@@ -47,7 +47,7 @@
 #define PASSWORD_COLOR_DEL        0xb004U
 #define PASSWORD_COLOR_VALID      0x35c6U
 #define PASSWORD_CURSOR_PERIOD_MS 450U
-#define PASSWORD_CURSOR_Y         30
+#define PASSWORD_CURSOR_Y         32
 #define PASSWORD_CURSOR_WIDTH     5
 #define PASSWORD_CURSOR_HEIGHT    9
 
@@ -247,27 +247,30 @@ static int drawLabel(const EspNativeIndexedBmp* font,
     return 1;
 }
 
+/* The original BSP question may contain '|' as a line break. Two 12px
+ * sprite-font rows fit the 29px header exactly; the bottom rule is BELOW
+ * the second row, never over the glyph descenders. */
 static int drawPrompt(const EspNativeIndexedBmp* font,
                       uint16_t* framebuffer,
                       EspNativeIndexedBmpStats* stats) {
     uint16_t i;
-    int x = 2;
-    int y = 2;
+    int x = 10;
+    int y = 3;
 
-    for (i = 0U; i < password.promptLength && y <= 14; ++i) {
-        uint8_t c = (uint8_t)password.prompt[i];
+    for (i = 0U; i < password.promptLength && y <= 16; ++i) {
+        const uint8_t c = (uint8_t)password.prompt[i];
         if (c == '|' || c == '\n') {
-            x = 2;
-            y += PASSWORD_FONT_HEIGHT;
+            x = 10;
+            y += 13;
             continue;
         }
-        if (x + PASSWORD_FONT_WIDTH > DOOMRPG_LOGICAL_WIDTH - 2) {
-            x = 2;
-            y += PASSWORD_FONT_HEIGHT;
-            if (y > 14) break;
+        if (x + PASSWORD_FONT_WIDTH > DOOMRPG_LOGICAL_WIDTH - 8) {
+            x = 10;
+            y += 13;
+            if (y > 16) break;
         }
         if (c == ' ') {
-            x += PASSWORD_FONT_ADVANCE;
+            if (x > 10) x += PASSWORD_FONT_ADVANCE;
             continue;
         }
         if (!drawGlyph(font, framebuffer, c, x, y, stats)) return 0;
@@ -305,21 +308,20 @@ static int drawCode(const EspNativeIndexedBmp* font,
         return 0;
     }
 
-    /* Dark recessed access-code window, not a monochrome outline. */
-    fillRect(framebuffer, 1, 27, DOOMRPG_LOGICAL_WIDTH - 2, 15,
+    /* Entire strip owns 30..43; both frame edges are continuous steel.
+     * Remove the two isolated red dashes at x3..19 and x141..157,y27.
+     * They were decorations in the old drawCode, not SPI corruption. */
+    fillRect(framebuffer, 0, 30, DOOMRPG_LOGICAL_WIDTH, 14,
              PASSWORD_COLOR_STEEL_DIM);
-    fillRect(framebuffer, 2, 28, DOOMRPG_LOGICAL_WIDTH - 4, 13,
+    fillRect(framebuffer, 2, 31, DOOMRPG_LOGICAL_WIDTH - 4, 12,
              PASSWORD_COLOR_INPUT);
-    fillRect(framebuffer, 3, 27, 16, 1, PASSWORD_COLOR_RED);
-    fillRect(framebuffer, DOOMRPG_LOGICAL_WIDTH - 19, 27, 16, 1,
-             PASSWORD_COLOR_RED);
 
     for (i = 0U; i < password.expectedLength; ++i) {
         if (i == enteredLength) continue; /* exclusive blinking caret cell */
         if (!drawGlyph(font, framebuffer,
                        i < enteredLength ? (uint8_t)password.entered[i]
                                          : (uint8_t)'_',
-                       x + i * PASSWORD_FONT_ADVANCE, 29, stats)) {
+                       x + i * PASSWORD_FONT_ADVANCE, 31, stats)) {
             return 0;
         }
     }
@@ -367,19 +369,19 @@ static int paintKeypad(void) {
         return 0;
     }
 
+    /* Continuous UAC header. Two question rows sit at y3 and y16,
+     * separator at y29, entry field at y30..43, keypad starts y44.
+     * No red corner teeth, overdrawn descenders or orphan dashes. */
     fillRect(framebuffer, 0, 0,
              DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
              PASSWORD_COLOR_BLACK);
+    fillRect(framebuffer, 0, 0, DOOMRPG_LOGICAL_WIDTH, 30,
+             PASSWORD_COLOR_PANEL);
     fillRect(framebuffer, 0, 0, DOOMRPG_LOGICAL_WIDTH, 2,
              PASSWORD_COLOR_RED);
-    fillRect(framebuffer, 0, 2, DOOMRPG_LOGICAL_WIDTH, 24,
-             PASSWORD_COLOR_PANEL);
-    fillRect(framebuffer, 0, 25, DOOMRPG_LOGICAL_WIDTH, 1,
-             PASSWORD_COLOR_RED);
-    /* Side console bolts: pure framebuffer, no extra texture/palette reads. */
-    fillRect(framebuffer, 0, 30, 1, 9, PASSWORD_COLOR_STEEL);
-    fillRect(framebuffer, DOOMRPG_LOGICAL_WIDTH - 1, 30, 1, 9,
+    fillRect(framebuffer, 0, 29, DOOMRPG_LOGICAL_WIDTH, 1,
              PASSWORD_COLOR_STEEL);
+    fillRect(framebuffer, 4, 4, 2, 23, PASSWORD_COLOR_STEEL);
 
     if (!drawPrompt(&font, framebuffer, &stats) ||
         !drawCode(&font, framebuffer, &stats)) {
@@ -405,14 +407,24 @@ static int paintKeypad(void) {
             if (row == 3 && col == 0) border = PASSWORD_COLOR_DEL;
             if (row == 3 && col == 2) border = PASSWORD_COLOR_VALID;
 
+            /* Each key floats in a dark recess, with inner metal lip. */
+            const uint16_t face =
+                row == 3 && col == 0 ? 0x3802U :
+                (row == 3 && col == 2 ? 0x0862U : PASSWORD_COLOR_BUTTON);
             fillRect(framebuffer, x, y, width, height,
-                     PASSWORD_COLOR_BUTTON);
-            drawRect(framebuffer, x, y, width, height, border);
-            /* Recess and warning stripe distinguish digit/DEL/VALID roles. */
-            fillRect(framebuffer, x + 2, y + 2, 2, height - 4,
+                     PASSWORD_COLOR_BLACK);
+            fillRect(framebuffer, x + 1, y + 1, width - 2, height - 2,
+                     PASSWORD_COLOR_STEEL_DIM);
+            fillRect(framebuffer, x + 2, y + 2, width - 4, height - 4,
+                     face);
+            drawRect(framebuffer, x + 2, y + 2, width - 4, height - 4,
                      border);
-            fillRect(framebuffer, x + 6, y + height - 3,
-                     width - 9, 1, PASSWORD_COLOR_STEEL_DIM);
+            fillRect(framebuffer, x + 4, y + height - 4, width - 8, 1,
+                     PASSWORD_COLOR_STEEL_DIM);
+            /* Thin status index at left; no contact with font glyph cells. */
+            fillRect(framebuffer, x + 4, y + 5, 2, height - 10,
+                     border);
+
             if (!drawLabel(&font, framebuffer, label, labelX,
                            y + 2, &stats)) {
                 return 0;
