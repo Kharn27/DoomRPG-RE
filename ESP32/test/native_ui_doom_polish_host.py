@@ -21,6 +21,7 @@ password = (SRC / "esp_native_gameplay_password.c").read_text()
 resident = (SRC / "esp_native_resident_gameplay.c").read_text()
 load = (SRC / "native_main_menu_actions.c").read_text()
 options = (SRC / "native_main_menu_options_back.c").read_text()
+options_painter = (SRC / "native_main_menu_options_action.c").read_text()
 
 def macro(src, name):
     m = re.search(r"^#define\s+" + re.escape(name) + r"\s+([0-9xa-fA-FU]+)", src, re.M)
@@ -85,6 +86,23 @@ assert "drawRect565(" not in drawMain
 assert "fillRect565(" not in drawMain
 assert "logoDst.x = DOOMRPG_CANVAS_X + DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_X" in drawMain
 assert "logo=102x120@0,0 stretched=yes unframed=yes" in menu
+# Regression: Options previously centered the full-height logo at x=29,
+# painting beneath the right rail and creating a blank strip on the left.
+# Both compositions must use the same logical origin and destination size.
+paintOptions = function(options_painter, "static int paintOptionsBounded(")
+logoFields = (
+    "logoDst.x = DOOMRPG_CANVAS_X + DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_X;",
+    "logoDst.y = DOOMRPG_CANVAS_Y +",
+    "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_Y;",
+    "logoDst.w = DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH;",
+    "logoDst.h = DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_HEIGHT;",
+)
+for field in logoFields:
+    assert field in paintOptions and field in drawMain, field
+assert "DOOMRPG_CANVAS_WIDTH -" not in paintOptions
+assert "DoomRPG_esp32PaintMainMenuOptionsDashboard(" in paintOptions
+assert "logoDst.x" in paintOptions and "SDL_RenderCopy(" in paintOptions
+
 assert 'static char noSaveLabel[] = "NO SAVE";' in load
 loadFeedback = function(load, "static void showNoSaveFeedback(")
 assert "DoomRPG_esp32MainMenuCardRect(MAIN_LOAD_ITEM_INDEX" in loadFeedback
