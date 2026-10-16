@@ -42,14 +42,14 @@ def function(src, signature):
 
 # Native 160x120 split geometry. Test the *shared* contract instead of
 # duplicating a second touch-hit table in the test suite.
-assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_X") == 2
-assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_Y") == 31
-assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH") == 84
-assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_HEIGHT") == 58
-assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT") == 89
+assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_X") == 0
+assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_Y") == 25
+assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH") == 100
+assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_HEIGHT") == 69
+assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT") == 102
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT") == 159
-assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT") == 94
-assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT") == 156
+assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT") == 104
+assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT") == 157
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_FIRST_TOP") == 13
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_HEIGHT") == 20
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_PITCH") == 25
@@ -73,6 +73,11 @@ assert card.count("drawRect565(") == 1  # no orange/white nested ring
 drawCards = function(menu, "int DoomRPG_esp32PaintMenuDashboardCards(")
 assert "DASH_RAIL_LEFT" in drawCards and "DASH_RAIL_RIGHT" in drawCards
 assert "DASH_RAIL_TOP" in drawCards and "DASH_RAIL_BOTTOM" in drawCards
+drawMain = function(menu, "static int drawTouchReadyMainMenuOpaque(")
+assert "drawRect565(" not in drawMain
+assert "fillRect565(" not in drawMain
+assert "logoDst.x = DOOMRPG_CANVAS_X + DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_X" in drawMain
+assert "logo=100x69@0,25 unframed=yes" in menu
 assert 'static char noSaveLabel[] = "NO SAVE";' in load
 loadFeedback = function(load, "static void showNoSaveFeedback(")
 assert "DoomRPG_esp32MainMenuCardRect(MAIN_LOAD_ITEM_INDEX" in loadFeedback
@@ -98,6 +103,8 @@ assert "fillRect(framebuffer, 0, 29, DOOMRPG_LOGICAL_WIDTH, 1," in paint
 assert "fillRect(framebuffer, 0, 30, DOOMRPG_LOGICAL_WIDTH, 14," in drawCode
 assert "PASSWORD_COLOR_VALID" in paint and "PASSWORD_COLOR_DEL" in paint
 assert "row * PASSWORD_KEY_ROW_HEIGHT" in paint
+assert "const int labelY = (row == 3 && (col == 0 || col == 2))" in paint
+assert "? y + 5 : y + 2;" in paint
 assert macro(password, "PASSWORD_CURSOR_Y") == 32
 assert macro(password, "PASSWORD_CURSOR_WIDTH") == 5
 assert macro(password, "PASSWORD_CURSOR_HEIGHT") == 9
@@ -162,7 +169,7 @@ int main(void) {
     for (int i = 0; i < 4; ++i) {
         int l, t, r, b;
         DoomRPG_esp32MainMenuCardRect(i, &l, &t, &r, &b);
-        assert(l == 94 && r == 156);
+        assert(l == 104 && r == 157);
         assert(t == 13 + 25 * i && b == 32 + 25 * i);
         assert(t > DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP);
         assert(b < DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM);
@@ -213,4 +220,4 @@ with tempfile.TemporaryDirectory() as d:
     subprocess.run([cc, "-std=c11", "-Wall", "-Wextra", "-Werror",
                     "-I", str(INC), str(src), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print("PASS native Doom UI: split title+4 right cards, 2-row clean terminal, 5x9 caret")
+print("PASS native Doom UI: unframed 100x69 logo, 54x20 cards, aligned DEL/VALID, caret")
