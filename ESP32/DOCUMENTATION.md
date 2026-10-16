@@ -1,5 +1,84 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #217 — clôture et mode d'emploi du menu DOOM / terminal (16 octobre 2026)
+
+Base réelle `main 4434e47a36b70826c401fc17a8b24d371789098c`,
+branche `agent/esp32-retire-canvas-sound-abi`,
+[PR #217](https://github.com/Kharn27/DoomRPG-RE/pull/217).
+**SHA code définitif de ce lot :**
+`7c866696f4ce1d263b4a514544d7f83c06146d27`.
+[CI du SHA : SUCCESS (51 étapes)](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38877111031) ;
+le retour utilisateur du 16 octobre autorise la clôture documentaire
+et la préparation au merge, **sans demander à l'agent de merger**.
+
+### Rendu MENU_MAIN : contrat désormais retenu
+
+En logique 160×120, le logo source PAK **108×74** est copié vers
+`SDL_Rect{x=0,y=0,w=102,h=120}`. Il est donc aligné **au bord haut**,
+occupe toute la hauteur et est **volontairement déformé** ; ne pas
+« corriger » son ratio sans nouveau retour visuel. Aucun encadrement
+ni montage rouge autour du logo. Le panneau droit, seul habillé,
+commence à `x=102` et contient les boutons `START`, `LOAD`,
+`OPTIONS`, `HELP` : `x=104..157`, hauteur 20, `top=13+25*i`
+pour `i=0..3`. `native_main_menu_160x120_layout.h`
+définit la géométrie partagée par dessin, sélections, touch gate,
+hitboxes de debug, Options Back et retour `NO SAVE`. La carte
+reste neutre jusqu'au premier tap, devient rouge armée, puis
+le **second tap après relâchement** confirme ; la logique
+d'action/touch existante ne change pas.
+
+### Terminal et code d'accès
+
+L'owner permanent `esp_native_gameplay_password.c` dessine
+l'en-tête de question sur deux lignes, un séparateur unique,
+un champ de saisie en creux (sans les deux anciens traits
+rouges isolés), et un keypad natif 3×4 avec touches différenciées
+DEL rouge / VALID vert. Les seules étiquettes déplacées sont
+DEL et VALID (`y+5` au lieu de `y+2`) ; rectangles tactiles
+inchangés. Un curseur bloc 5×9 (ligne `y=32`) clignote
+toutes les 450 ms dans le chemin modal résident, à la suite
+du code saisi, sans relecture des glyphes ni tour supplémentaire.
+Les 5×9 pixels sont modifiés dans le framebuffer, puis
+`Esp32PlatformVideo_present()` est appelé normalement ;
+ne pas confondre ce rafraîchissement logique borné avec
+un transfert matériel partiel.
+
+### Preuve et test en cas de nouvelle révision
+
+Le dernier firmware avant documentation compile dans les profils
+`esp32-cyd`, `bringup` et `trace` ; les tests hôte
+`ESP32/test/native_ui_doom_polish_host.py` et
+`native_audio_handoff_host.py` ainsi que les gardes
+compiledb/ELF passent. L'ancien hardware PASS audio
+`b6711e666965dfa7efb2017d18d6cff3ab68b5fc` a prouvé
+intro/Entrance/EXIT et les invariants mémoire, mais
+**n'est pas un essai matériel du logo final 102×120**.
+Le retour visuel utilisateur accepte le jalon pour merge,
+sans nouveau Serial/capture indexé au SHA final.
+
+Si le layout doit encore bouger, tester sur carte réelle uniquement
+en configuration normale :
+
+```sh
+cd ESP32
+pio run -e esp32-cyd -t upload -t monitor
+```
+
+Sur les logs, repérer `[MAINOPAQUE] TARGET` indiquant
+`logo=102x120@0,0 stretched=yes unframed=yes`,
+puis vérifier les quatre doubles taps et Options→Back,
+LOAD `NO SAVE`, le champ code et son curseur. Les FNV
+de framebuffer seront nécessairement différents des étapes
+historisées. Audio : le nouvel `EspNativeAudioIntent_stopAll()`
+et le PLAY 5039 utilisent encore un backend **silent**,
+sans FIFO ni sortie sonore réelle ; ce chantier sera testé
+ultérieurement. Ne pas réintroduire de ZIP runtime, de
+`shapeData` ou `mediaTexels`, ni de source desktop
+compilée. Pour tout prochain milestone après merge, relire
+le vrai `main` et ses SHA de référence.
+
+---
+
 ## PR #217 — handoff audio natif depuis l'intro, test CYD (16 octobre 2026)
 
 Depuis le `main 4434e47a36b70826c401fc17a8b24d371789098c`,
@@ -40,9 +119,10 @@ retrouve le menu de FNV `522dc605`, `heap8=158256`,
 
 **Ne pas extrapoler :** aucun STOP_ALL observé **pendant EXIT**,
 aucune sortie sonore réelle, aucun combat ni nouveau SAVE→LOAD sur
-ce code, et pas de comparaison pixel exhaustive. Toute mutation
-firmware ultérieure exige un nouveau test matériel ; la clôture
-de #217 après ce témoin est docs-only. La cadence UI sous charge
+ce code, et pas de comparaison pixel exhaustive. Toute mutation firmware ultérieure exige un nouveau test matériel ;
+les commits documentaires qui suivirent ce premier témoin audio
+étaient docs-only, puis une passe UI distincte fut conduite sur
+cette même PR, clôturée avec son propre code SHA ci-dessus. La cadence UI sous charge
 est une dette distincte et reste documentée dans PORTING_STATUS.
 
 ---
