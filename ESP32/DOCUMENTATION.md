@@ -1,5 +1,30 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #217 — follow-up de code review : Options aligné sur MENU_MAIN (16 octobre 2026)
+
+Après la clôture initiale `7c866696`/docs `909e7e37`,
+la review Codex GitHub a identifié un P2 réel :
+`paintOptionsBounded()` composait le logo 102×120 à `x=29`
+(car il le centrait dans 160px) tandis que le menu principal
+l'affiche à `x=0`. Le rail `x=102..159` masquait sa droite.
+**Nouveau SHA de code :**
+`e4d0d03844ebfbd431318b8b1e0c9f2936c5d961`.
+Le painter Options utilise désormais exactement
+`DOOMRPG_CANVAS_X + DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_X`,
+comme MENU_MAIN, sans modifier y/w/h ou les quatre boutons.
+Le test hôte vérifie explicitement l'égalité des destinations
+`logoDst` dans les deux renderers et interdit le recentrage.
+
+Il s'agit d'une **nouvelle frontière de code** : ne pas
+présenter les photos précédentes comme un test matériel de
+cette variante. Pour validation sur le classic CYD normal,
+ouvrir MENU_MAIN → OPTIONS et vérifier que le logo occupe
+la même zone gauche `x=0..101`, puis BACK. Les autres
+limitations audio et gameplay listées ci-dessous subsistent.
+Seul l'utilisateur merge dans `main`.
+
+---
+
 ## PR #217 — clôture et mode d'emploi du menu DOOM / terminal (16 octobre 2026)
 
 Base réelle `main 4434e47a36b70826c401fc17a8b24d371789098c`,
