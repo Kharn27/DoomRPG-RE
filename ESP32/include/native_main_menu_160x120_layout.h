@@ -28,13 +28,14 @@
      DOOMRPG_ESP32_MAIN_MENU_FONT_HEIGHT)
 
 /* Landscape split layout, all coordinates logical RGB565 160x120.
- * Source logo 108x74 retains aspect ratio: 100x69 floating on black.
- * Finger targets are 54x20 logical / 108x40 physical, four tall cards.
+ * Deliberately stretch the 108x74 source logo to a 102x120 tall left
+ * banner, anchored at 0,0; the user prefers full height over aspect ratio.
+ * Four 54x20 logical touch cards (108x40 physical) stay in the right rail.
  * One source of truth for painting, touch gate and debug hitboxes. */
-#define DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH 100
-#define DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_HEIGHT 69
+#define DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH 102
+#define DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_HEIGHT 120
 #define DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_X 0
-#define DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_Y 25
+#define DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_Y 0
 
 #define DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT 102
 #define DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT 159
