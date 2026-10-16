@@ -38,25 +38,56 @@ def function(src, signature):
                 return src[start:end + 1]
     raise AssertionError("Unclosed native function " + signature)
 
-assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH") == 108
-assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_HEIGHT") == 74
-assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_Y") == 0
-logo_end = (macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_Y") +
-            macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_HEIGHT"))
-rail_top = macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP")
-assert logo_end <= rail_top
-assert rail_top < macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_TOP")
-assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_BOTTOM") < macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_ROW1_TOP")
-assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_ROW1_BOTTOM") < 120
-assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_RIGHT") < macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_COL1_LEFT")
+# Native 160x120 split geometry. Test the *shared* contract instead of
+# duplicating a second touch-hit table in the test suite.
+assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_X") == 2
+assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_Y") == 31
+assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH") == 84
+assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_HEIGHT") == 58
+assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT") == 89
+assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT") == 159
+assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT") == 94
+assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT") == 156
+assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_FIRST_TOP") == 13
+assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_HEIGHT") == 20
+assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_PITCH") == 25
+assert "DoomRPG_esp32MainMenuCardRect" in layout
+assert menu.count("DoomRPG_esp32MainMenuCardRect(") == 1
+assert touch.count("DoomRPG_esp32MainMenuCardRect(") == 1
+assert "return findHitItem(screenX / DOOMRPG_INTEGER_SCALE" in touch
+assert "cardRect(item, &left, &top, &right, &bottom)" in touch
+assert "DOOMRPG_ESP32_MAIN_MENU_CARD_COL0" not in touch
+assert "DOOMRPG_ESP32_MAIN_MENU_CARD_COL1" not in touch
+assert "DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0" not in touch
+assert "DOOMRPG_ESP32_MAIN_MENU_CARD_ROW1" not in menu
 assert "focused = selected && armed && enabled" in menu
 card = function(menu, "static void drawDashboardCard(")
 assert "MAIN_DOOM_RED_HOT" in card and "ESP_HUB_COLOR_AMBER" not in card
-assert card.count("drawRect565(") == 1  # no white+orange nested border
+assert card.count("drawRect565(") == 1  # no orange/white nested ring
+drawCards = function(menu, "int DoomRPG_esp32PaintMenuDashboardCards(")
+assert "DASH_RAIL_LEFT" in drawCards and "DASH_RAIL_RIGHT" in drawCards
+assert "DASH_RAIL_TOP" in drawCards and "DASH_RAIL_BOTTOM" in drawCards
 assert "DoomRPG_esp32MainMenuPaintDashboardSelection" in touch
-assert "68x19" in touch and "doom-red-single-border" in touch
+assert "dashboard=split-logo-left+rail-right" in touch
 assert "EspNativeGameplayPassword_serviceCursor(" in resident
 assert "esp_timer_get_time() / 1000LL" in resident
+
+# Original two red fragments came from these drawCode decorations, not TFT
+# gamma or a bus fault. Guard their actual removal and non-overlapping rows.
+prompt = function(password, "static int drawPrompt(")
+drawCode = function(password, "static int drawCode(")
+paint = function(password, "static int paintKeypad(")
+assert "int y = 3;" in prompt and "y += 13" in prompt
+assert "y <= 16" in prompt
+assert "PASSWORD_COLOR_RED" not in drawCode
+assert "PASSWORD_COLOR_STEEL_DIM" in drawCode
+assert "fillRect(framebuffer, 0, 29, DOOMRPG_LOGICAL_WIDTH, 1," in paint
+assert "fillRect(framebuffer, 0, 30, DOOMRPG_LOGICAL_WIDTH, 14," in drawCode
+assert "PASSWORD_COLOR_VALID" in paint and "PASSWORD_COLOR_DEL" in paint
+assert "row * PASSWORD_KEY_ROW_HEIGHT" in paint
+assert macro(password, "PASSWORD_CURSOR_Y") == 32
+assert macro(password, "PASSWORD_CURSOR_WIDTH") == 5
+assert macro(password, "PASSWORD_CURSOR_HEIGHT") == 9
 
 names = ["PASSWORD_FONT_ADVANCE", "PASSWORD_COLOR_RED_HOT", "PASSWORD_COLOR_INPUT",
          "PASSWORD_CURSOR_PERIOD_MS", "PASSWORD_CURSOR_Y",
@@ -79,6 +110,7 @@ harness = r"""
 #include <string.h>
 #define DOOMRPG_LOGICAL_WIDTH 160
 #define DOOMRPG_LOGICAL_HEIGHT 120
+#include "native_main_menu_160x120_layout.h"
 
 typedef struct {
     uint32_t cursorEpochMs;
@@ -111,6 +143,18 @@ static void fillRect(uint16_t* framebuffer, int x, int y, int w, int h, uint16_t
 """
 tests = r"""
 int main(void) {
+    assert(DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_X +
+           DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH <=
+           DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT);
+    for (int i = 0; i < 4; ++i) {
+        int l, t, r, b;
+        DoomRPG_esp32MainMenuCardRect(i, &l, &t, &r, &b);
+        assert(l == 94 && r == 156);
+        assert(t == 13 + 25 * i && b == 32 + 25 * i);
+        assert(t > DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP);
+        assert(b < DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM);
+        if (i < 3) assert(b < DOOMRPG_ESP32_MAIN_MENU_CARD_TOP(i+1));
+    }
     s.active = s.packOwned = s.cursorVisible = 1;
     s.expectedLength = 16;
     memset(pixels, 0x55, sizeof(pixels));
@@ -154,6 +198,6 @@ with tempfile.TemporaryDirectory() as d:
     exe = Path(d) / "caret"
     src.write_text(harness + "\n" + defines + "\n" + code + "\n" + tests)
     subprocess.run([cc, "-std=c11", "-Wall", "-Wextra", "-Werror",
-                    str(src), "-o", str(exe)], check=True)
+                    "-I", str(INC), str(src), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print("PASS native Doom UI: 108x74 title, red single-border, 5x9 modal caret, 450ms retry")
+print("PASS native Doom UI: split title+4 right cards, 2-row clean terminal, 5x9 caret")
