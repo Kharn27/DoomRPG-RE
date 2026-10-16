@@ -108,7 +108,7 @@ int DoomRPG_esp32MainMenuTouchPrepare(struct DoomRPG_s* doomRpgBase) {
     confirmCount = 0U;
     missCount = 0U;
 
-    printf("[MENUTOUCH] PREPARED dashboard=split-logo-left+rail-right cursorPatchBytes=0 targetLogical=63x20 targetPhysical=126x40\n");
+    printf("[MENUTOUCH] PREPARED dashboard=split-logo-left+rail-right cursorPatchBytes=0 targetLogical=54x20 targetPhysical=108x40\n");
     return 1;
 }
 
@@ -422,7 +422,7 @@ static void registerMainMenuHitboxOverlay(void) {
         Esp32PlatformVideo_debugOverlaySetZone(item, left, top,
                                                right, bottom);
     }
-    printf("[HITBOX] MAIN split-rail overlay zones=4 target=63x20 logical framebuffer=untouched\n");
+    printf("[HITBOX] MAIN split-rail overlay zones=4 target=54x20 logical framebuffer=untouched\n");
 }
 
 #endif
