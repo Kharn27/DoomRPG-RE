@@ -19,6 +19,7 @@ layout = (INC / "native_main_menu_160x120_layout.h").read_text()
 touch = (SRC / "native_main_menu_touch.c").read_text()
 password = (SRC / "esp_native_gameplay_password.c").read_text()
 resident = (SRC / "esp_native_resident_gameplay.c").read_text()
+load = (SRC / "native_main_menu_actions.c").read_text()
 
 def macro(src, name):
     m = re.search(r"^#define\s+" + re.escape(name) + r"\s+([0-9xa-fA-FU]+)", src, re.M)
@@ -67,6 +68,13 @@ assert card.count("drawRect565(") == 1  # no orange/white nested ring
 drawCards = function(menu, "int DoomRPG_esp32PaintMenuDashboardCards(")
 assert "DASH_RAIL_LEFT" in drawCards and "DASH_RAIL_RIGHT" in drawCards
 assert "DASH_RAIL_TOP" in drawCards and "DASH_RAIL_BOTTOM" in drawCards
+assert 'static char noSaveLabel[] = "NO SAVE";' in load
+loadFeedback = function(load, "static void showNoSaveFeedback(")
+assert "DoomRPG_esp32MainMenuCardRect(MAIN_LOAD_ITEM_INDEX" in loadFeedback
+assert "DoomRPG_esp32MainMenuTouchRebaseFrame(" in loadFeedback
+assert len("NO SAVE") * 7 <= (
+    macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT") -
+    macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT") + 1)
 assert "DoomRPG_esp32MainMenuPaintDashboardSelection" in touch
 assert "dashboard=split-logo-left+rail-right" in touch
 assert "EspNativeGameplayPassword_serviceCursor(" in resident
