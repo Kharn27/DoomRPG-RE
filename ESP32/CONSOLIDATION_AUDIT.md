@@ -1,5 +1,33 @@
 # Audit de consolidation architecturale ESP32
 
+## PR #217 — review P2 : même ancrage du logo sur MENU_MAIN et OPTIONS (2026-10-16)
+
+Après la clôture documentaire `909e7e3769ff4c82a7cc13a99be6039e8544f5e9`,
+la review GitHub a identifié que `native_main_menu_options_action.c`
+recentrant le logo full-height 102×120 à x=29, sans respecter
+l'ancrage `DASH_LOGO_X=0` du painter MENU_MAIN.
+Le rail x=102..159 pouvait alors écraser les 29 derniers pixels
+de l'image, tandis qu'une bande noire persistait à gauche.
+**Correctif natif exact :** `e4d0d03844ebfbd431318b8b1e0c9f2936c5d961`
+(modification d'un calcul de rectangle et test hôte associé) ;
+`paintOptionsBounded` reprend `DOOMRPG_CANVAS_X +
+DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_X`. Les 2 chemins
+partagent désormais x/y/w/h et les mêmes assets PAK.
+Le registre de tests bloque une divergence de position
+ou le retour au centrage. Les offsets des hitboxes,
+l'ABI audio, le monde, la sauvegarde et le RNG sont inchangés.
+
+**Preuve** : ancien CI code/documentaire SUCCESS ; la CI
+correspondant au review-fix est à revérifier avant merge.
+Aucun nouveau test physique explicitement attribué à ce SHA
+n'est fourni. Les trois commits docs-only de la précédente
+clôture restent historiques : le review-fix ouvre une petite
+nouvelle frontière de code après eux, sans invalider le
+PASS CYD audio antérieur. Merge effectué uniquement
+par l'utilisateur.
+
+---
+
 ## PR #217 — clôture d'audit : audio-intent et présentation native (2026-10-16)
 
 [PR #217](https://github.com/Kharn27/DoomRPG-RE/pull/217), base
