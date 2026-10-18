@@ -209,13 +209,13 @@ bool PlatformVideo_begin(TFT_eSPI* display) {
     if (!backlightReady) {
         if (ledcSetup(kBacklightChannel, kBacklightFrequencyHz,
                       kBacklightResolutionBits) <= 0.0) {
-            Serial.println("[BACKLIGHT] FAILED LEDC setup; video remains usable, Video setting unavailable");
+            Serial.println("[BACKLIGHT] FAILED LEDC setup; video remains usable, Luminosite setting unavailable");
         } else {
             ledcAttachPin(TFT_BL, kBacklightChannel);
             ledcWrite(kBacklightChannel, 255U);
             backlightPercent = 100U;
             backlightReady = true;
-            Serial.println("[BACKLIGHT] READY pin=21 active=HIGH pwm=5000Hz/8bit channel=7 percent=100 persistence=session-only");
+            Serial.println("[BACKLIGHT] READY pin=21 active=HIGH pwm=5000Hz/8bit channel=7 percent=100 persistence=native-sd-config");
         }
     }
 
