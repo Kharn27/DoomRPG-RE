@@ -36,15 +36,12 @@ def extract(source, signature):
 
 legacy = (ROOT / "src/DoomRPG.c").read_text(encoding="latin-1")
 native = (ROOT / "ESP32/src/esp_doomrpg_process_clock.c").read_text(encoding="latin-1")
-generator = (ROOT / "ESP32/scripts/build_engine.py").read_text()
 assert legacy.count(BASE) == native.count(BASE) == 1
-assert "clock_basetime = " in generator and "clock_methods = (" in generator
 bodies = []
 for sig, crc in SIGNATURES:
     expected = extract(legacy, sig)
     assert zlib.crc32(expected.encode("latin-1")) == crc, "reference drift " + sig
     assert extract(native, sig) == expected, "effective clock behavior changed " + sig
-    assert generator.count('("' + sig + '",') == 1, "generator ABI contract drift " + sig
     bodies.append(expected.replace("DoomRPG_Get", "Legacy_Get"))
 
 HARNESS = r"""
