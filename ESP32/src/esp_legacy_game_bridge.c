@@ -5,11 +5,13 @@
 #include "Game.h"
 
 /*
- * Permanent ESP32 compatibility bridge for the three Game_* roots that still
- * survive in the normal classic-CYD ELF. Desktop Game.c is not compiled.
+ * Permanent ESP32 compatibility bridge for the last live Game_init root.
+ * Desktop Game.c is not compiled. The two inert Game_activate and
+ * Game_unloadMapData exports are intentionally absent: any attempted
+ * resurrection of legacy world/activation ownership must fail to link.
  *
- * World/entity/script/gameplay ownership is native. Adding a new legacy Game_*
- * dependency must fail at link time and receive an explicit migration milestone.
+ * World/entity/script/gameplay ownership remains native. The one-pointer
+ * Game_t process shell is retired in a separate lifecycle milestone.
  */
 
 Game_t* Game_init(Game_t* game, DoomRPG_t* doomRpg)
@@ -28,18 +30,3 @@ Game_t* Game_init(Game_t* game, DoomRPG_t* doomRpg)
     return game;
 }
 
-void Game_activate(Game_t* game, Entity_t* entity)
-{
-    /* Native monster activation owns this behavior. Keep stale ABI fail-closed. */
-    (void)game;
-    (void)entity;
-}
-
-void Game_unloadMapData(Game_t* game)
-{
-    /*
-     * Native resident/session owners perform the real teardown. The minimal
-     * ESP32 Game_t and compact DoomCanvas_t carry no world/entity mirrors.
-     */
-    (void)game;
-}
