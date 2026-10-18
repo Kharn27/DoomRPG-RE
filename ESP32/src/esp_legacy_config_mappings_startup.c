@@ -298,7 +298,7 @@ int EspLegacyConfigMappingsStartup_start(int renderStartupReady) {
            (unsigned int)mappingBytes);
 
     /* Native config is independently restored after SD mount in main.cpp.
-     * Neither SDL_RWFromFile("Config") nor Game_loadConfig is allowed here. */
+     * Neither the desktop Config file nor its legacy loader is used here. */
     printf("[CONFIGMAP] Native CYD config restored earlier; legacy Config v23 skipped\n");
 
     render = doomRpg->render;
