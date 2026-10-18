@@ -1,5 +1,20 @@
 # Doom RPG ESP32 — guide de travail
 
+## Animation d'ambiance native — PR #220, validée sur CYD (19 octobre 2026)
+
+[PR #220](https://github.com/Kharn27/DoomRPG-RE/pull/220), base `main` `16155aec8e741151c5f057e95c7fe395a15521e8`.
+**Dernier commit de code** : `3b8c2135bc2f4307eaa0deb633f7314c93ea1c27`, [CI SUCCESS #39176840460](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39176840460) (56 étapes).
+
+La présentation **reste pilotée par les changements de phase, pas un FPS permanent**. Les sprites immobiles éligibles utilisent la politique `esp_native_ambient_sprite.h`, avec retraitement des animations fixes interdit. Pour les voyants, l'overlay natif des lignes doit être actif *également dans `renderAmbient`* : sinon une porte déverrouillée retombe visuellement sur la texture immutable rouge, ou un rendu sur porte ouverte échoue. Le wrapper `EspNativeGameplayFrame_renderAmbient` dans `esp_native_dynamic_line_render.c` préserve cette frontière.
+
+**Cadences finales** (champs en `esp_native_wall_indicator_animation.h`) : rouge/verrouillé logique 9, `0,0,1,2,3,3,2,1` à 360 ms par phase, respiration **2,88 s** ; vert/déverrouillé logique 10, `0,1,2,3` à 144 ms par phase, **576 ms**. Ce sont des indices dans les quatre textures physiques PAK, sans création d'assets. Le masque de voyants visibles et l'heure d'échantillonnage sont publiés uniquement après le raster mural réussi ; la comparaison des phases absolues décide du prochain rendu. Une action de navigation ne rallonge donc pas le cycle. Jeu/RNG/world/activation jamais mutés par le simple redraw.
+
+**Playtest normal CYD** : armor shards et flamme visibles animés, vert durable après EV_UNLOCK dans un essai précédent ; utilisateur approuve le rouge ralenti au SHA final. Déplacements, dialogue, pickups et ouverture/fermeture dans le dernier journal ; `heap8` stable à `110216` sur les dernières mesures, plus grand bloc `86004`. `shapeData` / `mediaTexels` NULL, 21 TU desktop toujours exclues. Absence de FAIL limitée aux extraits fournis, pas de garantie sur toutes les cartes. Voir [PORTING_STATUS.md](PORTING_STATUS.md) pour les limites détaillées.
+
+**Reprise après merge** : vérifier le SHA GitHub réel de `main`, et relire `PORTING_STATUS.md`, ce guide et les dernières notes avant tout nouveau `agent/*`. Ne pas modifier la mécanique de combat à l'occasion de ce jalon d'animation ; investiguer séparément le spam `[NATIVESPRITE] CROSS` en idle si un nettoyage des logs est choisi.
+
+---
+
 ## Utilisation et validation du firmware courant — PR #219 (18 octobre 2026)
 
 La prise en main et les commandes actuelles sont dans

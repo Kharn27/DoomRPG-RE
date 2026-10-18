@@ -1,5 +1,38 @@
 # Doom RPG ESP32 — état actuel du port
 
+## PR #220 — animation native des sprites et des voyants de porte (19 octobre 2026)
+
+**Branche** : `agent/esp32-native-ambient-sprite-animation`, [PR #220](https://github.com/Kharn27/DoomRPG-RE/pull/220).
+**Base main vérifiée** : `16155aec8e741151c5f057e95c7fe395a15521e8`.
+**Dernier SHA de code** : `3b8c2135bc2f4307eaa0deb633f7314c93ea1c27`.
+**CI** : [SUCCESS #39176840460](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39176840460), **56 étapes** (tests hôte, builds normal/bringup/trace, audits compilés/ELF).
+**Statique CI normal** : RAM **49 520 B** ; Flash **822 241 B**.
+Bringup : **49 672 / 843 021 B** ; trace : **49 568 / 839 005 B**.
+Tous les commits post-PASS sur cette branche sont **documentation uniquement**.
+
+### Périmètre livré et ownership
+
+- Sprites natifs non-fixes animés depuis les frames du PAK sans état mutable de carte ni random gameplay : éléments de décor/armor shards 4 phases / 250 ms ; humains 2 phases / 6 s ; monstres au repos 0/3 / 4 s. Les animations explicites d'attaque, douleur et mort gardent leur propriétaire et leur `FIXED_ANIM`.
+- Les previews d'ambiance passent par le même adaptateur natif des lignes dynamiques que MOVE/TURN. Cela respecte les portes ouvertes et le remplacement de texture 9 (rouge/verrouillée) par 10 (verte/déverrouillée), sans jamais réécrire l'état d'unlock à la présentation. Cette correction a éliminé la cause du retour visuel au rouge et de l'échec `[AMBIENT] FAIL` après ouverture relevés sur une révision précédente.
+- Les voyants de porte 9/10 utilisent uniquement les **quatre frames physiques PAK** de leur texture, indexées par l'horloge monotone absolue, sans réinitialisation au déplacement. Rouge : `0,0,1,2,3,3,2,1` à **360 ms/pas**, cycle de respiration **2 880 ms** ; vert : `0,1,2,3` à **144 ms/pas**, cycle **576 ms**. Le dernier raster expose masque de voyants réellement dessinés et horloge échantillonnée ; l'idle ne redessine que lorsque la phase affichée diffère, indépendamment des rafraîchissements MOVE/TURN. Aucun timer ou texel map-wide.
+- Rendu seulement si besoin en phase idle, sans tour de monstre, sans activation, sans nouvelle lecture ZIP, `/DoomRPG-ESP32.pak` restant l'unique backing store ; `shapeData==NULL`, `mediaTexels==NULL` préservés. Le RNG est gardé exact, rollback et suspension d'ambiance en cas d'échec, sans masquer un échec de rendu normal.
+- **21 unités C desktop exclues**, Game/Canvas/Render natifs du jalon précédent inchangés. Le legacy reste oracle de format/comportement, et non nouveau fournisseur runtime.
+
+### Témoins CYD réels du 19 octobre 2026 — PASS ciblé
+
+L'utilisateur a confirmé des **armor shards qui clignotent** et une **flamme animée derrière une grille à distance** au début du jalon ; puis la **conservation effective du vert après EV_UNLOCK** sur les révisions correctives ; finalement, sur la révision au code SHA ci-dessus, **« Pour moi le rouge c'est ok »** valide subjectivement la respiration lente. Il n'a pas encore donné un verdict visuel explicite détaillé sur la nouvelle cadence verte *dans ce dernier extrait* (cadence verte laissée identique à la révision antérieure).
+
+Le dernier extrait normal `esp32-cyd` contient `[ENGINESESSION] READY map=1`, `shapeData=0x0 mediaTexels=0x0`, les `[PLAYERRES]` armor shards / medkit / bullet clip, `[VIEWANIM]` MOVE et TURN, les événements/défilements de dialogue, `[DOORANIM] ARM/HOLD/RELEASE/COMPLETE` sur la ligne 275, sans échec de rendu ni `[AMBIENT] FAIL` **dans la portion fournie**. Les trois mesures au cours de la session évoluent avec des propriétaires légitimes :
+`heap8=113784` (147 s, début du segment), `112640` (~162 s), puis `110216` (fin de dialogues et ~177–182 s), `largest8=86004` constant. Cela prouve la stabilité sur ces fenêtres observées, **pas** une absence universelle de fuite.
+Le firmware ne journalise pas son SHA, les logs n'en prouvent pas directement l'identité binaire indépendante. Le test n'est ni un run complet du jeu, ni une revalidation SAVE/LOAD/combats/EXIT à ce SHA. La visualisation de la cadence rouge et les chemins listés sont seuls acceptés matériellement ici.
+
+**Observation non bloquante à isoler plus tard** : `[NATIVESPRITE] CROSS index=77 ...` est très répétitif lors des rafraîchissements idle (aucune dégradation mémoire visible ici). Envisager un lot distinct de réduction de bruit des logs sans modifier le gameplay ni le code de ce jalon après PASS.
+La rencontre « zombie shotgun » sur l'essai précédent avait une attaque alternative `weapon=3` et les coups du joueur `weapon=0` (hache) ; les tirages critique/manqués sont compatibles avec les calculs legacy dans les logs. Aucun nerf ni correctif RNG engagé dans la présente PR.
+
+**Statut** : jalon d'animation **accepté sur les observations ciblées**, prêt pour revue/merge par l'utilisateur ; laisser les limites non testées explicites et ne pas extrapoler à toutes les cartes. Les journaux historiques du désengagement desktop restent plus bas, datés de la PR #219.
+
+---
+
 ## PR #219 — désengagement desktop C/Game/Canvas : état courant (18 octobre 2026)
 
 **Branche** : `agent/esp32-retire-generated-doomrpg-oracle`, [PR #219](https://github.com/Kharn27/DoomRPG-RE/pull/219).
