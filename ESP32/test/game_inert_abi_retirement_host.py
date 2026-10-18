@@ -28,6 +28,11 @@ assert 'bridge=Game_init-only' in builder
 assert "exports=1(Game_init) inertExports=retired" in core
 assert "Game_init(NULL, doomRpg)" in core
 assert "_Static_assert(sizeof(Game_t) == sizeof(void*)" in core
+cleanup = (SRC / "native_main_menu_start_action.c").read_text(encoding="latin-1")
+assert "Render_freeRuntime(render);" in cleanup
+assert "return render->nodes == NULL" in cleanup
+assert "!EspNativeWallCache_isActive()" in cleanup
+assert "!EspNativeSpriteCache_isActive()" in cleanup
 
 # Reject new native code that starts depending on one of the removed
 # functions, even if it happened to land in a discarded translation unit.
