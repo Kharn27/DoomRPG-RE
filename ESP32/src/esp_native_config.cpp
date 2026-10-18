@@ -108,17 +108,31 @@ extern "C" int EspNativeConfig_saveBrightness(uint8_t percent) {
     }
 
     if (SD.exists(kConfigPath)) {
-        if (SD.exists(kBackupPath) && !SD.remove(kBackupPath)) {
-            (void)SD.remove(kTempPath);
-            Serial.println("[NATIVECONFIG] SAVE failed stage=stale-backup-remove");
-            return 0;
+        uint8_t stored = 0U;
+        uint8_t recovered = 0U;
+        /* If an earlier interrupted save left an intact backup and an
+         * invalid primary, do not destroy the last recoverable settings.
+         * A failed promotion must leave the valid backup available at boot. */
+        if (!readExact(kConfigPath, &stored) &&
+            readExact(kBackupPath, &recovered)) {
+            if (!SD.remove(kConfigPath)) {
+                (void)SD.remove(kTempPath);
+                Serial.println("[NATIVECONFIG] SAVE failed stage=invalid-primary-remove backup=kept");
+                return 0;
+            }
+        } else {
+            if (SD.exists(kBackupPath) && !SD.remove(kBackupPath)) {
+                (void)SD.remove(kTempPath);
+                Serial.println("[NATIVECONFIG] SAVE failed stage=stale-backup-remove");
+                return 0;
+            }
+            if (!SD.rename(kConfigPath, kBackupPath)) {
+                (void)SD.remove(kTempPath);
+                Serial.println("[NATIVECONFIG] SAVE failed stage=backup-rename");
+                return 0;
+            }
+            oldMoved = true;
         }
-        if (!SD.rename(kConfigPath, kBackupPath)) {
-            (void)SD.remove(kTempPath);
-            Serial.println("[NATIVECONFIG] SAVE failed stage=backup-rename");
-            return 0;
-        }
-        oldMoved = true;
     }
 
     if (!SD.rename(kTempPath, kConfigPath) ||
