@@ -23,9 +23,10 @@ assert not old_tu.exists()
 assert "Game_loadConfig(" not in bridge
 assert "Game_loadConfig(" not in startup
 assert 'SDL_RWFromFile("Config"' not in startup
-assert "retired_config_readers" in builder
-assert "File_readByte(SDL_RWops* rw)" in builder
-assert "File_readInt(SDL_RWops* rw)" in builder
+legacy = (ROOT / "src/DoomRPG.c").read_text(encoding="latin-1")
+assert legacy.count("int File_readByte(SDL_RWops* rw)") == 1
+assert legacy.count("int File_readInt(SDL_RWops* rw)") == 1
+assert "doom_rpg_source_text" not in builder  # No generated legacy config reader.
 assert 'EspNativeConfig_loadAtBoot(sdReady ? 1 : 0);' in start
 assert start.index("initializePlatformVideo();") < start.index("initializeSdCard();")
 assert start.index("initializeSdCard();") < start.index("EspNativeConfig_loadAtBoot(sdReady ? 1 : 0);")
