@@ -64,7 +64,7 @@ static int introBoundaryIsSafe(const DoomRPG_t* doomRpg) {
     const Render_t* render;
 
     if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
-        doomRpg->render == NULL || doomRpg->game == NULL ||
+        doomRpg->render == NULL || doomRpg->game != NULL ||
         doomRpg->menuSystem == NULL) {
         return 0;
     }
