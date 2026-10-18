@@ -55,6 +55,28 @@
      DOOMRPG_ESP32_MAIN_MENU_CARD_HEIGHT - 1)
 #define DOOMRPG_ESP32_MAIN_MENU_DASH_FOOTER_Y 119
 
+/* Brightness child lives inside Options, without creating another desktop
+ * MenuSystem model. Five 54x20 cards fit the same right rail with 2px gaps.
+ * Card 0: Back; 1..4: 25/50/75/100 percent. Shared paint/touch geometry. */
+#define DOOMRPG_ESP32_BRIGHTNESS_CARD_COUNT 5
+#define DOOMRPG_ESP32_BRIGHTNESS_CARD_FIRST_TOP 6
+#define DOOMRPG_ESP32_BRIGHTNESS_CARD_HEIGHT 20
+#define DOOMRPG_ESP32_BRIGHTNESS_CARD_PITCH 22
+#define DOOMRPG_ESP32_BRIGHTNESS_CARD_TOP(index) \
+    (DOOMRPG_ESP32_BRIGHTNESS_CARD_FIRST_TOP + \
+     (index) * DOOMRPG_ESP32_BRIGHTNESS_CARD_PITCH)
+#define DOOMRPG_ESP32_BRIGHTNESS_CARD_BOTTOM(index) \
+    (DOOMRPG_ESP32_BRIGHTNESS_CARD_TOP(index) + \
+     DOOMRPG_ESP32_BRIGHTNESS_CARD_HEIGHT - 1)
+
+static inline void DoomRPG_esp32BrightnessCardRect(
+    int item, int* left, int* top, int* right, int* bottom) {
+    if (left != 0) *left = DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT;
+    if (right != 0) *right = DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT;
+    if (top != 0) *top = DOOMRPG_ESP32_BRIGHTNESS_CARD_TOP(item);
+    if (bottom != 0) *bottom = DOOMRPG_ESP32_BRIGHTNESS_CARD_BOTTOM(item);
+}
+
 /* Keep the exact 2-tap logical selection/confirmation contract. */
 static inline void DoomRPG_esp32MainMenuCardRect(
     int item, int* left, int* top, int* right, int* bottom) {
