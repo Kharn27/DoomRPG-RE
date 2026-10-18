@@ -8,10 +8,10 @@ extern "C" {
 /*
  * Continue the retained legacy startup after EspRenderStartupBridge_start().
  *
- * Game_loadConfig() is allowed to find no Config file on first boot. This
- * compatibility stage then inspects mappings.bin, verifies that its persistent
- * allocation plan fits the current classic-CYD heap, and executes the retained
- * Render_loadMappings() parser/owner.
+ * Native EspNativeConfig_loadAtBoot handles absent/invalid config after SD
+ * mount. This compatibility stage never reads desktop Config v23. It inspects
+ * mappings.bin, verifies its persistent allocation plan for the classic CYD,
+ * and executes the retained Render_loadMappings() parser/owner.
  *
  * No BSP/map file is opened by this stage.
  */
