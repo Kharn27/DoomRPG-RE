@@ -76,12 +76,12 @@ int main(void) {
     assert(EspNativeWallIndicator_bit(9U)==ESP_NATIVE_WALL_INDICATOR_RED_BIT);
     assert(EspNativeWallIndicator_bit(10U)==ESP_NATIVE_WALL_INDICATOR_GREEN_BIT);
     assert(EspNativeWallIndicator_bit(15U)==0);
-    /* MOVE/TURN can repaint at t=100 or t=155; neither starts another
-     * 160ms timer. At t=160 the red phase changes regardless. */
+    /* Red's immutable texture-9 phase offset is 27ms: first transition
+     * occurs at wall-clock 133ms. A MOVE repaint at 131ms must not delay it. */
     assert(!EspNativeWallIndicator_changed(1U,100U,130U));
-    assert(!EspNativeWallIndicator_changed(1U,155U,156U));
-    assert(EspNativeWallIndicator_changed(1U,155U,160U));
-    assert(EspNativeWallIndicator_changed(1U,100U,160U));
+    assert(!EspNativeWallIndicator_changed(1U,131U,132U));
+    assert(EspNativeWallIndicator_changed(1U,131U,134U));
+    assert(EspNativeWallIndicator_changed(1U,100U,134U));
     assert(!EspNativeWallIndicator_changed(2U,100U,110U));
     assert(EspNativeWallIndicator_changed(2U,100U,115U));
     assert(EspNativeWallIndicator_changed(3U,100U,115U));
