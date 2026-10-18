@@ -13,14 +13,14 @@ SRC = ROOT / "ESP32/src"
 INC = ROOT / "ESP32/include"
 start = (SRC / "main.cpp").read_text()
 owner = (SRC / "esp_native_config.cpp").read_text()
-bridge = (SRC / "esp_legacy_game_bridge.c").read_text()
+assert not (SRC / "esp_legacy_game_bridge.c").exists()
 startup = (SRC / "esp_legacy_config_mappings_startup.c").read_text()
 menu = (SRC / "native_main_menu_options_back.c").read_text()
 builder = (ROOT / "ESP32/scripts/build_engine.py").read_text()
 old_tu = SRC / "esp_doomrpg_config_read.c"
 
 assert not old_tu.exists()
-assert "Game_loadConfig(" not in bridge
+assert "Game_loadConfig(" not in (SRC / "engine_stubs.c").read_text()
 assert "Game_loadConfig(" not in startup
 assert 'SDL_RWFromFile("Config"' not in startup
 legacy = (ROOT / "src/DoomRPG.c").read_text(encoding="latin-1")
