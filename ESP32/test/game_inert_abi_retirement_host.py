@@ -93,7 +93,7 @@ with tempfile.TemporaryDirectory(prefix="cyd-game-owner-retired-") as temp:
         "#include <assert.h>\n"
         "#include <stdio.h>\n"
         '#include "engine_metrics.h"\n'
-        "typedef struct {uint8_t v[280];} DoomRPG_t;\n"
+        "typedef struct {uint8_t v[264];} DoomRPG_t;\n"
         "typedef struct {uint8_t v[44];} DoomCanvas_t;\n"
         "typedef struct {uint8_t v[1532];} Render_t;\n"
         "typedef struct {uint8_t v[496];} EspNativeMenuState_t;\n"
@@ -102,9 +102,9 @@ with tempfile.TemporaryDirectory(prefix="cyd-game-owner-retired-") as temp:
         "  DoomRpgEngineMetrics m = {0};\n"
         "  DoomRPG_getEngineMetrics(&m);\n"
         "  assert(m.game == 0U && m.player == 0U && m.combat == 0U);\n"
-        "  assert(m.doomRpg == 280U && m.doomCanvas == 44U);\n"
+        "  assert(m.doomRpg == 264U && m.doomCanvas == 44U);\n"
         "  assert(m.render == 1532U && m.supportObjects == 496U);\n"
-        "  assert(m.totalInitialObjects == 2352U);\n"
+        "  assert(m.totalInitialObjects == 2336U);\n"
         "  puts(\"PASS native Game=0B allocated object, metrics exact\");\n"
         "  return 0;\n"
         "}\n", encoding="utf-8")
