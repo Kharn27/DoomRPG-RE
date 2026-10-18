@@ -11,6 +11,7 @@
 #include "native_main_menu_160x120_layout.h"
 #include "native_main_menu_actions.h"
 #include "esp_native_backlight.h"
+#include "esp_native_config.h"
 #include "native_main_menu_options_action.h"
 #include "native_main_menu_options_back.h"
 #include "native_main_menu_touch.h"
@@ -233,8 +234,15 @@ static void optionsBackTap(int16_t screenX,
             const uint8_t before = Esp32Backlight_percent();
             const uint8_t after = (uint8_t)(item * 25U);
             if (after != before) {
+                /* Durable commit before touching PWM; SD failures remain fail-closed. */
+                if (!EspNativeConfig_saveBrightness(after)) {
+                    printf("[OPTIONSBRIGHTNESS] FAILED persist percent=%u->%u pwm=unchanged\\n",
+                           (unsigned int)before, (unsigned int)after);
+                    return;
+                }
                 if (!Esp32Backlight_setPercent(after)) {
-                    printf("[OPTIONSBRIGHTNESS] FAILED set percent=%u->%u\n",
+                    (void)EspNativeConfig_saveBrightness(before);
+                    printf("[OPTIONSBRIGHTNESS] FAILED pwm percent=%u->%u configRollback=attempted\\n",
                            (unsigned int)before, (unsigned int)after);
                     return;
                 }
@@ -246,7 +254,7 @@ static void optionsBackTap(int16_t screenX,
                     return;
                 }
             }
-            printf("[OPTIONSBRIGHTNESS] SELECT percent=%u->%u changed=%s directTap=yes persistence=session gameplayTurn=no framebufferPixels=rail-only\n",
+            printf("[OPTIONSBRIGHTNESS] SELECT percent=%u->%u changed=%s directTap=yes persistence=sd-native-config gameplayTurn=no framebufferPixels=rail-only\n",
                    (unsigned int)before, (unsigned int)after,
                    after == before ? "no" : "yes");
             return;
