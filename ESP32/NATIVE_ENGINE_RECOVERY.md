@@ -46,9 +46,9 @@ mediaTexels = NULL
 native pack = /DoomRPG-ESP32.pak
 ```
 
-For migrated native world paths, legacy `Game.entities` and `Game.monsters` remain empty. Prefer compact immutable arenas, indices/offsets, bounded caches and lazy/small mutable owners.
+The desktop `Game_t` instance has been **retired entirely** on CYD (Game runtime metrics=0); the historical `doomRpg->game` field stays **NULL**. Native player, monster, world and event owners are explicit and bounded; prefer immutable arenas, indices/offsets, caches and small lazy mutable owners.
 
-Runtime ZIP access is transitional compatibility only for paths not yet migrated. Never reintroduce ZIP/map-wide inflation into a path already backed by the native PAK.
+**No runtime ZIP access remains**: `/DoomRPG.zip` is an offline reference/archive for PAK generation and tests only. Never revive ZIP or map-wide inflate into the CYD firmware. The native backing store is `/DoomRPG-ESP32.pak`.
 
 ## Current startup authority
 
@@ -96,6 +96,6 @@ Do not use bring-up RAM as a canonical memory figure.
 
 ## Historical evidence
 
-Detailed MAP1/Junction probe transcripts and milestone files are archaeology, not active documentation. Once their knowledge is synthesized into `ARCHITECTURE.md` / `PORTING_STATUS.md`, Git history is the archive.
+Detailed MAP1/Junction probe transcripts and milestone files are archaeology, not active documentation. The old START/INTRO documents now live under `ESP32/archive/`, and the full PR #219 per-lot witness history is `ESP32/archive/PR219_DESKTOP_RETIREMENT_MILESTONES.md`. Once their knowledge is synthesized into `ARCHITECTURE.md` / `PORTING_STATUS.md`, Git history is the archive.
 
 When an exact old witness is genuinely needed, recover it from the commit/PR history instead of restoring the historical probe ladder to the production tree.
