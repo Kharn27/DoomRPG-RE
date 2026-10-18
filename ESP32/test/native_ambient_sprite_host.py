@@ -5,6 +5,8 @@ root=Path(__file__).resolve().parents[2]
 sprite=(root/"ESP32/src/esp_native_sprite_renderer.c").read_text()
 resident=(root/"ESP32/src/esp_native_resident_gameplay.c").read_text()
 frame=(root/"ESP32/src/esp_native_gameplay_frame.c").read_text()
+wall=(root/"ESP32/src/esp_native_first_frame.c").read_text()
+wall_policy=(root/"ESP32/include/esp_native_wall_indicator_animation.h").read_text()
 dynamic=(root/"ESP32/src/esp_native_dynamic_line_render.c").read_text()
 platformio=(root/"ESP32/platformio.ini").read_text()
 legacy=(root/"src/Render.c").read_text(encoding="latin-1")
@@ -17,6 +19,13 @@ assert "EspNativeSpriteRenderer_resetAmbient()" in resident
 assert "EspNativeGameplayPresentGate_isArmed()" in resident
 assert "renderComposed(render,v,(uint8_t)v->viewAngle,1,1,stats)" in frame
 assert "if (!preview && EspMapAutomapState_isReady())" in sprite
+assert "EspNativeFirstFrame_indicatorVisible()" in sprite
+assert "ambientSuspended=1U" in sprite
+assert "EspNativeWallIndicator_phase(" in wall
+assert "work->indicatorSeen = 1U" in wall
+assert "indicatorVisible = work->indicatorSeen" in wall
+assert "if (ok) indicatorVisible" in wall
+assert "logical == 9U || logical == 10U" in wall_policy
 assert "-Wl,--wrap=EspNativeGameplayFrame_renderAmbient" in platformio
 assert "int __wrap_EspNativeGameplayFrame_renderAmbient(" in dynamic
 assert "beginDynamicPreview()" in dynamic
@@ -29,6 +38,7 @@ code=r"""
 #include <stdint.h>
 #include <stdio.h>
 #include "esp_native_ambient_sprite.h"
+#include "esp_native_wall_indicator_animation.h"
 #define INFO(v,f) ((uint32_t)(v)*512U|((f)?0x80000000UL:0U))
 int main(void) {
     for (uint32_t t=0;t<10000;t+=250)
@@ -46,7 +56,20 @@ int main(void) {
     assert(!EspNativeAmbientSprite_due(4000,0,0,0));
     assert(!EspNativeAmbientSprite_due(10,0xfffffff0UL,1,1));
     assert(EspNativeAmbientSprite_due(400,0xffffff00UL,1,1));
-    puts("PASS ambient pure frames/timers/fixed");
+    assert(EspNativeWallIndicator_isAnimated(9));
+    assert(EspNativeWallIndicator_isAnimated(10));
+    assert(!EspNativeWallIndicator_isAnimated(8));
+    assert(!EspNativeWallIndicator_isAnimated(11));
+    for (uint32_t ms=0;ms<30000;ms+=13) {
+       for (uint16_t id=9;id<=10;id++) {
+           uint32_t tick=(ms+(uint32_t)id*3U);
+           uint32_t legacy=(tick*0x400000UL)>>30;
+           assert(EspNativeWallIndicator_phase(id,ms)==legacy);
+       }
+    }
+    assert(EspNativeWallIndicator_phase(9,UINT32_MAX)==
+           (((UINT32_MAX+9U*3U)>>8)&3U));
+    puts("PASS ambient sprites + native door indicator frames/timers");
 }
 """
 with tempfile.TemporaryDirectory() as d:

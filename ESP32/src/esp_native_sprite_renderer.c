@@ -19,6 +19,7 @@
 #include "esp_native_gameplay_monster_drop.h"
 #include "esp_native_sprite_renderer.h"
 #include "esp_native_ambient_sprite.h"
+#include "esp_native_first_frame.h"
 #include "esp_player_view_state.h"
 
 #define MAP_HEADER 16U
@@ -193,16 +194,24 @@ static uint16_t source565(uint16_t c) {
 /* Renderer-owned presentation clock and visible candidates. No frame loop. */
 static uint32_t ambientSampleMs, ambientPresentedMs;
 static uint8_t ambientCandidates, ambientFastCandidates;
+static uint8_t ambientSuspended;
 int EspNativeSpriteRenderer_ambientDue(uint32_t now) {
-    return EspNativeAmbientSprite_due(now,ambientPresentedMs,
-                                      ambientFastCandidates,ambientCandidates);
+    const uint8_t wallIndicator =
+        (uint8_t)(EspNativeFirstFrame_indicatorVisible() != 0);
+    return !ambientSuspended &&
+           EspNativeAmbientSprite_due(
+               now, ambientPresentedMs,
+               (uint8_t)(ambientFastCandidates || wallIndicator),
+               (uint8_t)(ambientCandidates || wallIndicator));
 }
 void EspNativeSpriteRenderer_suspendAmbient(void) {
+    ambientSuspended=1U;
     ambientCandidates=0U; ambientFastCandidates=0U;
 }
 void EspNativeSpriteRenderer_resetAmbient(void) {
     EspNativeSpriteRenderer_suspendAmbient();
     ambientSampleMs=0U; ambientPresentedMs=0U;
+    ambientSuspended=0U;
 }
 static uint8_t spriteRenderMode(uint16_t logical) {
     return (logical == 136U || logical == 137U || logical == 144U)
@@ -1533,6 +1542,7 @@ done:
     free(saved);
     free(workspace);
     if (ok) {
+        ambientSuspended=0U;
         ambientPresentedMs=ambientSampleMs;
         ambientCandidates=(uint8_t)(stats.ambientCandidates!=0U);
         ambientFastCandidates=(uint8_t)(stats.ambientFastCandidates!=0U);
