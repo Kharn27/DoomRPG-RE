@@ -336,7 +336,7 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
                (unsigned int)randomFNV);
     }
 
-    DoomRPG_setDefaultBinds(doomRpg);
+    /* CYD input is touch-owned: desktop keyboard/controller bindings absent. */
     EspNativeAudioIntent_reset();
 
 #define INIT_CORE_OBJECT(stage, member, expression) \
