@@ -1,5 +1,67 @@
 # Doom RPG ESP32 — état actuel du port
 
+## PR #219 — générateur C desktop retiré, SDL packed et parité préservés (18 octobre 2026)
+
+**Base `main` post-merge #218 vérifiée** :
+`6390a6d42e50a058a05ebc0f4483cb02894f065f`.
+**Branche** : `agent/esp32-retire-generated-doomrpg-oracle`,
+[PR #219](https://github.com/Kharn27/DoomRPG-RE/pull/219).
+**Dernier SHA de code vérifié par CI** :
+`04b696ffbb6cfd76b7c2ef00c1260a202752e979`.
+[CI PR SUCCESS #39130682162](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39130682162) :
+tests hôte, trois builds `esp32-cyd` / bringup / trace et audits compiledb/ELF.
+
+### Frontière exacte retirée
+
+- Les **21 unités C desktop originales** restent strictement exclues.
+  `src/DoomRPG.c` demeure une référence comportementale utilisée par
+  les tests hôte, **sans copie C générée** ni compilation dans le firmware.
+- `ESP32/scripts/build_engine.py` passe de **781 à 332 lignes**.
+  Il ne réécrit plus `DoomRPG.c`, purge une éventuelle copie obsolète
+  dans le répertoire de génération et conserve le contrôle fail-closed
+  de l'inventaire des 21 sources desktop.
+- Le **générateur SDL packed reste inchangé sur ses 8 017 caractères**
+  depuis le `main` de base, ainsi que les chemins de génération,
+  le sampler indexé 1/4/8 bpp, les palettes et le transfert d'ownership
+  surface→texture. La copie C++ SDL adaptée demeure la seule source
+  moteur générée admise au build ; elle **n'est pas** une TU desktop.
+- Tests primitives/math/binary, images/PAK, présentation/clip,
+  temps, RNG, config et keybindings lisent désormais directement la
+  référence desktop et les propriétaires natifs, sans exiger les
+  marqueurs du générateur supprimé. Les CRC, parités des corps et
+  tests différentiels restent présents.
+- Nouveau `doomrpg_oracle_retirement_host.py` : le vrai pré-script
+  SCons est exécuté avec un `DoomRPG.c` volontairement invalide,
+  contrôle la génération du seul SDL, l'effacement d'une ancienne
+  copie C et l'échec explicite sur dérive d'inventaire/SDL.
+  La CI vérifie également qu'aucun des trois builds ne produit la
+  copie `doomrpg_patched_sources/DoomRPG.c`.
+
+### Résultats et portée
+
+| Profil | RAM statique | Flash |
+| --- | ---: | ---: |
+| `esp32-cyd` normal | 49 488 B | 821 285 B |
+| `esp32-cyd-bringup` | 49 640 B | 841 901 B |
+| `esp32-cyd-trace` | 49 536 B | 837 889 B |
+
+Ces six valeurs sont **identiques** aux logs de la
+[CI #39127502174](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39127502174)
+du code #218. Les audits confirment `compiledOriginal=0`,
+`compiledPatchedC=0`, `linkedInput=0` et les propriétaires natifs
+attendus. Les étapes CI post-correctif sont toutes vertes.
+**Ce n'est pas un comparatif strict octet par octet des sections
+ALLOC de deux ELF** : ne pas déclarer le firmware bit-identique.
+**Aucun flash ni PASS CYD nouveau** n'a été réalisé pour cette passe.
+Le code gameplay, RNG, rendu, SD/PAK, sauvegarde et les structures
+résidentes ne sont pas modifiés ; leurs validations hardware
+antérieures restent bornées à leurs propres SHA.
+
+**État** : branche prête pour revue de ce nettoyage build/tests,
+commits suivants docs-only ; merge exclusif de l'utilisateur.
+
+---
+
 ## PR #218 — clôture matérielle : luminosité persistante, Config v23 et keybindings desktop retirés (18 octobre 2026)
 
 **Base GitHub vérifiée** : `main 8a9c28940b03ab1ee10d5cdc720a26b6f08cbb4e`.
