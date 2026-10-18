@@ -173,6 +173,7 @@ typedef struct LegacyWallGuard_s {
     } while (0)
 
 static EspNativeFirstFrameState frameState;
+static uint8_t indicatorVisible;
 static uint8_t frameScratchLogged;
 /* Failure-only BSS witness, printed after renderer work has unwound. */
 static FirstFrameFailure frameFailure;
@@ -1425,7 +1426,6 @@ static int renderFrameWithInlineBoundary(
 
 /* The idle scheduler consumes one bit from the last successful BSP render.
  * It never scans all map lines or opens the PAK between redraws. */
-static uint8_t indicatorVisible;
 int EspNativeFirstFrame_indicatorVisible(void) {
     return indicatorVisible != 0U;
 }
