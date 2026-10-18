@@ -64,33 +64,43 @@ int main(void) {
     assert(EspNativeWallIndicator_isAnimated(10));
     assert(!EspNativeWallIndicator_isAnimated(8));
     assert(!EspNativeWallIndicator_isAnimated(11));
-    /* Absolute-clock red breathing: forward and back, 960ms/loop.
-     * Green races through all four frames in only 576ms. */
-    static const uint8_t red[6]={0,1,2,3,2,1};
-    for (uint32_t i=0;i<30U;i++) {
+    /* Four original PAK textures; deliberately slower breath with
+     * a held dark and bright endpoint, while the green cadence is untouched. */
+    static const uint8_t red[8]={0,0,1,2,3,3,2,1};
+    assert(ESP_NATIVE_WALL_INDICATOR_RED_MS == 360U);
+    assert(ESP_NATIVE_WALL_INDICATOR_GREEN_MS == 144U);
+    assert(8U*ESP_NATIVE_WALL_INDICATOR_RED_MS ==
+           5U*4U*ESP_NATIVE_WALL_INDICATOR_GREEN_MS);
+    for (uint32_t i=0;i<48U;i++) {
         uint32_t ms=i*ESP_NATIVE_WALL_INDICATOR_RED_MS;
-        assert(EspNativeWallIndicator_phase(9U,ms-27U)==red[i%6U]);
+        assert(EspNativeWallIndicator_phase(9U,ms-27U)==red[i%8U]);
         assert(EspNativeWallIndicator_phase(10U,
             i*ESP_NATIVE_WALL_INDICATOR_GREEN_MS-30U)==i%4U);
     }
+    assert(EspNativeWallIndicator_phase(9U,692U)==0U);
+    assert(EspNativeWallIndicator_phase(9U,694U)==1U);
+    assert(EspNativeWallIndicator_phase(9U,1700U)==3U);
+    assert(EspNativeWallIndicator_phase(9U,2120U)==3U);
     assert(EspNativeWallIndicator_bit(9U)==ESP_NATIVE_WALL_INDICATOR_RED_BIT);
     assert(EspNativeWallIndicator_bit(10U)==ESP_NATIVE_WALL_INDICATOR_GREEN_BIT);
     assert(EspNativeWallIndicator_bit(15U)==0);
-    /* Red's immutable texture-9 phase offset is 27ms: first transition
-     * occurs at wall-clock 133ms. A MOVE repaint at 131ms must not delay it. */
-    assert(!EspNativeWallIndicator_changed(1U,100U,130U));
-    assert(!EspNativeWallIndicator_changed(1U,131U,132U));
-    assert(EspNativeWallIndicator_changed(1U,131U,134U));
-    assert(EspNativeWallIndicator_changed(1U,100U,134U));
+    /* Red logical-9 offset remains 27ms. Two resting steps mean
+     * first visible transition at t=720-27=693ms. MOVE/TURN redraws
+     * at t=690/692 never restart a timer or shift that transition. */
+    assert(!EspNativeWallIndicator_changed(1U,600U,690U));
+    assert(!EspNativeWallIndicator_changed(1U,690U,692U));
+    assert(EspNativeWallIndicator_changed(1U,690U,694U));
+    assert(EspNativeWallIndicator_changed(1U,600U,694U));
+    assert(!EspNativeWallIndicator_changed(1U,694U,705U));
     assert(!EspNativeWallIndicator_changed(2U,100U,110U));
     assert(EspNativeWallIndicator_changed(2U,100U,115U));
     assert(EspNativeWallIndicator_changed(3U,100U,115U));
     assert(!EspNativeWallIndicator_changed(0U,100U,300U));
-    assert(!EspNativeWallIndicator_changed(1U,0U,960U));
-    assert(EspNativeWallIndicator_changed(1U,0U,192U));
+    assert(!EspNativeWallIndicator_changed(1U,0U,2880U));
+    assert(EspNativeWallIndicator_changed(1U,0U,800U));
     assert(EspNativeWallIndicator_phase(9U,UINT32_MAX)==
            EspNativeWallIndicator_phase(9U,(uint32_t)UINT32_MAX));
-    puts("PASS ambient sprites, 960ms red breathe, 576ms green cycle, absolute wall phase, MOVE parity");
+    puts("PASS ambient sprites, 2880ms red breathe with endpoint holds, 576ms green, MOVE parity");
 }
 """
 with tempfile.TemporaryDirectory() as d:

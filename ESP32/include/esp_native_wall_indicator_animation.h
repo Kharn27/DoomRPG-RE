@@ -10,11 +10,13 @@
  * Absolute monotonic wall clock: there is no phase reset on MOVE/TURN, and
  * rendering a fresh player pose cannot extend a blink interval.
  *
- * Red breathes through 0,1,2,3,2,1 (960ms), slightly quicker than the former
- * 4*256=1024ms cycle; green races through 0,1,2,3 (576ms).
- * Bounded cadence (~6.25 / 6.94 candidate refreshes/s, not fixed FPS).
- * PAK frames keep their original palette and texels. */
-#define ESP_NATIVE_WALL_INDICATOR_RED_MS 160U
+ * Red breathes slowly through 0,0,1,2,3,3,2,1: 360ms per step,
+ * 720ms resting at either extremum, 2880ms for a complete breath.
+ * Green stays alert at 0,1,2,3: 144ms per step, 576ms/cycle.
+ * The visibly changing red steps are 2.5x slower than green's, and a
+ * complete red breath takes 5 green cycles. No synthetic colors or texels:
+ * only the four genuine PAK frames and a bounded, demand-driven redraw. */
+#define ESP_NATIVE_WALL_INDICATOR_RED_MS 360U
 #define ESP_NATIVE_WALL_INDICATOR_GREEN_MS 144U
 #define ESP_NATIVE_WALL_INDICATOR_RED_BIT 0x01U
 #define ESP_NATIVE_WALL_INDICATOR_GREEN_BIT 0x02U
@@ -30,8 +32,9 @@ static inline uint8_t EspNativeWallIndicator_phase(uint16_t logical,
                                                   uint32_t nowMs) {
     const uint32_t tick = nowMs + (uint32_t)logical * 3U;
     if (logical == 9U) {
-        static const uint8_t redBreath[6] = {0U, 1U, 2U, 3U, 2U, 1U};
-        return redBreath[(tick / ESP_NATIVE_WALL_INDICATOR_RED_MS) % 6U];
+        static const uint8_t redBreath[8] =
+            {0U, 0U, 1U, 2U, 3U, 3U, 2U, 1U};
+        return redBreath[(tick / ESP_NATIVE_WALL_INDICATOR_RED_MS) % 8U];
     }
     if (logical == 10U) {
         return (uint8_t)((tick / ESP_NATIVE_WALL_INDICATOR_GREEN_MS) & 3U);
