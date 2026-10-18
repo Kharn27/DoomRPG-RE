@@ -140,6 +140,9 @@ jobs:
       - name: Test desktop key binding retirement and native touch ownership (host C)
         run: python ESP32/test/desktop_keybind_retirement_host.py
 
+      - name: Test retirement of inert desktop Game activation/unload ABI (host C)
+        run: python ESP32/test/game_inert_abi_retirement_host.py
+
       - name: Test permanent DoomRPG root and fatal cleanup ownership (host C)
         run: python ESP32/test/doomrpg_root_owner_host.py
 
@@ -254,6 +257,8 @@ jobs:
               --forbid-prefix DoomRPG_loadNativeBitShapes \
               --forbid-prefix DoomRPG_prepareNativePalette \
               --forbid-prefix __wrap_Render_beginLoadMap \
+              --forbid-prefix Game_activate \
+              --forbid-prefix Game_unloadMapData \
               --forbid-prefix __wrap_DoomCanvas_updateLoadingBar \
               --forbid-prefix __wrap_DoomRPG_probeNative
           done
