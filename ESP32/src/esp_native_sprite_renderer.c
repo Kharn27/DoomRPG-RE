@@ -3,10 +3,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <esp_timer.h>
 
 #include "DoomRPG.h"
 #include "Render.h"
+#include <esp_timer.h>
 
 #include "esp_asset_pack.h"
 #include "doomrpg_log.h"

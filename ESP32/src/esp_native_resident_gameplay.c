@@ -2394,10 +2394,10 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
                 if (!painted || !frame.finalPresented || !rngExact) {
                     if (!rngExact) doomRpg->random=rngBefore;
                     EspNativeSpriteRenderer_suspendAmbient();
-                    printf("[AMBIENT] FAIL painted=%d presented=%u rngExact=%d suspended=yes\\n",
+                    printf("[AMBIENT] FAIL painted=%d presented=%u rngExact=%d suspended=yes\n",
                            painted,(unsigned int)frame.finalPresented,rngExact);
                 } else {
-                    DRPG_LOGD("[AMBIENT] FRAME fnv=%08x sprites=%u us=%u turn=no rngExact=yes\\n",
+                    DRPG_LOGD("[AMBIENT] FRAME fnv=%08x sprites=%u us=%u turn=no rngExact=yes\n",
                               (unsigned int)frame.frameAfterFNV,
                               (unsigned int)frame.spriteDraws,
                               (unsigned int)frame.totalMicros);
