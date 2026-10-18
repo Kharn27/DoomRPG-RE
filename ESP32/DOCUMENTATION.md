@@ -2,6 +2,44 @@
 
 ## PR #219 — génération C desktop retirée, protocole CI clos (18 octobre 2026)
 
+### Lot C — aucun Game_t alloué ni Game_* lié : PASS CYD normal
+
+**SHA code du troisième lot** :
+`33835b6dadef03aafe10bdb7874459c287cfeb09`
+([CI SUCCESS #39160572323](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39160572323) :
+tests host, 3 builds et audits ELF).
+Le pont `esp_legacy_game_bridge.c` est supprimé et les trois
+exports `Game_init`, `Game_activate`, `Game_unloadMapData`
+sont interdits dans le firmware. `doomRpg->game` n'est
+**plus une allocation**, c'est un ancien champ compatibilité
+**strictement NULL**. Les gardes natifs de START/intro/chargement/
+EXIT le refusent s'il redevient non NULL ; les propriétaires
+map/gameplay et le root process sont inchangés.
+
+**Témoin matériel CYD du 18 octobre 2026** : START → intro
+complète (7 taps) → libération du transitoire **34 056 B** →
+Entrance fresh → HUB/SYSTEM EXIT sans SAVE →
+MENU_MAIN → LOAD slot09 V11 5 604 B → Entrance restauré.
+`[RESIDENTRESET] empty=1`, `shapeData=0`,
+`mediaTexels=0` et `heap8=113816 largest8=86004`
+stables dans les trois `[ALIVE]` finaux.
+Gain de **16 B de heap libre** à menu et en gameplay vs
+lot B (`113800→113816`), malgré le
+`Game_t` référentiel de 4 B, par disparition de sa
+petite allocation et de son overhead.
+Ce dernier extrait ne montre **pas de combat joué** ni le boot
+`[CORE]` : ne pas fabriquer ces témoins, même si la
+CI vérifie `Game=0`. Le SHA n'est pas imprimé par le
+firmware dans cette trace, le PASS est celui du flash de
+la branche annoncé, sans fingerprint indépendant.
+
+**État** : lot C validé sur le parcours observé.
+La branche `agent/esp32-retire-generated-doomrpg-oracle`
+et la PR #219 restent **ouvertes** et ne sont pas
+mergées. Toute modification de code ultérieure
+nécessite une nouvelle validation selon sa frontière.
+Consulter `PORTING_STATUS.md` pour les témoins exacts.
+
 ### Lot B — deux anciens Game_* no-op retirés, PASS CYD réel
 
 Toujours sur la **même branche #219** (code `e3b02d86963523c89824dc757ac3a8161d50776e`),
