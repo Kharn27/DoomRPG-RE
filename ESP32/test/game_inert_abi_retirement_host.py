@@ -21,9 +21,9 @@ header = (ROOT / "src/Game.h").read_text(encoding="latin-1")
 
 retired = ("Game_activate", "Game_unloadMapData")
 assert src.count("Game_t* Game_init(") == 1
-assert all(re.search(r"\\b" + n + r"\\s*\\(", legacy) for n in retired)
-assert all(re.search(r"\\b" + n + r"\\s*\\(", header) for n in retired)
-assert all(not re.search(r"\\b" + n + r"\\s*\\(", src) for n in retired)
+assert all(re.search(r"\b" + n + r"\s*\(", legacy) for n in retired)
+assert all(re.search(r"\b" + n + r"\s*\(", header) for n in retired)
+assert all(not re.search(r"\b" + n + r"\s*\(", src) for n in retired)
 assert 'bridge=Game_init-only' in builder
 assert "exports=1(Game_init) inertExports=retired" in core
 assert "Game_init(NULL, doomRpg)" in core
@@ -33,7 +33,7 @@ assert "_Static_assert(sizeof(Game_t) == sizeof(void*)" in core
 # functions, even if it happened to land in a discarded translation unit.
 # Preserve the desktop originals: their functions are specification only.
 def code_without_comments_and_literals(s):
-    return re.sub(r"/\\*.*?\\*/|//[^\\n]*|\\\"(?:\\\\.|[^\\\"\\\\])*\\\"",
+    return re.sub(r"/\*.*?\*/|//[^\n]*|\\"(?:\\.|[^\\"\\])*\\"",
                   " ", s, flags=re.S)
 
 for path in sorted(SRC.rglob("*")):
@@ -41,20 +41,20 @@ for path in sorted(SRC.rglob("*")):
         continue
     c = code_without_comments_and_literals(path.read_text(encoding="latin-1"))
     for name in retired:
-        assert not re.search(r"\\b" + name + r"\\s*\\(", c), (
+        assert not re.search(r"\b" + name + r"\s*\(", c), (
             "legacy Game ABI resurrected by " + str(path.relative_to(ROOT)))
 
 with tempfile.TemporaryDirectory(prefix="cyd-game-inert-abi-") as temp:
     work = Path(temp)
     (work / "SDL.h").write_text(
-        "#pragma once\\n#include <stddef.h>\\n"
-        "void* SDL_malloc(size_t);\\nvoid* SDL_memset(void*, int, size_t);\\n")
+        "#pragma once\n#include <stddef.h>\n"
+        "void* SDL_malloc(size_t);\nvoid* SDL_memset(void*, int, size_t);\n")
     (work / "DoomRPG.h").write_text(
-        "#pragma once\\ntypedef struct {int marker;} DoomRPG_t;\\n")
+        "#pragma once\ntypedef struct {int marker;} DoomRPG_t;\n")
     (work / "Game.h").write_text(
-        '#pragma once\\n#include "DoomRPG.h"\\n'
-        "typedef struct { DoomRPG_t* doomRpg; } Game_t;\\n"
-        "Game_t* Game_init(Game_t*, DoomRPG_t*);\\n")
+        '#pragma once\n#include "DoomRPG.h"\n'
+        "typedef struct { DoomRPG_t* doomRpg; } Game_t;\n"
+        "Game_t* Game_init(Game_t*, DoomRPG_t*);\n")
     (work / "test.c").write_text(r"""
 #include <assert.h>
 #include <stddef.h>
@@ -98,7 +98,7 @@ int main(void) {
     symbols = subprocess.check_output(["nm", "-g", str(obj)], text=True)
     defined = [
         m.group(1) for line in symbols.splitlines()
-        if (m := re.search(r"\\b[Tt]\\s+(Game_\\w+)$", line))
+        if (m := re.search(r"\b[Tt]\s+(Game_\w+)$", line))
     ]
     assert defined == ["Game_init"], "Unexpected Game bridge definitions: " + str(defined)
     exe = work / "test"
@@ -109,8 +109,8 @@ int main(void) {
     for retired_name in retired:
         bad = work / "invalid.c"
         bad.write_text("extern void " + retired_name
-                       + "(void*,void*);\\nint main(void) { "
-                       + retired_name + "(0,0); return 0; }\\n")
+                       + "(void*,void*);\nint main(void) { "
+                       + retired_name + "(0,0); return 0; }\n")
         result = subprocess.run(
             cc + [str(obj), str(bad), "-o", str(work / "invalid")],
             text=True, capture_output=True)
