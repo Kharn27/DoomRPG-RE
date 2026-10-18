@@ -23,8 +23,8 @@ load = (SRC / "native_main_menu_actions.c").read_text()
 options = (SRC / "native_main_menu_options_back.c").read_text()
 options_painter = (SRC / "native_main_menu_options_action.c").read_text()
 video = (SRC / "platform_video.cpp").read_text()
-backlight_header = (ROOT / "include" / "esp_native_backlight.h").read_text()
-platformio = (ROOT / "platformio.ini").read_text()
+backlight_header = (INC / "esp_native_backlight.h").read_text()
+platformio = (ROOT / "ESP32/platformio.ini").read_text()
 
 def macro(src, name):
     m = re.search(r"^#define\s+" + re.escape(name) + r"\s+([0-9xa-fA-FU]+)", src, re.M)
