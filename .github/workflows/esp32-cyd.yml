@@ -119,6 +119,9 @@ jobs:
           python ESP32/test/desktop_elf_audit_host.py
           python ESP32/test/render_geometry_host.py
 
+      - name: Test retirement of generated DoomRPG C oracle and preserved packed SDL (host Python)
+        run: python ESP32/test/doomrpg_oracle_retirement_host.py
+
       - name: Test stateless DoomRPG primitive ownership and reference ABI (host C)
         run: python ESP32/test/doomrpg_pure_primitives_host.py
 
@@ -253,6 +256,15 @@ jobs:
               --forbid-prefix __wrap_Render_beginLoadMap \
               --forbid-prefix __wrap_DoomCanvas_updateLoadingBar \
               --forbid-prefix __wrap_DoomRPG_probeNative
+          done
+
+      - name: Reject generated desktop C oracle in all profiles
+        working-directory: ESP32
+        run: |
+          for profile in esp32-cyd esp32-cyd-bringup esp32-cyd-trace; do
+            test ! -e ".pio/build/$profile/doomrpg_patched_sources/DoomRPG.c" || {
+              echo "FAIL stale/generated desktop DoomRPG.c for $profile"; exit 1;
+            }
           done
 
       - name: Reject generated Render source registration in all profiles
