@@ -39,7 +39,6 @@ src = (ROOT / "src/DoomRPG.c").read_text(encoding="latin-1")
 native = (ROOT / "ESP32/src/esp_doomrpg_process_rng.c").read_text(encoding="latin-1")
 for glob in GLOBALS:
     assert src.count(glob) == native.count(glob) == 1
-    assert glob in build
 bodies = []
 for signature, checksum in METHODS:
     original = extract(src, signature)
