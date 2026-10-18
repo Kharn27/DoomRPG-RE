@@ -23,6 +23,11 @@ assert retired + '",' not in builder  # absent from source ABI export inventory
 assert '"DoomCanvas_drawString1",' in builder
 assert "glyph blitter must be private" in builder
 assert "void DoomCanvas_drawString1(" in bridge
+assert 'INIT exports=5 desktopTU=no' in bridge
+assert 'INIT exports=6 desktopTU=no' not in bridge
+assert 'char loadingText[] = "Loading...";' in bridge
+assert 'doomCanvas, loadingText, DOOMRPG_CANVAS_CENTER_X' in bridge
+assert 'doomCanvas, "Loading...", DOOMRPG_CANVAS_CENTER_X' not in bridge
 assert "SDL_RenderCopy(sdlVideo.renderer, img->imgBitmap, &clip, &renderQuad);" in bridge
 
 # Extract identical actual source body, after the renamed function signature.
