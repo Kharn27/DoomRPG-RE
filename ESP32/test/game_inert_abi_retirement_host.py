@@ -73,9 +73,10 @@ assert "!EspNativeWallCache_isActive()" in cleanup
 assert "!EspNativeSpriteCache_isActive()" in cleanup
 
 def extract(src, signature):
-    anchor = signature + "\n{"
-    assert src.count(anchor) == 1, signature
-    start = src.index(anchor)
+    anchors = (signature + "\n{", signature + " {")
+    hits = [a for a in anchors if src.count(a) == 1]
+    assert len(hits) == 1, signature
+    start = src.index(hits[0])
     depth = 0
     for i in range(src.index("{", start), len(src)):
         depth += (src[i] == "{") - (src[i] == "}")
