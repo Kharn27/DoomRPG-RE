@@ -1,5 +1,36 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #219 — génération C desktop retirée, protocole CI clos (18 octobre 2026)
+
+Depuis `main 6390a6d42e50a058a05ebc0f4483cb02894f065f`, branche
+`agent/esp32-retire-generated-doomrpg-oracle`,
+[PR #219](https://github.com/Kharn27/DoomRPG-RE/pull/219) :
+`DoomRPG.c` desktop **n'est plus généré** par le build CYD. L'original
+`src/DoomRPG.c` reste intact et sert directement aux tests de parité.
+Seule la copie C++ du **shim SDL packed** est toujours produite.
+Aucune des 21 unités C desktop originales n'est compilée.
+
+Le test `python3 ESP32/test/doomrpg_oracle_retirement_host.py` exécute le
+vrai script de build avec une fausse source desktop invalide, supprime
+une copie obsolète, vérifie la sortie SDL seule, et exige un refus si
+l'inventaire desktop ou les ancres SDL changent. Les autres tests
+comparatifs (primitives, images, dessin, horloge, RNG, config) gardent
+leurs CRC/références directs. La CI ajoute un garde d'absence de
+`doomrpg_patched_sources/DoomRPG.c` pour chaque profil.
+
+Code `04b696ffbb6cfd76b7c2ef00c1260a202752e979`,
+[CI PR #39130682162 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39130682162)
+(hôte, normal, bringup, trace, compiledb/ELF). RAM/Flash identiques
+aux mesures CI #218 : normal **49 488 / 821 285 B**, bringup
+**49 640 / 841 901 B**, trace **49 536 / 837 889 B**.
+Le bloc de patch SDL a été comparé textuellement au `main`
+de base : **8 017 caractères identiques**.
+Il n'existe pas de comparatif strict des sections ELF chargées ni de
+nouveau flash matériel associé à cette passe de nettoyage.
+Pour l'état précis et les limites, voir [PORTING_STATUS.md](PORTING_STATUS.md).
+
+---
+
 ## PR #218 — luminosité native persistante et retrait du keybinding desktop : protocole clos (18 octobre 2026)
 
 **Base `main`** :
