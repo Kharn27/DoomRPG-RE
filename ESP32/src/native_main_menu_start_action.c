@@ -94,7 +94,7 @@ int DoomRPG_esp32ReleaseMainMenuMemory(struct DoomRPG_s* doomRpgBase) {
     uint32_t largestBefore;
 
     if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
-        doomRpg->render == NULL || doomRpg->game == NULL) {
+        doomRpg->render == NULL || doomRpg->game != NULL) {
         return 0;
     }
 
