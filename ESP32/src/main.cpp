@@ -7,6 +7,7 @@
 #include "esp_asset_pack.h"
 #include "esp_legacy_asset_source.h"
 #include "esp_legacy_config_mappings_startup.h"
+#include "esp_native_config.h"
 #include "engine_metrics.h"
 #include "esp_native_gameplay_session.h"
 #include "esp_native_resident_gameplay.h"
@@ -471,6 +472,7 @@ void setup()
 
     initializePlatformVideo();
     initializeSdCard();
+    EspNativeConfig_loadAtBoot(sdReady ? 1 : 0);
     initializeGameAssets();
     initializeEngineCore();
     initializeEngineLayout();
