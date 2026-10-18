@@ -57,12 +57,12 @@ print("[ESP32] Desktop Render.c retired; geometry=esp-render-geometry-primitives
       "profiles=normal+trace+bringup generated=no")
 
 # The ESP32 firmware no longer compiles a generated copy of desktop Game.c.
-# Its only four linked compatibility roots are implemented permanently by
+# Its only three linked compatibility roots are implemented permanently by
 # ESP32/src/esp_legacy_game_bridge.c. Any new retained Game_* dependency must
 # therefore fail at link time instead of silently reviving desktop gameplay.
 print(
     "[ESP32] Desktop Game.c retired; "
-    "esp_legacy_game_bridge.c owns Game_init/Game_loadConfig/"
+    "esp_legacy_game_bridge.c owns Game_init/"
     "Game_unloadMapData/Game_activate"
 )
 
@@ -464,31 +464,26 @@ for global_definition in rng_hidden_globals:
 print("[ESP32] DoomRPG RNG provider moved=4 linked=3 "
       "owner=esp_doomrpg_process_rng hiddenGlobals=2 lifetime=process generatedBodies=removed")
 
-# Remaining linked binary config readers: preserve exact bodies and
-# signed-char/SDL LE semantics. Do not add inferred EOF handling here.
-config_readers = (
+# Retire the two binary readers formerly consumed exclusively by desktop
+# Config v23. Preserve the pinned legacy signatures/CRC to fail if upstream
+# DoomRPG.c changed; neither body is linked into the native CYD ELF.
+retired_config_readers = (
     ("int File_readByte(SDL_RWops* rw)", 0x91bf04f3),
     ("int File_readInt(SDL_RWops* rw)", 0x417442d7),
 )
-with open(join(project_src_dir, "esp_doomrpg_config_read.c"),
-          "r", encoding="latin-1") as config_reader_file:
-    config_reader_native = config_reader_file.read()
-for signature, crc in config_readers:
+for signature, crc in retired_config_readers:
     reference_body = extract_doomrpg_function(doom_rpg_source_text, signature)
     if zlib.crc32(reference_body.encode("latin-1")) != crc:
-        raise RuntimeError("Desktop config reader reference drift: " + signature)
-    if extract_doomrpg_function(config_reader_native, signature) != reference_body:
-        raise RuntimeError("Native config reader body drift: " + signature)
+        raise RuntimeError("Retired desktop config reader reference drift: " + signature)
     doom_rpg_source_text = doom_rpg_source_text.replace(
-        reference_body, "/* Native config reader: esp_doomrpg_config_read.c */", 1)
-for signature, _ in config_readers:
+        reference_body, "/* Retired desktop Config v23 read helper */", 1)
+for signature, _ in retired_config_readers:
     if signature in doom_rpg_source_text:
-        raise RuntimeError("Generated DoomRPG still defines config reader: " + signature)
-print("[ESP32] DoomRPG config readers moved=2 owner=esp_doomrpg_config_read "
-      "signedByte+LE32=unchanged generatedBodies=removed")
+        raise RuntimeError("Retired config reader still generated: " + signature)
+print("[ESP32] Desktop Config v23 readers retired=2, no native shim linked")
 
-# Native process-lifetime key bindings are shared by the still-retained
-# DoomRPG input ABI and Game_loadConfig's actual Config reader. Transfer
+# Native process-lifetime key bindings remain for the DoomRPG input ABI.
+# The desktop Config v23 loader was removed; default bindings are still exact. Transfer
 # the three original globals and default-reset routine as ONE ownership unit.
 # The exact table bytes and function body are pinned; do not substitute
 # session-local keyboard defaults or lose the configurable mappings.
