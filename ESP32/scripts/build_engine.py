@@ -56,13 +56,12 @@ print("[ESP32] Desktop Render.c retired; geometry=esp-render-geometry-primitives
       "profiles=normal+trace+bringup generated=no")
 
 # The ESP32 firmware no longer compiles a generated copy of desktop Game.c.
-# Its only three linked compatibility roots are implemented permanently by
-# ESP32/src/esp_legacy_game_bridge.c. Any new retained Game_* dependency must
-# therefore fail at link time instead of silently reviving desktop gameplay.
+# Game_init is its last live compatibility root, owned by
+# ESP32/src/esp_legacy_game_bridge.c. The former no-op exports for activation
+# and world unload are absent, so a revived Game_* caller fails at link time.
 print(
-    "[ESP32] Desktop Game.c retired; "
-    "esp_legacy_game_bridge.c owns Game_init/"
-    "Game_unloadMapData/Game_activate"
+    "[ESP32] Desktop Game.c retired; bridge=Game_init-only "
+    "inertExports=Game_activate+Game_unloadMapData-retired"
 )
 
 # The original DoomRPG.c is a behavioral reference, never a firmware or
