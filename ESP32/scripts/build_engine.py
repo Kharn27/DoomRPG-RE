@@ -22,7 +22,6 @@ env.Append(CPPPATH=[join(project_dir, "include"), project_src_dir, engine_dir])
 doom_canvas_bridge_source = join(project_src_dir, "esp_legacy_doomcanvas_bridge.c")
 doom_canvas_bridge_exports = (
     "DoomCanvas_free",
-    "DoomCanvas_drawImageSpecial",
     "DoomCanvas_drawString1",
     "DoomCanvas_setState",
     "DoomCanvas_startup",
@@ -38,6 +37,9 @@ for export_name in doom_canvas_bridge_exports:
             "Missing DoomCanvas bridge export " + export_name +
             "; review the explicit ESP32 compatibility ABI"
         )
+if ("static void EspDoomCanvas_drawImageSpecial(" not in doom_canvas_bridge_text or
+        "void DoomCanvas_drawImageSpecial(" in doom_canvas_bridge_text):
+    raise RuntimeError("DoomCanvas glyph blitter must be private, not public desktop ABI")
 if "DoomCanvas_run(" in doom_canvas_bridge_text or "DoomCanvas_loadMap(" in doom_canvas_bridge_text:
     raise RuntimeError(
         "Desktop DoomCanvas state-machine/map-loading ownership leaked into the ESP32 bridge"
