@@ -103,8 +103,10 @@ int DoomRPG_esp32ReleaseMainMenuMemory(struct DoomRPG_s* doomRpgBase) {
     heapBefore = heap8Free();
     largestBefore = largest8Block();
 
+    /* Render_freeRuntime owns the real legacy render-side cleanup.
+     * Game_unloadMapData was an inert compatibility no-op: native
+     * resident/session map state is released by its own lifecycle owners. */
     Render_freeRuntime(render);
-    Game_unloadMapData(doomRpg->game);
 
     printf("[MAINMENU] Runtime cleanup legals=retired heap8=%u->%u gained=%d largest8=%u->%u nodes=%p lines=%p mapSprites=%p mappings=%p/%p shapeData=%p mediaTexels=%p\n",
            (unsigned int)heapBefore,
