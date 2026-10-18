@@ -482,56 +482,26 @@ for signature, _ in retired_config_readers:
         raise RuntimeError("Retired config reader still generated: " + signature)
 print("[ESP32] Desktop Config v23 readers retired=2, no native shim linked")
 
-# Native process-lifetime key bindings remain for the DoomRPG input ABI.
-# The desktop Config v23 loader was removed; default bindings are still exact. Transfer
-# the three original globals and default-reset routine as ONE ownership unit.
-# The exact table bytes and function body are pinned; do not substitute
-# session-local keyboard defaults or lose the configurable mappings.
-config_bind_declarations = (
+# Keyboard/mouse/controller remapping belonged to the retired desktop
+# DoomRPG.c input loop. No ESP32 profile registers that original or generated
+# desktop translation unit: the native touch pipeline dispatches gameplay and
+# all current menus. Retire the 3 x 528 byte keymap owners and default reset;
+# preserve the original desktop source as an unmodified behavioral reference.
+# Guard both retirement sites and any accidental revival of that TU in the
+# compiledb/ELF audit below.
+retired_config_key_binding_declarations = (
     "keyMapping_t keyMapping[12];",
     "keyMapping_t keyMappingTemp[12];",
+    "keyMapping_t keyMappingDefault[12] = {",
+    "void DoomRPG_setDefaultBinds(DoomRPG_t* doomrpg)",
+    "int DoomRPG_getEventKey(int mouse_Button, const Uint8* state)",
+    "void DoomRPG_setBind(DoomRPG_t* doomrpg, int mouse_Button, const Uint8* state)",
 )
-config_bind_table_anchor = "keyMapping_t keyMappingDefault[12] = {"
-config_bind_function = "void DoomRPG_setDefaultBinds(DoomRPG_t* doomrpg)"
-config_bind_owner = join(project_src_dir, "esp_legacy_config_mappings_startup.c")
-with open(config_bind_owner, "r", encoding="latin-1") as bind_file:
-    bind_native = bind_file.read()
-for declaration in config_bind_declarations:
-    if doom_rpg_source_text.count(declaration) != 1 or bind_native.count(declaration) != 1:
-        raise RuntimeError("Config key binding global declaration drift: " + declaration)
-    doom_rpg_source_text = doom_rpg_source_text.replace(
-        declaration, "/* Native process config bind state */", 1)
-if (doom_rpg_source_text.count(config_bind_table_anchor) != 1 or
-        bind_native.count(config_bind_table_anchor) != 1):
-    raise RuntimeError("Config default bind table declaration drift")
-
-def extract_config_bind_table(source):
-    start = source.index(config_bind_table_anchor)
-    end = source.find("\n};", start)
-    if end < 0:
-        raise RuntimeError("Unterminated default bind table")
-    return source[start:end + 3]
-
-bind_table_reference = extract_config_bind_table(doom_rpg_source_text)
-if zlib.crc32(bind_table_reference.encode("latin-1")) != 0x640ab977:
-    raise RuntimeError("Default bind table reference changed")
-if extract_config_bind_table(bind_native) != bind_table_reference:
-    raise RuntimeError("Native bind table differs from desktop")
-doom_rpg_source_text = doom_rpg_source_text.replace(
-    bind_table_reference, "/* Native Config default key map */", 1)
-bind_fn_reference = extract_doomrpg_function(doom_rpg_source_text, config_bind_function)
-if zlib.crc32(bind_fn_reference.encode("latin-1")) != 0x5c83b22a:
-    raise RuntimeError("Default bindings reset reference changed")
-if extract_doomrpg_function(bind_native, config_bind_function) != bind_fn_reference:
-    raise RuntimeError("Native default bindings reset differs from desktop")
-doom_rpg_source_text = doom_rpg_source_text.replace(
-    bind_fn_reference, "/* Native Config default bindings reset */", 1)
-if (config_bind_table_anchor in doom_rpg_source_text or
-        config_bind_function in doom_rpg_source_text or
-        any(declaration in doom_rpg_source_text for declaration in config_bind_declarations)):
-    raise RuntimeError("Generated DoomRPG still defines key bind storage/reset")
-print("[ESP32] Config key-bind globals=3 reset=1 owner=esp_legacy_config_mappings_startup "
-      "process-lifetime generated=0")
+for declaration in retired_config_key_binding_declarations:
+    if doom_rpg_source_text.count(declaration) != 1:
+        raise RuntimeError("Desktop keybinding input reference drift: " + declaration)
+print("[ESP32] Desktop key bindings retired=3 tables/1584B + reset + input-decoders "
+      "owner=native-touch legacyInputCompiled=no")
 
 with open(doom_rpg_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(doom_rpg_source_text)
