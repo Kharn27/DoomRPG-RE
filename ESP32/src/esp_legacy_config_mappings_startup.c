@@ -18,9 +18,9 @@
 
 extern DoomRPG_t* doomRpg;
 
-/* Permanent CONFIG/key-bind storage. Same process-lifetime ABI and exact
- * desktop initializers; Config reads are applied by Game_loadConfig().
- * Neither the touch input owner nor a map session owns these arrays. */
+/* Permanent native key-bind storage with the original default table.
+ * Desktop Config v23 loading is retired; touch and map sessions do not own
+ * these process-lifetime arrays. */
 keyMapping_t keyMapping[12];
 keyMapping_t keyMappingTemp[12];
 keyMapping_t keyMappingDefault[12] = {
