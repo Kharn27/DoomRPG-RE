@@ -134,8 +134,8 @@ jobs:
       - name: Test native CYD config codec and first-run defaults (host C)
         run: python ESP32/test/native_config_host.py
 
-      - name: Test permanent config key binding ownership and reset parity (host C)
-        run: python ESP32/test/doomrpg_config_binds_host.py
+      - name: Test desktop key binding retirement and native touch ownership (host C)
+        run: python ESP32/test/desktop_keybind_retirement_host.py
 
       - name: Test permanent DoomRPG root and fatal cleanup ownership (host C)
         run: python ESP32/test/doomrpg_root_owner_host.py
@@ -273,7 +273,7 @@ jobs:
             python tools/audit_desktop_elf.py ".pio/build/$profile" \
               --compiledb compile_commands.json --require-retired-doomrpg-config-read
             python tools/audit_desktop_elf.py ".pio/build/$profile" \
-              --compiledb compile_commands.json --require-native-doomrpg-config-binds
+              --compiledb compile_commands.json --require-retired-doomrpg-keybinds
           done
 
       - name: Upload firmware artifacts
