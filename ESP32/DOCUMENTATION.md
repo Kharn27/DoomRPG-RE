@@ -1,153 +1,70 @@
 # Doom RPG ESP32 — guide de travail
 
-## PR #219 — génération C desktop retirée, protocole CI clos (18 octobre 2026)
+## Utilisation et validation du firmware courant — PR #219 (18 octobre 2026)
 
-### Lot D — blitter Canvas internalisé, PASS CYD sur textes du menu
+La prise en main et les commandes actuelles sont dans
+**[README.md](README.md)** (PAK, flash normal, menu, jeux,
+sauvegardes V11, luminosité et HUB). Les détails matériels et
+mesures à jour sont dans **[PORTING_STATUS.md](PORTING_STATUS.md)** ;
+le design invariant est dans **[ARCHITECTURE.md](ARCHITECTURE.md)**.
+Les anciens lots A–D avec leurs SHA/CRC et leurs limites sont
+conservés dans [l'archive #219](archive/PR219_DESKTOP_RETIREMENT_MILESTONES.md).
+Les sections datées #218 et antérieures ci-dessous sont
+**des archives de décisions**, pas des propriétaires runtime.
 
-Code `461d5d917a630b96cd08b34bf28713c65fd60d8f`,
-[CI SUCCESS #39161846989](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39161846989)
-(55 étapes : tests host, normal/bringup/trace et audits ELF).
-`DoomCanvas_drawImageSpecial` est devenu
-`static EspDoomCanvas_drawImageSpecial`, appelé seulement
-par le texte `DoomCanvas_drawString1`. Son corps de rendu
-est **inchangé**, testé par FNV `4c4a9a93` ;
-il reste cinq ABI Canvas externes et aucun objet Game.
+**Dernier SHA code #219** :
+`a59554ed524502d02dbab69149777a94050b0a26`
+([CI #39162920720 SUCCESS, 55 étapes](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39162920720)).
+`Game_t` n'est plus alloué (`Game=0`), le générateur
+`DoomRPG.c` desktop est retiré, le runtime ne lit pas ZIP et
+le pont Canvas exporte **cinq** fonctions, contre six avant.
+`DoomCanvas_drawImageSpecial` est privé et son corps de rendu
+est inchangé. Le label `Loading...` est passé sous forme
+d'un tableau `char[]` local à la signature historique.
+Les trois warnings de chaîne `BACK/UP/DOWN` de Help/About
+restent **connus** en CI pour ce SHA ; ne pas les éliminer
+par cast silencieux.
 
-**Test réel ESP32 classic** : téléversement normal réussi ;
-boot/menu FNV `0f2c9fc3`, Help/About 83 lignes avec
-défilement haut/bas et BACK exact, Options FNV
-`0acffb35` et retour exact au menu, START → intro
-(7 taps et première frame `ade0195d`) → libération
-34 056 B → `/intro.bsp` → resident gameplay READY.
-`heap8=154908` au menu et `heap8=113816`,
-`largest8=86004` au jeu, stables sur les
-`[ALIVE]` observés. `shapeData=mediaTexels=NULL`.
-Ce témoin **ne couvre pas** LOAD ni combat du lot D.
-Aucun SHA runtime imprimé.
-Build local Flash 820 961 B vs CI 820 945 B :
-16 B de différence, sans conclusion d'identité ELF.
-Le diagnostic Canvas `exports=6` du boot est
-désormais **périmé**, bien que l'audit ELF voie cinq
-exports. Le warning `"Loading..."` passé à `char*`
-est également noté. Ces deux petites corrections
-sont une autre frontière de code et ne sont pas
-couvertes par le PASS présent.
+**PASS CYD réel ciblé** : Help/About 83 lignes, défilements
+jusqu'au décalage 32 et retour correct ;
+Options puis BACK ; START, intro
+(six taps dans le dernier extrait car premier texte achevé
+naturellement), dispose 34 056 B, Entrance
+`FRESH-VISIBLE` et resident gameplay prêt. FNV :
+menu `0f2c9fc3`, Options `0acffb35`, première image
+d'intro `ade0195d` ; en gameplay,
+`heap8=113816 largest8=86004` stables.
+`shapeData/mediaTexels=NULL`.
+Le dernier extrait n'inclut **pas** son boot, donc ne prouve
+pas directement l'affichage `exports=5` sur la carte ;
+il ne rejoue pas non plus LOAD, EXIT ou combat.
+Ces derniers chemins possèdent des preuves matérielles
+antérieures dans l'archive, non extrapolées au nouveau SHA.
+Le firmware ne journalise pas son empreinte SHA.
 
-La [PR #219](https://github.com/Kharn27/DoomRPG-RE/pull/219)
-reste ouverte en draft sur **la même branche**, aucun
-merge dans `main`. Voir `PORTING_STATUS.md`
-pour les FNV et mesures détaillés.
+Pour confirmer une future révision :
+```sh
+cd ESP32
+pio run -e esp32-cyd -t upload -t monitor
+```
 
-### Lot C — aucun Game_t alloué ni Game_* lié : PASS CYD normal
-
-**SHA code du troisième lot** :
-`33835b6dadef03aafe10bdb7874459c287cfeb09`
-([CI SUCCESS #39160572323](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39160572323) :
-tests host, 3 builds et audits ELF).
-Le pont `esp_legacy_game_bridge.c` est supprimé et les trois
-exports `Game_init`, `Game_activate`, `Game_unloadMapData`
-sont interdits dans le firmware. `doomRpg->game` n'est
-**plus une allocation**, c'est un ancien champ compatibilité
-**strictement NULL**. Les gardes natifs de START/intro/chargement/
-EXIT le refusent s'il redevient non NULL ; les propriétaires
-map/gameplay et le root process sont inchangés.
-
-**Témoin matériel CYD du 18 octobre 2026** : START → intro
-complète (7 taps) → libération du transitoire **34 056 B** →
-Entrance fresh → HUB/SYSTEM EXIT sans SAVE →
-MENU_MAIN → LOAD slot09 V11 5 604 B → Entrance restauré.
-`[RESIDENTRESET] empty=1`, `shapeData=0`,
-`mediaTexels=0` et `heap8=113816 largest8=86004`
-stables dans les trois `[ALIVE]` finaux.
-Gain de **16 B de heap libre** à menu et en gameplay vs
-lot B (`113800→113816`), malgré le
-`Game_t` référentiel de 4 B, par disparition de sa
-petite allocation et de son overhead.
-Ce dernier extrait ne montre **pas de combat joué** ni le boot
-`[CORE]` : ne pas fabriquer ces témoins, même si la
-CI vérifie `Game=0`. Le SHA n'est pas imprimé par le
-firmware dans cette trace, le PASS est celui du flash de
-la branche annoncé, sans fingerprint indépendant.
-
-**État** : lot C validé sur le parcours observé.
-La branche `agent/esp32-retire-generated-doomrpg-oracle`
-et la PR #219 restent **ouvertes** et ne sont pas
-mergées. Toute modification de code ultérieure
-nécessite une nouvelle validation selon sa frontière.
-Consulter `PORTING_STATUS.md` pour les témoins exacts.
-
-### Lot B — deux anciens Game_* no-op retirés, PASS CYD réel
-
-Toujours sur la **même branche #219** (code `e3b02d86963523c89824dc757ac3a8161d50776e`),
-[CI complète SUCCESS #39145231343](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39145231343) :
-le pont permanent `esp_legacy_game_bridge.c` n'exporte plus que
-`Game_init`. `Game_activate` et `Game_unloadMapData` étaient des
-no-op et sont désormais absentes ; un appel inédit ne doit **pas** linker.
-L'ancien appel `Game_unloadMapData` dans le nettoyage START a été retiré,
-mais **`Render_freeRuntime`, le contrôle des caches et les propriétaires
-résidents sont conservés**. Nouveau test `game_inert_abi_retirement_host.py`
-avec compilateur/harness et audit des symboles sur les trois profils.
-
-**Flash normal validé par l'utilisateur le 18 octobre 2026** :
-START → intro animée et texte complet (7 taps) → intro disposée
-(heap8 129276→163332) → chargement frais Entrance → gameplay ;
-EXIT depuis SYS sans sauvegarde → menu → LOAD slot09 V11 5604 B →
-reprise du gameplay, rotation/strafe, changement d'armes,
-combat et riposte esquivée. `[RESIDENTRESET] empty=1`, et
-`heap8=113800 largest8=86004` restent stables au jeu ;
-`shapeData/mediaTexels` sont toujours NULL.
-La trace ne fournit pas de SHA firmware imprimé ; PASS ciblé de la
-branche, non empreinte binaire contrôlée. Le nouveau code ne touche pas
-les mécaniques de combat. Voir `PORTING_STATUS.md` pour les témoins exacts.
-
-`Game_t` fait encore **4 B** et `Game_init` reste un export vivant :
-les retirer requiert un audit spécifique des frontières init, reset,
-config/mappings, Game shell et teardown. **Aucun merge** dans `main`.
-
-Depuis `main 6390a6d42e50a058a05ebc0f4483cb02894f065f`, branche
-`agent/esp32-retire-generated-doomrpg-oracle`,
-[PR #219](https://github.com/Kharn27/DoomRPG-RE/pull/219) :
-`DoomRPG.c` desktop **n'est plus généré** par le build CYD. L'original
-`src/DoomRPG.c` reste intact et sert directement aux tests de parité.
-Seule la copie C++ du **shim SDL packed** est toujours produite.
-Aucune des 21 unités C desktop originales n'est compilée.
-
-Le test `python3 ESP32/test/doomrpg_oracle_retirement_host.py` exécute le
-vrai script de build avec une fausse source desktop invalide, supprime
-une copie obsolète, vérifie la sortie SDL seule, et exige un refus si
-l'inventaire desktop ou les ancres SDL changent. Les autres tests
-comparatifs (primitives, images, dessin, horloge, RNG, config) gardent
-leurs CRC/références directs. La CI ajoute un garde d'absence de
-`doomrpg_patched_sources/DoomRPG.c` pour chaque profil.
-
-Code `04b696ffbb6cfd76b7c2ef00c1260a202752e979`,
-[CI PR #39130682162 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39130682162)
-(hôte, normal, bringup, trace, compiledb/ELF). RAM/Flash identiques
-aux mesures CI #218 : normal **49 488 / 821 285 B**, bringup
-**49 640 / 841 901 B**, trace **49 536 / 837 889 B**.
-Le bloc de patch SDL a été comparé textuellement au `main`
-de base : **8 017 caractères identiques**.
-Il n'existe pas de comparatif strict des sections ELF chargées.
-**PASS hardware normal #219 reçu le 18 octobre 2026**, après flash de cette
-branche par l'utilisateur : restauration de la luminosité 75 %, boot SD/PAK,
-MENU_MAIN → LOAD slot09 V11 → Entrance, reprise des monstres et cache,
-PASS_TURN/riposte, combats et mort de monstres, LEVELUP 1→2, animation
-de mouvement/rotation/strafe et pickup dynamique Bullet Clip. Série
-`heap8=113800 largest8=86004` stable en jeu ;
-`shapeData=0x0 mediaTexels=0x0`. Pas d'erreur Serial observée.
-Le SHA du firmware n'est pas imprimé dans le log ; ce PASS est donc
-attribué **au test de la branche #219**, pas à une empreinte binaire
-indépendamment vérifiée. Ne pas l'étendre aux cas non exercés.
-
-**La branche reste ouverte** : la prochaine tranche étudie le
-pont `Game_t` minimal. Tout nouveau changement de code exige ses
-propres validations ; aucune modification firmware ne suit ce PASS dans
-ce seul commit documentaire.
-Pour le détail de la preuve, voir [PORTING_STATUS.md](PORTING_STATUS.md).
+Contrôler les premiers logs `Game=0` et `exports=5`,
+SD/PAK, le FNV menu, un cycle Help/About/Options, l'intro,
+puis les invariants et la mémoire en jeu.
+`esp32-cyd-bringup` et `esp32-cyd-trace` ne
+remplacent jamais le test normal. La CI vérifie
+toujours les 21 TU C desktop rejetées, les symboles
+retirés, et les trois builds normaux/diagnostiques.
 
 ---
 
-## PR #218 — luminosité native persistante et retrait du keybinding desktop : protocole clos (18 octobre 2026)
+## Historique PR #218 — luminosité native et retrait du keybinding desktop (état daté du 18 octobre 2026)
+
+> **Archive historique** : les nombres de fonctions Game et les états
+> « à faire » de cette section étaient exacts au SHA #218 mais sont
+> remplacés par le statut #219 ci-dessus. Ne pas les appliquer au
+> firmware courant.
+
 
 **Base `main`** :
 `8a9c28940b03ab1ee10d5cdc720a26b6f08cbb4e` ;
