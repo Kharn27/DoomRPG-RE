@@ -370,7 +370,7 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
      */
     printf("[CORE] Legacy Game shell minimal gameBytes=%u desktopBytes=36468 totalReclaimed=36464 fields=doomRpg-only worldOwner=native\n",
            (unsigned int)sizeof(Game_t));
-    printf("[CORE] Desktop Game.c retired bridge=esp_legacy_game_bridge exports=3 linkedRoots=audit-ELF worldOwner=native\n");
+    printf("[CORE] Desktop Game.c retired bridge=esp_legacy_game_bridge exports=1(Game_init) inertExports=retired worldOwner=native\n");
 
     /*
      * Player state is owned by the compact 52-byte native gameplay owner.
