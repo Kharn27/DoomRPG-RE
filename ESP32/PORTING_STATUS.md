@@ -52,13 +52,43 @@ du code #218. Les audits confirment `compiledOriginal=0`,
 attendus. Les étapes CI post-correctif sont toutes vertes.
 **Ce n'est pas un comparatif strict octet par octet des sections
 ALLOC de deux ELF** : ne pas déclarer le firmware bit-identique.
-**Aucun flash ni PASS CYD nouveau** n'a été réalisé pour cette passe.
-Le code gameplay, RNG, rendu, SD/PAK, sauvegarde et les structures
-résidentes ne sont pas modifiés ; leurs validations hardware
-antérieures restent bornées à leurs propres SHA.
+**PASS CYD normal rapporté le 18 octobre 2026 pour ce nettoyage**, sur
+le firmware flashé par l'utilisateur depuis la branche #219. La trace ne
+contient **pas de SHA firmware embarqué** ; on ne lui attribue donc pas
+une empreinte de code exacte ou une identité binaire non démontrée.
 
-**État** : branche prête pour revue de ce nettoyage build/tests,
-commits suivants docs-only ; merge exclusif de l'utilisateur.
+Parcours et témoins Serial réellement observés : boot classic ESP32-D0WD-V3
+240 MHz, sans PSRAM ; SD 240 MiB et PAK 241 entrées ; restauration primaire
+`/DoomRPG-ESP32.cfg` 12 B à **75 %** (LEDC GPIO21 duty=191) ; écran
+160×120 RGB565 / présentation x2 ; menu opaque interactif ; LOAD slot09
+version **V11 5 604 B** sur **Entrance MAP1 /intro.bsp** (source CRC
+`623f34e4`, arena FNV `c3882516`), overlays/monstres/position/activation
+restaurés. Reprise gameplay et première image visibles, rotations animées,
+PASS_TURN, attaque de monstre et riposte commise avec `rngRollback=yes`,
+`rngExact=yes` à la frontière visuelle, attaques au corps à corps et
+à distance, mort de monstres et FX, LEVELUP **1→2**, fermeture de la carte
+sans tour supplémentaire, déplacement, strafe, drop puis ramassage
+`Got Bullet Clip` avec munitions 17→21. Le log affiche un
+`MONSTERTURN SKIP` pendant LEVELUP, conformément à la sémantique déjà
+identifiée, **pas une panne AI nouvellement découverte**.
+
+En jeu, après reprise et cache primé : trois `[ALIVE]` successifs montrent
+`heap8=113800` et `largest8=86004` stables ; avant LOAD, `heap8=154892`,
+`largest8=110580`. Le `ENGINESESSION READY` atteste
+`shapeData=0x0 mediaTexels=0x0`; aucun ZIP runtime ou backend desktop
+réactivé. Aucune exception, erreur de transaction ou dérive RNG n'est
+visible dans cet extrait. Ce PASS est **ciblé** ; il ne valide pas toutes
+les maps, tous les scripts, les permutations SD, l'identité ELF ni
+l'audio audible (toujours différé).
+
+Le code gameplay, RNG, rendu, SD/PAK, sauvegarde et les structures
+résidentes n'a pas été modifié dans le premier lot. **Clôture du lot
+oracle uniquement** : les commits de documentation suivent le SHA code
+`04b696ffbb6cfd76b7c2ef00c1260a202752e979` sans firmware modifié.
+**La branche #219 reste ouverte pour un nouveau lot** de désengagement
+`Game_t` ; chaque nouveau commit de code ouvre une nouvelle frontière
+nécessitant ses propres tests et, si code chargé modifié, un PASS CYD
+spécifique. Merge par l'utilisateur uniquement.
 
 ---
 
