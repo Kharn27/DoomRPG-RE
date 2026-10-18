@@ -18,7 +18,7 @@
 
 extern DoomRPG_t* doomRpg;
 
-/* Legacy keyMapping/keyMappingTemp/keyMappingDefault storage is retired.
+/* Desktop keyboard/controller mapping storage is retired.
  * This translation unit retains only the independent native mappings.bin
  * loader and its fixed memory plan. Touch routing owns input on classic CYD. */
 
