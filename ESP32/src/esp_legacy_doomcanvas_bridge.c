@@ -107,7 +107,9 @@ void DoomCanvas_free(DoomCanvas_t* doomCanvas, boolean freePtr)
     }
 }
 
-void DoomCanvas_drawImageSpecial(DoomCanvas_t* doomCanvas,
+/* Private glyph blitter: all external DoomCanvas drawing must enter through
+ * its remaining audited text ABI. Keep clipping/tiling semantics exact. */
+static void EspDoomCanvas_drawImageSpecial(DoomCanvas_t* doomCanvas,
                                  Image_t* img,
                                  int xSrc,
                                  int ySrc,
@@ -248,7 +250,7 @@ void DoomCanvas_drawString1(DoomCanvas_t* doomCanvas,
             xpos = x;
         } else {
             if (c != (unsigned int)' ') {
-                DoomCanvas_drawImageSpecial(
+                EspDoomCanvas_drawImageSpecial(
                     doomCanvas,
                     imgFont,
                     width * ((c - 33U) & 0x0fU),
