@@ -63,7 +63,7 @@ int main(void) {
     for (uint32_t ms=0;ms<30000;ms+=13) {
        for (uint16_t id=9;id<=10;id++) {
            uint32_t tick=(ms+(uint32_t)id*3U);
-           uint32_t legacy=(tick*0x400000UL)>>30;
+           uint32_t legacy=((uint32_t)(tick*UINT32_C(0x400000)))>>30;
            assert(EspNativeWallIndicator_phase(id,ms)==legacy);
        }
     }
