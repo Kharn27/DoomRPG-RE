@@ -131,8 +131,8 @@ jobs:
       - name: Test native process-lifetime DoomRPG clock parity (host C)
         run: python ESP32/test/doomrpg_process_clock_host.py
 
-      - name: Test native binary config reader ABI (host C)
-        run: python ESP32/test/doomrpg_config_read_host.py
+      - name: Test native CYD config codec and first-run defaults (host C)
+        run: python ESP32/test/native_config_host.py
 
       - name: Test permanent config key binding ownership and reset parity (host C)
         run: python ESP32/test/doomrpg_config_binds_host.py
@@ -271,7 +271,7 @@ jobs:
             python tools/audit_desktop_elf.py ".pio/build/$profile" \
               --compiledb compile_commands.json --require-native-doomrpg-rng
             python tools/audit_desktop_elf.py ".pio/build/$profile" \
-              --compiledb compile_commands.json --require-native-doomrpg-config-read
+              --compiledb compile_commands.json --require-retired-doomrpg-config-read
             python tools/audit_desktop_elf.py ".pio/build/$profile" \
               --compiledb compile_commands.json --require-native-doomrpg-config-binds
           done
