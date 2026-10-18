@@ -2,14 +2,10 @@
 #include <stdio.h>
 
 #include "DoomRPG.h"
-#include "DoomCanvas.h"
 #include "Game.h"
-#include "SDL_Video.h"
-
-#define ESP_LEGACY_CONFIG_VERSION 23
 
 /*
- * Permanent ESP32 compatibility bridge for the four Game_* roots that still
+ * Permanent ESP32 compatibility bridge for the three Game_* roots that still
  * survive in the normal classic-CYD ELF. Desktop Game.c is not compiled.
  *
  * World/entity/script/gameplay ownership is native. Adding a new legacy Game_*
@@ -37,92 +33,6 @@ void Game_activate(Game_t* game, Entity_t* entity)
     /* Native monster activation owns this behavior. Keep stale ABI fail-closed. */
     (void)game;
     (void)entity;
-}
-
-void Game_loadConfig(Game_t* game)
-{
-    SDL_RWops* rw;
-    int version;
-    byte boolData;
-    int intData;
-
-    printf("loadConfig\n");
-
-    rw = SDL_RWFromFile("Config", "r");
-    if (rw != NULL) {
-        version = File_readInt(rw);
-        if (version == ESP_LEGACY_CONFIG_VERSION) {
-            /* Retired desktop vibration option: consume for stream compatibility. */
-            boolData = File_readByte(rw);
-            (void)boolData;
-
-            /* Retired Sound_t volume: consume for stream compatibility. */
-            intData = File_readInt(rw);
-            (void)intData;
-
-            /* Retired desktop animation-frame option: consume for compatibility. */
-            intData = File_readInt(rw);
-            (void)intData;
-
-            /* Retired Player_t totalDeaths: consume for stream compatibility. */
-            intData = File_readInt(rw);
-            (void)intData;
-
-            boolData = File_readByte(rw);
-            sdlVideo.fullScreen = boolData != 0 ? true : false;
-
-            boolData = File_readByte(rw);
-            sdlVideo.vSync = boolData != 0 ? true : false;
-
-            boolData = File_readByte(rw);
-            sdlVideo.integerScaling = boolData != 0 ? true : false;
-
-            boolData = File_readByte(rw);
-            sdlVideo.displaySoftKeys = boolData != 0 ? true : false;
-
-            sdlVideo.resolutionIndex = File_readInt(rw);
-
-            /* Retired desktop mouse options: consume for stream compatibility. */
-            intData = File_readInt(rw);
-            (void)intData;
-
-            boolData = File_readByte(rw);
-            (void)boolData;
-
-            sdlController.deadZoneLeft = File_readInt(rw);
-            sdlController.deadZoneRight = File_readInt(rw);
-
-            /* Retired desktop sound-priority option: consume for compatibility. */
-            boolData = File_readByte(rw);
-            (void)boolData;
-
-            boolData = File_readByte(rw);
-            if (game != NULL) {
-                game->doomRpg->doomCanvas->renderFloorCeilingTextures =
-                    boolData != 0 ? true : false;
-            }
-
-            if (game != NULL) {
-                for (int i = 0; i < 12; ++i) {
-                    for (int j = 0; j < KEYBINDS_MAX; ++j) {
-                        keyMapping[i].keyBinds[j] = File_readInt(rw);
-                    }
-                }
-                SDL_memcpy(keyMappingTemp, keyMapping, sizeof(keyMapping));
-            }
-        }
-        else {
-            printf("loadConfig: save version mismatch (expected %d found %d)\n",
-                   ESP_LEGACY_CONFIG_VERSION, version);
-        }
-    }
-    else {
-        printf("loadConfig: (%s)\n", SDL_GetError());
-    }
-
-    if (rw != NULL) {
-        SDL_RWclose(rw);
-    }
 }
 
 void Game_unloadMapData(Game_t* game)
