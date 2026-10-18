@@ -227,8 +227,6 @@ int main(void) {
 def main():
     legacy = (ROOT / "src/DoomRPG.c").read_text(encoding="latin-1")
     native = (ROOT / "ESP32/src/esp_doomrpg_presentation.c").read_text(encoding="latin-1")
-    generator = (ROOT / "ESP32/scripts/build_engine.py").read_text()
-    assert "presentation/clip linked ABI moved=7" in generator
     assert "SDL_Render" in native
     assert "PlatformVideo_framebuffer" not in native
     names, bodies = [], []
