@@ -33,8 +33,8 @@ assert "_Static_assert(sizeof(Game_t) == sizeof(void*)" in core
 # functions, even if it happened to land in a discarded translation unit.
 # Preserve the desktop originals: their functions are specification only.
 def code_without_comments_and_literals(s):
-    return re.sub(r"/\*.*?\*/|//[^\n]*|\\"(?:\\.|[^\\"\\])*\\"",
-                  " ", s, flags=re.S)
+    return re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ", s,
+                  flags=re.S)
 
 for path in sorted(SRC.rglob("*")):
     if path.suffix not in (".c", ".cpp") or path == BRIDGE:
