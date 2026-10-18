@@ -6,12 +6,26 @@
 #include <algorithm>
 
 #include "platform_video_config.h"
+#include "esp_native_backlight.h"
 #include "doomrpg_log.h"
 
 namespace {
 
 TFT_eSPI* platformDisplay = nullptr;
 uint16_t* framebuffer = nullptr;
+
+/* Dedicated backlight LEDC channel; no RGB565 data or frame presentation is
+ * ever modified by this owner. TFT_eSPI initializes active-high GPIO21. */
+constexpr uint8_t kBacklightChannel = 7U;
+constexpr uint32_t kBacklightFrequencyHz = 5000U;
+constexpr uint8_t kBacklightResolutionBits = 8U;
+bool backlightReady = false;
+uint8_t backlightPercent = 100U;
+
+#if !defined(TFT_BL) || TFT_BL != 21 || !defined(TFT_BACKLIGHT_ON)
+#error "CYD backlight PWM requires active-high TFT_BL=21"
+#endif
+
 
 constexpr size_t kPixelCount =
     static_cast<size_t>(DOOMRPG_LOGICAL_WIDTH) * DOOMRPG_LOGICAL_HEIGHT;
@@ -192,6 +206,19 @@ bool PlatformVideo_begin(TFT_eSPI* display) {
 
     applyCydInvertedGammaProfile();
 
+    if (!backlightReady) {
+        if (ledcSetup(kBacklightChannel, kBacklightFrequencyHz,
+                      kBacklightResolutionBits) <= 0.0) {
+            Serial.println("[BACKLIGHT] FAILED LEDC setup; video remains usable, Video setting unavailable");
+        } else {
+            ledcAttachPin(TFT_BL, kBacklightChannel);
+            ledcWrite(kBacklightChannel, 255U);
+            backlightPercent = 100U;
+            backlightReady = true;
+            Serial.println("[BACKLIGHT] READY pin=21 active=HIGH pwm=5000Hz/8bit channel=7 percent=100 persistence=session-only");
+        }
+    }
+
     Serial.printf("[VIDEO] Logical framebuffer %dx%d RGB565, %u bytes\n",
                   DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
                   static_cast<unsigned int>(kFramebufferBytes));
@@ -203,6 +230,29 @@ bool PlatformVideo_begin(TFT_eSPI* display) {
     Serial.println("[HITBOX] Physical overlay enabled; framebuffer hashes remain untouched");
 #endif
     return true;
+}
+
+extern "C" int Esp32Backlight_isReady(void) {
+    return backlightReady ? 1 : 0;
+}
+
+extern "C" uint8_t Esp32Backlight_percent(void) {
+    return backlightPercent;
+}
+
+extern "C" int Esp32Backlight_setPercent(uint8_t percent) {
+    if (!backlightReady ||
+        (percent != 25U && percent != 50U &&
+         percent != 75U && percent != 100U)) {
+        return 0;
+    }
+
+    const uint32_t duty = ((uint32_t)percent * 255U + 50U) / 100U;
+    ledcWrite(kBacklightChannel, duty);
+    backlightPercent = percent;
+    Serial.printf("[BACKLIGHT] SET percent=%u duty=%u/255 gpio=21 frame=untouched gameplayRng=untouched\n",
+                  (unsigned int)percent, (unsigned int)duty);
+    return 1;
 }
 
 uint16_t* PlatformVideo_framebuffer() {
