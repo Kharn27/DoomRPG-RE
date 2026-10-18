@@ -22,6 +22,9 @@ resident = (SRC / "esp_native_resident_gameplay.c").read_text()
 load = (SRC / "native_main_menu_actions.c").read_text()
 options = (SRC / "native_main_menu_options_back.c").read_text()
 options_painter = (SRC / "native_main_menu_options_action.c").read_text()
+video = (SRC / "platform_video.cpp").read_text()
+backlight_header = (ROOT / "include" / "esp_native_backlight.h").read_text()
+platformio = (ROOT / "platformio.ini").read_text()
 
 def macro(src, name):
     m = re.search(r"^#define\s+" + re.escape(name) + r"\s+([0-9xa-fA-FU]+)", src, re.M)
@@ -101,6 +104,33 @@ for field in logoFields:
     assert field in paintOptions and field in drawMain, field
 assert "DOOMRPG_CANVAS_WIDTH -" not in paintOptions
 assert "DoomRPG_esp32PaintMainMenuOptionsDashboard(" in paintOptions
+
+# Classic CYD GPIO21 backlight owner stays entirely separate from RGB565.
+assert "-D TFT_BL=21" in platformio
+assert "-D TFT_BACKLIGHT_ON=HIGH" in platformio
+assert "#include \"esp_native_backlight.h\"" in video
+assert "#if !defined(TFT_BL) || TFT_BL != 21" in video
+assert "ledcSetup(kBacklightChannel, kBacklightFrequencyHz" in video
+assert "ledcAttachPin(TFT_BL, kBacklightChannel)" in video
+assert "ledcWrite(kBacklightChannel, duty)" in video
+assert "Esp32Backlight_setPercent(uint8_t percent)" in backlight_header
+assert "percent != 25U && percent != 50U" in video
+assert "percent != 75U && percent != 100U" in video
+assert "const uint32_t duty = ((uint32_t)percent * 255U + 50U) / 100U;" in video
+assert "framebuffer[" not in function(video, 'extern "C" int Esp32Backlight_setPercent(')
+
+# Options Video is a second-tap hardware operation, Back still survives.
+assert "DoomRPG_esp32PaintMainMenuOptionsDashboardSelection(" in options_painter
+assert "BRT %u" in options_painter
+assert "Esp32Backlight_isReady()" in options_painter
+assert "OPTIONS_VIDEO_ITEM" in options
+assert "if (armedItem != item)" in options
+assert "Esp32Backlight_setPercent(after)" in options
+assert "nextBrightnessPercent" in options
+assert "100U: return 75U" in options and "50U: return 25U" in options
+assert "DoomRPG_esp32MainMenuReturnToMain(" in options
+assert "optionsExpectedFrameFNV" in options
+assert "Input/Sound stay fail-closed" in options
 assert "logoDst.x" in paintOptions and "SDL_RenderCopy(" in paintOptions
 
 assert 'static char noSaveLabel[] = "NO SAVE";' in load
