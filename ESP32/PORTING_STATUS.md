@@ -2,6 +2,76 @@
 
 ## PR #219 — générateur C desktop retiré, SDL packed et parité préservés (18 octobre 2026)
 
+### Deuxième frontière sur la même PR : retrait des deux Game_* inertes — PASS CYD (18 octobre 2026)
+
+**Dernier SHA de code de ce lot** :
+`e3b02d86963523c89824dc757ac3a8161d50776e`,
+[CI SUCCESS #39145231343](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39145231343)
+(host + trois builds `esp32-cyd`, bringup, trace + compiledb/ELF).
+Ce lot suit le retrait du générateur C et a été testé **sur la même
+branche #219**, sans merge.
+
+- `esp_legacy_game_bridge.c` ne fournit plus que **`Game_init`**.
+  Les exports `Game_activate` et `Game_unloadMapData` ont été retirés :
+  ces anciens corps étaient des no-op sans mutation du monde ni
+  libération de map. L'unique invocation résiduelle du second était
+  dans `native_main_menu_start_action.c`, après `Render_freeRuntime()` ;
+  elle est supprimée. Le vrai cleanup Render et les vérifications
+  strictes NULL / cache inactif restent inchangés.
+- Nouveau test hôte `game_inert_abi_retirement_host.py` : compile
+  le vrai bridge, teste l'allocation et la réutilisation de `Game_init`,
+  confirme l'absence des deux autres définitions, et qu'un appel
+  réintroduit échoue au lien. Garde CI `--forbid-prefix` des
+  deux symboles dans chaque ELF.
+- Résultats CI du lot : RAM statique normal **49 488 B** (inchangée),
+  Flash normal **821 273 B** (−12 B vs premier lot) ; bringup
+  **49 640 / 841 901 B**, trace **49 536 / 837 893 B**.
+  Aucun contrôle strict d'identité binaire ELF inter-commits revendiqué.
+
+**Témoins matériels de l'utilisateur, firmware normal sur branche #219 :**
+
+1. **START nouveau jeu** : `[MAINSTART]` preflight PAK réussi ;
+   `[MAINMENU] Runtime cleanup` heap8 **154892→163332 (+8440 B)**
+   avec `nodes/lines/mapSprites/mappings/shapeData/mediaTexels=NULL` ;
+   `[PLAYERSTATE] READY` niveau 1, HP 30/30, arme 2,
+   `[INTROSTATE] READY` images=4/texts=3 ; first frame FNV `ade0195d`.
+2. **Intro réelle** : sept taps acceptés, texte révélé/continué,
+   `FINAL-TEXT-PRESENTED` puis `FINAL-CONTINUE` ; 50 ms clock
+   parked ; `[INTRODISP] READY` récupère **34 056 B**
+   (heap8 129276→163332, largest8 98292→110580), owner/images/texts
+   libérés, pas de `DoomCanvas_loadMap` desktop.
+3. **Chargement frais** : `/intro.bsp` CRC `623f34e4`, arena 14 095 B,
+   FNV `c3882516`, spawn 544,1824 angle 64 ;
+   `[ENGINESESSION] FRESH-VISIBLE` et `[RESIDENTGAMEPLAY] READY` ;
+   heap8 **113800**, largest8 **86004** stables lors de plusieurs
+   `[ALIVE]`. État immuable `shapeData=0 mediaTexels=0`.
+4. **EXIT sans sauvegarde** : `[SYSEXIT] MENU-READY` et
+   `[RESIDENTRESET]` before=1/1/1/1/1/1/1 → after=0/0/0/0/0/0/0,
+   `empty=1`, released 18008 B. Cleanup menu ne réintroduit pas
+   de structures desktop, saveWrite=no.
+5. **LOAD depuis le même menu**, slot09 V11 **5604 B** :
+   overlays, topologie et activation restaurés exactement, session
+   `RESUME-VISIBLE` ; nouveau retour au gameplay avec
+   heap8 **113800**, largest8 **86004**, rotation, strafe,
+   changement d'armes, attaque sur sprite242, animation et riposte
+   ratée `[MONSTERRETAL] MISS-COMMIT`, `rngRollback=yes` au
+   préflight et `gameplayRngCommitted=yes` au commit.
+
+**Évaluation** : PASS CYD ciblé pour cette deuxième frontière,
+START/INTRO/DISPOSAL/EXIT/LOAD/gameplay. Pas de crash, fuite progressive,
+réintroduction ZIP/desktop ou divergence RNG visible dans les traces fournies.
+Le log ne contient pas d'identifiant SHA compilé ; l'empreinte du firmware
+n'est donc pas indépendamment prouvée. Cette validation ne vaut pas
+couverture exhaustive des autres maps ou des scripts.
+
+**Branche #219 encore ouverte** ; ne pas merger dans `main`.
+Prochaine frontière éventuelle : `Game_init` et la shell `Game_t` de
+**4 B** (pointeur parent uniquement), avec audit de tous les consommateurs
+lifecycle avant tout retrait. Ce prochain code ne bénéficie **pas**
+automatiquement du PASS matériel décrit ci-dessus.
+
+---
+
 **Base `main` post-merge #218 vérifiée** :
 `6390a6d42e50a058a05ebc0f4483cb02894f065f`.
 **Branche** : `agent/esp32-retire-generated-doomrpg-oracle`,
