@@ -1940,7 +1940,7 @@ void EspNativeResidentGameplay_serviceMenuExit(struct DoomRPG_s* doomRpgBase) {
      * Legacy Hud/Combat objects are retired: native owners service those roles
      * and neither object belongs to the main-menu cleanup contract. */
     if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
-        doomRpg->render == NULL || doomRpg->game == NULL ||
+        doomRpg->render == NULL || doomRpg->game != NULL ||
         doomRpg->menuSystem == NULL || doomRpg->player != NULL ||
         !EspNativeResidentGameplay_isActive() || EspAssetPack_isOpen()) {
         printf("[SYSEXIT] REFUSED reason=core-or-session-boundary teardown=no saveWrite=no\n");
