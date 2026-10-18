@@ -16,7 +16,8 @@ PORTING_STATUS for runtime ownership and exact CYD evidence.
 
 Current source boundary after [PR #218](https://github.com/Kharn27/DoomRPG-RE/pull/218)
 and [PR #219](https://github.com/Kharn27/DoomRPG-RE/pull/219)
-(current Game ownership code `33835b6dadef03aafe10bdb7874459c287cfeb09`):
+(final code `a59554ed524502d02dbab69149777a94050b0a26`,
+[CI success #39162920720](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39162920720)):
 
 - All **21 original desktop C translation units**, including Game, Render,
   DoomCanvas and DoomRPG, are excluded from firmware compilation.
@@ -35,9 +36,14 @@ and [PR #219](https://github.com/Kharn27/DoomRPG-RE/pull/219)
   mappings, resident session and SYS/EXIT gates refuse non-NULL.
   A zero-byte Game diagnostic stage remains and the native root teardown
   does not free a Game instance.
-- Compact **Canvas/Render** compatibility APIs and selected `--wrap`
-  adapters still serve native callers. Their behavior and owned lifetimes
-  must be retired **individually**, not inferred from the Game result.
+- **Canvas** now retains exactly five externally linked functions:
+  `DoomCanvas_init`, `DoomCanvas_free`, `DoomCanvas_drawString1`,
+  `DoomCanvas_setState`, `DoomCanvas_startup`. The former
+  `DoomCanvas_drawImageSpecial` export is a private static glyph blitter,
+  body unchanged (source-FNV `4c4a9a93`). The remaining Canvas/Render
+  compatibility APIs and selected `--wrap` adapters still serve native
+  callers. Retire each individually; do not infer their ownership from
+  the Game result.
 
 The generic startup/session replaces the historical Junction post-load
 marker ladder (nine source/header pairs); the unrelated ZIP/menu-scene
@@ -47,16 +53,18 @@ reported **158 C/C++ sources and 152 include headers**. Two dormant menu
 scene/overlay wrappers remain because their removal can change compiler
 inlining of active painter functions; handle them separately.
 
-[CI #39160572323](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39160572323)
-verifies the final Game removal on host, normal/bringup/trace builds and
-compiledb/ELF audits: no original desktop C, no generated DoomRPG C, no
-Game_* linked symbol. Static RAM remains 49 488 B normal; Flash
-821 161 B normal. The user supplied a **targeted CYD PASS** for the
-Game removal: START → full intro → Entrance → SYS EXIT → MENU_MAIN →
-LOAD V11 slot09 → resident session stable; heap8 113 816 B in gameplay,
-shapeData/mediaTexels NULL. No complete game coverage, sound playback,
-strict loaded-ELF byte identity, boot SHA fingerprint or combat replay
-for this last hardware log is claimed.
+[CI #39162920720](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39162920720)
+verifies the final Game and five-export Canvas boundary across host,
+normal/bringup/trace builds and compiledb/ELF audits: no original desktop
+C, no generated DoomRPG C, no linked Game_* or public Canvas image blitter.
+Static RAM remains **49 488 B** normal, Flash **820 997 B** normal.
+Real CYD accepted the current Help/About (83 lines / five observed scroll
+positions) → Options → START/intro → Entrance route, with stable framebuffer
+hashes and `heap8=113816 largest8=86004`; shapeData/mediaTexels NULL.
+The last log does not show its boot `exports=5` string or re-test LOAD/combat.
+Earlier Game removal CYD evidence includes EXIT → LOAD V11, but belongs to
+its separate SHA. No strict ELF bytewise identity, full gameplay coverage,
+active audio or runtime SHA fingerprint is claimed.
 
 ## 1. Design rule
 
@@ -145,8 +153,8 @@ Permanent invariants:
 ```text
 Render.shapeData == NULL
 Render.mediaTexels == NULL
-legacy Game.entities == 0 for the migrated native world
-legacy Game.monsters == 0 for the migrated native world
+legacy DoomRPG.game == NULL (no Game_t instance)
+no desktop Game.entities / Game.monsters runtime arrays exist
 ```
 
 Forbidden permanent designs:
