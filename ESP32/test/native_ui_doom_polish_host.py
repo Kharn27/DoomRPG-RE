@@ -22,6 +22,9 @@ resident = (SRC / "esp_native_resident_gameplay.c").read_text()
 load = (SRC / "native_main_menu_actions.c").read_text()
 options = (SRC / "native_main_menu_options_back.c").read_text()
 options_painter = (SRC / "native_main_menu_options_action.c").read_text()
+video = (SRC / "platform_video.cpp").read_text()
+backlight_header = (INC / "esp_native_backlight.h").read_text()
+platformio = (ROOT / "ESP32/platformio.ini").read_text()
 
 def macro(src, name):
     m = re.search(r"^#define\s+" + re.escape(name) + r"\s+([0-9xa-fA-FU]+)", src, re.M)
@@ -101,6 +104,55 @@ for field in logoFields:
     assert field in paintOptions and field in drawMain, field
 assert "DOOMRPG_CANVAS_WIDTH -" not in paintOptions
 assert "DoomRPG_esp32PaintMainMenuOptionsDashboard(" in paintOptions
+
+# Classic CYD GPIO21 backlight owner stays entirely separate from RGB565.
+assert "-D TFT_BL=21" in platformio
+assert "-D TFT_BACKLIGHT_ON=HIGH" in platformio
+assert "#include \"esp_native_backlight.h\"" in video
+assert "#if !defined(TFT_BL) || TFT_BL != 21" in video
+assert "ledcSetup(kBacklightChannel, kBacklightFrequencyHz" in video
+assert "ledcAttachPin(TFT_BL, kBacklightChannel)" in video
+assert "ledcWrite(kBacklightChannel, duty)" in video
+assert "Esp32Backlight_setPercent(uint8_t percent)" in backlight_header
+assert "percent != 25U && percent != 50U" in video
+assert "percent != 75U && percent != 100U" in video
+assert "const uint32_t duty = ((uint32_t)percent * 255U + 50U) / 100U;" in video
+assert "framebuffer[" not in function(video, 'extern "C" int Esp32Backlight_setPercent(')
+
+# Luminosité is a real child screen. Root keeps the original 2-tap navigation
+# while the five child presets are directly selectable with one released tap.
+assert "DoomRPG_esp32PaintMainMenuOptionsDashboardSelection(" in options_painter
+assert '"LUMINOSITE"' in options_painter
+assert '"BRT %u"' not in options_painter
+assert 'strcmp(label, "LUMINOSITE") == 0' in menu
+smallLabel = function(menu, "static void drawLuminositeLabel(")
+assert "static const uint8_t glyphs[10][7]" in smallLabel
+assert "putPixel(render, x + ch * 5 + col, y + row, color)" in smallLabel
+assert "Esp32Backlight_isReady()" in options_painter
+assert "DoomRPG_esp32PaintBrightnessPresetCards(" in options_painter
+presets = function(menu, "int DoomRPG_esp32PaintBrightnessPresetCards(")
+assert '"BACK", "25%", "50%", "75%", "100%"' in presets
+assert "DoomRPG_esp32BrightnessCardRect(item," in presets
+assert "DASH_RAIL_LEFT" in presets and "DASH_RAIL_RIGHT" in presets
+assert "item != 0 && activePercent == percent" in presets
+assert "DoomRPG_esp32MainMenuCardRect(item, &left, &top, &right, &bottom)" in options
+assert "DoomRPG_esp32BrightnessCardRect(item, &left, &top, &right, &bottom)" in options
+assert "luminositeOpen ? luminositeItemAt" in options
+assert "if (luminositeOpen)" in options
+assert "if (armedItem != item)" in options
+assert "if (item == OPTIONS_VIDEO_ITEM)" in options
+assert "luminositeOpen = 1U;" in options
+assert "if (item == 0)" in options
+assert "luminositeOpen = 0U;" in options
+assert "const uint8_t after = (uint8_t)(item * 25U);" in options
+assert "Esp32Backlight_setPercent(after)" in options
+assert "if (!paintLuminositeState())" in options
+assert "nextBrightnessPercent" not in options
+assert "OPTIONSBRIGHTNESS] OPEN" in options
+assert "OPTIONSBRIGHTNESS] BACK" in options
+assert "DoomRPG_esp32MainMenuReturnToMain(" in options
+assert "optionsExpectedFrameFNV" in options
+assert "Input/Sound stay fail-closed" in options
 assert "logoDst.x" in paintOptions and "SDL_RenderCopy(" in paintOptions
 
 assert 'static char noSaveLabel[] = "NO SAVE";' in load
@@ -204,6 +256,20 @@ int main(void) {
         assert(b < DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM);
         if (i < 3) assert(b < DOOMRPG_ESP32_MAIN_MENU_CARD_TOP(i+1));
     }
+    assert(DOOMRPG_ESP32_BRIGHTNESS_CARD_COUNT == 5);
+    assert(10*5-1 <= DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT -
+                     DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT + 1);
+    for (int i = 0; i < DOOMRPG_ESP32_BRIGHTNESS_CARD_COUNT; ++i) {
+        int l, t, r, b;
+        DoomRPG_esp32BrightnessCardRect(i, &l, &t, &r, &b);
+        assert(l == 104 && r == 157);
+        assert(t == 6 + i*22 && b == 25 + i*22);
+        assert(t > DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP);
+        assert(b < DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM);
+        if (i < DOOMRPG_ESP32_BRIGHTNESS_CARD_COUNT-1) {
+            assert(b < DOOMRPG_ESP32_BRIGHTNESS_CARD_TOP(i+1));
+        }
+    }
     s.active = s.packOwned = s.cursorVisible = 1;
     s.expectedLength = 16;
     memset(pixels, 0x55, sizeof(pixels));
@@ -249,4 +315,4 @@ with tempfile.TemporaryDirectory() as d:
     subprocess.run([cc, "-std=c11", "-Wall", "-Wextra", "-Werror",
                     "-I", str(INC), str(src), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print("PASS native Doom UI: full-height 102x120 stretched logo, 54x20 cards, keypad caret")
+print("PASS native Doom UI: full-height logo, Luminosite 5-card child, keypad caret")

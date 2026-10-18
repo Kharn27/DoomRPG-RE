@@ -10,6 +10,7 @@
 #include "esp_native_menu_state.h"
 #include "Render.h"
 #include "esp_native_audio_intent.h"
+#include "esp_native_backlight.h"
 
 #include "native_main_menu_160x120_layout.h"
 #include "native_main_menu_model.h"
@@ -26,6 +27,7 @@
 
 #define OPTIONS_ITEM_COUNT 4
 #define OPTIONS_BACK_ITEM 0
+#define OPTIONS_VIDEO_ITEM 1
 #define OPTIONS_ENABLED_MASK (1U << OPTIONS_BACK_ITEM)
 
 static const char* expectedOptionsItems[OPTIONS_ITEM_COUNT] = {
@@ -35,9 +37,11 @@ static const char* expectedOptionsItems[OPTIONS_ITEM_COUNT] = {
     "Sound"
 };
 
+/* The 10-character French title has a compact 4x7 glyph in the dashboard
+ * painter so it fits within the same 54-pixel-wide protected rail. */
 static const char* optionsDashboardLabels[OPTIONS_ITEM_COUNT] = {
     "BACK",
-    "VIDEO",
+    "LUMINOSITE",
     "INPUT",
     "SOUND"
 };
@@ -109,24 +113,48 @@ static int validateOptionsModel(const EspNativeMenuState_t* menuSystem) {
     return 1;
 }
 
+int DoomRPG_esp32PaintMainMenuOptionsDashboardSelection(
+    struct DoomRPG_s* doomRpgBase,
+    int selectedItem,
+    int armed,
+    uint32_t* framebufferFNV) {
+    DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
+    const char* labels[OPTIONS_ITEM_COUNT] = {
+        optionsDashboardLabels[0],
+        optionsDashboardLabels[1],
+        optionsDashboardLabels[2],
+        optionsDashboardLabels[3]
+    };
+    uint8_t mask = OPTIONS_ENABLED_MASK;
+
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
+        !validateOptionsModel(doomRpg->menuSystem) ||
+        selectedItem < OPTIONS_BACK_ITEM || selectedItem > OPTIONS_VIDEO_ITEM) {
+        return 0;
+    }
+    if (Esp32Backlight_isReady()) mask |= (1U << OPTIONS_VIDEO_ITEM);
+    return DoomRPG_esp32PaintMenuDashboardCards(
+        doomRpg, labels, selectedItem, armed, mask, framebufferFNV);
+}
+
 int DoomRPG_esp32PaintMainMenuOptionsDashboard(
     struct DoomRPG_s* doomRpgBase,
     int backArmed,
     uint32_t* framebufferFNV) {
+    return DoomRPG_esp32PaintMainMenuOptionsDashboardSelection(
+        doomRpgBase, OPTIONS_BACK_ITEM, backArmed, framebufferFNV);
+}
+
+int DoomRPG_esp32PaintMainMenuBrightnessDashboard(
+    struct DoomRPG_s* doomRpgBase,
+    uint32_t* framebufferFNV) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
-
     if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
-        !validateOptionsModel(doomRpg->menuSystem)) {
-        return 0;
-    }
+        !validateOptionsModel(doomRpg->menuSystem) ||
+        !Esp32Backlight_isReady()) return 0;
 
-    return DoomRPG_esp32PaintMenuDashboardCards(
-        doomRpg,
-        optionsDashboardLabels,
-        OPTIONS_BACK_ITEM,
-        backArmed,
-        OPTIONS_ENABLED_MASK,
-        framebufferFNV);
+    return DoomRPG_esp32PaintBrightnessPresetCards(
+        doomRpg, Esp32Backlight_percent(), framebufferFNV);
 }
 
 static int paintOptionsBounded(DoomRPG_t* doomRpg,
@@ -269,7 +297,8 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase,
                menuSystem->items[i].textField,
                menuSystem->items[i].flags,
                menuSystem->items[i].action,
-               i == OPTIONS_BACK_ITEM ? "yes" : "no",
+               (i == OPTIONS_BACK_ITEM ||
+            (i == OPTIONS_VIDEO_ITEM && Esp32Backlight_isReady())) ? "yes" : "no",
                i == menuSystem->selectedIndex ? "yes" : "no");
     }
 
@@ -307,7 +336,8 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase,
 
     SDL_RenderPresent(NULL);
     if (finalFramebufferFNV != NULL) *finalFramebufferFNV = finalHash;
-    printf("[MAINOPTIONS] Presented real MENU_MAIN_OPTIONS model with shared split logo-left/cards-right dashboard paint\n");
+    printf("[MAINOPTIONS] Presented real MENU_MAIN_OPTIONS model with shared split logo-left/cards-right dashboard paint, Luminosite entry brightness=%u ready=%d\n",
+           (unsigned int)Esp32Backlight_percent(), Esp32Backlight_isReady());
     printf("[MAINOPTIONS] READY explicit MENU_MAIN -> MENU_MAIN_OPTIONS composition; no legacy Render_render, no map reload, no gameplay loader\n");
     return 1;
 }

@@ -18,31 +18,9 @@
 
 extern DoomRPG_t* doomRpg;
 
-/* Permanent CONFIG/key-bind storage. Same process-lifetime ABI and exact
- * desktop initializers; Config reads are applied by Game_loadConfig().
- * Neither the touch input owner nor a map session owns these arrays. */
-keyMapping_t keyMapping[12];
-keyMapping_t keyMappingTemp[12];
-keyMapping_t keyMappingDefault[12] = {
-	{AVK_UP | AVK_MENU_UP,				{SDL_SCANCODE_UP,-1,-1,-1,-1,-1,-1,-1,-1,-1}},	// Move forward
-	{AVK_DOWN | AVK_MENU_DOWN,			{SDL_SCANCODE_DOWN,-1,-1,-1,-1,-1,-1,-1,-1,-1}},	// Move backward
-	{AVK_LEFT | AVK_MENU_PAGE_UP,		{SDL_SCANCODE_LEFT,-1,-1,-1,-1,-1,-1,-1,-1,-1}},	// Turn left/page up
-	{AVK_RIGHT | AVK_MENU_PAGE_DOWN,	{SDL_SCANCODE_RIGHT,-1,-1,-1,-1,-1,-1,-1,-1,-1}},	// Turn right/page down
-	{AVK_MOVELEFT,						{SDL_SCANCODE_A,-1,-1,-1,-1,-1,-1,-1,-1,-1}},		// Move left
-	{AVK_MOVERIGHT,						{SDL_SCANCODE_D,-1,-1,-1,-1,-1,-1,-1,-1,-1}},		// Move right
-	{AVK_NEXTWEAPON,					{SDL_SCANCODE_Z,-1,-1,-1,-1,-1,-1,-1,-1,-1}},		// Next weapon
-	{AVK_PREVWEAPON,					{SDL_SCANCODE_X,-1,-1,-1,-1,-1,-1,-1,-1,-1}},		// Prev weapon
-	{AVK_SELECT | AVK_MENU_SELECT,		{SDL_SCANCODE_RETURN,-1,-1,-1,-1,-1,-1,-1,-1,-1}},// Attack/Talk/Use
-	{AVK_PASSTURN,						{SDL_SCANCODE_C,-1,-1,-1,-1,-1,-1,-1,-1,-1}},		// Pass Turn
-	{AVK_AUTOMAP,						{SDL_SCANCODE_TAB,-1,-1,-1,-1,-1,-1,-1,-1,-1}},	// Automap
-	{AVK_MENUOPEN | AVK_MENU_OPEN,		{SDL_SCANCODE_ESCAPE,-1,-1,-1,-1,-1,-1,-1,-1,-1}}	// Open menu/back
-};
-
-void DoomRPG_setDefaultBinds(DoomRPG_t* doomrpg)
-{
-	SDL_memcpy(keyMapping, keyMappingDefault, sizeof(keyMapping));
-	SDL_memcpy(keyMappingTemp, keyMappingDefault, sizeof(keyMapping));
-}
+/* Desktop keyboard/controller mapping storage is retired.
+ * This translation unit retains only the independent native mappings.bin
+ * loader and its fixed memory plan. Touch routing owns input on classic CYD. */
 
 typedef struct MappingPlan_s {
     int texelsCnt;
@@ -263,25 +241,13 @@ boolean Render_loadMappings(Render_t* render)
     return EspLegacyMappings_load(render) ? true : false;
 }
 
-static int configFilePresent(void) {
-    SDL_RWops* rw = SDL_RWFromFile("Config", "r");
-    if (rw == NULL) {
-        return 0;
-    }
-    SDL_RWclose(rw);
-    return 1;
-}
-
 int EspLegacyConfigMappingsStartup_start(int renderStartupReady) {
     uint32_t mappingBytes = 0U;
     MappingPlan_t plan;
     Render_t* render;
-    uint32_t before;
-    uint32_t after;
     uint32_t heapBeforeMappings;
     uint32_t heapAfterMappings;
     uint32_t largestBeforeMappings;
-    int hasConfig;
     boolean mappingsResult;
 
     if (configMappingsAttempted) {
@@ -289,7 +255,7 @@ int EspLegacyConfigMappingsStartup_start(int renderStartupReady) {
     }
     configMappingsAttempted = 1;
 
-    printf("\n=== Doom RPG config + mappings startup probe ===\n");
+    printf("\n=== Doom RPG native config handoff + mappings startup ===\n");
 
     if (!renderStartupReady) {
         printf("[CONFIGMAP] Render startup is not ready; probe skipped safely\n");
@@ -309,18 +275,9 @@ int EspLegacyConfigMappingsStartup_start(int renderStartupReady) {
     printf("[MAPPINGS] mappings.bin bytes=%u backing=pak\n",
            (unsigned int)mappingBytes);
 
-    hasConfig = configFilePresent();
-    printf("[CONFIG] Config file present=%s (missing is valid on first boot)\n",
-           hasConfig ? "yes" : "no");
-
-    before = heap8Free();
-    printf("[CONFIG] -> Game_loadConfig()\n");
-    Game_loadConfig(doomRpg->game);
-    after = heap8Free();
-    printf("[CONFIG] DONE heap delta=%d heap8=%u largest8=%u\n",
-           (int)before - (int)after,
-           (unsigned int)after,
-           (unsigned int)largest8Block());
+    /* Native config is independently restored after SD mount in main.cpp.
+     * Neither the desktop Config file nor its legacy loader is used here. */
+    printf("[CONFIGMAP] Native CYD config restored earlier; legacy Config v23 skipped\n");
 
     render = doomRpg->render;
     heapBeforeMappings = heap8Free();
@@ -360,7 +317,7 @@ int EspLegacyConfigMappingsStartup_start(int renderStartupReady) {
     }
 
     configMappingsReady = 1;
-    printf("[CONFIGMAP] READY config path exercised and mappings resident\n");
+    printf("[CONFIGMAP] READY native config handoff and mappings resident\n");
     printf("[CONFIGMAP] mappingPayload=%u heap8=%u largest8=%u\n",
            (unsigned int)plan.persistentBytes,
            (unsigned int)heapAfterMappings,

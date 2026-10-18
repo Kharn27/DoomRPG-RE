@@ -1,5 +1,147 @@
 # Doom RPG ESP32 — état actuel du port
 
+## PR #218 — clôture matérielle : luminosité persistante, Config v23 et keybindings desktop retirés (18 octobre 2026)
+
+**Base GitHub vérifiée** : `main 8a9c28940b03ab1ee10d5cdc720a26b6f08cbb4e`.
+**Branche** : `agent/esp32-native-backlight-options`,
+[PR #218](https://github.com/Kharn27/DoomRPG-RE/pull/218).
+**Dernier SHA de code validé matériellement** :
+`3c36f7544e537ec96f77c7fa077b66636cd6db0f`.
+CI de ce SHA : [SUCCESS #39127502174](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39127502174)
+et [SUCCESS #39127499576](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39127499576) ;
+tests hôte, builds normaux `esp32-cyd` + bringup + trace, audit ELF/compiledb sur les trois profils.
+**Validation CYD normal du 18 octobre 2026** : l'utilisateur a flashé et exécuté
+ce SHA, fourni les traces de boot, Options/Luminosité, LOAD slot09
+puis déplacements/armes/combats/montée de niveau. **PASS sur le périmètre
+observé, sans prétendre à une couverture exhaustive du jeu**.
+Seul l'utilisateur effectue le merge.
+
+### Frontière de code native / desktop
+
+- `src/Game.c`, `src/Render.c`, `src/DoomCanvas.c` et le
+  `src/DoomRPG.c` desktop ne sont pas des TU compilées par le CYD ;
+  les adaptateurs permanents nécessaires restent bornés.
+- Le pont `esp_legacy_game_bridge.c` possède **3** exports
+  (`Game_init`, `Game_unloadMapData`, `Game_activate`) ;
+  **`Game_loadConfig` est retiré**, comme les lecteurs historiques
+  `File_readByte`/`File_readInt` (ancien TU `esp_doomrpg_config_read.c`
+  supprimé). `[CONFIGMAP]` n'ouvre plus `Config` v23.
+- `keyMapping`, `keyMappingTemp`, `keyMappingDefault`
+  (**12 × 44 = 528 octets chacun**) et
+  `DoomRPG_setDefaultBinds` ont été supprimés de
+  `esp_legacy_config_mappings_startup.c` et de l'init core. Leur
+  ancien décodage PC clavier/souris/manette
+  `DoomRPG_getEventKey`/`DoomRPG_setBind` n'est pas lié :
+  la surface `src/DoomRPG.c/.h` reste **référence desktop intacte**.
+  `EspLegacyConfigMappingsStartup_start` et
+  `Render_loadMappings` continuent à charger `mappings.bin`
+  depuis le PAK natif ; aucune dépendance keybinding n'a été
+  réintroduite. L'audit
+  `--require-retired-doomrpg-keybinds` vérifie l'absence des 6
+  symboles et la présence de l'owner PAK mappings dans les ELF.
+  Tests : `desktop_keybind_retirement_host.py` remplace le
+  test de parité d'un état désormais inexistant.
+- **Gain démontré**, profil `esp32-cyd` :
+  RAM statique `51072 -> 49488` octets (**1584 libérés**),
+  flash `821881 -> 821285` octets (**596 libérés**).
+  La preuve hardware correspond aussi :
+  après mappings, heap8 `153308 -> 154892` ;
+  après une écriture SD, `153108 -> 154692` ;
+  `largest8=110580` avant/après. Les allocations ponctuelles SD
+  de 200 B sont observées séparément, **pas attribuées au
+  retrait keybinding ni qualifiées de fuite**.
+
+### Configuration native et sous-menu vidéo
+
+- Backlight classic CYD GPIO21 actif haut, LEDC 5000 Hz/8 bits,
+  canal 7, valeurs **25/50/75/100 %** (jamais 0 %).
+- Dans Options, carte `LUMINOSITE` ; deux taps relâchés pour
+  ouvrir le sous-menu, puis **un tap** sur un preset, BACK
+  enfant vers Options et Back parent vers MENU_MAIN.
+  Logo PAK étiré **102 × 120** à `x=0` intact, rail droit repeint
+  sans rerender du monde, Input et Sound encore différés.
+- Nouveau fichier SD `/DoomRPG-ESP32.cfg`, **12 octets**,
+  magic `DRCF`, version 1, pourcentage, réservés zéro et
+  FNV-1a LE32. Pas de conversion de `Config` v23 ni de
+  dépendance aux `.sav` ou au ZIP runtime. Ouverture
+  **après montage SD et avant affichage du menu**.
+  Premier boot sans fichier = défaut 100 %, aucune création
+  de fichier avant changement. Écriture vérifiée dans `.tmp`,
+  sauvegarde `.bak`, promotion puis relecture ; backup valide
+  récupérable après primaire invalide. Échec d'écriture
+  **avant PWM**, pas de faux commit visuel.
+- Hardware initial de la sous-fonction avant retrait keybindings :
+  `[NATIVECONFIG] LOAD ... first-run-missing percent=100 write=no`,
+  `[NATIVECONFIG] SAVE ... percent=50 bytes=12`,
+  `[BACKLIGHT] SET percent=50 duty=128/255`, **débranchement
+  et rebranchement**, `LOAD source=primary result=valid ...
+  brightness=50` ; valeur conservée visuellement.
+- Hardware du SHA final : boot
+  `[NATIVECONFIG] LOAD source=primary result=valid
+  version=1 bytes=12 brightness=100 write=no`, puis
+  `SAVE result=committed percent=75 bytes=12`,
+  `[BACKLIGHT] SET percent=75 duty=191/255`,
+  `[OPTIONSBRIGHTNESS] SELECT percent=100->75 changed=yes`,
+  navigation enfant/parent correcte. `heap8=154692` après
+  écriture, puis stable durant la session observée.
+- Tests `native_config_host.py` + `native_config_codec_host.c` :
+  magic/version/checksum, tailles tronquées, quatre valeurs,
+  refus d'SD absente, premier démarrage sans fichier,
+  relances, corruption, backup et rollback avec mocks SD
+  (ces tests ne remplacent pas le test matériel).
+
+### Preuve gameplay après désengagement
+
+- `[CORE] ... exports=3`, `[CONFIGMAP] Native CYD config
+  restored earlier; legacy Config v23 skipped`,
+  `[MAPPINGS] INSTALLED payload=8376 heap8=154892`,
+  menu `framebufferFNV=0f2c9fc3`, logo
+  `05aa37e1`, `shapeData=mediaTexels=0x0`.
+- LOAD `/DoomRPG-ESP32-slot09.sav` : **v11, 5604 B**,
+  `/intro.bsp`/Entrance, `arenaFNV=c3882516`.
+  Ressources, états scripts/lignes/caisses, topologie,
+  positions et activation restaurés depuis le checkpoint ;
+  `MONSTERSTATE ... enemies=30`,
+  `MONSTERACT ... activeCount=12`,
+  `V9-SPATIAL-STAGE ... exact=yes`,
+  `[ENGINESESSION] RESUME-VISIBLE` puis `READY`.
+  Aucun moteur desktop Entity n'a été instancié.
+- Touch réel : `TURN_LEFT` `128->192`, `TURN_RIGHT`
+  `192->128`, `STRAFE_LEFT` `209->241`, `STRAFE_RIGHT`
+  `241->242`, `NEXT_WEAPON` `0->1->2`.
+  Tour de monstres ordonné sur mouvements.
+  `SELECT` sur sprite 242 : `MONSTERCOMBAT` commit
+  `hp=6->1`, attaque monstre et
+  `[MONSTERRETAL] COMMIT ... playerHP=30->28 armor=20->18`
+  après animation ; deuxième attaque tue ce sprite,
+  déclenche `[LEVELUP] PRESENT/CLOSE level=1->2`
+  avec fermeture par tap. Sprite 241 ensuite tué
+  (critical, drop visible, XP), puis `FORWARD 241->209`.
+  Cela démontre la continuité des touch actions natives,
+  pas une nouvelle validation exhaustive de l'IA.
+- **RAM en jeu observée** : `[ALIVE] heap8=113592
+  largest8=86004` stable à travers les commandes
+  envoyées ; `[RAMBUDGET] ... HEADROOM_OK` ;
+  `shapeData==NULL`, `mediaTexels==NULL`.
+  Aucun crash, assert, RNG replay diverged ou
+  rollback fail relevé **dans cette trace fournie**.
+- Les logs de probes qui impriment encore
+  `Game_loadConfig still NOT executed` sont une
+  **mention textuelle historique** d'une API désormais
+  non liée, pas une invocation de la fonction. Leur
+  nettoyage est cosmétique, hors de ce checkpoint docs-only.
+
+**État** : jalon **merge-ready** pour la partie native
+config/backlight + retrait keybinding, à condition que la
+review GitHub n'ouvre pas de nouveau problème de code.
+Aucun commit de production nécessaire après ce PASS ;
+les commits suivants de clôture sont **docs-only**.
+Ne pas merger dans `main` sans demande explicite.
+Au prochain jalon, après confirmation du merge,
+relire le **vrai main** et repartir de son SHA exact.
+
+---
+
 ## PR #217 — correctif de code review P2, écran Options (16 octobre 2026)
 
 **Correctif post-clôture demandé par la review GitHub** :

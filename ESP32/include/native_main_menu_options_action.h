@@ -16,9 +16,22 @@ struct DoomRPG_s;
 int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpg,
                                          uint32_t* finalFramebufferFNV);
 
-/* Repaint the shared dashboard band for Options interaction feedback. Back is
- * the sole enabled card for now; the other three remain visible and subdued.
- */
+/* Repaint only the shared right-hand rail; selectedItem is 0 (Back) or
+ * 1 (Luminosité child entry), armed is the first-tap visual confirmation state.
+ * Input/Sound remain disabled, and the left logo remains untouched. */
+int DoomRPG_esp32PaintMainMenuOptionsDashboardSelection(
+    struct DoomRPG_s* doomRpg,
+    int selectedItem,
+    int armed,
+    uint32_t* framebufferFNV);
+
+/* Paint five bounded preset cards into the same right-hand rail while
+ * keeping the immutable native Options model and the left logo intact. */
+int DoomRPG_esp32PaintMainMenuBrightnessDashboard(
+    struct DoomRPG_s* doomRpg,
+    uint32_t* framebufferFNV);
+
+/* Compatibility entry used for initial Options composition. */
 int DoomRPG_esp32PaintMainMenuOptionsDashboard(
     struct DoomRPG_s* doomRpg,
     int backArmed,

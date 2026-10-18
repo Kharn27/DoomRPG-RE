@@ -1,5 +1,135 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #218 — luminosité native persistante et retrait du keybinding desktop : protocole clos (18 octobre 2026)
+
+**Base `main`** :
+`8a9c28940b03ab1ee10d5cdc720a26b6f08cbb4e` ;
+branche `agent/esp32-native-backlight-options`,
+[PR #218](https://github.com/Kharn27/DoomRPG-RE/pull/218).
+**Dernier SHA de code validé sur le vrai CYD classic** :
+`3c36f7544e537ec96f77c7fa077b66636cd6db0f`.
+[CI SUCCESS #39127502174](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39127502174)
+et [#39127499576](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39127499576)
+(host, `esp32-cyd`, bringup, trace, ELF).
+Le test matériel transmis couvre boot + Options/Luminosité + Load Game slot09
+et déplacements/combats ; il valide cette frontière, pas tout Doom RPG.
+L'utilisateur merge lui-même après review.
+
+### Utiliser le réglage sur la carte
+
+1. Flash normal : `cd ESP32 && pio run -e esp32-cyd -t upload -t monitor`.
+   À l'initialisation, `PlatformVideo_begin` installe le PWM
+   **GPIO21 actif HIGH**, 5 kHz/8 bits, canal 7, valeur initiale
+   **100 %** ; puis `SD.begin` et
+   `EspNativeConfig_loadAtBoot(sdReady ? 1 : 0)`.
+2. Naviguer **MENU_MAIN → Options** (deux taps relâchés sur Options),
+   puis **LUMINOSITE** (deux taps relâchés sur sa carte).
+   Dans le sous-menu du rail droit, **un tap** choisit
+   25, 50, 75 ou 100 %. La carte courante est soulignée
+   par le focus rouge. BACK du sous-menu est à un tap ;
+   Back d'Options demande deux taps et ramène au menu principal.
+   INPUT et SOUND restent désactivés.
+3. Le fichier persistant est exclusivement
+   **`/DoomRPG-ESP32.cfg` à la racine de la microSD**,
+   non `Config`, non `.sav`, non le `.pak` et non le ZIP.
+   Format : **12 B**, `DRCF`, version 1, pourcentage (25/50/75/100),
+   réservés zéro et checksum FNV-1a LE32.
+   Aucune option PC, souris ou manette n'est migrée.
+   **Premier boot sans fichier** : c'est valide, 100 %,
+   aucun fichier créé automatiquement.
+4. Une sélection différente commence par
+   `[NATIVECONFIG] SAVE result=committed version=1 percent=75 ...`,
+   puis `[BACKLIGHT] SET percent=75 duty=191/255`.
+   Écriture : `.cfg.tmp` puis read-back + `.cfg.bak` puis
+   renommage et relecture. Si SD en erreur, **pas de
+   changement PWM** ; si primaire absente/invalide
+   mais backup valide, chargement backup ; sinon
+   défaut sûr 100 %. Le loader ne lit jamais une
+   entrée desktop `Config` v23.
+5. Débranchement/rebranchement réapplique le fichier
+   au début du boot. Le **PASS de restauration réellement
+   montré** est celui de 50 % sur la première révision du
+   sous-menu : `LOAD source=primary ... brightness=50`.
+   Le dernier SHA démarre aussi avec fichier valide à
+   `brightness=100`, puis enregistre correctement 75 %.
+   **Un redémarrage après le changement à 75 % n'a
+   pas été fourni** ; ne pas lui attribuer un PASS fictif.
+
+### Ce qui a été désengagé, et ce qui reste
+
+- Le firmware ESP32 ne compile pas `src/Game.c`. Son pont
+  `esp_legacy_game_bridge.c` ne possède plus que **3**
+  fonctions de compatibilité :
+  `Game_init`, `Game_unloadMapData`, `Game_activate`.
+  `Game_loadConfig`, ainsi que les lecteurs desktop
+  `File_readByte` et `File_readInt` sont retirés,
+  anciens tests et audits positifs remplacés.
+- Les trois tableaux de configuration clavier
+  `keyMapping[12]`, `keyMappingTemp[12]`,
+  `keyMappingDefault[12]`, plus leur fonction
+  `DoomRPG_setDefaultBinds`, ne sont plus dans
+  les TU ESP32. Leurs **1584 B** sont récupérés
+  en stockage statique. Le décodage souris/clavier/manette
+  de `src/DoomRPG.c` n'est pas lié et ce fichier reste
+  référence du port desktop, intact.
+- Le toucher sur classic CYD utilise
+  `platform_input.cpp`, les dispatchers UI et
+  `esp_native_gameplay_input.c`. Le lecteur
+  natif de ressources PAK `Render_loadMappings` est
+  **maintenu** ; ne pas confondre mappings de textures
+  avec key bindings.
+- L'audit ELF
+  `--require-retired-doomrpg-keybinds` vérifie
+  que les six symboles desktop sont absents des
+  owners et du binaire final sur les trois profils.
+  `desktop_keybind_retirement_host.py` couvre
+  les frontières touch/mappings, et
+  `native_config_host.py` valide stockage simulé,
+  version, corruption, redémarrage et rollback.
+  Ils ne remplacent pas les logs réels de la carte.
+
+### Mesures et critères matériels clos
+
+Le firmware normal passe de **51072 à 49488 B**
+de RAM statique (**1584 B économisés**), et de
+**821881 à 821285 B** en flash (**596 B économisés**).
+`heap8` post-mappings progresse de `153308`
+à `154892`, `largest8=110580`.
+Après changement SD : `154692` (delta
+de -200 B dû à l'utilisation SD, observé avant/après retrait).
+Sur le gameplay restauré du slot09 :
+`heap8=113592`, `largest8=86004` stables.
+
+Trace du 18 octobre, même firmware :
+`[NATIVECONFIG] LOAD source=primary ... brightness=100`,
+`[OPTIONSBRIGHTNESS] SELECT percent=100->75`,
+`[NATIVECONFIG] SAVE ... percent=75`,
+`[BACKLIGHT] SET percent=75`,
+BACK enfant puis parent, `[NATIVESAVE] LOAD ... version=11
+bytes=5604 map=1`, `V9-SPATIAL-STAGE ... exact=yes`,
+`[ENGINESESSION] RESUME-VISIBLE map=1`.
+Les taps monde confirmés incluent `TURN_LEFT`,
+`TURN_RIGHT`, `STRAFE_LEFT`, `STRAFE_RIGHT`,
+`NEXT_WEAPON`, `SELECT`, `FORWARD`.
+Attaques et ripostes commit, monté de niveau 1→2
+avec popup/tap, gib et drop natifs présents.
+`shapeData==NULL`, `mediaTexels==NULL`
+sur les frontières contrôlées ; aucun avertissement
+de divergence RNG dans ces logs.
+
+**Statut : merge-ready sous réserve de la review**,
+clôture post-hardware en commits **docs-only**.
+Pas de nouveau code après les logs de PASS.
+En cas de nouveau commentaire review impliquant un changement
+de code, refaire la CI et un test ciblé sur le CYD :
+la validation matérielle ne se transmet pas
+automatiquement à une variante non flashée.
+Ne pas merger dans `main` sans demande explicite.
+Au prochain jalon après merge, lire le nouveau SHA de
+`main` et ses deux documents de référence.
+
+---
+
 ## PR #217 — follow-up de code review : Options aligné sur MENU_MAIN (16 octobre 2026)
 
 Après la clôture initiale `7c866696`/docs `909e7e37`,

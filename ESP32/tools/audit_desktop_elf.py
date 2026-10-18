@@ -165,8 +165,8 @@ def main():
     parser.add_argument("--require-native-doomrpg-presentation", action="store_true")
     parser.add_argument("--require-native-doomrpg-clock", action="store_true")
     parser.add_argument("--require-native-doomrpg-rng", action="store_true")
-    parser.add_argument("--require-native-doomrpg-config-read", action="store_true")
-    parser.add_argument("--require-native-doomrpg-config-binds", action="store_true")
+    parser.add_argument("--require-retired-doomrpg-config-read", action="store_true")
+    parser.add_argument("--require-retired-doomrpg-keybinds", action="store_true")
     args = parser.parse_args()
     reports = audit(args.build, args.repo.resolve(), args.nm, args.compiledb)
     if args.require_retired_doomrpg:
@@ -207,73 +207,58 @@ def main():
         print("PASS DoomRPG.c generated/original admission=0 linkedInput=0 "
               "nativeRoot=1 nativeCoreMethods=3 rootLifetime=process")
         return
-    if args.require_native_doomrpg_config_binds:
+    if args.require_retired_doomrpg_keybinds:
         if args.compiledb is None:
-            parser.error("--require-native-doomrpg-config-binds requires compiledb")
-        # Xtensa GCC may emit uninitialized globals as tentative COMMON
-        # ('C') in the owner object; the linker resolves them to final BSS.
-        # The end-of-link ABI still requires exactly one BSS definition.
-        required = {"keyMapping": "B", "keyMappingTemp": "B",
-                    "keyMappingDefault": "D", "DoomRPG_setDefaultBinds": "T"}
+            parser.error("--require-retired-doomrpg-keybinds requires compiledb")
+        retired = {"keyMapping", "keyMappingTemp", "keyMappingDefault",
+                   "DoomRPG_setDefaultBinds",
+                   "DoomRPG_getEventKey", "DoomRPG_setBind"}
+        if reports["desktop_original_units"] or reports["DoomRPG"]["admitted"]:
+            parser.exit(1, "FAIL: desktop input source admitted into CYD build\n")
         generated = {row["symbol"] for row in reports["DoomRPG"]["symbols"]}
-        if generated & required.keys() or reports["desktop_original_units"]:
-            parser.exit(1, "FAIL: legacy config binds still defined/admitted\n")
+        if generated & retired:
+            parser.exit(1, "FAIL: retired desktop keybind symbols in generated C\n")
         owner = args.build / "src" / "esp_legacy_config_mappings_startup.c.o"
         if not owner.is_file():
-            parser.exit(1, "FAIL: native config binds owner missing\n")
-        def owned(path):
-            output = subprocess.check_output(
-                [str(args.nm), "-g", "--defined-only", str(path)], text=True)
-            found = {name: [] for name in required}
-            for line in output.splitlines():
-                fields = line.split()
-                if len(fields) >= 3 and fields[-1] in found:
-                    found[fields[-1]].append(fields[-2].upper())
-            return found
-        native = owned(owner)
-        final = owned(args.build / "firmware.elf")
-        for name, kind in required.items():
-            owner_kinds = ("B", "C") if kind == "B" else (kind,)
-            if len(native[name]) != 1 or native[name][0] not in owner_kinds or final[name] != [kind]:
-                parser.exit(1, "FAIL: config binding owner/ELF symbol " +
-                            name + ": " + str(native[name]) + "/" +
-                            str(final[name]) + "\n")
-        print("PASS native config key-bind globals=3 BSS=2 DATA=1 "
-              "reset=1 generated=0 desktopOriginal=0")
+            parser.exit(1, "FAIL: required native PAK mappings loader missing\n")
+        def symbols(path):
+            lines = subprocess.check_output(
+                [str(args.nm), "-g", "--defined-only", str(path)],
+                text=True).splitlines()
+            return {words[-1] for line in lines
+                    if len(words := line.split()) >= 3}
+        for path in (owner, args.build / "src" / "engine_stubs.c.o",
+                     args.build / "firmware.elf"):
+            remaining = symbols(path) & retired
+            if remaining:
+                parser.exit(1, "FAIL: retired keybind symbols in " + str(path) +
+                            ": " + str(sorted(remaining)) + "\n")
+        print("PASS desktop keybinding retirement globals=0 reset=0 "
+              "keyboardMouseController=unlinked mappingsPAK=retained "
+              "reclaimedStaticBytes=1584")
         return
-    if args.require_native_doomrpg_config_read:
+    if args.require_retired_doomrpg_config_read:
         if args.compiledb is None:
-            parser.error("--require-native-doomrpg-config-read requires compiledb")
-        names = {"File_readByte", "File_readInt"}
+            parser.error("--require-retired-doomrpg-config-read requires compiledb")
+        names = {"File_readByte", "File_readInt", "Game_loadConfig"}
         generated = {row["symbol"] for row in reports["DoomRPG"]["symbols"]}
         if generated & names or reports["desktop_original_units"]:
-            parser.exit(1, "FAIL: legacy config reader definition/source leaked\n")
-        owner = args.build / "src" / "esp_doomrpg_config_read.c.o"
-        if not owner.is_file():
-            parser.exit(1, "FAIL: native config reader owner not built\n")
-        owner_nm = subprocess.check_output(
-            [str(args.nm), "--defined-only", str(owner)], text=True)
-        own = {}
-        for line in owner_nm.splitlines():
-            fields = line.split()
-            if len(fields) >= 3:
-                own.setdefault(fields[-1], []).append(fields[-2])
-        if any(own.get(name) != ["T"] for name in names):
-            parser.exit(1, "FAIL: native config reader owner symbols: " +
-                        str(own) + "\n")
-        elf_nm = subprocess.check_output(
+            parser.exit(1, "FAIL: desktop Config v23 reader still compiled\n")
+        retired_object = args.build / "src" / "esp_doomrpg_config_read.c.o"
+        if retired_object.exists():
+            parser.exit(1, "FAIL: retired Config reader object still compiled\n")
+        for filename in ("esp_native_config_codec.c.o", "esp_native_config.cpp.o"):
+            if not (args.build / "src" / filename).is_file():
+                parser.exit(1, "FAIL: missing native config owner " + filename + "\n")
+        linked_nm = subprocess.check_output(
             [str(args.nm), "-g", "--defined-only",
              str(args.build / "firmware.elf")], text=True)
-        found = {name: 0 for name in names}
-        for line in elf_nm.splitlines():
-            fields = line.split()
-            if len(fields) >= 3 and fields[-2].upper() == "T" and fields[-1] in found:
-                found[fields[-1]] += 1
-        if any(n != 1 for n in found.values()):
-            parser.exit(1, "FAIL: config readers linked count: " +
-                        str(found) + "\n")
-        print("PASS native config readers linked=2 generated=0 "
-              "signedByte=preserved LE32=preserved")
+        linked = [line.split()[-1] for line in linked_nm.splitlines()
+                  if len(line.split()) >= 3]
+        if any(name in linked for name in names):
+            parser.exit(1, "FAIL: desktop Config v23 symbols still linked\n")
+        print("PASS retired desktop Config v23 methods=3 oldTU=absent "
+              "nativeConfig=codec+SD-IO")
         return
     if args.require_native_doomrpg_rng:
         if args.compiledb is None:
