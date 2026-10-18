@@ -5,6 +5,8 @@ root=Path(__file__).resolve().parents[2]
 sprite=(root/"ESP32/src/esp_native_sprite_renderer.c").read_text()
 resident=(root/"ESP32/src/esp_native_resident_gameplay.c").read_text()
 frame=(root/"ESP32/src/esp_native_gameplay_frame.c").read_text()
+dynamic=(root/"ESP32/src/esp_native_dynamic_line_render.c").read_text()
+platformio=(root/"ESP32/platformio.ini").read_text()
 legacy=(root/"src/Render.c").read_text(encoding="latin-1")
 assert "render->animFrameTime" in legacy
 assert "EspNativeAmbientSprite_frame(" in sprite
@@ -15,6 +17,13 @@ assert "EspNativeSpriteRenderer_resetAmbient()" in resident
 assert "EspNativeGameplayPresentGate_isArmed()" in resident
 assert "renderComposed(render,v,(uint8_t)v->viewAngle,1,1,stats)" in frame
 assert "if (!preview && EspMapAutomapState_isReady())" in sprite
+assert "-Wl,--wrap=EspNativeGameplayFrame_renderAmbient" in platformio
+assert "int __wrap_EspNativeGameplayFrame_renderAmbient(" in dynamic
+assert "beginDynamicPreview()" in dynamic
+assert 'endDynamicPreview(ok, "ambient")' in dynamic
+assert "__real_EspNativeGameplayFrame_renderAmbient(render, outStats)" in dynamic
+assert "if (open == 0U) return 1;" in dynamic
+assert "resolveDynamicTexture(index, outLine->texture" in dynamic
 code=r"""
 #include <assert.h>
 #include <stdint.h>

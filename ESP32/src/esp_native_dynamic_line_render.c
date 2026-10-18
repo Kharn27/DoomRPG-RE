@@ -58,6 +58,9 @@ int __real_EspNativeGameplayFrame_renderTurn(
     struct Render_s* render,
     uint8_t angle,
     EspNativeGameplayFrameStats* outStats);
+int __real_EspNativeGameplayFrame_renderAmbient(
+    struct Render_s* render,
+    EspNativeGameplayFrameStats* outStats);
 int __real_EspNativeGameplayFrame_composeTurn(
     struct Render_s* render,
     uint8_t angle,
@@ -347,6 +350,19 @@ static int endDynamicPreview(int rendered, const char* kind) {
                (unsigned int)dynamicAnimationFault);
     }
     return ok;
+}
+
+/* Ambient is the same read-only camera path as MOVE/ROTATE previews.
+ * Without this scope, EV_UNLOCK textures fall back to immutable red and any
+ * opened door trips the old first-frame closed-only witness. Never bypass the
+ * line-state + texture-state overlays, even for presentation-only redraws. */
+int __wrap_EspNativeGameplayFrame_renderAmbient(
+    struct Render_s* render,
+    EspNativeGameplayFrameStats* outStats) {
+    int ok;
+    if (!beginDynamicPreview()) return 0;
+    ok = __real_EspNativeGameplayFrame_renderAmbient(render, outStats);
+    return endDynamicPreview(ok, "ambient");
 }
 
 int __wrap_EspNativeGameplayFrame_composeTurn(
