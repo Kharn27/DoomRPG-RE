@@ -263,25 +263,13 @@ boolean Render_loadMappings(Render_t* render)
     return EspLegacyMappings_load(render) ? true : false;
 }
 
-static int configFilePresent(void) {
-    SDL_RWops* rw = SDL_RWFromFile("Config", "r");
-    if (rw == NULL) {
-        return 0;
-    }
-    SDL_RWclose(rw);
-    return 1;
-}
-
 int EspLegacyConfigMappingsStartup_start(int renderStartupReady) {
     uint32_t mappingBytes = 0U;
     MappingPlan_t plan;
     Render_t* render;
-    uint32_t before;
-    uint32_t after;
     uint32_t heapBeforeMappings;
     uint32_t heapAfterMappings;
     uint32_t largestBeforeMappings;
-    int hasConfig;
     boolean mappingsResult;
 
     if (configMappingsAttempted) {
@@ -289,7 +277,7 @@ int EspLegacyConfigMappingsStartup_start(int renderStartupReady) {
     }
     configMappingsAttempted = 1;
 
-    printf("\n=== Doom RPG config + mappings startup probe ===\n");
+    printf("\n=== Doom RPG native config handoff + mappings startup ===\n");
 
     if (!renderStartupReady) {
         printf("[CONFIGMAP] Render startup is not ready; probe skipped safely\n");
@@ -309,18 +297,9 @@ int EspLegacyConfigMappingsStartup_start(int renderStartupReady) {
     printf("[MAPPINGS] mappings.bin bytes=%u backing=pak\n",
            (unsigned int)mappingBytes);
 
-    hasConfig = configFilePresent();
-    printf("[CONFIG] Config file present=%s (missing is valid on first boot)\n",
-           hasConfig ? "yes" : "no");
-
-    before = heap8Free();
-    printf("[CONFIG] -> Game_loadConfig()\n");
-    Game_loadConfig(doomRpg->game);
-    after = heap8Free();
-    printf("[CONFIG] DONE heap delta=%d heap8=%u largest8=%u\n",
-           (int)before - (int)after,
-           (unsigned int)after,
-           (unsigned int)largest8Block());
+    /* Native config is independently restored after SD mount in main.cpp.
+     * Neither SDL_RWFromFile("Config") nor Game_loadConfig is allowed here. */
+    printf("[CONFIGMAP] Native CYD config restored earlier; legacy Config v23 skipped\n");
 
     render = doomRpg->render;
     heapBeforeMappings = heap8Free();
@@ -360,7 +339,7 @@ int EspLegacyConfigMappingsStartup_start(int renderStartupReady) {
     }
 
     configMappingsReady = 1;
-    printf("[CONFIGMAP] READY config path exercised and mappings resident\n");
+    printf("[CONFIGMAP] READY native config handoff and mappings resident\n");
     printf("[CONFIGMAP] mappingPayload=%u heap8=%u largest8=%u\n",
            (unsigned int)plan.persistentBytes,
            (unsigned int)heapAfterMappings,
