@@ -25,9 +25,23 @@ aux mesures CI #218 : normal **49 488 / 821 285 B**, bringup
 **49 640 / 841 901 B**, trace **49 536 / 837 889 B**.
 Le bloc de patch SDL a été comparé textuellement au `main`
 de base : **8 017 caractères identiques**.
-Il n'existe pas de comparatif strict des sections ELF chargées ni de
-nouveau flash matériel associé à cette passe de nettoyage.
-Pour l'état précis et les limites, voir [PORTING_STATUS.md](PORTING_STATUS.md).
+Il n'existe pas de comparatif strict des sections ELF chargées.
+**PASS hardware normal #219 reçu le 18 octobre 2026**, après flash de cette
+branche par l'utilisateur : restauration de la luminosité 75 %, boot SD/PAK,
+MENU_MAIN → LOAD slot09 V11 → Entrance, reprise des monstres et cache,
+PASS_TURN/riposte, combats et mort de monstres, LEVELUP 1→2, animation
+de mouvement/rotation/strafe et pickup dynamique Bullet Clip. Série
+`heap8=113800 largest8=86004` stable en jeu ;
+`shapeData=0x0 mediaTexels=0x0`. Pas d'erreur Serial observée.
+Le SHA du firmware n'est pas imprimé dans le log ; ce PASS est donc
+attribué **au test de la branche #219**, pas à une empreinte binaire
+indépendamment vérifiée. Ne pas l'étendre aux cas non exercés.
+
+**La branche reste ouverte** : la prochaine tranche étudie le
+pont `Game_t` minimal. Tout nouveau changement de code exige ses
+propres validations ; aucune modification firmware ne suit ce PASS dans
+ce seul commit documentaire.
+Pour le détail de la preuve, voir [PORTING_STATUS.md](PORTING_STATUS.md).
 
 ---
 
