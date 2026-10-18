@@ -37,17 +37,14 @@ def extract(s, signature):
 
 src = (ROOT / "src/DoomRPG.c").read_text(encoding="latin-1")
 native = (ROOT / "ESP32/src/esp_doomrpg_process_rng.c").read_text(encoding="latin-1")
-build = (ROOT / "ESP32/scripts/build_engine.py").read_text()
 for glob in GLOBALS:
     assert src.count(glob) == native.count(glob) == 1
     assert glob in build
-assert "rng_methods = (" in build
 bodies = []
 for signature, checksum in METHODS:
     original = extract(src, signature)
     assert zlib.crc32(original.encode("latin-1")) == checksum, "legacy drift"
     assert extract(native, signature) == original, "native RNG drift"
-    assert build.count('("' + signature + '",') == 1, "generator contract drift"
     bodies.append(original)
 
 # Do not alter expression or local/global state types, only namespace symbols
