@@ -16,7 +16,7 @@ PORTING_STATUS for runtime ownership and exact CYD evidence.
 
 Current source boundary after [PR #218](https://github.com/Kharn27/DoomRPG-RE/pull/218)
 and [PR #219](https://github.com/Kharn27/DoomRPG-RE/pull/219)
-(code `04b696ffbb6cfd76b7c2ef00c1260a202752e979`):
+(current Game ownership code `33835b6dadef03aafe10bdb7874459c287cfeb09`):
 
 - All **21 original desktop C translation units**, including Game, Render,
   DoomCanvas and DoomRPG, are excluded from firmware compilation.
@@ -29,9 +29,15 @@ and [PR #219](https://github.com/Kharn27/DoomRPG-RE/pull/219)
   presentation, process clocks/RNG and the small process root/teardown.
   Desktop Config v23 readers and keyboard/controller binding tables are
   retired; brightness persistence belongs to the native SD config.
-- Compact Game/Canvas/Render ABI shells and selected `--wrap` adapters
-  still serve native callers; removing a desktop TU does not authorize
-  deleting a live compatibility function or mixing owner lifetimes.
+- **Game**: no `Game_t` process allocation and no linked `Game_*`
+  provider remain. The historical `doomRpg->game` root field is retained
+  for layout compatibility but is **always NULL** on CYD; startup, intro,
+  mappings, resident session and SYS/EXIT gates refuse non-NULL.
+  A zero-byte Game diagnostic stage remains and the native root teardown
+  does not free a Game instance.
+- Compact **Canvas/Render** compatibility APIs and selected `--wrap`
+  adapters still serve native callers. Their behavior and owned lifetimes
+  must be retired **individually**, not inferred from the Game result.
 
 The generic startup/session replaces the historical Junction post-load
 marker ladder (nine source/header pairs); the unrelated ZIP/menu-scene
@@ -41,11 +47,16 @@ reported **158 C/C++ sources and 152 include headers**. Two dormant menu
 scene/overlay wrappers remain because their removal can change compiler
 inlining of active painter functions; handle them separately.
 
-[CI #39130682162](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39130682162)
-verifies host tests, builds and compiledb/ELF exclusion across normal,
-bringup and trace. RAM/Flash values match the #218 baseline across all
-three profiles, but no strict loaded-ELF byte identity or new CYD hardware
-PASS is claimed for the generator-only cleanup.
+[CI #39160572323](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39160572323)
+verifies the final Game removal on host, normal/bringup/trace builds and
+compiledb/ELF audits: no original desktop C, no generated DoomRPG C, no
+Game_* linked symbol. Static RAM remains 49 488 B normal; Flash
+821 161 B normal. The user supplied a **targeted CYD PASS** for the
+Game removal: START → full intro → Entrance → SYS EXIT → MENU_MAIN →
+LOAD V11 slot09 → resident session stable; heap8 113 816 B in gameplay,
+shapeData/mediaTexels NULL. No complete game coverage, sound playback,
+strict loaded-ELF byte identity, boot SHA fingerprint or combat replay
+for this last hardware log is claimed.
 
 ## 1. Design rule
 
