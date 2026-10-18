@@ -37,11 +37,11 @@ static const char* expectedOptionsItems[OPTIONS_ITEM_COUNT] = {
     "Sound"
 };
 
-/* The brightness value is rendered from the hardware owner on each repaint.
- * Seven glyphs at 7 px fit the existing 54 px dashboard card. */
+/* The 10-character French title has a compact 4x7 glyph in the dashboard
+ * painter so it fits within the same 54-pixel-wide protected rail. */
 static const char* optionsDashboardLabels[OPTIONS_ITEM_COUNT] = {
     "BACK",
-    "BRT 100",
+    "LUMINOSITE",
     "INPUT",
     "SOUND"
 };
@@ -119,10 +119,9 @@ int DoomRPG_esp32PaintMainMenuOptionsDashboardSelection(
     int armed,
     uint32_t* framebufferFNV) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
-    char brightnessLabel[10];
     const char* labels[OPTIONS_ITEM_COUNT] = {
         optionsDashboardLabels[0],
-        brightnessLabel,
+        optionsDashboardLabels[1],
         optionsDashboardLabels[2],
         optionsDashboardLabels[3]
     };
@@ -134,9 +133,6 @@ int DoomRPG_esp32PaintMainMenuOptionsDashboardSelection(
         return 0;
     }
     if (Esp32Backlight_isReady()) mask |= (1U << OPTIONS_VIDEO_ITEM);
-    (void)snprintf(brightnessLabel, sizeof(brightnessLabel),
-                   "BRT %u", (unsigned int)Esp32Backlight_percent());
-
     return DoomRPG_esp32PaintMenuDashboardCards(
         doomRpg, labels, selectedItem, armed, mask, framebufferFNV);
 }
@@ -147,6 +143,18 @@ int DoomRPG_esp32PaintMainMenuOptionsDashboard(
     uint32_t* framebufferFNV) {
     return DoomRPG_esp32PaintMainMenuOptionsDashboardSelection(
         doomRpgBase, OPTIONS_BACK_ITEM, backArmed, framebufferFNV);
+}
+
+int DoomRPG_esp32PaintMainMenuBrightnessDashboard(
+    struct DoomRPG_s* doomRpgBase,
+    uint32_t* framebufferFNV) {
+    DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
+        !validateOptionsModel(doomRpg->menuSystem) ||
+        !Esp32Backlight_isReady()) return 0;
+
+    return DoomRPG_esp32PaintBrightnessPresetCards(
+        doomRpg, Esp32Backlight_percent(), framebufferFNV);
 }
 
 static int paintOptionsBounded(DoomRPG_t* doomRpg,
@@ -328,7 +336,7 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase,
 
     SDL_RenderPresent(NULL);
     if (finalFramebufferFNV != NULL) *finalFramebufferFNV = finalHash;
-    printf("[MAINOPTIONS] Presented real MENU_MAIN_OPTIONS model with shared split logo-left/cards-right dashboard paint, Video brightness=%u ready=%d\n",
+    printf("[MAINOPTIONS] Presented real MENU_MAIN_OPTIONS model with shared split logo-left/cards-right dashboard paint, Luminosite entry brightness=%u ready=%d\n",
            (unsigned int)Esp32Backlight_percent(), Esp32Backlight_isReady());
     printf("[MAINOPTIONS] READY explicit MENU_MAIN -> MENU_MAIN_OPTIONS composition; no legacy Render_render, no map reload, no gameplay loader\n");
     return 1;
