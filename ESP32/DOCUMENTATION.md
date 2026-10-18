@@ -2,6 +2,42 @@
 
 ## PR #219 — génération C desktop retirée, protocole CI clos (18 octobre 2026)
 
+### Lot D — blitter Canvas internalisé, PASS CYD sur textes du menu
+
+Code `461d5d917a630b96cd08b34bf28713c65fd60d8f`,
+[CI SUCCESS #39161846989](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39161846989)
+(55 étapes : tests host, normal/bringup/trace et audits ELF).
+`DoomCanvas_drawImageSpecial` est devenu
+`static EspDoomCanvas_drawImageSpecial`, appelé seulement
+par le texte `DoomCanvas_drawString1`. Son corps de rendu
+est **inchangé**, testé par FNV `4c4a9a93` ;
+il reste cinq ABI Canvas externes et aucun objet Game.
+
+**Test réel ESP32 classic** : téléversement normal réussi ;
+boot/menu FNV `0f2c9fc3`, Help/About 83 lignes avec
+défilement haut/bas et BACK exact, Options FNV
+`0acffb35` et retour exact au menu, START → intro
+(7 taps et première frame `ade0195d`) → libération
+34 056 B → `/intro.bsp` → resident gameplay READY.
+`heap8=154908` au menu et `heap8=113816`,
+`largest8=86004` au jeu, stables sur les
+`[ALIVE]` observés. `shapeData=mediaTexels=NULL`.
+Ce témoin **ne couvre pas** LOAD ni combat du lot D.
+Aucun SHA runtime imprimé.
+Build local Flash 820 961 B vs CI 820 945 B :
+16 B de différence, sans conclusion d'identité ELF.
+Le diagnostic Canvas `exports=6` du boot est
+désormais **périmé**, bien que l'audit ELF voie cinq
+exports. Le warning `"Loading..."` passé à `char*`
+est également noté. Ces deux petites corrections
+sont une autre frontière de code et ne sont pas
+couvertes par le PASS présent.
+
+La [PR #219](https://github.com/Kharn27/DoomRPG-RE/pull/219)
+reste ouverte en draft sur **la même branche**, aucun
+merge dans `main`. Voir `PORTING_STATUS.md`
+pour les FNV et mesures détaillés.
+
 ### Lot C — aucun Game_t alloué ni Game_* lié : PASS CYD normal
 
 **SHA code du troisième lot** :
