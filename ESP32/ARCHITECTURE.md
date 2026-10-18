@@ -7,40 +7,64 @@ in which historical recovery probes were written.
 For current hardware status and exact canons, read [`PORTING_STATUS.md`](PORTING_STATUS.md).
 For build/platform notes, read [`DOCUMENTATION.md`](DOCUMENTATION.md).
 
-Current ELF census (main `b941048`, 2026-10-14; earlier census `9d203e5` retained):
-[`CONSOLIDATION_AUDIT.md`](CONSOLIDATION_AUDIT.md), with the per-source build/ELF
-inventory. Several older recovery descriptions below (notably §6/7/10/13) no
-longer describe the complete live port. Use the current census and source for
-ownership, and PORTING_STATUS for the exact scope of hardware evidence; do not
-infer live ZIP access or retired desktop ownership from those historical notes.
+Historical ELF census (main `b941048`, 14 October 2026;
+older census `9d203e5`): [`CONSOLIDATION_AUDIT.md`](CONSOLIDATION_AUDIT.md).
+Its per-source counts and pre-retirement `DoomRPG.o` tables describe the
+**old baseline**, not current compilation. Older recovery passages below
+(especially §6/7/10/13) can also be historical: use current source and
+PORTING_STATUS for runtime ownership and exact CYD evidence.
 
-The closed, unreachable fresh-Junction post-load marker ladder has been retired
-as nine source/header pairs. The generic startup/session and genuine post-spawn
-owners are unchanged. Do not recreate `EspPostLoad*` or
-`EspNativePlayingService*` markers as prerequisites for generic gameplay.
+Current source boundary after [PR #218](https://github.com/Kharn27/DoomRPG-RE/pull/218)
+and [PR #219](https://github.com/Kharn27/DoomRPG-RE/pull/219)
+(final code `a59554ed524502d02dbab69149777a94050b0a26`,
+[CI success #39162920720](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39162920720)):
 
-The next consolidation lot retires the unreachable ZIP/menu-scene diagnostic
-renderer (16 sources, 13 headers) while retaining the current native renderer,
-PAK catalogs, live cache-inactivity gates and opaque menu painter unchanged.
-Current census: **158 C/C++ sources, 152 include headers**. See the audit for
-why two dormant dashboard bridges and their frame contracts remain deferred;
-removing an unlinked function can still alter GCC inlining in a live TU.
+- All **21 original desktop C translation units**, including Game, Render,
+  DoomCanvas and DoomRPG, are excluded from firmware compilation.
+- **No desktop C copy is generated**. `src/DoomRPG.c` and `src/Render.c`
+  remain executable behavior/reference sources for direct host CRC/parity
+  tests, not firmware object providers. The build still patches and compiles
+  only the separate **packed-indexed SDL C++ shim**; its 1/4/8-bpp
+  surface→texture ownership stays unchanged.
+- Permanent native owners supply math/binary helpers, PAK/BMP images,
+  presentation, process clocks/RNG and the small process root/teardown.
+  Desktop Config v23 readers and keyboard/controller binding tables are
+  retired; brightness persistence belongs to the native SD config.
+- **Game**: no `Game_t` process allocation and no linked `Game_*`
+  provider remain. The historical `doomRpg->game` root field is retained
+  for layout compatibility but is **always NULL** on CYD; startup, intro,
+  mappings, resident session and SYS/EXIT gates refuse non-NULL.
+  A zero-byte Game diagnostic stage remains and the native root teardown
+  does not free a Game instance.
+- **Canvas** now retains exactly five externally linked functions:
+  `DoomCanvas_init`, `DoomCanvas_free`, `DoomCanvas_drawString1`,
+  `DoomCanvas_setState`, `DoomCanvas_startup`. The former
+  `DoomCanvas_drawImageSpecial` export is a private static glyph blitter,
+  body unchanged (source-FNV `4c4a9a93`). The remaining Canvas/Render
+  compatibility APIs and selected `--wrap` adapters still serve native
+  callers. Retire each individually; do not infer their ownership from
+  the Game result.
 
-Neither CYD profile generates or compiles desktop Render.c anymore. Normal
-already linked zero bytes from it; bringup's seven pure geometry helpers now
-come from the same permanent `esp_render_geometry_primitives.c` as production.
-No world/sprite/plane/shape loader is reactivated, no owner is merged. Desktop
-Render.c remains a test-only behavior reference; the old bringup-only bodies
-are no longer firmware providers. Normal loaded ELF is unchanged in the local
-controlled comparison; bringup is not claimed binary-identical.
+The generic startup/session replaces the historical Junction post-load
+marker ladder (nine source/header pairs); the unrelated ZIP/menu-scene
+probe renderer (16 sources and 13 headers) was also retired. Its former
+PAK-irrelevant pipeline must not be reintroduced. The earlier census
+reported **158 C/C++ sources and 152 include headers**. Two dormant menu
+scene/overlay wrappers remain because their removal can change compiler
+inlining of active painter functions; handle them separately.
 
-The remaining generated desktop C root is DoomRPG.c: 27 linked utilities plus
-seven named data symbols, including process-lifetime basetime and hidden RNG
-seed/reset state. Its next retirement must separate math/binary, image/SDL,
-clock/RNG, config and core responsibilities, reusing genuine owners. Renaming
-the monolith is not native ownership, nor permission to combine independent
-state lifetimes. The separately generated packed SDL shim is not desktop
-gameplay; its surface→texture ownership transfer remains functional.
+[CI #39162920720](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39162920720)
+verifies the final Game and five-export Canvas boundary across host,
+normal/bringup/trace builds and compiledb/ELF audits: no original desktop
+C, no generated DoomRPG C, no linked Game_* or public Canvas image blitter.
+Static RAM remains **49 488 B** normal, Flash **820 997 B** normal.
+Real CYD accepted the current Help/About (83 lines / five observed scroll
+positions) → Options → START/intro → Entrance route, with stable framebuffer
+hashes and `heap8=113816 largest8=86004`; shapeData/mediaTexels NULL.
+The last log does not show its boot `exports=5` string or re-test LOAD/combat.
+Earlier Game removal CYD evidence includes EXIT → LOAD V11, but belongs to
+its separate SHA. No strict ELF bytewise identity, full gameplay coverage,
+active audio or runtime SHA fingerprint is claimed.
 
 ## 1. Design rule
 
@@ -129,8 +153,8 @@ Permanent invariants:
 ```text
 Render.shapeData == NULL
 Render.mediaTexels == NULL
-legacy Game.entities == 0 for the migrated native world
-legacy Game.monsters == 0 for the migrated native world
+legacy DoomRPG.game == NULL (no Game_t instance)
+no desktop Game.entities / Game.monsters runtime arrays exist
 ```
 
 Forbidden permanent designs:
@@ -502,8 +526,9 @@ The cleanup is intentionally incremental. Remaining transitional areas include:
   menu storage; desktop ParticleSystem/EntityDef startup is retired;
 - `EspRenderStartupBridge` still loads legacy sintable/palette resources needed
   by retained Render helpers;
-- `EspLegacyConfigMappingsStartup` still reads retained config/mapping resources
-  through legacy compatibility APIs;
+- `EspLegacyConfigMappingsStartup` still installs native PAK-backed
+  `mappings.bin`; desktop Config v23 has been retired, while brightness
+  persistence is owned by `EspNativeConfig` on SD;
 - two dormant menu scene/overlay wrapper bodies remain inside the live painter
   TU: their removal changes compiler inlining, despite their absence from both
   final ELFs. Retire them with a targeted menu validation, not a false no-op claim;

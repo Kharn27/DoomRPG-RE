@@ -1,5 +1,10 @@
 # ESP32 first bounded intro frame
 
+> **Archive historique de jalon.** Les interdictions de chargement de map,
+> chiffres de heap et « prochaines étapes » ci-dessous sont propres au SHA
+> original, **pas au firmware actuel**. Pour le statut et le mode d'emploi,
+> consulter [PORTING_STATUS](../PORTING_STATUS.md) et [le guide](../README.md).
+
 Branch: `agent/esp32-first-intro-frame`
 
 Base hardware-validated `main`:
@@ -18,8 +23,8 @@ b934e21c7f2dbf6463a4d2dfa13d1e06614e2b96
 
 This file is a historical hardware-evidence archive for PR #37. Its measured
 values remain intentionally build-specific. For the current port recovery point,
-see [`PORTING_STATUS.md`](PORTING_STATUS.md); for documentation ownership rules,
-see [`DOCUMENTATION.md`](DOCUMENTATION.md).
+see [`PORTING_STATUS.md`](../PORTING_STATUS.md); for documentation ownership rules,
+see [`DOCUMENTATION.md`](../DOCUMENTATION.md).
 
 ## Objective
 
@@ -220,4 +225,4 @@ At that time these items were still deferred:
 - audio
 
 Those bullets are retained only as historical context. The live roadmap is in
-[`PORTING_STATUS.md`](PORTING_STATUS.md).
+[`PORTING_STATUS.md`](../PORTING_STATUS.md).

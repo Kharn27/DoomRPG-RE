@@ -22,9 +22,8 @@
 #include <esp_heap_caps.h>
 
 #ifdef DOOMRPG_ESP32
-/* The normal classic-CYD build must never silently grow the retired Game shell. */
-_Static_assert(sizeof(Game_t) == sizeof(void*),
-               "ESP32 Game_t must remain the one-pointer compatibility shell");
+/* Legacy Game_t is a reference-only type; it must never be instantiated.
+ * DoomRPG_t keeps an ABI compatibility field, permanently NULL on ESP32. */
 #endif
 
 /* The final linked DoomRPG.c globals/functions are now native-owned.
@@ -49,9 +48,8 @@ void DoomRPG_FreeAppData(DoomRPG_t* doomrpg)
     doomrpg->combat = NULL;
     doomrpg->particleSystem = NULL;
     doomrpg->player = NULL;
-    if (doomrpg->game) {
-        SDL_free(doomrpg->game);
-    }
+    /* No Game allocation/teardown exists on CYD; native resident and
+     * session owners are released by their own lifecycle. */
     doomrpg->game = NULL;
     doomrpg->entityDef = NULL;
     doomrpg->sound = NULL;
@@ -202,7 +200,7 @@ void DoomRPG_getEngineMetrics(DoomRpgEngineMetrics* metrics) {
     metrics->doomRpg = sizeof(DoomRPG_t);
     metrics->doomCanvas = sizeof(DoomCanvas_t);
     metrics->render = sizeof(Render_t);
-    metrics->game = sizeof(Game_t);
+    metrics->game = 0U;  /* Game_t is no longer a resident object. */
     metrics->player = 0U;
     metrics->combat = 0U;
     metrics->supportObjects = sizeof(EspNativeMenuState_t);
@@ -358,19 +356,22 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
                      Render_init(NULL, doomRpg));
     INIT_CORE_OBJECT(DOOMRPG_CORE_MENU_SYSTEM, menuSystem,
                      EspNativeMenuStorage_init(NULL));
-    INIT_CORE_OBJECT(DOOMRPG_CORE_GAME, game,
-                     Game_init(NULL, doomRpg));
+    /* Keep the historical diagnostics slot without an allocation or legacy
+     * Game_init call. Reject an unexpected Game shell, even when malloc'd by
+     * an accidental new compatibility provider. */
+    before = coreFreeHeap();
+    if (doomRpg->game != NULL) {
+        failCoreStage(DOOMRPG_CORE_GAME);
+        if (report != NULL) *report = coreInitReport;
+        return 0;
+    }
+    recordCoreStage(DOOMRPG_CORE_GAME, before, coreFreeHeap());
 
 #undef INIT_CORE_OBJECT
 
-    /*
-     * Legacy Game world/entity/transient storage is absent by layout on ESP32.
-     * The sole remaining field is the DoomRPG backpointer used by the config/
-     * teardown compatibility bridge.
-     */
-    printf("[CORE] Legacy Game shell minimal gameBytes=%u desktopBytes=36468 totalReclaimed=36464 fields=doomRpg-only worldOwner=native\n",
-           (unsigned int)sizeof(Game_t));
-    printf("[CORE] Desktop Game.c retired bridge=esp_legacy_game_bridge exports=3 linkedRoots=audit-ELF worldOwner=native\n");
+    /* No Game_t object: the legacy root field is permanently NULL. */
+    printf("[CORE] Game object retired gameBytes=0 desktopBytes=36468 totalReclaimed=36468 field=NULL worldOwner=native\n");
+    printf("[CORE] Desktop Game.c retired bridge=absent exports=0 nativeGameOwner=yes\n");
 
     /*
      * Player state is owned by the compact 52-byte native gameplay owner.
@@ -540,7 +541,7 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
     }
 
     coreInitReport.ready = 1;
-    printf("[CORE] READY objects=%u heap used=%u remaining=%u largest=%u clip=%ux%u\n",
+    printf("[CORE] READY stages=%u allocatedObjects=4 heap used=%u remaining=%u largest=%u clip=%ux%u\n",
            (unsigned int)coreInitReport.completedStages,
            (unsigned int)coreInitReport.bytesUsed,
            (unsigned int)coreInitReport.heapAfter,

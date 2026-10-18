@@ -1,5 +1,10 @@
 # ESP32 bounded intro clock
 
+> **Archive historique de jalon.** Les interdictions de chargement de map,
+> chiffres de heap et « prochaines étapes » ci-dessous sont propres au SHA
+> original, **pas au firmware actuel**. Pour le statut et le mode d'emploi,
+> consulter [PORTING_STATUS](../PORTING_STATUS.md) et [le guide](../README.md).
+
 Branch: `agent/esp32-intro-clock`
 
 Base hardware-validated `main`:
@@ -18,8 +23,8 @@ Merged to `main` at:
 
 This file is the historical hardware-evidence archive for PR #38. Its measured
 heap/timing values belong to that build. For the current recovery point, see
-[`PORTING_STATUS.md`](PORTING_STATUS.md); for documentation ownership rules, see
-[`DOCUMENTATION.md`](DOCUMENTATION.md).
+[`PORTING_STATUS.md`](../PORTING_STATUS.md); for documentation ownership rules, see
+[`DOCUMENTATION.md`](../DOCUMENTATION.md).
 
 ## Objective
 
@@ -205,4 +210,4 @@ without handing control to the broad legacy game loop or loading the first
 gameplay map.
 
 That statement is retained as historical context. The live roadmap is in
-[`PORTING_STATUS.md`](PORTING_STATUS.md).
+[`PORTING_STATUS.md`](../PORTING_STATUS.md).

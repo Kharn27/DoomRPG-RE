@@ -40,6 +40,16 @@ implementation.
 
 ### Current status
 
+As of **18 October 2026 / PR #219**: no desktop C translation unit is
+linked, the generated desktop DoomRPG.c oracle is retired, the separate
+Game_t allocation and all Game_* runtime exports are gone, and the Canvas
+compatibility surface is reduced to five exports. Real-CYD Help/About,
+Options, Start/intro and Entrance checks retain stable PAK-backed native
+rendering. The current firmware guide is
+[ESP32/README.md](ESP32/README.md); historical intro milestones have
+been filed under [ESP32/archive/](ESP32/archive/).
+The native audio backend is still silent.
+
 The current hardware-validated native path includes:
 
 - PAK-backed map loading, compact immutable map state and raw internal-flash
@@ -54,9 +64,10 @@ The current hardware-validated native path includes:
   families;
 - destructible subtype-2 crates, including their exact RNG-driven conversion
   into pickups;
-- checkpoint save/load V9, retaining the player/resources/script/line,
-  action-removal, transformed-crate and Automap state plus exact monster
-  state, topology, positions and activation;
+- native checkpoint save/load **V11** (ten slots on two pages), retaining
+  player/resources, scripts/lines, transformed crates, Automap, exact monster
+  state/topology/positions/activation and persistent drops; V1–V10
+  remain read-compatible;
 - a full-height compact industrial HUB that temporarily reclaims the lower
   gameplay strip, uses crisp native 5x7 tab labels, presents Notebook, carried
   items and owned keys in a four-row scrolling inventory, and restores the
@@ -72,17 +83,18 @@ The current hardware-validated native path includes:
   and displays `No Save`;
 - an `Options` child that reuses the same 2x2 finger-first dashboard; `Back` is
   active with two-tap confirmation while deferred settings remain subdued;
-- compatibility reads for the earlier V1 to V8 save formats.
+- native SD brightness configuration (25/50/75/100%) and independent
+  PAK/SD ownership; no runtime ZIP reads and no desktop Game allocation.
 
-Development candidate: `SYS` now stacks `SAVE`, `LOAD`, `EXIT TO MENU`, replacing
+The hardware-tested `SYS` menu stacks `SAVE`, `LOAD`, `EXIT TO MENU`, replacing
 the fixed `CHECKPOINT 1` caption. Exit requires a second tap after an unsaved
 progress warning, then returns to the existing main menu without autosaving or
-changing the checkpoint on SD. Build/host checks pass, and repeated real-CYD `LOAD -> gameplay -> EXIT`
-cycles now return to the exact same menu memory state with resident map owners
-empty and no save write. Cancellation/Options/Help/fresh-START and unsaved/no-save
-edge cases remain to be checked.
+changing the checkpoint on SD. Build/host checks and real-CYD `LOAD -> gameplay -> EXIT` cycles show native
+resident owners fully released and no unexpected save write. Options, Help and
+fresh START are also exercised in later hardware milestones; cancellation,
+corrupted/missing-save recovery and longer progression need separate tests.
 
-The V7 Automap checkpoint state remains part of the hardware-tested V9 format. The HUB
+The V7 Automap state remains preserved by the current native V11 checkpoint. The HUB
 redesign, its touch-feedback coexistence fixes and the successful SAVE return
 flow have been exercised on the real CYD; broader gameplay progression remains
 to be exercised. The exact boundaries, memory figures, fingerprints and
@@ -104,17 +116,17 @@ death-menu Main Menu is distinct from the working in-game `SYS → EXIT TO MENU`
 Only presentation changes: fall, fade and existing actions are preserved.
 Local build/tests pass; visual and LOAD acceptance on the CYD remain pending.
 
-### Mission report — development candidate
+### Mission report — historical V10 milestone
 
-Development candidate — mission report: a compact HUB-style full-screen report
+Historical V10 milestone — mission report: a compact HUB-style full-screen report
 now shows Secrets, Monsters, elapsed time, original-style Moves (player turns)
 and XP earned in the current map visit. Time uses a monotonic ESP32 counter,
-without an RTC or network. New V10 checkpoints preserve these metrics; V1–V9
-remain readable and show `SINCE LOAD` when earlier history is unavailable.
-Local build/host checks pass; the user accepted the report on the rebased CYD
-branch. V10 reboot resume and legacy-save migration still await dedicated
-hardware confirmation. See
-[`ESP32/DOCUMENTATION.md`](ESP32/DOCUMENTATION.md#mission-report-and-v10-progress--development-candidate-2026-10-02).
+without an RTC or network. The V10 milestone introduced these metrics; current checkpoint format is
+**V11**, with the prior V1–V10 read-compatibility boundaries documented
+in the ESP32 guide. Older incomplete histories can display `SINCE LOAD`.
+These are historical V10 build/acceptance observations, not the current
+checkpoint status or a claim that every legacy migration has been tested. See
+[`ESP32/PORTING_STATUS.md`](ESP32/PORTING_STATUS.md).
 
 ### Target hardware
 
@@ -264,6 +276,16 @@ un allocateur ou une implémentation de gameplay propre à ce niveau.
 
 ### État actuel
 
+**18 octobre 2026 / PR #219** : plus aucune unité C desktop dans le
+firmware, plus de génération de DoomRPG.c desktop, plus d'allocation
+Game_t ni d'export Game_* lié. Canvas conserve cinq ABI externes.
+Les tests réels Help/About, Options, START/intro puis Entrance
+restent stables avec les données PAK et le moteur natif.
+Le [guide d'usage actuel](ESP32/README.md) remplace les
+anciens jalons, désormais rangés dans
+[ESP32/archive/](ESP32/archive/).
+L'audio est encore muet.
+
 Le chemin natif actuellement validé sur le vrai CYD comprend notamment :
 
 - le chargement des cartes depuis le PAK, un runtime de carte compact et
@@ -280,10 +302,10 @@ Le chemin natif actuellement validé sur le vrai CYD comprend notamment :
   d'attaques des monstres ;
 - les caisses destructibles de sous-type 2, y compris leur transformation en
   pickups déterminée par le RNG original ;
-- les sauvegardes V9, qui reprennent les états joueur, ressources, scripts,
-  lignes, suppressions du moteur d'action, transformations de caisses et
-  révélation de l'Automap, avec en plus l'état exact des monstres, leur topologie,
-  leurs positions et leur activation ;
+- les sauvegardes natives **V11** (dix slots sur deux pages), couvrant
+  joueur/ressources, scripts, lignes, caisses, Automap, monstres,
+  topologie/positions/activation et drops persistants ; lecture compatible
+  des anciennes versions V1 à V10 ;
 - une présentation HUB industrielle en pleine hauteur qui récupère
   temporairement la bande inférieure du gameplay, emploie des onglets natifs
   5x7 nets, affiche le Notebook, les objets transportés et les cartes d'accès
@@ -301,20 +323,21 @@ Le chemin natif actuellement validé sur le vrai CYD comprend notamment :
 - un sous-menu `Options` qui réutilise la même grille tactile 2x2 ; `Back` reste
   actif avec confirmation en deux pressions, tandis que les réglages différés
   sont affichés en retrait ;
-- la lecture des anciennes sauvegardes V1 à V8.
+- la configuration native de luminosité SD (25/50/75/100 %) ; aucun ZIP
+  utilisé en runtime et aucun objet desktop Game alloué.
 
-Évolution en cours : `SYS` propose désormais `SAVE`, `LOAD`, `EXIT TO MENU`, à
+Le menu `SYS` validé sur le vrai CYD propose `SAVE`, `LOAD`, `EXIT TO MENU`, à
 la place du titre fixe `CHECKPOINT 1`. Quitter exige une seconde pression après
 l'avertissement de perte des changements non sauvegardés, puis revient au menu
 principal existant sans sauvegarde automatique ni modification du fichier SD.
-Compilation et tests locaux OK ; des cycles répétés
-`LOAD -> gameplay -> EXIT` sont désormais validés sur le vrai CYD et
-reviennent exactement au même état mémoire du menu, avec les propriétaires de
-map résidente vidés et sans écriture de sauvegarde. Restent à vérifier les cas
-d'annulation, Options/Help, START frais et les scénarios non sauvegardé/sans
-checkpoint.
+Compilations et tests logiciels OK ; des cycles réels
+`LOAD -> gameplay -> EXIT` ont confirmé la libération des propriétaires de
+carte et l'absence d'écriture de sauvegarde. Options, Help et START frais
+ont également été exercés dans les jalons matériels suivants ;
+les cas d'annulation, sauvegarde corrompue/absente et la progression prolongée
+nécessitent des tests séparés.
 
-L'état Automap de la V7 reste inclus dans le format V9 validé sur matériel. La refonte du
+L'état Automap hérité de V7 reste conservé dans les sauvegardes natives V11. La refonte du
 HUB, les corrections de coexistence des retours tactiles et le retour en jeu
 après SAVE ont été testés sur le vrai CYD ; la progression plus loin dans le
 jeu reste à exercer. Les frontières exactes, mesures mémoire, empreintes et
@@ -337,17 +360,16 @@ indisponibles ; ce Main Menu est distinct du retour fonctionnel en jeu
 existantes sont conservés. Compilation/tests locaux OK ; aspect et LOAD sur
 CYD encore à valider.
 
-### Bilan de mission — évolution en cours
+### Bilan de mission — jalon historique V10
 
-Évolution en cours — bilan de mission : un écran compact dans le style du HUB
+Jalon historique V10 — bilan de mission : un écran compact dans le style du HUB
 affiche désormais les secrets, monstres, le temps écoulé, les Moves (tours de jeu,
 comme dans l'original) et l'XP gagnée pendant la visite du niveau. Le chronomètre
-ESP32 fonctionne sans horloge RTC ni réseau. Les nouvelles sauvegardes V10
-conservent ces compteurs ; les V1–V9 restent lisibles, avec `SINCE LOAD` lorsque
-l'historique antérieur est inconnu. Compilation et tests locaux OK ; bilan
-accepté par l'utilisateur sur le CYD après rebase. La reprise V10 après reboot
-et la migration des anciennes sauvegardes restent à confirmer séparément. Détails dans
-[`ESP32/DOCUMENTATION.md`](ESP32/DOCUMENTATION.md#mission-report-and-v10-progress--development-candidate-2026-10-02).
+ESP32 fonctionne sans horloge RTC ni réseau. Le jalon V10 introduisait ces compteurs ; le format courant est
+**V11** avec compatibilité des V1–V10 documentée dans le guide ESP32.
+Les historiques anciens incomplets peuvent afficher `SINCE LOAD`. Ces observations et réserves sont celles du jalon V10 historique, et non
+une description du firmware V11 actuel ou une preuve de migration exhaustive. Détails dans
+[`ESP32/PORTING_STATUS.md`](ESP32/PORTING_STATUS.md).
 
 ### Matériel cible
 

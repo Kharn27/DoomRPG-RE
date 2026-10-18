@@ -38,7 +38,7 @@ assert '"+<DoomRPG.c>"' not in build
 assert "compiledPatchedC=0" in build
 # Fatal callback deliberately stays off the positive-path test harness.
 # Capture every teardown side effect in the *real* native production body.
-assert teardown.count("SDL_free(")==3
+assert teardown.count("SDL_free(")==2
 assert teardown.count("EspNativeMenuStorage_free(")==1
 assert teardown.count("Render_free(")==1
 assert teardown.count("DoomCanvas_free(")==1
@@ -98,23 +98,23 @@ int main(void) {
         assert(p);doomRpg=p;n=0;sdlfrees=menuCalls=renderCalls=canvasCalls=0;
         int full=(i%3)==0, core=(i%3)==1;
         if(full||core) {
-            p->game=malloc(1);p->menuSystem=malloc(1);
+            p->menuSystem=malloc(1);
             p->menu=malloc(1);p->render=malloc(1);p->doomCanvas=malloc(1);
-            assert(p->game&&p->menuSystem&&p->menu&&p->render&&p->doomCanvas);
+            assert(p->game==NULL&&p->menuSystem&&p->menu&&p->render&&p->doomCanvas);
         }
         DoomRPG_FreeAppData(p);
-        assert(sdlfrees==(full||core ? 3 : 1));
+        assert(sdlfrees==(full||core ? 2 : 1));
         assert(menuCalls==(full||core ? 1 : 0));
         assert(renderCalls==(full||core ? 1 : 0));
         assert(canvasCalls==(full||core ? 1 : 0));
         if(full||core) {
-            /* game, native MenuStorage, Menu, Render, Canvas, root */
-            int expected[]={1,2,1,3,4,1};
-            assert(n==6 && memcmp(trace,expected,sizeof(expected))==0);
+            /* Native MenuStorage, Menu, Render, Canvas, root; NO Game object. */
+            int expected[]={2,1,3,4,1};
+            assert(n==5 && memcmp(trace,expected,sizeof(expected))==0);
         } else assert(n==1 && trace[0]==1);
         doomRpg=0;
     }
-    puts("PASS native DoomRPG root=process cleanupCalls=4096 partial+full metric=exact");
+    puts("PASS native DoomRPG root=process cleanupCalls=4096 Game=NULL partial+full metric=exact");
 }
 """
 with tempfile.TemporaryDirectory(prefix="root-owner-host-") as temp:

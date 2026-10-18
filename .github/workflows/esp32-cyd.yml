@@ -119,6 +119,9 @@ jobs:
           python ESP32/test/desktop_elf_audit_host.py
           python ESP32/test/render_geometry_host.py
 
+      - name: Test retirement of generated DoomRPG C oracle and preserved packed SDL (host Python)
+        run: python ESP32/test/doomrpg_oracle_retirement_host.py
+
       - name: Test stateless DoomRPG primitive ownership and reference ABI (host C)
         run: python ESP32/test/doomrpg_pure_primitives_host.py
 
@@ -136,6 +139,12 @@ jobs:
 
       - name: Test desktop key binding retirement and native touch ownership (host C)
         run: python ESP32/test/desktop_keybind_retirement_host.py
+
+      - name: Test DoomCanvas private indexed glyph blitter contract (host Python)
+        run: python ESP32/test/doomcanvas_private_blitter_host.py
+
+      - name: Test full retirement of desktop Game object and Game ABI (host C)
+        run: python ESP32/test/game_inert_abi_retirement_host.py
 
       - name: Test permanent DoomRPG root and fatal cleanup ownership (host C)
         run: python ESP32/test/doomrpg_root_owner_host.py
@@ -251,8 +260,21 @@ jobs:
               --forbid-prefix DoomRPG_loadNativeBitShapes \
               --forbid-prefix DoomRPG_prepareNativePalette \
               --forbid-prefix __wrap_Render_beginLoadMap \
+              --forbid-prefix DoomCanvas_drawImageSpecial \
+              --forbid-prefix Game_init \
+              --forbid-prefix Game_activate \
+              --forbid-prefix Game_unloadMapData \
               --forbid-prefix __wrap_DoomCanvas_updateLoadingBar \
               --forbid-prefix __wrap_DoomRPG_probeNative
+          done
+
+      - name: Reject generated desktop C oracle in all profiles
+        working-directory: ESP32
+        run: |
+          for profile in esp32-cyd esp32-cyd-bringup esp32-cyd-trace; do
+            test ! -e ".pio/build/$profile/doomrpg_patched_sources/DoomRPG.c" || {
+              echo "FAIL stale/generated desktop DoomRPG.c for $profile"; exit 1;
+            }
           done
 
       - name: Reject generated Render source registration in all profiles

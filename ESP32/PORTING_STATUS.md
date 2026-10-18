@@ -1,5 +1,95 @@
 # Doom RPG ESP32 — état actuel du port
 
+## PR #219 — désengagement desktop C/Game/Canvas : état courant (18 octobre 2026)
+
+**Branche** : `agent/esp32-retire-generated-doomrpg-oracle`, [PR #219](https://github.com/Kharn27/DoomRPG-RE/pull/219).
+**Base main** : `6390a6d42e50a058a05ebc0f4483cb02894f065f`.
+**Dernier SHA de code** : `a59554ed524502d02dbab69149777a94050b0a26`,
+[CI SUCCESS #39162920720](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39162920720)
+(**55 étapes**, tests host, builds normal/bringup/trace et audits ELF).
+Les commits ultérieurs de clôture sont **documentation uniquement**.
+Les témoins, FNV et métriques historiques des lots A-D sont préservés dans
+[le journal #219 archivé](archive/PR219_DESKTOP_RETIREMENT_MILESTONES.md).
+
+### Frontière de production actuellement retenue
+
+- **21 unités C desktop exclues** ; aucune génération ni compilation de
+  `DoomRPG.c` desktop. Le seul source adapté généré au build reste
+  `esp32_sdl.cpp`, shim SDL packed indexed 1/4/8 bpp ; backing store natif
+  **`/DoomRPG-ESP32.pak`**, et **aucun accès ZIP runtime**.
+- **Game** : pas de `Game_t` alloué, ni de fournisseur/export `Game_init`,
+  `Game_activate` ou `Game_unloadMapData`. Le champ `doomRpg->game`
+  est encore présent pour compatibilité de layout, mais doit rester
+  **NULL** sur les chemins boot/intro/maps/session/teardown. Métrique
+  `Game=0` ; le journal de teardown confirme le reset des vrais owners.
+- **Canvas** : cinq ABI externes seulement :
+  `DoomCanvas_init`, `DoomCanvas_free`,
+  `DoomCanvas_drawString1`, `DoomCanvas_setState`,
+  `DoomCanvas_startup`. L'ancien
+  `DoomCanvas_drawImageSpecial` est maintenant un blitter glyphes
+  privé `static EspDoomCanvas_drawImageSpecial`, **corps inchangé**
+  (FNV source `4c4a9a93`) ; la CI interdit l'ancien symbole ELF.
+- **Diagnostics et const** : le boot annonce désormais
+  `[DOOMCANVASBRIDGE] INIT exports=5` dans le source.
+  Le libellé intro `Loading...` utilise un buffer local `char[]`
+  pour respecter la signature `DoomCanvas_drawString1(char*)`.
+  Trois warnings du même type subsistent historiquement sur les
+  littéraux `BACK`, `UP`, `DOWN` dans
+  `native_main_menu_actions.c` ; **ils ne bloquent pas** la CI et ne
+  doivent pas être dissimulés par un cast. Prochain cleanup à traiter
+  par API de texte const-correcte, dans un jalon distinct.
+- **Taille CI dernier SHA code (normal)** : RAM statique **49 488 B**,
+  Flash **820 997 B** ; bringup **49 640 / 841 617 B**, trace
+  **49 536 / 837 613 B**. Aucune preuve d'identité ELF bit-à-bit
+  n'est revendiquée, ni égalité obligatoire avec les jauges locales
+  PlatformIO d'un autre environnement.
+
+### Témoins matériels et limites, normal esp32-cyd
+
+**PASS matériel des lots A–D**, puis **acceptation CYD ciblée du dernier
+lot E** d'après les logs transmis par l'utilisateur le 18 octobre 2026.
+Le dernier extrait **ne fournit pas l'en-tête boot**, donc ne prouve pas
+directement la nouvelle ligne `exports=5` ; en revanche, la CI compile
+le nouveau code et son test source confirme la chaîne.
+
+- **MENU_MAIN et texte** : Help/About parse **83 lignes**, pages
+  `0→8→16→24→32`, avec FNV `5f22cf6b`,
+  `d0788359`, `9213df95`, `b0191189`, `4c944ee5`.
+  BACK rétablit exactement le dashboard FNV **`0f2c9fc3`**.
+- **Options** : modèle et panneau FNV **`0acffb35`**, bouton BACK
+  fonctionnel, nouveau retour au dashboard `0f2c9fc3` ;
+  brightness 75 % dans les anciens logs boot de la branche.
+- **START / intro** : le nettoyage menu libère **8 440 B**,
+  première image FNV **`ade0195d`**, texte de l'intro achevé puis
+  navigation validée (six touches dans cet extrait : premier texte
+  terminé naturellement, pas par tap). `[INTRODISP] READY`
+  libère **34 056 B** (`heap8=129292→163348`) avec ressources
+  relâchées exactement, sans moteur ZIP/desktop.
+- **Entrance** : `/intro.bsp`, CRC **`623f34e4`**, arena
+  **14 095 B** / FNV `c3882516`, `FIRST_FRAME`,
+  `FRESH-VISIBLE`, `RESIDENTGAMEPLAY READY`, monstres
+  natifs initialisés.
+- **RAM stable dans les deux [ALIVE] finaux** (uptime ~211 s et
+  ~216 s) : `heap8=113816`, `largest8=86004`,
+  `shapeData=0x0`, `mediaTexels=0x0`.
+  Le jeu a tourné normalement pendant l'observation.
+- **Non exercés dans le dernier extrait E** : LOAD checkpoint,
+  combat, retour EXIT, nouvelle sauvegarde, corruption SD,
+  audio audible, autres cartes ; **ces scénarios ont des
+  témoins distincts sur les lots antérieurs**, pas sur ce
+  dernier code. Le log ne fournit pas de SHA firmware imprimé :
+  on associe le PASS au flash déclaré de la branche,
+  pas à un fingerprint binaire indépendant.
+
+**Bilan de clôture** : lot E validé matériellement **sur les chemins
+de texte/intro/Entrance observés** ; le firmware possède désormais
+**Game=0** et **Canvas ABI=5**. Les invariants mémoire et
+l'architecture native PAK sont tenus sur ce périmètre.
+PR #219 préparée pour revue/merge **par l'utilisateur seulement**,
+sans modification de code après le SHA validé.
+
+---
+
 ## PR #218 — clôture matérielle : luminosité persistante, Config v23 et keybindings desktop retirés (18 octobre 2026)
 
 **Base GitHub vérifiée** : `main 8a9c28940b03ab1ee10d5cdc720a26b6f08cbb4e`.

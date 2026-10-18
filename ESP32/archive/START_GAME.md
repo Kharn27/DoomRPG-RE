@@ -1,5 +1,10 @@
 # ESP32 fresh Start Game entry and lifecycle cleanup
 
+> **Archive historique de jalon.** Les interdictions de chargement de map,
+> chiffres de heap et « prochaines étapes » ci-dessous sont propres au SHA
+> original, **pas au firmware actuel**. Pour le statut et le mode d'emploi,
+> consulter [PORTING_STATUS](../PORTING_STATUS.md) et [le guide](../README.md).
+
 Historical milestone: **PR #36 — HARDWARE PASS — MERGED ARCHIVE**.
 
 Base hardware-selected display milestone:
@@ -16,7 +21,7 @@ Merged to `main` at:
 
 This archive preserves the detailed evidence behind the first real
 `MENU_MAIN -> Start Game -> ST_INTRO` transition on the no-PSRAM CYD.
-For the current recovery point, see [`PORTING_STATUS.md`](PORTING_STATUS.md).
+For the current recovery point, see [`PORTING_STATUS.md`](../PORTING_STATUS.md).
 
 ## Objective
 
@@ -255,4 +260,4 @@ After PR #36, the next objective was exactly one deterministic `ST_INTRO` frame,
 with no broad game loop, input progression or map load. That work became PR #37
 and is archived in [`FIRST_INTRO_FRAME.md`](FIRST_INTRO_FRAME.md).
 
-The live roadmap is maintained only in [`PORTING_STATUS.md`](PORTING_STATUS.md).
+The live roadmap is maintained only in [`PORTING_STATUS.md`](../PORTING_STATUS.md).

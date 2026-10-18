@@ -1,6 +1,70 @@
 # Doom RPG ESP32 — guide de travail
 
-## PR #218 — luminosité native persistante et retrait du keybinding desktop : protocole clos (18 octobre 2026)
+## Utilisation et validation du firmware courant — PR #219 (18 octobre 2026)
+
+La prise en main et les commandes actuelles sont dans
+**[README.md](README.md)** (PAK, flash normal, menu, jeux,
+sauvegardes V11, luminosité et HUB). Les détails matériels et
+mesures à jour sont dans **[PORTING_STATUS.md](PORTING_STATUS.md)** ;
+le design invariant est dans **[ARCHITECTURE.md](ARCHITECTURE.md)**.
+Les anciens lots A–D avec leurs SHA/CRC et leurs limites sont
+conservés dans [l'archive #219](archive/PR219_DESKTOP_RETIREMENT_MILESTONES.md).
+Les sections datées #218 et antérieures ci-dessous sont
+**des archives de décisions**, pas des propriétaires runtime.
+
+**Dernier SHA code #219** :
+`a59554ed524502d02dbab69149777a94050b0a26`
+([CI #39162920720 SUCCESS, 55 étapes](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39162920720)).
+`Game_t` n'est plus alloué (`Game=0`), le générateur
+`DoomRPG.c` desktop est retiré, le runtime ne lit pas ZIP et
+le pont Canvas exporte **cinq** fonctions, contre six avant.
+`DoomCanvas_drawImageSpecial` est privé et son corps de rendu
+est inchangé. Le label `Loading...` est passé sous forme
+d'un tableau `char[]` local à la signature historique.
+Les trois warnings de chaîne `BACK/UP/DOWN` de Help/About
+restent **connus** en CI pour ce SHA ; ne pas les éliminer
+par cast silencieux.
+
+**PASS CYD réel ciblé** : Help/About 83 lignes, défilements
+jusqu'au décalage 32 et retour correct ;
+Options puis BACK ; START, intro
+(six taps dans le dernier extrait car premier texte achevé
+naturellement), dispose 34 056 B, Entrance
+`FRESH-VISIBLE` et resident gameplay prêt. FNV :
+menu `0f2c9fc3`, Options `0acffb35`, première image
+d'intro `ade0195d` ; en gameplay,
+`heap8=113816 largest8=86004` stables.
+`shapeData/mediaTexels=NULL`.
+Le dernier extrait n'inclut **pas** son boot, donc ne prouve
+pas directement l'affichage `exports=5` sur la carte ;
+il ne rejoue pas non plus LOAD, EXIT ou combat.
+Ces derniers chemins possèdent des preuves matérielles
+antérieures dans l'archive, non extrapolées au nouveau SHA.
+Le firmware ne journalise pas son empreinte SHA.
+
+Pour confirmer une future révision :
+```sh
+cd ESP32
+pio run -e esp32-cyd -t upload -t monitor
+```
+
+Contrôler les premiers logs `Game=0` et `exports=5`,
+SD/PAK, le FNV menu, un cycle Help/About/Options, l'intro,
+puis les invariants et la mémoire en jeu.
+`esp32-cyd-bringup` et `esp32-cyd-trace` ne
+remplacent jamais le test normal. La CI vérifie
+toujours les 21 TU C desktop rejetées, les symboles
+retirés, et les trois builds normaux/diagnostiques.
+
+---
+
+## Historique PR #218 — luminosité native et retrait du keybinding desktop (état daté du 18 octobre 2026)
+
+> **Archive historique** : les nombres de fonctions Game et les états
+> « à faire » de cette section étaient exacts au SHA #218 mais sont
+> remplacés par le statut #219 ci-dessus. Ne pas les appliquer au
+> firmware courant.
+
 
 **Base `main`** :
 `8a9c28940b03ab1ee10d5cdc720a26b6f08cbb4e` ;

@@ -31,8 +31,8 @@ assert all(name not in map_owner for name in retired_symbols)
 assert all(name not in core for name in retired_symbols)
 assert "DoomRPG_getEventKey(" in legacy_source
 assert "DoomRPG_setBind(" in legacy_source
-assert "retired_config_key_binding_declarations" in builder
-assert "legacyInputCompiled=no" in builder
+assert '"DoomRPG.c",' in builder  # Original reference remains in the 21-TU denylist.
+assert "doom_rpg_source_text" not in builder  # No unused generated desktop TU.
 assert "compiledOriginal=0 compiledPatchedC=0" in builder
 assert all(name not in main for name in retired_symbols)
 assert "EspLegacyMappings_load(" in map_owner

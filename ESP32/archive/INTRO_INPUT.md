@@ -1,5 +1,10 @@
 # ESP32 bounded intro input
 
+> **Archive historique de jalon.** Les interdictions de chargement de map,
+> chiffres de heap et « prochaines étapes » ci-dessous sont propres au SHA
+> original, **pas au firmware actuel**. Pour le statut et le mode d'emploi,
+> consulter [PORTING_STATUS](../PORTING_STATUS.md) et [le guide](../README.md).
+
 Branch: `agent/esp32-intro-input`
 
 Base hardware-validated `main`:
@@ -18,8 +23,8 @@ Merged to `main` at:
 
 This file is the historical hardware-evidence archive for PR #39. The two real-CYD
 runs below intentionally remain detailed and build-specific. For the current
-recovery point, see [`PORTING_STATUS.md`](PORTING_STATUS.md); for documentation
-ownership rules, see [`DOCUMENTATION.md`](DOCUMENTATION.md).
+recovery point, see [`PORTING_STATUS.md`](../PORTING_STATUS.md); for documentation
+ownership rules, see [`DOCUMENTATION.md`](../DOCUMENTATION.md).
 
 ## Objective
 
@@ -369,4 +374,4 @@ The first gameplay map must not be allowed to resurrect the old monolithic
 `shapeData` / `mediaTexels` architecture.
 
 That section is retained as the milestone's historical handoff. The live roadmap
-is in [`PORTING_STATUS.md`](PORTING_STATUS.md).
+is in [`PORTING_STATUS.md`](../PORTING_STATUS.md).

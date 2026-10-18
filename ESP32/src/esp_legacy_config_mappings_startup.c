@@ -262,7 +262,7 @@ int EspLegacyConfigMappingsStartup_start(int renderStartupReady) {
         return 0;
     }
 
-    if (doomRpg == NULL || doomRpg->game == NULL || doomRpg->render == NULL) {
+    if (doomRpg == NULL || doomRpg->game != NULL || doomRpg->render == NULL) {
         printf("[CONFIGMAP] Core object graph incomplete; probe refused\n");
         return 0;
     }

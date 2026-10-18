@@ -1,5 +1,10 @@
 # ESP32 bounded intro disposal
 
+> **Archive historique de jalon.** Les interdictions de chargement de map,
+> chiffres de heap et « prochaines étapes » ci-dessous sont propres au SHA
+> original, **pas au firmware actuel**. Pour le statut et le mode d'emploi,
+> consulter [PORTING_STATUS](../PORTING_STATUS.md) et [le guide](../README.md).
+
 Branch: `agent/esp32-intro-dispose`
 
 Base merged `main`:
@@ -23,7 +28,7 @@ shapeData     = NULL
 mediaTexels   = NULL
 ```
 
-Status: **REAL-CYD HARDWARE PASS; DOCUMENTED; MERGE-READY**.
+Status at original milestone: **REAL-CYD HARDWARE PASS — historical archive; do not use as current merge instructions**.
 
 ## Objective
 
