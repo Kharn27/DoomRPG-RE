@@ -41,7 +41,7 @@ int main(void) {
         expectRejected(packet, 13U); /* unexpected trailing bytes */
 
         /* All header and payload bytes are covered by checksum/version. */
-        for (int byte = 0; byte < ESP_NATIVE_CONFIG_BYTES; ++byte) {
+        for (uint32_t byte = 0; byte < ESP_NATIVE_CONFIG_BYTES; ++byte) {
             memcpy(corrupted, packet, sizeof(packet));
             corrupted[byte] ^= (uint8_t)(1U << (byte % 8));
             expectRejected(corrupted, sizeof(corrupted));
