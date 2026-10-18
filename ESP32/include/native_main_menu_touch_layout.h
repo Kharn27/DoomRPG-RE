@@ -39,6 +39,13 @@ int DoomRPG_esp32PaintMenuDashboardCards(
     uint8_t enabledMask,
     uint32_t* framebufferFNV);
 
+/* Parent Options -> Luminosité child: right rail only; 5 cards with
+ * persistent one-tap selection highlighting. Never touches logo or world. */
+int DoomRPG_esp32PaintBrightnessPresetCards(
+    struct DoomRPG_s* doomRpg,
+    uint8_t activePercent,
+    uint32_t* framebufferFNV);
+
 #ifdef __cplusplus
 }
 #endif
