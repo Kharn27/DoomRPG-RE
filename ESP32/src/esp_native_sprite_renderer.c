@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <esp_timer.h>
 
 #include "DoomRPG.h"
 #include "Render.h"
@@ -17,6 +18,7 @@
 #include "esp_native_graphics_catalog.h"
 #include "esp_native_gameplay_monster_drop.h"
 #include "esp_native_sprite_renderer.h"
+#include "esp_native_ambient_sprite.h"
 #include "esp_player_view_state.h"
 
 #define MAP_HEADER 16U
@@ -188,6 +190,20 @@ static uint16_t source565(uint16_t c) {
                       ((c & 0xf800U) >> 11));
 }
 
+/* Renderer-owned presentation clock and visible candidates. No frame loop. */
+static uint32_t ambientSampleMs, ambientPresentedMs;
+static uint8_t ambientCandidates, ambientFastCandidates;
+int EspNativeSpriteRenderer_ambientDue(uint32_t now) {
+    return EspNativeAmbientSprite_due(now,ambientPresentedMs,
+                                      ambientFastCandidates,ambientCandidates);
+}
+void EspNativeSpriteRenderer_suspendAmbient(void) {
+    ambientCandidates=0U; ambientFastCandidates=0U;
+}
+void EspNativeSpriteRenderer_resetAmbient(void) {
+    EspNativeSpriteRenderer_suspendAmbient();
+    ambientSampleMs=0U; ambientPresentedMs=0U;
+}
 static uint8_t spriteRenderMode(uint16_t logical) {
     return (logical == 136U || logical == 137U || logical == 144U)
                ? RENDER_MODE_ADD
@@ -687,6 +703,10 @@ static int buildOrder(Render_t* render,
             return 0;
         }
 
+        if (EspNativeAmbientSprite_eligible(info,type)) {
+            ++stats->ambientCandidates;
+            if (type != 1U && type != 2U) ++stats->ambientFastCandidates;
+        }
         if (spriteRenderMode(resourceLogical) == RENDER_MODE_ADD) {
             ++stats->mode7Objects;
         }
@@ -1137,6 +1157,8 @@ static int drawAt(Render_t* render,
     Vertex_t swap;
     Line_t line;
     uint32_t animation;
+    uint8_t entityType, entitySubtype;
+    uint16_t entityLink, entityOrdinal;
     int minimum;
     int maximum;
     int spriteX;
@@ -1151,9 +1173,11 @@ static int drawAt(Render_t* render,
     spriteX += offsetX;
     spriteY += offsetY;
 
-    animation = (parent->info & FIXED_ANIM) != 0U
-                    ? ((parent->info & 0x1e00U) >> 9)
-                    : 0U;
+    if (!EspMapSpriteTopology_getEntity(parent->index,&entityType,
+                                        &entitySubtype,&entityLink,
+                                        &entityOrdinal)) return 0;
+    animation = EspNativeAmbientSprite_frame(parent->info,entityType,
+                                              parent->index,ambientSampleMs);
     if (!loadFrame(sources, logical, animation, glow,
                    frame, seenLogical, stats)) {
         TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=frame-failed logical=%u animation=%u glow=%u\n", (unsigned int)parent->index, (unsigned int)logical, (unsigned int)animation, (unsigned int)(glow != 0));
@@ -1408,6 +1432,7 @@ static int renderImpl(struct Render_s* renderBase,
                (unsigned int)sizeof(*workspace));
     }
 
+    ambientSampleMs = (uint32_t)(esp_timer_get_time()/1000LL);
     if (!(preview
               ? EspNativeBspVisibility_buildForView(
                     render, view, &workspace->visibility)
@@ -1507,6 +1532,11 @@ done:
     if (!scratchMatches(render, saved)) ok = 0;
     free(saved);
     free(workspace);
+    if (ok) {
+        ambientPresentedMs=ambientSampleMs;
+        ambientCandidates=(uint8_t)(stats.ambientCandidates!=0U);
+        ambientFastCandidates=(uint8_t)(stats.ambientFastCandidates!=0U);
+    } else EspNativeSpriteRenderer_suspendAmbient();
     *outStats = stats;
     return ok;
 }

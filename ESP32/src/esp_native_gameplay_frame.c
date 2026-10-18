@@ -415,6 +415,16 @@ int EspNativeGameplayFrame_renderTurn(
     return renderComposed(render, EspPlayerView_view(), angle, 0, 1, outStats);
 }
 
+/* Canonical standing pose, preview BSP: no automap or monster activation. */
+int EspNativeGameplayFrame_renderAmbient(
+    struct Render_s* render, EspNativeGameplayFrameStats* stats) {
+    const EspPlayerViewState* v=EspPlayerView_view();
+    if (stats) memset(stats,0,sizeof(*stats));
+    if (!v || v->active!=1U || v->viewX!=v->destX ||
+        v->viewY!=v->destY || v->viewAngle!=v->destAngle ||
+        (v->viewAngle&63)!=0) return 0;
+    return renderComposed(render,v,(uint8_t)v->viewAngle,1,1,stats);
+}
 int EspNativeGameplayFrame_composeTurn(
     struct Render_s* render,
     uint8_t angle,

@@ -50,6 +50,8 @@ typedef struct EspNativeSpriteStats_s {
     uint32_t depthOccluders;
     uint32_t depthSpriteSpans;
     uint32_t orderFNV1a;
+    uint32_t ambientCandidates;
+    uint32_t ambientFastCandidates;
 } EspNativeSpriteStats;
 
 /*
@@ -62,6 +64,10 @@ typedef struct EspNativeSpriteStats_s {
  * are resolved through bounded PAK reads. Render projection scratch is restored
  * exactly before return.
  */
+/* Visual-only idle cadence; suspend on a failed render until next world frame. */
+int EspNativeSpriteRenderer_ambientDue(uint32_t nowMs);
+void EspNativeSpriteRenderer_suspendAmbient(void);
+void EspNativeSpriteRenderer_resetAmbient(void);
 int EspNativeSpriteRenderer_render(struct Render_s* render,
                                    EspNativeSpriteStats* outStats);
 

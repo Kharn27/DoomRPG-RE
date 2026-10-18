@@ -30,6 +30,7 @@
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_facing_label.h"
 #include "esp_native_gameplay_frame.h"
+#include "esp_native_sprite_renderer.h"
 #include "esp_native_gameplay_hub.h"
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_input.h"
@@ -1895,7 +1896,8 @@ void EspNativeResidentGameplay_reset(void) {
     EspNativeGameplayControls_reset();
     EspNativeGameplayInput_reset();
     EspNativeGameplayPlayerDeath_reset();
-    memset(&gameplayState, 0, sizeof(gameplayState));
+    EspNativeSpriteRenderer_resetAmbient();
+    memset(&gameplayState,0,sizeof(gameplayState));
 }
 
 int EspNativeResidentGameplay_armCheckpointResume(void) {
@@ -2373,7 +2375,37 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
         return;
     }
 
-    if (pending == NULL || pending->pending == 0U) return;
+    if (pending == NULL || pending->pending == 0U) {
+        const uint32_t nowMs=(uint32_t)(esp_timer_get_time()/1000LL);
+        if (!EspNativeGameplayControls_isActive() &&
+            !EspNativeGameplayPresentGate_isArmed() &&
+            !EspAssetPack_isOpen() &&
+            EspNativeSpriteRenderer_ambientDue(nowMs)) {
+            const EspPlayerViewState* v=EspPlayerView_view();
+            if (v && v->active==1U &&
+                v->viewX==v->destX && v->viewY==v->destY &&
+                v->viewAngle==v->destAngle) {
+                EspNativeGameplayFrameStats frame;
+                const Random_t rngBefore=doomRpg->random;
+                int painted=EspNativeGameplayFrame_renderAmbient(
+                    doomRpg->render,&frame);
+                int rngExact=memcmp(&rngBefore,&doomRpg->random,
+                                    sizeof(rngBefore))==0;
+                if (!painted || !frame.finalPresented || !rngExact) {
+                    if (!rngExact) doomRpg->random=rngBefore;
+                    EspNativeSpriteRenderer_suspendAmbient();
+                    printf("[AMBIENT] FAIL painted=%d presented=%u rngExact=%d suspended=yes\\n",
+                           painted,(unsigned int)frame.finalPresented,rngExact);
+                } else {
+                    DRPG_LOGD("[AMBIENT] FRAME fnv=%08x sprites=%u us=%u turn=no rngExact=yes\\n",
+                              (unsigned int)frame.frameAfterFNV,
+                              (unsigned int)frame.spriteDraws,
+                              (unsigned int)frame.totalMicros);
+                }
+            }
+        }
+        return;
+    }
 
     memset(&intent, 0, sizeof(intent));
     inputStatus = EspNativeGameplayInput_consume(&intent);

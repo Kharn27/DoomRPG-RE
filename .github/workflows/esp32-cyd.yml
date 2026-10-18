@@ -163,6 +163,8 @@ jobs:
 
       - name: Test wall sprite visual offset and priority versus desktop (host C)
         run: python ESP32/test/wall_sprite_visual_host.py
+      - name: Native ambient sprite animation
+        run: python ESP32/test/native_ambient_sprite_host.py
 
       - name: Test SYS cards and multislot input ownership (host C)
         run: |
