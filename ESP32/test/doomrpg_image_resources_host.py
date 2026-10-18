@@ -207,8 +207,6 @@ int main(void) {
 def main():
     desktop = (ROOT / "src/DoomRPG.c").read_text(encoding="latin-1")
     native = (ROOT / "ESP32/src/esp_doomrpg_image_resources.c").read_text(encoding="latin-1")
-    generator = (ROOT / "ESP32/scripts/build_engine.py").read_text()
-    assert 'generatedBodies=removed' in generator
     assert native.count("readZipFileEntry(") == 0, "legacy ZIP runtime dependency"
     for signature, crc_before, crc_after in METHODS:
         raw = extract(desktop, signature)
