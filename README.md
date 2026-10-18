@@ -89,10 +89,10 @@ The current hardware-validated native path includes:
 The hardware-tested `SYS` menu stacks `SAVE`, `LOAD`, `EXIT TO MENU`, replacing
 the fixed `CHECKPOINT 1` caption. Exit requires a second tap after an unsaved
 progress warning, then returns to the existing main menu without autosaving or
-changing the checkpoint on SD. Build/host checks pass, and repeated real-CYD `LOAD -> gameplay -> EXIT`
-cycles now return to the exact same menu memory state with resident map owners
-empty and no save write. Cancellation/Options/Help/fresh-START and unsaved/no-save
-edge cases remain to be checked.
+changing the checkpoint on SD. Build/host checks and real-CYD `LOAD -> gameplay -> EXIT` cycles show native
+resident owners fully released and no unexpected save write. Options, Help and
+fresh START are also exercised in later hardware milestones; cancellation,
+corrupted/missing-save recovery and longer progression need separate tests.
 
 The V7 Automap state remains preserved by the current native V11 checkpoint. The HUB
 redesign, its touch-feedback coexistence fixes and the successful SAVE return
@@ -116,16 +116,16 @@ death-menu Main Menu is distinct from the working in-game `SYS → EXIT TO MENU`
 Only presentation changes: fall, fade and existing actions are preserved.
 Local build/tests pass; visual and LOAD acceptance on the CYD remain pending.
 
-### Mission report — development candidate
+### Mission report — historical V10 milestone
 
-Development candidate — mission report: a compact HUB-style full-screen report
+Historical V10 milestone — mission report: a compact HUB-style full-screen report
 now shows Secrets, Monsters, elapsed time, original-style Moves (player turns)
 and XP earned in the current map visit. Time uses a monotonic ESP32 counter,
-without an RTC or network. New V10 checkpoints preserve these metrics; V1–V9
-remain readable and show `SINCE LOAD` when earlier history is unavailable.
-Local build/host checks pass; the user accepted the report on the rebased CYD
-branch. V10 reboot resume and legacy-save migration still await dedicated
-hardware confirmation. See
+without an RTC or network. The V10 milestone introduced these metrics; current checkpoint format is
+**V11**, with the prior V1–V10 read-compatibility boundaries documented
+in the ESP32 guide. Older incomplete histories can display `SINCE LOAD`.
+These are historical V10 build/acceptance observations, not the current
+checkpoint status or a claim that every legacy migration has been tested. See
 [`ESP32/PORTING_STATUS.md`](ESP32/PORTING_STATUS.md).
 
 ### Target hardware
@@ -330,12 +330,12 @@ Le menu `SYS` validé sur le vrai CYD propose `SAVE`, `LOAD`, `EXIT TO MENU`, à
 la place du titre fixe `CHECKPOINT 1`. Quitter exige une seconde pression après
 l'avertissement de perte des changements non sauvegardés, puis revient au menu
 principal existant sans sauvegarde automatique ni modification du fichier SD.
-Compilation et tests locaux OK ; des cycles répétés
-`LOAD -> gameplay -> EXIT` sont désormais validés sur le vrai CYD et
-reviennent exactement au même état mémoire du menu, avec les propriétaires de
-map résidente vidés et sans écriture de sauvegarde. Restent à vérifier les cas
-d'annulation, Options/Help, START frais et les scénarios non sauvegardé/sans
-checkpoint.
+Compilations et tests logiciels OK ; des cycles réels
+`LOAD -> gameplay -> EXIT` ont confirmé la libération des propriétaires de
+carte et l'absence d'écriture de sauvegarde. Options, Help et START frais
+ont également été exercés dans les jalons matériels suivants ;
+les cas d'annulation, sauvegarde corrompue/absente et la progression prolongée
+nécessitent des tests séparés.
 
 L'état Automap hérité de V7 reste conservé dans les sauvegardes natives V11. La refonte du
 HUB, les corrections de coexistence des retours tactiles et le retour en jeu
@@ -360,16 +360,15 @@ indisponibles ; ce Main Menu est distinct du retour fonctionnel en jeu
 existantes sont conservés. Compilation/tests locaux OK ; aspect et LOAD sur
 CYD encore à valider.
 
-### Bilan de mission — évolution en cours
+### Bilan de mission — jalon historique V10
 
-Évolution en cours — bilan de mission : un écran compact dans le style du HUB
+Jalon historique V10 — bilan de mission : un écran compact dans le style du HUB
 affiche désormais les secrets, monstres, le temps écoulé, les Moves (tours de jeu,
 comme dans l'original) et l'XP gagnée pendant la visite du niveau. Le chronomètre
-ESP32 fonctionne sans horloge RTC ni réseau. Les nouvelles sauvegardes V10
-conservent ces compteurs ; les V1–V9 restent lisibles, avec `SINCE LOAD` lorsque
-l'historique antérieur est inconnu. Compilation et tests locaux OK ; bilan
-accepté par l'utilisateur sur le CYD après rebase. La reprise V10 après reboot
-et la migration des anciennes sauvegardes restent à confirmer séparément. Détails dans
+ESP32 fonctionne sans horloge RTC ni réseau. Le jalon V10 introduisait ces compteurs ; le format courant est
+**V11** avec compatibilité des V1–V10 documentée dans le guide ESP32.
+Les historiques anciens incomplets peuvent afficher `SINCE LOAD`. Ces observations et réserves sont celles du jalon V10 historique, et non
+une description du firmware V11 actuel ou une preuve de migration exhaustive. Détails dans
 [`ESP32/PORTING_STATUS.md`](ESP32/PORTING_STATUS.md).
 
 ### Matériel cible
