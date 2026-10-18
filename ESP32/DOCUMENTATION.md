@@ -2,6 +2,34 @@
 
 ## PR #219 — génération C desktop retirée, protocole CI clos (18 octobre 2026)
 
+### Lot B — deux anciens Game_* no-op retirés, PASS CYD réel
+
+Toujours sur la **même branche #219** (code `e3b02d86963523c89824dc757ac3a8161d50776e`),
+[CI complète SUCCESS #39145231343](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39145231343) :
+le pont permanent `esp_legacy_game_bridge.c` n'exporte plus que
+`Game_init`. `Game_activate` et `Game_unloadMapData` étaient des
+no-op et sont désormais absentes ; un appel inédit ne doit **pas** linker.
+L'ancien appel `Game_unloadMapData` dans le nettoyage START a été retiré,
+mais **`Render_freeRuntime`, le contrôle des caches et les propriétaires
+résidents sont conservés**. Nouveau test `game_inert_abi_retirement_host.py`
+avec compilateur/harness et audit des symboles sur les trois profils.
+
+**Flash normal validé par l'utilisateur le 18 octobre 2026** :
+START → intro animée et texte complet (7 taps) → intro disposée
+(heap8 129276→163332) → chargement frais Entrance → gameplay ;
+EXIT depuis SYS sans sauvegarde → menu → LOAD slot09 V11 5604 B →
+reprise du gameplay, rotation/strafe, changement d'armes,
+combat et riposte esquivée. `[RESIDENTRESET] empty=1`, et
+`heap8=113800 largest8=86004` restent stables au jeu ;
+`shapeData/mediaTexels` sont toujours NULL.
+La trace ne fournit pas de SHA firmware imprimé ; PASS ciblé de la
+branche, non empreinte binaire contrôlée. Le nouveau code ne touche pas
+les mécaniques de combat. Voir `PORTING_STATUS.md` pour les témoins exacts.
+
+`Game_t` fait encore **4 B** et `Game_init` reste un export vivant :
+les retirer requiert un audit spécifique des frontières init, reset,
+config/mappings, Game shell et teardown. **Aucun merge** dans `main`.
+
 Depuis `main 6390a6d42e50a058a05ebc0f4483cb02894f065f`, branche
 `agent/esp32-retire-generated-doomrpg-oracle`,
 [PR #219](https://github.com/Kharn27/DoomRPG-RE/pull/219) :
