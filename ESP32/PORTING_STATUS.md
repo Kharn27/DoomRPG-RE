@@ -2,6 +2,93 @@
 
 ## PR #219 — générateur C desktop retiré, SDL packed et parité préservés (18 octobre 2026)
 
+### Troisième frontière : retrait du dernier Game_init / Game_t alloué — PASS CYD (18 octobre 2026)
+
+**Branche et PR inchangées** : `agent/esp32-retire-generated-doomrpg-oracle`,
+[PR #219](https://github.com/Kharn27/DoomRPG-RE/pull/219) en cours, **aucun merge dans main**.
+**Dernier SHA de code testé en CI** :
+`33835b6dadef03aafe10bdb7874459c287cfeb09`.
+[CI SUCCESS #39160572323](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39160572323)
+(54 étapes : host, normal/bringup/trace, compiledb, garde des symboles ELF).
+
+- `ESP32/src/esp_legacy_game_bridge.c` **supprimé**.
+  Aucun export `Game_init`, `Game_activate`, `Game_unloadMapData` dans
+  les ELF ; aucune unité `src/Game.c` desktop compilée.
+- L'instance heap de `Game_t` a disparu. Le **champ structurel**
+  `doomRpg->game` reste provisoirement compatible mais est
+  **invariablement NULL**, y compris dans les gardes de session,
+  intro, chargement, sortie et le teardown fatal.
+  `DoomRPG_getEngineMetrics` annonce `game=0 B` ;
+  l'étape `DOOMRPG_CORE_GAME` reste une étape de diagnostic de 0 B.
+  Le démontage de la structure racine n'est **pas** entrepris ici.
+- Test `game_inert_abi_retirement_host.py` : métriques extraites du vrai
+  code natif, absence d'appels Game_* dans les sources ESP32, refus de
+  tout pointeur Game non NULL. `doomrpg_root_owner_host.py` a exécuté
+  **4096 cas de teardown simulé**, sans allocation Game.
+- CI mémoire statique : normal **49 488 B**, bringup **49 640 B**,
+  trace **49 536 B** (inchangé) ; Flash normal **821 161 B**,
+  bringup **841 789 B**, trace **837 781 B**. Ces tailles ne sont
+  pas une preuve de parité binaire ELF.
+
+**PASS matériel ciblé, vrai CYD classic, normal `esp32-cyd`, logs utilisateur
+du 18 octobre 2026** (l'extrait commence au tap START et ne contient pas
+l'en-tête `[CORE]` ; aucun SHA embarqué n'est fourni : rattachement au
+flash de la branche annoncé, pas fingerprint vérifié indépendamment) :
+
+1. MENU_MAIN → **START** : `[MAINSTART] Begin` valide avec
+   `shapeData=0 mediaTexels=0` et `heap8=154908` ; nettoyage
+   `154908→163348` (**+8440 B**) sans structures legacy.
+   Nouveau joueur niveau 1 HP30/30, `stateFNV=e745fce9`,
+   quatre images d'intro adoptées en packed indexed.
+2. **Intro** : frame initiale FNV `ade0195d`,
+   sept taps acceptés, `FINAL-TEXT-PRESENTED`,
+   `FINAL-CONTINUE`, `[INTRODISP] READY` :
+   `heap8=129292→163348` (**34 056 B récupérés**),
+   `largest8=98292→110580`, ressources NULL,
+   chargement natif sans retour `DoomCanvas_loadMap`.
+3. **Nouveau jeu Entrance** : `/intro.bsp`, CRC
+   `623f34e4`, arena `14095 B` FNV `c3882516`,
+   spawn `544,1824`, angle 64 ;
+   `[ENGINESESSION] FRESH-VISIBLE` et
+   `[RESIDENTGAMEPLAY] READY`, `shapeData/mediaTexels=0`.
+   Après initialisation, `[ALIVE]` avec
+   `heap8=113816`, `largest8=86004`.
+4. **EXIT depuis le HUB/SYSTEM**, sans sauvegarde :
+   `[SYS] EXIT-CONFIRMED` suivi de
+   `[RESIDENTRESET]` before=1/1/1/1/1/1/1 →
+   after=0/0/0/0/0/0/0, `empty=1`,
+   libération résidente **18 008 B**.
+   Menu opaque disponible (`[SYSEXIT] MENU-READY`),
+   `heap8=159752`, `largest8=110580`.
+5. **LOAD slot09 V11 5 604 B** depuis ce même menu :
+   `[NATIVESAVE] LOAD` restaure ressources, scripts, lignes,
+   automap, état/topologie/position/activation monstres et drops,
+   `[ENGINESESSION] RESUME-VISIBLE`,
+   `[RESIDENTGAMEPLAY] READY`. Trois `[ALIVE]` consécutifs
+   à **heap8=113816**, **largest8=86004** :
+   pas de fuite observée sur la durée de cet extrait.
+   Aucune attaque n'est montrée après cette reprise dans **ce**
+   log ; ne pas lui attribuer de PASS de combat nouveau.
+
+**Comparaison matérielle sur le même parcours** :
+le lot B affichait `heap8=154892` avant START et
+`heap8=113800` en jeu ; le lot C affiche respectivement
+**154908** et **113816**, soit **+16 octets libres**,
+ce qui est cohérent avec la disparition de l'allocation heap
+de la shell Game_t de 4 B et de son overhead allocateur.
+Le `largest8` reste à 86004 B en jeu.
+`shapeData==NULL`, `mediaTexels==NULL` sont préservés.
+Ne pas extrapoler cette mesure à toutes les maps, aux tests de
+défaillance SD ou à l'audio (backend silent).
+
+**Bilan** : zéro unité C desktop liée, zéro `Game_*` lié,
+zéro objet `Game_t` alloué ; champ historique du root
+provisoirement NULL. **Frontière #219 lot C matériellement PASS**.
+La PR reste ouverte sur cette même branche pour un éventuel
+jalon suivant, séparément testé ; **ne pas merger dans main**.
+
+---
+
 ### Deuxième frontière sur la même PR : retrait des deux Game_* inertes — PASS CYD (18 octobre 2026)
 
 **Dernier SHA de code de ce lot** :
