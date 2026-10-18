@@ -1,271 +1,142 @@
-# Doom RPG ESP32-native port
+# Doom RPG — port ESP32-native sur classic CYD
 
-This directory contains the classic **ESP32-2432S028R CYD / no-PSRAM** port of Doom RPG.
+> Guide d'usage **actuel au 18 octobre 2026**, au dernier code
+> `a59554ed524502d02dbab69149777a94050b0a26` de
+> [PR #219](https://github.com/Kharn27/DoomRPG-RE/pull/219).
+> Pour les futurs changements, le dépôt GitHub et
+> [PORTING_STATUS.md](PORTING_STATUS.md) font foi, pas les anciens jalons.
 
-DoomRPG-RE desktop/J2ME code is an executable specification for original behavior and formats. The permanent ESP32 architecture is native, compact and data-driven.
+## Démarrer
 
-Start here:
+Carte cible : **ESP32-2432S028R classic CYD**, ESP32-D0WD-V3 240 MHz,
+4 Mo Flash, **sans PSRAM**, ILI9341 320×240, tactile XPT2046, microSD.
+Le moteur dessine en **160×120 RGB565 (38 400 octets)** puis présente
+en nearest-neighbor ×2. Pas de framebuffer 320×240 supplémentaire.
 
-- [`PORTING_STATUS.md`](PORTING_STATUS.md) — exact current real-CYD hardware boundary, allocations and canonical fingerprints.
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) — permanent engine ownership and rules.
-- [`NATIVE_ENGINE_RECOVERY.md`](NATIVE_ENGINE_RECOVERY.md) — short restart checklist for a new development session.
-- [`DOCUMENTATION.md`](DOCUMENTATION.md) — build/test/documentation map.
+La microSD doit fournir **`/DoomRPG-ESP32.pak`** à sa racine.
+Le fichier `/DoomRPG.zip` n'est **pas lu en runtime** : il est uniquement
+une source de référence, notamment pour générer le PAK hors carte.
 
-## Mission report — development candidate
+Depuis la **racine du dépôt**, pour créer le PAK à partir des données de jeu
+possédées par l'utilisateur :
 
-Development candidate (2026-10-02): the mission-complete screen now reuses the
-HUB palette/crisp font and shows Secrets, Monsters, elapsed time, original-style
-Moves (player turns) and XP earned on the map. V10 saves preserve these counters;
-V1–V9 remain readable, with `SINCE LOAD` for counters missing from old saves.
-No RTC/network is needed. Local build and host checks pass; the user accepted
-the report on the rebased CYD branch. V10 reboot resume and legacy-save migration
-still await dedicated hardware confirmation. See the [report/checkpoint details](DOCUMENTATION.md#mission-report-and-v10-progress--development-candidate-2026-10-02).
+```sh
+python3 ESP32/tools/build_asset_pack.py /path/to/DoomRPG.zip /path/to/DoomRPG-ESP32.pak
+```
 
-## Target
+Copier le `DoomRPG-ESP32.pak` obtenu à la racine de la microSD.
+Le dépôt ne fournit pas les assets originaux du jeu.
+
+Depuis le dossier `ESP32/`, compiler, flasher et afficher le Serial :
+
+```sh
+pio run -e esp32-cyd -t upload -t monitor
+```
+
+Le port de téléversement configuré pour cette installation est
+`/dev/ttyUSB0` ; il peut varier sur un autre PC. Le firmware de
+référence est **`esp32-cyd` normal** : `esp32-cyd-bringup`
+ajoute des diagnostics qui changent les mesures RAM, et
+`esp32-cyd-trace` altère le timing des logs.
+Ne pas confondre succès de CI et PASS sur la vraie carte.
+
+## Utiliser le jeu
+
+Le menu de démarrage possède quatre cartes :
+**Start Game**, **Load Game**, **Options**, **Help/About**.
+Sur les cartes du menu principal, un tap sélectionne et arme la carte
+rouge ; un **deuxième tap après relâchement** confirme.
+
+- **Start Game** : nouvelle partie niveau 1, intro animée avec
+  `More` / `Continue`, puis transition de chargement et arrivée
+  dans Entrance (`/intro.bsp`). Pendant l'intro, toucher l'écran
+  révèle le texte en cours ou passe à la suite ; la dernière
+  confirmation libère les assets de l'intro avant de charger la map.
+- **Load Game** : liste native de **10 slots sur 2 pages**, armement
+  puis confirmation de la sauvegarde choisie. Reprend directement
+  carte et état natif sans rejouer l'intro. Les saves **V11**
+  incluent notamment ressources, scripts, lignes, caisses,
+  automap, monstres, positions, activation et drops. Les versions
+  antérieures V1–V10 restent lisibles via compatibilité documentée.
+- **Options → Video → Luminosité** : préréglages 25 / 50 / 75 / 100 %
+  sauvegardés dans `/DoomRPG-ESP32.cfg` sur la SD
+  (fichier indépendant du PAK et des `.sav`).
+  `Input` et `Sound` demeurent différés.
+- **Help/About** : aide native depuis le PAK, **83 lignes**,
+  huit visibles par page, boutons fixes **BACK**, **UP**, **DOWN** ;
+  `BACK` retourne au dashboard sans reconstruire de menu BSP.
+
+En jeu, les **12 zones tactiles invisibles** gèrent mouvements,
+strafe, rotations, sélection/attaque et actions de HUB. Le
+bandeau supérieur permet de passer un tour ; les rotations
+n'avancent pas le tour des monstres. Le HUD et l'affichage monde
+utilisent le même framebuffer natif. L'interface HUB possède
+quatre onglets :
+
+| Onglet | Usage |
+|---|---|
+| `INV` | Notebook, objets transportés, clés possédées ; plusieurs usages d'objets restent différés |
+| `WPN` | Choix d'arme par grille 3×3 ; les familiers sont hors de cette grille |
+| `STAT` | Santé, armure, niveau, XP, attributs, crédits et clés |
+| `SYS` | `SAVE`, `LOAD`, `EXIT TO MENU`, avec confirmation avant action |
+
+`EXIT TO MENU` libère la session et retourne au menu sans sauvegarder.
+Une sauvegarde en cours ne doit pas être implicitement modifiée par EXIT.
+Le combat et les événements sont natifs, avec plusieurs familles encore
+**fail-closed** (comportement non encore pris en charge). L'audio
+dispose d'intentions natives mais **pas de lecture audible**
+actuellement. Ne pas considérer le port comme une parité complète.
+
+## Vérifier le firmware et la mémoire
+
+Témoins Serial utiles sur le firmware normal :
 
 ```text
-board       ESP32-2432S028R classic CYD
-MCU         ESP32-D0WD-V3 dual core 240 MHz
-flash       4 MB
-PSRAM       none
-display     ILI9341 320x240
-input       XPT2046
-storage     microSD
-logical FB  160x120 RGB565 = 38400 B
+Engine structs: Render=1532 Game=0 Canvas=44 Total=2336 bytes
+[CORE] Game           used=0
+[CORE] Desktop Game.c retired bridge=absent exports=0
+[DOOMCANVASBRIDGE] INIT exports=5
+[DATA] Native PAK indexed, entries=241
+[MAINOPAQUE] DASHBOARD ... finalFNV=0f2c9fc3
+[ENGINESESSION] READY ... shapeData=0x0 mediaTexels=0x0
+[ALIVE] ... heap8=113816 largest8=86004
 ```
 
-Presentation is nearest-neighbor x2 to the physical panel.
+Les deux dernières valeurs RAM sont des **témoins matériels
+observés** sur Entrance / jeu resident après chargement, pas
+des seuils valables pour toutes les maps. Le log complet du
+dernier lot ne contient pas sa ligne de boot `exports=5` ;
+elle est contrôlée au niveau du source/CI et doit être vérifiée
+lors d'un prochain boot pour un témoin matériel direct.
+`Game=0` est validé sur la carte dans le lot antérieur.
+Dans tous les cas, `shapeData` et `mediaTexels` doivent
+rester `NULL`; **pas de décompression ZIP ni de tableau
+texels map-wide en runtime**.
 
-Permanent migrated-world invariants:
+En cas d'incident, conserver le contexte exact Serial
+(`[ALIVE]`, `[NATIVEFRAME]`, `[MONSTER...]`,
+`[NATIVESAVE]`) et distinguer **faits observés**,
+tests host/CI et couverture matérielle.
+Voir [DOCUMENTATION.md](DOCUMENTATION.md) pour les procédures
+de validation détaillées et [ARCHITECTURE.md](ARCHITECTURE.md)
+pour les propriétaires natifs et règles d'évolution.
 
-```text
-Render.shapeData == NULL
-Render.mediaTexels == NULL
-legacy Game.entities == 0
-legacy Game.monsters == 0
-```
+## Développer / reprendre la branche
 
-## Build / flash
+1. Relire le SHA réel de `main`, le
+   [statut](PORTING_STATUS.md), puis
+   [l'architecture](ARCHITECTURE.md) et
+   [le recovery](NATIVE_ENGINE_RECOVERY.md).
+2. Prendre le comportement desktop comme **spécification exécutable**,
+   pas comme propriétaire de structures ESP32.
+3. Un seul milestone cohérent sur `agent/*`, avec API native
+   bornée, tests hôte et garde fail-closed.
+4. Commit + push ; faire tester le binaire normal sur le
+   vrai CYD ; documenter **seulement** les PASS Serial observés.
+5. Ne jamais merger `main` automatiquement.
 
-Normal hardware authority:
-
-```bash
-cd ESP32
-pio run -e esp32-cyd -t clean
-pio run -e esp32-cyd -t upload
-pio device monitor -e esp32-cyd
-```
-
-Optional diagnostic profile:
-
-```bash
-pio run -e esp32-cyd-bringup -t clean
-pio run -e esp32-cyd-bringup -t upload
-pio device monitor -e esp32-cyd-bringup
-```
-
-Use `esp32-cyd` for canonical hardware validation and RAM observations. Bring-up diagnostics can change memory layout.
-
-## Asset model
-
-Native backing store:
-
-```text
-/DoomRPG-ESP32.pak
-```
-
-Build it from the reference archive with:
-
-```bash
-python3 ESP32/tools/build_asset_pack.py \
-    /path/to/DoomRPG.zip \
-    /path/to/DoomRPG-ESP32.pak
-```
-
-`/DoomRPG.zip` is still present for transitional legacy menu/core paths and recovery tooling. It is **not** the runtime architecture for migrated map/gameplay paths. Do not reintroduce ZIP or map-wide inflation where the PAK path already exists.
-
-## Engine model
-
-The permanent direction is:
-
-```text
-original Doom RPG data / behavior
-        -> native parsers + catalogs
-        -> compact immutable EspMapRuntime
-        -> small explicit mutable owners
-        -> EspPlayerView
-        -> native events/gameplay
-        -> native renderer/HUD/dialog/input
-        -> 160x120 RGB565
-        -> CYD x2 presentation
-```
-
-**A new BSP is data, not a new engine.** Loading another level must not create `native_mapN_*` modules, per-level renderers or another lifecycle ladder. New code is justified by a reusable behavior family or explicit native owner.
-
-## Current main-menu routes
-
-The CYD main menu contains, in display order:
-
-```text
-Start Game
-Load Game
-Options
-Help/About
-```
-
-`Exit` from the original application model has no useful meaning on the
-standalone device and is replaced by `Load Game`.
-
-`Options` reuses the same finger-first 2x2 Doom-tech dashboard instead of
-falling back to the thin J2ME rows:
-
-```text
-BACK  | VIDEO
-INPUT | SOUND
-```
-
-`BACK` keeps the released double-tap confirmation and returns through the real
-menu hierarchy. `VIDEO`, `INPUT` and `SOUND` remain deliberately subdued and
-non-interactive until their settings backends are ported. The shared dashboard,
-its subdued deferred cards and the two-tap `BACK` route have passed focused
-visual/touch testing on the real CYD.
-
-The normal new-game route is:
-
-The historical MAP1 startup probe ladder has been replaced by the generic bootstrap:
-
-```text
-Start Game
- -> bounded legacy intro compatibility path
- -> post-intro safe boundary
- -> EspMapCatalog
- -> EspMapResidentLifecycle_loadFromEmpty
- -> generic initial spawn owners
- -> EspNativeGameplaySession
- -> resident native gameplay service
-```
-
-The real CYD has hardware-proven this route into Entrance with movement, scientist dialog, regular-door traversal and an ENTER-triggered `EV_DIALOGNOBACK`, while preserving `shapeData == NULL` and `mediaTexels == NULL`.
-
-The alternate resume route is:
-
-```text
-Load Game
- -> validate the one-slot native checkpoint
- -> release menu-only runtime
- -> rebuild the immutable BSP and restore versioned mutable owners
- -> configure the resumed EspNativeGameplaySession
- -> ST_PLAYING without replaying the intro
-```
-
-If the checkpoint is missing or invalid, the menu remains active and replaces
-the selected row with a red `No Save` response. Both successful resume and the
-no-save response are hardware-proven on the real CYD at `18c1cfb`.
-
-## Current death menu — presentation candidate
-
-The death menu now shares the HUB/mission-report industrial palette and crisp
-fonts: a red `YOU DIED` header and four aligned two-line cards. Checkpoint LOAD
-is amber when available, otherwise shows `NO SAVE`. Junction, Retry and Main
-Menu remain deferred and explicitly display `NOT AVAILABLE`. The fall/fade and
-existing single-tap LOAD route are unchanged. Build/host checks pass; the new
-presentation still awaits CYD testing.
-
-Death-menu `MAIN MENU` is separate from the working in-game
-`SYS → EXIT TO MENU` route, which this redesign does not change.
-
-## Current in-game HUB
-
-The compact native HUB currently exposes:
-
-```text
-INV | WPN | STAT | SYS
-```
-
-While it is open, the HUB owns the complete 160x100 logical surface below the
-industrial title bar (`y=20..119`). The gameplay portrait/status strip is hidden
-instead of consuming the last 20 rows. Closing the HUB reconstructs the normal
-HUD immediately and validates the lower strip against its pre-open fingerprint;
-the following world frame then recomposes the derived top message band.
-
-All four tab labels use the same native 5x7 pixel font as the primary STAT
-values, avoiding the blurry double-scaled 3x5 glyphs while preserving the full
-38x13 logical touch targets.
-
-- `INV` presents Notebook, carried items and owned key cards in a four-row scrolling window.
-  Every visible row is directly touch-selectable; item counts use a compact
-  `Xn` label and keys reuse their green/yellow/blue/red mini-card icon. Weapons
-  remain in WPN and Credits remain in STAT; STAT also keeps its useful key
-  summary. Notebook opening and consumable use are
-  deliberately deferred until their native interaction/turn owners exist.
-- `WPN` presents the nine normal weapon IDs 0..8 as a complete 3x3 grid.
-  Familiar IDs 9..11 remain excluded. Source BGR565 weapon palettes are
-  converted to framebuffer RGB565 before drawing; its three rows now extend to
-  the bottom of the HUB surface.
-- `STAT` remains read-only and now uses a denser 3x5 information dashboard:
-  slightly raised HP/Armor cards with intermediate 5x7 values and real
-  proportional green/red health and blue armor rails, level/XP with progress
-  bar, an aligned 2x2 attribute grid, and a lower footer that renders owned
-  keys as green/true-yellow/blue/red key cards rather than exposing the
-  internal bitmask. Only the tab remains touch-active.
-  The refined typography and key-card colors have passed focused visual testing
-  on the real CYD.
-- `SYS` has three stacked cards: `SAVE`, `LOAD`, `EXIT TO MENU`. The old
-  `CHECKPOINT 1` caption was only the fixed single save slot, not a stage number,
-  and has been removed. SAVE and LOAD require a
-  second SELECT/tap to confirm; missing checkpoints display `NO SAVE`. A
-  successful SAVE closes the HUB immediately and queues `Game saved` in the
-  gameplay message bar for about 1.2 seconds.
-  Exit also requires two taps: the first displays `EXIT TO MENU?` and
-  `UNSAVED CHANGES LOST`; the second tears down the current session and returns
-  to the existing main dashboard, without autosaving or modifying the SD
-  checkpoint. Changing rows/tabs or closing the HUB cancels confirmation.
-  The destructive lifecycle is now hardware-proven on the real CYD: repeated
-  `LOAD -> gameplay -> EXIT -> MENU_MAIN` cycles return to the exact same
-  `heap8=108488 / largest8=73716` menu state, with resident map owners empty
-  and no save write. Cancellation/Options/Help/fresh-START and unsaved/no-save
-  edge cases remain on the extended acceptance checklist.
-
-The HUB repaints its industrial title bar and the former lower-HUD area while
-active, then reconstructs the normal gameplay HUD when closing. Touch feedback
-is bounded and conflict-aware:
-large checkpoint buttons fit the static edit owner, and newer pickup, message
-or viewport-flash overlays win if they touch the same framebuffer pixels.
-The lower HUD band is the close-time integrity boundary; the top message band
-is deliberately recomposed by the following world frame. When `Game saved`
-expires, the normal priority chain restores a permanent status message first,
-otherwise the current facing-entity label, otherwise an empty bar.
-
-The rebased `esp32-cyd` image builds successfully at 45,224 bytes of static RAM
-and 796,045 bytes of flash. The full-height HUB, four-row inventory (including
-the owned yellow card), compact STAT page, tab typography and ordinary HUD
-restoration have passed a focused real-CYD visual/touch check.
-
-## Source-tree rule
-
-Permanent production code should describe responsibility, not the map on which it was discovered.
-
-Good examples:
-
-```text
-esp_map_*
-esp_player_*
-esp_native_gameplay_*
-esp_native_*_renderer
-platform_*
-```
-
-Historical MAP1/Junction/Entrance probes are not production architecture. Once their behavior is owned by generic modules and hardware-proven, Git history is their archive.
-
-Some transitional menu/intro/legacy wrapper names remain. They should be removed only when their replacement path is explicit and hardware-tested, not by broad cosmetic deletion.
-
-## Workflow
-
-1. Recover exact current `main` SHA and read `PORTING_STATUS.md` + `ARCHITECTURE.md`.
-2. Implement one bounded reusable objective.
-3. Commit and push on `agent/*`.
-4. Flash normal `esp32-cyd` on the real CYD.
-5. Serial output is the hardware truth.
-6. Fix failures on the same branch without broadening scope.
-7. After PASS, document the observed boundary and retire temporary scaffolding.
-8. Never merge into `main` without an explicit request.
+Les anciens jalons d'intro et leurs anciennes empreintes mémoire
+sont conservés sous [archive/](archive/) et ne sont **pas**
+la documentation d'usage actuelle. Les valeurs exactes
+de l'ancienne PR #219 A–D sont dans
+[le journal archivé](archive/PR219_DESKTOP_RETIREMENT_MILESTONES.md).
