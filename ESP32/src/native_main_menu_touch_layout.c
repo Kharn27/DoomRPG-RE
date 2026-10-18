@@ -294,6 +294,37 @@ static void chamferCard(Render_t* render,
 #define MAIN_DOOM_METAL     0x1082U
 #define MAIN_DOOM_METAL_HI  0x2104U
 
+/* Long French label in the original 54px card. A fixed 4x7 bitmap at
+ * 5px advance fits all ten letters into 49 pixels (98 physical); unlike
+ * scaling the canvas font it cannot bleed into the immutable left logo. */
+static void drawLuminositeLabel(Render_t* render, int left, int top,
+                                uint16_t color) {
+    static const uint8_t glyphs[10][7] = {
+        {8, 8, 8, 8, 8, 8,15}, /* L */
+        {9, 9, 9, 9, 9, 9,15}, /* U */
+        {9,15,15, 9, 9, 9, 9}, /* M */
+        {15,6, 6, 6, 6, 6,15}, /* I */
+        {9,13,13,11,11, 9, 9}, /* N */
+        {6, 9, 9, 9, 9, 9, 6}, /* O */
+        {7, 8, 8, 6, 1, 1,14}, /* S */
+        {15,6, 6, 6, 6, 6,15}, /* I */
+        {15,6, 6, 6, 6, 6, 6}, /* T */
+        {15,8, 8,14, 8, 8,15}  /* E */
+    };
+    int ch, row, col;
+    const int x = left + 2;
+    const int y = top + 6;
+    for (ch = 0; ch < 10; ++ch) {
+        for (row = 0; row < 7; ++row) {
+            for (col = 0; col < 4; ++col) {
+                if ((glyphs[ch][row] & (uint8_t)(8U >> col)) != 0U) {
+                    putPixel(render, x + ch * 5 + col, y + row, color);
+                }
+            }
+        }
+    }
+}
+
 static void drawDashboardCard(DoomRPG_t* doomRpg,
                               int item,
                               const char* label,
@@ -340,8 +371,14 @@ static void drawDashboardCard(DoomRPG_t* doomRpg,
     DoomRPG_setFontColor(doomRpg,
                          !enabled ? 0xff6f7881U :
                          (focused ? 0xffffece8U : 0xffddd5ccU));
-    DoomCanvas_drawString1(doomRpg->doomCanvas,
-                           (char*)label, textX, textY, 0);
+    if (strcmp(label, "LUMINOSITE") == 0) {
+        drawLuminositeLabel(render, left, top,
+                            !enabled ? ESP_HUB_COLOR_STEEL_DARK :
+                            (focused ? 0xff7dU : 0xd6b9U));
+    } else {
+        DoomCanvas_drawString1(doomRpg->doomCanvas,
+                               (char*)label, textX, textY, 0);
+    }
 }
 
 int DoomRPG_esp32PaintMenuDashboardCards(
@@ -404,6 +441,78 @@ int DoomRPG_esp32PaintMenuDashboardCards(
 
     DoomRPG_setFontColor(doomRpg, 0xffffffffU);
 
+    hash = DoomRPG_esp32MainMenuFramebufferHash(render);
+    if (hash == 0U) return 0;
+    if (framebufferFNV != NULL) *framebufferFNV = hash;
+    return 1;
+}
+
+/* The child reuses the same protected right rail; touching Back switches
+ * to the four-card Options painter, not to MENU_MAIN. No model mutation or PAK
+ * read is needed for any preset change. */
+int DoomRPG_esp32PaintBrightnessPresetCards(
+    struct DoomRPG_s* doomRpgBase,
+    uint8_t activePercent,
+    uint32_t* framebufferFNV) {
+    static const char* const names[DOOMRPG_ESP32_BRIGHTNESS_CARD_COUNT] = {
+        "BACK", "25%", "50%", "75%", "100%"
+    };
+    DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
+    Render_t* render;
+    int item;
+    uint32_t hash;
+
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
+        (activePercent != 25U && activePercent != 50U &&
+         activePercent != 75U && activePercent != 100U) ||
+        DOOMRPG_ESP32_BRIGHTNESS_CARD_TOP(0) <=
+            DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP ||
+        DOOMRPG_ESP32_BRIGHTNESS_CARD_BOTTOM(4) >=
+            DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM) return 0;
+
+    render = doomRpg->render;
+    fillRect565(render, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT,
+                DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP,
+                DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT,
+                DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM,
+                MAIN_DOOM_METAL);
+    drawRect565(render, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT,
+                DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP,
+                DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT - 1,
+                DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM,
+                ESP_HUB_COLOR_STEEL_DARK);
+
+    for (item = 0; item < DOOMRPG_ESP32_BRIGHTNESS_CARD_COUNT; ++item) {
+        int left, top, right, bottom;
+        int selected;
+        int textWidth, textX, textY;
+        const uint8_t percent = item == 0 ? 0U : (uint8_t)(item * 25U);
+        uint16_t panel, border, stripe;
+        DoomRPG_esp32BrightnessCardRect(item, &left, &top, &right, &bottom);
+        selected = (item != 0 && activePercent == percent);
+        panel = selected ? MAIN_DOOM_RED_DARK : MAIN_DOOM_METAL;
+        border = selected ? MAIN_DOOM_RED_HOT : ESP_HUB_COLOR_STEEL_DARK;
+        stripe = selected ? MAIN_DOOM_RED_HOT : MAIN_DOOM_METAL_HI;
+
+        fillRect565(render, left, top, right, bottom, panel);
+        drawRect565(render, left, top, right, bottom, border);
+        fillRect565(render, left + 2, top + 4,
+                    left + (selected ? 4 : 3), bottom - 4, stripe);
+        putPixel(render, right - 3, top + 2, border);
+        putPixel(render, right - 2, top + 2, border);
+        putPixel(render, right - 2, bottom - 2, border);
+        chamferCard(render, left, top, right, bottom);
+
+        textWidth = (int)strlen(names[item]) * MENU_GLYPH_ADVANCE;
+        textX = ((left + right + 1) >> 1) - (textWidth >> 1);
+        textY = top + (((bottom - top + 1) -
+                        DOOMRPG_ESP32_MAIN_MENU_FONT_HEIGHT) >> 1);
+        DoomRPG_setFontColor(doomRpg,
+                             selected ? 0xffffece8U : 0xffddd5ccU);
+        DoomCanvas_drawString1(doomRpg->doomCanvas,
+                               (char*)names[item], textX, textY, 0);
+    }
+    DoomRPG_setFontColor(doomRpg, 0xffffffffU);
     hash = DoomRPG_esp32MainMenuFramebufferHash(render);
     if (hash == 0U) return 0;
     if (framebufferFNV != NULL) *framebufferFNV = hash;
