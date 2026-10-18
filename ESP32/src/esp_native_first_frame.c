@@ -174,6 +174,7 @@ typedef struct LegacyWallGuard_s {
 
 static EspNativeFirstFrameState frameState;
 static uint8_t indicatorVisible;
+static uint32_t indicatorSampleMs;
 static uint8_t frameScratchLogged;
 /* Failure-only BSS witness, printed after renderer work has unwound. */
 static FirstFrameFailure frameFailure;
@@ -1107,7 +1108,7 @@ static int drawLine(FirstFrameWork* work, uint32_t lineIndex) {
     }
     ++work->wallDraws;
     if (EspNativeWallIndicator_isAnimated(mapLine.texture)) {
-        work->indicatorSeen = 1U;
+        work->indicatorSeen |= EspNativeWallIndicator_bit(mapLine.texture);
     }
     return 1;
 }
@@ -1402,7 +1403,10 @@ static int renderFrame(Render_t* render,
     ok = work->wallDraws > 0U && work->pixelsDrawn > 0U;
     /* This is a presentation witness, not mutable geometry or map state.
      * Only advertise visible indicators after the complete world pass. */
-    if (ok) indicatorVisible = work->indicatorSeen;
+    if (ok) {
+        indicatorVisible = work->indicatorSeen;
+        indicatorSampleMs = work->animationMs;
+    }
 
 done:
     releaseCache(work);
@@ -1429,9 +1433,14 @@ static int renderFrameWithInlineBoundary(
 int EspNativeFirstFrame_indicatorVisible(void) {
     return indicatorVisible != 0U;
 }
+int EspNativeFirstFrame_indicatorDue(uint32_t nowMs) {
+    return EspNativeWallIndicator_changed(indicatorVisible,
+                                          indicatorSampleMs, nowMs);
+}
 
 void EspNativeFirstFrame_reset(void) {
     indicatorVisible = 0U;
+    indicatorSampleMs = 0U;
     memset(&frameState, 0, sizeof(frameState));
     memset(&frameFailure, 0, sizeof(frameFailure));
     memset(legacyWallGuards, 0, sizeof(legacyWallGuards));

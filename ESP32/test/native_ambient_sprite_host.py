@@ -19,12 +19,16 @@ assert "EspNativeSpriteRenderer_resetAmbient()" in resident
 assert "EspNativeGameplayPresentGate_isArmed()" in resident
 assert "renderComposed(render,v,(uint8_t)v->viewAngle,1,1,stats)" in frame
 assert "if (!preview && EspMapAutomapState_isReady())" in sprite
-assert "EspNativeFirstFrame_indicatorVisible()" in sprite
+assert "EspNativeFirstFrame_indicatorDue(now)" in sprite
+assert "EspNativeAmbientSprite_due(now, ambientPresentedMs" in sprite
 assert "ambientSuspended=1U" in sprite
 assert "EspNativeWallIndicator_phase(" in wall
-assert "work->indicatorSeen = 1U" in wall
+assert "work->indicatorSeen |= EspNativeWallIndicator_bit(mapLine.texture);" in wall
 assert "indicatorVisible = work->indicatorSeen" in wall
-assert "if (ok) indicatorVisible" in wall
+assert "indicatorSampleMs = work->animationMs" in wall
+assert "if (ok) {" in wall
+assert "EspNativeFirstFrame_indicatorDue(uint32_t nowMs)" in wall
+assert "EspNativeWallIndicator_changed(indicatorVisible," in wall
 assert "logical == 9U || logical == 10U" in wall_policy
 assert "-Wl,--wrap=EspNativeGameplayFrame_renderAmbient" in platformio
 assert "int __wrap_EspNativeGameplayFrame_renderAmbient(" in dynamic
@@ -60,16 +64,33 @@ int main(void) {
     assert(EspNativeWallIndicator_isAnimated(10));
     assert(!EspNativeWallIndicator_isAnimated(8));
     assert(!EspNativeWallIndicator_isAnimated(11));
-    for (uint32_t ms=0;ms<30000;ms+=13) {
-       for (uint16_t id=9;id<=10;id++) {
-           uint32_t tick=(ms+(uint32_t)id*3U);
-           uint32_t legacy=((uint32_t)(tick*UINT32_C(0x400000)))>>30;
-           assert(EspNativeWallIndicator_phase(id,ms)==legacy);
-       }
+    /* Absolute-clock red breathing: forward and back, 960ms/loop.
+     * Green races through all four frames in only 576ms. */
+    static const uint8_t red[6]={0,1,2,3,2,1};
+    for (uint32_t i=0;i<30U;i++) {
+        uint32_t ms=i*ESP_NATIVE_WALL_INDICATOR_RED_MS;
+        assert(EspNativeWallIndicator_phase(9U,ms-27U)==red[i%6U]);
+        assert(EspNativeWallIndicator_phase(10U,
+            i*ESP_NATIVE_WALL_INDICATOR_GREEN_MS-30U)==i%4U);
     }
-    assert(EspNativeWallIndicator_phase(9,UINT32_MAX)==
-           (((UINT32_MAX+9U*3U)>>8)&3U));
-    puts("PASS ambient sprites + native door indicator frames/timers");
+    assert(EspNativeWallIndicator_bit(9U)==ESP_NATIVE_WALL_INDICATOR_RED_BIT);
+    assert(EspNativeWallIndicator_bit(10U)==ESP_NATIVE_WALL_INDICATOR_GREEN_BIT);
+    assert(EspNativeWallIndicator_bit(15U)==0);
+    /* MOVE/TURN can repaint at t=100 or t=155; neither starts another
+     * 160ms timer. At t=160 the red phase changes regardless. */
+    assert(!EspNativeWallIndicator_changed(1U,100U,130U));
+    assert(!EspNativeWallIndicator_changed(1U,155U,156U));
+    assert(EspNativeWallIndicator_changed(1U,155U,160U));
+    assert(EspNativeWallIndicator_changed(1U,100U,160U));
+    assert(!EspNativeWallIndicator_changed(2U,100U,110U));
+    assert(EspNativeWallIndicator_changed(2U,100U,115U));
+    assert(EspNativeWallIndicator_changed(3U,100U,115U));
+    assert(!EspNativeWallIndicator_changed(0U,100U,300U));
+    assert(!EspNativeWallIndicator_changed(1U,0U,960U));
+    assert(EspNativeWallIndicator_changed(1U,0U,192U));
+    assert(EspNativeWallIndicator_phase(9U,UINT32_MAX)==
+           EspNativeWallIndicator_phase(9U,(uint32_t)UINT32_MAX));
+    puts("PASS ambient sprites, 960ms red breathe, 576ms green cycle, absolute wall phase, MOVE parity");
 }
 """
 with tempfile.TemporaryDirectory() as d:

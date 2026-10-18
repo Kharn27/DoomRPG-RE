@@ -196,13 +196,11 @@ static uint32_t ambientSampleMs, ambientPresentedMs;
 static uint8_t ambientCandidates, ambientFastCandidates;
 static uint8_t ambientSuspended;
 int EspNativeSpriteRenderer_ambientDue(uint32_t now) {
-    const uint8_t wallIndicator =
-        (uint8_t)(EspNativeFirstFrame_indicatorVisible() != 0);
     return !ambientSuspended &&
-           EspNativeAmbientSprite_due(
-               now, ambientPresentedMs,
-               (uint8_t)(ambientFastCandidates || wallIndicator),
-               (uint8_t)(ambientCandidates || wallIndicator));
+           (EspNativeFirstFrame_indicatorDue(now) ||
+            EspNativeAmbientSprite_due(now, ambientPresentedMs,
+                                       ambientFastCandidates,
+                                       ambientCandidates));
 }
 void EspNativeSpriteRenderer_suspendAmbient(void) {
     ambientSuspended=1U;
