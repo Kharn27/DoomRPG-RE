@@ -74,7 +74,7 @@ DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
     doomCanvas->fontColor = 0xffffffff;
     doomCanvas->renderFloorCeilingTextures = true;
 
-    printf("[DOOMCANVASBRIDGE] INIT exports=6 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u, retiredStateLayout=%u retiredGraphMirrors=%u retiredIntroState=%u retiredDeadShell=%u retiredInertControl=%u retiredLargeFont=%u retiredFixedGeometry=%u retiredViewShakeAlias=%u clip=%dx%d\n",
+    printf("[DOOMCANVASBRIDGE] INIT exports=5 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u, retiredStateLayout=%u retiredGraphMirrors=%u retiredIntroState=%u retiredDeadShell=%u retiredInertControl=%u retiredLargeFont=%u retiredFixedGeometry=%u retiredViewShakeAlias=%u clip=%dx%d\n",
            (unsigned int)sizeof(DoomCanvas_t),
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES,
@@ -269,6 +269,10 @@ void DoomCanvas_drawString1(DoomCanvas_t* doomCanvas,
 
 static int doomCanvasBeginIntro(DoomCanvas_t* doomCanvas)
 {
+    /* Legacy drawString1 takes char* but reads text without mutation.
+     * Use a mutable bounded local literal instead of discarding const. */
+    char loadingText[] = "Loading...";
+
     if (doomCanvas == NULL || doomCanvas->doomRpg == NULL) {
         return 0;
     }
@@ -280,7 +284,7 @@ static int doomCanvasBeginIntro(DoomCanvas_t* doomCanvas)
                      DOOMRPG_CANVAS_WIDTH,
                      DOOMRPG_CANVAS_HEIGHT);
     DoomCanvas_drawString1(
-        doomCanvas, "Loading...", DOOMRPG_CANVAS_CENTER_X, DOOMRPG_CANVAS_CENTER_Y, 17);
+        doomCanvas, loadingText, DOOMRPG_CANVAS_CENTER_X, DOOMRPG_CANVAS_CENTER_Y, 17);
     DoomRPG_flushGraphics(doomCanvas->doomRpg);
     /* Intro music is a native intent, independent of the retired Sound_t.
      * Playback remains deferred until a bounded hardware backend exists. */
