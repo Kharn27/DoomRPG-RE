@@ -2,6 +2,91 @@
 
 ## PR #219 — générateur C desktop retiré, SDL packed et parité préservés (18 octobre 2026)
 
+### Quatrième frontière : blitter glyphes Canvas privé — PASS CYD (18 octobre 2026)
+
+**Branche et PR conservées** :
+`agent/esp32-retire-generated-doomrpg-oracle`,
+[PR #219](https://github.com/Kharn27/DoomRPG-RE/pull/219)
+ouverte en draft ; pas de merge dans `main`.
+**SHA code du lot D testé sur la branche** :
+`461d5d917a630b96cd08b34bf28713c65fd60d8f`.
+[CI SUCCESS #39161846989](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39161846989)
+(55 étapes, hôte + normal/bringup/trace, compiledb/ELF).
+
+- `DoomCanvas_drawImageSpecial` n'a plus d'export ABI externe.
+  Il est devenu `static EspDoomCanvas_drawImageSpecial` dans
+  `esp_legacy_doomcanvas_bridge.c`, appelé exclusivement depuis
+  `DoomCanvas_drawString1`. **Le corps entier de dessin/clipping/
+  tiling est inchangé** et verrouillé par le test hôte
+  `doomcanvas_private_blitter_host.py`
+  (FNV-1a du corps `4c4a9a93`).
+- **Cinq exports Canvas restent compilés** :
+  `DoomCanvas_init/free/drawString1/setState/startup`.
+  Les audits ELF des trois profils interdisent
+  `DoomCanvas_drawImageSpecial` et les 21 TU desktop
+  continuent d'être exclues.
+- Mesures CI : normal RAM statique **49 488 B**, Flash
+  **820 945 B** (−216 B par rapport au lot C) ; bringup
+  **49 640 / 841 573 B**, trace **49 536 / 837 569 B**.
+  Le build local de l'utilisateur donne
+  **49 488 B RAM / 820 961 B Flash** ; écart de Flash **+16 B**
+  par rapport à CI, non expliqué par la trace.
+  Le firmware binaire installé représente **821 328 B**
+  sur flash, ce qui ne correspond pas directement à la jauge
+  PlatformIO des sections utilisées : ne pas confondre les métriques.
+
+**PASS hardware ciblé sur le CYD normal, logs transmis par l'utilisateur :**
+
+1. Upload `platformio ... -e esp32-cyd` réussi (hash flash vérifié),
+   ESP32-D0WD-V3 240 MHz sans PSRAM, SD/PAK 241 ressources,
+   configuration native restaurée à luminosité **75 %** ;
+   `Engine structs: Render=1532 Game=0 Canvas=44 Total=2336`.
+   `[CORE] Game used=0` et `bridge=absent exports=0`.
+   L'init Canvas affiche encore `exports=6` :
+   **diagnostic obsolète uniquement**, pas un sixième export
+   ELF (audit CI : cinq).
+2. `[MAINOPAQUE] DASHBOARD` FNV **`0f2c9fc3`**
+   et `heap8=154908`, `largest8=110580` durant six
+   `[ALIVE]` initiaux. Menu `Help/About` :
+   83 lignes parsées, pages 0→8→16→8, fonds/panneaux
+   `5f22cf6b`, `d0788359`, `9213df95`, puis
+   BACK redessine exactement le menu FNV `0f2c9fc3`.
+   Les textes sont exercés via le blitter interne.
+3. `Options` : FNV **`0acffb35`**, cards Back/Video
+   actives, Input/Sound explicitement différées, BACK
+   retourne FNV `0f2c9fc3`, état et heap inchangés.
+   Pas d'ouverture du sous-menu luminosité dans cet extrait.
+4. `START` : nettoyage natif `154908→163348`, intro
+   packed 4 images, première frame FNV **`ade0195d`** ;
+   sept taps, `FINAL-TEXT-PRESENTED` et
+   `FINAL-CONTINUE`, `[INTRODISP] READY`
+   `heap8=129292→163348` (**34 056 B libérés**).
+5. `/intro.bsp` CRC `623f34e4`, arena 14 095 B
+   FNV `c3882516`, `[ENGINESESSION] FRESH-VISIBLE`,
+   `[RESIDENTGAMEPLAY] READY`. Deux `[ALIVE]`
+   consécutifs à **heap8=113816**, **largest8=86004** ;
+   `shapeData=0x0 mediaTexels=0x0`.
+   Aucune erreur/crash mémoire visible, mais cet extrait
+   **ne contient ni LOAD, ni combat** sur le lot D.
+
+**Dette repérée par ce test** : warning compilateur
+`DoomCanvas_drawString1(char*)` appelé avec littéral
+`"Loading..."` `const char*` ; la correction de
+const-qualification et la chaîne de diagnostic
+`[DOOMCANVASBRIDGE] INIT exports=6` doivent appartenir à
+un **commit distinct**. Ne pas modifier rétroactivement
+le lot D testé, ni lui attribuer un résultat hardware
+d'un changement de code futur.
+
+**Conclusion** : lot D **PASS CYD ciblé** sur les glyphes et
+menus exercés, intro/Entrance et stabilité heap. Les invariants
+mémoire restent tenus. Aucun SHA n'est imprimé dans le
+runtime : l'empreinte flashée n'est pas indépendante du
+workflow rapporté. Branche et PR restent ouvertes,
+sans merge.
+
+---
+
 ### Troisième frontière : retrait du dernier Game_init / Game_t alloué — PASS CYD (18 octobre 2026)
 
 **Branche et PR inchangées** : `agent/esp32-retire-generated-doomrpg-oracle`,
