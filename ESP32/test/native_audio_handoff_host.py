@@ -11,7 +11,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 ESP = ROOT / "ESP32"
-BRIDGE = ESP / "src/esp_legacy_doomcanvas_bridge.c"
+BRIDGE = ESP / "src/esp_native_canvas_text.c"
 AUDIO = ESP / "src/esp_native_audio_intent.c"
 
 bridge = BRIDGE.read_text(encoding="utf-8")
