@@ -99,6 +99,12 @@ start = root_owner.index("static void EspNativeEngineLayout_startupCanvas(")
 end = root_owner.index("\nint DoomRPG_startEngineLayout(", start)
 layout = root_owner[start:end]
 layout = layout.replace("static void EspNativeEngineLayout_startupCanvas(", "void DoomCanvas_startup(")
+# The Render setup symbol was made private without changing any geometry or
+# initialization behavior. Normalize only this internal call for the old
+# independently hardware-proven Canvas layout source fingerprint.
+assert "EspNativeEngineLayout_setupRender(doomRpg->render, &screenRect);" in layout
+layout = layout.replace("EspNativeEngineLayout_setupRender(doomRpg->render, &screenRect);",
+                        "Render_setup(doomRpg->render, &screenRect);")
 layout_fnv = 2166136261
 for byte in layout.encode("utf-8"):
     layout_fnv = ((layout_fnv ^ byte) * 16777619) & 0xFFFFFFFF
