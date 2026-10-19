@@ -1,8 +1,8 @@
 # Doom RPG — port ESP32-native sur classic CYD
 
-> Guide d'usage **actuel au 18 octobre 2026**, au dernier code
-> `a59554ed524502d02dbab69149777a94050b0a26` de
-> [PR #219](https://github.com/Kharn27/DoomRPG-RE/pull/219).
+> Guide d'usage **mis à jour au 19 octobre 2026**, sur le code
+> `0482f13c2f62b9fc79e650a0b80bfc9695d55bd4` de
+> [PR #221](https://github.com/Kharn27/DoomRPG-RE/pull/221) (PASS CYD ciblé).
 > Pour les futurs changements, le dépôt GitHub et
 > [PORTING_STATUS.md](PORTING_STATUS.md) font foi, pas les anciens jalons.
 
@@ -66,17 +66,30 @@ rouge ; un **deuxième tap après relâchement** confirme.
   huit visibles par page, boutons fixes **BACK**, **UP**, **DOWN** ;
   `BACK` retourne au dashboard sans reconstruire de menu BSP.
 
-En jeu, les **12 zones tactiles invisibles** gèrent mouvements,
-strafe, rotations, sélection/attaque et actions de HUB. Le
-bandeau supérieur permet de passer un tour ; les rotations
+En jeu, les **12 zones tactiles invisibles** de navigation/
+actions (plus une zone dédiée aux armes dans le HUD inférieur)
+gèrent mouvements, strafe, rotations, sélection/attaque et menu.
+Le bandeau supérieur permet de passer un tour ; les rotations
 n'avancent pas le tour des monstres. Le HUD et l'affichage monde
-utilisent le même framebuffer natif. L'interface HUB possède
-quatre onglets :
+utilisent le même framebuffer natif.
+
+**Accès aux armes :** taper **l'icône munitions/boussole en bas à droite**
+du HUD (x100..159 et y100..119 logiques, soit x200..319 et
+y200..239 sur l'écran physique). Cette zone ouvre directement la
+**grille 4×3 des 12 armes** : l'arme équipée est surlignée, les
+armes possédées sont en couleur, les autres sont grisées.
+**Un seul tap sur une arme possédée l'équipe et referme immédiatement
+la grille**, sans tour de monstre ; **BACK** ferme sans changer l'arme.
+Les icônes des familiers 9–11 manquent aux données sources et restent
+en présentation fail-closed. Le feedback tactile lumineux sur la
+zone HUD est facultatif : l'absence d'overlay ne bloque pas l'action.
+
+Le menu du haut ouvre le **HUB à trois onglets**, sans ancien onglet
+`WPN` :
 
 | Onglet | Usage |
 |---|---|
 | `INV` | Notebook, objets transportés, clés possédées ; plusieurs usages d'objets restent différés |
-| `WPN` | Choix d'arme par grille 3×3 ; les familiers sont hors de cette grille |
 | `STAT` | Santé, armure, niveau, XP, attributs, crédits et clés |
 | `SYS` | `SAVE`, `LOAD`, `EXIT TO MENU`, avec confirmation avant action |
 
@@ -95,7 +108,7 @@ Témoins Serial utiles sur le firmware normal :
 Engine structs: Render=1532 Game=0 Canvas=44 Total=2336 bytes
 [CORE] Game           used=0
 [CORE] Desktop Game.c retired bridge=absent exports=0
-[DOOMCANVASBRIDGE] INIT exports=5
+[DOOMCANVASBRIDGE] INIT exports=4
 [DATA] Native PAK indexed, entries=241
 [MAINOPAQUE] DASHBOARD ... finalFNV=0f2c9fc3
 [ENGINESESSION] READY ... shapeData=0x0 mediaTexels=0x0

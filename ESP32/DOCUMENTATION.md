@@ -1,5 +1,19 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #221 — accès direct aux armes depuis le HUD : PASS CYD ciblé (19 octobre 2026)
+
+**Code CYD testé** : `0482f13c2f62b9fc79e650a0b80bfc9695d55bd4` sur `agent/esp32-retire-desktop-canvas-text-abi`. [CI push #39246653544 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39246653544), [CI PR #39246661282 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39246661282), RAM statique **49 520 B**, Flash **823 037 B** en normal. Le PASS Canvas texte précédent reste distinct : `f9d8061`.
+
+**Guide d'usage final** : en jeu, un seul tap dans le bas droit du HUD (munitions/boussole ; zone logique **x100..159 / y100..119**) ouvre l'écran **WEAPONS** avec grille 4×3, arme courante préselectionnée ; les armes possédées sont en couleur, les autres grisées. Un tap sur une arme possédée la sélectionne et **ferme immédiatement le menu sans faire avancer le tour** ; BACK annule sans sélection. La navigation HUB top/menu affiche exclusivement **INV/STAT/SYS** ; l'ancien onglet **WPN** est retiré. Les trois icônes de familiers 9–11 absentes des données sont affichées selon le comportement fail-closed existant ; ne pas leur inventer d'asset.
+
+**Diagnostic causatif** : sur `45a549a5`, une sélection correcte `2→3` produisait un `REBASE-FAILED` (`firstBottom=4ad75e77`, `secondBottom=f1d77c03`) puis `GRID-CLOSE-ROLLBACK` ; le personnage gardait donc son arme précédente. La cause se trouvait dans la coexistence d'un HUD retained obsolète (arme/munitions/angle) et de la réapplication non idempotente de la boussole après un repaint complet. Le correctif `0482f13` a introduit un **instantané local depuis le PlayerState canonique** : HP, armure, arme, ammo-type (même table que le cycle d'armes), quantité et angle. Un même modèle live alimente le HUD et le sprite du weapon en vue subjective. Pas de nouvelle copie persistante, pas de mutation de player par le renderer, pas de suppression du contrôle FNV ; **la fermeture refait encore deux peintures et impose le même FNV de bas HUD**.
+
+**Résultats matériels exacts** : tap `WEAPON_MENU zone=13`, `HUB-OPEN source=hud-ammo-compass`, puis Pistol `2→3` : deux `REPAINT weapon=3 ammo=22 angle=128`, `HUB CLOSE exactBottom=yes` avec `f1d77c03` identique à l'attendu, `GRID-SELECT-CLOSE target=3` et `HUB-CLOSE seq=2`. Réouverture `equipped=3 selected=3` ; sélection Axe `3→0`, deux `REPAINT weapon=0`, `exactBottom=yes` avec `966e71ad`, `GRID-SELECT-CLOSE target=0`, `HUB-CLOSE seq=4`. `turn=no` aux deux sorties. Quatre `[ALIVE]` entre **80,261 s** et **95,362 s**, `heap8=113784 largest8=86004` constants. Le `TOUCHFEEDBACK SKIP ... overlay-unavailable inputQueued=yes fatal=no` indique uniquement l'indisponibilité du feedback facultatif ; les deux inputs ont bien ouvert la grille. `exactHud=topbar-pending` n'invalide pas le bas exact, la barre haute est recomposée au rendu monde.
+
+**Non couvert dans cet extrait** : visibilité subjective vérifiée par capture/inspection visuelle, case grise, BACK, arme identique, test tactile des trois onglets, SAVE/LOAD/combat/EXIT, ni impression de `shapeData/mediaTexels` ou du SHA firmware. Les nouveaux tests C/CI gardent leurs couvertures propres mais ne s'étendent pas au matériel sans log. **Plus de modifications de code après ce PASS** : clôture documentaire seule, PR review-ready après CI docs verte, merge humain.
+
+---
+
 ## PR #221 — retrait du texte Canvas desktop : validation réelle CYD (19 octobre 2026)
 
 Base `main 90cb0d054e9ec234690c27935e68a19cc805a464`, branche `agent/esp32-retire-desktop-canvas-text-abi`, [PR #221](https://github.com/Kharn27/DoomRPG-RE/pull/221), **dernier SHA code texte validé** `f9d8061fd342e77d4c83271075c077a470b0207a`. [CI push #39181089435 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39181089435) et [CI PR #39181183706 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39181183706).
@@ -8,7 +22,7 @@ Base `main 90cb0d054e9ec234690c27935e68a19cc805a464`, branche `agent/esp32-retir
 
 **PASS ciblé sur le vrai CYD** : Help/About 83 lignes, navigation `0→8→16→24→32→40→32→24` et BACK ; FNV stables `5f22cf6b/d0788359/9213df95/b0191189/4c944ee5/943f0b77`, menu `0f2c9fc3`. Options `0acffb35`, luminosité 75→100→25→100 via SD native et retours OK. START→intro première image `ade0195d`→sortie (+34 056 B)→Entrance CRC `623f34e4`, arena `14095 B` FNV `c3882516`, resident ready. Deux `ALIVE` jeu `heap8=113584 largest8=86004` à ~38,7 et ~43,7 s ; `shapeData/mediaTexels=NULL`. L'extrait n'a ni header boot `exports=4` ni SHA embarqué, ni SAVE/LOAD, combat ou EXIT. **Ce témoin reste attaché au code texte `f9d8061`, pas à un firmware UI ultérieur.**
 
-La suite demandée sur cette même PR est un **jalon B séparé** : accès direct à la grille d'armes depuis le bas droit du HUD (munitions/boussole), retrait de l'onglet WPN du HUB inventaire/statistiques/système, fermeture de la grille immédiatement après sélection valide, sans tour de jeu. Le jalon B doit être testé indépendamment sur le profil normal avant sa clôture documentaire.
+Le jalon B (grille d'armes via le HUD, retrait WPN et fermeture après sélection) possède désormais sa **validation matérielle ciblée distincte** sur le dernier code `0482f13`, documentée en tête de ce fichier.
 
 ---
 

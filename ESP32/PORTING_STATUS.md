@@ -1,5 +1,31 @@
 # Doom RPG ESP32 — état actuel du port
 
+## PR #221 — jalon B : navigation armes via HUD, PASS CYD ciblé (19 octobre 2026)
+
+**Branche** : `agent/esp32-retire-desktop-canvas-text-abi`, [PR #221](https://github.com/Kharn27/DoomRPG-RE/pull/221), base `main 90cb0d054e9ec234690c27935e68a19cc805a464`. **Dernier commit de code testé sur CYD** : `0482f13c2f62b9fc79e650a0b80bfc9695d55bd4`. [CI push SUCCESS #39246653544](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39246653544), [CI PR SUCCESS #39246661282](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39246661282) : tests hôte (dont le vrai helper C de snapshot HUD live Pistol→Shotgun), normal/bringup/trace, audits compilés/ELF. **Statique normal** RAM **49 520 B**, Flash **823 037 B** ; bringup **49 672 / 843 769 B** ; trace **49 568 / 839 693 B**.
+
+### Contrat natif livré
+
+- Tap HUD munitions/boussole **x100..159/y100..119** en pixels logiques 160×120 (zone 13, action `WEAPON_MENU`), quatre petits repères ambre. Accès direct à la **grille native 4×3 de douze armes** ; mêmes ressources du PAK, scratch statique borné 2 690 B, aucune nouvelle copie de sprites map-wide. La grille démarre sur l'arme courante ; les armes non possédées sont grises et refusées. Les trois familiers 9–11 occupent les trois cases originales, leurs icônes sont absentes du corpus source ; ne pas inventer d'assets.
+- Le HUB classique ne comporte désormais que **INV / STAT / SYS** ; WPN a disparu des trois onglets et de leur cycle. La grille d'armes autonome possède une carte BACK. Choisir une arme possédée, y compris déjà équipée, ferme immédiatement le menu. Pas d'avance de tour, d'appel au moteur desktop ni de mutation world/entity.
+- **Incident matériel réellement observé sur le code antérieur `45a549a5`** : sélection valide `weapon=2→3`, mais le double rendu de restauration divergeait (`[HUBHUD] REBASE-FAILED firstBottom=4ad75e77 secondBottom=f1d77c03`), fermeture `NOT_READY` puis `GRID-CLOSE-ROLLBACK`. La sélection joueur était annulée ; ne jamais étiqueter ce code intermédiaire PASS.
+- **Correctif de cause racine** : `EspNativeGameplayHud_snapshotLive` dérive sur la pile l'état d'affichage à partir du `EspNativeGameplayPlayerState` courant, en reprenant HP/armure, arme, type/quantité de munitions via la table existante `EspNativeGameplayWeaponControl`, et angle de vue actuel ; aucune mutation du HUD immutable conservé à l'entrée. Le HUD se reconstruit une seule fois par peinture complète, sans deuxième overlay boussole potentiellement non idempotent. Le rendu de l'arme en vue subjective consulte le même instantané actuel, pas l'arme chargée historiquement. L'exigence **deux peintures avec FNV de bas de HUD strictement égaux reste active**, fail-closed si divergence, rollback sur échec ; aucun simple assouplissement de comparaison.
+
+### Témoins CYD du code final `0482f13`
+
+**Deux sélections réellement exécutées sur firmware normal**, même session, et pas seulement des tests hôte :
+
+1. Tap `WEAPON_MENU zone=13 logical=130,110` → `HUB-OPEN page=weapons source=hud-ammo-compass`, grille `equipped=2 selected=2`. Tap `SELECT logical=145,44` : deux `[GAMEPLAYHUD] REPAINT health=39/39 armor=26/26 weapon=3 ammo=22 angle=128`. `[HUB] CLOSE n=1 weapon=2->3 playerFNV=d17395e1->f5760d24 exact=yes hudRepaint=yes hudBottom=f1d77c03 expectedBottom=f1d77c03 exactBottom=yes` ; `[HUBWEAPON] GRID-SELECT-CLOSE target=3`, `[RESIDENTGAMEPLAY] HUB-CLOSE seq=2 ... turnAdvance=no`.
+2. Réouverture `WEAPON_MENU zone=13 logical=133,108` : grille `equipped=3 selected=3` confirmant persistance de Shotgun. Tap `SELECT logical=20,41` : deux `REPAINT ... weapon=0 ammo=14 angle=128` ; `[HUB] CLOSE n=2 weapon=3->0 playerFNV=f5760d24->856ea10f exact=yes hudRepaint=yes hudBottom=966e71ad expectedBottom=966e71ad exactBottom=yes` ; `GRID-SELECT-CLOSE target=0`, `HUB-CLOSE seq=4 ... turnAdvance=no`. `ammo=14` est le compteur interne rapporté au repaint pour l'arme 0 ; ce champ ne prouve pas à lui seul la typographie visible.
+3. `[ALIVE]` aux **80 261, 85 262, 90 361 et 95 362 ms** : `heap=179028`, `heap8=113784`, `largest8=86004` constants sur les ~15 s observées ; SD/PAK/VIDEO/CORE/LAYOUT/PRERENDER/RENDER/MAPPINGS/MENU tous `ready`. Aucun `REBASE-FAILED`, `GRID-CLOSE-ROLLBACK` ni `HUB-RECOVER` dans cette séquence.
+4. `[TOUCHFEEDBACK] SKIP ... overlay-unavailable inputQueued=yes fatal=no` survient sur les deux taps du HUD : **l'overlay visuel de feedback n'est pas disponible**, mais le routage et l'ouverture fonctionnent ; non bloquant pour la fonctionnalité validée. `exactHud=topbar-pending` pendant CLOSE est attendu : le bas du HUD est exact et la barre haute est recomposée avec le redraw monde.
+
+**Portée exacte du PASS** : routage HUD→grille, état de sélection Pistol→Shotgun→Axe, réouverture après première sélection, fermeture instantanée, réconciliation pixel-exacte du bas HUD, absence de tour et stabilité RAM observée. Le log ne contient ni screenshot/témoin explicite du sprite d'arme en vue subjective, ni test de sélection d'une case grise, BACK, sélection de la même arme, cycle INV/STAT/SYS, combat/SAVE/LOAD/EXIT ou assertion `shapeData/mediaTexels` à ce nouveau SHA ; ces routes bénéficient des tests/contrats de code mais **ne sont pas proclamées matériellement retestées ici**. Le firmware n'imprime pas de SHA embarqué ; son association au commit est celle du flash déclaré. La preuve du jalon A Canvas reste attachée au SHA `f9d8061` antérieur et n'est pas réinventée.
+
+**Clôture** : dernier changement de code `0482f13` matériellement approuvé sur le parcours décrit. À partir du PASS, **documentation uniquement**, CI requise sur le dernier commit documentaire ; PR prête à revenir en revue une fois verte, merge de `main` réservé à l'utilisateur.
+
+---
+
 ## PR #221 — retrait de l'ABI texte Canvas desktop : PASS CYD ciblé (19 octobre 2026)
 
 **Base `main` réelle** : `90cb0d054e9ec234690c27935e68a19cc805a464` (merge #220).
@@ -13,7 +39,7 @@
 - START : intro packed PAK, FNV première image `ade0195d`, progression complète de sept taps ; `INTRODISP` récupère **34 056 B** ; `/intro.bsp` CRC `623f34e4`, arena **14 095 B** FNV `c3882516`, `ENGINESESSION READY`, invariants `shapeData=0 mediaTexels=0`.
 - Deux `[ALIVE]` en jeu aux uptimes **38 669 ms** et **43 714 ms** : `heap8=113584`, `largest8=86004`, stables sur cette fenêtre de ~5 s. Le log fourni commence au menu (pas d'en-tête boot), donc `exports=4` est prouvé côté code/CI, **pas indépendamment imprimé par le CYD** ; aucun SHA firmware embarqué.
 
-**Limites** : PASS de navigation/texte/startup uniquement ; pas de LOAD, SAVE, combat, EXIT ou parcours multi-cartes à ce SHA. Les tests hôte et CI ne sont pas des mesures de pixels matérielles exhaustives. **Ce PASS ne valide aucun changement de code ultérieur** : un second jalon UI armes sur la même branche requiert ses propres tests CI et CYD. Ne pas merger sans demande explicite.
+**Limites** : PASS de navigation/texte/startup uniquement ; pas de LOAD, SAVE, combat, EXIT ou parcours multi-cartes à ce SHA. Les tests hôte et CI ne sont pas des mesures de pixels matérielles exhaustives. **Ce PASS ne valide aucun changement de code ultérieur** : le jalon UI armes dispose désormais de son propre PASS distinct, documenté en tête de ce fichier. Ne pas merger sans demande explicite.
 
 ---
 
