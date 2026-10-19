@@ -5,12 +5,19 @@ ESP32-2432S028R CYD port. It describes the engine we are keeping, not the order
 in which historical recovery probes were written.
 
 For current hardware status and exact canons, read [`PORTING_STATUS.md`](PORTING_STATUS.md).
-As of PR #223 tested code `19f52749b18cf60cc14ecbacd2a32e4756aac2b1`,
-`Render_init` is private native-root constructor `EspNativeEngineRoot_initRender`
-(source-body FNV `884791fe`), not ESP32 Render ABI. It preserves 1532-byte
-`Render_t` ownership; `Render_setup`, `Render_startup` and `Render_free` still
-have distinct native owners. The same SHA has real CYD START → EXIT → LOAD
-V11 → combat PASS, while fatal Render teardown is host-only/unexercised.
+As of PR #223 latest CYD-tested code `eb93bf2fefe3aa48cd87b933648d3a84c78f9743`,
+`Render_init` and `Render_setup` are **not** ESP32 Render ABI symbols.
+They live privately within the native engine root/layout as respectively
+`EspNativeEngineRoot_initRender` (FNV `884791fe`) and
+`EspNativeEngineLayout_setupRender` (FNV `ec9d1151`) in `engine_stubs.c`.
+The 1532-byte `Render_t`, 160x80 viewport, three setup arrays totaling
+1280 B, and `Render_startup` / `Render_free` semantics remain unchanged.
+This SHA passes real CYD START → EXIT → LOAD V11 → monster combat including
+two kills, with constant observed gameplay heap. Fatal Render teardown is
+not hardware-tested. The user has identified **lost perceived responsiveness**
+after animations: `COMBAT-INPUT-BLOCK ... queued=no` rejects taps while
+monster attack/retaliation owns the turn. Input admission/buffering must
+be its own bounded, turn-safe milestone; no world/RNG mutation until commit.
 For build/platform notes, read [`DOCUMENTATION.md`](DOCUMENTATION.md).
 
 Historical ELF census (main `b941048`, 14 October 2026;
