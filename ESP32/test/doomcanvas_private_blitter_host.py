@@ -24,7 +24,7 @@ assert '"DoomCanvas_drawString1",' not in builder
 assert '"DoomCanvas_setState",' not in builder
 assert "glyph blitter must be private" in builder
 assert "void EspNativeCanvas_drawText(" in bridge
-assert 'INIT exports=1 nativeText=1 desktopTU=no' in bridge
+assert 'INIT exports=1 nativeText=1 desktopTU=no' in (SRC / "engine_stubs.c").read_text(encoding="utf-8")
 assert 'INIT exports=6 desktopTU=no' not in bridge
 assert 'doomCanvas, "Loading...", DOOMRPG_CANVAS_CENTER_X' in (SRC / "native_main_menu_model.c").read_text(encoding="utf-8")
 assert "SDL_RenderCopy(sdlVideo.renderer, img->imgBitmap, &clip, &renderQuad);" in bridge
