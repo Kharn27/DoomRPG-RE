@@ -242,8 +242,10 @@ EspNativeGameplayPassTurnStatus EspNativeGameplayPassTurn_execute(
             const uint16_t armorAfter =
                 (uint16_t)((current->param1 >> 16U) & 0xffU);
             const uint16_t damage =
-                (uint16_t)((hpBefore >= hpAfter ? hpBefore - hpAfter : 0U) +
-                           (armorBefore >= armorAfter ? armorBefore - armorAfter : 0U));
+                (uint16_t)((hpBefore >= hpAfter
+                                 ? (uint16_t)(hpBefore - hpAfter) : (uint16_t)0) +
+                           (armorBefore >= armorAfter
+                                 ? (uint16_t)(armorBefore - armorAfter) : (uint16_t)0));
             EspNativeGameplayAutomap_noteDamage(damage, 0U);
             printf("[PASSTURN] AUTOMAP-HAZARD seq=%u tile=%u lost=%u hp=%u->%u armor=%u->%u turn=requested\n",
                    (unsigned int)intent->sequence, (unsigned int)tile,
