@@ -13,36 +13,6 @@
 #include "native_story_fit.h"
 #include "platform_video_config.h"
 
-#define ESP32_DOOMCANVAS_DESKTOP_BYTES 3740U
-#define ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES (2048U + 512U)
-#define ESP32_DOOMCANVAS_RETIRED_ZEROREF_FIELD_BYTES 239U
-#define ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES 240U
-#define ESP32_DOOMCANVAS_RETIRED_DORMANT_TEXT_BYTES (300U + 128U)
-#define ESP32_DOOMCANVAS_RETIRED_STATE_FIELD_BYTES 113U
-#define ESP32_DOOMCANVAS_RETIRED_STATE_LAYOUT_BYTES 116U
-#define ESP32_DOOMCANVAS_RETIRED_GRAPH_MIRROR_BYTES (7U * sizeof(void*))
-#define ESP32_DOOMCANVAS_RETIRED_INTRO_STATE_BYTES 96U
-#define ESP32_DOOMCANVAS_RETIRED_DEAD_SHELL_BYTES 56U
-#define ESP32_DOOMCANVAS_RETIRED_INERT_CONTROL_BYTES 72U
-#define ESP32_DOOMCANVAS_RETIRED_LARGE_FONT_BYTES 16U
-#define ESP32_DOOMCANVAS_RETIRED_FIXED_GEOMETRY_BYTES 56U
-#define ESP32_DOOMCANVAS_RETIRED_VIEW_SHAKE_ALIAS_BYTES 28U
-#define ESP32_DOOMCANVAS_COMPACT_BYTES \
-    (ESP32_DOOMCANVAS_DESKTOP_BYTES - ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_DORMANT_TEXT_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_STATE_LAYOUT_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_GRAPH_MIRROR_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_INTRO_STATE_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_DEAD_SHELL_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_INERT_CONTROL_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_LARGE_FONT_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_FIXED_GEOMETRY_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_VIEW_SHAKE_ALIAS_BYTES)
-
-_Static_assert(sizeof(DoomCanvas_t) == ESP32_DOOMCANVAS_COMPACT_BYTES,
-               "ESP32 DoomCanvas_t layout changed; audit compatibility owners before proceeding");
-
 /*
  * Permanent ESP32 compatibility bridge for the small DoomCanvas ABI that
  * survived the hardware-proven linked-root audit.
@@ -52,41 +22,6 @@ _Static_assert(sizeof(DoomCanvas_t) == ESP32_DOOMCANVAS_COMPACT_BYTES,
  * keeps only the legacy construction/text hooks still referenced
  * by the native runtime while those call sites are migrated individually.
  */
-
-DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
-{
-    printf("DoomCanvas_init\n");
-
-    if (doomCanvas == NULL) {
-        doomCanvas = SDL_malloc(sizeof(DoomCanvas_t));
-        if (doomCanvas == NULL) {
-            return NULL;
-        }
-    }
-    SDL_memset(doomCanvas, 0, sizeof(DoomCanvas_t));
-
-    doomCanvas->doomRpg = doomRpg;
-    doomCanvas->imgFont.imgBitmap = NULL;
-    doomCanvas->fontColor = 0xffffffff;
-    doomCanvas->renderFloorCeilingTextures = true;
-
-    printf("[DOOMCANVASBRIDGE] INIT exports=2 nativeText=1 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u, retiredStateLayout=%u retiredGraphMirrors=%u retiredIntroState=%u retiredDeadShell=%u retiredInertControl=%u retiredLargeFont=%u retiredFixedGeometry=%u retiredViewShakeAlias=%u clip=%dx%d\n",
-           (unsigned int)sizeof(DoomCanvas_t),
-           (unsigned int)ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES,
-           (unsigned int)ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES,
-           (unsigned int)ESP32_DOOMCANVAS_RETIRED_DORMANT_TEXT_BYTES,
-           (unsigned int)ESP32_DOOMCANVAS_RETIRED_STATE_LAYOUT_BYTES,
-           (unsigned int)ESP32_DOOMCANVAS_RETIRED_GRAPH_MIRROR_BYTES,
-           (unsigned int)ESP32_DOOMCANVAS_RETIRED_INTRO_STATE_BYTES,
-           (unsigned int)ESP32_DOOMCANVAS_RETIRED_DEAD_SHELL_BYTES,
-           (unsigned int)ESP32_DOOMCANVAS_RETIRED_INERT_CONTROL_BYTES,
-           (unsigned int)ESP32_DOOMCANVAS_RETIRED_LARGE_FONT_BYTES,
-           (unsigned int)ESP32_DOOMCANVAS_RETIRED_FIXED_GEOMETRY_BYTES,
-           (unsigned int)ESP32_DOOMCANVAS_RETIRED_VIEW_SHAKE_ALIAS_BYTES,
-           DOOMRPG_CANVAS_WIDTH,
-           DOOMRPG_CANVAS_HEIGHT);
-    return doomCanvas;
-}
 
 void DoomCanvas_free(DoomCanvas_t* doomCanvas, boolean freePtr)
 {

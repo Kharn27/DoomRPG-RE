@@ -249,7 +249,9 @@ enum _CanvasState {
 	ST_SORRY
 };
 
+#ifndef DOOMRPG_ESP32
 DoomCanvas_t* DoomCanvas_init(DoomCanvas_t * doomCanvas, DoomRPG_t* doomRpg);
+#endif
 void DoomCanvas_free(DoomCanvas_t* doomCanvas, boolean freePtr);
 void DoomCanvas_updatePlayerDoors(DoomCanvas_t* doomCanvas, Line_t* line);
 void DoomCanvas_attemptMove(DoomCanvas_t* doomCanvas, int x, int y);

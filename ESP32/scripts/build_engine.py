@@ -22,7 +22,6 @@ env.Append(CPPPATH=[join(project_dir, "include"), project_src_dir, engine_dir])
 doom_canvas_bridge_source = join(project_src_dir, "esp_legacy_doomcanvas_bridge.c")
 doom_canvas_bridge_exports = (
     "DoomCanvas_free",
-    "DoomCanvas_init",
 )
 if not os.path.isfile(doom_canvas_bridge_source):
     raise RuntimeError("Missing permanent ESP32 DoomCanvas compatibility bridge")
@@ -46,6 +45,10 @@ if not os.path.isfile(native_layout_source):
     raise RuntimeError("native engine layout owner missing")
 with open(native_layout_source, "r", encoding="utf-8") as owner_file:
     native_layout_owner = owner_file.read()
+if ("static DoomCanvas_t* EspNativeEngineRoot_initCanvas(" not in native_layout_owner or
+        "EspNativeEngineRoot_initCanvas(NULL, doomRpg));" not in native_layout_owner or
+        "DoomCanvas_init(" in doom_canvas_bridge_text):
+    raise RuntimeError("Retired Canvas constructor ABI revived or native root owner absent")
 if ("static void EspNativeEngineLayout_startupCanvas(" not in native_layout_owner or
         "EspNativeEngineLayout_startupCanvas(canvas);" not in native_layout_owner or
         "DoomCanvas_startup(" in doom_canvas_bridge_text):

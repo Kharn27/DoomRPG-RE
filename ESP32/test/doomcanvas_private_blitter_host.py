@@ -24,7 +24,7 @@ assert '"DoomCanvas_drawString1",' not in builder
 assert '"DoomCanvas_setState",' not in builder
 assert "glyph blitter must be private" in builder
 assert "void EspNativeCanvas_drawText(" in bridge
-assert 'INIT exports=2 nativeText=1 desktopTU=no' in bridge
+assert 'INIT exports=1 nativeText=1 desktopTU=no' in bridge
 assert 'INIT exports=6 desktopTU=no' not in bridge
 assert 'doomCanvas, "Loading...", DOOMRPG_CANVAS_CENTER_X' in (SRC / "native_main_menu_model.c").read_text(encoding="utf-8")
 assert "SDL_RenderCopy(sdlVideo.renderer, img->imgBitmap, &clip, &renderQuad);" in bridge
@@ -51,7 +51,7 @@ for path in sorted(SRC.rglob("*")):
         "retired DoomCanvas image ABI revived in " + str(path.relative_to(ROOT)))
 
 # The text entry is native; only three compatibility roots remain.
-for name in ("init", "free"):
+for name in ("free",):
     assert "DoomCanvas_" + name + "(" in bridge
 assert "DoomCanvas_drawString1(" not in bridge
 assert re.search(r"\bEspNativeCanvas_drawText\s*\([^;]+\)\s*\{", bridge, re.S)
@@ -113,4 +113,32 @@ for path in sorted(SRC.rglob("*")):
     assert not re.search(r"\bDoomCanvas_startup\s*\(", source), (
         "retired Canvas startup ABI revived in " + str(path.relative_to(ROOT)))
 
-print("PASS Canvas ABI=2 native const text glyphBlitterFNV=4c4a9a93")
+
+# Native root now owns the only linked Canvas allocation/zeroing function.
+# Preserve the exact allocation path, field defaults and diagnostic payload
+# after normalizing the private function name and ABI export count.
+assert "DoomCanvas_init(" not in bridge
+assert '"DoomCanvas_init",' not in builder
+assert "DoomCanvas_t* DoomCanvas_init(" not in root_owner
+assert root_owner.count("EspNativeEngineRoot_initCanvas(") == 2  # definition + one call
+assert re.search(r"#ifndef DOOMRPG_ESP32\s+DoomCanvas_t\* DoomCanvas_init\(", legacy_canvas_h)
+assert "ESP32_DOOMCANVAS_COMPACT_BYTES" in (ROOT / "ESP32/include/engine_metrics.h").read_text()
+first = root_owner.index("static DoomCanvas_t* EspNativeEngineRoot_initCanvas(")
+last = root_owner.index("int DoomRPG_initEngineCore(", first)
+normalized = root_owner[first:last].replace(
+    "static DoomCanvas_t* EspNativeEngineRoot_initCanvas(", "DoomCanvas_t* DoomCanvas_init(").replace(
+    "[DOOMCANVASBRIDGE] INIT exports=1", "[DOOMCANVASBRIDGE] INIT exports=2")
+init_fnv = 2166136261
+for byte in normalized.encode("utf-8"):
+    init_fnv = ((init_fnv ^ byte) * 16777619) & 0xFFFFFFFF
+assert init_fnv == 0xb621a796, f"Canvas root init body drift: {init_fnv:08x}"
+
+for path in sorted(SRC.rglob("*")):
+    if path.suffix not in (".c", ".cpp"):
+        continue
+    source = path.read_text(encoding="latin-1")
+    source = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ", source, flags=re.S)
+    assert not re.search(r"\bDoomCanvas_init\s*\(", source), (
+        "retired Canvas init ABI revived in " + str(path.relative_to(ROOT)))
+
+print("PASS Canvas ABI=1 native const text glyphBlitterFNV=4c4a9a93")
