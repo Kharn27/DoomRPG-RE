@@ -49,7 +49,7 @@ _Static_assert(sizeof(DoomCanvas_t) == ESP32_DOOMCANVAS_COMPACT_BYTES,
  *
  * Desktop DoomCanvas.c is intentionally not compiled for ESP32. Native owners
  * handle gameplay, menus, dialogs, world mutation and presentation. This file
- * keeps only the legacy construction/layout/text hooks still referenced
+ * keeps only the legacy construction/text hooks still referenced
  * by the native runtime while those call sites are migrated individually.
  */
 
@@ -70,7 +70,7 @@ DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
     doomCanvas->fontColor = 0xffffffff;
     doomCanvas->renderFloorCeilingTextures = true;
 
-    printf("[DOOMCANVASBRIDGE] INIT exports=3 nativeText=1 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u, retiredStateLayout=%u retiredGraphMirrors=%u retiredIntroState=%u retiredDeadShell=%u retiredInertControl=%u retiredLargeFont=%u retiredFixedGeometry=%u retiredViewShakeAlias=%u clip=%dx%d\n",
+    printf("[DOOMCANVASBRIDGE] INIT exports=2 nativeText=1 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u, retiredStateLayout=%u retiredGraphMirrors=%u retiredIntroState=%u retiredDeadShell=%u retiredInertControl=%u retiredLargeFont=%u retiredFixedGeometry=%u retiredViewShakeAlias=%u clip=%dx%d\n",
            (unsigned int)sizeof(DoomCanvas_t),
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES,
@@ -261,29 +261,6 @@ void EspNativeCanvas_drawText(DoomCanvas_t* doomCanvas,
             xpos += advance;
         }
     }
-}
-
-void DoomCanvas_startup(DoomCanvas_t* doomCanvas)
-{
-    SDL_Rect screenRect;
-    DoomRPG_t* doomRpg;
-
-    if (doomCanvas == NULL || doomCanvas->doomRpg == NULL) return;
-
-    doomRpg = doomCanvas->doomRpg;
-    screenRect.x = DOOMRPG_VIEWPORT_X;
-    screenRect.y = DOOMRPG_VIEWPORT_Y;
-    screenRect.w = DOOMRPG_VIEWPORT_WIDTH;
-    screenRect.h = DOOMRPG_VIEWPORT_HEIGHT;
-    Render_setup(doomRpg->render, &screenRect);
-    doomCanvas->startupMap = 1;
-    doomCanvas->skipIntro = false;
-    DoomRPG_createImage(doomCanvas->doomRpg, "a.bmp", true, &doomCanvas->imgFont);
-    printf("[DOOMCANVASBRIDGE] STARTUP desktopTU=no display=%dx%d screen=%dx%d@%d,%d startupMap=%d hud=native geometry=fixed-cyd\n",
-           DOOMRPG_CANVAS_WIDTH, DOOMRPG_CANVAS_HEIGHT,
-           DOOMRPG_VIEWPORT_WIDTH, DOOMRPG_VIEWPORT_HEIGHT,
-           DOOMRPG_VIEWPORT_X, DOOMRPG_VIEWPORT_Y,
-           doomCanvas->startupMap);
 }
 
 #if defined(DOOMRPG_ESP32_BRINGUP_PROBES)

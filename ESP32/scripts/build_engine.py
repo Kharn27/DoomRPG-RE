@@ -22,7 +22,6 @@ env.Append(CPPPATH=[join(project_dir, "include"), project_src_dir, engine_dir])
 doom_canvas_bridge_source = join(project_src_dir, "esp_legacy_doomcanvas_bridge.c")
 doom_canvas_bridge_exports = (
     "DoomCanvas_free",
-    "DoomCanvas_startup",
     "DoomCanvas_init",
 )
 if not os.path.isfile(doom_canvas_bridge_source):
@@ -42,6 +41,15 @@ if ("void EspNativeCanvas_drawText(" not in doom_canvas_bridge_text or
         "const char* text," not in doom_canvas_bridge_text or
         "void DoomCanvas_drawString1(" in doom_canvas_bridge_text):
     raise RuntimeError("Legacy Canvas text ABI revived or native const-text owner missing")
+native_layout_source = join(project_src_dir, "engine_stubs.c")
+if not os.path.isfile(native_layout_source):
+    raise RuntimeError("native engine layout owner missing")
+with open(native_layout_source, "r", encoding="utf-8") as owner_file:
+    native_layout_owner = owner_file.read()
+if ("static void EspNativeEngineLayout_startupCanvas(" not in native_layout_owner or
+        "EspNativeEngineLayout_startupCanvas(canvas);" not in native_layout_owner or
+        "DoomCanvas_startup(" in doom_canvas_bridge_text):
+    raise RuntimeError("Retired Canvas startup ABI revived or native layout owner absent")
 native_menu_state_source = join(project_src_dir, "native_main_menu_model.c")
 if not os.path.isfile(native_menu_state_source):
     raise RuntimeError("native menu state owner missing")
@@ -56,7 +64,7 @@ if "DoomCanvas_run(" in doom_canvas_bridge_text or "DoomCanvas_loadMap(" in doom
     )
 print(
     "[ESP32] Desktop DoomCanvas.c retired; "
-    f"esp_legacy_doomcanvas_bridge.c owns {len(doom_canvas_bridge_exports)} source ABI exports; nativeText=1 nativeMenuState=1"
+    f"esp_legacy_doomcanvas_bridge.c owns {len(doom_canvas_bridge_exports)} source ABI exports; nativeText=1 nativeMenuState=1 nativeLayout=1"
 )
 
 # Render.c is no longer generated or compiled in any CYD profile. The

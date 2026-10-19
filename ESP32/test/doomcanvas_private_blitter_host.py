@@ -24,7 +24,7 @@ assert '"DoomCanvas_drawString1",' not in builder
 assert '"DoomCanvas_setState",' not in builder
 assert "glyph blitter must be private" in builder
 assert "void EspNativeCanvas_drawText(" in bridge
-assert 'INIT exports=3 nativeText=1 desktopTU=no' in bridge
+assert 'INIT exports=2 nativeText=1 desktopTU=no' in bridge
 assert 'INIT exports=6 desktopTU=no' not in bridge
 assert 'doomCanvas, "Loading...", DOOMRPG_CANVAS_CENTER_X' in (SRC / "native_main_menu_model.c").read_text(encoding="utf-8")
 assert "SDL_RenderCopy(sdlVideo.renderer, img->imgBitmap, &clip, &renderQuad);" in bridge
@@ -51,7 +51,7 @@ for path in sorted(SRC.rglob("*")):
         "retired DoomCanvas image ABI revived in " + str(path.relative_to(ROOT)))
 
 # The text entry is native; only three compatibility roots remain.
-for name in ("init", "free", "startup"):
+for name in ("init", "free"):
     assert "DoomCanvas_" + name + "(" in bridge
 assert "DoomCanvas_drawString1(" not in bridge
 assert re.search(r"\bEspNativeCanvas_drawText\s*\([^;]+\)\s*\{", bridge, re.S)
@@ -84,4 +84,34 @@ for path in sorted(SRC.rglob("*")):
     assert not re.search(r"\b" + "DoomCanvas_setState" + r"\s*\(", source), (
         "desktop Canvas state ABI revived in " + str(path.relative_to(ROOT)))
 
-print("PASS Canvas ABI=3 native const text glyphBlitterFNV=4c4a9a93")
+
+# The remaining one-shot layout startup is owned directly by the process
+# layout stage. Pin its COMPLETE source body after name normalization to the
+# hardware-tested predecessor, not merely its call-site or rendered pixels.
+root_owner = (SRC / "engine_stubs.c").read_text(encoding="utf-8")
+legacy_canvas_h = (ROOT / "src/DoomCanvas.h").read_text(encoding="utf-8")
+assert '"DoomCanvas_startup",' not in builder
+assert "DoomCanvas_startup(" not in bridge
+assert "static void EspNativeEngineLayout_startupCanvas(" in root_owner
+assert root_owner.count("EspNativeEngineLayout_startupCanvas(") == 2  # definition + single call
+assert re.search(r"#ifndef DOOMRPG_ESP32\\s+void DoomCanvas_startup\\(", legacy_canvas_h)
+start = root_owner.index("static void EspNativeEngineLayout_startupCanvas(")
+end = root_owner.index("\\nint DoomRPG_startEngineLayout(", start)
+layout = root_owner[start:end]
+layout = layout.replace("static void EspNativeEngineLayout_startupCanvas(", "void DoomCanvas_startup(")
+layout = layout.removesuffix("\\n")  # owner separator outside source parity range
+layout_fnv = 2166136261
+for byte in layout.encode("utf-8"):
+    layout_fnv = ((layout_fnv ^ byte) * 16777619) & 0xFFFFFFFF
+assert layout_fnv == 0x9166e429, f"Canvas layout startup body drift: {layout_fnv:08x}"
+
+# No CYD C/C++ unit may revive a direct call to the retired Canvas layout ABI.
+for path in sorted(SRC.rglob("*")):
+    if path.suffix not in (".c", ".cpp"):
+        continue
+    source = path.read_text(encoding="latin-1")
+    source = re.sub(r'/\\*.*?\\*/|//[^\\n]*|"(?:\\\\.|[^"\\\\])*"', " ", source, flags=re.S)
+    assert not re.search(r"\\bDoomCanvas_startup\\s*\\(", source), (
+        "retired Canvas startup ABI revived in " + str(path.relative_to(ROOT)))
+
+print("PASS Canvas ABI=2 native const text glyphBlitterFNV=4c4a9a93")

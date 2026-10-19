@@ -339,7 +339,9 @@ void DoomCanvas_startDialogPassword(DoomCanvas_t* doomCanvas, char* text);
 void DoomCanvas_startShake(DoomCanvas_t* doomCanvas, int i, int i2, int i3);
 void DoomCanvas_startSpeedTest(DoomCanvas_t* doomCanvas, boolean b);
 void DoomCanvas_vibrate(DoomCanvas_t* doomCanvas, int i);
+#ifndef DOOMRPG_ESP32
 void DoomCanvas_startup(DoomCanvas_t* doomCanvas);
+#endif
 void DoomCanvas_uncoverAutomap(DoomCanvas_t* doomCanvas);
 void DoomCanvas_unloadMedia(DoomCanvas_t* doomCanvas);
 void DoomCanvas_checkFacingEntity(DoomCanvas_t* doomCanvas);

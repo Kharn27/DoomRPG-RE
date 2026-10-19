@@ -74,7 +74,7 @@ def main():
         for name in ORIGINALS:
             (desktop / name).write_text("NOT A C IMPLEMENTATION\n")
         for name in ("esp32_sdl.cpp", "esp_legacy_doomcanvas_bridge.c",
-                     "native_main_menu_model.c"):
+                     "native_main_menu_model.c", "engine_stubs.c"):
             shutil.copyfile(ROOT / "ESP32/src" / name, native / name)
 
         obsolete = staged / "DoomRPG.c"
@@ -133,6 +133,18 @@ def main():
         else:
             raise AssertionError("native menu state owner removal was accepted")
         owner_source.write_text(owner_body, encoding="utf-8")
+
+        # A missing native layout owner must fail closed in isolation too.
+        layout_source = native / "engine_stubs.c"
+        layout_body = layout_source.read_text(encoding="utf-8")
+        layout_source.unlink()
+        try:
+            execute_build_script(FakeEnv(project, build))
+        except RuntimeError as exc:
+            assert "native engine layout owner missing" in str(exc)
+        else:
+            raise AssertionError("native layout owner removal was accepted")
+        layout_source.write_text(layout_body, encoding="utf-8")
 
         # SDL patching also retains its exact single-anchor failure guard.
         (desktop / "Unexpected.c").unlink()
