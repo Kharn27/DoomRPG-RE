@@ -4,23 +4,24 @@
 
 **Branche** : `agent/esp32-native-ambient-sprite-animation`, [PR #220](https://github.com/Kharn27/DoomRPG-RE/pull/220).
 **Base main vérifiée** : `16155aec8e741151c5f057e95c7fe395a15521e8`.
-**Dernier SHA de code** : `3b8c2135bc2f4307eaa0deb633f7314c93ea1c27`.
-**CI** : [SUCCESS #39176840460](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39176840460), **56 étapes** (tests hôte, builds normal/bringup/trace, audits compilés/ELF).
-**Statique CI normal** : RAM **49 520 B** ; Flash **822 241 B**.
-Bringup : **49 672 / 843 021 B** ; trace : **49 568 / 839 005 B**.
-Tous les commits post-PASS sur cette branche sont **documentation uniquement**.
+**Dernier SHA de code (post-review, CYD à revalider)** : `5b0439f801532cf070d8dae57f13a7345d0eea29`.
+**CI du dernier code** : [SUCCESS #39179286818](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39179286818), **56 étapes** (tests hôte, builds normal/bringup/trace, audits compilés/ELF).
+**Statique CI normal** : RAM **49 520 B** ; Flash **822 357 B**.
+Bringup : **49 672 / 843 141 B** ; trace : **49 568 / 839 109 B**.
+Le **PASS matériel ciblé antérieur** porte sur le code `3b8c2135bc2f4307eaa0deb633f7314c93ea1c27` ([CI verte #39176840460](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39176840460)).
+Le commit de clôture `09125e4706343c377c1094dd4bb7cf0da0e86e16` était docs-only ; les **deux findings P2 apparus après passage de la PR en review ont nécessité une nouvelle correction de code**, et annulent le statut merge-ready tant que le CYD n'a pas revalidé. PR **draft**.
 
 ### Périmètre livré et ownership
 
-- Sprites natifs non-fixes animés depuis les frames du PAK sans état mutable de carte ni random gameplay : éléments de décor/armor shards 4 phases / 250 ms ; humains 2 phases / 6 s ; monstres au repos 0/3 / 4 s. Les animations explicites d'attaque, douleur et mort gardent leur propriétaire et leur `FIXED_ANIM`.
+- Sprites natifs non-fixes animés depuis les frames du PAK sans état mutable de carte ni random gameplay : éléments de décor/armor shards 4 phases / 250 ms ; humains 2 phases / 6 s ; monstres ordinaires au repos 0/3 / 4 s ; **sous-type 4 (Phantom / Lost Soul / Nightmare) au repos 0/3 / 250 ms** conformément à `src/Render.c`. Les animations explicites d'attaque, douleur et mort gardent leur propriétaire et leur `FIXED_ANIM`.
 - Les previews d'ambiance passent par le même adaptateur natif des lignes dynamiques que MOVE/TURN. Cela respecte les portes ouvertes et le remplacement de texture 9 (rouge/verrouillée) par 10 (verte/déverrouillée), sans jamais réécrire l'état d'unlock à la présentation. Cette correction a éliminé la cause du retour visuel au rouge et de l'échec `[AMBIENT] FAIL` après ouverture relevés sur une révision précédente.
 - Les voyants de porte 9/10 utilisent uniquement les **quatre frames physiques PAK** de leur texture, indexées par l'horloge monotone absolue, sans réinitialisation au déplacement. Rouge : `0,0,1,2,3,3,2,1` à **360 ms/pas**, cycle de respiration **2 880 ms** ; vert : `0,1,2,3` à **144 ms/pas**, cycle **576 ms**. Le dernier raster expose masque de voyants réellement dessinés et horloge échantillonnée ; l'idle ne redessine que lorsque la phase affichée diffère, indépendamment des rafraîchissements MOVE/TURN. Aucun timer ou texel map-wide.
-- Rendu seulement si besoin en phase idle, sans tour de monstre, sans activation, sans nouvelle lecture ZIP, `/DoomRPG-ESP32.pak` restant l'unique backing store ; `shapeData==NULL`, `mediaTexels==NULL` préservés. Le RNG est gardé exact, rollback et suspension d'ambiance en cas d'échec, sans masquer un échec de rendu normal.
+- Rendu seulement si besoin en phase idle, sans tour de monstre, sans activation, sans nouvelle lecture ZIP, `/DoomRPG-ESP32.pak` restant l'unique backing store ; `shapeData==NULL`, `mediaTexels==NULL` préservés. **P2 corrigée :** les candidats d'animation ne sont armés qu'après des pixels réellement écrits par le raster de sprites (y compris les copies CROSS et les glows), jamais simplement à l'admission BSP. Les sprites cachés/culled/entièrement masqués par les murs ne doivent pas entretenir des redessins idle. Cadence supplémentaire à 250 ms uniquement pour les sous-types 4 visibles. Le RNG est gardé exact, rollback et suspension d'ambiance en cas d'échec, sans masquer un échec de rendu normal.
 - **21 unités C desktop exclues**, Game/Canvas/Render natifs du jalon précédent inchangés. Le legacy reste oracle de format/comportement, et non nouveau fournisseur runtime.
 
 ### Témoins CYD réels du 19 octobre 2026 — PASS ciblé
 
-L'utilisateur a confirmé des **armor shards qui clignotent** et une **flamme animée derrière une grille à distance** au début du jalon ; puis la **conservation effective du vert après EV_UNLOCK** sur les révisions correctives ; finalement, sur la révision au code SHA ci-dessus, **« Pour moi le rouge c'est ok »** valide subjectivement la respiration lente. Il n'a pas encore donné un verdict visuel explicite détaillé sur la nouvelle cadence verte *dans ce dernier extrait* (cadence verte laissée identique à la révision antérieure).
+L'utilisateur a confirmé des **armor shards qui clignotent** et une **flamme animée derrière une grille à distance** au début du jalon ; puis la **conservation effective du vert après EV_UNLOCK** sur les révisions correctives ; finalement, sur la révision de code **`3b8c2135bc2f4307eaa0deb633f7314c93ea1c27`**, **« Pour moi le rouge c'est ok »** valide subjectivement la respiration lente. Il n'a pas encore donné un verdict visuel explicite détaillé sur la nouvelle cadence verte *dans ce dernier extrait* (cadence verte laissée identique à la révision antérieure).
 
 Le dernier extrait normal `esp32-cyd` contient `[ENGINESESSION] READY map=1`, `shapeData=0x0 mediaTexels=0x0`, les `[PLAYERRES]` armor shards / medkit / bullet clip, `[VIEWANIM]` MOVE et TURN, les événements/défilements de dialogue, `[DOORANIM] ARM/HOLD/RELEASE/COMPLETE` sur la ligne 275, sans échec de rendu ni `[AMBIENT] FAIL` **dans la portion fournie**. Les trois mesures au cours de la session évoluent avec des propriétaires légitimes :
 `heap8=113784` (147 s, début du segment), `112640` (~162 s), puis `110216` (fin de dialogues et ~177–182 s), `largest8=86004` constant. Cela prouve la stabilité sur ces fenêtres observées, **pas** une absence universelle de fuite.
@@ -29,7 +30,7 @@ Le firmware ne journalise pas son SHA, les logs n'en prouvent pas directement l'
 **Observation non bloquante à isoler plus tard** : `[NATIVESPRITE] CROSS index=77 ...` est très répétitif lors des rafraîchissements idle (aucune dégradation mémoire visible ici). Envisager un lot distinct de réduction de bruit des logs sans modifier le gameplay ni le code de ce jalon après PASS.
 La rencontre « zombie shotgun » sur l'essai précédent avait une attaque alternative `weapon=3` et les coups du joueur `weapon=0` (hache) ; les tirages critique/manqués sont compatibles avec les calculs legacy dans les logs. Aucun nerf ni correctif RNG engagé dans la présente PR.
 
-**Statut** : jalon d'animation **accepté sur les observations ciblées**, prêt pour revue/merge par l'utilisateur ; laisser les limites non testées explicites et ne pas extrapoler à toutes les cartes. Les journaux historiques du désengagement desktop restent plus bas, datés de la PR #219.
+**Statut** : respiration rouge et chemins listés **acceptés sur le code antérieur** ; corrections P2 sous-type 4 et raster-only **CI PASS, CYD réel non encore testé au dernier code** ; **PR draft, non merge-ready** jusqu'au nouveau PASS. Laisser les limites non testées explicites et ne pas extrapoler à toutes les cartes. Les journaux historiques du désengagement desktop restent plus bas, datés de la PR #219.
 
 ---
 
