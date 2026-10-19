@@ -16,7 +16,7 @@ assert re.search(r"void\s+EspNativeCanvas_drawText\s*\(\s*DoomCanvas_t\s*\*\s*\w
 assert "void EspNativeCanvas_drawText(DoomCanvas_t* doomCanvas,\n                              const char* text," in bridge
 assert "DoomCanvas_drawString1" not in bridge
 assert '"DoomCanvas_drawString1",' not in builder
-assert 'INIT exports=1 nativeText=1 desktopTU=no' in bridge
+assert 'INIT exports=1 nativeText=1 desktopTU=no' in (SRC / "engine_stubs.c").read_text(encoding="utf-8")
 assert re.search(r"#ifndef DOOMRPG_ESP32\s+void DoomCanvas_drawString1\(", legacy)
 assert 'doomCanvas, "Loading...", DOOMRPG_CANVAS_CENTER_X' in (SRC / "native_main_menu_model.c").read_text(encoding="utf-8")
 assert "(char*)line" not in menu and "(char*)label" not in layout
