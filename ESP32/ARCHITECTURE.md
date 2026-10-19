@@ -5,6 +5,12 @@ ESP32-2432S028R CYD port. It describes the engine we are keeping, not the order
 in which historical recovery probes were written.
 
 For current hardware status and exact canons, read [`PORTING_STATUS.md`](PORTING_STATUS.md).
+As of PR #223 tested code `19f52749b18cf60cc14ecbacd2a32e4756aac2b1`,
+`Render_init` is private native-root constructor `EspNativeEngineRoot_initRender`
+(source-body FNV `884791fe`), not ESP32 Render ABI. It preserves 1532-byte
+`Render_t` ownership; `Render_setup`, `Render_startup` and `Render_free` still
+have distinct native owners. The same SHA has real CYD START → EXIT → LOAD
+V11 → combat PASS, while fatal Render teardown is host-only/unexercised.
 For build/platform notes, read [`DOCUMENTATION.md`](DOCUMENTATION.md).
 
 Historical ELF census (main `b941048`, 14 October 2026;
