@@ -157,6 +157,13 @@ jobs:
           /tmp/doomrpg-hud-weapon-route
           python ESP32/test/native_hud_weapon_route_host.py
 
+      - name: Test HUD weapon-menu feedback glyph and strict 120ms undo (host C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/test/host_include -IESP32/include \
+            ESP32/src/esp_native_gameplay_controls.c ESP32/test/hud_weapon_feedback_host.c \
+            -o /tmp/doomrpg-hud-weapon-feedback
+          /tmp/doomrpg-hud-weapon-feedback
+
       - name: Test native Canvas const-text ABI retirement (host Python)
         run: python ESP32/test/native_canvas_text_retirement_host.py
 

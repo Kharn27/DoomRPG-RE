@@ -550,16 +550,32 @@ int EspNativeGameplayHud_snapshotLive(
     uint8_t angle,
     EspNativeGameplayHudState* outSnapshot) {
     EspNativeGameplayHudModel model;
-    uint8_t ammoType;
+    uint8_t ammoType = 0U;
+    int noWeapon;
 
     if (outSnapshot != NULL) memset(outSnapshot, 0, sizeof(*outSnapshot));
     if (retained == NULL || outSnapshot == NULL ||
         retained->active != 1U || retained->painted != 1U ||
         player == NULL || player->active != 1U ||
         player->weapon >= ESP_NATIVE_GAMEPLAY_PLAYER_WEAPON_LIMIT ||
-        (player->weapons & (uint16_t)(1U << player->weapon)) == 0U ||
-        !directionSupported(angle) ||
-        !EspNativeGameplayWeaponControl_ammoType(player->weapon, &ammoType)) {
+        !directionSupported(angle)) {
+        return 0;
+    }
+
+    /*
+     * PlayerState_enterDeath() intentionally clears weapon AND weapons before
+     * the 750-ms fall animation. A 0-HP/no-weapon state is valid there: the
+     * native first-person weapon renderer must SKIP, not fail the whole frame.
+     * Healthy no-weapon states and nonzero-but-unowned weapon IDs remain
+     * fail-closed. Do not "grant" axe ownership just to draw the death frame.
+     */
+    noWeapon = player->weapons == 0U;
+    if (noWeapon) {
+        if (player->weapon != 0U || (player->param1 & 0xffU) != 0U) return 0;
+    }
+    else if ((player->weapons & (uint16_t)(1U << player->weapon)) == 0U ||
+             !EspNativeGameplayWeaponControl_ammoType(
+                 player->weapon, &ammoType)) {
         return 0;
     }
 
@@ -570,8 +586,8 @@ int EspNativeGameplayHud_snapshotLive(
     model.maxArmor = (uint8_t)((player->param1 >> 24) & 0xffU);
     model.weapon = player->weapon;
     model.ammoType = ammoType;
-    model.ammo = player->ammo[ammoType];
-    model.weaponsPresent = 1U;
+    model.ammo = noWeapon ? 0U : player->ammo[ammoType];
+    model.weaponsPresent = noWeapon ? 0U : 1U;
     model.destAngle = angle;
     return EspNativeGameplayHud_prepareInitial(&model, outSnapshot) ==
            ESP_NATIVE_GAMEPLAY_HUD_OK;

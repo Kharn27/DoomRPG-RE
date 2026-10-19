@@ -292,6 +292,18 @@ static int drawActionGlyph(uint16_t* framebuffer,
         return drawWeaponChevron(framebuffer, cx, cy, -1, color);
     case ESP_NATIVE_GAMEPLAY_ACTION_NEXT_WEAPON:
         return drawWeaponChevron(framebuffer, cx, cy, 1, color);
+    case ESP_NATIVE_GAMEPLAY_ACTION_WEAPON_MENU:
+        /* W-shaped armory glyph within the 60x20 lower-HUD hit rectangle.
+         * Unlike NEXT_WEAPON's chevron, this means open the full grid.
+         * Four bounded segments fit the existing 640-edit overlay journal. */
+        return drawFeedbackLine(framebuffer, cx - 6, cy - 4,
+                                cx - 3, cy + 4, color) &&
+               drawFeedbackLine(framebuffer, cx - 3, cy + 4,
+                                cx, cy - 1, color) &&
+               drawFeedbackLine(framebuffer, cx, cy - 1,
+                                cx + 3, cy + 4, color) &&
+               drawFeedbackLine(framebuffer, cx + 3, cy + 4,
+                                cx + 6, cy - 4, color);
     case ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN:
         return drawFeedbackLine(framebuffer, cx - 5, cy - 4, cx + 5, cy - 4, color) &&
                drawFeedbackLine(framebuffer, cx - 5, cy, cx + 5, cy, color) &&

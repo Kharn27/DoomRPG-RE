@@ -31,4 +31,12 @@ assert "EspNativeGameplayHub_openWeapons()" in resident
 assert 'weaponPanel ? "hud-ammo-compass"' in resident
 assert "ESP_NATIVE_GAMEPLAY_ACTION_WEAPON_MENU" in inp
 assert "drawWeaponTouchCorners(framebuffer, stats);" in hud
-print("PASS HUD direct weapon grid, 3 tabs, owned selection closes without turn")
+controls = source("ESP32/src/esp_native_gameplay_controls.c")
+glyph = controls.split("static int drawActionGlyph(",1)[1].split(
+    "static void fillStats(",1)[0]
+assert "case ESP_NATIVE_GAMEPLAY_ACTION_WEAPON_MENU:" in glyph
+assert "drawFeedbackLine(framebuffer, cx - 6, cy - 4," in glyph
+assert "case ESP_NATIVE_GAMEPLAY_ACTION_WEAPON_MENU:" in controls.split(
+    "static FeedbackPalette feedbackPalette(",1)[1].split(
+        "static uint16_t glowAdd565(",1)[0]
+print("PASS HUD direct weapon grid, weapon-menu feedback glyph, 3 tabs, owned selection closes without turn")

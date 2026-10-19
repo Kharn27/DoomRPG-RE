@@ -43,6 +43,28 @@ int main(void) {
     assert(EspNativeGameplayHud_snapshotLive(&retained,&player,128U,&live));
     assert(live.model.weapon==3U && live.model.ammo==22U);
     assert(memcmp(&retained,&before,sizeof(retained))==0);
+    /* Death-arm clears the weapon inventory before the first FALL frame.
+     * It must produce a valid, explicitly hidden first-person weapon, without
+     * mutating the input PlayerState or permanent retained HUD model. */
+    player.weapon=0U;
+    player.weapons=0U;
+    player.param1 &= ~0xffU; /* health=0 (other fields unchanged) */
+    original=player;
+    assert(EspNativeGameplayHud_snapshotLive(&retained,&player,128U,&live));
+    assert(live.model.health==0U && live.model.weapon==0U);
+    assert(live.model.weaponsPresent==0U && live.model.ammo==0U);
+    assert(live.model.ammoType==0U && live.model.destAngle==128U);
+    assert(memcmp(&retained,&before,sizeof(retained))==0);
+    assert(memcmp(&player,&original,sizeof(player))==0);
+    assert(EspNativeGameplayHud_snapshotLive(&retained,&player,128U,&live));
+    assert(live.model.weaponsPresent==0U); /* repeated FALL frames */
+    /* Reject impossible healthy inventory-empty or unowned variants. */
+    player.param1 |= 1U; /* health=1 without weapons */
+    assert(!EspNativeGameplayHud_snapshotLive(&retained,&player,128U,&live));
+    player.param1 &= ~0xffU;
+    player.weapon=2U; /* disarmed death state must remain weapon zero */
+    assert(!EspNativeGameplayHud_snapshotLive(&retained,&player,128U,&live));
+    player.weapons=0xfU;
     player.weapon=4U;
     assert(!EspNativeGameplayHud_snapshotLive(&retained,&player,128U,&live));
     assert(live.active==0U);
@@ -51,6 +73,6 @@ int main(void) {
     assert(!EspNativeGameplayHud_snapshotLive(&retained,NULL,128U,&live));
     assert(EspNativeGameplayWeaponControl_ammoType(2U,&ammoType) && ammoType==1U);
     assert(!EspNativeGameplayWeaponControl_ammoType(12U,&ammoType));
-    puts("PASS HUD live Pistol->Shotgun ammo14->22 angle64->128, no stale model mutation");
+    puts("PASS live HUD Pistol->Shotgun and zero-HP disarmed death FALL, invalid contexts closed");
     return 0;
 }
