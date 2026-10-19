@@ -315,6 +315,49 @@ static DoomCanvas_t* EspNativeEngineRoot_initCanvas(DoomCanvas_t* doomCanvas, Do
     return doomCanvas;
 }
 
+/* Native Render constructor owned by the process root; old initializer body
+ * intentionally unmodified. Other Render owners remain unchanged. */
+static Render_t* EspNativeEngineRoot_initRender(Render_t* render, DoomRPG_t* doomRpg)
+{
+	printf("Render_init\n");
+
+	if (render == NULL)
+	{
+		render = SDL_malloc(sizeof(Render_t));
+		if (render == NULL) {
+			return NULL;
+		}
+	}
+	SDL_memset(render, 0, sizeof(Render_t));
+
+	//resourceAsStream.Init(&renderClass->mapFile, doomRPGClass, 1);
+	render->doomRpg = doomRpg;
+	render->skipStretch = 0;
+	render->unk4 = 0;
+	render->skipCull = 0;
+	render->skipBSP = 0;
+	render->skipLines = 0;
+	render->unk5 = 0;
+	render->skipSprites = 0;
+	render->skipViewNudge = 0;
+	render->ioBufferPos = 0;
+	render->lines = NULL;
+	render->nodes = NULL;
+	render->mapSprites = NULL;
+	render->mapCameraSpawnIndex = 0;
+	render->floorColor = NULL;
+	render->ceilingColor = NULL;
+	render->ceilingTex = 0;
+	render->floorTex = 0;
+	render->columnScale = NULL;
+	render->animFrameTime = 0;
+	render->mapStringsIDs = NULL;
+	render->mapStringCount = 0;
+
+	printf("[RENDERCORE] INIT owner=esp-native-bridge bytes=%u\n", (unsigned int)sizeof(*render));
+	return render;
+}
+
 int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
     uint32_t before;
     uint32_t after;
@@ -407,7 +450,7 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
     INIT_CORE_OBJECT(DOOMRPG_CORE_CANVAS, doomCanvas,
                      EspNativeEngineRoot_initCanvas(NULL, doomRpg));
     INIT_CORE_OBJECT(DOOMRPG_CORE_RENDER, render,
-                     Render_init(NULL, doomRpg));
+                     EspNativeEngineRoot_initRender(NULL, doomRpg));
     INIT_CORE_OBJECT(DOOMRPG_CORE_MENU_SYSTEM, menuSystem,
                      EspNativeMenuStorage_init(NULL));
     /* Keep the historical diagnostics slot without an allocation or legacy

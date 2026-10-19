@@ -69,51 +69,10 @@ void Render_freeRuntime(Render_t* render)
 }
 
 /*
- * Permanent ESP32 owner of the two constructor/layout Render API roots.
+ * Permanent ESP32 owner of the layout Render API root.
  * The original source bodies are preserved exactly, except for one-time
  * source-ownership diagnostics; all legacy world/raster logic stays excluded.
  */
-Render_t* Render_init(Render_t* render, DoomRPG_t* doomRpg)
-{
-	printf("Render_init\n");
-
-	if (render == NULL)
-	{
-		render = SDL_malloc(sizeof(Render_t));
-		if (render == NULL) {
-			return NULL;
-		}
-	}
-	SDL_memset(render, 0, sizeof(Render_t));
-
-	//resourceAsStream.Init(&renderClass->mapFile, doomRPGClass, 1);
-	render->doomRpg = doomRpg;
-	render->skipStretch = 0;
-	render->unk4 = 0;
-	render->skipCull = 0;
-	render->skipBSP = 0;
-	render->skipLines = 0;
-	render->unk5 = 0;
-	render->skipSprites = 0;
-	render->skipViewNudge = 0;
-	render->ioBufferPos = 0;
-	render->lines = NULL;
-	render->nodes = NULL;
-	render->mapSprites = NULL;
-	render->mapCameraSpawnIndex = 0;
-	render->floorColor = NULL;
-	render->ceilingColor = NULL;
-	render->ceilingTex = 0;
-	render->floorTex = 0;
-	render->columnScale = NULL;
-	render->animFrameTime = 0;
-	render->mapStringsIDs = NULL;
-	render->mapStringCount = 0;
-
-	printf("[RENDERCORE] INIT owner=esp-native-bridge bytes=%u\n", (unsigned int)sizeof(*render));
-	return render;
-}
-
 void Render_setup(Render_t* render, SDL_Rect* windowRect)
 {
 	boolean memError = false;

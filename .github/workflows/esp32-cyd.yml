@@ -188,6 +188,9 @@ jobs:
       - name: Test permanent DoomRPG root and fatal cleanup ownership (host C)
         run: python ESP32/test/doomrpg_root_owner_host.py
 
+      - name: Test Render constructor retirement (host C)
+        run: python ESP32/test/native_render_init_retirement_host.py
+
       - name: Test final Canvas native teardown and exact release order (host C)
         run: python ESP32/test/native_canvas_release_host.py
 
