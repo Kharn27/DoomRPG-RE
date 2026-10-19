@@ -7,6 +7,7 @@
 
 static EspPlayerViewState testView;
 static EspNativeGameplayHudState testHud;
+static EspNativeGameplayPlayerState testPlayer;
 static DoomRPG_t testGame;
 static Render_t testRender;
 static EspNativeGameplayInputState testIntent;
@@ -111,6 +112,9 @@ int EspNativeDoorAnimator_finishFrame(int ok) { (void)ok; assert(0); return 0; }
 
 const EspPlayerViewState* EspPlayerView_view(void) { return &testView; }
 const EspNativeGameplayHudState* EspNativeGameplayHud_view(void) { return &testHud; }
+const EspNativeGameplayPlayerState* EspNativeGameplayPlayerState_view(void) {
+    return &testPlayer;
+}
 int EspNativeGameplayFacingLabel_refresh(const char* reason) { (void)reason; return 1; }
 int EspNativeGameplayFrame_renderTurn(Render_t* render, uint8_t angle,
                                      EspNativeGameplayFrameStats* out) {
@@ -119,9 +123,18 @@ int EspNativeGameplayFrame_renderTurn(Render_t* render, uint8_t angle,
     memset(out, 0, sizeof(*out));
     return worldOk;
 }
-EspNativeGameplayHudStatus EspNativeGameplayHud_repaint(
-    const EspNativeGameplayHudState* state, EspNativeGameplayHudStats* out) {
-    assert(state == &testHud);
+/* Real snapshot/repaint contract is covered by the HUD unit tests.
+ * This resident-router harness verifies that automap EXIT passes the live
+ * player and settled angle, not the map-entry retained weapon copy. */
+EspNativeGameplayHudStatus EspNativeGameplayHud_repaintLive(
+    const EspNativeGameplayHudState* retained,
+    const EspNativeGameplayPlayerState* player,
+    uint8_t angle, EspNativeGameplayHudStats* out) {
+    assert(retained == &testHud && player == &testPlayer);
+    assert(player->active == 1U && player->weapon == 3U);
+    assert(player->weapons == (1U << 3) && player->ammo[2] == 17U);
+    assert(retained->model.weapon == 2U); /* Deliberately stale HUD cache. */
+    assert(angle == (uint8_t)testView.viewAngle);
     memset(out, 0, sizeof(*out));
     return ESP_NATIVE_GAMEPLAY_HUD_OK;
 }
@@ -178,6 +191,14 @@ static void seed(int inAutomap, EspNativeGameplayDialogResumeStatus status) {
     memset(&testRender, 0, sizeof(testRender));
     memset(&testView, 0, sizeof(testView));
     memset(&testIntent, 0, sizeof(testIntent));
+    memset(&testHud, 0, sizeof(testHud));
+    memset(&testPlayer, 0, sizeof(testPlayer));
+    testHud.active = testHud.painted = 1U;
+    testHud.model.weapon = 2U;
+    testPlayer.active = 1U;
+    testPlayer.weapon = 3U;
+    testPlayer.weapons = (1U << 3);
+    testPlayer.ammo[2] = 17U;
     gameplayState.active = 1U;
     /* Preserve unrelated mode bits when restoring automap. */
     gameplayState.modeFlags = (uint8_t)(0x80U | (inAutomap ? RESIDENT_MODE_AUTOMAP : 0U));
