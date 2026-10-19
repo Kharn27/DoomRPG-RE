@@ -1,5 +1,17 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #222 — Canvas init ABI 2→1 : PASS sur CYD / clôture (20 octobre 2026)
+
+**Dernier code firmware normal `esp32-cyd` réellement éprouvé** : `adb075773c8698fd2cd6fc8a913e07aa00412c21` sur [PR #222](https://github.com/Kharn27/DoomRPG-RE/pull/222), [CI push #39332204874 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39332204874), [CI PR #39332212609 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39332212609). RAM **49 536 B**, flash **825 629 B** (−20 B face à 3→2). Sur ESP32, l'allocation du Canvas n'est plus une ABI desktop : `EspNativeEngineRoot_initCanvas` locale à `engine_stubs.c` garde l'allocation, le zéro, les champs par défaut et le diagnostic ; source normalisée verrouillée par FNV **`b621a796`**. `DoomCanvas_free` est **le seul export restant** du bridge Canvas (il contient encore les routines de raster natif privées). **Canvas vaut toujours 44 B**.
+
+**Parcours matériel contrôlé** : `INIT exports=1 bytes=44`, `CORE READY used=2500` ; layout HUD `160x80@0,20`, framebuffer 160×120, MENU FNV `0f2c9fc3`; START → intro `ade0195d`, `FINAL-CONTINUE` puis `INTRODISP recovered=34056` ; Entrance CRC `623f34e4`, arena **14095 B/c3882516**, rendu frais et PlayerState. Deux Armor Shards donnent `armor 0→4→8`. HUB SYS → EXIT (`RESIDENTRESET ... empty=1 saveWrite=no`) → MENU FNV canonique → MENU_MAIN LOAD **slot07 V11/5604 B** réellement restauré (`state=3 intro=skipped`, monde `restored-exact`, 30 monstres / 22 actifs), puis mouvements/portes/activation à **24**. Tir réel sur `sprite7` `MONSTERCOMBAT hp6→3 armor4→2 ammo38→37`, et riposte **après l'animation** `MONSTERRETAL hp30→27 armor10→8 damageTotal=5`, cue de dégâts et feedback clos. `shapeData/mediaTexels=0x0` aux frontières chargement/menu/reprise.
+
+**Mémoire constatée, sans inférence de fuite universelle** : boot MENU `heap8=154860 largest8=110580` aux 5/10/15 s ; intro `129244/98292`; gameplay neuf aux 52, 57, 62, 72 s et gameplay chargé aux 85, 90, 96, 101, 106, 112 s : **`heap8=113768 largest8=86004` constants**. `NATIVEFRAME BOUNDARY-INLINE` isolé est le fallback borné déjà connu ; pas de crash. Pas de SAVE neuf ni de mort sur ce SHA, ni SHA imprimé par le Serial. Les fingerprints et chiffres doivent rester attribués à ce seul code testé.
+
+**Après PASS** : gel strict du code `adb075773c8698fd2cd6fc8a913e07aa00412c21`. Documentation exclusivement après test, CI doc puis revue/merge par l'utilisateur ; **ne pas retirer `DoomCanvas_free` dans cette PR**. Après fusion confirmée, relire le nouveau `main`/SHA et repartir sur une nouvelle branche dédiée au dernier cycle de vie Canvas.
+
+---
+
 ## PR #222 — ABI Canvas startup 3→2 : procédure et PASS CYD (19 octobre 2026)
 
 **SHA matériel normal `esp32-cyd`** `5c76e7f73e019200c3296a5567891b21170093df`, [PR #222](https://github.com/Kharn27/DoomRPG-RE/pull/222). [CI push SUCCESS #39330881971](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39330881971), [CI PR SUCCESS #39330886161](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39330886161), RAM **49 536 B** et Flash **825 649 B**. `DoomCanvas_startup` est maintenant une **fonction locale du stage `DoomRPG_startEngineLayout`** `EspNativeEngineLayout_startupCanvas`, plus un export du pont Canvas ; seulement **init/free** restent. `Render_setup`/police `a.bmp` et `startupMap/skipIntro` sont inchangés par contrat hôte (FNV `9166e429`).
