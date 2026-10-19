@@ -15,7 +15,9 @@
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_hud_direction.h"
+#include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_present_gate.h"
+#include "esp_native_resident_gameplay.h"
 #include "esp_native_gameplay_weapon.h"
 #include "esp_native_plane_renderer.h"
 #include "esp_native_sprite_renderer.h"
@@ -152,6 +154,9 @@ static int renderComposed(
     Render_t* render = (Render_t*)renderBase;
     const EspNativePlaneRenderStats* planes;
     const EspNativeGameplayHudState* hudState;
+    const EspNativeGameplayHudState* weaponHud;
+    EspNativeGameplayHudState liveHud;
+    const EspNativeGameplayPlayerState* livePlayer;
     EspNativeGameplayFrameStats* stats = &frameScratch.stats;
     EspNativeSpriteStats* sprites = &frameScratch.sprites;
     EspNativeGameplayWeaponStats* weapon = &frameScratch.weapon;
@@ -333,17 +338,31 @@ static int renderComposed(
         goto done;
     }
 
+    /* A saved game's initial HUD may predate in-session weapon selection.
+     * Render the actual native PlayerState weapon, not the initial HUD copy.
+     * Pre-session cache prime can still use its original immutable HUD model. */
+    livePlayer = EspNativeGameplayPlayerState_view();
+    weaponHud = hudState;
+    if (livePlayer != NULL && livePlayer->active == 1U) {
+        if (!EspNativeGameplayHud_snapshotLive(
+                hudState, livePlayer, angle, &liveHud)) {
+            printf("[TURNFRAME] DIAG fail=WEAPON_LIVE_STATE weapon=%u\n",
+                   (unsigned int)livePlayer->weapon);
+            goto done;
+        }
+        weaponHud = &liveHud;
+    }
     if (!EspNativeGameplayWeapon_render(render,
-                                        hudState->model.weapon,
-                                        hudState->model.weaponsPresent,
+                                        weaponHud->model.weapon,
+                                        weaponHud->model.weaponsPresent,
                                         weapon) ||
         EspAssetPack_isOpen() ||
         fnv1a(render, (uint32_t)sizeof(*render)) != renderAfterSpritesFNV ||
-        (hudState->model.weaponsPresent != 0U && weapon->drawn != 1U) ||
-        (hudState->model.weaponsPresent == 0U && weapon->skipped != 1U)) {
+        (weaponHud->model.weaponsPresent != 0U && weapon->drawn != 1U) ||
+        (weaponHud->model.weaponsPresent == 0U && weapon->skipped != 1U)) {
         printf("[TURNFRAME] DIAG fail=WEAPON weapon=%u present=%u drawn=%u skipped=%u pack=%u renderStable=%s\n",
-               (unsigned int)hudState->model.weapon,
-               (unsigned int)hudState->model.weaponsPresent,
+               (unsigned int)weaponHud->model.weapon,
+               (unsigned int)weaponHud->model.weaponsPresent,
                (unsigned int)weapon->drawn,
                (unsigned int)weapon->skipped,
                (unsigned int)EspAssetPack_isOpen(),
@@ -388,10 +407,44 @@ static int renderComposed(
 
     if (publish) {
         phaseStart = esp_timer_get_time();
-        if (!preview) EspNativeGameplayActionEngine_markFreshFrame();
-        if (!Esp32PlatformVideo_present()) {
-            printf("[TURNFRAME] DIAG fail=PRESENT\n");
-            goto done;
+        /*
+         * Monster movement/attack and door-settle owners can request a
+         * canonical 3D frame while AUTOMAP still owns the visible surface.
+         * Keep their real world/sprite accounting, but NEVER present those
+         * pixels over the map. The resident automap owner re-composes and
+         * publishes its current view instead. This is also true after a
+         * blocked movement's monster turn: gameplay cadence is unchanged.
+         *
+         * A failed automap repaint fails this render transaction closed;
+         * callers retain their existing rollback/recovery contract.
+         * No second framebuffer and no new mutable screen owner.
+         */
+        if (EspNativeResidentGameplay_isAutomapActive()) {
+            const int dynamicScoped =
+                EspNativeDynamicLineRender_pauseForAutomap();
+            const int mapPresented = EspNativeResidentGameplay_redrawAutomap(
+                renderBase, "WORLD-COMPOSITOR");
+            EspNativeDynamicLineRender_resumeFromAutomap(dynamicScoped);
+            if (!mapPresented) {
+                printf("[TURNFRAME] DIAG fail=AUTOMAP-OWNED-PRESENT\n");
+                goto done;
+            }
+            stats->frameAfterFNV = frameFNV();
+            stats->hudBandsAfterFNV = hudBandsFNV();
+            if (stats->frameAfterFNV == 0U ||
+                stats->hudBandsAfterFNV == 0U) {
+                printf("[TURNFRAME] DIAG fail=AUTOMAP-OWNED-FNV\n");
+                goto done;
+            }
+            DRPG_LOGT("[TURNFRAME] AUTOMAP-OWNED visible=automap worldRaster=not-presented frame=%08x gameplayMutation=no\n",
+                      (unsigned int)stats->frameAfterFNV);
+        }
+        else {
+            if (!preview) EspNativeGameplayActionEngine_markFreshFrame();
+            if (!Esp32PlatformVideo_present()) {
+                printf("[TURNFRAME] DIAG fail=PRESENT\n");
+                goto done;
+            }
         }
         stats->presentMicros = elapsedMicros(phaseStart);
         stats->finalPresented = 1U;

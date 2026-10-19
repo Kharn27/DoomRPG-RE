@@ -10,8 +10,8 @@ extern "C" {
 /* Visible touch chrome for the native gameplay HUB. This layer owns no gameplay
  * state and no framebuffer snapshot. It paints logical y=20..119 while the HUB
  * is active; the gameplay HUD underneath is reconstructed on close. It maps
- * the INV / WPN / STAT / SYS tabs plus page-local touch targets to semantic
- * actions. */
+ * the INV / STAT / SYS tabs plus page-local targets. The weapon grid
+ * is a standalone panel with BACK, opened from the lower ammo/compass HUD. */
 int EspNativeGameplayHubTouchUi_paint(uint16_t* framebuffer,
                                       uint8_t page,
                                       uint8_t selectedRow);
@@ -41,8 +41,8 @@ int EspNativeGameplayHubTouchUi_classify(
 int EspNativeGameplayHubTouchUi_consumedWeaponTarget(uint8_t* outWeaponId);
 
 /* Resolve the exact tab touched by an already-consumed TURN input. This keeps
- * all four tabs directly addressable even when the destination is two pages
- * away in the cyclic keyboard navigation order. */
+ * all three visible HUB tabs directly addressable without passing through
+ * the separate Weapons panel. */
 int EspNativeGameplayHubTouchUi_consumedPageTarget(uint8_t* outPage);
 
 /* Resolve the exact row touched in the four-line Inventory window. Physical

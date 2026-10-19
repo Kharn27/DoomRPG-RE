@@ -37,6 +37,7 @@ static uint16_t pixels[160 * 120 + 2];
 static int dialogActive, dialogOk = 1, standalone, frameOk = 1, presentOk = 1;
 static int pack, noteOk = 1, noteStaged, notes, sounds, captures;
 static int showOk = 1, hides, shows, renderCalls, presents;
+static int automapOwned, automapRenderOk = 1, automapRenders;
 static int freshFrames, decoratedPresents, moveFrameResults, spritePublications;
 static Render_t renderOwner;
 static EspMapLineStateView lineView;
@@ -193,6 +194,8 @@ int Esp32PlatformVideo_present(void) {
     ++presents; return presentOk;
 }
 int __real_Esp32PlatformVideo_present(void);
+int __wrap_EspNativeGameplayFrame_renderAmbient(
+    struct Render_s* render, EspNativeGameplayFrameStats* outStats);
 int __wrap_EspNativeGameplayActionEngine_present(void) {
     ++decoratedPresents;
     return __real_Esp32PlatformVideo_present();
@@ -200,10 +203,45 @@ int __wrap_EspNativeGameplayActionEngine_present(void) {
 void EspNativeGameplayActionEngine_markFreshFrame(void) { ++freshFrames; }
 int EspNativeTransitionPresentation_isLoadingActive(void) { return 0; }
 int EspNativeGameplayLevelUp_filterGameplayPresent(void) { return 0; }
+/* The real frame compositor is compiled into this harness. A monster world
+ * redraw must never leak a 3D present while automap owns the display. */
+int EspNativeResidentGameplay_isAutomapActive(void) { return automapOwned; }
+int EspNativeResidentGameplay_redrawAutomap(struct Render_s* render, const char* reason) {
+    assert(automapOwned && render == &renderOwner);
+    assert(strcmp(reason, "WORLD-COMPOSITOR") == 0);
+    /* The dynamic 3D door scope must have been suspended, so the map sees
+     * the immutable BSP line rather than the transient opened-door adapter. */
+    {
+        EspMapLine originalLine;
+        assert(__wrap_EspMapRuntime_getLine(0U, &originalLine));
+        assert(originalLine.texture == 9U);
+        assert((originalLine.flags & 0x20000000U) != 0U);
+    }
+    ++automapRenders;
+    if (!automapRenderOk) return 0;
+    for (size_t i = 0U; i < 160U * 120U; ++i) pixels[1 + i] = 0xa55aU;
+    return Esp32PlatformVideo_present();
+}
 int EspNativeGameplayLevelUp_repaintOwned(void) { assert(0); return 0; }
 void EspNativePlaneRenderer_reset(void) { memset(&planes, 0, sizeof(planes)); }
 const EspNativePlaneRenderStats* EspNativePlaneRenderer_view(void) { return &planes; }
 const EspNativeGameplayHudState* EspNativeGameplayHud_view(void) { return &hud; }
+/* This event-chain harness mocks presentation owners. The real live HUD model
+ * implementation is independently exercised by hub_weapon_live_model_host.c.
+ * Keep the frame contract anchored to the mock PlayerState. */
+int EspNativeGameplayHud_snapshotLive(
+    const EspNativeGameplayHudState* retained,
+    const EspNativeGameplayPlayerState* current,
+    uint8_t angle,
+    EspNativeGameplayHudState* out) {
+    if (retained == NULL || current == NULL || out == NULL ||
+        current->active != 1U) return 0;
+    *out = *retained;
+    out->model.weapon = current->weapon;
+    out->model.weaponsPresent = current->weapons != 0U;
+    out->model.destAngle = angle;
+    return 1;
+}
 int EspNativeGameplayWeapon_render(struct Render_s* render, uint8_t weapon,
     uint8_t present, EspNativeGameplayWeaponStats* out) {
     (void)render; (void)weapon; memset(out, 0, sizeof(*out));
@@ -269,6 +307,8 @@ static void seed(unsigned credits) {
     EspNativeGameplayPresentGate_cancel();
     dialogOk = noteOk = frameOk = presentOk = showOk = 1;
     captures = presents = renderCalls = freshFrames = decoratedPresents = moveFrameResults = spritePublications = 0;
+    automapOwned = automapRenders = 0;
+    automapRenderOk = 1;
     clockMs = 1000;
     memset(&renderOwner, 0, sizeof(renderOwner)); renderOwner.framebuffer = (byte*)(pixels + 1);
     renderOwner.screenWidth = 160; renderOwner.screenHeight = 80; renderOwner.screenY = 20;
@@ -318,6 +358,27 @@ int main(void) {
     assert(EspNativeGameplayFrame_renderTurn(render, 0, &frame));
     assert(frame.finalPresented && presents == 1 && freshFrames == 1 && decoratedPresents == 1);
     assert(spritePublications == 1);
+    /* World raster/visibility still runs; the map replaces the full frame
+     * BEFORE the only physical present. Never expose the transient 3D view. */
+    seed(10); automapOwned = 1;
+    assert(EspNativeGameplayFrame_renderTurn(render, 0, &frame));
+    assert(frame.active && frame.finalPresented && automapRenders == 1);
+    assert(renderCalls == 1 && presents == 1 && freshFrames == 0);
+    assert(frame.frameAfterFNV != 0U);
+    for (size_t i = 0U; i < 160U * 120U; ++i)
+        assert(pixels[1 + i] == 0xa55aU);
+    /* Even an ambient/preview publication is not allowed to reveal 3D
+     * while a modal map owns the screen. */
+    seed(10); automapOwned = 1;
+    assert(__wrap_EspNativeGameplayFrame_renderAmbient(render, &frame));
+    assert(frame.active && frame.finalPresented);
+    assert(automapRenders == 1 && presents == 1 && freshFrames == 0);
+    for (size_t i = 0U; i < 160U * 120U; ++i)
+        assert(pixels[1 + i] == 0xa55aU);
+    /* Rendering failure must not fall through to a 3D presentation. */
+    seed(10); automapOwned = 1; automapRenderOk = 0;
+    assert(!EspNativeGameplayFrame_renderTurn(render, 0, &frame));
+    assert(automapRenders == 1 && presents == 0 && freshFrames == 0);
     seed(9);
     assert(EspNativeGameplayEventChain_execute(67,9,0x500,&result) == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_PAUSED);
     assert(standalone == 1 && player.credits == 9 && hides == 0 && !pack && notes == 0);
@@ -402,6 +463,6 @@ int main(void) {
     }
     EspNativeGameplayEventChain_reset();
     assert(!EspNativeGameplayEventChain_isWaiting());
-    puts("paid_interaction_host: PASS real frame/gate/dynamic-lines, credit rollback, WAIT publish/retry, NOTE, clock wrap, guards");
+    puts("paid_interaction_host: PASS automap retains screen ownership over 3D turn frames, fail-closed, real frame/gate, WAIT and guards");
     return 0;
 }

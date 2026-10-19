@@ -8,6 +8,8 @@
 #include "esp_hud_refresh_state.h"
 #include "esp_map_catalog.h"
 #include "esp_native_gameplay_hud.h"
+#include "esp_native_gameplay_hud_weapon_button.h"
+#include "esp_native_gameplay_weapon_control.h"
 #include "esp_native_indexed_bmp.h"
 #include "esp_native_transition_presentation.h"
 #include "platform_video_c_bridge.h"
@@ -48,6 +50,7 @@
 #define HUD_TOP_TOUCH_NOTCH_BOTTOM_Y0 17
 #define HUD_TOP_TOUCH_NOTCH_BOTTOM_Y1 18
 #define HUD_TOP_TOUCH_NEON_BLUE 0x001fU
+#define HUD_WEAPON_TOUCH_NEON_AMBER 0xfd20U
 
 static EspNativeGameplayHudState hudState;
 
@@ -129,6 +132,24 @@ static void drawTopTouchNotches(uint16_t* framebuffer,
     drawVerticalLine(framebuffer, HUD_TOP_TOUCH_SPLIT2_X,
                      HUD_TOP_TOUCH_NOTCH_BOTTOM_Y0,
                      HUD_TOP_TOUCH_NOTCH_BOTTOM_Y1, blue, stats);
+}
+
+/* Tiny frame corners advertise touch without obscuring ammo/compass. */
+static void drawWeaponTouchCorners(uint16_t* framebuffer,
+                                   EspNativeGameplayHudStats* stats) {
+    const uint16_t accent = HUD_WEAPON_TOUCH_NEON_AMBER;
+    drawVerticalLine(framebuffer, ESP_NATIVE_HUD_WEAPON_LEFT + 1,
+                     ESP_NATIVE_HUD_WEAPON_TOP + 1,
+                     ESP_NATIVE_HUD_WEAPON_TOP + 3, accent, stats);
+    drawVerticalLine(framebuffer, ESP_NATIVE_HUD_WEAPON_RIGHT - 1,
+                     ESP_NATIVE_HUD_WEAPON_TOP + 1,
+                     ESP_NATIVE_HUD_WEAPON_TOP + 3, accent, stats);
+    drawVerticalLine(framebuffer, ESP_NATIVE_HUD_WEAPON_LEFT + 1,
+                     ESP_NATIVE_HUD_WEAPON_BOTTOM - 3,
+                     ESP_NATIVE_HUD_WEAPON_BOTTOM - 1, accent, stats);
+    drawVerticalLine(framebuffer, ESP_NATIVE_HUD_WEAPON_RIGHT - 1,
+                     ESP_NATIVE_HUD_WEAPON_BOTTOM - 3,
+                     ESP_NATIVE_HUD_WEAPON_BOTTOM - 1, accent, stats);
 }
 
 static EspNativeGameplayHudStatus openAsset(
@@ -399,6 +420,9 @@ static EspNativeGameplayHudStatus paintPrepared(
     status = drawSmallText(&bmp, framebuffer, dir,
                            HUD_ORIENTATION_X + cx,
                            y + 2, 1U, 1U, stats);
+    if (status == ESP_NATIVE_GAMEPLAY_HUD_OK) {
+        drawWeaponTouchCorners(framebuffer, stats);
+    }
     return status;
 }
 
@@ -520,6 +544,55 @@ EspNativeGameplayHudStatus EspNativeGameplayHud_routeInitial(
     return ESP_NATIVE_GAMEPLAY_HUD_OK;
 }
 
+int EspNativeGameplayHud_snapshotLive(
+    const EspNativeGameplayHudState* retained,
+    const EspNativeGameplayPlayerState* player,
+    uint8_t angle,
+    EspNativeGameplayHudState* outSnapshot) {
+    EspNativeGameplayHudModel model;
+    uint8_t ammoType = 0U;
+    int noWeapon;
+
+    if (outSnapshot != NULL) memset(outSnapshot, 0, sizeof(*outSnapshot));
+    if (retained == NULL || outSnapshot == NULL ||
+        retained->active != 1U || retained->painted != 1U ||
+        player == NULL || player->active != 1U ||
+        player->weapon >= ESP_NATIVE_GAMEPLAY_PLAYER_WEAPON_LIMIT ||
+        !directionSupported(angle)) {
+        return 0;
+    }
+
+    /*
+     * PlayerState_enterDeath() intentionally clears weapon AND weapons before
+     * the 750-ms fall animation. A 0-HP/no-weapon state is valid there: the
+     * native first-person weapon renderer must SKIP, not fail the whole frame.
+     * Healthy no-weapon states and nonzero-but-unowned weapon IDs remain
+     * fail-closed. Do not "grant" axe ownership just to draw the death frame.
+     */
+    noWeapon = player->weapons == 0U;
+    if (noWeapon) {
+        if (player->weapon != 0U || (player->param1 & 0xffU) != 0U) return 0;
+    }
+    else if ((player->weapons & (uint16_t)(1U << player->weapon)) == 0U ||
+             !EspNativeGameplayWeaponControl_ammoType(
+                 player->weapon, &ammoType)) {
+        return 0;
+    }
+
+    model = retained->model;
+    model.health = (uint8_t)(player->param1 & 0xffU);
+    model.maxHealth = (uint8_t)((player->param1 >> 8) & 0xffU);
+    model.armor = (uint8_t)((player->param1 >> 16) & 0xffU);
+    model.maxArmor = (uint8_t)((player->param1 >> 24) & 0xffU);
+    model.weapon = player->weapon;
+    model.ammoType = ammoType;
+    model.ammo = noWeapon ? 0U : player->ammo[ammoType];
+    model.weaponsPresent = noWeapon ? 0U : 1U;
+    model.destAngle = angle;
+    return EspNativeGameplayHud_prepareInitial(&model, outSnapshot) ==
+           ESP_NATIVE_GAMEPLAY_HUD_OK;
+}
+
 EspNativeGameplayHudStatus EspNativeGameplayHud_repaint(
     const EspNativeGameplayHudState* state,
     EspNativeGameplayHudStats* outStats) {
@@ -574,4 +647,23 @@ EspNativeGameplayHudStatus EspNativeGameplayHud_repaint(
            (unsigned int)outStats->packReads,
            (unsigned int)outStats->bytesRead);
     return ESP_NATIVE_GAMEPLAY_HUD_OK;
+}
+
+/* One native route for all full-screen modal returns. Keep snapshot ownership
+ * and pixel painting separated so the exact HUD-close double-repaint witness
+ * continues to compare two equivalent current PlayerState presentations. */
+EspNativeGameplayHudStatus EspNativeGameplayHud_repaintLive(
+    const EspNativeGameplayHudState* retained,
+    const EspNativeGameplayPlayerState* player,
+    uint8_t angle,
+    EspNativeGameplayHudStats* outStats) {
+    EspNativeGameplayHudState live;
+
+    if (outStats != NULL) memset(outStats, 0, sizeof(*outStats));
+    if (outStats == NULL ||
+        !EspNativeGameplayHud_snapshotLive(
+            retained, player, angle, &live)) {
+        return ESP_NATIVE_GAMEPLAY_HUD_UNSUPPORTED_CONTEXT;
+    }
+    return EspNativeGameplayHud_repaint(&live, outStats);
 }

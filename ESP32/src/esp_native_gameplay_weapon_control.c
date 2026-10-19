@@ -82,6 +82,16 @@ EspNativeGameplayWeaponControlStatus EspNativeGameplayWeaponControl_prepare(
     return ESP_NATIVE_GAMEPLAY_WEAPON_CONTROL_UNCHANGED;
 }
 
+int EspNativeGameplayWeaponControl_ammoType(uint8_t weapon,
+                                            uint8_t* outAmmoType) {
+    if (outAmmoType == NULL || weapon >= WEAPON_CONTROL_COUNT ||
+        selectionAmmoType[weapon] >= ESP_NATIVE_GAMEPLAY_PLAYER_AMMO_TYPES) {
+        return 0;
+    }
+    *outAmmoType = selectionAmmoType[weapon];
+    return 1;
+}
+
 const char* EspNativeGameplayWeaponControl_statusName(
     EspNativeGameplayWeaponControlStatus status) {
     switch (status) {

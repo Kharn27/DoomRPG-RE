@@ -2,7 +2,7 @@
 """Audit retirement of public DoomCanvas image blitter without drawing drift.
 
 The former exported DoomCanvas_drawImageSpecial has only one permanent
-caller, DoomCanvas_drawString1, in the native bridge. Its complete body is
+caller, EspNativeCanvas_drawText, in the native bridge. Its complete body is
 locked to the previous CYD hardware-proven implementation by FNV-1a.
 A new external source caller is rejected at host test and ELF link time.
 """
@@ -20,20 +20,19 @@ assert bridge.count("static void " + internal + "(") == 1
 assert bridge.count(internal + "(") == 2, "one definition, one glyph caller"
 assert "void " + retired + "(" not in bridge
 assert retired + '",' not in builder  # absent from source ABI export inventory
-assert '"DoomCanvas_drawString1",' in builder
+assert '"DoomCanvas_drawString1",' not in builder
+assert '"DoomCanvas_setState",' in builder
 assert "glyph blitter must be private" in builder
-assert "void DoomCanvas_drawString1(" in bridge
-assert 'INIT exports=5 desktopTU=no' in bridge
+assert "void EspNativeCanvas_drawText(" in bridge
+assert 'INIT exports=4 nativeText=1 desktopTU=no' in bridge
 assert 'INIT exports=6 desktopTU=no' not in bridge
-assert 'char loadingText[] = "Loading...";' in bridge
-assert 'doomCanvas, loadingText, DOOMRPG_CANVAS_CENTER_X' in bridge
-assert 'doomCanvas, "Loading...", DOOMRPG_CANVAS_CENTER_X' not in bridge
+assert 'doomCanvas, "Loading...", DOOMRPG_CANVAS_CENTER_X' in bridge
 assert "SDL_RenderCopy(sdlVideo.renderer, img->imgBitmap, &clip, &renderQuad);" in bridge
 
 # Extract identical actual source body, after the renamed function signature.
 a = bridge.index("static void " + internal + "(")
 a = bridge.index("\n{", a)
-b = bridge.index("\nvoid DoomCanvas_drawString1(", a)
+b = bridge.index("\nvoid EspNativeCanvas_drawText(", a)
 body = bridge[a:b]
 assert body.startswith("\n{\n") and body.endswith("}\n")
 h = 2166136261
@@ -51,11 +50,10 @@ for path in sorted(SRC.rglob("*")):
     assert not re.search(r"\b" + retired + r"\s*\(", text), (
         "retired DoomCanvas image ABI revived in " + str(path.relative_to(ROOT)))
 
-# Avoid changing the externally-called text routine or the active
-# init/free/state/startup roots as part of this tiny ABI boundary.
-for name in ("init", "free", "drawString1", "setState", "startup"):
+# The text entry is native; only four compatibility roots remain.
+for name in ("init", "free", "setState", "startup"):
     assert "DoomCanvas_" + name + "(" in bridge
-assert "DoomCanvas_drawString1(" in bridge
-assert re.search(r"\bDoomCanvas_drawString1\s*\([^;]+\)\s*\{", bridge, re.S)
+assert "DoomCanvas_drawString1(" not in bridge
+assert re.search(r"\bEspNativeCanvas_drawText\s*\([^;]+\)\s*\{", bridge, re.S)
 
-print("PASS Canvas public ABI=5, internal indexed glyph blitter bodyFNV=4c4a9a93, external calls=0")
+print("PASS Canvas ABI=4 native const text glyphBlitterFNV=4c4a9a93")

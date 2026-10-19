@@ -7,6 +7,7 @@
 
 static EspPlayerViewState testView;
 static EspNativeGameplayHudState testHud;
+static EspNativeGameplayPlayerState testPlayer;
 static DoomRPG_t testGame;
 static Render_t testRender;
 static EspNativeGameplayInputState testIntent;
@@ -111,17 +112,31 @@ int EspNativeDoorAnimator_finishFrame(int ok) { (void)ok; assert(0); return 0; }
 
 const EspPlayerViewState* EspPlayerView_view(void) { return &testView; }
 const EspNativeGameplayHudState* EspNativeGameplayHud_view(void) { return &testHud; }
+const EspNativeGameplayPlayerState* EspNativeGameplayPlayerState_view(void) {
+    return &testPlayer;
+}
 int EspNativeGameplayFacingLabel_refresh(const char* reason) { (void)reason; return 1; }
 int EspNativeGameplayFrame_renderTurn(Render_t* render, uint8_t angle,
                                      EspNativeGameplayFrameStats* out) {
     assert(render == &testRender && angle == testView.viewAngle);
+    /* A world frame MUST see world-owned presentation, not automap-owned. */
+    assert(!automapActive());
     ++worldFrames;
     memset(out, 0, sizeof(*out));
     return worldOk;
 }
-EspNativeGameplayHudStatus EspNativeGameplayHud_repaint(
-    const EspNativeGameplayHudState* state, EspNativeGameplayHudStats* out) {
-    assert(state == &testHud);
+/* Real snapshot/repaint contract is covered by the HUD unit tests.
+ * This resident-router harness verifies that automap EXIT passes the live
+ * player and settled angle, not the map-entry retained weapon copy. */
+EspNativeGameplayHudStatus EspNativeGameplayHud_repaintLive(
+    const EspNativeGameplayHudState* retained,
+    const EspNativeGameplayPlayerState* player,
+    uint8_t angle, EspNativeGameplayHudStats* out) {
+    assert(retained == &testHud && player == &testPlayer);
+    assert(player->active == 1U && player->weapon == 3U);
+    assert(player->weapons == (1U << 3) && player->ammo[2] == 17U);
+    assert(retained->model.weapon == 2U); /* Deliberately stale HUD cache. */
+    assert(angle == (uint8_t)testView.viewAngle);
     memset(out, 0, sizeof(*out));
     return ESP_NATIVE_GAMEPLAY_HUD_OK;
 }
@@ -169,6 +184,10 @@ int EspNativeGameplayAutomap_render(int32_t x, int32_t y, uint8_t angle,
     memset(out, 0, sizeof(*out));
     return automapOk;
 }
+/* The modal-router host stubs real pixel effects; the separate native
+ * automap_damage_host.c exercises their bounded timing and raster output. */
+void EspNativeGameplayAutomap_cancelDamage(void) {}
+int EspNativeGameplayAutomap_damageRedrawDue(void) { return 0; }
 int EspNativeDoorAnimator_hasPendingFrames(void) { return 0; }
 void EspNativeGameplayMoveEvents_onFrameResult(int ok) { (void)ok; }
 
@@ -178,6 +197,14 @@ static void seed(int inAutomap, EspNativeGameplayDialogResumeStatus status) {
     memset(&testRender, 0, sizeof(testRender));
     memset(&testView, 0, sizeof(testView));
     memset(&testIntent, 0, sizeof(testIntent));
+    memset(&testHud, 0, sizeof(testHud));
+    memset(&testPlayer, 0, sizeof(testPlayer));
+    testHud.active = testHud.painted = 1U;
+    testHud.model.weapon = 2U;
+    testPlayer.active = 1U;
+    testPlayer.weapon = 3U;
+    testPlayer.weapons = (1U << 3);
+    testPlayer.ammo[2] = 17U;
     gameplayState.active = 1U;
     /* Preserve unrelated mode bits when restoring automap. */
     gameplayState.modeFlags = (uint8_t)(0x80U | (inAutomap ? RESIDENT_MODE_AUTOMAP : 0U));
@@ -191,6 +218,15 @@ static void seed(int inAutomap, EspNativeGameplayDialogResumeStatus status) {
 }
 
 int main(void) {
+    /* Modal exit transfers the display domain before composing the new 3D
+     * frame. A failed world render must restore AUTOMAP and repaint its map. */
+    seed(1, ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK);
+    assert(closeAutomap(&testRender, "HOST-CLOSE"));
+    assert(!automapActive() && worldFrames == 1 && automapFrames == 0);
+    seed(1, ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK);
+    worldOk = 0;
+    assert(!closeAutomap(&testRender, "HOST-FAIL"));
+    assert(automapActive() && worldFrames == 1 && automapFrames == 1);
     const EspNativeGameplayDialogResumeStatus failures[] = {
         ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_EXEC_FAILED,
         ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_INVALID
@@ -224,7 +260,8 @@ int main(void) {
     worldOk = 0; /* Close failed: keep mode and don't start/debit the script. */
     serviceSelect(&testGame, &testRender, &testIntent);
     assert(automapActive() && gameplayState.active && !gameplayState.failed);
-    assert(chainCalls == 0 && automapFrames == 0 && gameplayState.deferred == 1);
+    /* Failed world exit now restores AUTOMAP and re-presents its pixels. */
+    assert(chainCalls == 0 && automapFrames == 1 && gameplayState.deferred == 1);
 
     seed(1, ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_PAUSED);
     serviceSelect(&testGame, &testRender, &testIntent);

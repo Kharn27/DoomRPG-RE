@@ -111,6 +111,21 @@ jobs:
             ESP32/test/damage_cue_timing_host.c -Wl,--gc-sections -o /tmp/doomrpg-damage-cue-timing-test
           /tmp/doomrpg-damage-cue-timing-test
 
+      - name: Test actual automap PASS_TURN including hazard, rollback and death (host C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+            -IESP32/test/host_include -IESP32/include -IESP32/src -Isrc \
+            ESP32/test/pass_turn_automap_host.c -Wl,--gc-sections -o /tmp/doomrpg-pass-turn-automap-test
+          /tmp/doomrpg-pass-turn-automap-test
+          python ESP32/test/automap_pass_turn_routing_host.py
+
+      - name: Test native automap damage pulse and text without map-wide buffers (host C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+            -IESP32/test/host_include -IESP32/include -IESP32/src -Isrc \
+            ESP32/test/automap_damage_host.c -Wl,--gc-sections -o /tmp/doomrpg-automap-damage-test
+          /tmp/doomrpg-automap-damage-test
+
       - name: Test strict allocated ELF comparison (host Python)
         run: python ESP32/test/elf_alloc_compare_host.py
 
@@ -142,6 +157,30 @@ jobs:
 
       - name: Test DoomCanvas private indexed glyph blitter contract (host Python)
         run: python ESP32/test/doomcanvas_private_blitter_host.py
+
+      - name: Test live PlayerState HUD weapon/ammo snapshot and strict close (host C + Python)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/include \
+            ESP32/src/esp_native_gameplay_hud.c ESP32/src/esp_native_gameplay_weapon_control.c \
+            ESP32/test/hub_weapon_live_model_host.c -Wl,--gc-sections -o /tmp/doomrpg-hud-live-model
+          /tmp/doomrpg-hud-live-model
+          python ESP32/test/hub_weapon_hud_rebase_host.py
+
+      - name: Test HUD weapon button and three-tab navigation (host C + source)
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/src/esp_native_gameplay_input.c ESP32/test/native_hud_weapon_route_host.c -o /tmp/doomrpg-hud-weapon-route
+          /tmp/doomrpg-hud-weapon-route
+          python ESP32/test/native_hud_weapon_route_host.py
+
+      - name: Test HUD weapon-menu feedback glyph and strict 120ms undo (host C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/test/host_include -IESP32/include \
+            ESP32/src/esp_native_gameplay_controls.c ESP32/test/hud_weapon_feedback_host.c \
+            -o /tmp/doomrpg-hud-weapon-feedback
+          /tmp/doomrpg-hud-weapon-feedback
+
+      - name: Test native Canvas const-text ABI retirement (host Python)
+        run: python ESP32/test/native_canvas_text_retirement_host.py
 
       - name: Test full retirement of desktop Game object and Game ABI (host C)
         run: python ESP32/test/game_inert_abi_retirement_host.py
@@ -191,6 +230,7 @@ jobs:
             ESP32/src/esp_native_gameplay_gib_fx.c ESP32/src/esp_native_gameplay_frame.c \
             ESP32/src/esp_native_dynamic_line_render.c ESP32/src/esp_native_gameplay_present_gate.c \
             -Wl,--gc-sections -Wl,--wrap=EspNativeGameplayFrame_renderTurn \
+            -Wl,--wrap=EspNativeGameplayFrame_renderAmbient \
             -Wl,--wrap=EspNativeGameplayFrame_composeTurn -Wl,--wrap=EspMapRuntime_getLine \
             -Wl,--wrap=EspMapLineState_view -Wl,--wrap=Esp32PlatformVideo_present \
             -Wl,--wrap=EspNativeGameplayActionEngine_present -o /tmp/doomrpg-paid-interaction-test
@@ -263,6 +303,7 @@ jobs:
               --forbid-prefix DoomRPG_prepareNativePalette \
               --forbid-prefix __wrap_Render_beginLoadMap \
               --forbid-prefix DoomCanvas_drawImageSpecial \
+              --forbid-prefix DoomCanvas_drawString1 \
               --forbid-prefix Game_init \
               --forbid-prefix Game_activate \
               --forbid-prefix Game_unloadMapData \

@@ -54,6 +54,24 @@ static uint32_t dynamicTextureVariantReads;
 static EspMapLineStateView renderLineStateView;
 static AnimatedClipContext animatedClip;
 
+/*
+ * A frame's world phase uses the adapted dynamic door reads. If a monster
+ * commits movement while AUTOMAP owns the screen, the real frame compositor
+ * paints the automap instead of presenting its world pixels. Its nested map
+ * and BSP-visibility reads must see the ordinary immutable source lines,
+ * never the transient 3D door-shift/texture adapter. No extra state buffer.
+ */
+int EspNativeDynamicLineRender_pauseForAutomap(void) {
+    if (!dynamicFrameActive) return 0;
+    dynamicFrameActive = 0U;
+    animatedClip.valid = 0U;
+    return 1;
+}
+
+void EspNativeDynamicLineRender_resumeFromAutomap(int wasScoped) {
+    if (wasScoped) dynamicFrameActive = 1U;
+}
+
 int __real_EspNativeGameplayFrame_renderTurn(
     struct Render_s* render,
     uint8_t angle,

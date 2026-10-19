@@ -3,6 +3,10 @@
 #include <stdio.h>
 #include <string.h>
 
+/* Reuse the canonical native millisecond clock without pulling the legacy
+ * DoomRPG object graph/SDL types into this permanent map renderer. */
+extern unsigned int DoomRPG_GetUpTimeMS(void);
+
 #include "esp_map_automap_state.h"
 #include "esp_map_runtime.h"
 #include "esp_map_line_state.h"
@@ -20,6 +24,11 @@
 #define AUTOMAP_Y ((DOOMRPG_LOGICAL_HEIGHT - AUTOMAP_PIXEL_SIZE) / 2)
 
 #define AUTOMAP_BLACK 0x0000U
+#define AUTOMAP_DAMAGE_RED 0x6800U
+#define AUTOMAP_DAMAGE_DURATION_MS 900U
+#define AUTOMAP_DAMAGE_RED1_MS 120U
+#define AUTOMAP_DAMAGE_GAP_MS 220U
+#define AUTOMAP_DAMAGE_RED2_MS 350U
 #define AUTOMAP_VISITED 0x6000U
 #define AUTOMAP_ENTRANCE 0xfd40U
 #define AUTOMAP_ITEM 0x35c0U
@@ -42,6 +51,126 @@
 #if DOOMRPG_LOGICAL_WIDTH != 160 || DOOMRPG_LOGICAL_HEIGHT != 120
 #error "Native Automap geometry is defined for 160x120 logical output"
 #endif
+
+/*
+ * One small screen-owned state, not a combat state. The monotonic integer
+ * clock is only read for presentation. No deferred world mutations.
+ *
+ * 0 red / 1 dark / 2 red / 3 dark-with-text / 4 clean. The last frame is
+ * explicitly repainted when a lease expires; later map redraws cannot revive
+ * the red pixels or old damage number.
+ */
+typedef struct AutomapDamageFeedback_s {
+    uint32_t sinceMs;
+    uint16_t total;
+    uint8_t critical;
+    uint8_t active;
+    uint8_t renderedPhase;
+} AutomapDamageFeedback;
+static AutomapDamageFeedback mapDamage;
+
+static uint8_t damagePhase(uint32_t nowMs) {
+    const uint32_t elapsed = nowMs - mapDamage.sinceMs;
+    if (!mapDamage.active || elapsed >= AUTOMAP_DAMAGE_DURATION_MS) return 4U;
+    if (elapsed < AUTOMAP_DAMAGE_RED1_MS) return 0U;
+    if (elapsed < AUTOMAP_DAMAGE_GAP_MS) return 1U;
+    if (elapsed < AUTOMAP_DAMAGE_RED2_MS) return 2U;
+    return 3U;
+}
+
+void EspNativeGameplayAutomap_noteDamage(uint16_t totalDamage, uint8_t critical) {
+    if (totalDamage == 0U) return;
+    mapDamage.sinceMs = DoomRPG_GetUpTimeMS();
+    mapDamage.total = totalDamage;
+    mapDamage.critical = critical != 0U ? 1U : 0U;
+    mapDamage.active = 1U;
+    mapDamage.renderedPhase = 0xffU;
+    printf("[AUTOMAPDAMAGE] ARM total=%u critical=%u background=red-black-red durationMs=%u turn=no owner=automap\n",
+           (unsigned int)totalDamage, (unsigned int)mapDamage.critical,
+           (unsigned int)AUTOMAP_DAMAGE_DURATION_MS);
+}
+
+int EspNativeGameplayAutomap_damageRedrawDue(void) {
+    return mapDamage.active &&
+           damagePhase(DoomRPG_GetUpTimeMS()) != mapDamage.renderedPhase;
+}
+
+void EspNativeGameplayAutomap_cancelDamage(void) {
+    memset(&mapDamage, 0, sizeof(mapDamage));
+}
+
+/* No PAK font lease inside the modal. Fixed 3x5 uppercase digits/letters,
+ * scaled x2 in a 12px high header above the map. Unsupported glyphs blank. */
+static const uint8_t* damageGlyph(char c) {
+    static const uint8_t patterns[][5] = {
+        {7,5,5,5,7}, {2,6,2,2,7}, {7,1,7,4,7},
+        {7,1,7,1,7}, {5,5,7,1,1}, {7,4,7,1,7},
+        {7,4,7,5,7}, {7,1,2,2,2}, {7,5,7,5,7},
+        {7,5,7,1,7}, /* 0..9 */
+        {6,5,5,5,6}, /* D */
+        {2,5,7,5,5}, /* A */
+        {5,7,7,5,5}, /* M */
+        {7,4,5,5,7}, /* G */
+        {7,4,6,4,7}, /* E */
+        {7,4,6,4,4}, /* F */
+        {7,2,2,2,7}, /* I */
+        {7,2,2,2,2}, /* T */
+        {0,2,2,0,2}, /* ! */
+        {7,4,4,4,7}, /* C */
+        {6,5,6,5,5}  /* R */
+    };
+    if (c >= '0' && c <= '9') return patterns[c - '0'];
+    switch (c) {
+    case 'D': return patterns[10];
+    case 'A': return patterns[11];
+    case 'M': return patterns[12];
+    case 'G': return patterns[13];
+    case 'E': return patterns[14];
+    case 'F': return patterns[15];
+    case 'I': return patterns[16];
+    case 'T': return patterns[17];
+    case '!': return patterns[18];
+    case 'C': return patterns[19];
+    case 'R': return patterns[20];
+    default: return NULL;
+    }
+}
+
+static void paintDamageHeader(uint16_t* fb, uint16_t* pixels) {
+    char caption[24];
+    int count;
+    int x;
+    int i;
+    uint16_t v = mapDamage.total;
+    if (mapDamage.critical)
+        count = snprintf(caption, sizeof(caption), "CRIT %u DAMAGE!",
+                         (unsigned int)v);
+    else
+        count = snprintf(caption, sizeof(caption), "%u DAMAGE!",
+                         (unsigned int)v);
+    if (count <= 0 || (size_t)count >= sizeof(caption)) return;
+    x = (DOOMRPG_LOGICAL_WIDTH - count * 8) / 2;
+    for (i = 0; i < count; ++i) {
+        const uint8_t* glyph = damageGlyph(caption[i]);
+        int col;
+        int row;
+        if (glyph == NULL) continue;
+        for (row = 0; row < 5; ++row) {
+            for (col = 0; col < 3; ++col) {
+                if ((glyph[row] & (4U >> col)) != 0U) {
+                    const int xx = x + i * 8 + col * 2;
+                    const int yy = 1 + row * 2;
+                    fb[yy * DOOMRPG_LOGICAL_WIDTH + xx] = 0xffe0U;
+                    fb[yy * DOOMRPG_LOGICAL_WIDTH + xx + 1] = 0xffe0U;
+                    fb[(yy+1) * DOOMRPG_LOGICAL_WIDTH + xx] = 0xffe0U;
+                    fb[(yy+1) * DOOMRPG_LOGICAL_WIDTH + xx + 1] = 0xffe0U;
+                    if (pixels != NULL && *pixels <= UINT16_MAX-4U)
+                        *pixels += 4U;
+                }
+            }
+        }
+    }
+}
 
 static uint32_t fnv1a32(const uint8_t* data, uint32_t length) {
     uint32_t hash = 2166136261U;
@@ -247,6 +376,7 @@ int EspNativeGameplayAutomap_render(int32_t worldX,
     size_t framebufferBytes;
     EspNativeGameplayAutomapStats stats;
     uint32_t i;
+    const uint8_t overlayPhase = damagePhase(DoomRPG_GetUpTimeMS());
 
     memset(&stats, 0, sizeof(stats));
     if (outStats != NULL) memset(outStats, 0, sizeof(*outStats));
@@ -270,7 +400,9 @@ int EspNativeGameplayAutomap_render(int32_t worldX,
 
     fillRect(framebuffer, 0, 0,
              DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
-             AUTOMAP_BLACK, &stats.pixelsWritten);
+             (overlayPhase == 0U || overlayPhase == 2U)
+                 ? AUTOMAP_DAMAGE_RED : AUTOMAP_BLACK,
+             &stats.pixelsWritten);
 
     for (i = 0U; i < ESP_MAP_STATE_TILE_COUNT; ++i) {
         uint8_t flags;
@@ -400,12 +532,28 @@ int EspNativeGameplayAutomap_render(int32_t worldX,
     drawPlayer(framebuffer, stats.playerX, stats.playerY, angle,
                &stats.pixelsWritten);
 
+    if (overlayPhase != 4U) paintDamageHeader(framebuffer, &stats.pixelsWritten);
+
     stats.scale = AUTOMAP_SCALE;
     stats.mapX = AUTOMAP_X;
     stats.mapY = AUTOMAP_Y;
     stats.frameFNV1a =
         fnv1a32((const uint8_t*)framebuffer, (uint32_t)framebufferBytes);
     if (!Esp32PlatformVideo_present()) return 0;
+    if (mapDamage.active) {
+        mapDamage.renderedPhase = overlayPhase;
+        if (overlayPhase == 4U) {
+            mapDamage.active = 0U;
+            printf("[AUTOMAPDAMAGE] DONE background=black text=cleared framebuffer=map-repaint\n");
+        }
+        else {
+            printf("[AUTOMAPDAMAGE] FRAME phase=%u color=%s damage=%u frame=%08x presented=1\n",
+                   (unsigned int)overlayPhase,
+                   overlayPhase == 0U || overlayPhase == 2U ? "red" : "black",
+                   (unsigned int)mapDamage.total,
+                   (unsigned int)stats.frameFNV1a);
+        }
+    }
     stats.presented = 1U;
     *outStats = stats;
 

@@ -1,8 +1,9 @@
 # Doom RPG — port ESP32-native sur classic CYD
 
-> Guide d'usage **actuel au 18 octobre 2026**, au dernier code
-> `a59554ed524502d02dbab69149777a94050b0a26` de
-> [PR #219](https://github.com/Kharn27/DoomRPG-RE/pull/219).
+> Guide d'usage **mis à jour au 19 octobre 2026**, sur le code
+> `bb4668b25be487aa80b85f8f3ac5f3871a006acc` de
+> [PR #221](https://github.com/Kharn27/DoomRPG-RE/pull/221) (PASS matériel
+> de l'automap et du feedback de dégâts, 19 octobre 2026).
 > Pour les futurs changements, le dépôt GitHub et
 > [PORTING_STATUS.md](PORTING_STATUS.md) font foi, pas les anciens jalons.
 
@@ -66,19 +67,41 @@ rouge ; un **deuxième tap après relâchement** confirme.
   huit visibles par page, boutons fixes **BACK**, **UP**, **DOWN** ;
   `BACK` retourne au dashboard sans reconstruire de menu BSP.
 
-En jeu, les **12 zones tactiles invisibles** gèrent mouvements,
-strafe, rotations, sélection/attaque et actions de HUB. Le
-bandeau supérieur permet de passer un tour ; les rotations
+En jeu, les **12 zones tactiles invisibles** de navigation/
+actions (plus une zone dédiée aux armes dans le HUD inférieur)
+gèrent mouvements, strafe, rotations, sélection/attaque et menu.
+Le bandeau supérieur permet de passer un tour ; les rotations
 n'avancent pas le tour des monstres. Le HUD et l'affichage monde
-utilisent le même framebuffer natif. L'interface HUB possède
-quatre onglets :
+utilisent le même framebuffer natif.
+
+**Accès aux armes :** taper **l'icône munitions/boussole en bas à droite**
+du HUD (x100..159 et y100..119 logiques, soit x200..319 et
+y200..239 sur l'écran physique). Cette zone ouvre directement la
+**grille 4×3 des 12 armes** : l'arme équipée est surlignée, les
+armes possédées sont en couleur, les autres sont grisées.
+**Un seul tap sur une arme possédée l'équipe et referme immédiatement
+la grille**, sans tour de monstre ; **BACK** ferme sans changer l'arme.
+Les icônes des familiers 9–11 manquent aux données sources et restent
+en présentation fail-closed. Le bouton HUD produit un **feedback
+jaune temporaire** à glyphe « W » : le test hôte vérifie une
+restauration RGB565/FNV exacte après 120 ms. En cas d'échec de
+l'overlay décoratif, la commande reste prioritaire et fonctionnelle.
+
+Le menu du haut ouvre le **HUB à trois onglets**, sans ancien onglet
+`WPN` :
 
 | Onglet | Usage |
 |---|---|
 | `INV` | Notebook, objets transportés, clés possédées ; plusieurs usages d'objets restent différés |
-| `WPN` | Choix d'arme par grille 3×3 ; les familiers sont hors de cette grille |
 | `STAT` | Santé, armure, niveau, XP, attributs, crédits et clés |
 | `SYS` | `SAVE`, `LOAD`, `EXIT TO MENU`, avec confirmation avant action |
+
+Le menu de mort natif reste accessible après le coup létal :
+le joueur passe à **HP=0, sans arme**, puis par la chute et le
+fondu avant le menu. Ce parcours a été confirmé sur CYD avec
+`[PLAYERDEATH] READY ... input=death-menu` ; un slot sauvegardé
+lisible y est détecté, mais la reprise par LOAD n'a pas été
+retentée dans ce dernier journal.
 
 `EXIT TO MENU` libère la session et retourne au menu sans sauvegarder.
 Une sauvegarde en cours ne doit pas être implicitement modifiée par EXIT.
@@ -86,6 +109,26 @@ Le combat et les événements sont natifs, avec plusieurs familles encore
 **fail-closed** (comportement non encore pris en charge). L'audio
 dispose d'intentions natives mais **pas de lecture audible**
 actuellement. Ne pas considérer le port comme une parité complète.
+
+## Automap et dégâts
+
+La carte en plein écran garde l'exclusivité des pixels pendant que les
+mouvements et tours de monstres se déroulent. Le tap **automap** ouvre/ferme
+cette vue ; il ne provoque pas de tour. Les rotations, mouvements et portes
+restent actifs, sans flash 3D ni barre HUD parasite par-dessus la carte.
+Un coup réellement reçu provoque un **double clignotement du fond noir en rouge
+sombre** et un message `5 DAMAGE!` (ou `CRIT 5 DAMAGE!`) au-dessus de
+la carte. Le nombre représente santé + armure perdues, comme le message combat.
+L'effet dure jusqu'à **900 ms**, puis fond et texte reprennent leur état
+initial ; selon le temps pris par le tour monstre, le premier pulse peut
+déjà être passé quand la carte est présentée. Le HUD complet et l'arme courante
+réapparaissent à la fermeture.
+
+Ce feedback a été confirmé sur le CYD au SHA `bb4668b` avec `damageTotal=5`
+(4 phases visibles et expiration exacte) et `damageTotal=4` (2 dernières
+phases visibles). Cinq `[ALIVE]` de 27 à 47 s : `heap8=113768`,
+`largest8=86004` constants. Aucun écran hors jeu ni copie de framebuffer
+supplémentaire.
 
 ## Vérifier le firmware et la mémoire
 
@@ -95,7 +138,7 @@ Témoins Serial utiles sur le firmware normal :
 Engine structs: Render=1532 Game=0 Canvas=44 Total=2336 bytes
 [CORE] Game           used=0
 [CORE] Desktop Game.c retired bridge=absent exports=0
-[DOOMCANVASBRIDGE] INIT exports=5
+[DOOMCANVASBRIDGE] INIT exports=4
 [DATA] Native PAK indexed, entries=241
 [MAINOPAQUE] DASHBOARD ... finalFNV=0f2c9fc3
 [ENGINESESSION] READY ... shapeData=0x0 mediaTexels=0x0

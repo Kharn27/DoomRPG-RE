@@ -8,6 +8,7 @@
 #include "esp_native_menu_state.h"
 #include "Render.h"
 #include "esp_native_audio_intent.h"
+#include "esp_native_canvas_text.h"
 
 #include "native_main_menu_actions.h"
 #include "native_main_menu_load_action.h"
@@ -174,7 +175,7 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
         const char* line = DoomRPG_esp32MainMenuHelpLine(i);
         if (line == NULL) return 0;
         if (line[0] != '\0') {
-            DoomCanvas_drawString1(canvas, (char*)line, x, y, 0);
+            EspNativeCanvas_drawText(canvas, line, x, y, 0);
         }
         y += MAIN_HELP_LINE_HEIGHT;
     }
@@ -200,9 +201,9 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
                      DOOMRPG_LOGICAL_HEIGHT - 1);
 
     DoomRPG_setFontColor(doomRpg, 0xffffffff);
-    DoomCanvas_drawString1(canvas, "BACK", 8, 102, 0);
-    DoomCanvas_drawString1(canvas, "UP", 70, 102, 0);
-    DoomCanvas_drawString1(canvas, "DOWN", 118, 102, 0);
+    EspNativeCanvas_drawText(canvas, "BACK", 8, 102, 0);
+    EspNativeCanvas_drawText(canvas, "UP", 70, 102, 0);
+    EspNativeCanvas_drawText(canvas, "DOWN", 118, 102, 0);
     DoomRPG_setFontColor(doomRpg, 0xffffffff);
 
     frameFNV = DoomRPG_esp32MainMenuFramebufferHash(doomRpg->render);
@@ -494,7 +495,7 @@ static void showNoSaveFeedback(DoomRPG_t* doomRpg) {
                      right - left - 9,
                      bottom - top - 7);
     DoomRPG_setFontColor(doomRpg, 0xffff0000);
-    DoomCanvas_drawString1(canvas, noSaveLabel, x, y, 0);
+    EspNativeCanvas_drawText(canvas, noSaveLabel, x, y, 0);
     DoomRPG_setFontColor(doomRpg, 0xffffffff);
     SDL_RenderPresent(NULL);
 

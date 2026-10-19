@@ -32,6 +32,7 @@
 #include "esp_native_graphics_catalog.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_player_death.h"
+#include "esp_native_resident_gameplay.h"
 #include "esp_native_rng_replay_guard.h"
 #include "esp_native_gameplay_status_message.h"
 #include "esp_native_gameplay_weapon.h"
@@ -1842,6 +1843,42 @@ done:
     return ok;
 }
 
+/* A full-screen automap frame is opaque and its 3D/HUD visual cues have no
+ * owned pixels there. Drop ONLY ephemeral presentation leases, never pending
+ * gameplay actions, removed-bits, RNG, damage commits or monster turn tokens.
+ * Do not restore their old pixel snapshots: they were captured on a different
+ * screen owner and would write HUD or world pixels onto the automap. */
+static void muteAutomapVisuals(void) {
+    const int hadVisual =
+        actionState.feedbackPending != 0U ||
+        actionState.feedbackVisible != 0U ||
+        actionState.viewportFlashPending != 0U ||
+        actionState.viewportFlashVisible != 0U ||
+        actionState.viewportFlashSnapshotValid != 0U ||
+        actionState.feedbackFollowupCount != 0U ||
+        directionCue.phase != 0U ||
+        directionCue.queued.count != 0U ||
+        directionCue.deferFirstPulse != 0U ||
+        directionCue.stageNonlethalBorder != 0U;
+    if (!hadVisual) return;
+    actionState.feedbackPending = 0U;
+    actionState.feedbackKind = ACTION_FEEDBACK_NONE;
+    actionState.feedbackVisible = 0U;
+    actionState.feedbackVisibleKind = ACTION_FEEDBACK_NONE;
+    actionState.feedbackShownAtMs = 0U;
+    actionState.feedbackText[0] = '\0';
+    clearFeedbackFollowups();
+    actionState.viewportFlashPending = 0U;
+    actionState.viewportFlashVisible = 0U;
+    actionState.viewportFlashSnapshotValid = 0U;
+    actionState.viewportFlashShownAtMs = 0U;
+    actionState.viewportFlashDurationMs = 0U;
+    actionState.viewportFlashColor565 = 0U;
+    actionState.framebufferFresh = 0U;
+    memset(&directionCue, 0, sizeof(directionCue));
+    printf("[AUTOMAPFX] SUPPRESS owner=automap feedback=hidden border=hidden cue=discarded gameplay=unchanged framebufferMutation=no\n");
+}
+
 int __wrap_Esp32PlatformVideo_present(void) {
     uint8_t feedback = ACTION_FEEDBACK_NONE;
     int hadFeedback = 0;
@@ -1864,6 +1901,10 @@ int __wrap_Esp32PlatformVideo_present(void) {
      * this barrier, the deferred compositor still needs to observe it after the
      * lease is released.
      */
+    if (EspNativeResidentGameplay_isAutomapActive()) {
+        muteAutomapVisuals();
+        return __real_Esp32PlatformVideo_present();
+    }
     if (EspNativeGameplayControls_isActive()) {
         return __real_Esp32PlatformVideo_present();
     }
@@ -2065,6 +2106,10 @@ static int serviceViewportFlashExpiry(void) {
  * physical present retries the same phase without dropping the attacker. */
 static int serviceDirectionalCue(void) {
     uint32_t now = actionNowMs();
+    if (EspNativeResidentGameplay_isAutomapActive()) {
+        muteAutomapVisuals();
+        return 1;
+    }
     if (EspNativeGameplayControls_isActive() ||
         EspNativeGameplayLevelUp_isActive() ||
         EspAssetPack_isOpen() || actionState.pending.active != 0U) return 1;
@@ -2699,6 +2744,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
     const EspPlayerViewState* view = EspPlayerView_view();
     ActionPending pending;
 
+    if (EspNativeResidentGameplay_isAutomapActive()) muteAutomapVisuals();
     if (!serviceDirectionalCue()) return 0;
     /* Admit a deferred first pulse before expiry can retire its base layer. */
     if (!serviceFeedbackExpiry()) return 0;

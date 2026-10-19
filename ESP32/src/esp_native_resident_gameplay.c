@@ -384,6 +384,23 @@ static int renderCurrent(Render_t* render,
     return 1;
 }
 
+/* Full-screen modal owners overwrite the HUD bands. Their exit must draw
+ * current PlayerState + settled camera, never the HUD captured at map entry.
+ * The canonical helper keeps gameplay mutation and retained HUD untouched. */
+static EspNativeGameplayHudStatus repaintLiveHudAtView(
+    const EspPlayerViewState* view,
+    EspNativeGameplayHudStats* outStats) {
+    if (view == NULL || view->active != 1U ||
+        view->viewAngle != view->destAngle ||
+        (view->viewAngle & 63) != 0 || outStats == NULL) {
+        return ESP_NATIVE_GAMEPLAY_HUD_UNSUPPORTED_CONTEXT;
+    }
+    return EspNativeGameplayHud_repaintLive(
+        EspNativeGameplayHud_view(),
+        EspNativeGameplayPlayerState_view(),
+        (uint8_t)view->viewAngle, outStats);
+}
+
 static int renderAutomapCurrent(Render_t* render, const char* reason);
 static int closeAutomap(Render_t* render, const char* reason);
 
@@ -1548,7 +1565,6 @@ static void servicePasswordCompletion(
     Render_t* render,
     const EspNativeGameplayPasswordCompletion* completion) {
     const EspPlayerViewState* view = EspPlayerView_view();
-    const EspNativeGameplayHudState* hud;
     EspNativeGameplayHudStats hudStats;
     EspNativeGameplayHudStatus hudStatus;
     EspNativeGameplayDialogResumeResult resume;
@@ -1580,16 +1596,11 @@ static void servicePasswordCompletion(
     /*
      * The keypad is intentionally a full-screen modal and therefore overwrites
      * both 20-row HUD bands. The gameplay frame compositor preserves those bands
-     * by design, so reconstruct them from the wrapped/current native HUD model
-     * before any world redraw. This is presentation-only: no dirty intent is
-     * consumed and no HUD/player owner is mutated.
+     * by design, so reconstruct them from the current PlayerState and settled
+     * camera before any world redraw. This is presentation-only: no dirty
+     * intent is consumed and no HUD/player owner is mutated.
      */
-    hud = EspNativeGameplayHud_view();
-    if (hud == NULL) {
-        disableGameplay("password-hud-view");
-        return;
-    }
-    hudStatus = EspNativeGameplayHud_repaint(hud, &hudStats);
+    hudStatus = repaintLiveHudAtView(view, &hudStats);
     if (hudStatus != ESP_NATIVE_GAMEPLAY_HUD_OK) {
         printf("[RESIDENTGAMEPLAY] PASSWORD-HUD-RESTORE-FAILED event=%u status=%d mutation=no\n",
                (unsigned int)completion->close.sourceEventIndex,
@@ -1597,7 +1608,7 @@ static void servicePasswordCompletion(
         disableGameplay("password-hud-repaint");
         return;
     }
-    printf("[RESIDENTGAMEPLAY] PASSWORD-HUD-RESTORE event=%u pixels=%u reads=%u bytes=%u exactSource=current-native-model dirtyConsume=no\n",
+    printf("[RESIDENTGAMEPLAY] PASSWORD-HUD-RESTORE event=%u pixels=%u reads=%u bytes=%u exactSource=live-PlayerState+settled-view dirtyConsume=no\n",
            (unsigned int)completion->close.sourceEventIndex,
            (unsigned int)hudStats.pixelsWritten,
            (unsigned int)hudStats.packReads,
@@ -1852,22 +1863,36 @@ static int renderAutomapCurrent(Render_t* render, const char* reason) {
 }
 
 static int closeAutomap(Render_t* render, const char* reason) {
-    const EspNativeGameplayHudState* hud = EspNativeGameplayHud_view();
     const EspPlayerViewState* view = EspPlayerView_view();
+    const uint8_t previousMode = gameplayState.modeFlags;
     EspNativeGameplayHudStats hudStats;
 
     memset(&hudStats, 0, sizeof(hudStats));
-    if (render == NULL || hud == NULL || view == NULL ||
+    if (!automapActive() || render == NULL || view == NULL ||
         view->active != 1U || view->viewAngle != view->destAngle ||
-        (view->viewAngle & 63) != 0 ||
-        EspNativeGameplayHud_repaint(hud, &hudStats) !=
+        (view->viewAngle & 63) != 0) return 0;
+
+    /*
+     * Screen ownership must change BEFORE the world render: the composed
+     * frame checks automapActive() at its final presentation boundary.
+     * Keeping AUTOMAP set through renderCurrent would repaint the minimap
+     * over the newly restored live HUD and leave its bottom band corrupted.
+     * Restore mode on any failure and attempt to re-present the map; never
+     * claim a closed modal after an unsuccessful framebuffer transaction.
+     */
+    gameplayState.modeFlags =
+        (uint8_t)(previousMode & (uint8_t)~RESIDENT_MODE_AUTOMAP);
+    if (repaintLiveHudAtView(view, &hudStats) !=
             ESP_NATIVE_GAMEPLAY_HUD_OK ||
         !renderCurrent(render, (uint8_t)view->viewAngle,
                        reason != NULL ? reason : "AUTOMAP-CLOSE")) {
+        gameplayState.modeFlags = previousMode;
+        if (!renderAutomapCurrent(render, "CLOSE-ROLLBACK")) {
+            printf("[RESIDENTGAMEPLAY] AUTOMAP-CLOSE-RECOVER-FAILED mode=automap\n");
+        }
         return 0;
     }
-    gameplayState.modeFlags =
-        (uint8_t)(gameplayState.modeFlags & (uint8_t)~RESIDENT_MODE_AUTOMAP);
+    EspNativeGameplayAutomap_cancelDamage();
     printf("[RESIDENTGAMEPLAY] AUTOMAP-CLOSE hudPixels=%u worldRedraw=yes mode=world turnAdvance=no\n",
            (unsigned int)hudStats.pixelsWritten);
     return 1;
@@ -2125,16 +2150,13 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
 
     if (EspNativeGameplayLevelUp_isActive()) {
         EspNativeGameplayHudStats levelHudStats;
-        const EspNativeGameplayHudState* levelHud;
         if (!EspNativeGameplayLevelUp_isDismissPending()) return;
         memset(&levelHudStats, 0, sizeof(levelHudStats));
-        levelHud = EspNativeGameplayHud_view();
         {
             const EspPlayerViewState* levelView = EspPlayerView_view();
             if (levelView == NULL || levelView->active != 1U ||
                 levelView->viewAngle != levelView->destAngle ||
-                levelHud == NULL ||
-                EspNativeGameplayHud_repaint(levelHud, &levelHudStats) !=
+                repaintLiveHudAtView(levelView, &levelHudStats) !=
                     ESP_NATIVE_GAMEPLAY_HUD_OK ||
                 !EspNativeGameplayLevelUp_armDismissPresent() ||
                 !renderCurrent(doomRpg->render,
@@ -2271,6 +2293,23 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
     }
 
     if (automapActive()) {
+        /* Timer-driven repaint of the owned 160x120 map only. This is UI
+         * presentation, not a player turn or a world/BSP mutation. */
+        if (EspNativeGameplayAutomap_damageRedrawDue() &&
+            !EspNativeGameplayPresentGate_isArmed() &&
+            !EspNativeGameplayControls_isActive() &&
+            !EspAssetPack_isOpen()) {
+            const EspPlayerViewState* v = EspPlayerView_view();
+            EspNativeGameplayAutomapStats fxStats;
+            memset(&fxStats, 0, sizeof(fxStats));
+            if (v == NULL || v->active != 1U ||
+                v->viewAngle != v->destAngle ||
+                (v->viewAngle & 63) != 0 ||
+                !EspNativeGameplayAutomap_render(
+                    v->viewX, v->viewY, (uint8_t)v->viewAngle, &fxStats)) {
+                printf("[AUTOMAPDAMAGE] DEFER reason=map-render-failed gameplay=unchanged\n");
+            }
+        }
         if (pending == NULL || pending->pending == 0U) return;
         memset(&intent, 0, sizeof(intent));
         inputStatus = EspNativeGameplayInput_consume(&intent);
@@ -2303,8 +2342,27 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
             serviceSelect(doomRpg, doomRpg->render, &intent);
             return;
 
+        case ESP_NATIVE_GAMEPLAY_ACTION_PASS_TURN: {
+            /*
+             * Automap is a presentation owner, not a frozen-world pause.
+             * Run the SAME native tile-touch + one monster-turn producer as
+             * world PASS_TURN, without closing the full-screen map.
+             */
+            const EspNativeGameplayPassTurnStatus passStatus =
+                EspNativeGameplayPassTurn_execute(doomRpg, &intent);
+            printf("[RESIDENTGAMEPLAY] AUTOMAP-PASS seq=%u status=%u turn=%s map=retained\n",
+                   (unsigned int)intent.sequence,
+                   (unsigned int)passStatus,
+                   passStatus == ESP_NATIVE_GAMEPLAY_PASS_TURN_OK
+                       ? "requested-or-lethal"
+                       : "not-requested");
+            if (passStatus != ESP_NATIVE_GAMEPLAY_PASS_TURN_OK)
+                ++gameplayState.deferred;
+            return;
+        }
+
         default:
-            printf("[RESIDENTGAMEPLAY] AUTOMAP-IGNORE seq=%u action=%s phase=move+turn+select-live otherLegacyActions=deferred mutation=no turnAdvance=no\n",
+            printf("[RESIDENTGAMEPLAY] AUTOMAP-IGNORE seq=%u action=%s phase=move+turn+select+pass-live otherLegacyActions=deferred mutation=no turnAdvance=no\n",
                    (unsigned int)intent.sequence,
                    EspNativeGameplayInput_actionName(intent.action));
             return;
@@ -2442,6 +2500,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
         break;
 
     case ESP_NATIVE_GAMEPLAY_ACTION_AUTOMAP:
+        EspNativeGameplayAutomap_cancelDamage();
         gameplayState.modeFlags =
             (uint8_t)(gameplayState.modeFlags | RESIDENT_MODE_AUTOMAP);
         if (!renderAutomapCurrent(doomRpg->render, "OPEN")) {
@@ -2458,11 +2517,18 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
                (unsigned int)intent.sequence);
         break;
 
-    case ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN: {
-        EspNativeGameplayHubStatus hubStatus = EspNativeGameplayHub_open();
+    case ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN:
+    case ESP_NATIVE_GAMEPLAY_ACTION_WEAPON_MENU: {
+        const int weaponPanel =
+            intent.action == ESP_NATIVE_GAMEPLAY_ACTION_WEAPON_MENU;
+        EspNativeGameplayHubStatus hubStatus =
+            weaponPanel ? EspNativeGameplayHub_openWeapons()
+                        : EspNativeGameplayHub_open();
         if (hubStatus == ESP_NATIVE_GAMEPLAY_HUB_OK) {
-            printf("[RESIDENTGAMEPLAY] HUB-OPEN seq=%u page=inventory-weapon-select openMutation=no turnAdvance=no worldDispatch=blocked packClosed=yes\n",
-                   (unsigned int)intent.sequence);
+            printf("[RESIDENTGAMEPLAY] HUB-OPEN seq=%u page=%s source=%s openMutation=no turnAdvance=no worldDispatch=blocked packClosed=yes\n",
+                   (unsigned int)intent.sequence,
+                   weaponPanel ? "weapons" : "inventory",
+                   weaponPanel ? "hud-ammo-compass" : "top-menu");
         }
         else {
             ++gameplayState.deferred;
