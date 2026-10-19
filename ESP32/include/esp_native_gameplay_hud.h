@@ -113,6 +113,16 @@ int EspNativeGameplayHud_snapshotLive(
     uint8_t angle,
     EspNativeGameplayHudState* outSnapshot);
 
+/* Shared full-HUD restore for modal owners. The retained map-entry HUD is
+ * only an immutable template: derive all live HP/armor/weapon/ammo/direction
+ * values from explicit current owners before repainting. No extra BSS,
+ * no PlayerState/HUD mutation, and no hidden fallback to stale weapon data. */
+EspNativeGameplayHudStatus EspNativeGameplayHud_repaintLive(
+    const EspNativeGameplayHudState* retained,
+    const EspNativeGameplayPlayerState* player,
+    uint8_t angle,
+    EspNativeGameplayHudStats* outStats);
+
 #ifdef __cplusplus
 }
 #endif

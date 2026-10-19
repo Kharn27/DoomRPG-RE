@@ -384,6 +384,23 @@ static int renderCurrent(Render_t* render,
     return 1;
 }
 
+/* Full-screen modal owners overwrite the HUD bands. Their exit must draw
+ * current PlayerState + settled camera, never the HUD captured at map entry.
+ * The canonical helper keeps gameplay mutation and retained HUD untouched. */
+static EspNativeGameplayHudStatus repaintLiveHudAtView(
+    const EspPlayerViewState* view,
+    EspNativeGameplayHudStats* outStats) {
+    if (view == NULL || view->active != 1U ||
+        view->viewAngle != view->destAngle ||
+        (view->viewAngle & 63) != 0 || outStats == NULL) {
+        return ESP_NATIVE_GAMEPLAY_HUD_UNSUPPORTED_CONTEXT;
+    }
+    return EspNativeGameplayHud_repaintLive(
+        EspNativeGameplayHud_view(),
+        EspNativeGameplayPlayerState_view(),
+        (uint8_t)view->viewAngle, outStats);
+}
+
 static int renderAutomapCurrent(Render_t* render, const char* reason);
 static int closeAutomap(Render_t* render, const char* reason);
 
@@ -1548,7 +1565,6 @@ static void servicePasswordCompletion(
     Render_t* render,
     const EspNativeGameplayPasswordCompletion* completion) {
     const EspPlayerViewState* view = EspPlayerView_view();
-    const EspNativeGameplayHudState* hud;
     EspNativeGameplayHudStats hudStats;
     EspNativeGameplayHudStatus hudStatus;
     EspNativeGameplayDialogResumeResult resume;
@@ -1580,16 +1596,11 @@ static void servicePasswordCompletion(
     /*
      * The keypad is intentionally a full-screen modal and therefore overwrites
      * both 20-row HUD bands. The gameplay frame compositor preserves those bands
-     * by design, so reconstruct them from the wrapped/current native HUD model
-     * before any world redraw. This is presentation-only: no dirty intent is
-     * consumed and no HUD/player owner is mutated.
+     * by design, so reconstruct them from the current PlayerState and settled
+     * camera before any world redraw. This is presentation-only: no dirty
+     * intent is consumed and no HUD/player owner is mutated.
      */
-    hud = EspNativeGameplayHud_view();
-    if (hud == NULL) {
-        disableGameplay("password-hud-view");
-        return;
-    }
-    hudStatus = EspNativeGameplayHud_repaint(hud, &hudStats);
+    hudStatus = repaintLiveHudAtView(view, &hudStats);
     if (hudStatus != ESP_NATIVE_GAMEPLAY_HUD_OK) {
         printf("[RESIDENTGAMEPLAY] PASSWORD-HUD-RESTORE-FAILED event=%u status=%d mutation=no\n",
                (unsigned int)completion->close.sourceEventIndex,
@@ -1597,7 +1608,7 @@ static void servicePasswordCompletion(
         disableGameplay("password-hud-repaint");
         return;
     }
-    printf("[RESIDENTGAMEPLAY] PASSWORD-HUD-RESTORE event=%u pixels=%u reads=%u bytes=%u exactSource=current-native-model dirtyConsume=no\n",
+    printf("[RESIDENTGAMEPLAY] PASSWORD-HUD-RESTORE event=%u pixels=%u reads=%u bytes=%u exactSource=live-PlayerState+settled-view dirtyConsume=no\n",
            (unsigned int)completion->close.sourceEventIndex,
            (unsigned int)hudStats.pixelsWritten,
            (unsigned int)hudStats.packReads,
@@ -1852,15 +1863,14 @@ static int renderAutomapCurrent(Render_t* render, const char* reason) {
 }
 
 static int closeAutomap(Render_t* render, const char* reason) {
-    const EspNativeGameplayHudState* hud = EspNativeGameplayHud_view();
     const EspPlayerViewState* view = EspPlayerView_view();
     EspNativeGameplayHudStats hudStats;
 
     memset(&hudStats, 0, sizeof(hudStats));
-    if (render == NULL || hud == NULL || view == NULL ||
+    if (render == NULL || view == NULL ||
         view->active != 1U || view->viewAngle != view->destAngle ||
         (view->viewAngle & 63) != 0 ||
-        EspNativeGameplayHud_repaint(hud, &hudStats) !=
+        repaintLiveHudAtView(view, &hudStats) !=
             ESP_NATIVE_GAMEPLAY_HUD_OK ||
         !renderCurrent(render, (uint8_t)view->viewAngle,
                        reason != NULL ? reason : "AUTOMAP-CLOSE")) {
@@ -2125,16 +2135,13 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
 
     if (EspNativeGameplayLevelUp_isActive()) {
         EspNativeGameplayHudStats levelHudStats;
-        const EspNativeGameplayHudState* levelHud;
         if (!EspNativeGameplayLevelUp_isDismissPending()) return;
         memset(&levelHudStats, 0, sizeof(levelHudStats));
-        levelHud = EspNativeGameplayHud_view();
         {
             const EspPlayerViewState* levelView = EspPlayerView_view();
             if (levelView == NULL || levelView->active != 1U ||
                 levelView->viewAngle != levelView->destAngle ||
-                levelHud == NULL ||
-                EspNativeGameplayHud_repaint(levelHud, &levelHudStats) !=
+                repaintLiveHudAtView(levelView, &levelHudStats) !=
                     ESP_NATIVE_GAMEPLAY_HUD_OK ||
                 !EspNativeGameplayLevelUp_armDismissPresent() ||
                 !renderCurrent(doomRpg->render,

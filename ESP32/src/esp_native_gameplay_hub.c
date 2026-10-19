@@ -199,16 +199,12 @@ static int repaintGameplayHud(void) {
     const EspNativeGameplayPlayerState* player =
         EspNativeGameplayPlayerState_view();
     const EspPlayerViewState* view = EspPlayerView_view();
-    EspNativeGameplayHudState live;
     EspNativeGameplayHudStats stats;
 
-    memset(&live, 0, sizeof(live));
     memset(&stats, 0, sizeof(stats));
     if (retained == NULL || view == NULL ||
         view->active != 1U || view->viewAngle != view->destAngle ||
-        (view->viewAngle & 63) != 0 || EspAssetPack_isOpen() ||
-        !EspNativeGameplayHud_snapshotLive(
-            retained, player, (uint8_t)view->viewAngle, &live)) {
+        (view->viewAngle & 63) != 0 || EspAssetPack_isOpen()) {
         return 0;
     }
     /* The full HUD is painted from a single current PlayerState snapshot,
@@ -216,7 +212,8 @@ static int repaintGameplayHud(void) {
      * Never overlay the partial compass here: the full painter already owns
      * those pixels. HUB-close repeats this same canonical full repaint and
      * insists on byte-exact bottom-band FNV equality before commit. */
-    return EspNativeGameplayHud_repaint(&live, &stats) ==
+    return EspNativeGameplayHud_repaintLive(
+               retained, player, (uint8_t)view->viewAngle, &stats) ==
            ESP_NATIVE_GAMEPLAY_HUD_OK;
 }
 

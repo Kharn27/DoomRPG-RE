@@ -648,3 +648,22 @@ EspNativeGameplayHudStatus EspNativeGameplayHud_repaint(
            (unsigned int)outStats->bytesRead);
     return ESP_NATIVE_GAMEPLAY_HUD_OK;
 }
+
+/* One native route for all full-screen modal returns. Keep snapshot ownership
+ * and pixel painting separated so the exact HUD-close double-repaint witness
+ * continues to compare two equivalent current PlayerState presentations. */
+EspNativeGameplayHudStatus EspNativeGameplayHud_repaintLive(
+    const EspNativeGameplayHudState* retained,
+    const EspNativeGameplayPlayerState* player,
+    uint8_t angle,
+    EspNativeGameplayHudStats* outStats) {
+    EspNativeGameplayHudState live;
+
+    if (outStats != NULL) memset(outStats, 0, sizeof(*outStats));
+    if (outStats == NULL ||
+        !EspNativeGameplayHud_snapshotLive(
+            retained, player, angle, &live)) {
+        return ESP_NATIVE_GAMEPLAY_HUD_UNSUPPORTED_CONTEXT;
+    }
+    return EspNativeGameplayHud_repaint(&live, outStats);
+}
