@@ -14,7 +14,7 @@ Its per-source counts and pre-retirement `DoomRPG.o` tables describe the
 (especially §6/7/10/13) can also be historical: use current source and
 PORTING_STATUS for runtime ownership and exact CYD evidence.
 
-Current source boundary after [PR #218](https://github.com/Kharn27/DoomRPG-RE/pull/218)
+Historical source boundary after [PR #218](https://github.com/Kharn27/DoomRPG-RE/pull/218)
 and [PR #219](https://github.com/Kharn27/DoomRPG-RE/pull/219)
 (final code `a59554ed524502d02dbab69149777a94050b0a26`,
 [CI success #39162920720](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39162920720)):
@@ -36,14 +36,16 @@ and [PR #219](https://github.com/Kharn27/DoomRPG-RE/pull/219)
   mappings, resident session and SYS/EXIT gates refuse non-NULL.
   A zero-byte Game diagnostic stage remains and the native root teardown
   does not free a Game instance.
-- **Canvas** now retains exactly five externally linked functions:
-  `DoomCanvas_init`, `DoomCanvas_free`, `DoomCanvas_drawString1`,
-  `DoomCanvas_setState`, `DoomCanvas_startup`. The former
-  `DoomCanvas_drawImageSpecial` export is a private static glyph blitter,
-  body unchanged (source-FNV `4c4a9a93`). The remaining Canvas/Render
-  compatibility APIs and selected `--wrap` adapters still serve native
-  callers. Retire each individually; do not infer their ownership from
-  the Game result.
+- **Canvas lifecycle**: as of the hardware-proven [PR #223](https://github.com/Kharn27/DoomRPG-RE/pull/223)
+  code `201232031e595563a42ca1e0d0f34d0252b1ab07`, **zero desktop Canvas
+  lifecycle ABI exports** remain on ESP32. Init/startup/release belong to the
+  native process root/layout (`engine_stubs.c`); Canvas MENU state transition
+  belongs to the native main-menu model, and native const-text raster with a
+  private glyph blitter lives in `esp_native_canvas_text.c`. Blitter source FNV
+  remains `4c4a9a93`; the Canvas allocation remains 44 B. The separately
+  conditional no-op bringup `DoomCanvas_updateLoadingBar` is not a gameplay or
+  lifecycle export. Do not reintroduce the desktop object graph or map-wide
+  shape/texel memory.
 
 The generic startup/session replaces the historical Junction post-load
 marker ladder (nine source/header pairs); the unrelated ZIP/menu-scene
