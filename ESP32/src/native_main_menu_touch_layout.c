@@ -5,6 +5,7 @@
 
 #include "DoomRPG.h"
 #include "DoomCanvas.h"
+#include "esp_native_canvas_text.h"
 #include "Menu.h"
 #include "esp_native_menu_state.h"
 #include "Render.h"
@@ -376,8 +377,8 @@ static void drawDashboardCard(DoomRPG_t* doomRpg,
                             !enabled ? ESP_HUB_COLOR_STEEL_DARK :
                             (focused ? 0xff7dU : 0xd6b9U));
     } else {
-        DoomCanvas_drawString1(doomRpg->doomCanvas,
-                               (char*)label, textX, textY, 0);
+        EspNativeCanvas_drawText(doomRpg->doomCanvas,
+                               label, textX, textY, 0);
     }
 }
 
@@ -509,8 +510,8 @@ int DoomRPG_esp32PaintBrightnessPresetCards(
                         DOOMRPG_ESP32_MAIN_MENU_FONT_HEIGHT) >> 1);
         DoomRPG_setFontColor(doomRpg,
                              selected ? 0xffffece8U : 0xffddd5ccU);
-        DoomCanvas_drawString1(doomRpg->doomCanvas,
-                               (char*)names[item], textX, textY, 0);
+        EspNativeCanvas_drawText(doomRpg->doomCanvas,
+                               names[item], textX, textY, 0);
     }
     DoomRPG_setFontColor(doomRpg, 0xffffffffU);
     hash = DoomRPG_esp32MainMenuFramebufferHash(render);
