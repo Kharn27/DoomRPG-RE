@@ -94,12 +94,11 @@ assert '"DoomCanvas_startup",' not in builder
 assert "DoomCanvas_startup(" not in bridge
 assert "static void EspNativeEngineLayout_startupCanvas(" in root_owner
 assert root_owner.count("EspNativeEngineLayout_startupCanvas(") == 2  # definition + single call
-assert re.search(r"#ifndef DOOMRPG_ESP32\\s+void DoomCanvas_startup\\(", legacy_canvas_h)
+assert re.search(r"#ifndef DOOMRPG_ESP32\s+void DoomCanvas_startup\(", legacy_canvas_h)
 start = root_owner.index("static void EspNativeEngineLayout_startupCanvas(")
-end = root_owner.index("\\nint DoomRPG_startEngineLayout(", start)
+end = root_owner.index("\nint DoomRPG_startEngineLayout(", start)
 layout = root_owner[start:end]
 layout = layout.replace("static void EspNativeEngineLayout_startupCanvas(", "void DoomCanvas_startup(")
-layout = layout.removesuffix("\\n")  # owner separator outside source parity range
 layout_fnv = 2166136261
 for byte in layout.encode("utf-8"):
     layout_fnv = ((layout_fnv ^ byte) * 16777619) & 0xFFFFFFFF
@@ -110,8 +109,8 @@ for path in sorted(SRC.rglob("*")):
     if path.suffix not in (".c", ".cpp"):
         continue
     source = path.read_text(encoding="latin-1")
-    source = re.sub(r'/\\*.*?\\*/|//[^\\n]*|"(?:\\\\.|[^"\\\\])*"', " ", source, flags=re.S)
-    assert not re.search(r"\\bDoomCanvas_startup\\s*\\(", source), (
+    source = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ", source, flags=re.S)
+    assert not re.search(r"\bDoomCanvas_startup\s*\(", source), (
         "retired Canvas startup ABI revived in " + str(path.relative_to(ROOT)))
 
 print("PASS Canvas ABI=2 native const text glyphBlitterFNV=4c4a9a93")
