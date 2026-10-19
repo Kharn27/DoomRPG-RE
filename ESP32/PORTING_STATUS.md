@@ -5,11 +5,11 @@
 **Branche** : `agent/esp32-native-ambient-sprite-animation`, [PR #220](https://github.com/Kharn27/DoomRPG-RE/pull/220).
 **Base main vérifiée** : `16155aec8e741151c5f057e95c7fe395a15521e8`.
 **Dernier SHA de code (post-review, CYD à revalider)** : `5b0439f801532cf070d8dae57f13a7345d0eea29`.
-**CI du dernier code** : [SUCCESS #39179286818](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39179286818), **56 étapes** (tests hôte, builds normal/bringup/trace, audits compilés/ELF).
+**CI du dernier code** : [SUCCESS #39179286818](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39179286818), **56 étapes** (tests hôte, builds normal/bringup/trace, audits compilés/ELF). Le commit docs-only post-correctifs `f05214e6f05a377f1131da1392a9567ce6c2f3b4` a également passé la [CI #39179545535](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39179545535).
 **Statique CI normal** : RAM **49 520 B** ; Flash **822 357 B**.
 Bringup : **49 672 / 843 141 B** ; trace : **49 568 / 839 109 B**.
 Le **PASS matériel ciblé antérieur** porte sur le code `3b8c2135bc2f4307eaa0deb633f7314c93ea1c27` ([CI verte #39176840460](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39176840460)).
-Le commit de clôture `09125e4706343c377c1094dd4bb7cf0da0e86e16` était docs-only ; les **deux findings P2 apparus après passage de la PR en review ont nécessité une nouvelle correction de code**, et annulent le statut merge-ready tant que le CYD n'a pas revalidé. PR **draft**.
+Le commit initial de clôture `09125e4706343c377c1094dd4bb7cf0da0e86e16` était docs-only ; les **deux findings P2 apparus ensuite** ont exigé le correctif de code `5b0439f8` et une nouvelle validation. Celle-ci a été reçue sous forme d'un **PASS de régression ciblé** sur le vrai CYD (voir ci-dessous). Les commits suivants sont docs-only. La branche peut revenir en revue, le merge restant du ressort de l'utilisateur.
 
 ### Périmètre livré et ownership
 
@@ -30,7 +30,14 @@ Le firmware ne journalise pas son SHA, les logs n'en prouvent pas directement l'
 **Observation non bloquante à isoler plus tard** : `[NATIVESPRITE] CROSS index=77 ...` est très répétitif lors des rafraîchissements idle (aucune dégradation mémoire visible ici). Envisager un lot distinct de réduction de bruit des logs sans modifier le gameplay ni le code de ce jalon après PASS.
 La rencontre « zombie shotgun » sur l'essai précédent avait une attaque alternative `weapon=3` et les coups du joueur `weapon=0` (hache) ; les tirages critique/manqués sont compatibles avec les calculs legacy dans les logs. Aucun nerf ni correctif RNG engagé dans la présente PR.
 
-**Statut** : respiration rouge et chemins listés **acceptés sur le code antérieur** ; corrections P2 sous-type 4 et raster-only **CI PASS, CYD réel non encore testé au dernier code** ; **PR draft, non merge-ready** jusqu'au nouveau PASS. Laisser les limites non testées explicites et ne pas extrapoler à toutes les cartes. Les journaux historiques du désengagement desktop restent plus bas, datés de la PR #219.
+### Régression CYD du correctif post-review — PASS ciblé
+
+**Retour utilisateur** : « Ça m'a l'air ok :) », après flash et navigation sur la branche corrigée (dernier code `5b0439f8`). Extrait du firmware normal : mouvements `FORWARD` et `STRAFE_RIGHT`, `TURN_RIGHT`, entrée en dialogue opcode 26, pages et fermeture du dialogue, ramassages medkit/munitions/Fire Ext, HUD/animations de flash. Aucun `[AMBIENT] FAIL` ni incident rendu rapporté dans cet extrait ; pas de lecture abusive ZIP ni d'indicateur rouge régressé signalés. Les mesures `[ALIVE]` de `uptime=228293` à `268626 ms` sont toutes `heap8=112640 largest8=86004`, stabilité observée sur environ 40 s.
+
+**Limites du PASS** : les tours `[MONSTERACTIVESEQ]` montrent `activeCount=0` dans l'extrait ; aucune rencontre Phantom/Lost Soul/Nightmare et aucune mesure de fréquence idle ne prouve directement le nouveau chemin rapide du sous-type 4 ou l'absence de toute recomposition invisible. Leur correction s'appuie sur l'implémentation revue + tests hôte + CI, pas sur une observation physique spécifique de cette famille. Le dernier log n'établit pas non plus le SHA exact du binaire, ni une couverture SAVE/LOAD/tous niveaux.
+
+**Statut** : **PASS de régression matériel ciblé + CI complète verte**, deux P2 corrigées et commentées dans leurs discussions GitHub. **PR #220 prête pour revue / merge par l'utilisateur**, sans extrapolation aux familles non exposées. Aucun correctif de code postérieur à ce dernier PASS.
+ Les journaux historiques du désengagement desktop restent plus bas, datés de la PR #219.
 
 ---
 
