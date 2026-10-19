@@ -74,7 +74,8 @@ def main():
         for name in ORIGINALS:
             (desktop / name).write_text("NOT A C IMPLEMENTATION\n")
         for name in ("esp32_sdl.cpp", "esp_native_canvas_text.c",
-                     "native_main_menu_model.c", "engine_stubs.c"):
+                     "native_main_menu_model.c", "engine_stubs.c",
+                     "render_startup_bridge.c"):
             shutil.copyfile(ROOT / "ESP32/src" / name, native / name)
 
         obsolete = staged / "DoomRPG.c"
