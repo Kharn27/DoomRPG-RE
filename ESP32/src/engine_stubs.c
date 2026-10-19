@@ -13,6 +13,8 @@
 #include "Z_Zone.h"
 #include "Z_Zip.h"
 #include "engine_metrics.h"
+#include "esp_native_intro_state.h"
+#include "native_story_fit.h"
 #include "esp_native_audio_intent.h"
 #include "esp_native_menu_storage.h"
 #include "platform_video_config.h"
@@ -29,6 +31,17 @@
 /* The final linked DoomRPG.c globals/functions are now native-owned.
  * Keep the one process root, never create an extra session-owned mirror. */
 DoomRPG_t* doomRpg = NULL;
+
+/* Native process-root Canvas teardown. Preserve the desktop release order
+ * and its sole CYD freePtr=true call; no Canvas lifecycle ABI survives. */
+static void EspNativeEngineRoot_releaseCanvas(DoomCanvas_t* doomCanvas)
+{
+    if (doomCanvas == NULL) return;
+    Esp32StoryFit_release(doomCanvas);
+    EspNativeIntroState_release(doomCanvas->doomRpg);
+    DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgFont);
+    SDL_free(doomCanvas);
+}
 
 /* Original metric contract. Z_FreeMemory() is the single native heap report. */
 int DoomRPG_freeMemory(void) { // 0x1EBFC
@@ -67,7 +80,7 @@ void DoomRPG_FreeAppData(DoomRPG_t* doomrpg)
     }
     doomrpg->render = NULL;
     if (doomrpg->doomCanvas) {
-        DoomCanvas_free(doomrpg->doomCanvas, true);
+        EspNativeEngineRoot_releaseCanvas(doomrpg->doomCanvas);
     }
     doomrpg->doomCanvas = NULL;
     SDL_free(doomrpg);
@@ -284,7 +297,7 @@ static DoomCanvas_t* EspNativeEngineRoot_initCanvas(DoomCanvas_t* doomCanvas, Do
     doomCanvas->fontColor = 0xffffffff;
     doomCanvas->renderFloorCeilingTextures = true;
 
-    printf("[DOOMCANVASBRIDGE] INIT exports=1 nativeText=1 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u, retiredStateLayout=%u retiredGraphMirrors=%u retiredIntroState=%u retiredDeadShell=%u retiredInertControl=%u retiredLargeFont=%u retiredFixedGeometry=%u retiredViewShakeAlias=%u clip=%dx%d\n",
+    printf("[DOOMCANVASBRIDGE] INIT exports=0 nativeText=1 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u, retiredStateLayout=%u retiredGraphMirrors=%u retiredIntroState=%u retiredDeadShell=%u retiredInertControl=%u retiredLargeFont=%u retiredFixedGeometry=%u retiredViewShakeAlias=%u clip=%dx%d\n",
            (unsigned int)sizeof(DoomCanvas_t),
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES,

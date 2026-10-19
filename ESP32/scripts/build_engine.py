@@ -14,32 +14,25 @@ os.makedirs(patched_dir, exist_ok=True)
 
 env.Append(CPPPATH=[join(project_dir, "include"), project_src_dir, engine_dir])
 
-# The desktop DoomCanvas.c translation unit is fully retired from the ESP32
-# build. Its hardware-proven compatibility surface is implemented permanently
-# by ESP32/src/esp_legacy_doomcanvas_bridge.c. Keeping the bridge in project
-# sources means any future DoomCanvas_* dependency outside this explicit ABI
-# fails at link time instead of silently reviving desktop state-machine code.
-doom_canvas_bridge_source = join(project_src_dir, "esp_legacy_doomcanvas_bridge.c")
-doom_canvas_bridge_exports = (
-    "DoomCanvas_free",
-)
-if not os.path.isfile(doom_canvas_bridge_source):
-    raise RuntimeError("Missing permanent ESP32 DoomCanvas compatibility bridge")
-with open(doom_canvas_bridge_source, "r", encoding="utf-8") as source_file:
-    doom_canvas_bridge_text = source_file.read()
-for export_name in doom_canvas_bridge_exports:
-    if export_name + "(" not in doom_canvas_bridge_text:
-        raise RuntimeError(
-            "Missing DoomCanvas bridge export " + export_name +
-            "; review the explicit ESP32 compatibility ABI"
-        )
-if ("static void EspDoomCanvas_drawImageSpecial(" not in doom_canvas_bridge_text or
-        "void DoomCanvas_drawImageSpecial(" in doom_canvas_bridge_text):
+# The desktop DoomCanvas.c and its final free hook are retired. Glyph raster
+# lives in the native text owner, not a legacy compatibility bridge.
+native_canvas_text_source = join(project_src_dir, "esp_native_canvas_text.c")
+retired_canvas_bridge_source = join(project_src_dir, "esp_legacy_doomcanvas_bridge.c")
+if os.path.isfile(retired_canvas_bridge_source):
+    raise RuntimeError("Retired desktop Canvas bridge source revived")
+if not os.path.isfile(native_canvas_text_source):
+    raise RuntimeError("Missing native Canvas text raster source")
+with open(native_canvas_text_source, "r", encoding="utf-8") as source_file:
+    native_canvas_text = source_file.read()
+if ("static void EspDoomCanvas_drawImageSpecial(" not in native_canvas_text or
+        "void DoomCanvas_drawImageSpecial(" in native_canvas_text):
     raise RuntimeError("DoomCanvas glyph blitter must be private, not public desktop ABI")
-if ("void EspNativeCanvas_drawText(" not in doom_canvas_bridge_text or
-        "const char* text," not in doom_canvas_bridge_text or
-        "void DoomCanvas_drawString1(" in doom_canvas_bridge_text):
+if ("void EspNativeCanvas_drawText(" not in native_canvas_text or
+        "const char* text," not in native_canvas_text or
+        "void DoomCanvas_drawString1(" in native_canvas_text):
     raise RuntimeError("Legacy Canvas text ABI revived or native const-text owner missing")
+if "void DoomCanvas_free(" in native_canvas_text:
+    raise RuntimeError("Retired Canvas destructor ABI revived in glyph owner")
 native_layout_source = join(project_src_dir, "engine_stubs.c")
 if not os.path.isfile(native_layout_source):
     raise RuntimeError("native engine layout owner missing")
@@ -47,11 +40,14 @@ with open(native_layout_source, "r", encoding="utf-8") as owner_file:
     native_layout_owner = owner_file.read()
 if ("static DoomCanvas_t* EspNativeEngineRoot_initCanvas(" not in native_layout_owner or
         "EspNativeEngineRoot_initCanvas(NULL, doomRpg));" not in native_layout_owner or
-        "DoomCanvas_init(" in doom_canvas_bridge_text):
-    raise RuntimeError("Retired Canvas constructor ABI revived or native root owner absent")
+        "static void EspNativeEngineRoot_releaseCanvas(" not in native_layout_owner or
+        "EspNativeEngineRoot_releaseCanvas(doomrpg->doomCanvas);" not in native_layout_owner or
+        "DoomCanvas_free(" in native_layout_owner or
+        "DoomCanvas_init(" in native_canvas_text):
+    raise RuntimeError("Retired Canvas lifecycle ABI revived or native root owner absent")
 if ("static void EspNativeEngineLayout_startupCanvas(" not in native_layout_owner or
         "EspNativeEngineLayout_startupCanvas(canvas);" not in native_layout_owner or
-        "DoomCanvas_startup(" in doom_canvas_bridge_text):
+        "DoomCanvas_startup(" in native_canvas_text):
     raise RuntimeError("Retired Canvas startup ABI revived or native layout owner absent")
 native_menu_state_source = join(project_src_dir, "native_main_menu_model.c")
 if not os.path.isfile(native_menu_state_source):
@@ -59,16 +55,12 @@ if not os.path.isfile(native_menu_state_source):
 with open(native_menu_state_source, "r", encoding="utf-8") as owner_file:
     native_menu_state_owner = owner_file.read()
 if ("void EspNativeMainMenu_transitionCanvasState(" not in native_menu_state_owner or
-        "DoomCanvas_setState(" in doom_canvas_bridge_text):
+        "DoomCanvas_setState(" in native_canvas_text):
     raise RuntimeError("Retired desktop Canvas state ABI revived or native menu owner absent")
-if "DoomCanvas_run(" in doom_canvas_bridge_text or "DoomCanvas_loadMap(" in doom_canvas_bridge_text:
-    raise RuntimeError(
-        "Desktop DoomCanvas state-machine/map-loading ownership leaked into the ESP32 bridge"
-    )
-print(
-    "[ESP32] Desktop DoomCanvas.c retired; "
-    f"esp_legacy_doomcanvas_bridge.c owns {len(doom_canvas_bridge_exports)} source ABI exports; nativeText=1 nativeMenuState=1 nativeLayout=1"
-)
+if "DoomCanvas_run(" in native_canvas_text or "DoomCanvas_loadMap(" in native_canvas_text:
+    raise RuntimeError("Desktop Canvas state-machine/map ownership revived")
+print("[ESP32] Desktop DoomCanvas.c and lifecycle bridge retired; "
+      "desktopCanvasABI=0 nativeCanvasText=1 nativeRootLifecycle=1")
 
 # Render.c is no longer generated or compiled in any CYD profile. The
 # permanent esp_render_geometry_primitives.c owns the seven linked geometry

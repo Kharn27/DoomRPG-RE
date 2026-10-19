@@ -9,34 +9,10 @@
 #include "SDL_Video.h"
 
 #include "esp_native_canvas_text.h"
-#include "esp_native_intro_state.h"
-#include "native_story_fit.h"
 #include "platform_video_config.h"
 
-/*
- * Permanent ESP32 compatibility bridge for the small DoomCanvas ABI that
- * survived the hardware-proven linked-root audit.
- *
- * Desktop DoomCanvas.c is intentionally not compiled for ESP32. Native owners
- * handle gameplay, menus, dialogs, world mutation and presentation. This file
- * keeps only the final legacy free hook and a private text rasterizer
- * while native root and layout own construction and startup.
- */
-
-void DoomCanvas_free(DoomCanvas_t* doomCanvas, boolean freePtr)
-{
-    if (doomCanvas == NULL) {
-        return;
-    }
-
-    Esp32StoryFit_release(doomCanvas);
-    EspNativeIntroState_release(doomCanvas->doomRpg);
-    DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgFont);
-
-    if (freePtr) {
-        SDL_free(doomCanvas);
-    }
-}
+/* Native Canvas text raster: no desktop lifecycle entrypoints.
+ * The process root owns its compact Canvas allocation and teardown. */
 
 /* Private glyph blitter, called solely by the const-safe native text entry.
  * Keep clipping/tiling semantics exact. */
