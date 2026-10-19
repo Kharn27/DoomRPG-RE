@@ -1,8 +1,9 @@
 # Doom RPG — port ESP32-native sur classic CYD
 
 > Guide d'usage **mis à jour au 19 octobre 2026**, sur le code
-> `813987e02b09c558364fba0d89b6ae4b62ca7656` de
-> [PR #221](https://github.com/Kharn27/DoomRPG-RE/pull/221) (PASS CYD ciblé).
+> `bb4668b25be487aa80b85f8f3ac5f3871a006acc` de
+> [PR #221](https://github.com/Kharn27/DoomRPG-RE/pull/221) (PASS matériel
+> de l'automap et du feedback de dégâts, 19 octobre 2026).
 > Pour les futurs changements, le dépôt GitHub et
 > [PORTING_STATUS.md](PORTING_STATUS.md) font foi, pas les anciens jalons.
 
@@ -108,6 +109,26 @@ Le combat et les événements sont natifs, avec plusieurs familles encore
 **fail-closed** (comportement non encore pris en charge). L'audio
 dispose d'intentions natives mais **pas de lecture audible**
 actuellement. Ne pas considérer le port comme une parité complète.
+
+## Automap et dégâts
+
+La carte en plein écran garde l'exclusivité des pixels pendant que les
+mouvements et tours de monstres se déroulent. Le tap **automap** ouvre/ferme
+cette vue ; il ne provoque pas de tour. Les rotations, mouvements et portes
+restent actifs, sans flash 3D ni barre HUD parasite par-dessus la carte.
+Un coup réellement reçu provoque un **double clignotement du fond noir en rouge
+sombre** et un message `5 DAMAGE!` (ou `CRIT 5 DAMAGE!`) au-dessus de
+la carte. Le nombre représente santé + armure perdues, comme le message combat.
+L'effet dure jusqu'à **900 ms**, puis fond et texte reprennent leur état
+initial ; selon le temps pris par le tour monstre, le premier pulse peut
+déjà être passé quand la carte est présentée. Le HUD complet et l'arme courante
+réapparaissent à la fermeture.
+
+Ce feedback a été confirmé sur le CYD au SHA `bb4668b` avec `damageTotal=5`
+(4 phases visibles et expiration exacte) et `damageTotal=4` (2 dernières
+phases visibles). Cinq `[ALIVE]` de 27 à 47 s : `heap8=113768`,
+`largest8=86004` constants. Aucun écran hors jeu ni copie de framebuffer
+supplémentaire.
 
 ## Vérifier le firmware et la mémoire
 
