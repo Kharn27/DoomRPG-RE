@@ -204,6 +204,22 @@ int EspNativeGameplayLevelUp_repaintOwned(void) { assert(0); return 0; }
 void EspNativePlaneRenderer_reset(void) { memset(&planes, 0, sizeof(planes)); }
 const EspNativePlaneRenderStats* EspNativePlaneRenderer_view(void) { return &planes; }
 const EspNativeGameplayHudState* EspNativeGameplayHud_view(void) { return &hud; }
+/* This event-chain harness mocks presentation owners. The real live HUD model
+ * implementation is independently exercised by hub_weapon_live_model_host.c.
+ * Keep the frame contract anchored to the mock PlayerState. */
+int EspNativeGameplayHud_snapshotLive(
+    const EspNativeGameplayHudState* retained,
+    const EspNativeGameplayPlayerState* current,
+    uint8_t angle,
+    EspNativeGameplayHudState* out) {
+    if (retained == NULL || current == NULL || out == NULL ||
+        current->active != 1U) return 0;
+    *out = *retained;
+    out->model.weapon = current->weapon;
+    out->model.weaponsPresent = current->weapons != 0U;
+    out->model.destAngle = angle;
+    return 1;
+}
 int EspNativeGameplayWeapon_render(struct Render_s* render, uint8_t weapon,
     uint8_t present, EspNativeGameplayWeaponStats* out) {
     (void)render; (void)weapon; memset(out, 0, sizeof(*out));
