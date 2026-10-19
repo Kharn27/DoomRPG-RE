@@ -71,6 +71,23 @@ static EspNativeGameplayHubMenuOverlay menuOverlay;
 static uint8_t notebookOpen;
 static uint8_t notebookPage;
 
+/* WPN is no longer an inventory tab. Only INV, STAT, SYS cycle. */
+static uint8_t hubNextMenuPage(uint8_t page) {
+    return page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY
+               ? ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS
+               : (page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS
+                      ? ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM
+                      : ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY);
+}
+static uint8_t hubPrevMenuPage(uint8_t page) {
+    return page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY
+               ? ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM
+               : (page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM
+                      ? ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS
+                      : ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY);
+}
+
+
 
 static uint32_t fnv1aUpdate(uint32_t hash, const void* data, uint32_t bytes) {
     const uint8_t* p = (const uint8_t*)data;
@@ -693,13 +710,16 @@ const EspNativeGameplayHubView* EspNativeGameplayHub_view(void) {
     return &hub;
 }
 
-EspNativeGameplayHubStatus EspNativeGameplayHub_open(void) {
+static EspNativeGameplayHubStatus openPage(uint8_t firstPage) {
     EspNativeGameplayPlayerState player;
     EspNativeGameplayHubStatus status;
     uint16_t* framebuffer;
     uint32_t playerFNV;
     memset(&player, 0, sizeof(player));
-    if (hub.active != 0U) return ESP_NATIVE_GAMEPLAY_HUB_IGNORED;
+    if (hub.active != 0U ||
+        (firstPage != ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY &&
+         firstPage != ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS))
+        return ESP_NATIVE_GAMEPLAY_HUB_IGNORED;
     if (EspAssetPack_isOpen()) return ESP_NATIVE_GAMEPLAY_HUB_PACK_BUSY;
     if (!EspNativeGameplayPlayerState_snapshot(&player) || player.active != 1U) {
         return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
@@ -712,8 +732,10 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_open(void) {
     if (!menuOverlayCapture(framebuffer)) return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
 
     ++hub.opens;
-    hub.selectedRow = 0U;
-    hub.page = ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY;
+    hub.selectedRow = firstPage == ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS &&
+                              player.weapon < ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COUNT
+                          ? player.weapon : 0U;
+    hub.page = firstPage;
     notebookOpen = 0U;
     notebookPage = 0U;
     hub.playerFNVAtOpen = playerFNV;
@@ -729,9 +751,9 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_open(void) {
         return status;
     }
 
-    printf("[HUB] OPEN n=%u mode=inventory+weapons-grid+status-readonly+system-checkpoint page=%s pages=%u viewport=160x100/y20..119 header=industrial menuButton=hand asset=p.bmp frame=%u menuUnderlayBytes=%u lowerHud=hidden-until-close ownerBytes=%u playerStateBytes=%u playerFNV=%08x weapon=%u weapons=%03x ammo=%02u/%02u/%02u/%02u/%02u/%02u items=%02u/%02u/%02u/%02u/%02u keys=%08lx credits=%lu mutation=no turn=no packClosed=yes\n",
+    printf("[HUB] OPEN n=%u mode=inventory+status+system+hud-weapon-grid page=%s menuPages=3 standaloneWeapons=%s viewport=160x100/y20..119 header=industrial menuButton=hand asset=p.bmp frame=%u menuUnderlayBytes=%u lowerHud=hidden-until-close ownerBytes=%u playerStateBytes=%u playerFNV=%08x weapon=%u weapons=%03x ammo=%02u/%02u/%02u/%02u/%02u/%02u items=%02u/%02u/%02u/%02u/%02u keys=%08lx credits=%lu mutation=no turn=no packClosed=yes\n",
            (unsigned int)hub.opens, pageName(hub.page),
-           (unsigned int)ESP_NATIVE_GAMEPLAY_HUB_PAGE_COUNT,
+           firstPage == ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS ? "yes" : "no",
            (unsigned int)HUB_FACE_FRAME,
            (unsigned int)sizeof(menuOverlay.underlay),
            (unsigned int)sizeof(hub), (unsigned int)sizeof(player),
@@ -745,6 +767,14 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_open(void) {
            (unsigned int)player.inventory[4],
            (unsigned long)player.keys, (unsigned long)player.credits);
     return ESP_NATIVE_GAMEPLAY_HUB_OK;
+}
+
+EspNativeGameplayHubStatus EspNativeGameplayHub_open(void) {
+    return openPage(ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY);
+}
+
+EspNativeGameplayHubStatus EspNativeGameplayHub_openWeapons(void) {
+    return openPage(ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS);
 }
 
 static EspNativeGameplayHubStatus handleInventorySelect(void) {
@@ -924,36 +954,31 @@ static EspNativeGameplayHubStatus handleWeaponGridSelect(void) {
                         : ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
     }
 
-    printf("[HUBWEAPON] GRID-SELECT target=%u weapon=%u->%u status=%s owned=yes playerFNV=%08x->%08x exactOnlyWeapon=yes worldRedraw=on-close mutation=%s turn=no\n",
-           (unsigned int)target, (unsigned int)before.weapon,
-           (unsigned int)after.weapon, changed ? "CHANGED" : "UNCHANGED",
-           (unsigned int)fnvBefore, (unsigned int)fnvAfter,
-           changed ? "weapon-only" : "no");
-    if (changed == 0U) {
-        hub.selectedRow = target;
-        return ESP_NATIVE_GAMEPLAY_HUB_IGNORED;
-    }
-
+    /* Valid owned cell (even already equipped) closes the standalone grid
+     * immediately, without intermediate painting or advancing monster turns.
+     * Rejects unowned cells above before mutating any owner. */
     beforeRow = hub.selectedRow;
     hub.selectedRow = target;
     hub.lastPlayerFNV = fnvAfter;
-    status = paintCurrentPage();
-    if (status != ESP_NATIVE_GAMEPLAY_HUB_OK) {
-        int restored;
+    status = EspNativeGameplayHub_handleAction(
+        ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN);
+    if (status != ESP_NATIVE_GAMEPLAY_HUB_CLOSED) {
+        const int restored = EspNativeGameplayPlayerState_restore(&before) &&
+                             EspNativeGameplayPlayerState_fingerprint() == fnvBefore;
         hub.selectedRow = beforeRow;
-        restored = EspNativeGameplayPlayerState_restore(&before) &&
-                   EspNativeGameplayPlayerState_fingerprint() == fnvBefore;
         if (restored) hub.lastPlayerFNV = fnvBefore;
-        printf("[HUBWEAPON] GRID-PAINT-ROLLBACK target=%u playerFNV=%08x restored=%s status=%s turn=no\n",
-               (unsigned int)target, (unsigned int)fnvBefore,
-               restored ? "exact" : "FAILED",
-               EspNativeGameplayHub_statusName(status));
-        return restored ? status : ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
+        printf("[HUBWEAPON] GRID-CLOSE-ROLLBACK target=%u changed=%u status=%s playerExact=%s turn=no\n",
+               (unsigned int)target, (unsigned int)changed,
+               EspNativeGameplayHub_statusName(status),
+               restored ? "yes" : "NO");
+        return restored ? ESP_NATIVE_GAMEPLAY_HUB_NOT_READY
+                        : ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
     }
-    printf("[HUBWGRID] SELECT target=%u weapon=%u->%u centered=yes mutation=weapon-only redraw=hub-only worldRedraw=on-close turn=no\n",
+    printf("[HUBWEAPON] GRID-SELECT-CLOSE target=%u weapon=%u->%u changed=%s playerFNV=%08x->%08x owned=yes worldRedraw=resident-on-close turn=no\n",
            (unsigned int)target, (unsigned int)before.weapon,
-           (unsigned int)after.weapon);
-    return ESP_NATIVE_GAMEPLAY_HUB_REDRAWN;
+           (unsigned int)after.weapon, changed ? "yes" : "no",
+           (unsigned int)fnvBefore, (unsigned int)fnvAfter);
+    return ESP_NATIVE_GAMEPLAY_HUB_CLOSED;
 }
 
 EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
@@ -1108,6 +1133,9 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
 
     if (action == ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT ||
         action == ESP_NATIVE_GAMEPLAY_ACTION_TURN_RIGHT) {
+        if (hub.page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS) {
+            return ESP_NATIVE_GAMEPLAY_HUB_IGNORED;
+        }
         beforePage = hub.page;
         beforeRow = hub.selectedRow;
         memset(&player, 0, sizeof(player));
@@ -1120,12 +1148,10 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
             hub.page = touchedPage;
         }
         else if (action == ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT) {
-            hub.page = (uint8_t)((hub.page + ESP_NATIVE_GAMEPLAY_HUB_PAGE_COUNT - 1U) %
-                                 ESP_NATIVE_GAMEPLAY_HUB_PAGE_COUNT);
+            hub.page = hubPrevMenuPage(hub.page);
         }
         else {
-            hub.page = (uint8_t)((hub.page + 1U) %
-                                 ESP_NATIVE_GAMEPLAY_HUB_PAGE_COUNT);
+            hub.page = hubNextMenuPage(hub.page);
         }
         if (hub.page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS) {
             hub.selectedRow = player.weapon < ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COUNT

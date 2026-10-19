@@ -8,6 +8,7 @@
 #include "esp_hud_refresh_state.h"
 #include "esp_map_catalog.h"
 #include "esp_native_gameplay_hud.h"
+#include "esp_native_gameplay_hud_weapon_button.h"
 #include "esp_native_indexed_bmp.h"
 #include "esp_native_transition_presentation.h"
 #include "platform_video_c_bridge.h"
@@ -48,6 +49,7 @@
 #define HUD_TOP_TOUCH_NOTCH_BOTTOM_Y0 17
 #define HUD_TOP_TOUCH_NOTCH_BOTTOM_Y1 18
 #define HUD_TOP_TOUCH_NEON_BLUE 0x001fU
+#define HUD_WEAPON_TOUCH_NEON_AMBER 0xfd20U
 
 static EspNativeGameplayHudState hudState;
 
@@ -129,6 +131,24 @@ static void drawTopTouchNotches(uint16_t* framebuffer,
     drawVerticalLine(framebuffer, HUD_TOP_TOUCH_SPLIT2_X,
                      HUD_TOP_TOUCH_NOTCH_BOTTOM_Y0,
                      HUD_TOP_TOUCH_NOTCH_BOTTOM_Y1, blue, stats);
+}
+
+/* Tiny frame corners advertise touch without obscuring ammo/compass. */
+static void drawWeaponTouchCorners(uint16_t* framebuffer,
+                                   EspNativeGameplayHudStats* stats) {
+    const uint16_t accent = HUD_WEAPON_TOUCH_NEON_AMBER;
+    drawVerticalLine(framebuffer, ESP_NATIVE_HUD_WEAPON_LEFT + 1,
+                     ESP_NATIVE_HUD_WEAPON_TOP + 1,
+                     ESP_NATIVE_HUD_WEAPON_TOP + 3, accent, stats);
+    drawVerticalLine(framebuffer, ESP_NATIVE_HUD_WEAPON_RIGHT - 1,
+                     ESP_NATIVE_HUD_WEAPON_TOP + 1,
+                     ESP_NATIVE_HUD_WEAPON_TOP + 3, accent, stats);
+    drawVerticalLine(framebuffer, ESP_NATIVE_HUD_WEAPON_LEFT + 1,
+                     ESP_NATIVE_HUD_WEAPON_BOTTOM - 3,
+                     ESP_NATIVE_HUD_WEAPON_BOTTOM - 1, accent, stats);
+    drawVerticalLine(framebuffer, ESP_NATIVE_HUD_WEAPON_RIGHT - 1,
+                     ESP_NATIVE_HUD_WEAPON_BOTTOM - 3,
+                     ESP_NATIVE_HUD_WEAPON_BOTTOM - 1, accent, stats);
 }
 
 static EspNativeGameplayHudStatus openAsset(
@@ -399,6 +419,9 @@ static EspNativeGameplayHudStatus paintPrepared(
     status = drawSmallText(&bmp, framebuffer, dir,
                            HUD_ORIENTATION_X + cx,
                            y + 2, 1U, 1U, stats);
+    if (status == ESP_NATIVE_GAMEPLAY_HUD_OK) {
+        drawWeaponTouchCorners(framebuffer, stats);
+    }
     return status;
 }
 

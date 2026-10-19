@@ -1,6 +1,7 @@
 #include <string.h>
 
 #include "esp_native_gameplay_input.h"
+#include "esp_native_gameplay_hud_weapon_button.h"
 #include "platform_video_config.h"
 
 #define GAMEPLAY_TOP_HUD_HEIGHT 20
@@ -55,6 +56,7 @@ static int supportedAction(uint8_t action) {
     case ESP_NATIVE_GAMEPLAY_ACTION_PREV_WEAPON:
     case ESP_NATIVE_GAMEPLAY_ACTION_NEXT_WEAPON:
     case ESP_NATIVE_GAMEPLAY_ACTION_PASS_TURN:
+    case ESP_NATIVE_GAMEPLAY_ACTION_WEAPON_MENU:
         return 1;
     default:
         return 0;
@@ -157,6 +159,16 @@ EspNativeGameplayInputStatus EspNativeGameplayInput_classify(
     }
 
     if (logicalY > GAMEPLAY_VIEW_BOTTOM) {
+        if (logicalX >= ESP_NATIVE_HUD_WEAPON_LEFT &&
+            logicalX <= ESP_NATIVE_HUD_WEAPON_RIGHT &&
+            logicalY >= ESP_NATIVE_HUD_WEAPON_TOP &&
+            logicalY <= ESP_NATIVE_HUD_WEAPON_BOTTOM) {
+            setHit(outHit, ESP_NATIVE_GAMEPLAY_ACTION_WEAPON_MENU,
+                   ESP_NATIVE_GAMEPLAY_ZONE_WEAPON_MENU,
+                   ESP_NATIVE_HUD_WEAPON_LEFT, ESP_NATIVE_HUD_WEAPON_TOP,
+                   ESP_NATIVE_HUD_WEAPON_RIGHT, ESP_NATIVE_HUD_WEAPON_BOTTOM);
+            return ESP_NATIVE_GAMEPLAY_INPUT_OK;
+        }
         return ESP_NATIVE_GAMEPLAY_INPUT_NO_HIT;
     }
 
@@ -240,6 +252,7 @@ const char* EspNativeGameplayInput_actionName(uint8_t action) {
     case ESP_NATIVE_GAMEPLAY_ACTION_PREV_WEAPON: return "PREV_WEAPON";
     case ESP_NATIVE_GAMEPLAY_ACTION_NEXT_WEAPON: return "NEXT_WEAPON";
     case ESP_NATIVE_GAMEPLAY_ACTION_PASS_TURN: return "PASS_TURN";
+    case ESP_NATIVE_GAMEPLAY_ACTION_WEAPON_MENU: return "WEAPON_MENU";
     default: return "NONE";
     }
 }

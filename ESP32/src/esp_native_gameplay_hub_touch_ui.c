@@ -40,20 +40,18 @@
 
 #define HUB_UI_INV_LEFT 2
 #define HUB_UI_INV_TOP 21
-#define HUB_UI_INV_RIGHT 39
+#define HUB_UI_INV_RIGHT 52
 #define HUB_UI_INV_BOTTOM 33
-#define HUB_UI_WPN_LEFT 41
-#define HUB_UI_WPN_TOP 21
-#define HUB_UI_WPN_RIGHT 78
-#define HUB_UI_WPN_BOTTOM 33
-#define HUB_UI_STATUS_LEFT 80
+#define HUB_UI_STATUS_LEFT 54
 #define HUB_UI_STATUS_TOP 21
-#define HUB_UI_STATUS_RIGHT 117
+#define HUB_UI_STATUS_RIGHT 104
 #define HUB_UI_STATUS_BOTTOM 33
-#define HUB_UI_SYSTEM_LEFT 119
+#define HUB_UI_SYSTEM_LEFT 106
 #define HUB_UI_SYSTEM_TOP 21
 #define HUB_UI_SYSTEM_RIGHT 157
 #define HUB_UI_SYSTEM_BOTTOM 33
+#define HUB_UI_WEAPON_BACK_LEFT 116
+#define HUB_UI_WEAPON_BACK_RIGHT 157
 
 #define HUB_UI_ROW_LEFT 2
 #define HUB_UI_ROW_RIGHT 157
@@ -720,18 +718,22 @@ int EspNativeGameplayHubTouchUi_paint(uint16_t* framebuffer,
     if (framebuffer == NULL || page >= ESP_NATIVE_GAMEPLAY_HUB_PAGE_COUNT) return 0;
 
     fillRect(framebuffer, 1, 21, 158, 33, HUB_UI_PANEL);
-    drawTab(framebuffer, HUB_UI_INV_LEFT, HUB_UI_INV_TOP,
-            HUB_UI_INV_RIGHT, HUB_UI_INV_BOTTOM, "INV",
-            page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY);
-    drawTab(framebuffer, HUB_UI_WPN_LEFT, HUB_UI_WPN_TOP,
-            HUB_UI_WPN_RIGHT, HUB_UI_WPN_BOTTOM, "WPN",
-            page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS);
-    drawTab(framebuffer, HUB_UI_STATUS_LEFT, HUB_UI_STATUS_TOP,
-            HUB_UI_STATUS_RIGHT, HUB_UI_STATUS_BOTTOM, "STAT",
-            page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS);
-    drawTab(framebuffer, HUB_UI_SYSTEM_LEFT, HUB_UI_SYSTEM_TOP,
-            HUB_UI_SYSTEM_RIGHT, HUB_UI_SYSTEM_BOTTOM, "SYS",
-            page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM);
+    if (page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS) {
+        /* Standalone grid: none of the HUB tabs appear here. */
+        drawCrispText(framebuffer, "WEAPONS", 54, 24, HUB_UI_TEXT);
+        drawTab(framebuffer, HUB_UI_WEAPON_BACK_LEFT, HUB_UI_INV_TOP,
+                HUB_UI_WEAPON_BACK_RIGHT, HUB_UI_INV_BOTTOM, "BACK", 0);
+    } else {
+        drawTab(framebuffer, HUB_UI_INV_LEFT, HUB_UI_INV_TOP,
+                HUB_UI_INV_RIGHT, HUB_UI_INV_BOTTOM, "INV",
+                page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY);
+        drawTab(framebuffer, HUB_UI_STATUS_LEFT, HUB_UI_STATUS_TOP,
+                HUB_UI_STATUS_RIGHT, HUB_UI_STATUS_BOTTOM, "STAT",
+                page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS);
+        drawTab(framebuffer, HUB_UI_SYSTEM_LEFT, HUB_UI_SYSTEM_TOP,
+                HUB_UI_SYSTEM_RIGHT, HUB_UI_SYSTEM_BOTTOM, "SYS",
+                page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM);
+    }
 
     memset(&player, 0, sizeof(player));
     if (!EspNativeGameplayPlayerState_snapshot(&player) || player.active != 1U) return 0;
@@ -787,10 +789,20 @@ static uint8_t tabAction(uint8_t currentPage, uint8_t targetPage) {
         targetPage >= ESP_NATIVE_GAMEPLAY_HUB_PAGE_COUNT) {
         return ESP_NATIVE_GAMEPLAY_ACTION_NONE;
     }
-    return (uint8_t)(((currentPage + 1U) % ESP_NATIVE_GAMEPLAY_HUB_PAGE_COUNT) ==
-                             targetPage
-                         ? ESP_NATIVE_GAMEPLAY_ACTION_TURN_RIGHT
-                         : ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT);
+    /* WPN is not part of cyclic HUB navigation. */
+    if (currentPage == ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS ||
+        targetPage == ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS) {
+        return ESP_NATIVE_GAMEPLAY_ACTION_NONE;
+    }
+    return (uint8_t)(
+        (currentPage == ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY &&
+         targetPage == ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS) ||
+        (currentPage == ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS &&
+         targetPage == ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM) ||
+        (currentPage == ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM &&
+         targetPage == ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY)
+            ? ESP_NATIVE_GAMEPLAY_ACTION_TURN_RIGHT
+            : ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT);
 }
 
 static int classifyTab(const EspNativeGameplayHubView* view,
@@ -828,15 +840,21 @@ int EspNativeGameplayHubTouchUi_classify(
     if (logicalY < HUB_UI_TOP || logicalY > HUB_UI_BOTTOM) return 0;
     memset(outHit, 0, sizeof(*outHit));
 
+    if (view->page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS) {
+        if (inside(logicalX, logicalY, HUB_UI_WEAPON_BACK_LEFT,
+                   HUB_UI_INV_TOP, HUB_UI_WEAPON_BACK_RIGHT,
+                   HUB_UI_INV_BOTTOM)) {
+            setHit(outHit, ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN,
+                   ESP_NATIVE_GAMEPLAY_ZONE_MENU,
+                   HUB_UI_WEAPON_BACK_LEFT, HUB_UI_INV_TOP,
+                   HUB_UI_WEAPON_BACK_RIGHT, HUB_UI_INV_BOTTOM);
+            return 1;
+        }
+    } else {
     tab = classifyTab(view, logicalX, logicalY,
                       ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY,
                       HUB_UI_INV_LEFT, HUB_UI_INV_TOP,
                       HUB_UI_INV_RIGHT, HUB_UI_INV_BOTTOM, outHit);
-    if (tab != 0) return tab;
-    tab = classifyTab(view, logicalX, logicalY,
-                      ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS,
-                      HUB_UI_WPN_LEFT, HUB_UI_WPN_TOP,
-                      HUB_UI_WPN_RIGHT, HUB_UI_WPN_BOTTOM, outHit);
     if (tab != 0) return tab;
     tab = classifyTab(view, logicalX, logicalY,
                       ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS,
@@ -848,6 +866,7 @@ int EspNativeGameplayHubTouchUi_classify(
                       HUB_UI_SYSTEM_LEFT, HUB_UI_SYSTEM_TOP,
                       HUB_UI_SYSTEM_RIGHT, HUB_UI_SYSTEM_BOTTOM, outHit);
     if (tab != 0) return tab;
+    }
 
     if (view->page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY &&
         EspNativeGameplayHub_notebookOpen()) {
@@ -950,12 +969,6 @@ int EspNativeGameplayHubTouchUi_consumedPageTarget(uint8_t* outPage) {
                HUB_UI_INV_LEFT, HUB_UI_INV_TOP,
                HUB_UI_INV_RIGHT, HUB_UI_INV_BOTTOM)) {
         *outPage = ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY;
-        return 1;
-    }
-    if (inside(input->logicalX, input->logicalY,
-               HUB_UI_WPN_LEFT, HUB_UI_WPN_TOP,
-               HUB_UI_WPN_RIGHT, HUB_UI_WPN_BOTTOM)) {
-        *outPage = ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS;
         return 1;
     }
     if (inside(input->logicalX, input->logicalY,

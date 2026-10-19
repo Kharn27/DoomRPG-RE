@@ -43,7 +43,7 @@ typedef struct EspNativeGameplayHubView_s {
 
 /* Permanent bounded gameplay-hub owner. The owner remains 28 B. selectedRow is
  * page-local transient navigation state: non-weapon Inventory entry index on
- * Inventory, weapon id 0..8 on Weapons, SAVE/LOAD/EXIT cursor on System and ignored
+ * Inventory, weapon id 0..11 on standalone Weapons, SAVE/LOAD/EXIT on System and ignored
  * on Status. weaponAtOpen keeps the close-time weapon-only mutation witness.
  * No icon/list framebuffer owner is added; Weapons decodes one bounded icon at
  * a time and System reuses the existing checkpoint owner. */
@@ -53,6 +53,8 @@ int EspNativeGameplayHub_notebookOpen(void);
 const EspNativeGameplayHubView* EspNativeGameplayHub_view(void);
 
 EspNativeGameplayHubStatus EspNativeGameplayHub_open(void);
+/* Opens the same existing native weapon grid directly from lower HUD. */
+EspNativeGameplayHubStatus EspNativeGameplayHub_openWeapons(void);
 EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action);
 const char* EspNativeGameplayHub_statusName(EspNativeGameplayHubStatus status);
 

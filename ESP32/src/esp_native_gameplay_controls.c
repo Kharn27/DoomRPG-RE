@@ -107,6 +107,7 @@ static FeedbackPalette feedbackPalette(const EspNativeGameplayTouchHit* hit) {
 
     case ESP_NATIVE_GAMEPLAY_ACTION_PREV_WEAPON:
     case ESP_NATIVE_GAMEPLAY_ACTION_NEXT_WEAPON:
+    case ESP_NATIVE_GAMEPLAY_ACTION_WEAPON_MENU:
         palette.halo = NEON_YELLOW_HALO;
         palette.core = NEON_YELLOW_CORE;
         break;

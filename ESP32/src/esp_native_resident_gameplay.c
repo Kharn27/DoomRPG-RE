@@ -2458,11 +2458,18 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
                (unsigned int)intent.sequence);
         break;
 
-    case ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN: {
-        EspNativeGameplayHubStatus hubStatus = EspNativeGameplayHub_open();
+    case ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN:
+    case ESP_NATIVE_GAMEPLAY_ACTION_WEAPON_MENU: {
+        const int weaponPanel =
+            intent.action == ESP_NATIVE_GAMEPLAY_ACTION_WEAPON_MENU;
+        EspNativeGameplayHubStatus hubStatus =
+            weaponPanel ? EspNativeGameplayHub_openWeapons()
+                        : EspNativeGameplayHub_open();
         if (hubStatus == ESP_NATIVE_GAMEPLAY_HUB_OK) {
-            printf("[RESIDENTGAMEPLAY] HUB-OPEN seq=%u page=inventory-weapon-select openMutation=no turnAdvance=no worldDispatch=blocked packClosed=yes\n",
-                   (unsigned int)intent.sequence);
+            printf("[RESIDENTGAMEPLAY] HUB-OPEN seq=%u page=%s source=%s openMutation=no turnAdvance=no worldDispatch=blocked packClosed=yes\n",
+                   (unsigned int)intent.sequence,
+                   weaponPanel ? "weapons" : "inventory",
+                   weaponPanel ? "hud-ammo-compass" : "top-menu");
         }
         else {
             ++gameplayState.deferred;
