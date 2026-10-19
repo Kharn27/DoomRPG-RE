@@ -19,8 +19,8 @@
  *
  * Desktop DoomCanvas.c is intentionally not compiled for ESP32. Native owners
  * handle gameplay, menus, dialogs, world mutation and presentation. This file
- * keeps only the legacy construction/text hooks still referenced
- * by the native runtime while those call sites are migrated individually.
+ * keeps only the final legacy free hook and a private text rasterizer
+ * while native root and layout own construction and startup.
  */
 
 void DoomCanvas_free(DoomCanvas_t* doomCanvas, boolean freePtr)
