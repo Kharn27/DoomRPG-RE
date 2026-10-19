@@ -42,7 +42,10 @@ if ("void EspNativeCanvas_drawText(" not in doom_canvas_bridge_text or
         "const char* text," not in doom_canvas_bridge_text or
         "void DoomCanvas_drawString1(" in doom_canvas_bridge_text):
     raise RuntimeError("Legacy Canvas text ABI revived or native const-text owner missing")
-with open(join(project_src_dir, "native_main_menu_model.c"), "r", encoding="utf-8") as owner_file:
+native_menu_state_source = join(project_src_dir, "native_main_menu_model.c")
+if not os.path.isfile(native_menu_state_source):
+    raise RuntimeError("native menu state owner missing")
+with open(native_menu_state_source, "r", encoding="utf-8") as owner_file:
     native_menu_state_owner = owner_file.read()
 if ("void EspNativeMainMenu_transitionCanvasState(" not in native_menu_state_owner or
         "DoomCanvas_setState(" in doom_canvas_bridge_text):
