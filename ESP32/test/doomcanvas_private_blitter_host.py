@@ -124,7 +124,7 @@ assert root_owner.count("EspNativeEngineRoot_initCanvas(") == 2  # definition + 
 assert re.search(r"#ifndef DOOMRPG_ESP32\s+DoomCanvas_t\* DoomCanvas_init\(", legacy_canvas_h)
 assert "ESP32_DOOMCANVAS_COMPACT_BYTES" in (ROOT / "ESP32/include/engine_metrics.h").read_text()
 first = root_owner.index("static DoomCanvas_t* EspNativeEngineRoot_initCanvas(")
-last = root_owner.index("int DoomRPG_initEngineCore(", first)
+last = root_owner.index("/* Native Render constructor owned by the process root;", first)
 normalized = root_owner[first:last].replace(
     "static DoomCanvas_t* EspNativeEngineRoot_initCanvas(", "DoomCanvas_t* DoomCanvas_init(").replace(
     "[DOOMCANVASBRIDGE] INIT exports=0", "[DOOMCANVASBRIDGE] INIT exports=2")
