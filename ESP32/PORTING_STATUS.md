@@ -1,5 +1,22 @@
 # Doom RPG ESP32 — état actuel du port
 
+## PR #221 — retrait de l'ABI texte Canvas desktop : PASS CYD ciblé (19 octobre 2026)
+
+**Base `main` réelle** : `90cb0d054e9ec234690c27935e68a19cc805a464` (merge #220).
+**Branche** : `agent/esp32-retire-desktop-canvas-text-abi`, [PR #221](https://github.com/Kharn27/DoomRPG-RE/pull/221).
+**Dernier SHA de code testé sur CYD** : `f9d8061fd342e77d4c83271075c077a470b0207a` ; [CI push SUCCESS #39181089435](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39181089435) et [CI PR SUCCESS #39181183706](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39181183706).
+**Jalon A clos sur le code cité** : `DoomCanvas_drawString1(char*)` est retiré de la surface ESP32 (Canvas **5 → 4 exports** : init/free/setState/startup). `EspNativeCanvas_drawText(const char*)` conserve le corps raster exact (FNV `b4296a8f`) et le blitter glyphes privé inchangé (FNV `4c4a9a93`). Les casts de chaînes constantes du menu disparaissent ; l'en-tête desktop garde son API hors ESP32. La CI rejette le symbole legacy et vérifie les trois builds (normal/bringup/trace) et audits ELF. RAM statique normal **49 520 B**, Flash **822 329 B** (−28 B par rapport au #220 en CI) ; diagnostics bringup **49 672 / 843 113 B**, trace **49 568 / 839 061 B**.
+
+**Témoins matériels réels fournis par l'utilisateur**, firmware normal déclaré sur la branche :
+- Help/About : **83 lignes**, FNV des offsets `0/8/16/24/32` = `5f22cf6b/d0788359/9213df95/b0191189/4c944ee5`; page 40 `943f0b77` puis retours 32 et 24 aux mêmes FNV ; BACK vers menu `0f2c9fc3`.
+- Options : framebuffer `0acffb35` ; presets luminosité **75 → 100 → 25 → 100** sauvegardés nativement dans `/DoomRPG-ESP32.cfg`, BACK enfant et BACK parent ; retour exact au menu `0f2c9fc3`. `shapeData=0 mediaTexels=0` aux frontières.
+- START : intro packed PAK, FNV première image `ade0195d`, progression complète de sept taps ; `INTRODISP` récupère **34 056 B** ; `/intro.bsp` CRC `623f34e4`, arena **14 095 B** FNV `c3882516`, `ENGINESESSION READY`, invariants `shapeData=0 mediaTexels=0`.
+- Deux `[ALIVE]` en jeu aux uptimes **38 669 ms** et **43 714 ms** : `heap8=113584`, `largest8=86004`, stables sur cette fenêtre de ~5 s. Le log fourni commence au menu (pas d'en-tête boot), donc `exports=4` est prouvé côté code/CI, **pas indépendamment imprimé par le CYD** ; aucun SHA firmware embarqué.
+
+**Limites** : PASS de navigation/texte/startup uniquement ; pas de LOAD, SAVE, combat, EXIT ou parcours multi-cartes à ce SHA. Les tests hôte et CI ne sont pas des mesures de pixels matérielles exhaustives. **Ce PASS ne valide aucun changement de code ultérieur** : un second jalon UI armes sur la même branche requiert ses propres tests CI et CYD. Ne pas merger sans demande explicite.
+
+---
+
 ## PR #220 — animation native des sprites et des voyants de porte (19 octobre 2026)
 
 **Branche** : `agent/esp32-native-ambient-sprite-animation`, [PR #220](https://github.com/Kharn27/DoomRPG-RE/pull/220).

@@ -1,5 +1,17 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #221 — retrait du texte Canvas desktop : validation réelle CYD (19 octobre 2026)
+
+Base `main 90cb0d054e9ec234690c27935e68a19cc805a464`, branche `agent/esp32-retire-desktop-canvas-text-abi`, [PR #221](https://github.com/Kharn27/DoomRPG-RE/pull/221), **dernier SHA code texte validé** `f9d8061fd342e77d4c83271075c077a470b0207a`. [CI push #39181089435 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39181089435) et [CI PR #39181183706 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39181183706).
+
+**Canvas desktop ABI désormais à 4** (`init/free/setState/startup`). Le rendu texte passe par `EspNativeCanvas_drawText(DoomCanvas_t*, const char*, x, y, flags)` ; corps du raster inchangé `b4296a8f`, blitter privé `4c4a9a93`. Le moteur desktop original n'est pas modifié pour les builds non ESP32. Tests hôte + symboles ELF empêchent la réintroduction de `DoomCanvas_drawString1` dans les trois profils.
+
+**PASS ciblé sur le vrai CYD** : Help/About 83 lignes, navigation `0→8→16→24→32→40→32→24` et BACK ; FNV stables `5f22cf6b/d0788359/9213df95/b0191189/4c944ee5/943f0b77`, menu `0f2c9fc3`. Options `0acffb35`, luminosité 75→100→25→100 via SD native et retours OK. START→intro première image `ade0195d`→sortie (+34 056 B)→Entrance CRC `623f34e4`, arena `14095 B` FNV `c3882516`, resident ready. Deux `ALIVE` jeu `heap8=113584 largest8=86004` à ~38,7 et ~43,7 s ; `shapeData/mediaTexels=NULL`. L'extrait n'a ni header boot `exports=4` ni SHA embarqué, ni SAVE/LOAD, combat ou EXIT. **Ce témoin reste attaché au code texte `f9d8061`, pas à un firmware UI ultérieur.**
+
+La suite demandée sur cette même PR est un **jalon B séparé** : accès direct à la grille d'armes depuis le bas droit du HUD (munitions/boussole), retrait de l'onglet WPN du HUB inventaire/statistiques/système, fermeture de la grille immédiatement après sélection valide, sans tour de jeu. Le jalon B doit être testé indépendamment sur le profil normal avant sa clôture documentaire.
+
+---
+
 ## Animation d'ambiance native — PR #220, régression post-review validée sur CYD (19 octobre 2026)
 
 [PR #220](https://github.com/Kharn27/DoomRPG-RE/pull/220), base `main` `16155aec8e741151c5f057e95c7fe395a15521e8`.
