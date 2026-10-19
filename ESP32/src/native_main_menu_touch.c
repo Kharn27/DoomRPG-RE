@@ -11,6 +11,7 @@
 
 #include "native_main_menu_160x120_layout.h"
 #include "native_main_menu_touch.h"
+#include "native_main_menu_model.h"
 #include "native_main_menu_present.h"
 #include "native_main_menu_touch_layout.h"
 #include "native_sprite_lru_cache.h"
@@ -557,7 +558,7 @@ void __wrap_PlatformInput_setTapCallback(PlatformTapCallback callback) {
         if (doomRpg != NULL && doomRpg->doomCanvas != NULL &&
             doomRpg->doomCanvas->state != ST_MENU) {
             const int priorState = doomRpg->doomCanvas->state;
-            DoomCanvas_setState(doomRpg->doomCanvas, ST_MENU);
+            EspNativeMainMenu_transitionCanvasState(doomRpg->doomCanvas, ST_MENU);
             printf("[MENUTOUCH] STATE SYNC canvas=%d->%d source=native-MENU_MAIN activation\n",
                    priorState,
                    doomRpg->doomCanvas->state);
