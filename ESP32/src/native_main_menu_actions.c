@@ -572,7 +572,7 @@ DoomRPG_esp32ActivateMainMenuLoad(struct DoomRPG_s* doomRpgBase) {
     EspNativeGameplaySave_mainSelectorFinish();
     doomRpg->menuSystem->menu = MENU_NONE;
     doomRpg->menuSystem->numItems = 0;
-    DoomCanvas_setState(doomRpg->doomCanvas, ST_PLAYING);
+    EspNativeMainMenu_transitionCanvasState(doomRpg->doomCanvas, ST_PLAYING);
 
     printf("[MAINLOAD] READY checkpoint restored; intro=skipped session=resume-pending state=%d\n",
            doomRpg->doomCanvas->state);

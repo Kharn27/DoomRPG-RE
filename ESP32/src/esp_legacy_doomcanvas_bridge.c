@@ -8,7 +8,6 @@
 #include "Render.h"
 #include "SDL_Video.h"
 
-#include "esp_native_audio_intent.h"
 #include "esp_native_canvas_text.h"
 #include "esp_native_intro_state.h"
 #include "native_story_fit.h"
@@ -50,13 +49,9 @@ _Static_assert(sizeof(DoomCanvas_t) == ESP32_DOOMCANVAS_COMPACT_BYTES,
  *
  * Desktop DoomCanvas.c is intentionally not compiled for ESP32. Native owners
  * handle gameplay, menus, dialogs, world mutation and presentation. This file
- * keeps only the legacy construction/layout/text/state hooks still referenced
+ * keeps only the legacy construction/layout/text hooks still referenced
  * by the native runtime while those call sites are migrated individually.
  */
-
-#define ESP32_SND_FLG_LOOP       1U
-#define ESP32_SND_FLG_STOPSOUNDS 2U
-#define ESP32_SND_FLG_ISMUSIC    8U
 
 DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
 {
@@ -75,7 +70,7 @@ DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
     doomCanvas->fontColor = 0xffffffff;
     doomCanvas->renderFloorCeilingTextures = true;
 
-    printf("[DOOMCANVASBRIDGE] INIT exports=4 nativeText=1 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u, retiredStateLayout=%u retiredGraphMirrors=%u retiredIntroState=%u retiredDeadShell=%u retiredInertControl=%u retiredLargeFont=%u retiredFixedGeometry=%u retiredViewShakeAlias=%u clip=%dx%d\n",
+    printf("[DOOMCANVASBRIDGE] INIT exports=3 nativeText=1 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u, retiredStateLayout=%u retiredGraphMirrors=%u retiredIntroState=%u retiredDeadShell=%u retiredInertControl=%u retiredLargeFont=%u retiredFixedGeometry=%u retiredViewShakeAlias=%u clip=%dx%d\n",
            (unsigned int)sizeof(DoomCanvas_t),
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES,
@@ -268,83 +263,6 @@ void EspNativeCanvas_drawText(DoomCanvas_t* doomCanvas,
     }
 }
 
-static int doomCanvasBeginIntro(DoomCanvas_t* doomCanvas)
-{
-    if (doomCanvas == NULL || doomCanvas->doomRpg == NULL) {
-        return 0;
-    }
-
-    DoomRPG_setColor(doomCanvas->doomRpg, 0x000000);
-    DoomRPG_fillRect(doomCanvas->doomRpg,
-                     0,
-                     0,
-                     DOOMRPG_CANVAS_WIDTH,
-                     DOOMRPG_CANVAS_HEIGHT);
-    EspNativeCanvas_drawText(
-        doomCanvas, "Loading...", DOOMRPG_CANVAS_CENTER_X, DOOMRPG_CANVAS_CENTER_Y, 17);
-    DoomRPG_flushGraphics(doomCanvas->doomRpg);
-    /* Intro music is a native intent, independent of the retired Sound_t.
-     * Playback remains deferred until a bounded hardware backend exists. */
-    (void)EspNativeAudioIntent_publish(
-        5039U, ESP32_SND_FLG_LOOP | ESP32_SND_FLG_STOPSOUNDS |
-                   ESP32_SND_FLG_ISMUSIC, 5U);
-
-    if (!EspNativeIntroState_begin(doomCanvas->doomRpg)) {
-        EspNativeAudioIntent_stopAll();
-        printf("[DOOMCANVASBRIDGE] INTRO-REJECT owner=native-transient allocation/load failed\n");
-        return 0;
-    }
-
-    DoomRPG_setColor(doomCanvas->doomRpg, 0x000000);
-    DoomRPG_fillRect(doomCanvas->doomRpg,
-                     0,
-                     0,
-                     DOOMRPG_CANVAS_WIDTH,
-                     DOOMRPG_CANVAS_HEIGHT);
-    DoomRPG_flushGraphics(doomCanvas->doomRpg);
-    return 1;
-}
-
-void DoomCanvas_setState(DoomCanvas_t* doomCanvas, int stateNum)
-{
-    int oldState;
-
-    if (doomCanvas == NULL) {
-        return;
-    }
-
-    /*
-     * ESP32 native owners handle gameplay dialogs, combat, automap, loading,
-     * death, cast, credits and epilogue presentation. Only the three canvas
-     * states still used as compatibility handoff markers remain accepted here.
-     * Any future inherited state dependency must receive its own native owner
-     * instead of silently widening this bridge.
-     */
-    if (stateNum != ST_MENU && stateNum != ST_PLAYING && stateNum != ST_INTRO) {
-        printf("[DOOMCANVASBRIDGE] STATE-REJECT requested=%d current=%d owner=native\n",
-               stateNum,
-               doomCanvas->state);
-        return;
-    }
-
-    oldState = doomCanvas->state;
-    if (oldState == ST_MENU && stateNum != ST_MENU) {
-        EspNativeAudioIntent_stopAll();
-    }
-
-    if (stateNum == ST_INTRO && stateNum != oldState) {
-        if (!doomCanvasBeginIntro(doomCanvas)) {
-            return;
-        }
-    }
-
-    doomCanvas->state = stateNum;
-
-    if (stateNum == ST_MENU && oldState == ST_PLAYING) {
-        (void)EspNativeAudioIntent_publish(5042U, 0U, 3U);
-        (void)EspNativeAudioIntent_publish(5067U, 0U, 3U);
-    }
-}
 void DoomCanvas_startup(DoomCanvas_t* doomCanvas)
 {
     SDL_Rect screenRect;

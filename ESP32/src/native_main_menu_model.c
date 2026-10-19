@@ -5,11 +5,96 @@
 #include "DoomCanvas.h"
 #include "Menu.h"
 #include "esp_native_menu_state.h"
+#include "esp_native_audio_intent.h"
+#include "esp_native_canvas_text.h"
+#include "esp_native_intro_state.h"
 
 #include "esp_legacy_asset_source.h"
 #include "native_main_menu_model.h"
 #include "platform_video_config.h"
 
+#define ESP32_SND_FLG_LOOP       1U
+#define ESP32_SND_FLG_STOPSOUNDS 2U
+#define ESP32_SND_FLG_ISMUSIC    8U
+
+/* Native MENU/INTRO/LOAD canvas-state handoff; unchanged legacy side effects. */
+static int doomCanvasBeginIntro(DoomCanvas_t* doomCanvas)
+{
+    if (doomCanvas == NULL || doomCanvas->doomRpg == NULL) {
+        return 0;
+    }
+
+    DoomRPG_setColor(doomCanvas->doomRpg, 0x000000);
+    DoomRPG_fillRect(doomCanvas->doomRpg,
+                     0,
+                     0,
+                     DOOMRPG_CANVAS_WIDTH,
+                     DOOMRPG_CANVAS_HEIGHT);
+    EspNativeCanvas_drawText(
+        doomCanvas, "Loading...", DOOMRPG_CANVAS_CENTER_X, DOOMRPG_CANVAS_CENTER_Y, 17);
+    DoomRPG_flushGraphics(doomCanvas->doomRpg);
+    /* Intro music is a native intent, independent of the retired Sound_t.
+     * Playback remains deferred until a bounded hardware backend exists. */
+    (void)EspNativeAudioIntent_publish(
+        5039U, ESP32_SND_FLG_LOOP | ESP32_SND_FLG_STOPSOUNDS |
+                   ESP32_SND_FLG_ISMUSIC, 5U);
+
+    if (!EspNativeIntroState_begin(doomCanvas->doomRpg)) {
+        EspNativeAudioIntent_stopAll();
+        printf("[DOOMCANVASBRIDGE] INTRO-REJECT owner=native-transient allocation/load failed\n");
+        return 0;
+    }
+
+    DoomRPG_setColor(doomCanvas->doomRpg, 0x000000);
+    DoomRPG_fillRect(doomCanvas->doomRpg,
+                     0,
+                     0,
+                     DOOMRPG_CANVAS_WIDTH,
+                     DOOMRPG_CANVAS_HEIGHT);
+    DoomRPG_flushGraphics(doomCanvas->doomRpg);
+    return 1;
+}
+
+void EspNativeMainMenu_transitionCanvasState(DoomCanvas_t* doomCanvas, int stateNum)
+{
+    int oldState;
+
+    if (doomCanvas == NULL) {
+        return;
+    }
+
+    /*
+     * ESP32 native owners handle gameplay dialogs, combat, automap, loading,
+     * death, cast, credits and epilogue presentation. Only the three canvas
+     * states still used as compatibility handoff markers remain accepted here.
+     * Any future inherited state dependency must receive its own native owner
+     * instead of silently widening this bridge.
+     */
+    if (stateNum != ST_MENU && stateNum != ST_PLAYING && stateNum != ST_INTRO) {
+        printf("[DOOMCANVASBRIDGE] STATE-REJECT requested=%d current=%d owner=native\n",
+               stateNum,
+               doomCanvas->state);
+        return;
+    }
+
+    oldState = doomCanvas->state;
+    if (oldState == ST_MENU && stateNum != ST_MENU) {
+        EspNativeAudioIntent_stopAll();
+    }
+
+    if (stateNum == ST_INTRO && stateNum != oldState) {
+        if (!doomCanvasBeginIntro(doomCanvas)) {
+            return;
+        }
+    }
+
+    doomCanvas->state = stateNum;
+
+    if (stateNum == ST_MENU && oldState == ST_PLAYING) {
+        (void)EspNativeAudioIntent_publish(5042U, 0U, 3U);
+        (void)EspNativeAudioIntent_publish(5067U, 0U, 3U);
+    }
+}
 #define MAIN_HELP_ASSET_NAME "help.txt"
 #define MAIN_HELP_HEADER_BYTES 3U
 #define MAIN_HELP_ASSET_MAX_BYTES 4096U
@@ -317,7 +402,7 @@ int DoomRPG_esp32MainMenuModelEnter(struct DoomRPG_s* doomRpgBase,
         return 0;
     }
 
-    DoomCanvas_setState(canvas, ST_MENU);
+    EspNativeMainMenu_transitionCanvasState(canvas, ST_MENU);
 
     printf("[MAINMODEL] ENTER target=%d type=%d old=%d items=%d selected=%d scroll=%d maxItems=%d state=%d dispatcher=native builder=%s\n",
            menuSystem->menu,

@@ -21,10 +21,10 @@ assert bridge.count(internal + "(") == 2, "one definition, one glyph caller"
 assert "void " + retired + "(" not in bridge
 assert retired + '",' not in builder  # absent from source ABI export inventory
 assert '"DoomCanvas_drawString1",' not in builder
-assert '"DoomCanvas_setState",' in builder
+assert '"DoomCanvas_setState",' not in builder
 assert "glyph blitter must be private" in builder
 assert "void EspNativeCanvas_drawText(" in bridge
-assert 'INIT exports=4 nativeText=1 desktopTU=no' in bridge
+assert 'INIT exports=3 nativeText=1 desktopTU=no' in bridge
 assert 'INIT exports=6 desktopTU=no' not in bridge
 assert 'doomCanvas, "Loading...", DOOMRPG_CANVAS_CENTER_X' in bridge
 assert "SDL_RenderCopy(sdlVideo.renderer, img->imgBitmap, &clip, &renderQuad);" in bridge
@@ -51,9 +51,36 @@ for path in sorted(SRC.rglob("*")):
         "retired DoomCanvas image ABI revived in " + str(path.relative_to(ROOT)))
 
 # The text entry is native; only four compatibility roots remain.
-for name in ("init", "free", "setState", "startup"):
+for name in ("init", "free", "startup"):
     assert "DoomCanvas_" + name + "(" in bridge
 assert "DoomCanvas_drawString1(" not in bridge
 assert re.search(r"\bEspNativeCanvas_drawText\s*\([^;]+\)\s*\{", bridge, re.S)
 
-print("PASS Canvas ABI=4 native const text glyphBlitterFNV=4c4a9a93")
+
+# Transition byte bodies are unchanged; only ownership and symbol are native.
+owner = (SRC / "native_main_menu_model.c").read_text(encoding="utf-8")
+model_header = (ROOT / "ESP32/include/native_main_menu_model.h").read_text(encoding="utf-8")
+assert "void EspNativeMainMenu_transitionCanvasState(" in owner
+assert "void EspNativeMainMenu_transitionCanvasState(" in model_header
+assert "DoomCanvas_setState(" not in bridge
+assert owner.count("EspNativeMainMenu_transitionCanvasState(") == 2  # definition + MENU
+assert (SRC / "native_main_menu_start_action.c").read_text().count("EspNativeMainMenu_transitionCanvasState(") == 1
+assert (SRC / "native_main_menu_actions.c").read_text().count("EspNativeMainMenu_transitionCanvasState(") == 1
+begin = owner.index("static int doomCanvasBeginIntro(")
+end = owner.index("\n#define MAIN_HELP_ASSET_NAME", begin)
+state_body = owner[begin:end].replace("EspNativeMainMenu_transitionCanvasState", "DoomCanvas_setState")
+state_fnv = 2166136261
+for byte in state_body.encode("utf-8"):
+    state_fnv = ((state_fnv ^ byte) * 16777619) & 0xFFFFFFFF
+assert state_fnv == 0x2f165f3f, f"Native state handoff body drift: {state_fnv:08x}"
+
+# Reject retired desktop state callers even if the TU is currently unlinked.
+for path in sorted(SRC.rglob("*")):
+    if path.suffix not in (".c", ".cpp"):
+        continue
+    source = path.read_text(encoding="latin-1")
+    source = re.sub(r'/\\*.*?\\*/|//[^\\n]*|"(?:\\\\.|[^"\\\\])*"', " ", source, flags=re.S)
+    assert not re.search(r"\\bDoomCanvas_setState\\s*\\(", source), (
+        "desktop Canvas state ABI revived in " + str(path.relative_to(ROOT)))
+
+print("PASS Canvas ABI=3 native const text glyphBlitterFNV=4c4a9a93")

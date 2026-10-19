@@ -6,6 +6,12 @@ extern "C" {
 #endif
 
 struct DoomRPG_s;
+struct DoomCanvas_s;
+
+/* The bounded MENU/INTRO/PLAYING transition, owned by native main menu.
+ * Preserves intro/audio order and rejects unsupported desktop states.
+ */
+void EspNativeMainMenu_transitionCanvasState(struct DoomCanvas_s* canvas, int state);
 
 /*
  * Transitional compact owner for the still-retained MenuSystem_t model.

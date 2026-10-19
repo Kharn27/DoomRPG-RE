@@ -22,7 +22,6 @@ env.Append(CPPPATH=[join(project_dir, "include"), project_src_dir, engine_dir])
 doom_canvas_bridge_source = join(project_src_dir, "esp_legacy_doomcanvas_bridge.c")
 doom_canvas_bridge_exports = (
     "DoomCanvas_free",
-    "DoomCanvas_setState",
     "DoomCanvas_startup",
     "DoomCanvas_init",
 )
@@ -43,13 +42,18 @@ if ("void EspNativeCanvas_drawText(" not in doom_canvas_bridge_text or
         "const char* text," not in doom_canvas_bridge_text or
         "void DoomCanvas_drawString1(" in doom_canvas_bridge_text):
     raise RuntimeError("Legacy Canvas text ABI revived or native const-text owner missing")
+with open(join(project_src_dir, "native_main_menu_model.c"), "r", encoding="utf-8") as owner_file:
+    native_menu_state_owner = owner_file.read()
+if ("void EspNativeMainMenu_transitionCanvasState(" not in native_menu_state_owner or
+        "DoomCanvas_setState(" in doom_canvas_bridge_text):
+    raise RuntimeError("Retired desktop Canvas state ABI revived or native menu owner absent")
 if "DoomCanvas_run(" in doom_canvas_bridge_text or "DoomCanvas_loadMap(" in doom_canvas_bridge_text:
     raise RuntimeError(
         "Desktop DoomCanvas state-machine/map-loading ownership leaked into the ESP32 bridge"
     )
 print(
     "[ESP32] Desktop DoomCanvas.c retired; "
-    f"esp_legacy_doomcanvas_bridge.c owns {len(doom_canvas_bridge_exports)} source ABI exports; nativeText=1"
+    f"esp_legacy_doomcanvas_bridge.c owns {len(doom_canvas_bridge_exports)} source ABI exports; nativeText=1 nativeMenuState=1"
 )
 
 # Render.c is no longer generated or compiled in any CYD profile. The

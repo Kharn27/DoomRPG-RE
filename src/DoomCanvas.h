@@ -326,7 +326,9 @@ void DoomCanvas_saveState(DoomCanvas_t* doomCanvas, int i, char* text);
 #ifndef DOOMRPG_ESP32
 void DoomCanvas_setAnimFrames(DoomCanvas_t* doomCanvas, int i);
 #endif
+#ifndef DOOMRPG_ESP32
 void DoomCanvas_setState(DoomCanvas_t* doomCanvas, int stateNum);
+#endif
 byte DoomCanvas_checkState(DoomCanvas_t* doomCanvas);
 #ifndef DOOMRPG_ESP32
 void DoomCanvas_invalidateRectAndUpdateView(DoomCanvas_t* doomCanvas);

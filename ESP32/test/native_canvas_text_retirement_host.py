@@ -16,7 +16,7 @@ assert re.search(r"void\s+EspNativeCanvas_drawText\s*\(\s*DoomCanvas_t\s*\*\s*\w
 assert "void EspNativeCanvas_drawText(DoomCanvas_t* doomCanvas,\n                              const char* text," in bridge
 assert "DoomCanvas_drawString1" not in bridge
 assert '"DoomCanvas_drawString1",' not in builder
-assert 'INIT exports=4 nativeText=1 desktopTU=no' in bridge
+assert 'INIT exports=3 nativeText=1 desktopTU=no' in bridge
 assert re.search(r"#ifndef DOOMRPG_ESP32\s+void DoomCanvas_drawString1\(", legacy)
 assert 'doomCanvas, "Loading...", DOOMRPG_CANVAS_CENTER_X' in bridge
 assert "(char*)line" not in menu and "(char*)label" not in layout
@@ -43,4 +43,4 @@ for path in sorted(SRC.rglob("*")):
     assert not re.search(r"\bDoomCanvas_drawString1\s*\(", source), (
         "desktop text ABI reintroduced in " + str(path.relative_to(ROOT)))
 
-print("PASS canvasExports=4 nativeText=const retiredText=0 glyphLoopFNV=b4296a8f")
+print("PASS canvasExports=3 nativeText=const retiredText=0 glyphLoopFNV=b4296a8f")
