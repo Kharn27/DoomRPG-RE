@@ -1887,6 +1887,18 @@ int __wrap_Esp32PlatformVideo_present(void) {
     int ok;
 
     /*
+     * The gameplay compositor never owns MENU_MAIN, SAVESLOTS, INTRO or the
+     * transition presentation. In particular, resetting the facing-label
+     * owner on SYS EXIT leaves facing.dirty=1, and the first SAVESLOTS paint
+     * previously re-tiled the gray gameplay top bar over its opaque frame.
+     * Pass non-world frames directly to the physical presenter WITHOUT
+     * touching any HUD feedback lease or consuming the facing dirty flag.
+     */
+    if (!EspNativeResidentGameplay_isActive()) {
+        return __real_Esp32PlatformVideo_present();
+    }
+
+    /*
      * Touch feedback owns an exact whole-frame baseline from begin() until
      * restore(). Its saved edit list contains only the pixels modified by the
      * touch overlay, so any unrelated compositor mutation during this lease
