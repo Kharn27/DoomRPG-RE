@@ -207,6 +207,14 @@ int EspNativeResidentGameplay_isAutomapActive(void) { return automapOwned; }
 int EspNativeResidentGameplay_redrawAutomap(struct Render_s* render, const char* reason) {
     assert(automapOwned && render == &renderOwner);
     assert(strcmp(reason, "WORLD-COMPOSITOR") == 0);
+    /* The dynamic 3D door scope must have been suspended, so the map sees
+     * the immutable BSP line rather than the transient opened-door adapter. */
+    {
+        EspMapLine originalLine;
+        assert(__wrap_EspMapRuntime_getLine(0U, &originalLine));
+        assert(originalLine.texture == 9U);
+        assert((originalLine.flags & 0x20000000U) != 0U);
+    }
     ++automapRenders;
     if (!automapRenderOk) return 0;
     for (size_t i = 0U; i < 160U * 120U; ++i) pixels[1 + i] = 0xa55aU;

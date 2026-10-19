@@ -420,8 +420,12 @@ static int renderComposed(
          * No second framebuffer and no new mutable screen owner.
          */
         if (EspNativeResidentGameplay_isAutomapActive()) {
-            if (!EspNativeResidentGameplay_redrawAutomap(
-                    renderBase, "WORLD-COMPOSITOR")) {
+            const int dynamicScoped =
+                EspNativeDynamicLineRender_pauseForAutomap();
+            const int mapPresented = EspNativeResidentGameplay_redrawAutomap(
+                renderBase, "WORLD-COMPOSITOR");
+            EspNativeDynamicLineRender_resumeFromAutomap(dynamicScoped);
+            if (!mapPresented) {
                 printf("[TURNFRAME] DIAG fail=AUTOMAP-OWNED-PRESENT\n");
                 goto done;
             }

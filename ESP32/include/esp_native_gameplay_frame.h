@@ -65,6 +65,13 @@ int EspNativeGameplayFrame_renderTurn(
     uint8_t angle,
     EspNativeGameplayFrameStats* outStats);
 
+/* The dynamic 3D door-line read scope must NOT leak into the nested full-screen
+ * automap redraw. Pause only its read adaptation after the 3D raster has
+ * finished, then restore the caller's scope exactly, even if map repaint fails.
+ * These do not publish, present, or mutate game-world line owners. */
+int EspNativeDynamicLineRender_pauseForAutomap(void);
+void EspNativeDynamicLineRender_resumeFromAutomap(int wasScoped);
+
 /* Compose the same settled cardinal frame without physical presentation or
  * fresh-world feedback, automap or monster activation publication. The caller
  * adds its overlay and owns the final present. No pre-armed PresentGate is
