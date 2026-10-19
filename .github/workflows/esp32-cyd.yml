@@ -215,6 +215,7 @@ jobs:
             ESP32/src/esp_native_gameplay_gib_fx.c ESP32/src/esp_native_gameplay_frame.c \
             ESP32/src/esp_native_dynamic_line_render.c ESP32/src/esp_native_gameplay_present_gate.c \
             -Wl,--gc-sections -Wl,--wrap=EspNativeGameplayFrame_renderTurn \
+            -Wl,--wrap=EspNativeGameplayFrame_renderAmbient \
             -Wl,--wrap=EspNativeGameplayFrame_composeTurn -Wl,--wrap=EspMapRuntime_getLine \
             -Wl,--wrap=EspMapLineState_view -Wl,--wrap=Esp32PlatformVideo_present \
             -Wl,--wrap=EspNativeGameplayActionEngine_present -o /tmp/doomrpg-paid-interaction-test
