@@ -13,7 +13,9 @@ assert "EspNativeGameplayHud_snapshotLive(" in repaint
 assert "EspNativeGameplayHud_repaint(&live, &stats)" in repaint
 assert "EspNativeGameplayHudDirection_render(" not in repaint
 assert "model.weapon = player->weapon;" in hud
-assert "model.ammo = player->ammo[ammoType];" in hud
+assert "model.ammo = noWeapon ? 0U : player->ammo[ammoType];" in hud
+assert "model.weaponsPresent = noWeapon ? 0U : 1U;" in hud
+assert "player->weapon != 0U || (player->param1 & 0xffU) != 0U" in hud
 assert "model.destAngle = angle;" in hud
 assert "EspNativeGameplayHud_snapshotLive(" in frame
 assert "weaponHud->model.weapon" in frame
