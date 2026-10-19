@@ -1,5 +1,24 @@
 # Doom RPG ESP32 — guide de travail
 
+## Animation d'ambiance native — PR #220, régression post-review validée sur CYD (19 octobre 2026)
+
+[PR #220](https://github.com/Kharn27/DoomRPG-RE/pull/220), base `main` `16155aec8e741151c5f057e95c7fe395a15521e8`.
+**Dernier commit de code** : `5b0439f801532cf070d8dae57f13a7345d0eea29`, [CI SUCCESS #39179286818](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39179286818) (56 étapes). Les deux P2 de review sont corrigées ; **la session CYD post-review a été jugée OK par l'utilisateur**, avec limites ci-dessous. L'ancien PASS de respiration rouge était sur `3b8c2135bc2f4307eaa0deb633f7314c93ea1c27`. La PR peut être remise en Ready for review pour le merge humain.
+
+La présentation **reste pilotée par les changements de phase, pas un FPS permanent**. Les sprites immobiles éligibles utilisent la politique `esp_native_ambient_sprite.h`, avec retraitement des animations fixes interdit. Pour les voyants, l'overlay natif des lignes doit être actif *également dans `renderAmbient`* : sinon une porte déverrouillée retombe visuellement sur la texture immutable rouge, ou un rendu sur porte ouverte échoue. Le wrapper `EspNativeGameplayFrame_renderAmbient` dans `esp_native_dynamic_line_render.c` préserve cette frontière.
+
+**Cadences finales** (champs en `esp_native_wall_indicator_animation.h`) : rouge/verrouillé logique 9, `0,0,1,2,3,3,2,1` à 360 ms par phase, respiration **2,88 s** ; vert/déverrouillé logique 10, `0,1,2,3` à 144 ms par phase, **576 ms**. Ce sont des indices dans les quatre textures physiques PAK, sans création d'assets. Le masque de voyants visibles et l'heure d'échantillonnage sont publiés uniquement après le raster mural réussi ; la comparaison des phases absolues décide du prochain rendu. Une action de navigation ne rallonge donc pas le cycle. Jeu/RNG/world/activation jamais mutés par le simple redraw.
+
+**Corrections P2 post-review, CI + régression hardware ciblée** : la famille monstre sous-type 4 anime les frames 0/3 en ~250 ms (les autres monstres en ~4 s) sans mutation de l'état ; les témoins `ambientCandidates` / `ambientFastCandidates` / `ambientRapidCandidates` sont désormais comptés **après écriture effective de pixels** dans `drawAt` et non à l'admission de BSP. Les copies CROSS et sprites glow utilisent leurs compteurs de pixels respectifs. En l'absence de sprites rasterisés et de voyant visible, aucune re-présentation idle ne doit être déclenchée ; les actions restent indépendantes de l'horloge. Ces chemins spécialisés sont prouvés par tests hôte/CI ; le dernier log CYD ne démontre pas individuellement chaque cas de culling ni la cadence Phantom.
+
+**Playtest normal CYD sur le code antérieur** : armor shards et flamme visibles animés, vert durable après EV_UNLOCK dans un essai précédent ; utilisateur approuve le rouge ralenti sur la révision `3b8c2135`. Déplacements, dialogue, pickups et ouverture/fermeture dans le dernier journal ; `heap8` stable à `110216` sur les dernières mesures, plus grand bloc `86004`. `shapeData` / `mediaTexels` NULL, 21 TU desktop toujours exclues. Absence de FAIL limitée aux extraits fournis, pas de garantie sur toutes les cartes. Voir [PORTING_STATUS.md](PORTING_STATUS.md) pour les limites détaillées.
+
+**Régression après corrections P2 sur le CYD** : « Ça m'a l'air ok :) ». Logs `esp32-cyd` avec MOVEs, TURN, dialogue opcode 26 et fermeture, pickups et flashes, sans `[AMBIENT] FAIL` visible dans l'extrait. Entre `[ALIVE] uptime=228293` et `268626 ms`, `heap8=112640 largest8=86004` constants (environ 40 secondes). Les tours de monstre observés ont `activeCount=0`, donc il **n'y a pas de test matériel de l'animation subtype 4** dans ce segment : ne jamais déclarer ce chemin matériellement éprouvé. La CI du code corrige le contrat et les tests hôte. Pas de nouvelle modification de code après ce PASS.
+
+**Reprise après merge** : vérifier le SHA GitHub réel de `main`, et relire `PORTING_STATUS.md`, ce guide et les dernières notes avant tout nouveau `agent/*`. Ne pas modifier la mécanique de combat à l'occasion de ce jalon d'animation ; investiguer séparément le spam `[NATIVESPRITE] CROSS` en idle si un nettoyage des logs est choisi.
+
+---
+
 ## Utilisation et validation du firmware courant — PR #219 (18 octobre 2026)
 
 La prise en main et les commandes actuelles sont dans

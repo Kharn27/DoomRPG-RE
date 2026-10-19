@@ -6,6 +6,7 @@
 
 #include "DoomRPG.h"
 #include "Render.h"
+#include <esp_timer.h>
 
 #include "doomrpg_log.h"
 #include "esp_asset_pack.h"
@@ -13,6 +14,7 @@
 #include "esp_map_line_state.h"
 #include "esp_map_runtime.h"
 #include "esp_native_first_frame.h"
+#include "esp_native_wall_indicator_animation.h"
 #include "esp_native_graphics_catalog.h"
 #include "esp_player_view_state.h"
 #include "platform_video_c_bridge.h"
@@ -72,6 +74,8 @@ typedef struct FirstFrameWork_s {
     EspAssetPackEntry wallTexels;
     EspAssetPackEntry mappings;
     uint32_t wallTexelDataBytes;
+    uint32_t animationMs;
+    uint8_t indicatorSeen;
 
     uint32_t lineCandidates;
     uint32_t leafNodes;
@@ -169,6 +173,8 @@ typedef struct LegacyWallGuard_s {
     } while (0)
 
 static EspNativeFirstFrameState frameState;
+static uint8_t indicatorVisible;
+static uint32_t indicatorSampleMs;
 static uint8_t frameScratchLogged;
 /* Failure-only BSS witness, printed after renderer work has unwound. */
 static FirstFrameFailure frameFailure;
@@ -578,8 +584,11 @@ static int buildResolvedTextures(FirstFrameWork* work,
             return 0;
         }
 
-        phase = (uint32_t)((((uint64_t)(FIRST_FRAME_ANIMATION_TIME + logical * 3U)) *
-                            0x400000ULL) >> 30);
+        phase = EspNativeWallIndicator_isAnimated((uint16_t)logical)
+                    ? EspNativeWallIndicator_phase((uint16_t)logical,
+                                                   work->animationMs)
+                    : (uint32_t)((((uint64_t)(FIRST_FRAME_ANIMATION_TIME + logical * 3U)) *
+                                  0x400000ULL) >> 30);
         actual = (uint32_t)readLe16(idBytes) + phase;
         if (actual >= texelPairs || actual > UINT16_MAX) return 0;
 
@@ -1098,6 +1107,9 @@ static int drawLine(FirstFrameWork* work, uint32_t lineIndex) {
         return 0;
     }
     ++work->wallDraws;
+    if (EspNativeWallIndicator_isAnimated(mapLine.texture)) {
+        work->indicatorSeen |= EspNativeWallIndicator_bit(mapLine.texture);
+    }
     return 1;
 }
 
@@ -1282,6 +1294,7 @@ static int renderFrame(Render_t* render,
     }
     work->render = render;
     work->runtime = runtime;
+    work->animationMs = (uint32_t)(esp_timer_get_time() / 1000LL);
     saveRenderScratch(render, &scratch);
     if (frameScratchLogged == 0U) {
         printf("[NATIVEFRAME] SCRATCH owner=heap-transient bytes=%u stackRender=%u lifetime=one-render\n",
@@ -1388,6 +1401,12 @@ static int renderFrame(Render_t* render,
            (unsigned int)FIRST_FRAME_ANIMATION_TIME);
 
     ok = work->wallDraws > 0U && work->pixelsDrawn > 0U;
+    /* This is a presentation witness, not mutable geometry or map state.
+     * Only advertise visible indicators after the complete world pass. */
+    if (ok) {
+        indicatorVisible = work->indicatorSeen;
+        indicatorSampleMs = work->animationMs;
+    }
 
 done:
     releaseCache(work);
@@ -1409,7 +1428,19 @@ static int renderFrameWithInlineBoundary(
     return renderFrame(render, playerView, outState, clearWholeFramebuffer);
 }
 
+/* The idle scheduler consumes one bit from the last successful BSP render.
+ * It never scans all map lines or opens the PAK between redraws. */
+int EspNativeFirstFrame_indicatorVisible(void) {
+    return indicatorVisible != 0U;
+}
+int EspNativeFirstFrame_indicatorDue(uint32_t nowMs) {
+    return EspNativeWallIndicator_changed(indicatorVisible,
+                                          indicatorSampleMs, nowMs);
+}
+
 void EspNativeFirstFrame_reset(void) {
+    indicatorVisible = 0U;
+    indicatorSampleMs = 0U;
     memset(&frameState, 0, sizeof(frameState));
     memset(&frameFailure, 0, sizeof(frameFailure));
     memset(legacyWallGuards, 0, sizeof(legacyWallGuards));

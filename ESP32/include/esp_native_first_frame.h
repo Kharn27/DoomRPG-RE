@@ -44,6 +44,13 @@ typedef struct EspNativeFirstFrameState_s {
 void EspNativeFirstFrame_reset(void);
 int EspNativeFirstFrame_isReady(void);
 const EspNativeFirstFrameState* EspNativeFirstFrame_view(void);
+/* Non-owning witness: one or more 9/10 door indicators reached wall raster in
+ * the last successful render; used to request an idle refresh without polling
+ * the BSP, committing events or opening the PAK. */
+int EspNativeFirstFrame_indicatorVisible(void);
+/* True only when a last-rendered visible indicator changed its absolute
+ * PAK frame since the last successful viewport composition. */
+int EspNativeFirstFrame_indicatorDue(uint32_t nowMs);
 
 /*
  * Render and present exactly one deterministic native Junction walls-only

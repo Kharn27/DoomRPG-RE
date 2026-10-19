@@ -71,6 +71,9 @@ int EspNativeGameplayFrame_renderTurn(
  * allowed, just as for
  * renderTurn(); stats.finalPresented remains zero. Dynamic-line adaptation is
  * scoped identically to visual previews, without consuming door/move events. */
+/* Render-only passive tick; BSP preview prevents gameplay publication. */
+int EspNativeGameplayFrame_renderAmbient(
+    struct Render_s* render, EspNativeGameplayFrameStats* stats);
 int EspNativeGameplayFrame_composeTurn(
     struct Render_s* render,
     uint8_t angle,
