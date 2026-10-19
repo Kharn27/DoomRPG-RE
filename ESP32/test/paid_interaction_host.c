@@ -194,6 +194,8 @@ int Esp32PlatformVideo_present(void) {
     ++presents; return presentOk;
 }
 int __real_Esp32PlatformVideo_present(void);
+int __wrap_EspNativeGameplayFrame_renderAmbient(
+    struct Render_s* render, EspNativeGameplayFrameStats* outStats);
 int __wrap_EspNativeGameplayActionEngine_present(void) {
     ++decoratedPresents;
     return __real_Esp32PlatformVideo_present();
