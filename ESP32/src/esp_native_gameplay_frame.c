@@ -419,7 +419,7 @@ static int renderComposed(
          * callers retain their existing rollback/recovery contract.
          * No second framebuffer and no new mutable screen owner.
          */
-        if (!preview && EspNativeResidentGameplay_isAutomapActive()) {
+        if (EspNativeResidentGameplay_isAutomapActive()) {
             if (!EspNativeResidentGameplay_redrawAutomap(
                     renderBase, "WORLD-COMPOSITOR")) {
                 printf("[TURNFRAME] DIAG fail=AUTOMAP-OWNED-PRESENT\n");

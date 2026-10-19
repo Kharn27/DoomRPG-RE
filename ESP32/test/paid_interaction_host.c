@@ -357,6 +357,14 @@ int main(void) {
     assert(frame.frameAfterFNV != 0U);
     for (size_t i = 0U; i < 160U * 120U; ++i)
         assert(pixels[1 + i] == 0xa55aU);
+    /* Even an ambient/preview publication is not allowed to reveal 3D
+     * while a modal map owns the screen. */
+    seed(10); automapOwned = 1;
+    assert(EspNativeGameplayFrame_renderAmbient(render, &frame));
+    assert(frame.active && frame.finalPresented);
+    assert(automapRenders == 1 && presents == 1 && freshFrames == 0);
+    for (size_t i = 0U; i < 160U * 120U; ++i)
+        assert(pixels[1 + i] == 0xa55aU);
     /* Rendering failure must not fall through to a 3D presentation. */
     seed(10); automapOwned = 1; automapRenderOk = 0;
     assert(!EspNativeGameplayFrame_renderTurn(render, 0, &frame));
