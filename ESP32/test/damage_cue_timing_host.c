@@ -13,6 +13,8 @@ void* Esp32PlatformVideo_framebuffer(void) { return &pixels[1]; }
 size_t Esp32PlatformVideo_framebufferSizeBytes(void) { return 160U * 120U * 2U; }
 int EspNativeGameplayControls_isActive(void) { return controls; }
 int EspNativeGameplayLevelUp_isActive(void) { return levelUp; }
+/* This fixture drives the real in-world feedback compositor, not MENU_MAIN. */
+int EspNativeResidentGameplay_isActive(void) { return 1; }
 int EspNativeResidentGameplay_isAutomapActive(void) { return automapOwner; }
 int EspAssetPack_isOpen(void) { return pack; }
 int EspAssetPack_open(const char* path) { (void)path; assert(!pack); pack = 1; return 1; }
