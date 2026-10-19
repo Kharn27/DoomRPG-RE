@@ -226,8 +226,12 @@ typedef struct Render_s
 	int textureCnt, spriteCnt;
 } Render_t;
 
+#ifndef DOOMRPG_ESP32
 Render_t* Render_init(Render_t * render, DoomRPG_t* doomRpg);
+#endif
+#ifndef DOOMRPG_ESP32
 void Render_setup(Render_t* render, SDL_Rect* windowRect);
+#endif
 void Render_freeRuntime(Render_t* render);
 void Render_free(Render_t* render, boolean freePtr);
 int Render_startup(Render_t* render);

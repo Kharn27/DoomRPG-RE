@@ -8,11 +8,8 @@
 #include "esp_native_text_format.h"
 #include "native_story_fit.h"
 
-/* Host pointers are 64-bit. Production's 32-bit layout assertion stays intact
- * in the real ESP32 build; disable ONLY this TU's assertion in this harness. */
-#define _Static_assert(condition, message)
-#include "../src/esp_legacy_doomcanvas_bridge.c"
-#undef _Static_assert
+/* Lifecycle is now process-root-owned. This stack-Canvas harness exercises
+ * the transient story/intro release owners directly, never a desktop free ABI. */
 
 static unsigned imageLive, imageCreated, imageFreed, introReleases;
 static int failImage;
@@ -73,11 +70,13 @@ int main(void) {
     assert(Esp32StoryFit_prepare(&canvasA) && imageCreated == 1U);
     assert(Esp32StoryFit_prepare(&canvasB) && imageCreated == 2U);
     assert(imageLive == 1U && imageFreed == 1U && lastFreedOwner == &ownerA);
-    DoomCanvas_free(&canvasB, false);
+    Esp32StoryFit_release(&canvasB);
+    EspNativeIntroState_release(canvasB.doomRpg);
     assert(!Esp32StoryFit_hasHand() && imageLive == 0U);
     assert(imageFreed == 2U && lastFreedOwner == &ownerB && introReleases == 1U);
-    DoomCanvas_free(&canvasB, false);
-    DoomCanvas_free(NULL, false);
+    Esp32StoryFit_release(&canvasB);
+    EspNativeIntroState_release(canvasB.doomRpg);
+    Esp32StoryFit_release(NULL);
     assert(imageFreed == 2U && introReleases == 2U);
     puts("startup_regressions_host: PASS divider bytes/guards, story reuse/owner-change/free/idempotence; image I/O mocked");
     return 0;

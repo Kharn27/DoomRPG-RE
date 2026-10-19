@@ -13,6 +13,8 @@
 #include "Z_Zone.h"
 #include "Z_Zip.h"
 #include "engine_metrics.h"
+#include "esp_native_intro_state.h"
+#include "native_story_fit.h"
 #include "esp_native_audio_intent.h"
 #include "esp_native_menu_storage.h"
 #include "platform_video_config.h"
@@ -29,6 +31,17 @@
 /* The final linked DoomRPG.c globals/functions are now native-owned.
  * Keep the one process root, never create an extra session-owned mirror. */
 DoomRPG_t* doomRpg = NULL;
+
+/* Native process-root Canvas teardown. Preserve the desktop release order
+ * and its sole CYD freePtr=true call; no Canvas lifecycle ABI survives. */
+static void EspNativeEngineRoot_releaseCanvas(DoomCanvas_t* doomCanvas)
+{
+    if (doomCanvas == NULL) return;
+    Esp32StoryFit_release(doomCanvas);
+    EspNativeIntroState_release(doomCanvas->doomRpg);
+    DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgFont);
+    SDL_free(doomCanvas);
+}
 
 /* Original metric contract. Z_FreeMemory() is the single native heap report. */
 int DoomRPG_freeMemory(void) { // 0x1EBFC
@@ -67,7 +80,7 @@ void DoomRPG_FreeAppData(DoomRPG_t* doomrpg)
     }
     doomrpg->render = NULL;
     if (doomrpg->doomCanvas) {
-        DoomCanvas_free(doomrpg->doomCanvas, true);
+        EspNativeEngineRoot_releaseCanvas(doomrpg->doomCanvas);
     }
     doomrpg->doomCanvas = NULL;
     SDL_free(doomrpg);
@@ -284,7 +297,7 @@ static DoomCanvas_t* EspNativeEngineRoot_initCanvas(DoomCanvas_t* doomCanvas, Do
     doomCanvas->fontColor = 0xffffffff;
     doomCanvas->renderFloorCeilingTextures = true;
 
-    printf("[DOOMCANVASBRIDGE] INIT exports=1 nativeText=1 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u, retiredStateLayout=%u retiredGraphMirrors=%u retiredIntroState=%u retiredDeadShell=%u retiredInertControl=%u retiredLargeFont=%u retiredFixedGeometry=%u retiredViewShakeAlias=%u clip=%dx%d\n",
+    printf("[DOOMCANVASBRIDGE] INIT exports=0 nativeText=1 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u, retiredStateLayout=%u retiredGraphMirrors=%u retiredIntroState=%u retiredDeadShell=%u retiredInertControl=%u retiredLargeFont=%u retiredFixedGeometry=%u retiredViewShakeAlias=%u clip=%dx%d\n",
            (unsigned int)sizeof(DoomCanvas_t),
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES,
@@ -300,6 +313,49 @@ static DoomCanvas_t* EspNativeEngineRoot_initCanvas(DoomCanvas_t* doomCanvas, Do
            DOOMRPG_CANVAS_WIDTH,
            DOOMRPG_CANVAS_HEIGHT);
     return doomCanvas;
+}
+
+/* Native Render constructor owned by the process root; old initializer body
+ * intentionally unmodified. Other Render owners remain unchanged. */
+static Render_t* EspNativeEngineRoot_initRender(Render_t* render, DoomRPG_t* doomRpg)
+{
+	printf("Render_init\n");
+
+	if (render == NULL)
+	{
+		render = SDL_malloc(sizeof(Render_t));
+		if (render == NULL) {
+			return NULL;
+		}
+	}
+	SDL_memset(render, 0, sizeof(Render_t));
+
+	//resourceAsStream.Init(&renderClass->mapFile, doomRPGClass, 1);
+	render->doomRpg = doomRpg;
+	render->skipStretch = 0;
+	render->unk4 = 0;
+	render->skipCull = 0;
+	render->skipBSP = 0;
+	render->skipLines = 0;
+	render->unk5 = 0;
+	render->skipSprites = 0;
+	render->skipViewNudge = 0;
+	render->ioBufferPos = 0;
+	render->lines = NULL;
+	render->nodes = NULL;
+	render->mapSprites = NULL;
+	render->mapCameraSpawnIndex = 0;
+	render->floorColor = NULL;
+	render->ceilingColor = NULL;
+	render->ceilingTex = 0;
+	render->floorTex = 0;
+	render->columnScale = NULL;
+	render->animFrameTime = 0;
+	render->mapStringsIDs = NULL;
+	render->mapStringCount = 0;
+
+	printf("[RENDERCORE] INIT owner=esp-native-bridge bytes=%u\n", (unsigned int)sizeof(*render));
+	return render;
 }
 
 int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
@@ -394,7 +450,7 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
     INIT_CORE_OBJECT(DOOMRPG_CORE_CANVAS, doomCanvas,
                      EspNativeEngineRoot_initCanvas(NULL, doomRpg));
     INIT_CORE_OBJECT(DOOMRPG_CORE_RENDER, render,
-                     Render_init(NULL, doomRpg));
+                     EspNativeEngineRoot_initRender(NULL, doomRpg));
     INIT_CORE_OBJECT(DOOMRPG_CORE_MENU_SYSTEM, menuSystem,
                      EspNativeMenuStorage_init(NULL));
     /* Keep the historical diagnostics slot without an allocation or legacy
@@ -594,6 +650,56 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
     return 1;
 }
 
+/* Private native layout Render setup; preserve validated array/free/geometry
+ * and odd-height behavior from the retired desktop-named compatibility API. */
+static void EspNativeEngineLayout_setupRender(Render_t* render, SDL_Rect* windowRect)
+{
+	boolean memError = false;
+	render->screenWidth = windowRect->w;
+	render->screenHeight = windowRect->h;
+	render->screenX = windowRect->x;
+	render->screenY = windowRect->y;
+	if ((windowRect->h & 1) != 0) {
+		render->screenHeight = windowRect->h - 1;
+	}
+	render->halfScreenWidth = render->screenWidth / 2;
+	render->halfScreenHeight = render->screenHeight / 2;
+	render->fracHalfScreenWidth = (render->halfScreenWidth << FRACBITS) - 0x8000;
+	render->fracHalfScreenHeight = (render->halfScreenHeight << FRACBITS) - 0x8000;
+
+#if 0
+	printf("render->screenWidth %d\n", render->screenWidth);
+	printf("render->screenHeight %d\n", render->screenHeight);
+	printf("render->screenX %d\n", render->screenX);
+	printf("render->screenY %d\n", render->screenY);
+	printf("render->halfScreenWidth %d\n", render->halfScreenWidth);
+	printf("render->halfScreenHeight %d\n", render->halfScreenHeight);
+	printf("render->fracHalfScreenWidth %d\n", render->fracHalfScreenWidth);
+	printf("render->fracHalfScreenHeight %d\n", render->fracHalfScreenHeight);
+#endif
+
+	SDL_free(render->ceilingColor);
+	render->ceilingColor = SDL_malloc(render->screenWidth * sizeof(short));
+	if (render->ceilingColor == NULL) { memError = true; }
+
+	SDL_free(render->floorColor);
+	render->floorColor = SDL_malloc(render->screenWidth * sizeof(short));
+	if (render->floorColor == NULL) { memError = true; }
+
+	SDL_free(render->columnScale);
+	render->columnScale = SDL_malloc(render->screenWidth * sizeof(int));
+	if (render->columnScale == NULL) { memError = true; }
+
+	if (memError) {
+		//DoomRPG_setErrorID(render->doomRpg, 2);
+		DoomRPG_Error("Render: Insufficient memory for allocation");
+	}
+	printf("[RENDERCORE] SETUP owner=esp-native-bridge view=%dx%d@%d,%d arrays=%uB\n",
+	       render->screenWidth, render->screenHeight,
+	       render->screenX, render->screenY,
+	       (unsigned int)(render->screenWidth * (sizeof(short) * 2U + sizeof(int))));
+}
+
 /* Bounded CYD layout and font initialization, owned by the native process
  * layout stage instead of a desktop DoomCanvas startup ABI entry. The body
  * preserves the validated Render_setup -> map marker -> font ordering. */
@@ -609,7 +715,7 @@ static void EspNativeEngineLayout_startupCanvas(DoomCanvas_t* doomCanvas)
     screenRect.y = DOOMRPG_VIEWPORT_Y;
     screenRect.w = DOOMRPG_VIEWPORT_WIDTH;
     screenRect.h = DOOMRPG_VIEWPORT_HEIGHT;
-    Render_setup(doomRpg->render, &screenRect);
+    EspNativeEngineLayout_setupRender(doomRpg->render, &screenRect);
     doomCanvas->startupMap = 1;
     doomCanvas->skipIntro = false;
     DoomRPG_createImage(doomCanvas->doomRpg, "a.bmp", true, &doomCanvas->imgFont);

@@ -5,7 +5,7 @@ import re
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "ESP32/src"
-bridge = (SRC / "esp_legacy_doomcanvas_bridge.c").read_text(encoding="utf-8")
+bridge = (SRC / "esp_native_canvas_text.c").read_text(encoding="utf-8")
 header = (ROOT / "ESP32/include/esp_native_canvas_text.h").read_text(encoding="utf-8")
 legacy = (ROOT / "src/DoomCanvas.h").read_text(encoding="utf-8")
 builder = (ROOT / "ESP32/scripts/build_engine.py").read_text(encoding="utf-8")
@@ -14,9 +14,10 @@ layout = (SRC / "native_main_menu_touch_layout.c").read_text(encoding="utf-8")
 
 assert re.search(r"void\s+EspNativeCanvas_drawText\s*\(\s*DoomCanvas_t\s*\*\s*\w+\s*,\s*const char\s*\*\s*text", header)
 assert "void EspNativeCanvas_drawText(DoomCanvas_t* doomCanvas,\n                              const char* text," in bridge
+assert "DoomCanvas_free(" not in bridge
 assert "DoomCanvas_drawString1" not in bridge
 assert '"DoomCanvas_drawString1",' not in builder
-assert 'INIT exports=1 nativeText=1 desktopTU=no' in (SRC / "engine_stubs.c").read_text(encoding="utf-8")
+assert 'INIT exports=0 nativeText=1 desktopTU=no' in (SRC / "engine_stubs.c").read_text(encoding="utf-8")
 assert re.search(r"#ifndef DOOMRPG_ESP32\s+void DoomCanvas_drawString1\(", legacy)
 assert 'doomCanvas, "Loading...", DOOMRPG_CANVAS_CENTER_X' in (SRC / "native_main_menu_model.c").read_text(encoding="utf-8")
 assert "(char*)line" not in menu and "(char*)label" not in layout
@@ -43,4 +44,4 @@ for path in sorted(SRC.rglob("*")):
     assert not re.search(r"\bDoomCanvas_drawString1\s*\(", source), (
         "desktop text ABI reintroduced in " + str(path.relative_to(ROOT)))
 
-print("PASS canvasExports=1 nativeText=const retiredText=0 glyphLoopFNV=b4296a8f")
+print("PASS canvasExports=0 nativeText=const retiredText=0 glyphLoopFNV=b4296a8f")

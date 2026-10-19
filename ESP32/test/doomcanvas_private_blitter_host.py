@@ -11,7 +11,7 @@ import re
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "ESP32/src"
-bridge = (SRC / "esp_legacy_doomcanvas_bridge.c").read_text(encoding="utf-8")
+bridge = (SRC / "esp_native_canvas_text.c").read_text(encoding="utf-8")
 builder = (ROOT / "ESP32/scripts/build_engine.py").read_text(encoding="utf-8")
 
 internal = "EspDoomCanvas_drawImageSpecial"
@@ -24,7 +24,7 @@ assert '"DoomCanvas_drawString1",' not in builder
 assert '"DoomCanvas_setState",' not in builder
 assert "glyph blitter must be private" in builder
 assert "void EspNativeCanvas_drawText(" in bridge
-assert 'INIT exports=1 nativeText=1 desktopTU=no' in (SRC / "engine_stubs.c").read_text(encoding="utf-8")
+assert 'INIT exports=0 nativeText=1 desktopTU=no' in (SRC / "engine_stubs.c").read_text(encoding="utf-8")
 assert 'INIT exports=6 desktopTU=no' not in bridge
 assert 'doomCanvas, "Loading...", DOOMRPG_CANVAS_CENTER_X' in (SRC / "native_main_menu_model.c").read_text(encoding="utf-8")
 assert "SDL_RenderCopy(sdlVideo.renderer, img->imgBitmap, &clip, &renderQuad);" in bridge
@@ -50,9 +50,9 @@ for path in sorted(SRC.rglob("*")):
     assert not re.search(r"\b" + retired + r"\s*\(", text), (
         "retired DoomCanvas image ABI revived in " + str(path.relative_to(ROOT)))
 
-# The text entry is native; only three compatibility roots remain.
-for name in ("free",):
-    assert "DoomCanvas_" + name + "(" in bridge
+# The text entry is native. No desktop Canvas lifecycle ABI survives.
+assert "DoomCanvas_free(" not in bridge
+assert "doom_canvas_bridge_exports" not in builder
 assert "DoomCanvas_drawString1(" not in bridge
 assert re.search(r"\bEspNativeCanvas_drawText\s*\([^;]+\)\s*\{", bridge, re.S)
 
@@ -99,6 +99,12 @@ start = root_owner.index("static void EspNativeEngineLayout_startupCanvas(")
 end = root_owner.index("\nint DoomRPG_startEngineLayout(", start)
 layout = root_owner[start:end]
 layout = layout.replace("static void EspNativeEngineLayout_startupCanvas(", "void DoomCanvas_startup(")
+# The Render setup symbol was made private without changing any geometry or
+# initialization behavior. Normalize only this internal call for the old
+# independently hardware-proven Canvas layout source fingerprint.
+assert "EspNativeEngineLayout_setupRender(doomRpg->render, &screenRect);" in layout
+layout = layout.replace("EspNativeEngineLayout_setupRender(doomRpg->render, &screenRect);",
+                        "Render_setup(doomRpg->render, &screenRect);")
 layout_fnv = 2166136261
 for byte in layout.encode("utf-8"):
     layout_fnv = ((layout_fnv ^ byte) * 16777619) & 0xFFFFFFFF
@@ -124,10 +130,10 @@ assert root_owner.count("EspNativeEngineRoot_initCanvas(") == 2  # definition + 
 assert re.search(r"#ifndef DOOMRPG_ESP32\s+DoomCanvas_t\* DoomCanvas_init\(", legacy_canvas_h)
 assert "ESP32_DOOMCANVAS_COMPACT_BYTES" in (ROOT / "ESP32/include/engine_metrics.h").read_text()
 first = root_owner.index("static DoomCanvas_t* EspNativeEngineRoot_initCanvas(")
-last = root_owner.index("int DoomRPG_initEngineCore(", first)
+last = root_owner.index("/* Native Render constructor owned by the process root;", first)
 normalized = root_owner[first:last].replace(
     "static DoomCanvas_t* EspNativeEngineRoot_initCanvas(", "DoomCanvas_t* DoomCanvas_init(").replace(
-    "[DOOMCANVASBRIDGE] INIT exports=1", "[DOOMCANVASBRIDGE] INIT exports=2")
+    "[DOOMCANVASBRIDGE] INIT exports=0", "[DOOMCANVASBRIDGE] INIT exports=2")
 init_fnv = 2166136261
 for byte in normalized.encode("utf-8"):
     init_fnv = ((init_fnv ^ byte) * 16777619) & 0xFFFFFFFF
@@ -141,4 +147,4 @@ for path in sorted(SRC.rglob("*")):
     assert not re.search(r"\bDoomCanvas_init\s*\(", source), (
         "retired Canvas init ABI revived in " + str(path.relative_to(ROOT)))
 
-print("PASS Canvas ABI=1 native const text glyphBlitterFNV=4c4a9a93")
+print("PASS Canvas ABI=0 native const text glyphBlitterFNV=4c4a9a93")

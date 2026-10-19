@@ -5,6 +5,19 @@ ESP32-2432S028R CYD port. It describes the engine we are keeping, not the order
 in which historical recovery probes were written.
 
 For current hardware status and exact canons, read [`PORTING_STATUS.md`](PORTING_STATUS.md).
+As of PR #223 latest CYD-tested code `eb93bf2fefe3aa48cd87b933648d3a84c78f9743`,
+`Render_init` and `Render_setup` are **not** ESP32 Render ABI symbols.
+They live privately within the native engine root/layout as respectively
+`EspNativeEngineRoot_initRender` (FNV `884791fe`) and
+`EspNativeEngineLayout_setupRender` (FNV `ec9d1151`) in `engine_stubs.c`.
+The 1532-byte `Render_t`, 160x80 viewport, three setup arrays totaling
+1280 B, and `Render_startup` / `Render_free` semantics remain unchanged.
+This SHA passes real CYD START → EXIT → LOAD V11 → monster combat including
+two kills, with constant observed gameplay heap. Fatal Render teardown is
+not hardware-tested. The user has identified **lost perceived responsiveness**
+after animations: `COMBAT-INPUT-BLOCK ... queued=no` rejects taps while
+monster attack/retaliation owns the turn. Input admission/buffering must
+be its own bounded, turn-safe milestone; no world/RNG mutation until commit.
 For build/platform notes, read [`DOCUMENTATION.md`](DOCUMENTATION.md).
 
 Historical ELF census (main `b941048`, 14 October 2026;
@@ -14,7 +27,7 @@ Its per-source counts and pre-retirement `DoomRPG.o` tables describe the
 (especially §6/7/10/13) can also be historical: use current source and
 PORTING_STATUS for runtime ownership and exact CYD evidence.
 
-Current source boundary after [PR #218](https://github.com/Kharn27/DoomRPG-RE/pull/218)
+Historical source boundary after [PR #218](https://github.com/Kharn27/DoomRPG-RE/pull/218)
 and [PR #219](https://github.com/Kharn27/DoomRPG-RE/pull/219)
 (final code `a59554ed524502d02dbab69149777a94050b0a26`,
 [CI success #39162920720](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39162920720)):
@@ -36,14 +49,16 @@ and [PR #219](https://github.com/Kharn27/DoomRPG-RE/pull/219)
   mappings, resident session and SYS/EXIT gates refuse non-NULL.
   A zero-byte Game diagnostic stage remains and the native root teardown
   does not free a Game instance.
-- **Canvas** now retains exactly five externally linked functions:
-  `DoomCanvas_init`, `DoomCanvas_free`, `DoomCanvas_drawString1`,
-  `DoomCanvas_setState`, `DoomCanvas_startup`. The former
-  `DoomCanvas_drawImageSpecial` export is a private static glyph blitter,
-  body unchanged (source-FNV `4c4a9a93`). The remaining Canvas/Render
-  compatibility APIs and selected `--wrap` adapters still serve native
-  callers. Retire each individually; do not infer their ownership from
-  the Game result.
+- **Canvas lifecycle**: as of the hardware-proven [PR #223](https://github.com/Kharn27/DoomRPG-RE/pull/223)
+  code `201232031e595563a42ca1e0d0f34d0252b1ab07`, **zero desktop Canvas
+  lifecycle ABI exports** remain on ESP32. Init/startup/release belong to the
+  native process root/layout (`engine_stubs.c`); Canvas MENU state transition
+  belongs to the native main-menu model, and native const-text raster with a
+  private glyph blitter lives in `esp_native_canvas_text.c`. Blitter source FNV
+  remains `4c4a9a93`; the Canvas allocation remains 44 B. The separately
+  conditional no-op bringup `DoomCanvas_updateLoadingBar` is not a gameplay or
+  lifecycle export. Do not reintroduce the desktop object graph or map-wide
+  shape/texel memory.
 
 The generic startup/session replaces the historical Junction post-load
 marker ladder (nine source/header pairs); the unrelated ZIP/menu-scene

@@ -252,7 +252,9 @@ enum _CanvasState {
 #ifndef DOOMRPG_ESP32
 DoomCanvas_t* DoomCanvas_init(DoomCanvas_t * doomCanvas, DoomRPG_t* doomRpg);
 #endif
+#ifndef DOOMRPG_ESP32
 void DoomCanvas_free(DoomCanvas_t* doomCanvas, boolean freePtr);
+#endif
 void DoomCanvas_updatePlayerDoors(DoomCanvas_t* doomCanvas, Line_t* line);
 void DoomCanvas_attemptMove(DoomCanvas_t* doomCanvas, int x, int y);
 void DoomCanvas_automapState(DoomCanvas_t* doomCanvas);
