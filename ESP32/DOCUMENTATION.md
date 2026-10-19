@@ -1,5 +1,15 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #222 — ABI Canvas startup 3→2 : procédure et PASS CYD (19 octobre 2026)
+
+**SHA matériel normal `esp32-cyd`** `5c76e7f73e019200c3296a5567891b21170093df`, [PR #222](https://github.com/Kharn27/DoomRPG-RE/pull/222). [CI push SUCCESS #39330881971](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39330881971), [CI PR SUCCESS #39330886161](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39330886161), RAM **49 536 B** et Flash **825 649 B**. `DoomCanvas_startup` est maintenant une **fonction locale du stage `DoomRPG_startEngineLayout`** `EspNativeEngineLayout_startupCanvas`, plus un export du pont Canvas ; seulement **init/free** restent. `Render_setup`/police `a.bmp` et `startupMap/skipIntro` sont inchangés par contrat hôte (FNV `9166e429`).
+
+**Séquence de test effectuée sur le classic CYD** : `INIT exports=2`, layout `160x80@0,20`, menu FNV `0f2c9fc3`; luminosité 25 % réellement restaurée depuis config SD ; START `state=9`, intro FNV `ade0195d`, disposition récupérant **34 056 B** ; Entrance `CRC=623f34e4`, arena 14095B / `c3882516`, gameplay (mouvements et dialogue event88 : `EV_DIALOG` puis `EV_NEXTSTATE`/`EV_CHANGESTATE` via `DIALOGCHAIN`); EXIT avec `RESIDENTRESET ... empty=1`; puis chargement réel slot07 V11/5604B → `ST_PLAYING=3` sans intro. La reprise conserve 30 monstres, 22 actifs initialement, mouvement/arme/porte ; activation à 24, `MONSTERRETAL COMMIT` réel de `sprite=7` (`HP30→27, armor10→8`, feedback), tir manqué consommant **1 munition**, tours livrés. `shapeData/mediaTexels=0` toujours confirmés. `heap8=113568 largest8=86004` identiques aux derniers `ALIVE` après reload.
+
+**Interprétation** : ce PASS concerne la transition du startup et ses principales non-régressions ; pas de test de mort, nouveau SAVE ni absence universelle de fuite. Les valeurs de RNG peuvent varier lors du seed sans être une erreur ; l'ordre d'intention audio, pas son `seq` absolu, fait foi. La version testée `5c76e7f73e019200c3296a5567891b21170093df` est gelée ; les commits suivants forment un nouveau jalon et demandent une nouvelle validation hardware. Toujours branche agent, aucun merge automatisé.
+
+---
+
 ## PR #222 — Canvas state ABI 4→3 : parcours utilisateur matériellement éprouvés (19 octobre 2026)
 
 **Code testé sur `esp32-cyd` : `ebba9c6586ecb8919937f8067442faac08e2a2f8`** ([PR #222](https://github.com/Kharn27/DoomRPG-RE/pull/222), base `main 8b89a46151c1645ae77493b27e4f6925df6d99d1`), [CI push verte #39328930441](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39328930441), [CI PR verte #39328938740](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39328938740). `DoomCanvas_setState` est retiré de l'ABI CYD : `INIT exports=3`, désormais init/free/startup uniquement ; MENU, intro START et PLAYING LOAD sont routés via `EspNativeMainMenu_transitionCanvasState` sur les quatre appelants natifs. Aucun nouvel owner lourd, aucune mutation du monde par cette refactorisation ; RAM statique **49 536 B**, Flash **825 653 B** (+8 B par rapport au dernier #221).
