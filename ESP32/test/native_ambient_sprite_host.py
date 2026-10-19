@@ -12,7 +12,15 @@ platformio=(root/"ESP32/platformio.ini").read_text()
 legacy=(root/"src/Render.c").read_text(encoding="latin-1")
 assert "render->animFrameTime" in legacy
 assert "EspNativeAmbientSprite_frame(" in sprite
-assert "EspNativeAmbientSprite_eligible(" in sprite
+assert "EspNativeAmbientSprite_rasterCandidate(" in sprite
+assert "EspNativeAmbientSprite_eligible(" not in sprite
+assert "Raster witnesses are recorded by drawAt()" in sprite
+assert "rasterPixelsBefore = glow ? stats->glowPixels : stats->pixelsDrawn;" in sprite
+assert "glow ? stats->glowPixels : stats->pixelsDrawn))" in sprite
+assert "EspNativeAmbientSprite_rapid(entityType,entitySubtype)" in sprite
+assert "++stats->ambientCandidates;" in sprite
+assert "++stats->ambientRapidCandidates;" in sprite
+assert "ambientRapidCandidates" in sprite
 assert "EspNativeSpriteRenderer_ambientDue(nowMs)" in resident
 assert "EspNativeGameplayFrame_renderAmbient(" in resident
 assert "EspNativeSpriteRenderer_resetAmbient()" in resident
@@ -45,21 +53,40 @@ code=r"""
 #include "esp_native_wall_indicator_animation.h"
 #define INFO(v,f) ((uint32_t)(v)*512U|((f)?0x80000000UL:0U))
 int main(void) {
-    for (uint32_t t=0;t<10000;t+=250)
-      assert(EspNativeAmbientSprite_frame(INFO(0,0),0,0,t)==(t/250)%4);
-    assert(EspNativeAmbientSprite_frame(INFO(0,0),1,0,3999)==0);
-    assert(EspNativeAmbientSprite_frame(INFO(0,0),1,0,4000)==3);
-    assert(EspNativeAmbientSprite_frame(INFO(0,0),1,0,8000)==0);
-    assert(EspNativeAmbientSprite_frame(INFO(5,1),1,0,4000)==5);
-    assert(EspNativeAmbientSprite_frame(INFO(1,0),1,0,4000)==1);
-    assert(EspNativeAmbientSprite_frame(INFO(0,0),2,0,6000)==1);
-    assert(EspNativeAmbientSprite_frame(INFO(0,0),2,0,12000)==0);
-    assert(!EspNativeAmbientSprite_due(374,0,1,1));
-    assert(EspNativeAmbientSprite_due(375,0,1,1));
-    assert(EspNativeAmbientSprite_due(4000,0,0,1));
-    assert(!EspNativeAmbientSprite_due(4000,0,0,0));
-    assert(!EspNativeAmbientSprite_due(10,0xfffffff0UL,1,1));
-    assert(EspNativeAmbientSprite_due(400,0xffffff00UL,1,1));
+    for (uint32_t ms=0;ms<10000;ms+=250)
+      assert(EspNativeAmbientSprite_frame(INFO(0,0),0,0,0,ms)==(ms/250)%4);
+    assert(EspNativeAmbientSprite_frame(INFO(0,0),1,0,0,3999)==0);
+    assert(EspNativeAmbientSprite_frame(INFO(0,0),1,0,0,4000)==3);
+    assert(EspNativeAmbientSprite_frame(INFO(0,0),1,0,0,8000)==0);
+    assert(EspNativeAmbientSprite_frame(INFO(5,1),1,4,0,4000)==5);
+    assert(EspNativeAmbientSprite_frame(INFO(1,0),1,4,0,4000)==1);
+    assert(EspNativeAmbientSprite_frame(INFO(0,0),2,0,0,6000)==1);
+    assert(EspNativeAmbientSprite_frame(INFO(0,0),2,0,0,12000)==0);
+    assert(EspNativeAmbientSprite_rapid(1,4));
+    assert(!EspNativeAmbientSprite_rapid(1,3));
+    assert(!EspNativeAmbientSprite_rapid(0,4));
+    assert(EspNativeAmbientSprite_frame(INFO(0,0),1,4,0,249)==0);
+    assert(EspNativeAmbientSprite_frame(INFO(0,0),1,4,0,250)==3);
+    assert(EspNativeAmbientSprite_frame(INFO(0,0),1,4,0,499)==3);
+    assert(EspNativeAmbientSprite_frame(INFO(0,0),1,4,0,500)==0);
+    assert(EspNativeAmbientSprite_frame(INFO(0,0),1,4,7,243)==3);
+    assert(EspNativeAmbientSprite_frame(INFO(0,0),1,0,7,243)==0);
+    assert(EspNativeAmbientSprite_rasterCandidate(INFO(0,0),1,0,1));
+    assert(!EspNativeAmbientSprite_rasterCandidate(INFO(0,0),1,0,0));
+    assert(!EspNativeAmbientSprite_rasterCandidate(INFO(0,0),1,99,99));
+    assert(!EspNativeAmbientSprite_rasterCandidate(INFO(5,1),1,0,100));
+    assert(!EspNativeAmbientSprite_rasterCandidate(INFO(1,0),1,0,100));
+    assert(EspNativeAmbientSprite_fast(0));
+    assert(!EspNativeAmbientSprite_fast(1));
+    assert(!EspNativeAmbientSprite_fast(2));
+    assert(!EspNativeAmbientSprite_due(249,0,0,1,1));
+    assert(EspNativeAmbientSprite_due(250,0,0,1,1));
+    assert(!EspNativeAmbientSprite_due(374,0,1,0,1));
+    assert(EspNativeAmbientSprite_due(375,0,1,0,1));
+    assert(EspNativeAmbientSprite_due(4000,0,0,0,1));
+    assert(!EspNativeAmbientSprite_due(4000,0,0,0,0));
+    assert(!EspNativeAmbientSprite_due(10,0xfffffff0UL,1,0,1));
+    assert(EspNativeAmbientSprite_due(400,0xffffff00UL,1,0,1));
     assert(EspNativeWallIndicator_isAnimated(9));
     assert(EspNativeWallIndicator_isAnimated(10));
     assert(!EspNativeWallIndicator_isAnimated(8));
@@ -109,4 +136,4 @@ with tempfile.TemporaryDirectory() as d:
                     "-IESP32/include",str(p/"t.c"),"-o",str(p/"t")],
                    cwd=root,check=True)
     subprocess.run([str(p/"t")],cwd=root,check=True)
-print("PASS native ambient ownership")
+print("PASS native ambient ownership, P2 subtype-4 250ms + raster-only witnesses")

@@ -52,6 +52,7 @@ typedef struct EspNativeSpriteStats_s {
     uint32_t orderFNV1a;
     uint32_t ambientCandidates;
     uint32_t ambientFastCandidates;
+    uint32_t ambientRapidCandidates;
 } EspNativeSpriteStats;
 
 /*

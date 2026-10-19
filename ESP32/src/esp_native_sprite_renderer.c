@@ -193,18 +193,19 @@ static uint16_t source565(uint16_t c) {
 
 /* Renderer-owned presentation clock and visible candidates. No frame loop. */
 static uint32_t ambientSampleMs, ambientPresentedMs;
-static uint8_t ambientCandidates, ambientFastCandidates;
+static uint8_t ambientCandidates, ambientFastCandidates, ambientRapidCandidates;
 static uint8_t ambientSuspended;
 int EspNativeSpriteRenderer_ambientDue(uint32_t now) {
     return !ambientSuspended &&
            (EspNativeFirstFrame_indicatorDue(now) ||
             EspNativeAmbientSprite_due(now, ambientPresentedMs,
                                        ambientFastCandidates,
+                                       ambientRapidCandidates,
                                        ambientCandidates));
 }
 void EspNativeSpriteRenderer_suspendAmbient(void) {
     ambientSuspended=1U;
-    ambientCandidates=0U; ambientFastCandidates=0U;
+    ambientCandidates=0U; ambientFastCandidates=0U; ambientRapidCandidates=0U;
 }
 void EspNativeSpriteRenderer_resetAmbient(void) {
     EspNativeSpriteRenderer_suspendAmbient();
@@ -710,10 +711,7 @@ static int buildOrder(Render_t* render,
             return 0;
         }
 
-        if (EspNativeAmbientSprite_eligible(info,type)) {
-            ++stats->ambientCandidates;
-            if (type != 1U && type != 2U) ++stats->ambientFastCandidates;
-        }
+        /* Raster witnesses are recorded by drawAt(), never BSP admission. */
         if (spriteRenderMode(resourceLogical) == RENDER_MODE_ADD) {
             ++stats->mode7Objects;
         }
@@ -1166,6 +1164,7 @@ static int drawAt(Render_t* render,
     uint32_t animation;
     uint8_t entityType, entitySubtype;
     uint16_t entityLink, entityOrdinal;
+    uint32_t rasterPixelsBefore;
     int minimum;
     int maximum;
     int spriteX;
@@ -1183,7 +1182,11 @@ static int drawAt(Render_t* render,
     if (!EspMapSpriteTopology_getEntity(parent->index,&entityType,
                                         &entitySubtype,&entityLink,
                                         &entityOrdinal)) return 0;
+    /* Base and glow have distinct pixel counters: a cull or wall mask
+     * must not claim a visible animation (including legacy CROSS copies). */
+    rasterPixelsBefore = glow ? stats->glowPixels : stats->pixelsDrawn;
     animation = EspNativeAmbientSprite_frame(parent->info,entityType,
+                                              entitySubtype,
                                               parent->index,ambientSampleMs);
     if (!loadFrame(sources, logical, animation, glow,
                    frame, seenLogical, stats)) {
@@ -1288,6 +1291,15 @@ static int drawAt(Render_t* render,
                  (unsigned int)logical, (unsigned int)animation,
                  (unsigned int)frame->actual, (unsigned int)(glow != 0),
                  (unsigned int)(stats->pixelsDrawn - tracePixelsBefore));
+    if (EspNativeAmbientSprite_rasterCandidate(
+            parent->info, entityType, rasterPixelsBefore,
+            glow ? stats->glowPixels : stats->pixelsDrawn)) {
+        ++stats->ambientCandidates;
+        if (EspNativeAmbientSprite_fast(entityType))
+            ++stats->ambientFastCandidates;
+        if (EspNativeAmbientSprite_rapid(entityType,entitySubtype))
+            ++stats->ambientRapidCandidates;
+    }
     if (glow) ++stats->glowDraws;
     else ++stats->draws;
     return 1;
@@ -1544,6 +1556,7 @@ done:
         ambientPresentedMs=ambientSampleMs;
         ambientCandidates=(uint8_t)(stats.ambientCandidates!=0U);
         ambientFastCandidates=(uint8_t)(stats.ambientFastCandidates!=0U);
+        ambientRapidCandidates=(uint8_t)(stats.ambientRapidCandidates!=0U);
     } else EspNativeSpriteRenderer_suspendAmbient();
     *outStats = stats;
     return ok;
