@@ -3,7 +3,10 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "DoomRPG.h"
+/* Reuse the canonical native millisecond clock without pulling the legacy
+ * DoomRPG object graph/SDL types into this permanent map renderer. */
+extern unsigned int DoomRPG_GetUpTimeMS(void);
+
 #include "esp_map_automap_state.h"
 #include "esp_map_runtime.h"
 #include "esp_map_line_state.h"
