@@ -70,6 +70,16 @@ print("[ESP32] Desktop DoomCanvas.c and lifecycle bridge retired; "
 print("[ESP32] Desktop Render.c retired; geometry=esp-render-geometry-primitives "
       "profiles=normal+trace+bringup generated=no")
 
+# Render_setup is private to native layout; guard the exclusive ownership.
+with open(join(project_src_dir, "render_startup_bridge.c"), "r", encoding="utf-8") as f:
+    native_render_startup = f.read()
+if ("void Render_setup(" in native_render_startup or
+        "static void EspNativeEngineLayout_setupRender(" not in native_layout_owner or
+        "EspNativeEngineLayout_setupRender(doomRpg->render, &screenRect);" not in native_layout_owner or
+        "Render_setup(doomRpg->render" in native_layout_owner):
+    raise RuntimeError("Retired Render_setup ABI revived or private native layout absent")
+print("[ESP32] Render_setup retired nativeLayout=private")
+
 # No Game.c provider, generated or native bridge, is compiled on ESP32.
 # Game_t is not allocated, the compatibility root pointer stays NULL, and
 # Game_* calls are intentionally unavailable at link time.

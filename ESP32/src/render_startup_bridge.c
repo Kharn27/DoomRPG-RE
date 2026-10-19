@@ -73,55 +73,6 @@ void Render_freeRuntime(Render_t* render)
  * The original source bodies are preserved exactly, except for one-time
  * source-ownership diagnostics; all legacy world/raster logic stays excluded.
  */
-void Render_setup(Render_t* render, SDL_Rect* windowRect)
-{
-	boolean memError = false;
-	render->screenWidth = windowRect->w;
-	render->screenHeight = windowRect->h;
-	render->screenX = windowRect->x;
-	render->screenY = windowRect->y;
-	if ((windowRect->h & 1) != 0) {
-		render->screenHeight = windowRect->h - 1;
-	}
-	render->halfScreenWidth = render->screenWidth / 2;
-	render->halfScreenHeight = render->screenHeight / 2;
-	render->fracHalfScreenWidth = (render->halfScreenWidth << FRACBITS) - 0x8000;
-	render->fracHalfScreenHeight = (render->halfScreenHeight << FRACBITS) - 0x8000;
-
-#if 0
-	printf("render->screenWidth %d\n", render->screenWidth);
-	printf("render->screenHeight %d\n", render->screenHeight);
-	printf("render->screenX %d\n", render->screenX);
-	printf("render->screenY %d\n", render->screenY);
-	printf("render->halfScreenWidth %d\n", render->halfScreenWidth);
-	printf("render->halfScreenHeight %d\n", render->halfScreenHeight);
-	printf("render->fracHalfScreenWidth %d\n", render->fracHalfScreenWidth);
-	printf("render->fracHalfScreenHeight %d\n", render->fracHalfScreenHeight);
-#endif
-
-	SDL_free(render->ceilingColor);
-	render->ceilingColor = SDL_malloc(render->screenWidth * sizeof(short));
-	if (render->ceilingColor == NULL) { memError = true; }
-
-	SDL_free(render->floorColor);
-	render->floorColor = SDL_malloc(render->screenWidth * sizeof(short));
-	if (render->floorColor == NULL) { memError = true; }
-
-	SDL_free(render->columnScale);
-	render->columnScale = SDL_malloc(render->screenWidth * sizeof(int));
-	if (render->columnScale == NULL) { memError = true; }
-
-	if (memError) {
-		//DoomRPG_setErrorID(render->doomRpg, 2);
-		DoomRPG_Error("Render: Insufficient memory for allocation");
-	}
-	printf("[RENDERCORE] SETUP owner=esp-native-bridge view=%dx%d@%d,%d arrays=%uB\n",
-	       render->screenWidth, render->screenHeight,
-	       render->screenX, render->screenY,
-	       (unsigned int)(render->screenWidth * (sizeof(short) * 2U + sizeof(int))));
-}
-
-
 /* Original Render palette and RGB565 ABI behavior, now native-owned. */
 void Render_loadPalettes(Render_t* render)
 {
