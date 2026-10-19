@@ -80,6 +80,15 @@ if ("void Render_setup(" in native_render_startup or
     raise RuntimeError("Retired Render_setup ABI revived or private native layout absent")
 print("[ESP32] Render_setup retired nativeLayout=private")
 
+# Legacy Render_startup is now implementation-private inside the native owner;
+# the source-body parity and error-path semantics are tested using real C.
+if ("int Render_startup(Render_t* render) {" in native_render_startup or
+        "static int EspNativeRenderStartup_initialize(Render_t* render) {" not in native_render_startup or
+        "result = EspNativeRenderStartup_initialize(render);" not in native_render_startup or
+        "result = Render_startup(render);" in native_render_startup):
+    raise RuntimeError("Render_startup desktop ABI revived or native initializer absent")
+print("[ESP32] Render_startup retired nativeRenderStartup=private")
+
 # No Game.c provider, generated or native bridge, is compiled on ESP32.
 # Game_t is not allocated, the compatibility root pointer stays NULL, and
 # Game_* calls are intentionally unavailable at link time.

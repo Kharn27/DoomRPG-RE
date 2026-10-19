@@ -209,10 +209,10 @@ static int preflightRenderResources(void) {
 }
 
 /*
- * Direct permanent ESP32 Render startup root. The original desktop startup
- * (SDL texture + second RGB565 framebuffer) is excluded from ESP32 linking.
+ * Private ESP32 Render startup implementation owned by EspRenderStartupBridge_start.
+ * Desktop Render_startup ABI is retired. No duplicate framebuffer or SDL texture.
  */
-int Render_startup(Render_t* render) {
+static int EspNativeRenderStartup_initialize(Render_t* render) {
     byte* fData;
     int i;
     int width;
@@ -368,8 +368,8 @@ int EspRenderStartupBridge_start(int preRenderReady) {
            (void*)expectedFramebuffer,
            (unsigned int)Esp32PlatformVideo_framebufferSizeBytes());
 
-    /* Call the original symbol name intentionally: --wrap must redirect it. */
-    result = Render_startup(render);
+    /* Native startup owner calls its private initializer directly; no legacy ABI or --wrap. */
+    result = EspNativeRenderStartup_initialize(render);
     heapAfter = heap8Free();
     largestAfter = largest8Block();
     used = heapBefore >= heapAfter ? heapBefore - heapAfter : 0;
