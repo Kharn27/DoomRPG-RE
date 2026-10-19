@@ -43,7 +43,7 @@ password = resident.split("static void servicePasswordCompletion(",1)[1].split(
     "static ",1)[0]
 automap = resident.split("static int closeAutomap(",1)[1].split(
     "static int restoreWorldAfterHub(",1)[0]
-levelup = resident.split("if (EspNativeGameplayLevelUp_isActive()) {",1)[1].split(
+levelup = resident.rsplit("if (EspNativeGameplayLevelUp_isActive()) {",1)[1].split(
     "if (EspNativeGameplayControls_isActive())",1)[0]
 assert "repaintLiveHudAtView(view, &hudStats)" in password
 assert "repaintLiveHudAtView(view, &hudStats)" in automap
