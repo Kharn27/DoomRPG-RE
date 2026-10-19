@@ -18,7 +18,7 @@ assert "DoomCanvas_drawString1" not in bridge
 assert '"DoomCanvas_drawString1",' not in builder
 assert 'INIT exports=3 nativeText=1 desktopTU=no' in bridge
 assert re.search(r"#ifndef DOOMRPG_ESP32\s+void DoomCanvas_drawString1\(", legacy)
-assert 'doomCanvas, "Loading...", DOOMRPG_CANVAS_CENTER_X' in bridge
+assert 'doomCanvas, "Loading...", DOOMRPG_CANVAS_CENTER_X' in (SRC / "native_main_menu_model.c").read_text(encoding="utf-8")
 assert "(char*)line" not in menu and "(char*)label" not in layout
 assert "(char*)names[item]" not in layout
 assert menu.count("EspNativeCanvas_drawText(") == 5
@@ -27,7 +27,7 @@ assert layout.count("EspNativeCanvas_drawText(") == 2
 # Same body as the validated legacy-compatibility glyph routine, byte-for-byte.
 a = bridge.index("void EspNativeCanvas_drawText(")
 a = bridge.index("\n{", a)
-b = bridge.index("\nstatic int doomCanvasBeginIntro(", a)
+b = bridge.index("\nvoid DoomCanvas_startup(", a)
 body = bridge[a:b]
 h = 2166136261
 for byte in body.encode("utf-8"):
