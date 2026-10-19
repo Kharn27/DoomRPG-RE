@@ -17,6 +17,7 @@
 #include "esp_native_gameplay_hud_direction.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_present_gate.h"
+#include "esp_native_resident_gameplay.h"
 #include "esp_native_gameplay_weapon.h"
 #include "esp_native_plane_renderer.h"
 #include "esp_native_sprite_renderer.h"
@@ -406,10 +407,40 @@ static int renderComposed(
 
     if (publish) {
         phaseStart = esp_timer_get_time();
-        if (!preview) EspNativeGameplayActionEngine_markFreshFrame();
-        if (!Esp32PlatformVideo_present()) {
-            printf("[TURNFRAME] DIAG fail=PRESENT\n");
-            goto done;
+        /*
+         * Monster movement/attack and door-settle owners can request a
+         * canonical 3D frame while AUTOMAP still owns the visible surface.
+         * Keep their real world/sprite accounting, but NEVER present those
+         * pixels over the map. The resident automap owner re-composes and
+         * publishes its current view instead. This is also true after a
+         * blocked movement's monster turn: gameplay cadence is unchanged.
+         *
+         * A failed automap repaint fails this render transaction closed;
+         * callers retain their existing rollback/recovery contract.
+         * No second framebuffer and no new mutable screen owner.
+         */
+        if (!preview && EspNativeResidentGameplay_isAutomapActive()) {
+            if (!EspNativeResidentGameplay_redrawAutomap(
+                    renderBase, "WORLD-COMPOSITOR")) {
+                printf("[TURNFRAME] DIAG fail=AUTOMAP-OWNED-PRESENT\n");
+                goto done;
+            }
+            stats->frameAfterFNV = frameFNV();
+            stats->hudBandsAfterFNV = hudBandsFNV();
+            if (stats->frameAfterFNV == 0U ||
+                stats->hudBandsAfterFNV == 0U) {
+                printf("[TURNFRAME] DIAG fail=AUTOMAP-OWNED-FNV\n");
+                goto done;
+            }
+            DRPG_LOGT("[TURNFRAME] AUTOMAP-OWNED visible=automap worldRaster=not-presented frame=%08x gameplayMutation=no\n",
+                      (unsigned int)stats->frameAfterFNV);
+        }
+        else {
+            if (!preview) EspNativeGameplayActionEngine_markFreshFrame();
+            if (!Esp32PlatformVideo_present()) {
+                printf("[TURNFRAME] DIAG fail=PRESENT\n");
+                goto done;
+            }
         }
         stats->presentMicros = elapsedMicros(phaseStart);
         stats->finalPresented = 1U;
