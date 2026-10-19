@@ -1,5 +1,15 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #222 — Canvas state ABI 4→3 : parcours utilisateur matériellement éprouvés (19 octobre 2026)
+
+**Code testé sur `esp32-cyd` : `ebba9c6586ecb8919937f8067442faac08e2a2f8`** ([PR #222](https://github.com/Kharn27/DoomRPG-RE/pull/222), base `main 8b89a46151c1645ae77493b27e4f6925df6d99d1`), [CI push verte #39328930441](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39328930441), [CI PR verte #39328938740](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39328938740). `DoomCanvas_setState` est retiré de l'ABI CYD : `INIT exports=3`, désormais init/free/startup uniquement ; MENU, intro START et PLAYING LOAD sont routés via `EspNativeMainMenu_transitionCanvasState` sur les quatre appelants natifs. Aucun nouvel owner lourd, aucune mutation du monde par cette refactorisation ; RAM statique **49 536 B**, Flash **825 653 B** (+8 B par rapport au dernier #221).
+
+**Protocole exécuté sur le vrai classic CYD** : boot `exports=3` et menu FNV `0f2c9fc3`; Help/About 83 lignes (scroll bas/haut, retour), Options → Video → luminosité 100→25 persistée → retour avec FNV exact; START → `ST_INTRO=9`, audio STOP_ALL→5039, première frame `ade0195d` → dernier Continue → teardown **34 056 B** → Entrance `CRC=623f34e4`, arena `14095/c3882516`, jeu jouable. Déplacement, deux pickups Armor Shards, ouverture de porte. HUB SYS → EXIT sans SAVE, reset `released=18008 empty=1` et menu `0f2c9fc3` retrouvés. Enfin LOAD **effectif** du slot07 `V11/5604 B` → `ST_PLAYING=3` directement sans nouvelle intro : 30 monstres, 22 actifs, MOVE/STRAFE et automap opérationnels après reprise. Cette séquence **étend la preuve de #221**, qui n'avait pas montré le LOAD effectif depuis son menu de mort.
+
+**RAM / limites** : gameplay neuf à 280112/285451 ms et gameplay rechargé à 316979/321983 ms : `heap8=113568 largest8=86004` constants aux points fournis ; pas de garantie universelle sur toutes les cartes. `shapeData/mediaTexels=0x0` aux frontières START, EXIT et fin de LOAD. `NATIVEFRAME BOUNDARY-INLINE` attendu sur une rotation, sans échec dans ce segment. Aucune mort, aucun coup réellement porté par les 22 monstres, aucune capture visuelle indépendante ni SHA firmware Serial sur ce test. **Code gelé** au commit `ebba9c6586ecb8919937f8067442faac08e2a2f8`; clôture documentaire seulement jusqu'à revue/merge humain.
+
+---
+
 ## PR #221 — PASS_TURN sur automap : PASS matériel et clôture (19 octobre 2026)
 
 **Firmware normal `esp32-cyd` éprouvé :** code `c7faa293a702d2a259e51faa8a17b174fe896e32` ([PR #221](https://github.com/Kharn27/DoomRPG-RE/pull/221)), base `main 90cb0d054e9ec234690c27935e68a19cc805a464` intacte. [CI push #39324723379 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39324723379), [PR #39324731800 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39324731800), incluant le nouveau test hôte `pass_turn_automap_host` (turn, hazard, rollback, lethal, WORLD) et le guard de routage. RAM statique normal **49 536 B**, flash **825 645 B**. Ce SHA remplace l'étiquette « dernier code testé » du précédent `bb4668b` décrit ci-dessous ; ses preuves historiques restent valides.
