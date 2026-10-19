@@ -9,6 +9,7 @@
 #include "esp_map_catalog.h"
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_hud_weapon_button.h"
+#include "esp_native_gameplay_weapon_control.h"
 #include "esp_native_indexed_bmp.h"
 #include "esp_native_transition_presentation.h"
 #include "platform_video_c_bridge.h"
@@ -541,6 +542,39 @@ EspNativeGameplayHudStatus EspNativeGameplayHud_routeInitial(
 
     hudState = prepared;
     return ESP_NATIVE_GAMEPLAY_HUD_OK;
+}
+
+int EspNativeGameplayHud_snapshotLive(
+    const EspNativeGameplayHudState* retained,
+    const EspNativeGameplayPlayerState* player,
+    uint8_t angle,
+    EspNativeGameplayHudState* outSnapshot) {
+    EspNativeGameplayHudModel model;
+    uint8_t ammoType;
+
+    if (outSnapshot != NULL) memset(outSnapshot, 0, sizeof(*outSnapshot));
+    if (retained == NULL || outSnapshot == NULL ||
+        retained->active != 1U || retained->painted != 1U ||
+        player == NULL || player->active != 1U ||
+        player->weapon >= ESP_NATIVE_GAMEPLAY_PLAYER_WEAPON_LIMIT ||
+        (player->weapons & (uint16_t)(1U << player->weapon)) == 0U ||
+        !directionSupported(angle) ||
+        !EspNativeGameplayWeaponControl_ammoType(player->weapon, &ammoType)) {
+        return 0;
+    }
+
+    model = retained->model;
+    model.health = (uint8_t)(player->param1 & 0xffU);
+    model.maxHealth = (uint8_t)((player->param1 >> 8) & 0xffU);
+    model.armor = (uint8_t)((player->param1 >> 16) & 0xffU);
+    model.maxArmor = (uint8_t)((player->param1 >> 24) & 0xffU);
+    model.weapon = player->weapon;
+    model.ammoType = ammoType;
+    model.ammo = player->ammo[ammoType];
+    model.weaponsPresent = 1U;
+    model.destAngle = angle;
+    return EspNativeGameplayHud_prepareInitial(&model, outSnapshot) ==
+           ESP_NATIVE_GAMEPLAY_HUD_OK;
 }
 
 EspNativeGameplayHudStatus EspNativeGameplayHud_repaint(

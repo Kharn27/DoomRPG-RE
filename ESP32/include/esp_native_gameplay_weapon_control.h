@@ -35,6 +35,11 @@ EspNativeGameplayWeaponControlStatus EspNativeGameplayWeaponControl_prepare(
     const EspNativeGameplayInputState* intent,
     EspNativeGameplayWeaponControlResult* outResult);
 
+/* Exact legacy ammo index for HUD; returns no type for invalid slots.
+ * Single source of truth shared with the circular weapon selector. */
+int EspNativeGameplayWeaponControl_ammoType(uint8_t weapon,
+                                            uint8_t* outAmmoType);
+
 const char* EspNativeGameplayWeaponControl_statusName(
     EspNativeGameplayWeaponControlStatus status);
 

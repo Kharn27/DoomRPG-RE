@@ -14,7 +14,6 @@
 #include "esp_native_gameplay_hub_touch_ui.h"
 #include "esp_native_gameplay_hub_weapon_grid.h"
 #include "esp_native_gameplay_hud.h"
-#include "esp_native_gameplay_hud_direction.h"
 #include "esp_player_view_state.h"
 #include "esp_native_gameplay_input.h"
 #include "esp_native_gameplay_player_state.h"
@@ -196,41 +195,29 @@ static int menuOverlayRestore(uint16_t* framebuffer) {
 }
 
 static int repaintGameplayHud(void) {
-    const EspNativeGameplayHudState* state = EspNativeGameplayHud_view();
+    const EspNativeGameplayHudState* retained = EspNativeGameplayHud_view();
+    const EspNativeGameplayPlayerState* player =
+        EspNativeGameplayPlayerState_view();
     const EspPlayerViewState* view = EspPlayerView_view();
+    EspNativeGameplayHudState live;
     EspNativeGameplayHudStats stats;
-    EspNativeGameplayHudDirectionStats directionStats;
 
+    memset(&live, 0, sizeof(live));
     memset(&stats, 0, sizeof(stats));
-    memset(&directionStats, 0, sizeof(directionStats));
-    if (state == NULL || state->active == 0U || view == NULL ||
+    if (retained == NULL || view == NULL ||
         view->active != 1U || view->viewAngle != view->destAngle ||
-        (view->viewAngle & 63) != 0 || EspAssetPack_isOpen()) {
+        (view->viewAngle & 63) != 0 || EspAssetPack_isOpen() ||
+        !EspNativeGameplayHud_snapshotLive(
+            retained, player, (uint8_t)view->viewAngle, &live)) {
         return 0;
     }
-    if (EspNativeGameplayHud_repaint(state, &stats) !=
-        ESP_NATIVE_GAMEPLAY_HUD_OK) {
-        return 0;
-    }
-
-    /*
-     * The full-HUD repaint has already drawn the native compass, including
-     * its angle glyph. Reapplying a partial dirty-rectangle compositor in that
-     * case is not equivalent to a second full paint: the compass and adjacent
-     * ammo digits overlap its clearing region. In particular this broke the
-     * strictly pixel-exact two-paint HUB weapon-change witness on real CYD
-     * (firstBottom != secondBottom), causing a correct weapon selection to
-     * roll back.
-     *
-     * TURN can leave the retained model angle older than the settled view.
-     * Only that case needs the existing native live-compass compositor.
-     * Keep the second full-HUD pixel equality witness in HUB close intact.
-     */
-    if ((uint8_t)view->viewAngle == state->model.destAngle) {
-        return 1; /* full native HUD is canonical for the current angle */
-    }
-    return EspNativeGameplayHudDirection_render(
-        (uint8_t)view->viewAngle, &directionStats);
+    /* The full HUD is painted from a single current PlayerState snapshot,
+     * including weapon, ammo type/count, HP, armor and settled compass.
+     * Never overlay the partial compass here: the full painter already owns
+     * those pixels. HUB-close repeats this same canonical full repaint and
+     * insists on byte-exact bottom-band FNV equality before commit. */
+    return EspNativeGameplayHud_repaint(&live, &stats) ==
+           ESP_NATIVE_GAMEPLAY_HUD_OK;
 }
 
 static void headerPixel(uint16_t* framebuffer, int x, int y, uint16_t color) {

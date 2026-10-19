@@ -2,6 +2,7 @@
 #define DOOMRPG_ESP32_NATIVE_GAMEPLAY_HUD_H
 
 #include <stdint.h>
+#include "esp_native_gameplay_player_state.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -102,6 +103,15 @@ EspNativeGameplayHudStatus EspNativeGameplayHud_routeInitial(
 EspNativeGameplayHudStatus EspNativeGameplayHud_repaint(
     const EspNativeGameplayHudState* state,
     EspNativeGameplayHudStats* outStats);
+
+/* Derive a small local HUD snapshot from the canonical native PlayerState and
+ * settled view angle. Retained initial HUD state is never mutated or duplicated;
+ * calling modules can render or inspect a consistent current weapon/ammo/HP. */
+int EspNativeGameplayHud_snapshotLive(
+    const EspNativeGameplayHudState* retained,
+    const EspNativeGameplayPlayerState* player,
+    uint8_t angle,
+    EspNativeGameplayHudState* outSnapshot);
 
 #ifdef __cplusplus
 }

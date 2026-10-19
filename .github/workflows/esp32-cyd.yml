@@ -143,8 +143,13 @@ jobs:
       - name: Test DoomCanvas private indexed glyph blitter contract (host Python)
         run: python ESP32/test/doomcanvas_private_blitter_host.py
 
-      - name: Test HUD rebase parity for matching and stale compass angles (host Python)
-        run: python ESP32/test/hub_weapon_hud_rebase_host.py
+      - name: Test live PlayerState HUD weapon/ammo snapshot and strict close (host C + Python)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/include \
+            ESP32/src/esp_native_gameplay_hud.c ESP32/src/esp_native_gameplay_weapon_control.c \
+            ESP32/test/hub_weapon_live_model_host.c -Wl,--gc-sections -o /tmp/doomrpg-hud-live-model
+          /tmp/doomrpg-hud-live-model
+          python ESP32/test/hub_weapon_hud_rebase_host.py
 
       - name: Test HUD weapon button and three-tab navigation (host C + source)
         run: |
