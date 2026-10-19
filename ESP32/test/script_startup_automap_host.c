@@ -256,7 +256,8 @@ int main(void) {
     worldOk = 0; /* Close failed: keep mode and don't start/debit the script. */
     serviceSelect(&testGame, &testRender, &testIntent);
     assert(automapActive() && gameplayState.active && !gameplayState.failed);
-    assert(chainCalls == 0 && automapFrames == 0 && gameplayState.deferred == 1);
+    /* Failed world exit now restores AUTOMAP and re-presents its pixels. */
+    assert(chainCalls == 0 && automapFrames == 1 && gameplayState.deferred == 1);
 
     seed(1, ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_PAUSED);
     serviceSelect(&testGame, &testRender, &testIntent);
