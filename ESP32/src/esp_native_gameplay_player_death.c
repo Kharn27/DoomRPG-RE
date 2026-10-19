@@ -13,6 +13,7 @@
 #include "esp_native_gameplay_hub_touch_ui.h"
 #include "esp_native_gameplay_player_death.h"
 #include "esp_native_gameplay_player_state.h"
+#include "esp_native_resident_gameplay.h"
 #include "esp_native_gameplay_save_ui.h"
 #include "esp_player_view_state.h"
 #include "platform_video_c_bridge.h"
@@ -278,11 +279,24 @@ static int armDeath(struct DoomRPG_s* doomRpgBase,
 
     hud = EspNativeGameplayHud_view();
     memset(&hudStats, 0, sizeof(hudStats));
+    /*
+     * Death has already cleared weapons and selected weapon in PlayerState.
+     * Never repaint the retained map-entry HUD: after a weapon-grid change
+     * it would resurrect stale HP/weapon/ammo across the entire death fall.
+     *
+     * AUTOMAP owns every pixel while it remains active, including the lethal
+     * raw-present from monster retaliation and the fall/fade frames. Do not
+     * write even a correct world HUD into that full-screen modal. The death
+     * menu replaces the whole screen when its own owner becomes ready.
+     */
     if (hud == NULL || hud->active != 1U || hud->painted != 1U ||
-        EspNativeGameplayHud_repaint(hud, &hudStats) !=
-            ESP_NATIVE_GAMEPLAY_HUD_OK) {
+        (!EspNativeResidentGameplay_isAutomapActive() &&
+         EspNativeGameplayHud_repaintLive(
+             hud, EspNativeGameplayPlayerState_view(),
+             (uint8_t)view->viewAngle, &hudStats) !=
+                 ESP_NATIVE_GAMEPLAY_HUD_OK)) {
         (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-        printf("[PLAYERDEATH] ARM-DEFER seq=%u tile=%u reason=hud-repaint playerRollback=yes rngConsumed=0 active=no\n",
+        printf("[PLAYERDEATH] ARM-DEFER seq=%u tile=%u reason=hud-live-repaint playerRollback=yes rngConsumed=0 active=no\n",
                (unsigned int)sequence, (unsigned int)tileIndex);
         return 0;
     }

@@ -23,6 +23,7 @@ static int selectorActive, selectorReady, selectorBegins, selectorFinishes;
 static int selectorBeginOk = 1, selectorTapResult, selectorTaps;
 static int loadOk = 1;
 static unsigned int deathRngCalls;
+static int automapOwnsScreen, liveHudRepaints, failLiveHud;
 
 void* Esp32PlatformVideo_framebuffer(void) { return pixels + 1; }
 size_t Esp32PlatformVideo_framebufferSizeBytes(void) {
@@ -45,9 +46,29 @@ int EspNativeGameplayPlayerState_enterDeath(uint16_t* weapons, uint8_t* weapon) 
     *weapons = player.weapons; *weapon = player.weapon;
     player.weapons = player.weapon = 0; return 1;
 }
-EspNativeGameplayHudStatus EspNativeGameplayHud_repaint(
-    const EspNativeGameplayHudState* state, EspNativeGameplayHudStats* stats) {
-    (void)state; memset(stats, 0, sizeof(*stats)); return ESP_NATIVE_GAMEPLAY_HUD_OK;
+int EspNativeResidentGameplay_isAutomapActive(void) {
+    return automapOwnsScreen;
+}
+EspNativeGameplayHudStatus EspNativeGameplayHud_repaintLive(
+    const EspNativeGameplayHudState* retained,
+    const EspNativeGameplayPlayerState* livePlayer,
+    uint8_t angle,
+    EspNativeGameplayHudStats* stats) {
+    assert(!automapOwnsScreen); /* Never paint HUD into a full-screen map. */
+    assert(retained == &hud && retained->model.weapon == 1U);
+    assert(livePlayer == &player);
+    assert(livePlayer->active && livePlayer->weapon == 0U &&
+           livePlayer->weapons == 0U && (livePlayer->param1 & 0xffU) == 0U);
+    assert(angle == view.viewAngle);
+    ++liveHudRepaints;
+    memset(stats, 0, sizeof(*stats));
+    if (failLiveHud) return ESP_NATIVE_GAMEPLAY_HUD_UNSUPPORTED_CONTEXT;
+    stats->pixelsWritten = 160U * 20U;
+    /* Pixel witness: the CURRENT death state is painted, not stale retained
+     * ammo/health/weapon from map entry. No extra framebuffer allocation. */
+    for (unsigned x = 0U; x < 160U; ++x)
+        pixels[1U + 110U * 160U + x] = 0x003fU;
+    return ESP_NATIVE_GAMEPLAY_HUD_OK;
 }
 int EspPlayerView_commitDeathViewZ(int32_t before, int32_t after) {
     assert(view.viewZ == before); view.viewZ = after; return 1;
@@ -94,13 +115,24 @@ static void start(DoomRPG_t* doom, int hasSave) {
     EspNativeGameplayPlayerDeath_reset();
     memset(&view, 0, sizeof(view)); memset(&hud, 0, sizeof(hud));
     memset(&player, 0, sizeof(player));
-    view.active = 1; view.viewZ = 36; hud.active = hud.painted = 1;
+    view.active = 1; view.viewZ = 36; view.viewAngle = view.destAngle = 64;
+    hud.active = hud.painted = 1;
+    hud.model.weapon = 1; /* Intentionally obsolete immutable map-entry HUD. */
+    player.active = 1;
+    player.weapons = (uint16_t)(1U << 3);
+    player.weapon = 3; /* Chosen with the native weapon grid before death. */
+    player.ammo[2] = 17;
+    player.param1 = (34U << 8) | (12U << 16) | (23U << 24);
+    automapOwnsScreen = failLiveHud = liveHudRepaints = 0;
     available = hasSave; clockMs = 0; presents = 0;
     selectorActive = selectorReady = selectorBegins = selectorFinishes = 0;
     selectorTaps = selectorTapResult = 0;
     selectorBeginOk = loadOk = 1;
     for (int i = 0; i < 160 * 120 + 2; ++i) pixels[i] = 0xdead;
     assert(EspNativeGameplayPlayerDeath_arm(doom, 1, 0));
+    assert(liveHudRepaints == 1);
+    assert(player.weapon == 0U && player.weapons == 0U);
+    assert(pixel(30, 110) == 0x003fU);
     assert(!EspNativeGameplayPlayerDeath_handleTap(80, 40));
     clockMs = 500;
     assert(EspNativeGameplayPlayerDeath_service(doom));
@@ -232,6 +264,51 @@ int main(int argc, char** argv) {
     view.viewZ = 36;
     assert(EspNativeGameplayPlayerDeath_arm(&doom, 488U, 486U));
     assert(deathRngCalls == beforeDeathRng + 1U);
-    puts("Death menu: PASS (theme/timing/hitboxes, slot open/back/confirm/failure, no-save, guards, reserved RNG exact)");
+    /* Fail-closed world HUD repaint: the post-death PlayerState rolls back,
+     * no death RNG is consumed and there is no armed death owner. */
+    {
+        const unsigned int rngBefore = deathRngCalls;
+        EspNativeGameplayPlayerState before;
+        EspNativeGameplayPlayerDeath_reset();
+        view.viewZ = 36;
+        player.active = 1;
+        player.weapon = 3U;
+        player.weapons = (uint16_t)(1U << 3);
+        player.param1 = 34U << 8;
+        before = player;
+        failLiveHud = 1;
+        liveHudRepaints = 0;
+        assert(!EspNativeGameplayPlayerDeath_arm(&doom, 501U, 181U));
+        assert(liveHudRepaints == 1 && !EspNativeGameplayPlayerDeath_isActive());
+        assert(memcmp(&player, &before, sizeof(player)) == 0);
+        assert(deathRngCalls == rngBefore);
+        failLiveHud = 0;
+    }
+    /* Lethal hit while AUTOMAP owns the full screen: arming death may mutate
+     * PlayerState but MUST NOT paint even the LIVE 3D HUD on map pixels.
+     * Monster retaliation's raw present must still see the original map. */
+    {
+        const unsigned int rngBefore = deathRngCalls;
+        EspNativeGameplayPlayerDeath_reset();
+        view.viewZ = 36;
+        player.weapon = 3U;
+        player.weapons = (uint16_t)(1U << 3);
+        player.param1 = 34U << 8;
+        automapOwnsScreen = 1;
+        liveHudRepaints = 0;
+        for (unsigned i = 1U; i < 160U * 120U + 1U; ++i)
+            pixels[i] = 0x49a2U;
+        pixels[0] = pixels[160U * 120U + 1U] = 0xdeadU;
+        assert(EspNativeGameplayPlayerDeath_arm(&doom, 502U, 181U));
+        assert(player.weapon == 0U && player.weapons == 0U);
+        assert(liveHudRepaints == 0 && deathRngCalls == rngBefore + 1U);
+        assert(Esp32PlatformVideo_present());
+        for (unsigned i = 1U; i < 160U * 120U + 1U; ++i)
+            assert(pixels[i] == 0x49a2U);
+        assert(pixels[0] == 0xdeadU && pixels[160U * 120U + 1U] == 0xdeadU);
+        automapOwnsScreen = 0;
+        EspNativeGameplayPlayerDeath_reset();
+    }
+    puts("Death menu: PASS live post-death HUD, stale retained HUD forbidden, automap lethal raw-present stays map-exact, rollback/RNG, menu/timing/slots");
     return 0;
 }
