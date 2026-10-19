@@ -188,6 +188,9 @@ jobs:
       - name: Test permanent DoomRPG root and fatal cleanup ownership (host C)
         run: python ESP32/test/doomrpg_root_owner_host.py
 
+      - name: Test final Canvas native teardown and exact release order (host C)
+        run: python ESP32/test/native_canvas_release_host.py
+
       - name: Test Doom-red menu geometry and incremental terminal caret (host C)
         run: python ESP32/test/native_ui_doom_polish_host.py
 
@@ -304,6 +307,7 @@ jobs:
               --forbid-prefix __wrap_Render_beginLoadMap \
               --forbid-prefix DoomCanvas_drawImageSpecial \
               --forbid-prefix DoomCanvas_drawString1 \
+              --forbid-prefix DoomCanvas_free \
               --forbid-prefix Game_init \
               --forbid-prefix Game_activate \
               --forbid-prefix Game_unloadMapData \

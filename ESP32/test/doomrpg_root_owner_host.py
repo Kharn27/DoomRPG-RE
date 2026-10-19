@@ -41,7 +41,7 @@ assert "compiledPatchedC=0" in build
 assert teardown.count("SDL_free(")==2
 assert teardown.count("EspNativeMenuStorage_free(")==1
 assert teardown.count("Render_free(")==1
-assert teardown.count("DoomCanvas_free(")==1
+assert teardown.count("EspNativeEngineRoot_releaseCanvas(")==1
 assert all(x in teardown for x in (
     "doomrpg->combat = NULL", "doomrpg->particleSystem = NULL",
     "doomrpg->player = NULL", "doomrpg->entityDef = NULL",
@@ -66,7 +66,7 @@ void traced_free(void*);
 int Z_FreeMemory(void);
 void EspNativeMenuStorage_free(void*,DoomRPG_t*,boolean);
 void Render_free(void*,boolean);
-void DoomCanvas_free(void*,boolean);
+void EspNativeEngineRoot_releaseCanvas(void*);
 """
 harness=r"""
 #include "shim.h"
@@ -85,8 +85,8 @@ void Render_free(void* p, boolean freePtr) {
     assert(p && freePtr); assert(n<8);
     trace[n++]=3;renderCalls++;free(p);
 }
-void DoomCanvas_free(void* p, boolean freePtr) {
-    assert(p && freePtr); assert(n<8);
+void EspNativeEngineRoot_releaseCanvas(void* p) {
+    assert(p); assert(n<8);
     trace[n++]=4;canvasCalls++;free(p);
 }
 int main(void) {
