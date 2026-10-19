@@ -8,41 +8,10 @@
 #include "Render.h"
 #include "SDL_Video.h"
 
-#include "esp_native_audio_intent.h"
 #include "esp_native_canvas_text.h"
 #include "esp_native_intro_state.h"
 #include "native_story_fit.h"
 #include "platform_video_config.h"
-
-#define ESP32_DOOMCANVAS_DESKTOP_BYTES 3740U
-#define ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES (2048U + 512U)
-#define ESP32_DOOMCANVAS_RETIRED_ZEROREF_FIELD_BYTES 239U
-#define ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES 240U
-#define ESP32_DOOMCANVAS_RETIRED_DORMANT_TEXT_BYTES (300U + 128U)
-#define ESP32_DOOMCANVAS_RETIRED_STATE_FIELD_BYTES 113U
-#define ESP32_DOOMCANVAS_RETIRED_STATE_LAYOUT_BYTES 116U
-#define ESP32_DOOMCANVAS_RETIRED_GRAPH_MIRROR_BYTES (7U * sizeof(void*))
-#define ESP32_DOOMCANVAS_RETIRED_INTRO_STATE_BYTES 96U
-#define ESP32_DOOMCANVAS_RETIRED_DEAD_SHELL_BYTES 56U
-#define ESP32_DOOMCANVAS_RETIRED_INERT_CONTROL_BYTES 72U
-#define ESP32_DOOMCANVAS_RETIRED_LARGE_FONT_BYTES 16U
-#define ESP32_DOOMCANVAS_RETIRED_FIXED_GEOMETRY_BYTES 56U
-#define ESP32_DOOMCANVAS_RETIRED_VIEW_SHAKE_ALIAS_BYTES 28U
-#define ESP32_DOOMCANVAS_COMPACT_BYTES \
-    (ESP32_DOOMCANVAS_DESKTOP_BYTES - ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_DORMANT_TEXT_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_STATE_LAYOUT_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_GRAPH_MIRROR_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_INTRO_STATE_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_DEAD_SHELL_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_INERT_CONTROL_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_LARGE_FONT_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_FIXED_GEOMETRY_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_VIEW_SHAKE_ALIAS_BYTES)
-
-_Static_assert(sizeof(DoomCanvas_t) == ESP32_DOOMCANVAS_COMPACT_BYTES,
-               "ESP32 DoomCanvas_t layout changed; audit compatibility owners before proceeding");
 
 /*
  * Permanent ESP32 compatibility bridge for the small DoomCanvas ABI that
@@ -50,48 +19,9 @@ _Static_assert(sizeof(DoomCanvas_t) == ESP32_DOOMCANVAS_COMPACT_BYTES,
  *
  * Desktop DoomCanvas.c is intentionally not compiled for ESP32. Native owners
  * handle gameplay, menus, dialogs, world mutation and presentation. This file
- * keeps only the legacy construction/layout/text/state hooks still referenced
- * by the native runtime while those call sites are migrated individually.
+ * keeps only the final legacy free hook and a private text rasterizer
+ * while native root and layout own construction and startup.
  */
-
-#define ESP32_SND_FLG_LOOP       1U
-#define ESP32_SND_FLG_STOPSOUNDS 2U
-#define ESP32_SND_FLG_ISMUSIC    8U
-
-DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
-{
-    printf("DoomCanvas_init\n");
-
-    if (doomCanvas == NULL) {
-        doomCanvas = SDL_malloc(sizeof(DoomCanvas_t));
-        if (doomCanvas == NULL) {
-            return NULL;
-        }
-    }
-    SDL_memset(doomCanvas, 0, sizeof(DoomCanvas_t));
-
-    doomCanvas->doomRpg = doomRpg;
-    doomCanvas->imgFont.imgBitmap = NULL;
-    doomCanvas->fontColor = 0xffffffff;
-    doomCanvas->renderFloorCeilingTextures = true;
-
-    printf("[DOOMCANVASBRIDGE] INIT exports=4 nativeText=1 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u, retiredStateLayout=%u retiredGraphMirrors=%u retiredIntroState=%u retiredDeadShell=%u retiredInertControl=%u retiredLargeFont=%u retiredFixedGeometry=%u retiredViewShakeAlias=%u clip=%dx%d\n",
-           (unsigned int)sizeof(DoomCanvas_t),
-           (unsigned int)ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES,
-           (unsigned int)ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES,
-           (unsigned int)ESP32_DOOMCANVAS_RETIRED_DORMANT_TEXT_BYTES,
-           (unsigned int)ESP32_DOOMCANVAS_RETIRED_STATE_LAYOUT_BYTES,
-           (unsigned int)ESP32_DOOMCANVAS_RETIRED_GRAPH_MIRROR_BYTES,
-           (unsigned int)ESP32_DOOMCANVAS_RETIRED_INTRO_STATE_BYTES,
-           (unsigned int)ESP32_DOOMCANVAS_RETIRED_DEAD_SHELL_BYTES,
-           (unsigned int)ESP32_DOOMCANVAS_RETIRED_INERT_CONTROL_BYTES,
-           (unsigned int)ESP32_DOOMCANVAS_RETIRED_LARGE_FONT_BYTES,
-           (unsigned int)ESP32_DOOMCANVAS_RETIRED_FIXED_GEOMETRY_BYTES,
-           (unsigned int)ESP32_DOOMCANVAS_RETIRED_VIEW_SHAKE_ALIAS_BYTES,
-           DOOMRPG_CANVAS_WIDTH,
-           DOOMRPG_CANVAS_HEIGHT);
-    return doomCanvas;
-}
 
 void DoomCanvas_free(DoomCanvas_t* doomCanvas, boolean freePtr)
 {
@@ -266,106 +196,6 @@ void EspNativeCanvas_drawText(DoomCanvas_t* doomCanvas,
             xpos += advance;
         }
     }
-}
-
-static int doomCanvasBeginIntro(DoomCanvas_t* doomCanvas)
-{
-    if (doomCanvas == NULL || doomCanvas->doomRpg == NULL) {
-        return 0;
-    }
-
-    DoomRPG_setColor(doomCanvas->doomRpg, 0x000000);
-    DoomRPG_fillRect(doomCanvas->doomRpg,
-                     0,
-                     0,
-                     DOOMRPG_CANVAS_WIDTH,
-                     DOOMRPG_CANVAS_HEIGHT);
-    EspNativeCanvas_drawText(
-        doomCanvas, "Loading...", DOOMRPG_CANVAS_CENTER_X, DOOMRPG_CANVAS_CENTER_Y, 17);
-    DoomRPG_flushGraphics(doomCanvas->doomRpg);
-    /* Intro music is a native intent, independent of the retired Sound_t.
-     * Playback remains deferred until a bounded hardware backend exists. */
-    (void)EspNativeAudioIntent_publish(
-        5039U, ESP32_SND_FLG_LOOP | ESP32_SND_FLG_STOPSOUNDS |
-                   ESP32_SND_FLG_ISMUSIC, 5U);
-
-    if (!EspNativeIntroState_begin(doomCanvas->doomRpg)) {
-        EspNativeAudioIntent_stopAll();
-        printf("[DOOMCANVASBRIDGE] INTRO-REJECT owner=native-transient allocation/load failed\n");
-        return 0;
-    }
-
-    DoomRPG_setColor(doomCanvas->doomRpg, 0x000000);
-    DoomRPG_fillRect(doomCanvas->doomRpg,
-                     0,
-                     0,
-                     DOOMRPG_CANVAS_WIDTH,
-                     DOOMRPG_CANVAS_HEIGHT);
-    DoomRPG_flushGraphics(doomCanvas->doomRpg);
-    return 1;
-}
-
-void DoomCanvas_setState(DoomCanvas_t* doomCanvas, int stateNum)
-{
-    int oldState;
-
-    if (doomCanvas == NULL) {
-        return;
-    }
-
-    /*
-     * ESP32 native owners handle gameplay dialogs, combat, automap, loading,
-     * death, cast, credits and epilogue presentation. Only the three canvas
-     * states still used as compatibility handoff markers remain accepted here.
-     * Any future inherited state dependency must receive its own native owner
-     * instead of silently widening this bridge.
-     */
-    if (stateNum != ST_MENU && stateNum != ST_PLAYING && stateNum != ST_INTRO) {
-        printf("[DOOMCANVASBRIDGE] STATE-REJECT requested=%d current=%d owner=native\n",
-               stateNum,
-               doomCanvas->state);
-        return;
-    }
-
-    oldState = doomCanvas->state;
-    if (oldState == ST_MENU && stateNum != ST_MENU) {
-        EspNativeAudioIntent_stopAll();
-    }
-
-    if (stateNum == ST_INTRO && stateNum != oldState) {
-        if (!doomCanvasBeginIntro(doomCanvas)) {
-            return;
-        }
-    }
-
-    doomCanvas->state = stateNum;
-
-    if (stateNum == ST_MENU && oldState == ST_PLAYING) {
-        (void)EspNativeAudioIntent_publish(5042U, 0U, 3U);
-        (void)EspNativeAudioIntent_publish(5067U, 0U, 3U);
-    }
-}
-void DoomCanvas_startup(DoomCanvas_t* doomCanvas)
-{
-    SDL_Rect screenRect;
-    DoomRPG_t* doomRpg;
-
-    if (doomCanvas == NULL || doomCanvas->doomRpg == NULL) return;
-
-    doomRpg = doomCanvas->doomRpg;
-    screenRect.x = DOOMRPG_VIEWPORT_X;
-    screenRect.y = DOOMRPG_VIEWPORT_Y;
-    screenRect.w = DOOMRPG_VIEWPORT_WIDTH;
-    screenRect.h = DOOMRPG_VIEWPORT_HEIGHT;
-    Render_setup(doomRpg->render, &screenRect);
-    doomCanvas->startupMap = 1;
-    doomCanvas->skipIntro = false;
-    DoomRPG_createImage(doomCanvas->doomRpg, "a.bmp", true, &doomCanvas->imgFont);
-    printf("[DOOMCANVASBRIDGE] STARTUP desktopTU=no display=%dx%d screen=%dx%d@%d,%d startupMap=%d hud=native geometry=fixed-cyd\n",
-           DOOMRPG_CANVAS_WIDTH, DOOMRPG_CANVAS_HEIGHT,
-           DOOMRPG_VIEWPORT_WIDTH, DOOMRPG_VIEWPORT_HEIGHT,
-           DOOMRPG_VIEWPORT_X, DOOMRPG_VIEWPORT_Y,
-           doomCanvas->startupMap);
 }
 
 #if defined(DOOMRPG_ESP32_BRINGUP_PROBES)

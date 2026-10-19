@@ -15,12 +15,15 @@ BRIDGE = ESP / "src/esp_legacy_doomcanvas_bridge.c"
 AUDIO = ESP / "src/esp_native_audio_intent.c"
 
 bridge = BRIDGE.read_text(encoding="utf-8")
-assert "Sound_playSound(" not in bridge
-assert "Sound_stopSounds(" not in bridge
-assert bridge.count("EspNativeAudioIntent_stopAll();") == 2
-assert "EspNativeAudioIntent_publish(" in bridge
-assert "5039U" in bridge
-assert "ESP32_SND_FLG_LOOP | ESP32_SND_FLG_STOPSOUNDS" in bridge
+native_state = (ESP / "src/native_main_menu_model.c").read_text(encoding="utf-8")
+assert "Sound_playSound(" not in bridge + native_state
+assert "Sound_stopSounds(" not in bridge + native_state
+assert "EspNativeAudioIntent_stopAll();" not in bridge
+assert "EspNativeAudioIntent_publish(" not in bridge
+assert native_state.count("EspNativeAudioIntent_stopAll();") == 2
+assert native_state.count("EspNativeAudioIntent_publish(") == 3
+assert "5039U" in native_state
+assert "ESP32_SND_FLG_LOOP | ESP32_SND_FLG_STOPSOUNDS" in native_state
 
 harness = r"""
 #include <assert.h>

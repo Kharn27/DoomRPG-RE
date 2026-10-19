@@ -235,7 +235,7 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
                (unsigned int)EspNativeGameplayPlayerState_fingerprint());
         return 0;
     }
-    DoomCanvas_setState(doomCanvas, ST_INTRO);
+    EspNativeMainMenu_transitionCanvasState(doomCanvas, ST_INTRO);
     introState = EspNativeIntroState_get(doomRpg);
     if (doomCanvas->state != ST_INTRO || introState == NULL) {
         printf("[MAINSTART] FAILED native transient intro owner was not established\n");

@@ -249,7 +249,9 @@ enum _CanvasState {
 	ST_SORRY
 };
 
+#ifndef DOOMRPG_ESP32
 DoomCanvas_t* DoomCanvas_init(DoomCanvas_t * doomCanvas, DoomRPG_t* doomRpg);
+#endif
 void DoomCanvas_free(DoomCanvas_t* doomCanvas, boolean freePtr);
 void DoomCanvas_updatePlayerDoors(DoomCanvas_t* doomCanvas, Line_t* line);
 void DoomCanvas_attemptMove(DoomCanvas_t* doomCanvas, int x, int y);
@@ -326,7 +328,9 @@ void DoomCanvas_saveState(DoomCanvas_t* doomCanvas, int i, char* text);
 #ifndef DOOMRPG_ESP32
 void DoomCanvas_setAnimFrames(DoomCanvas_t* doomCanvas, int i);
 #endif
+#ifndef DOOMRPG_ESP32
 void DoomCanvas_setState(DoomCanvas_t* doomCanvas, int stateNum);
+#endif
 byte DoomCanvas_checkState(DoomCanvas_t* doomCanvas);
 #ifndef DOOMRPG_ESP32
 void DoomCanvas_invalidateRectAndUpdateView(DoomCanvas_t* doomCanvas);
@@ -337,7 +341,9 @@ void DoomCanvas_startDialogPassword(DoomCanvas_t* doomCanvas, char* text);
 void DoomCanvas_startShake(DoomCanvas_t* doomCanvas, int i, int i2, int i3);
 void DoomCanvas_startSpeedTest(DoomCanvas_t* doomCanvas, boolean b);
 void DoomCanvas_vibrate(DoomCanvas_t* doomCanvas, int i);
+#ifndef DOOMRPG_ESP32
 void DoomCanvas_startup(DoomCanvas_t* doomCanvas);
+#endif
 void DoomCanvas_uncoverAutomap(DoomCanvas_t* doomCanvas);
 void DoomCanvas_unloadMedia(DoomCanvas_t* doomCanvas);
 void DoomCanvas_checkFacingEntity(DoomCanvas_t* doomCanvas);
