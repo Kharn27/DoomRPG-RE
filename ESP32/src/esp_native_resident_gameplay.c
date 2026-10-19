@@ -2342,8 +2342,27 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
             serviceSelect(doomRpg, doomRpg->render, &intent);
             return;
 
+        case ESP_NATIVE_GAMEPLAY_ACTION_PASS_TURN: {
+            /*
+             * Automap is a presentation owner, not a frozen-world pause.
+             * Run the SAME native tile-touch + one monster-turn producer as
+             * world PASS_TURN, without closing the full-screen map.
+             */
+            const EspNativeGameplayPassTurnStatus passStatus =
+                EspNativeGameplayPassTurn_execute(doomRpg, &intent);
+            printf("[RESIDENTGAMEPLAY] AUTOMAP-PASS seq=%u status=%u turn=%s map=retained\n",
+                   (unsigned int)intent.sequence,
+                   (unsigned int)passStatus,
+                   passStatus == ESP_NATIVE_GAMEPLAY_PASS_TURN_OK
+                       ? "requested-or-lethal"
+                       : "not-requested");
+            if (passStatus != ESP_NATIVE_GAMEPLAY_PASS_TURN_OK)
+                ++gameplayState.deferred;
+            return;
+        }
+
         default:
-            printf("[RESIDENTGAMEPLAY] AUTOMAP-IGNORE seq=%u action=%s phase=move+turn+select-live otherLegacyActions=deferred mutation=no turnAdvance=no\n",
+            printf("[RESIDENTGAMEPLAY] AUTOMAP-IGNORE seq=%u action=%s phase=move+turn+select+pass-live otherLegacyActions=deferred mutation=no turnAdvance=no\n",
                    (unsigned int)intent.sequence,
                    EspNativeGameplayInput_actionName(intent.action));
             return;

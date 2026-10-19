@@ -111,6 +111,14 @@ jobs:
             ESP32/test/damage_cue_timing_host.c -Wl,--gc-sections -o /tmp/doomrpg-damage-cue-timing-test
           /tmp/doomrpg-damage-cue-timing-test
 
+      - name: Test actual automap PASS_TURN including hazard, rollback and death (host C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+            -IESP32/test/host_include -IESP32/include -IESP32/src -Isrc \
+            ESP32/test/pass_turn_automap_host.c -Wl,--gc-sections -o /tmp/doomrpg-pass-turn-automap-test
+          /tmp/doomrpg-pass-turn-automap-test
+          python ESP32/test/automap_pass_turn_routing_host.py
+
       - name: Test native automap damage pulse and text without map-wide buffers (host C)
         run: |
           cc -O2 -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \

@@ -4,6 +4,9 @@
 
 #include "esp_map_sprite_topology.h"
 #include "esp_native_gameplay_action_engine.h"
+#include "esp_native_gameplay_automap.h"
+#include "esp_native_gameplay_player_state.h"
+#include "esp_native_resident_gameplay.h"
 #include "esp_native_gameplay_dialog.h"
 #include "esp_native_gameplay_hazard_touch.h"
 #include "esp_native_gameplay_hud.h"
@@ -39,6 +42,16 @@ static int repaintCurrentHud(uint32_t sequence,
     EspNativeGameplayHudStatus status;
 
     memset(&stats, 0, sizeof(stats));
+    /* This routine paints the 3D HUD band. The full-screen automap owns
+     * every pixel, including its black margins. A tile hazard can commit
+     * PlayerState during PASS_TURN without giving the HUD any pixels here.
+     * The final world HUD is rebuilt live only when the map is closed. */
+    if (EspNativeResidentGameplay_isAutomapActive()) {
+        printf("[PASSTURN] HUD-SKIP seq=%u tile=%u phase=%s owner=automap mutation=no\n",
+               (unsigned int)sequence, (unsigned int)tile,
+               phase != NULL ? phase : "unknown");
+        return 1;
+    }
     if (hud == NULL || hud->active != 1U || hud->painted != 1U) {
         printf("[PASSTURN] HUD-REPAINT-DEFER seq=%u tile=%u phase=%s cause=current-hud-not-ready framebufferMutation=unknown\n",
                (unsigned int)sequence,
@@ -207,6 +220,37 @@ EspNativeGameplayPassTurnStatus EspNativeGameplayPassTurn_execute(
                (hazardRollback && hudRollback && feedbackRollback)
                    ? "rolled-back" : "ROLLBACK-FAILED");
         return ESP_NATIVE_GAMEPLAY_PASS_TURN_REQUEST_BUSY;
+    }
+
+    /*
+     * Hazard health/armor is already committed, the monster-turn request has
+     * succeeded, and the full-screen map still owns presentation. Publish a
+     * map-native damage alert for the actual lost resources; never render the
+     * old world HUD/flash or publish an alert for a rolled-back hazard.
+     */
+    if (hazardStatus == ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_COMMITTED &&
+        EspNativeResidentGameplay_isAutomapActive()) {
+        const EspNativeGameplayPlayerState* current =
+            EspNativeGameplayPlayerState_view();
+        if (current != NULL && current->active == 1U) {
+            const uint16_t hpBefore =
+                (uint16_t)(hazardUndo.param1Before & 0xffU);
+            const uint16_t armorBefore =
+                (uint16_t)((hazardUndo.param1Before >> 16U) & 0xffU);
+            const uint16_t hpAfter =
+                (uint16_t)(current->param1 & 0xffU);
+            const uint16_t armorAfter =
+                (uint16_t)((current->param1 >> 16U) & 0xffU);
+            const uint16_t damage =
+                (uint16_t)((hpBefore >= hpAfter ? hpBefore - hpAfter : 0U) +
+                           (armorBefore >= armorAfter ? armorBefore - armorAfter : 0U));
+            EspNativeGameplayAutomap_noteDamage(damage, 0U);
+            printf("[PASSTURN] AUTOMAP-HAZARD seq=%u tile=%u lost=%u hp=%u->%u armor=%u->%u turn=requested\n",
+                   (unsigned int)intent->sequence, (unsigned int)tile,
+                   (unsigned int)damage, (unsigned int)hpBefore,
+                   (unsigned int)hpAfter, (unsigned int)armorBefore,
+                   (unsigned int)armorAfter);
+        }
     }
 
     /* The shared feedback service expires the previous visible message before
