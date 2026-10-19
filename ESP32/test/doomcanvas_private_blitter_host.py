@@ -66,6 +66,7 @@ assert "DoomCanvas_setState(" not in bridge
 assert owner.count("EspNativeMainMenu_transitionCanvasState(") == 2  # definition + MENU
 assert (SRC / "native_main_menu_start_action.c").read_text().count("EspNativeMainMenu_transitionCanvasState(") == 1
 assert (SRC / "native_main_menu_actions.c").read_text().count("EspNativeMainMenu_transitionCanvasState(") == 1
+assert (SRC / "native_main_menu_touch.c").read_text().count("EspNativeMainMenu_transitionCanvasState(") == 1
 begin = owner.index("static int doomCanvasBeginIntro(")
 end = owner.index("\n#define MAIN_HELP_ASSET_NAME", begin)
 state_body = owner[begin:end].replace("EspNativeMainMenu_transitionCanvasState", "DoomCanvas_setState")
