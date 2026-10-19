@@ -50,7 +50,7 @@ for path in sorted(SRC.rglob("*")):
     assert not re.search(r"\b" + retired + r"\s*\(", text), (
         "retired DoomCanvas image ABI revived in " + str(path.relative_to(ROOT)))
 
-# The text entry is native; only four compatibility roots remain.
+# The text entry is native; only three compatibility roots remain.
 for name in ("init", "free", "startup"):
     assert "DoomCanvas_" + name + "(" in bridge
 assert "DoomCanvas_drawString1(" not in bridge
@@ -79,8 +79,8 @@ for path in sorted(SRC.rglob("*")):
     if path.suffix not in (".c", ".cpp"):
         continue
     source = path.read_text(encoding="latin-1")
-    source = re.sub(r'/\\*.*?\\*/|//[^\\n]*|"(?:\\\\.|[^"\\\\])*"', " ", source, flags=re.S)
-    assert not re.search(r"\\bDoomCanvas_setState\\s*\\(", source), (
+    source = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ", source, flags=re.S)
+    assert not re.search(r"\b" + "DoomCanvas_setState" + r"\s*\(", source), (
         "desktop Canvas state ABI revived in " + str(path.relative_to(ROOT)))
 
 print("PASS Canvas ABI=3 native const text glyphBlitterFNV=4c4a9a93")
