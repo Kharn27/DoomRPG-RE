@@ -214,16 +214,21 @@ static int repaintGameplayHud(void) {
     }
 
     /*
-     * The retained full-HUD model is the original/fresh-map baseline. TURN
-     * updates the live compass through the bounded direction painter without
-     * mutating that retained model, so its destAngle may legitimately differ
-     * from the settled player view after gameplay has rotated.
+     * The full-HUD repaint has already drawn the native compass, including
+     * its angle glyph. Reapplying a partial dirty-rectangle compositor in that
+     * case is not equivalent to a second full paint: the compass and adjacent
+     * ammo digits overlap its clearing region. In particular this broke the
+     * strictly pixel-exact two-paint HUB weapon-change witness on real CYD
+     * (firstBottom != secondBottom), causing a correct weapon selection to
+     * roll back.
      *
-     * HUB owns y=20..119 while open, including the gameplay HUD band. Rebuild
-     * the retained HUD at close, then reapply the live compass dirty rectangle:
-     * TURN does not mutate the retained HUD model, so this second step is what
-     * makes the restored lower band byte-exact with the pre-HUB presentation.
+     * TURN can leave the retained model angle older than the settled view.
+     * Only that case needs the existing native live-compass compositor.
+     * Keep the second full-HUD pixel equality witness in HUB close intact.
      */
+    if ((uint8_t)view->viewAngle == state->model.destAngle) {
+        return 1; /* full native HUD is canonical for the current angle */
+    }
     return EspNativeGameplayHudDirection_render(
         (uint8_t)view->viewAngle, &directionStats);
 }
