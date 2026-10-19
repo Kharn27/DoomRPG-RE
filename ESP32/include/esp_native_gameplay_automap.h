@@ -45,6 +45,14 @@ int EspNativeGameplayAutomap_render(int32_t worldX,
                                     uint8_t angle,
                                     EspNativeGameplayAutomapStats* outStats);
 
+/* AUTOMAP-exclusive post-COMMIT visual intent. Shows total legacy damage
+ * (health+armor), not just HP lost. Four bounded redraw phases in 900ms,
+ * red/black background pulses and small text above the 96x96 map. No render
+ * buffer, PAK, RNG, player or turn ownership. */
+void EspNativeGameplayAutomap_noteDamage(uint16_t totalDamage, uint8_t critical);
+int EspNativeGameplayAutomap_damageRedrawDue(void);
+void EspNativeGameplayAutomap_cancelDamage(void);
+
 #ifdef __cplusplus
 }
 #endif

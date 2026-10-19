@@ -7,6 +7,8 @@
 #include "Render.h"
 
 #include "esp_native_gameplay_action_engine.h"
+#include "esp_native_gameplay_automap.h"
+#include "esp_native_resident_gameplay.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_monster_activation.h"
 #include "esp_native_gameplay_monster_retaliation.h"
@@ -703,6 +705,14 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
 
     ++retaliationView.committedAttacks;
     retaliationView.lastResolvedProbe = turn->attackProbes;
+    /* AUTOMAP has its own 900ms visual lease, only AFTER an actual committed
+     * hit. Avoid mapping the pre-COMMIT DAMAGE topbar intent, which is
+     * intentionally suppressed with the 3D feedback owner. */
+    if (EspNativeResidentGameplay_isAutomapActive()) {
+        EspNativeGameplayAutomap_noteDamage(
+            (uint16_t)(roll.totalDamage + roll.totalArmorDamage),
+            (uint8_t)(roll.gotCrit != 0U));
+    }
     /* UI intent is published only after player+RNG+frame COMMIT. Overflow
      * never rolls back gameplay or aliases another attacker's direction. */
     if (damageSide != ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_NONE) {

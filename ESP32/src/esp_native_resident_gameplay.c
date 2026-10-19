@@ -1892,6 +1892,7 @@ static int closeAutomap(Render_t* render, const char* reason) {
         }
         return 0;
     }
+    EspNativeGameplayAutomap_cancelDamage();
     printf("[RESIDENTGAMEPLAY] AUTOMAP-CLOSE hudPixels=%u worldRedraw=yes mode=world turnAdvance=no\n",
            (unsigned int)hudStats.pixelsWritten);
     return 1;
@@ -2292,6 +2293,23 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
     }
 
     if (automapActive()) {
+        /* Timer-driven repaint of the owned 160x120 map only. This is UI
+         * presentation, not a player turn or a world/BSP mutation. */
+        if (EspNativeGameplayAutomap_damageRedrawDue() &&
+            !EspNativeGameplayPresentGate_isArmed() &&
+            !EspNativeGameplayControls_isActive() &&
+            !EspAssetPack_isOpen()) {
+            const EspPlayerViewState* v = EspPlayerView_view();
+            EspNativeGameplayAutomapStats fxStats;
+            memset(&fxStats, 0, sizeof(fxStats));
+            if (v == NULL || v->active != 1U ||
+                v->viewAngle != v->destAngle ||
+                (v->viewAngle & 63) != 0 ||
+                !EspNativeGameplayAutomap_render(
+                    v->viewX, v->viewY, (uint8_t)v->viewAngle, &fxStats)) {
+                printf("[AUTOMAPDAMAGE] DEFER reason=map-render-failed gameplay=unchanged\n");
+            }
+        }
         if (pending == NULL || pending->pending == 0U) return;
         memset(&intent, 0, sizeof(intent));
         inputStatus = EspNativeGameplayInput_consume(&intent);
@@ -2463,6 +2481,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
         break;
 
     case ESP_NATIVE_GAMEPLAY_ACTION_AUTOMAP:
+        EspNativeGameplayAutomap_cancelDamage();
         gameplayState.modeFlags =
             (uint8_t)(gameplayState.modeFlags | RESIDENT_MODE_AUTOMAP);
         if (!renderAutomapCurrent(doomRpg->render, "OPEN")) {
