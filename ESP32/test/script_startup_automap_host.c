@@ -184,6 +184,10 @@ int EspNativeGameplayAutomap_render(int32_t x, int32_t y, uint8_t angle,
     memset(out, 0, sizeof(*out));
     return automapOk;
 }
+/* The modal-router host stubs real pixel effects; the separate native
+ * automap_damage_host.c exercises their bounded timing and raster output. */
+void EspNativeGameplayAutomap_cancelDamage(void) {}
+int EspNativeGameplayAutomap_damageRedrawDue(void) { return 0; }
 int EspNativeDoorAnimator_hasPendingFrames(void) { return 0; }
 void EspNativeGameplayMoveEvents_onFrameResult(int ok) { (void)ok; }
 
