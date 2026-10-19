@@ -119,6 +119,8 @@ int EspNativeGameplayFacingLabel_refresh(const char* reason) { (void)reason; ret
 int EspNativeGameplayFrame_renderTurn(Render_t* render, uint8_t angle,
                                      EspNativeGameplayFrameStats* out) {
     assert(render == &testRender && angle == testView.viewAngle);
+    /* A world frame MUST see world-owned presentation, not automap-owned. */
+    assert(!automapActive());
     ++worldFrames;
     memset(out, 0, sizeof(*out));
     return worldOk;
@@ -212,6 +214,15 @@ static void seed(int inAutomap, EspNativeGameplayDialogResumeStatus status) {
 }
 
 int main(void) {
+    /* Modal exit transfers the display domain before composing the new 3D
+     * frame. A failed world render must restore AUTOMAP and repaint its map. */
+    seed(1, ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK);
+    assert(closeAutomap(&testRender, "HOST-CLOSE"));
+    assert(!automapActive() && worldFrames == 1 && automapFrames == 0);
+    seed(1, ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK);
+    worldOk = 0;
+    assert(!closeAutomap(&testRender, "HOST-FAIL"));
+    assert(automapActive() && worldFrames == 1 && automapFrames == 1);
     const EspNativeGameplayDialogResumeStatus failures[] = {
         ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_EXEC_FAILED,
         ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_INVALID

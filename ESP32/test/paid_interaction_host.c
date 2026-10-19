@@ -368,7 +368,7 @@ int main(void) {
     /* Even an ambient/preview publication is not allowed to reveal 3D
      * while a modal map owns the screen. */
     seed(10); automapOwned = 1;
-    assert(EspNativeGameplayFrame_renderAmbient(render, &frame));
+    assert(__wrap_EspNativeGameplayFrame_renderAmbient(render, &frame));
     assert(frame.active && frame.finalPresented);
     assert(automapRenders == 1 && presents == 1 && freshFrames == 0);
     for (size_t i = 0U; i < 160U * 120U; ++i)

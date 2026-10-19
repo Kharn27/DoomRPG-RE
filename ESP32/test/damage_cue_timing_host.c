@@ -5,7 +5,7 @@
 
 static uint16_t pixels[160U * 120U + 2U];
 static uint32_t clockMs;
-static int controls, levelUp, pack, failPresent;
+static int controls, levelUp, pack, failPresent, automapOwner;
 static unsigned presents, concurrentPresents, damageGlyphs, groupedTextPresents;
 unsigned int DoomRPG_GetUpTimeMS(void) { return clockMs; }
 const EspPlayerViewState* EspPlayerView_view(void) { return NULL; }
@@ -13,6 +13,7 @@ void* Esp32PlatformVideo_framebuffer(void) { return &pixels[1]; }
 size_t Esp32PlatformVideo_framebufferSizeBytes(void) { return 160U * 120U * 2U; }
 int EspNativeGameplayControls_isActive(void) { return controls; }
 int EspNativeGameplayLevelUp_isActive(void) { return levelUp; }
+int EspNativeResidentGameplay_isAutomapActive(void) { return automapOwner; }
 int EspAssetPack_isOpen(void) { return pack; }
 int EspAssetPack_open(const char* path) { (void)path; assert(!pack); pack = 1; return 1; }
 void EspAssetPack_close(void) { pack = 0; }
@@ -79,7 +80,7 @@ static void seedUnpainted(void) {
     memset(&directionCue, 0, sizeof(directionCue));
     for (unsigned i = 0; i < sizeof(pixels) / sizeof(pixels[0]); ++i) pixels[i] = 0x1234;
     clockMs = 1000;
-    controls = levelUp = pack = failPresent = 0;
+    controls = levelUp = pack = failPresent = automapOwner = 0;
     presents = concurrentPresents = damageGlyphs = groupedTextPresents = 0;
     actionState.viewportFlashPending = 1;
     actionState.viewportFlashColor565 = 0xb800;
@@ -315,6 +316,36 @@ int main(void) {
     for (unsigned y = 0; y < 120; ++y)
         for (unsigned x = 0; x < 160; ++x)
             assert(pixels[1 + y * 160 + x] == (y >= 20 && y < 100 ? 0x5678 : 0x1234));
-    puts("damage_cue_timing_host: PASS grouped DAMAGE text+red+direction after 818ms tail, unchanged lethal timing, fallback, pulse metrics, barriers, FIFO/full, retry/timeout, four sides, clock wrap, redraw and exact restoration");
+    /* Full-screen automap takes priority over all transient 3D effects.
+     * Neither queued monster hits nor timed restores may touch map pixels. */
+    seedUnpainted();
+    automapOwner = 1;
+    for (unsigned i = 1U; i < 160U * 120U + 1U; ++i) pixels[i] = 0x4567U;
+    actionState.feedbackPending = 1U;
+    actionState.feedbackKind = ACTION_FEEDBACK_DAMAGE;
+    strcpy(actionState.feedbackText, "5 damage!");
+    EspNativeGameplayActionEngine_beginMonsterVisualWork();
+    EspNativeGameplayActionEngine_stageNonlethalMonsterFlash();
+    assert(__wrap_Esp32PlatformVideo_present());
+    assert(presents == 1U && damageGlyphs == 0U);
+    assert(!actionState.feedbackPending && !actionState.feedbackVisible);
+    assert(!actionState.viewportFlashPending &&
+           !actionState.viewportFlashVisible &&
+           !actionState.viewportFlashSnapshotValid);
+    assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
+        31U, 7U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
+    EspNativeGameplayActionEngine_endMonsterVisualWork();
+    assert(directionCue.phase == 0U && directionCue.queued.count == 0U);
+    clockMs += 2000U;
+    poll();
+    assert(presents == 1U && damageGlyphs == 0U);
+    for (unsigned i = 1U; i < 160U * 120U + 1U; ++i)
+        assert(pixels[i] == 0x4567U);
+    automapOwner = 0;
+    poll();
+    assert(presents == 1U && !actionState.feedbackVisible &&
+           !actionState.viewportFlashVisible &&
+           directionCue.phase == 0U);
+    puts("damage_cue_timing_host: PASS fullscreen AUTOMAP mutes transient damage UI without framebuffer writes; normal DAMAGE timing/restoration/failures unchanged");
     return 0;
 }

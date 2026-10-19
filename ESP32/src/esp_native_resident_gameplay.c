@@ -1864,20 +1864,34 @@ static int renderAutomapCurrent(Render_t* render, const char* reason) {
 
 static int closeAutomap(Render_t* render, const char* reason) {
     const EspPlayerViewState* view = EspPlayerView_view();
+    const uint8_t previousMode = gameplayState.modeFlags;
     EspNativeGameplayHudStats hudStats;
 
     memset(&hudStats, 0, sizeof(hudStats));
-    if (render == NULL || view == NULL ||
+    if (!automapActive() || render == NULL || view == NULL ||
         view->active != 1U || view->viewAngle != view->destAngle ||
-        (view->viewAngle & 63) != 0 ||
-        repaintLiveHudAtView(view, &hudStats) !=
+        (view->viewAngle & 63) != 0) return 0;
+
+    /*
+     * Screen ownership must change BEFORE the world render: the composed
+     * frame checks automapActive() at its final presentation boundary.
+     * Keeping AUTOMAP set through renderCurrent would repaint the minimap
+     * over the newly restored live HUD and leave its bottom band corrupted.
+     * Restore mode on any failure and attempt to re-present the map; never
+     * claim a closed modal after an unsuccessful framebuffer transaction.
+     */
+    gameplayState.modeFlags =
+        (uint8_t)(previousMode & (uint8_t)~RESIDENT_MODE_AUTOMAP);
+    if (repaintLiveHudAtView(view, &hudStats) !=
             ESP_NATIVE_GAMEPLAY_HUD_OK ||
         !renderCurrent(render, (uint8_t)view->viewAngle,
                        reason != NULL ? reason : "AUTOMAP-CLOSE")) {
+        gameplayState.modeFlags = previousMode;
+        if (!renderAutomapCurrent(render, "CLOSE-ROLLBACK")) {
+            printf("[RESIDENTGAMEPLAY] AUTOMAP-CLOSE-RECOVER-FAILED mode=automap\n");
+        }
         return 0;
     }
-    gameplayState.modeFlags =
-        (uint8_t)(gameplayState.modeFlags & (uint8_t)~RESIDENT_MODE_AUTOMAP);
     printf("[RESIDENTGAMEPLAY] AUTOMAP-CLOSE hudPixels=%u worldRedraw=yes mode=world turnAdvance=no\n",
            (unsigned int)hudStats.pixelsWritten);
     return 1;
