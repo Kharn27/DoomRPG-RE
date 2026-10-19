@@ -1,5 +1,21 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #221 — clôture après les deux reviews Codex : PASS CYD (19 octobre 2026)
+
+**Dernier code testé sur le vrai classic CYD normal :** `813987e02b09c558364fba0d89b6ae4b62ca7656` ([PR #221](https://github.com/Kharn27/DoomRPG-RE/pull/221), branche `agent/esp32-retire-desktop-canvas-text-abi`). [CI push SUCCESS #39251963619](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39251963619) et [PR SUCCESS #39251973504](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39251973504), incluant tests C réels des deux corrections et builds/audits ELF des trois profils ; normal RAM statique **49 520 B**, Flash **823 197 B**. Ce jalon post-review **remplace le statut de dernier code testé** `0482f13` décrit plus bas, dont la preuve antérieure reste valide pour les seuls parcours Pistol→Shotgun→Axe.
+
+**P1** : le render HUD live accepte le tuple réel de mort `HP=0, weapons=0, weapon=0`, `weaponsPresent=0`, afin que le renderer natif cache l'arme sans interrompre la chute. Un joueur vivant sans armes ou une arme non possédée reste fail-closed. **P2** : le bouton tactile `WEAPON_MENU` en bas droit possède désormais son glyphe vectoriel jaune, rendu par le compositor de feedback réversible existant. Le test hôte vérifie `begin`, journal borné, temporisation **120 ms**, `restore`, framebuffer et FNV exacts ; aucun état gameplay mutable. Les deux threads de review GitHub sont résolus.
+
+**Témoins hardware après ces modifications** : `WEAPON_MENU zone=13` ouvre directement les armes à deux reprises ; **Axe 0→Fire Ext 1**, `hudBottom=3ec7786a=expectedBottom`, puis **Fire Ext 1→Shotgun 3**, `hudBottom=e6ba2d3c=expectedBottom` ; à chaque fois `hudRepaint=yes exactBottom=yes`, `GRID-SELECT-CLOSE`, `HUB-CLOSE turnAdvance=no`. Pas de `TOUCHFEEDBACK SKIP` sur les ouvertures fournies ; cela prouve que le routage ne perd plus son feedback, sans prouver à lui seul l'apparence visuelle du glyphe.
+
+**Régression critique de mort** : coup létal `playerHP=5→0`, `[PLAYERDEATH] ARM seq=11 hp=0 weapons=000f->0000 weapon=3->0`, `[MONSTERRETAL] LETHAL-COMMIT deathOwner=armed`, `[PLAYERDEATH] PHASE elapsedMs=836 fall=complete viewZ=6 fade=begin`, puis **`[PLAYERDEATH] READY elapsedMs=3001 frames=50 phase=death-menu-ready input=death-menu load=available`**. Le chemin chûte/fondu/menu est réussi sur le matériel. Les frames FALL individuels sont masqués dans le logging normal, pas attestés une par une. `[NATIVESAVE] READABLE-SPATIAL path=/DoomRPG-ESP32-slot01.sav bytes=5604 result=valid` constate uniquement la lisibilité du slot depuis le menu, sans prouver une action LOAD.
+
+**Mémoire** : de 207 285 ms à 257 871 ms (~50,586 s) `heap=179028 heap8=113784 largest8=86004` constants, combats et mort inclus. Pas de `REBASE-FAILED`, de rollback d'arme ni de `HUB-RECOVER` dans l'extrait. Autres tests non présents : boutons BACK, cases non possédées, onglets INV/STAT/SYS, SAVE/LOAD réel, screenshot du HUD, lecture d'un SHA firmware dans les logs. L'ancien PASS Canvas demeure propre au code `f9d8061`.
+
+**Processus** : clôturer par commit **docs-only** et CI verte. La PR peut repasser en revue une fois ce contrôle réussi ; seul l'utilisateur fusionne `main`. Le repo GitHub garde priorité sur les souvenirs des conversations.
+
+---
+
 ## PR #221 — accès direct aux armes depuis le HUD : PASS CYD ciblé (19 octobre 2026)
 
 **Code CYD testé** : `0482f13c2f62b9fc79e650a0b80bfc9695d55bd4` sur `agent/esp32-retire-desktop-canvas-text-abi`. [CI push #39246653544 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39246653544), [CI PR #39246661282 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39246661282), RAM statique **49 520 B**, Flash **823 037 B** en normal. Le PASS Canvas texte précédent reste distinct : `f9d8061`.
@@ -10,7 +26,7 @@
 
 **Résultats matériels exacts** : tap `WEAPON_MENU zone=13`, `HUB-OPEN source=hud-ammo-compass`, puis Pistol `2→3` : deux `REPAINT weapon=3 ammo=22 angle=128`, `HUB CLOSE exactBottom=yes` avec `f1d77c03` identique à l'attendu, `GRID-SELECT-CLOSE target=3` et `HUB-CLOSE seq=2`. Réouverture `equipped=3 selected=3` ; sélection Axe `3→0`, deux `REPAINT weapon=0`, `exactBottom=yes` avec `966e71ad`, `GRID-SELECT-CLOSE target=0`, `HUB-CLOSE seq=4`. `turn=no` aux deux sorties. Quatre `[ALIVE]` entre **80,261 s** et **95,362 s**, `heap8=113784 largest8=86004` constants. Le `TOUCHFEEDBACK SKIP ... overlay-unavailable inputQueued=yes fatal=no` indique uniquement l'indisponibilité du feedback facultatif ; les deux inputs ont bien ouvert la grille. `exactHud=topbar-pending` n'invalide pas le bas exact, la barre haute est recomposée au rendu monde.
 
-**Non couvert dans cet extrait** : visibilité subjective vérifiée par capture/inspection visuelle, case grise, BACK, arme identique, test tactile des trois onglets, SAVE/LOAD/combat/EXIT, ni impression de `shapeData/mediaTexels` ou du SHA firmware. Les nouveaux tests C/CI gardent leurs couvertures propres mais ne s'étendent pas au matériel sans log. **Plus de modifications de code après ce PASS** : clôture documentaire seule, PR review-ready après CI docs verte, merge humain.
+**Non couvert dans cet extrait** : visibilité subjective vérifiée par capture/inspection visuelle, case grise, BACK, arme identique, test tactile des trois onglets, SAVE/LOAD/combat/EXIT, ni impression de `shapeData/mediaTexels` ou du SHA firmware. Les nouveaux tests C/CI gardent leurs couvertures propres mais ne s'étendent pas au matériel sans log. **État daté avant reviews** : cette clôture concernait `0482f13`. La première section de ce guide documente désormais le nouveau dernier code `813987e`, son PASS matériel post-review et le processus de clôture actualisé.
 
 ---
 
@@ -22,7 +38,7 @@ Base `main 90cb0d054e9ec234690c27935e68a19cc805a464`, branche `agent/esp32-retir
 
 **PASS ciblé sur le vrai CYD** : Help/About 83 lignes, navigation `0→8→16→24→32→40→32→24` et BACK ; FNV stables `5f22cf6b/d0788359/9213df95/b0191189/4c944ee5/943f0b77`, menu `0f2c9fc3`. Options `0acffb35`, luminosité 75→100→25→100 via SD native et retours OK. START→intro première image `ade0195d`→sortie (+34 056 B)→Entrance CRC `623f34e4`, arena `14095 B` FNV `c3882516`, resident ready. Deux `ALIVE` jeu `heap8=113584 largest8=86004` à ~38,7 et ~43,7 s ; `shapeData/mediaTexels=NULL`. L'extrait n'a ni header boot `exports=4` ni SHA embarqué, ni SAVE/LOAD, combat ou EXIT. **Ce témoin reste attaché au code texte `f9d8061`, pas à un firmware UI ultérieur.**
 
-Le jalon B (grille d'armes via le HUD, retrait WPN et fermeture après sélection) possède désormais sa **validation matérielle ciblée distincte** sur le dernier code `0482f13`, documentée en tête de ce fichier.
+Le jalon B (grille d’armes depuis le HUD, retrait de WPN et fermeture après sélection) a un **premier PASS matériel** sur `0482f13`, puis un **PASS matériel post-review** sur `813987e` détaillé en tête du guide.
 
 ---
 

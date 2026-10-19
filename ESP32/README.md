@@ -1,7 +1,7 @@
 # Doom RPG — port ESP32-native sur classic CYD
 
 > Guide d'usage **mis à jour au 19 octobre 2026**, sur le code
-> `0482f13c2f62b9fc79e650a0b80bfc9695d55bd4` de
+> `813987e02b09c558364fba0d89b6ae4b62ca7656` de
 > [PR #221](https://github.com/Kharn27/DoomRPG-RE/pull/221) (PASS CYD ciblé).
 > Pour les futurs changements, le dépôt GitHub et
 > [PORTING_STATUS.md](PORTING_STATUS.md) font foi, pas les anciens jalons.
@@ -81,8 +81,10 @@ armes possédées sont en couleur, les autres sont grisées.
 **Un seul tap sur une arme possédée l'équipe et referme immédiatement
 la grille**, sans tour de monstre ; **BACK** ferme sans changer l'arme.
 Les icônes des familiers 9–11 manquent aux données sources et restent
-en présentation fail-closed. Le feedback tactile lumineux sur la
-zone HUD est facultatif : l'absence d'overlay ne bloque pas l'action.
+en présentation fail-closed. Le bouton HUD produit un **feedback
+jaune temporaire** à glyphe « W » : le test hôte vérifie une
+restauration RGB565/FNV exacte après 120 ms. En cas d'échec de
+l'overlay décoratif, la commande reste prioritaire et fonctionnelle.
 
 Le menu du haut ouvre le **HUB à trois onglets**, sans ancien onglet
 `WPN` :
@@ -92,6 +94,13 @@ Le menu du haut ouvre le **HUB à trois onglets**, sans ancien onglet
 | `INV` | Notebook, objets transportés, clés possédées ; plusieurs usages d'objets restent différés |
 | `STAT` | Santé, armure, niveau, XP, attributs, crédits et clés |
 | `SYS` | `SAVE`, `LOAD`, `EXIT TO MENU`, avec confirmation avant action |
+
+Le menu de mort natif reste accessible après le coup létal :
+le joueur passe à **HP=0, sans arme**, puis par la chute et le
+fondu avant le menu. Ce parcours a été confirmé sur CYD avec
+`[PLAYERDEATH] READY ... input=death-menu` ; un slot sauvegardé
+lisible y est détecté, mais la reprise par LOAD n'a pas été
+retentée dans ce dernier journal.
 
 `EXIT TO MENU` libère la session et retourne au menu sans sauvegarder.
 Une sauvegarde en cours ne doit pas être implicitement modifiée par EXIT.
