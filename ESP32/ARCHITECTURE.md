@@ -5,6 +5,25 @@ ESP32-2432S028R CYD port. It describes the engine we are keeping, not the order
 in which historical recovery probes were written.
 
 For current hardware status and exact canons, read [`PORTING_STATUS.md`](PORTING_STATUS.md).
+**PR #224 follow-up (20 October 2026):** current production code hardware exercised
+on the classic CYD is `f15c412c757c40eceacd353eec3c3439d33462c2`,
+with [CI push success](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39463831546)
+and [CI PR success](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39463839288).
+The ActionEngine compositor runs only when
+`EspNativeResidentGameplay_ownsWorldPresent()` authorizes it: either
+resident gameplay is active, or the native resident service temporarily
+owns the **initial** world present in `firstWorldPresentArmed`.
+The short lease wraps the sole initial `Esp32PlatformVideo_present()`
+before activating player input/turns and is cleared even on failure.
+Full-screen MENU_MAIN, INTRO, SAVESLOTS and transitions never borrow that
+lease. This fixes the review P2 without reverting the menu HUD bleed fix.
+Real CYD logs show fresh START, SYS EXIT, first LOAD selector, V11
+slot04 restore, resumed WORLD, movement, monster attack and retaliation,
+and stable observed gameplay heap; Serial does not independently prove
+the exact first-facing-label pixels. Hot-path `NATIVESPRITE CROSS` and
+`TRANSIENT` `printf` spam is a separate future trace-level cleanup,
+not part of this hardware-proven milestone.
+
 As of PR #224 the latest **targeted hardware-tested** code is
 `0686740c1361068f3c96d05eab95e4713b37aa49`: `Render_startup` is
 no longer an ESP32 public ABI and is a private static native startup
