@@ -5,7 +5,8 @@
 
 static uint16_t pixels[160U * 120U + 2U];
 static uint32_t clockMs;
-static int controls, levelUp, pack, failPresent, automapOwner;
+static int controls, levelUp, pack, failPresent, automapOwner, worldActive, firstWorldLease, facingDirty;
+static unsigned topBarTiles;
 static unsigned presents, concurrentPresents, damageGlyphs, groupedTextPresents;
 unsigned int DoomRPG_GetUpTimeMS(void) { return clockMs; }
 const EspPlayerViewState* EspPlayerView_view(void) { return NULL; }
@@ -13,13 +14,18 @@ void* Esp32PlatformVideo_framebuffer(void) { return &pixels[1]; }
 size_t Esp32PlatformVideo_framebufferSizeBytes(void) { return 160U * 120U * 2U; }
 int EspNativeGameplayControls_isActive(void) { return controls; }
 int EspNativeGameplayLevelUp_isActive(void) { return levelUp; }
+/* This fixture drives the real in-world feedback compositor, not MENU_MAIN. */
+int EspNativeResidentGameplay_isActive(void) { return worldActive; }
+int EspNativeResidentGameplay_ownsWorldPresent(void) {
+    return worldActive || firstWorldLease;
+}
 int EspNativeResidentGameplay_isAutomapActive(void) { return automapOwner; }
 int EspAssetPack_isOpen(void) { return pack; }
 int EspAssetPack_open(const char* path) { (void)path; assert(!pack); pack = 1; return 1; }
 void EspAssetPack_close(void) { pack = 0; }
-int EspNativeGameplayFacingLabel_isDirty(void) { return 0; }
+int EspNativeGameplayFacingLabel_isDirty(void) { return facingDirty; }
 const EspNativeGameplayFacingLabelView* EspNativeGameplayFacingLabel_view(void) { return NULL; }
-void EspNativeGameplayFacingLabel_markPainted(void) {}
+void EspNativeGameplayFacingLabel_markPainted(void) { facingDirty = 0; }
 const EspMapStatusMessageState* EspNativeGameplayStatusMessage_view(void) { return NULL; }
 int EspMapStatusMessage_isActive(const EspMapStatusMessageState* state) { (void)state; return 0; }
 int EspNativeGameplayStatusMessage_repaintCurrent(void) { return 1; }
@@ -46,7 +52,9 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_tile(
     int16_t x, int16_t y, uint16_t w, uint16_t h, uint8_t transparent,
     EspNativeIndexedBmpStats* stats) {
     (void)bmp; (void)fb; (void)fw; (void)fh; (void)x; (void)y;
-    (void)w; (void)h; (void)transparent; (void)stats;
+    (void)transparent; (void)stats;
+    if (x == 0 && y == 0 && w == 160U && h == FEEDBACK_TOP_HEIGHT)
+        ++topBarTiles;
     return ESP_NATIVE_INDEXED_BMP_OK;
 }
 EspNativeIndexedBmpStatus EspNativeIndexedBmp_blit(
@@ -80,7 +88,10 @@ static void seedUnpainted(void) {
     memset(&directionCue, 0, sizeof(directionCue));
     for (unsigned i = 0; i < sizeof(pixels) / sizeof(pixels[0]); ++i) pixels[i] = 0x1234;
     clockMs = 1000;
-    controls = levelUp = pack = failPresent = automapOwner = 0;
+    controls = levelUp = pack = failPresent = automapOwner = facingDirty = 0;
+    worldActive = 1;
+    firstWorldLease = 0;
+    topBarTiles = 0;
     presents = concurrentPresents = damageGlyphs = groupedTextPresents = 0;
     actionState.viewportFlashPending = 1;
     actionState.viewportFlashColor565 = 0xb800;
@@ -346,6 +357,32 @@ int main(void) {
     assert(presents == 1U && !actionState.feedbackVisible &&
            !actionState.viewportFlashVisible &&
            directionCue.phase == 0U);
-    puts("damage_cue_timing_host: PASS fullscreen AUTOMAP mutes transient damage UI without framebuffer writes; normal DAMAGE timing/restoration/failures unchanged");
+    /* Real compositor wrapper regression: EXIT resets facing.dirty, but the
+     * first full-frame SAVESLOTS present belongs to MENU_MAIN, not gameplay.
+     * The old code retiled k.bmp onto the first 20 pixels rows, exactly once;
+     * a second LOAD was clean because the dirty flag had been consumed. */
+    seedUnpainted();
+    actionState.viewportFlashPending = 0U;
+    worldActive = 0;
+    facingDirty = 1;
+    assert(__wrap_Esp32PlatformVideo_present());
+    assert(topBarTiles == 0U && facingDirty == 1 && presents == 1U);
+    assert(__wrap_Esp32PlatformVideo_present());
+    assert(topBarTiles == 0U && facingDirty == 1 && presents == 2U);
+    /* CODE REVIEW P2: the first WORLD present is before active=1. */
+    firstWorldLease = 1;
+    assert(__wrap_Esp32PlatformVideo_present());
+    assert(topBarTiles == 1U && facingDirty == 0 && presents == 3U);
+    firstWorldLease = 0;
+    worldActive = 1;
+    assert(__wrap_Esp32PlatformVideo_present());
+    assert(topBarTiles == 1U && presents == 4U);
+    /* First-world lease must never survive an EXIT/failure. */
+    worldActive = 0;
+    facingDirty = 1;
+    failPresent = 1;
+    assert(!__wrap_Esp32PlatformVideo_present());
+    assert(topBarTiles == 1U && facingDirty == 1 && presents == 5U);
+    puts("damage_cue_timing_host: PASS fullscreen AUTOMAP mutes transient damage UI without framebuffer writes; normal DAMAGE timing/restoration/failures unchanged; EXIT->LOAD + initial-WORLD compositor lease");
     return 0;
 }

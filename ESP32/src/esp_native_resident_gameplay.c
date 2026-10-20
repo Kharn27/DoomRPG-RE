@@ -82,6 +82,8 @@ typedef struct EspNativeResidentGameplayState_s {
     uint8_t active;
     uint8_t failed;
     uint8_t checkpointResumeArmed;
+    /* Short synchronous owner lease for first WORLD top-bar present. */
+    uint8_t firstWorldPresentArmed;
     uint8_t modeFlags;
     uint8_t exitRequested;
 } EspNativeResidentGameplayState;
@@ -1938,6 +1940,14 @@ int EspNativeResidentGameplay_isActive(void) {
     return gameplayState.active != 0U && gameplayState.failed == 0U;
 }
 
+int EspNativeResidentGameplay_ownsWorldPresent(void) {
+    /* The initial map presenter runs before touch/turn activation. Never
+     * grant this right to MENU_MAIN, SAVESLOTS, INTRO or loading screens. */
+    return gameplayState.failed == 0U &&
+           (gameplayState.active != 0U ||
+            gameplayState.firstWorldPresentArmed != 0U);
+}
+
 int EspNativeResidentGameplay_isAutomapActive(void) {
     return EspNativeResidentGameplay_isActive() && automapActive();
 }
@@ -2100,13 +2110,18 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
                 printf("[RESIDENTGAMEPLAY] WAIT facing-label initial trace\n");
                 return;
             }
-            /* First-frame rendering precedes resident service arming. Paint the
-             * newly derived fallback immediately so initial standing parity does
-             * not require a first MOVE/TURN. The present wrapper sees dirty=1. */
+            /* First-frame rendering precedes resident touch/turn activation.
+             * Grant the ActionEngine compositor a narrowly scoped WORLD
+             * present lease to consume the fresh facing label before the
+             * first visible frame. Clear it on both success and failure; do
+             * not mark gameplay active or install input before publication. */
+            gameplayState.firstWorldPresentArmed = 1U;
             if (!Esp32PlatformVideo_present()) {
+                gameplayState.firstWorldPresentArmed = 0U;
                 printf("[RESIDENTGAMEPLAY] WAIT facing-label initial present\n");
                 return;
             }
+            gameplayState.firstWorldPresentArmed = 0U;
             gameplayState.checkpointResumeArmed = 0U;
             gameplayState.active = 1U;
             EspPlayerFreshMap_beginTimer(

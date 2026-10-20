@@ -23,6 +23,9 @@ void EspNativeResidentGameplay_reset(void);
 int EspNativeResidentGameplay_armCheckpointResume(void);
 void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpg);
 int EspNativeResidentGameplay_isActive(void);
+/* Presentation ownership differs from input/turn activation only inside the
+ * synchronous first-WORLD-frame publisher. Never true on MENU/LOAD/INTRO. */
+int EspNativeResidentGameplay_ownsWorldPresent(void);
 int EspNativeResidentGameplay_isAutomapActive(void);
 
 /* SYS confirmation only queues this terminal action. The Arduino loop services
