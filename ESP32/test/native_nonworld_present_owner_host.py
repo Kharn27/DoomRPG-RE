@@ -22,13 +22,24 @@ main = (ROOT / "ESP32/src/native_main_menu_actions.c").read_text()
 start = source.index("int __wrap_Esp32PlatformVideo_present(void) {")
 body = source[start:]
 guard = re.search(
-    r"if \(!EspNativeResidentGameplay_isActive\(\)\) \{\s*"
+    r"if \(!EspNativeResidentGameplay_ownsWorldPresent\(\)\) \{\s*"
     r"return __real_Esp32PlatformVideo_present\(\);\s*\}", body)
 assert guard, "missing non-world bypass of the gameplay compositor"
 assert guard.start() < body.index("EspNativeGameplayControls_isActive()")
 assert guard.start() < body.index("actionState.feedbackPending")
 assert guard.start() < body.index("EspNativeGameplayFacingLabel_isDirty()")
 assert "facing.dirty = 1U;" in facing
+assert "int EspNativeResidentGameplay_ownsWorldPresent(void)" in resident
+assert "gameplayState.active != 0U ||" in resident
+assert "gameplayState.firstWorldPresentArmed != 0U" in resident
+assert re.search(r"gameplayState.firstWorldPresentArmed = 1U;\s*"
+                 r"if \(!Esp32PlatformVideo_present\(\)\) \{\s*"
+                 r"gameplayState.firstWorldPresentArmed = 0U;.*?"
+                 r"return;\s*\}\s*"
+                 r"gameplayState.firstWorldPresentArmed = 0U;\s*"
+                 r"gameplayState.checkpointResumeArmed = 0U;\s*"
+                 r"gameplayState.active = 1U;", resident, re.S)
+assert "memset(&gameplayState,0,sizeof(gameplayState));" in resident
 assert "EspNativeGameplayFacingLabel_reset();" in resident
 assert "EspNativeResidentGameplay_reset();" in flow
 assert "fillRect(fb, 0, 0, 159, 119, ESP_HUB_COLOR_BG);" in saves
@@ -44,8 +55,10 @@ guard_c = guard.group(0)
 code = r"""
 #include <assert.h>
 #include <stdio.h>
-static int worldActive, dirty, presentOk, presentCalls, hudPaints;
-static int EspNativeResidentGameplay_isActive(void) { return worldActive; }
+static int worldActive, firstWorldLease, dirty, presentOk, presentCalls, hudPaints;
+static int EspNativeResidentGameplay_ownsWorldPresent(void) {
+    return worldActive || firstWorldLease;
+}
 static int __real_Esp32PlatformVideo_present(void) {
     ++presentCalls;
     return presentOk;
@@ -60,25 +73,30 @@ static int nativePresent(void) {
 }
 int main(void) {
     for(int i=0;i<4096;i++) {
-        worldActive=0; dirty=1; presentOk=1; presentCalls=0; hudPaints=0;
+        worldActive=0; firstWorldLease=0;
+        dirty=1; presentOk=1; presentCalls=0; hudPaints=0;
         /* Menu opaque painter used the direct physical path: first LOAD
          * selector is a FULL 160x120 frame behind this wrapper. */
         assert(nativePresent()==1);
         assert(presentCalls==1 && dirty==1 && hudPaints==0);
         assert(nativePresent()==1); /* BACK -> second LOAD */
         assert(presentCalls==2 && dirty==1 && hudPaints==0);
-        worldActive=1;
+        /* Initial world present happens before gameplay activation: lease
+         * must paint the label; it ends immediately after the present. */
+        firstWorldLease=1;
         assert(nativePresent()==1);
         assert(presentCalls==3 && dirty==0 && hudPaints==1);
+        firstWorldLease=0;
+        worldActive=1;
         assert(nativePresent()==1);
         assert(presentCalls==4 && hudPaints==1);
 
         /* Hardware/presentation failure cannot be called success. */
-        worldActive=0; dirty=1; presentOk=0;
+        worldActive=0; firstWorldLease=0; dirty=1; presentOk=0;
         assert(nativePresent()==0);
         assert(dirty==1 && hudPaints==1);
     }
-    puts("PASS non-world full-screen present guard 4096 EXIT/LOAD/BACK cycles and fail-closed");
+    puts("PASS non-world gate 4096 EXIT/LOAD/BACK + first-WORLD facing lease + fail-closed");
     return 0;
 }
 """

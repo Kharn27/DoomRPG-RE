@@ -1891,10 +1891,12 @@ int __wrap_Esp32PlatformVideo_present(void) {
      * transition presentation. In particular, resetting the facing-label
      * owner on SYS EXIT leaves facing.dirty=1, and the first SAVESLOTS paint
      * previously re-tiled the gray gameplay top bar over its opaque frame.
-     * Pass non-world frames directly to the physical presenter WITHOUT
-     * touching any HUD feedback lease or consuming the facing dirty flag.
+     * The resident owner grants a synchronous lease for the initial WORLD
+     * present before touch/turn activation: its first facing label must be
+     * composed too. Otherwise pass non-world frames straight through without
+     * touching HUD feedback or consuming facing.dirty.
      */
-    if (!EspNativeResidentGameplay_isActive()) {
+    if (!EspNativeResidentGameplay_ownsWorldPresent()) {
         return __real_Esp32PlatformVideo_present();
     }
 

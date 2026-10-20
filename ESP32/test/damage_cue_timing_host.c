@@ -5,7 +5,7 @@
 
 static uint16_t pixels[160U * 120U + 2U];
 static uint32_t clockMs;
-static int controls, levelUp, pack, failPresent, automapOwner, worldActive, facingDirty;
+static int controls, levelUp, pack, failPresent, automapOwner, worldActive, firstWorldLease, facingDirty;
 static unsigned topBarTiles;
 static unsigned presents, concurrentPresents, damageGlyphs, groupedTextPresents;
 unsigned int DoomRPG_GetUpTimeMS(void) { return clockMs; }
@@ -16,6 +16,9 @@ int EspNativeGameplayControls_isActive(void) { return controls; }
 int EspNativeGameplayLevelUp_isActive(void) { return levelUp; }
 /* This fixture drives the real in-world feedback compositor, not MENU_MAIN. */
 int EspNativeResidentGameplay_isActive(void) { return worldActive; }
+int EspNativeResidentGameplay_ownsWorldPresent(void) {
+    return worldActive || firstWorldLease;
+}
 int EspNativeResidentGameplay_isAutomapActive(void) { return automapOwner; }
 int EspAssetPack_isOpen(void) { return pack; }
 int EspAssetPack_open(const char* path) { (void)path; assert(!pack); pack = 1; return 1; }
@@ -87,6 +90,7 @@ static void seedUnpainted(void) {
     clockMs = 1000;
     controls = levelUp = pack = failPresent = automapOwner = facingDirty = 0;
     worldActive = 1;
+    firstWorldLease = 0;
     topBarTiles = 0;
     presents = concurrentPresents = damageGlyphs = groupedTextPresents = 0;
     actionState.viewportFlashPending = 1;
@@ -365,11 +369,20 @@ int main(void) {
     assert(topBarTiles == 0U && facingDirty == 1 && presents == 1U);
     assert(__wrap_Esp32PlatformVideo_present());
     assert(topBarTiles == 0U && facingDirty == 1 && presents == 2U);
-    worldActive = 1;
+    /* CODE REVIEW P2: the first WORLD present is before active=1. */
+    firstWorldLease = 1;
     assert(__wrap_Esp32PlatformVideo_present());
     assert(topBarTiles == 1U && facingDirty == 0 && presents == 3U);
+    firstWorldLease = 0;
+    worldActive = 1;
     assert(__wrap_Esp32PlatformVideo_present());
     assert(topBarTiles == 1U && presents == 4U);
-    puts("damage_cue_timing_host: PASS fullscreen AUTOMAP mutes transient damage UI without framebuffer writes; normal DAMAGE timing/restoration/failures unchanged; EXIT->LOAD compositor gate");
+    /* First-world lease must never survive an EXIT/failure. */
+    worldActive = 0;
+    facingDirty = 1;
+    failPresent = 1;
+    assert(!__wrap_Esp32PlatformVideo_present());
+    assert(topBarTiles == 1U && facingDirty == 1 && presents == 5U);
+    puts("damage_cue_timing_host: PASS fullscreen AUTOMAP mutes transient damage UI without framebuffer writes; normal DAMAGE timing/restoration/failures unchanged; EXIT->LOAD + initial-WORLD compositor lease");
     return 0;
 }
