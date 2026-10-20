@@ -5,13 +5,26 @@ ESP32-2432S028R CYD port. It describes the engine we are keeping, not the order
 in which historical recovery probes were written.
 
 For current hardware status and exact canons, read [`PORTING_STATUS.md`](PORTING_STATUS.md).
-As of PR #223 latest CYD-tested code `eb93bf2fefe3aa48cd87b933648d3a84c78f9743`,
+As of PR #224 the latest **targeted hardware-tested** code is
+`0686740c1361068f3c96d05eab95e4713b37aa49`: `Render_startup` is
+no longer an ESP32 public ABI and is a private static native startup
+implementation (FNV `f6343a76`) in `render_startup_bridge.c`. Native
+presentation ownership now excludes the gameplay ActionEngine compositor
+whenever the resident gameplay session is inactive, fixing the first
+MENU_MAIN LOAD selector's inherited top HUD strip after SYS EXIT. The
+user confirmed the first LOAD opens with no gray top bar on actual CYD.
+This is a presentation ownership boundary, not a gameplay/input timing
+change. Other post-EXIT paths and V11 combat were tested on earlier
+code but not this final SHA.
+
+Historically, as of PR #223 CYD-tested code `eb93bf2fefe3aa48cd87b933648d3a84c78f9743`,
 `Render_init` and `Render_setup` are **not** ESP32 Render ABI symbols.
 They live privately within the native engine root/layout as respectively
 `EspNativeEngineRoot_initRender` (FNV `884791fe`) and
 `EspNativeEngineLayout_setupRender` (FNV `ec9d1151`) in `engine_stubs.c`.
 The 1532-byte `Render_t`, 160x80 viewport, three setup arrays totaling
-1280 B, and `Render_startup` / `Render_free` semantics remain unchanged.
+1280 B, and the `Render_startup` implementation semantics remain unchanged despite
+its later ABI retirement. `Render_free` is not retired by PR #224.
 This SHA passes real CYD START → EXIT → LOAD V11 → monster combat including
 two kills, with constant observed gameplay heap. Fatal Render teardown is
 not hardware-tested. The user has identified **lost perceived responsiveness**
