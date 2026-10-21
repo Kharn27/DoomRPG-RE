@@ -1,5 +1,17 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #226 — Entrées Render planes *_Test retirées : contrat et PASS CYD (22 octobre 2026)
+
+**Code testé sur firmware normal `esp32-cyd` : `ba758095e82e594c232c410f737e005ccae518fc`**, [PR #226](https://github.com/Kharn27/DoomRPG-RE/pull/226) sur `agent/esp32-retire-legacy-plane-test-abi`, base `main=a7bfffca4f13abd4cbdf5844615ab5559930fb30`. [CI push #39686642437](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39686642437) et [PR #39686742624](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39686742624) **SUCCESS**, budgets statiques inchangés **49 536/825 497 B** (normal), **49 688/846 301 B** (bringup), **49 584/842 265 B** (trace).
+
+**Contrat permanent** : les trois fonctions de test desktop `Render_renderFloorAndCeilingBG_Test`, `Render_drawPlane_Test`, `Render_spanPlane_Test` ne doivent plus être des ABI ESP32 : ni stub `esp_legacy_render_reject.c`, ni prototype visible sous `DOOMRPG_ESP32`, ni référence dans les sources natives. `Render.h` garde les prototypes desktop seulement et `src/Render.c` garde les implémentations d'origine comme oracle. Les plans du monde sont toujours rendus via les propriétaires natifs compacts et le PAK ; **ne pas réintroduire `mediaTexels` map-wide ni utiliser les entrées *_Test comme raccourci**. La CI exécute `native_render_plane_test_retirement_host.py` pour bloquer toute réapparition. Aucun remplacement fonctionnel, changement gameplay, allocation framebuffer, RNG, asset source, cadence de `present()` ou mutation World.
+
+**Preuve Serial reçue** : CYD réel sans PSRAM, PAK 241 entrées, framebuffer 160×120 RGB565 / 38 400 B partagé ; `Game=0`, `Canvas exports=0`, `Render=1532`. MENU_MAIN `0f2c9fc3`, START `fec57f30`, INTRO initial `ade0195d`, dispose `34056 B` sans changer le framebuffer ; Entrance CRC `623f34e4`, arena **14095 / `c3882516`**, `FIRST_FRAME=71ca7465`, `FRESH-VISIBLE` ; deux Armor Shards (0→4→8), porte 275 animée, déplacement jusqu'au dialogue opcode26 événement79, continuation native et Sm Medkit. `ALIVE heap8=113768 largest8=86004` stable avant dialogue ; `DIALOGCHAIN` journal de **1128 B** libéré à EXIT (`activeAtTeardown=1` = journal transactionnel encore actif, détruit au reset), `RESIDENTRESET released=18008 empty=1`, retour MENU_MAIN FNV `0f2c9fc3`, puis quatre `ALIVE heap8=159704 largest8=110580` sans dérive observée.
+
+**Limites du PASS** : pas de test nouveau des LOAD/SAVE V11, combat, mort joueur, reboot, fatal root teardown, rollback sur échec de rendu, ni preuve exhaustive multi-session ou pixel par pixel. `BOUNDARY-INLINE` déjà connu et variation des états RNG/cache ne sont pas des régressions attribuables ici. Le **SHA de code hardware est gelé** ; seuls les documents sont modifiés après les logs, et la PR ne devient merge-ready qu'après CI docs-only verte. L'utilisateur effectue lui-même le merge.
+
+---
+
 ## PR #225 — Direct mappings PAK natifs : validation CYD et contrat permanent (22 octobre 2026)
 
 **Code gelé réellement testé, normal `esp32-cyd` : `d284329b937204452ceb9d5f2d7b26a37fc99f72`** sur `agent/esp32-retire-render-free-abi`, [PR #225](https://github.com/Kharn27/DoomRPG-RE/pull/225), base main `61bf1519730af5d81aeef5faeeba31bed210bfac`. CI pour ce SHA : [push #39682532690 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39682532690), [PR #39682540173 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39682540173). Budgets : normal `RAM=49536 / flash=825497`, bringup `49688 / 846301`, trace `49584 / 842265` octets.
