@@ -17,11 +17,12 @@ root = (ROOT / "ESP32/src/engine_stubs.c").read_text(encoding="utf-8")
 header = (ROOT / "ESP32/include/esp_render_startup_bridge.h").read_text(encoding="utf-8")
 
 def extract(source, signature):
-    anchor = signature + "\n{"
-    assert source.count(anchor) == 1, signature
-    begin = source.index(anchor)
+    assert source.count(signature) == 1, signature
+    begin = source.index(signature)
+    opening = source.index("{", begin + len(signature))
+    assert not source[begin + len(signature):opening].strip(), signature
     depth = 0
-    for offset in range(source.index("{", begin), len(source)):
+    for offset in range(opening, len(source)):
         depth += (source[offset] == "{") - (source[offset] == "}")
         if depth == 0:
             return source[begin:offset + 1]
