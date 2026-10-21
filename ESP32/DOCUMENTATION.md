@@ -1,5 +1,17 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #225 — Direct mappings PAK natifs : validation CYD et contrat permanent (22 octobre 2026)
+
+**Code gelé réellement testé, normal `esp32-cyd` : `d284329b937204452ceb9d5f2d7b26a37fc99f72`** sur `agent/esp32-retire-render-free-abi`, [PR #225](https://github.com/Kharn27/DoomRPG-RE/pull/225), base main `61bf1519730af5d81aeef5faeeba31bed210bfac`. CI pour ce SHA : [push #39682532690 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39682532690), [PR #39682540173 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39682540173). Budgets : normal `RAM=49536 / flash=825497`, bringup `49688 / 846301`, trace `49584 / 842265` octets.
+
+**Contrat logiciel permanent** : `Render_loadMappings(Render_t*)` est retiré de l'ABI ESP32. Son adaptateur ne faisait que transmettre à `EspLegacyMappings_load`. CONFIGMAP appelle directement le vrai chargeur natif : `mappingsResult = EspLegacyMappings_load(render) ? true : false;` ; `src/Render.h` déclare `Render_loadMappings` uniquement sur desktop. Les tableaux persistants `mediaTexelOffsets`, `mediaBitShapeOffsets`, `mediaTexturesIds` et `mediaSpriteIds` conservent leurs plans de mémoire et données. Aucun `mediaTexels` monolithique, `shapeData`, backing ZIP runtime ou décompression carte globale. Source du parseur `EspLegacyMappings_load` **FNV `da45ea1f`** préservée, test host de **4096 cycles** du vrai C startup (succès/réutilisation/fail-closed), guard native ABI du build, audit du test desktop-keybinding recentré sur le propriétaire natif. La source desktop reste l'oracle de comportement, pas un moteur compilé ESP32.
+
+**Témoins matériel Serial `d284329b`** : SD 240 MiB, PAK 241 entrées ; palette 3280 entrées / 6560 B, framebuffer logique partagé 38400 B ; `[MAPPINGS] -> EspLegacyMappings_load()` et `result=1`, `mappings.bin=8392`, `INSTALLED payload=8376`, en-tête `592/1300/152/252`, heap8 `163300→154860` (`used=8440`), `scratch=framebuffer noInflatedHeap=yes`. MENU_MAIN FNV **`0f2c9fc3`**, START armed **`fec57f30`** ; first INTRO **`ade0195d`**, `INTRODISP recovered=34056`; carte Entrance source CRC **`623f34e4`** et arena **14095/c3882516**, `FIRST_FRAME=71ca7465`, `FRESH-VISIBLE/READY` ; navigation/rotation, deux pickups armure **0→4→8**, porte **275** ouverte en 4 frames et franchie ; `ALIVE heap8=113768 largest8=86004` en gameplay ; HUB System EXIT `saveWrite=no`, `RESIDENTRESET released=18008 empty=1`, menu final FNV **`0f2c9fc3`**, heap8 **159704 largest8=110580**.
+
+**Limites explicites** : ce jalon valide uniquement BOOT/START/INTRO/gameplay/EXIT, pas LOAD V11, SAVE, combats, ni le teardown fatal de `DoomRPG_FreeAppData`. Les trames warm-cache peuvent avoir des FNV distincts sans altérer les témoins fixés. Le retrait du wrapper ne modifie pas le corps du parseur PAK ni le gameplay/RNG. Les commits suivant le PASS sont **docs-only** ; PR à rendre prête au merge une fois CI docs-only verte, sans merge dans `main` par l'agent.
+
+---
+
 ## PR #225 — Render_setGrayPalettes retiré : PASS CYD ciblé (21 octobre 2026)
 
 **SHA de code firmware normal testé sur classic CYD : `3acd358e15a13430e8aa991f2797da73d75ac91f`**, branche `agent/esp32-retire-render-free-abi`, [PR #225](https://github.com/Kharn27/DoomRPG-RE/pull/225). [CI push #39677462114](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39677462114) et [PR #39677472767](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39677472767) **SUCCESS**. Statique normal **49 536 B RAM / 825 509 B flash**, bringup **49 688 / 846 317 B**, trace **49 584 / 842 261 B**.
