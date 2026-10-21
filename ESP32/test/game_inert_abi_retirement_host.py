@@ -67,7 +67,8 @@ for name in guards:
     assert "doomRpg->render" in content, name
 
 cleanup = (SRC / "native_main_menu_start_action.c").read_text(encoding="latin-1")
-assert "Render_freeRuntime(render);" in cleanup
+assert "EspNativeRenderRuntime_releaseCompatibility(render);" in cleanup
+assert "Render_freeRuntime(render);" not in cleanup
 assert "return render->nodes == NULL" in cleanup
 assert "!EspNativeWallCache_isActive()" in cleanup
 assert "!EspNativeSpriteCache_isActive()" in cleanup
