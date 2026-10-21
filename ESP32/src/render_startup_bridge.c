@@ -23,12 +23,11 @@ _Static_assert(sizeof(Render_t) == 1532U,
 
 extern DoomRPG_t* doomRpg;
 
-/*
- * Permanent production owner of Render_freeRuntime. Native map arenas and
- * overlays are independent; this frees only inherited compatibility slots.
- * Desktop free/null ordering is preserved.
- */
-void Render_freeRuntime(Render_t* render)
+/* Render-shell compatibility slots have two native lifecycle callers:
+ * MENU_MAIN new-game START and fatal root teardown. This is the previous
+ * Render_freeRuntime body with only the native symbol substituted; map-owned
+ * immutable arenas and compact overlays remain independent. */
+void EspNativeRenderRuntime_releaseCompatibility(Render_t* render)
 {
     int i;
 
@@ -73,8 +72,9 @@ void Render_freeRuntime(Render_t* render)
  * The original source bodies are preserved exactly, except for one-time
  * source-ownership diagnostics; all legacy world/raster logic stays excluded.
  */
-/* Original Render palette and RGB565 ABI behavior, now native-owned. */
-void Render_loadPalettes(Render_t* render)
+/* Native startup-owned palette loader. The original desktop body, including
+ * paletteMemory accounting and fatal OOM contract, remains unchanged. */
+static void EspNativeRenderStartup_loadPalettes(Render_t* render)
 {
 	byte* fData;
 	int dataPos = 0, i;
@@ -125,44 +125,6 @@ unsigned short Render_RGB888_To_RGB565(Render_t* render, int rgb)
 {
 	return (unsigned short)Render_make565RGB(render, rgb & 0xff, (rgb >> 8) & 0xff, (rgb >> 16) & 0xff);
 }
-
-void Render_setGrayPalettes(Render_t* render)
-{
-	short* mediaPalettes, color, grayColor;
-	#ifndef DOOMRPG_ESP32
-	short* mediaPlanes;
-	#endif
-	int i, j;
-
-	for (i = 0; i < render->mediaPalettesLength; i++) {
-		mediaPalettes = render->mediaPalettes;
-		color = mediaPalettes[i];
-		grayColor = (((color & 0xf800) >> 10) + ((color >> 5) & 0x3f) + ((color & 0x1f) << 1)) / 3; //RGB
-		mediaPalettes[i] = ((grayColor >> 1) << 11) | (grayColor << 5) | (grayColor >> 1);
-	}
-
-	#ifndef DOOMRPG_ESP32
-	for (i = 0; i < render->planeTexturesCnt; i++)
-	{
-		for (j = 0; j < (64 * 64); j++) {
-			mediaPlanes = &render->mediaPlanes[i][j];
-			color = mediaPlanes[0];
-			grayColor = (((color & 0xf800) >> 10) + ((color >> 5) & 0x3f) + ((color & 0x1f) << 1)) / 3; //RGB
-			mediaPlanes[0] = ((grayColor >> 1) << 11) | (grayColor << 5) | (grayColor >> 1);
-		}
-	}
-	#endif
-
-	color = render->floorColor[0];
-	grayColor = (((color & 0xf800) >> 10) + ((color >> 5) & 0x3f) + ((color & 0x1f) << 1)) / 3; //RGB
-	render->floorColor[0] = ((grayColor >> 1) << 11) | (grayColor << 5) | (grayColor >> 1);
-
-	color = render->ceilingColor[0];
-	grayColor = (((color & 0xf800) >> 10) + ((color >> 5) & 0x3f) + ((color & 0x1f) << 1)) / 3; //RGB
-	render->ceilingColor[0] = ((grayColor >> 1) << 11) | (grayColor << 5) | (grayColor >> 1);
-}
-
-
 
 static int renderStartupAttempted = 0;
 static int renderStartupReady = 0;
@@ -276,7 +238,7 @@ static int EspNativeRenderStartup_initialize(Render_t* render) {
            (unsigned int)framebufferBytes,
            (void*)render->framebuffer);
 
-    Render_loadPalettes(render);
+    EspNativeRenderStartup_loadPalettes(render);
     if (render->mediaPalettes == NULL || render->mediaPalettesLength <= 0) {
         printf("[RENDER] ERROR palettes not initialized\n");
         return 0;
@@ -287,41 +249,6 @@ static int EspNativeRenderStartup_initialize(Render_t* render) {
            (unsigned int)(render->mediaPalettesLength * sizeof(short)));
 
     return 1;
-}
-
-/*
- * Permanent native Render destructor ABI.
- * Never free PlatformVideo's shared framebuffer: the framebuffer pointer is
- * detached before invoking the directly owned Render_freeRuntime cleanup.
- * All other cleanup actions and freePtr semantics mirror desktop Render_free.
- */
-void Render_free(Render_t* render, boolean freePtr)
-{
-    const int sharedFramebuffer = render != NULL &&
-        render->framebuffer == (byte*)Esp32PlatformVideo_framebuffer();
-    if (sharedFramebuffer) {
-        render->framebuffer = NULL;
-    }
-    printf("[RENDERFREE] ENTRY owner=esp-native-render-startup direct=yes wrap=no sharedFB=%d freePtr=%d\n",
-           sharedFramebuffer, (int)freePtr);
-
-    Render_freeRuntime(render);
-    SDL_free(render->ceilingColor);
-    SDL_free(render->floorColor);
-    SDL_free(render->columnScale);
-    SDL_free(render->mediaPalettes);
-
-    SDL_free(render->framebuffer);
-    render->framebuffer = NULL;
-
-    if (render->piDIB) {
-        SDL_DestroyTexture(render->piDIB);
-        render->piDIB = NULL;
-    }
-
-    if (freePtr) {
-        SDL_free(render);
-    }
 }
 
 int EspRenderStartupBridge_start(int preRenderReady) {

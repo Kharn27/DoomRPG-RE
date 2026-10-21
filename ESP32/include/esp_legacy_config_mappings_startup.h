@@ -11,7 +11,7 @@ extern "C" {
  * Native EspNativeConfig_loadAtBoot handles absent/invalid config after SD
  * mount. This compatibility stage never reads desktop Config v23. It inspects
  * mappings.bin, verifies its persistent allocation plan for the classic CYD,
- * and executes the retained Render_loadMappings() parser/owner.
+ * and directly executes EspLegacyMappings_load(), the native bounded PAK parser/owner.
  *
  * No BSP/map file is opened by this stage.
  */

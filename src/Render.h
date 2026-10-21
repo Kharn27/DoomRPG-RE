@@ -232,17 +232,27 @@ Render_t* Render_init(Render_t * render, DoomRPG_t* doomRpg);
 #ifndef DOOMRPG_ESP32
 void Render_setup(Render_t* render, SDL_Rect* windowRect);
 #endif
+#ifndef DOOMRPG_ESP32
 void Render_freeRuntime(Render_t* render);
+#endif
+#ifndef DOOMRPG_ESP32
 void Render_free(Render_t* render, boolean freePtr);
+#endif
 #ifndef DOOMRPG_ESP32
 int Render_startup(Render_t* render);
 #endif
+#ifndef DOOMRPG_ESP32
 void Render_loadPalettes(Render_t* render);
+#endif
 unsigned int Render_make565RGB(Render_t* render, int blue, int green, int red);
 unsigned short Render_RGB888_To_RGB565(Render_t* render, int rgb);
+#ifndef DOOMRPG_ESP32
 void Render_setGrayPalettes(Render_t* render);
+#endif
 
+#ifndef DOOMRPG_ESP32
 boolean Render_loadMappings(Render_t* render);
+#endif
 boolean Render_beginLoadMap(Render_t* render, int mapNameID);
 boolean Render_beginLoadMapData(Render_t* render);
 boolean Render_loadBitShapes(Render_t* render);

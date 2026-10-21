@@ -89,6 +89,57 @@ if ("int Render_startup(Render_t* render) {" in native_render_startup or
     raise RuntimeError("Render_startup desktop ABI revived or native initializer absent")
 print("[ESP32] Render_startup retired nativeRenderStartup=private")
 
+# Render_free is private to the fatal process-root teardown. The legacy
+# cleanup slots now have a separate native-named two-caller API.
+if ("void Render_free(Render_t* render, boolean freePtr)" in native_render_startup or
+        "static void EspNativeEngineRoot_releaseRender(Render_t* render, boolean freePtr)" not in native_layout_owner or
+        "EspNativeEngineRoot_releaseRender(doomrpg->render, true);" not in native_layout_owner or
+        "Render_free(doomrpg->render" in native_layout_owner):
+    raise RuntimeError("Retired Render_free ABI revived or private root teardown absent")
+print("[ESP32] Render_free retired nativeRenderTeardown=private runtimeSlots=separate")
+
+# Two native callers share compatibility Render cleanup. Reject the desktop
+# Render_freeRuntime ABI without accidentally privatizing MENU_MAIN START.
+if ("void Render_freeRuntime(Render_t* render)" in native_render_startup or
+        "void EspNativeRenderRuntime_releaseCompatibility(Render_t* render)" not in native_render_startup or
+        "EspNativeRenderRuntime_releaseCompatibility(render);" not in native_layout_owner or
+        "Render_freeRuntime(render);" in native_layout_owner):
+    raise RuntimeError("Retired Render_freeRuntime ABI revived or native dual-lifetime cleanup absent")
+print("[ESP32] Render_freeRuntime retired nativeRenderRuntimeCleanup=shared-native-two-callers")
+
+# The palette loader is only a private Render startup phase. The existing
+# RGB565 conversion helpers remain independent public compatibility APIs.
+if ("void Render_loadPalettes(Render_t* render)" in native_render_startup or
+        "static void EspNativeRenderStartup_loadPalettes(Render_t* render)" not in native_render_startup or
+        "EspNativeRenderStartup_loadPalettes(render);" not in native_render_startup or
+        "Render_loadPalettes(render);" in native_render_startup):
+    raise RuntimeError("Retired Render_loadPalettes ABI revived or native startup owner absent")
+print("[ESP32] Render_loadPalettes retired nativePaletteLoader=private")
+
+# The legacy Render_setGrayPalettes mutator has no native owner or caller.
+# Native grayscale effects, if ever required, must own their own small color
+# state and must not mutate map-wide texture arrays from desktop Render.
+if "void Render_setGrayPalettes(Render_t* render)" in native_render_startup:
+    raise RuntimeError("Unused Render_setGrayPalettes legacy ABI revived")
+print("[ESP32] Render_setGrayPalettes retired nativeGrayPaletteOwner=none")
+
+# No Render_loadMappings compatibility symbol may remain: CONFIGMAP must call
+# the existing native PAK/framebuffer-scratch mapping owner directly.
+native_mapping_path = join(project_src_dir, "esp_legacy_config_mappings_startup.c")
+# Oracle-retirement host tests intentionally emulate a minimal project_src_dir
+# without native TUs; full PlatformIO builds always own this source file. The
+# dedicated native_render_mappings_retirement_host.py independently verifies
+# the actual repository sources, including this direct caller contract.
+if os.path.isfile(native_mapping_path):
+    with open(native_mapping_path, "r", encoding="utf-8") as f:
+        native_mapping_owner = f.read()
+    if ("boolean Render_loadMappings(Render_t* render)" in native_mapping_owner or
+            "int EspLegacyMappings_load(struct Render_s* renderBase)" not in native_mapping_owner or
+            "mappingsResult = EspLegacyMappings_load(render) ? true : false;" not in native_mapping_owner or
+            "mappingsResult = Render_loadMappings(render);" in native_mapping_owner):
+        raise RuntimeError("Retired Render_loadMappings ABI revived or direct native mapping owner missing")
+print("[ESP32] Render_loadMappings retired nativeMappings=direct-PAK-owned")
+
 # No Game.c provider, generated or native bridge, is compiled on ESP32.
 # Game_t is not allocated, the compatibility root pointer stays NULL, and
 # Game_* calls are intentionally unavailable at link time.

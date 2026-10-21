@@ -40,7 +40,7 @@ assert "compiledPatchedC=0" in build
 # Capture every teardown side effect in the *real* native production body.
 assert teardown.count("SDL_free(")==2
 assert teardown.count("EspNativeMenuStorage_free(")==1
-assert teardown.count("Render_free(")==1
+assert teardown.count("EspNativeEngineRoot_releaseRender(")==1
 assert teardown.count("EspNativeEngineRoot_releaseCanvas(")==1
 assert all(x in teardown for x in (
     "doomrpg->combat = NULL", "doomrpg->particleSystem = NULL",
@@ -65,7 +65,7 @@ void traced_free(void*);
 #define SDL_free traced_free
 int Z_FreeMemory(void);
 void EspNativeMenuStorage_free(void*,DoomRPG_t*,boolean);
-void Render_free(void*,boolean);
+void EspNativeEngineRoot_releaseRender(void*,boolean);
 void EspNativeEngineRoot_releaseCanvas(void*);
 """
 harness=r"""
@@ -81,7 +81,7 @@ void EspNativeMenuStorage_free(void* p,DoomRPG_t* root,boolean freePtr) {
     assert(p && root==doomRpg && freePtr); assert(n<8);
     trace[n++]=2;menuCalls++;free(p);
 }
-void Render_free(void* p, boolean freePtr) {
+void EspNativeEngineRoot_releaseRender(void* p, boolean freePtr) {
     assert(p && freePtr); assert(n<8);
     trace[n++]=3;renderCalls++;free(p);
 }

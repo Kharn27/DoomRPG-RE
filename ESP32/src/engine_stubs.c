@@ -18,6 +18,8 @@
 #include "esp_native_audio_intent.h"
 #include "esp_native_menu_storage.h"
 #include "platform_video_config.h"
+#include "platform_video_c_bridge.h"
+#include "esp_render_startup_bridge.h"
 
 /* DoomRPG.h defines its original J2ME-style boolean before ESP-IDF brings in
  * the C99 false/true macros. */
@@ -41,6 +43,40 @@ static void EspNativeEngineRoot_releaseCanvas(DoomCanvas_t* doomCanvas)
     EspNativeIntroState_release(doomCanvas->doomRpg);
     DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgFont);
     SDL_free(doomCanvas);
+}
+
+/* Process-root-owned Render destructor. The original native cleanup body and
+ * freePtr semantics are retained verbatim apart from the private symbol name.
+ * In particular, the shared PlatformVideo framebuffer must be detached before
+ * compatibility cleanup and must never be released by the Render shell.
+ * The legacy owner wording in the Serial diagnostic is historical. */
+static void EspNativeEngineRoot_releaseRender(Render_t* render, boolean freePtr)
+{
+    const int sharedFramebuffer = render != NULL &&
+        render->framebuffer == (byte*)Esp32PlatformVideo_framebuffer();
+    if (sharedFramebuffer) {
+        render->framebuffer = NULL;
+    }
+    printf("[RENDERFREE] ENTRY owner=esp-native-render-startup direct=yes wrap=no sharedFB=%d freePtr=%d\n",
+           sharedFramebuffer, (int)freePtr);
+
+    EspNativeRenderRuntime_releaseCompatibility(render);
+    SDL_free(render->ceilingColor);
+    SDL_free(render->floorColor);
+    SDL_free(render->columnScale);
+    SDL_free(render->mediaPalettes);
+
+    SDL_free(render->framebuffer);
+    render->framebuffer = NULL;
+
+    if (render->piDIB) {
+        SDL_DestroyTexture(render->piDIB);
+        render->piDIB = NULL;
+    }
+
+    if (freePtr) {
+        SDL_free(render);
+    }
 }
 
 /* Original metric contract. Z_FreeMemory() is the single native heap report. */
@@ -76,7 +112,7 @@ void DoomRPG_FreeAppData(DoomRPG_t* doomrpg)
     }
     doomrpg->menu = NULL;
     if (doomrpg->render) {
-        Render_free(doomrpg->render, true);
+        EspNativeEngineRoot_releaseRender(doomrpg->render, true);
     }
     doomrpg->render = NULL;
     if (doomrpg->doomCanvas) {
