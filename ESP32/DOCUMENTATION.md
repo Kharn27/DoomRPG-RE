@@ -1,5 +1,15 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #225 — Palette Render native privée : PASS CYD (21 octobre 2026)
+
+**SHA firmware normal réellement testé : `2080e250a0c60d81d3304988d8c89ea9fd328f7b`**, sur `agent/esp32-retire-render-free-abi`, [PR #225](https://github.com/Kharn27/DoomRPG-RE/pull/225). [CI push #39675709558](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39675709558) et [CI PR #39675715983](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39675715983) **SUCCESS**. Normal `esp32-cyd` **49 536 B RAM / 825 517 B flash**, bringup **49 688 / 846 321 B**, trace **49 584 / 842 269 B**. Nouvelle API privée `static EspNativeRenderStartup_loadPalettes` appelée uniquement par `EspNativeRenderStartup_initialize`, ancienne ABI `Render_loadPalettes` exclue côté ESP32 ; fonction source originale conservée à l'octet près hormis déclaration, FNV normalisé **`3573ad2c`**, tests C **4096 cycles** avec pixels RGB565/replacement et `paletteMemory`, startup FNV normalisé **`f6343a76`**. Le loader reste PAK, pas de réouverture du ZIP.
+
+**Hardware logs de ce SHA** : classic CYD ESP32-D0WD-V3 **sans PSRAM**, `PAK entries=241`, `/palettes.bin=6564`, `[RENDER] palettes loaded entries=3280 bytes=6560`, framebuffer `160x120 RGB565 38400` partagé, `RENDERSTART result=1 used=6576 heap8=163300`. MENU_MAIN FNV **`0f2c9fc3`** et `ALIVE heap8=154860 largest8=110580` répété jusqu'à 125s. START initial `fec57f30`, `[MAINMENU] Runtime cleanup gained=8440` sans champs legacy ; intro `ade0195d` puis disposition `recovered=34056` ; `/intro.bsp` CRC `623f34e4` arena `14095/c3882516`, première frame mondiale **`71ca7465`**, HUD 30/30 ; mouvements `904→872→840`, rotation `64→128`, déplacements `840→839→838`, pickup armure **0→4→8** ; gameplay `heap8=113768 largest8=86004`. HUB/SYS EXIT sans SAVE : `RESIDENTRESET released=18008 empty=1`, cleanup `gained=0`, menu FNV **`0f2c9fc3`**, heap après EXIT **159704**, largest8 **110580**. `shapeData/mediaTexels=0` aux frontières.
+
+**Portée exacte** : PASS de non-régression boot, palettes, menu, intro, première scène, gameplay pickups et EXIT. Non couverts sur ce code : LOAD après EXIT, SAVE neuf, combat, teardown fatal root, preuve photographique de pixels ou recherche exhaustive de fuites. La diversité des graines RNG entre boots ne prouve pas une divergence. Code matériel `2080e250` gelé, clôture docs-only ; un jalon ultérieur sur la même branche impose CI et nouveau test CYD. Pas de merge automatique.
+
+---
+
 ## PR #225 — Render_freeRuntime retiré, cleanup natif à deux appelants : PASS CYD (21 octobre 2026)
 
 **Nouveau SHA réellement testé en firmware normal `esp32-cyd` : `3b551a6d0c17f28b392fe04675f5f428b4d545a8`**, branche `agent/esp32-retire-render-free-abi` ([PR #225](https://github.com/Kharn27/DoomRPG-RE/pull/225), base main `61bf1519730af5d81aeef5faeeba31bed210bfac`). [Push CI #39650761704](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39650761704) et [PR CI #39650771777](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39650771777) **SUCCESS**, trois environnements : RAM/flash normal **49 536/825 529 B**, bringup **49 688/846 341 B**, trace **49 584/842 281 B**.
