@@ -31,8 +31,10 @@ def extract(source, signature):
 name = "EspNativeEngineRoot_releaseRender"
 body = extract(owner, "static void " + name +
                "(Render_t* render, boolean freePtr)")
-runtime = extract(bridge, "void Render_freeRuntime(Render_t* render)")
-normalized = body.replace("static void " + name + "(", "void Render_free(")
+runtime = extract(owner, "static void EspNativeEngineRoot_releaseRenderRuntime(Render_t* render)")
+normalized = (body.replace("static void " + name + "(", "void Render_free(")
+              .replace("EspNativeEngineRoot_releaseRenderRuntime(render);",
+                       "Render_freeRuntime(render);"))
 hash_value = 2166136261
 for b in normalized.encode("utf-8"):
     hash_value = ((hash_value ^ b) * 16777619) & 0xffffffff
@@ -41,7 +43,16 @@ assert owner.count(name + "(") == 2
 assert "void Render_free(" not in bridge
 assert "nativeRenderTeardown=private" in builder
 assert re.search(r"#ifndef DOOMRPG_ESP32\s+void Render_free\(", header)
-assert "Render_freeRuntime(render);" in body
+assert "EspNativeEngineRoot_releaseRenderRuntime(render);" in body
+assert owner.count("EspNativeEngineRoot_releaseRenderRuntime(") == 2
+assert "Render_freeRuntime(" not in bridge
+assert re.search(r"#ifndef DOOMRPG_ESP32\s+void Render_freeRuntime\(", header)
+runtime_original = runtime.replace("static void EspNativeEngineRoot_releaseRenderRuntime(",
+                                   "void Render_freeRuntime(")
+runtime_fingerprint = 2166136261
+for b in runtime_original.encode("utf-8"):
+    runtime_fingerprint = ((runtime_fingerprint ^ b) * 16777619) & 0xffffffff
+assert runtime_fingerprint == 0x8042d34c, f"Render_freeRuntime body drift {runtime_fingerprint:08x}"
 assert "EspNativeEngineRoot_releaseRender(doomrpg->render, true);" in owner
 # No linked ESP32 C/C++ caller or implementation may resurrect this ABI.
 for p in sorted((ROOT / "ESP32/src").rglob("*")):
@@ -49,7 +60,7 @@ for p in sorted((ROOT / "ESP32/src").rglob("*")):
         continue
     clean = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ",
                    p.read_text(encoding="latin-1"), flags=re.S)
-    assert not re.search(r"\bRender_free\s*\(", clean), p
+    assert not re.search(r"\b(?:Render_free|Render_freeRuntime)\s*\(", clean), p
 
 shim = r"""
 #include <assert.h>
@@ -164,8 +175,8 @@ int main(void) {
 """
 # Add an observing wrapper to count REAL runtime calls, without modifying it.
 runtime_instrumented = runtime.replace(
-    "void Render_freeRuntime(Render_t* render)\n{",
-    "void Render_freeRuntime(Render_t* render)\n{\n    ++runtimeCalls;",
+    "static void EspNativeEngineRoot_releaseRenderRuntime(Render_t* render)\n{",
+    "static void EspNativeEngineRoot_releaseRenderRuntime(Render_t* render)\n{\n    ++runtimeCalls;",
     1,
 )
 with tempfile.TemporaryDirectory(prefix="private-render-free-") as temp:
@@ -177,4 +188,4 @@ with tempfile.TemporaryDirectory(prefix="private-render-free-") as temp:
                     "-Wall", "-Wextra", "-Werror", str(p), "-o", str(exe)],
                    check=True)
     subprocess.run([str(exe)], check=True)
-print("PASS Render_free=retired private native root bodyFNV=7e988863")
+print("PASS Render_free=retired FNV=7e988863 Render_freeRuntime=retired FNV=8042d34c")
