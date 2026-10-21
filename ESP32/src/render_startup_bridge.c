@@ -72,8 +72,9 @@ void EspNativeRenderRuntime_releaseCompatibility(Render_t* render)
  * The original source bodies are preserved exactly, except for one-time
  * source-ownership diagnostics; all legacy world/raster logic stays excluded.
  */
-/* Original Render palette and RGB565 ABI behavior, now native-owned. */
-void Render_loadPalettes(Render_t* render)
+/* Native startup-owned palette loader. The original desktop body, including
+ * paletteMemory accounting and fatal OOM contract, remains unchanged. */
+static void EspNativeRenderStartup_loadPalettes(Render_t* render)
 {
 	byte* fData;
 	int dataPos = 0, i;
@@ -275,7 +276,7 @@ static int EspNativeRenderStartup_initialize(Render_t* render) {
            (unsigned int)framebufferBytes,
            (void*)render->framebuffer);
 
-    Render_loadPalettes(render);
+    EspNativeRenderStartup_loadPalettes(render);
     if (render->mediaPalettes == NULL || render->mediaPalettesLength <= 0) {
         printf("[RENDER] ERROR palettes not initialized\n");
         return 0;

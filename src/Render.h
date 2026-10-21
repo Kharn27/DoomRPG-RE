@@ -241,7 +241,9 @@ void Render_free(Render_t* render, boolean freePtr);
 #ifndef DOOMRPG_ESP32
 int Render_startup(Render_t* render);
 #endif
+#ifndef DOOMRPG_ESP32
 void Render_loadPalettes(Render_t* render);
+#endif
 unsigned int Render_make565RGB(Render_t* render, int blue, int green, int red);
 unsigned short Render_RGB888_To_RGB565(Render_t* render, int rgb);
 void Render_setGrayPalettes(Render_t* render);

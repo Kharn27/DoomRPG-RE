@@ -197,6 +197,9 @@ jobs:
       - name: Test private Render startup and shared framebuffer failure paths (host C)
         run: python ESP32/test/native_render_startup_retirement_host.py
 
+      - name: Test private Render palettes loader byte parity (host C)
+        run: python ESP32/test/native_render_palette_retirement_host.py
+
       - name: Test private Render destructor and runtime slot teardown (host C)
         run: python ESP32/test/native_render_free_retirement_host.py
 

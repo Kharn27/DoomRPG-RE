@@ -26,7 +26,9 @@ assert "int Render_startup(Render_t* render) {" not in source
 assert "nativeRenderStartup=private" in builder
 assert re.search(r"#ifndef DOOMRPG_ESP32\s+int Render_startup\(", header)
 body = source[source.index(start):source.index(end, source.index(start))].rstrip()
-normalized = body.replace("static int " + name + "(", "int Render_startup(")
+normalized = (body.replace("static int " + name + "(", "int Render_startup(")
+              .replace("EspNativeRenderStartup_loadPalettes(render);",
+                       "Render_loadPalettes(render);"))
 h = 2166136261
 for byte in normalized.encode("utf-8"):
     h = ((h ^ byte) * 16777619) & 0xffffffff
@@ -39,7 +41,7 @@ for file in sorted((ROOT / "ESP32/src").rglob("*")):
         continue
     sanitized = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ",
                        file.read_text(encoding="latin-1"), flags=re.S)
-    assert not re.search(r"\bRender_startup\s*\(", sanitized), file
+    assert not re.search(r"\b(?:Render_startup|Render_loadPalettes)\s*\(", sanitized), file
 
 shim = r"""
 #include <assert.h>
@@ -97,7 +99,7 @@ static void* Esp32PlatformVideo_framebuffer(void) {
     return fbReady ? framebuffer : NULL;
 }
 static size_t Esp32PlatformVideo_framebufferSizeBytes(void) { return fbBytes; }
-static void Render_loadPalettes(Render_t* render) {
+static void EspNativeRenderStartup_loadPalettes(Render_t* render) {
     static short palette[3280];
     ++paletteLoads;
     render->mediaPalettes = failPalettes ? NULL : palette;

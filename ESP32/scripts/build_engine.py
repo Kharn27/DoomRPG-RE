@@ -107,6 +107,15 @@ if ("void Render_freeRuntime(Render_t* render)" in native_render_startup or
     raise RuntimeError("Retired Render_freeRuntime ABI revived or native dual-lifetime cleanup absent")
 print("[ESP32] Render_freeRuntime retired nativeRenderRuntimeCleanup=shared-native-two-callers")
 
+# The palette loader is only a private Render startup phase. The existing
+# RGB565 conversion helpers remain independent public compatibility APIs.
+if ("void Render_loadPalettes(Render_t* render)" in native_render_startup or
+        "static void EspNativeRenderStartup_loadPalettes(Render_t* render)" not in native_render_startup or
+        "EspNativeRenderStartup_loadPalettes(render);" not in native_render_startup or
+        "Render_loadPalettes(render);" in native_render_startup):
+    raise RuntimeError("Retired Render_loadPalettes ABI revived or native startup owner absent")
+print("[ESP32] Render_loadPalettes retired nativePaletteLoader=private")
+
 # No Game.c provider, generated or native bridge, is compiled on ESP32.
 # Game_t is not allocated, the compatibility root pointer stays NULL, and
 # Game_* calls are intentionally unavailable at link time.
