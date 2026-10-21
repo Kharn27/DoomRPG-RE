@@ -18,7 +18,7 @@ header = (ROOT / "src/Render.h").read_text(encoding="utf-8")
 builder = (ROOT / "ESP32/scripts/build_engine.py").read_text(encoding="utf-8")
 name = "EspNativeRenderStartup_initialize"
 start = "static int " + name + "(Render_t* render) {"
-end = "\n/*\n * Permanent native Render destructor ABI."
+end = "\nint EspRenderStartupBridge_start("
 assert source.count(start) == 1
 assert source.count(name + "(") == 2  # private body + single bridge call
 assert "result = " + name + "(render);" in source
