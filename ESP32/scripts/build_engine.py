@@ -89,8 +89,8 @@ if ("int Render_startup(Render_t* render) {" in native_render_startup or
     raise RuntimeError("Render_startup desktop ABI revived or native initializer absent")
 print("[ESP32] Render_startup retired nativeRenderStartup=private")
 
-# Render_free is private to the fatal process-root teardown. The tiny legacy
-# runtime-slot cleanup remains exported for its own later retirement milestone.
+# Render_free is private to the fatal process-root teardown. The legacy
+# cleanup slots now have a separate native-named two-caller API.
 if ("void Render_free(Render_t* render, boolean freePtr)" in native_render_startup or
         "static void EspNativeEngineRoot_releaseRender(Render_t* render, boolean freePtr)" not in native_layout_owner or
         "EspNativeEngineRoot_releaseRender(doomrpg->render, true);" not in native_layout_owner or
@@ -103,7 +103,7 @@ print("[ESP32] Render_free retired nativeRenderTeardown=private runtimeSlots=sep
 if ("void Render_freeRuntime(Render_t* render)" in native_render_startup or
         "void EspNativeRenderRuntime_releaseCompatibility(Render_t* render)" not in native_render_startup or
         "EspNativeRenderRuntime_releaseCompatibility(render);" not in native_layout_owner or
-        "Render_freeRuntime(render);" in native_main_start_owner):
+        "Render_freeRuntime(render);" in native_layout_owner):
     raise RuntimeError("Retired Render_freeRuntime ABI revived or native dual-lifetime cleanup absent")
 print("[ESP32] Render_freeRuntime retired nativeRenderRuntimeCleanup=shared-native-two-callers")
 
