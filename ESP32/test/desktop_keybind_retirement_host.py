@@ -36,7 +36,8 @@ assert "doom_rpg_source_text" not in builder  # No unused generated desktop TU.
 assert "compiledOriginal=0 compiledPatchedC=0" in builder
 assert all(name not in main for name in retired_symbols)
 assert "EspLegacyMappings_load(" in map_owner
-assert "Render_loadMappings(" in map_owner
+assert "Render_loadMappings(" not in map_owner
+assert "mappingsResult = EspLegacyMappings_load(render) ? true : false;" in map_owner
 assert "EspLegacyConfigMappingsStartup_start(" in map_owner
 
 # Native controls remain alive: root touchscreen, context routing, and menu
