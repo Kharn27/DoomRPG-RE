@@ -289,41 +289,6 @@ static int EspNativeRenderStartup_initialize(Render_t* render) {
     return 1;
 }
 
-/*
- * Permanent native Render destructor ABI.
- * Never free PlatformVideo's shared framebuffer: the framebuffer pointer is
- * detached before invoking the directly owned Render_freeRuntime cleanup.
- * All other cleanup actions and freePtr semantics mirror desktop Render_free.
- */
-void Render_free(Render_t* render, boolean freePtr)
-{
-    const int sharedFramebuffer = render != NULL &&
-        render->framebuffer == (byte*)Esp32PlatformVideo_framebuffer();
-    if (sharedFramebuffer) {
-        render->framebuffer = NULL;
-    }
-    printf("[RENDERFREE] ENTRY owner=esp-native-render-startup direct=yes wrap=no sharedFB=%d freePtr=%d\n",
-           sharedFramebuffer, (int)freePtr);
-
-    Render_freeRuntime(render);
-    SDL_free(render->ceilingColor);
-    SDL_free(render->floorColor);
-    SDL_free(render->columnScale);
-    SDL_free(render->mediaPalettes);
-
-    SDL_free(render->framebuffer);
-    render->framebuffer = NULL;
-
-    if (render->piDIB) {
-        SDL_DestroyTexture(render->piDIB);
-        render->piDIB = NULL;
-    }
-
-    if (freePtr) {
-        SDL_free(render);
-    }
-}
-
 int EspRenderStartupBridge_start(int preRenderReady) {
     Render_t* render;
     byte* expectedFramebuffer;

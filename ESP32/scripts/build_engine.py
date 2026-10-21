@@ -89,6 +89,15 @@ if ("int Render_startup(Render_t* render) {" in native_render_startup or
     raise RuntimeError("Render_startup desktop ABI revived or native initializer absent")
 print("[ESP32] Render_startup retired nativeRenderStartup=private")
 
+# Render_free is private to the fatal process-root teardown. The tiny legacy
+# runtime-slot cleanup remains exported for its own later retirement milestone.
+if ("void Render_free(Render_t* render, boolean freePtr)" in native_render_startup or
+        "static void EspNativeEngineRoot_releaseRender(Render_t* render, boolean freePtr)" not in native_layout_owner or
+        "EspNativeEngineRoot_releaseRender(doomrpg->render, true);" not in native_layout_owner or
+        "Render_free(doomrpg->render" in native_layout_owner):
+    raise RuntimeError("Retired Render_free ABI revived or private root teardown absent")
+print("[ESP32] Render_free retired nativeRenderTeardown=private runtimeSlots=separate")
+
 # No Game.c provider, generated or native bridge, is compiled on ESP32.
 # Game_t is not allocated, the compatibility root pointer stays NULL, and
 # Game_* calls are intentionally unavailable at link time.

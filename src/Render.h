@@ -233,7 +233,9 @@ Render_t* Render_init(Render_t * render, DoomRPG_t* doomRpg);
 void Render_setup(Render_t* render, SDL_Rect* windowRect);
 #endif
 void Render_freeRuntime(Render_t* render);
+#ifndef DOOMRPG_ESP32
 void Render_free(Render_t* render, boolean freePtr);
+#endif
 #ifndef DOOMRPG_ESP32
 int Render_startup(Render_t* render);
 #endif
