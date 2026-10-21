@@ -206,6 +206,9 @@ jobs:
       - name: Test retired legacy Render plane test entrypoints (host Python)
         run: python ESP32/test/native_render_plane_test_retirement_host.py
 
+      - name: Test retired legacy Render BSP and map ABI (host Python)
+        run: python ESP32/test/native_render_bsp_abi_retirement_host.py
+
       - name: Test private Render palettes loader byte parity (host C)
         run: python ESP32/test/native_render_palette_retirement_host.py
 
