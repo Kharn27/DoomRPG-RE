@@ -126,44 +126,6 @@ unsigned short Render_RGB888_To_RGB565(Render_t* render, int rgb)
 	return (unsigned short)Render_make565RGB(render, rgb & 0xff, (rgb >> 8) & 0xff, (rgb >> 16) & 0xff);
 }
 
-void Render_setGrayPalettes(Render_t* render)
-{
-	short* mediaPalettes, color, grayColor;
-	#ifndef DOOMRPG_ESP32
-	short* mediaPlanes;
-	#endif
-	int i, j;
-
-	for (i = 0; i < render->mediaPalettesLength; i++) {
-		mediaPalettes = render->mediaPalettes;
-		color = mediaPalettes[i];
-		grayColor = (((color & 0xf800) >> 10) + ((color >> 5) & 0x3f) + ((color & 0x1f) << 1)) / 3; //RGB
-		mediaPalettes[i] = ((grayColor >> 1) << 11) | (grayColor << 5) | (grayColor >> 1);
-	}
-
-	#ifndef DOOMRPG_ESP32
-	for (i = 0; i < render->planeTexturesCnt; i++)
-	{
-		for (j = 0; j < (64 * 64); j++) {
-			mediaPlanes = &render->mediaPlanes[i][j];
-			color = mediaPlanes[0];
-			grayColor = (((color & 0xf800) >> 10) + ((color >> 5) & 0x3f) + ((color & 0x1f) << 1)) / 3; //RGB
-			mediaPlanes[0] = ((grayColor >> 1) << 11) | (grayColor << 5) | (grayColor >> 1);
-		}
-	}
-	#endif
-
-	color = render->floorColor[0];
-	grayColor = (((color & 0xf800) >> 10) + ((color >> 5) & 0x3f) + ((color & 0x1f) << 1)) / 3; //RGB
-	render->floorColor[0] = ((grayColor >> 1) << 11) | (grayColor << 5) | (grayColor >> 1);
-
-	color = render->ceilingColor[0];
-	grayColor = (((color & 0xf800) >> 10) + ((color >> 5) & 0x3f) + ((color & 0x1f) << 1)) / 3; //RGB
-	render->ceilingColor[0] = ((grayColor >> 1) << 11) | (grayColor << 5) | (grayColor >> 1);
-}
-
-
-
 static int renderStartupAttempted = 0;
 static int renderStartupReady = 0;
 

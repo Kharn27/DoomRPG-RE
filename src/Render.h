@@ -246,7 +246,9 @@ void Render_loadPalettes(Render_t* render);
 #endif
 unsigned int Render_make565RGB(Render_t* render, int blue, int green, int red);
 unsigned short Render_RGB888_To_RGB565(Render_t* render, int rgb);
+#ifndef DOOMRPG_ESP32
 void Render_setGrayPalettes(Render_t* render);
+#endif
 
 boolean Render_loadMappings(Render_t* render);
 boolean Render_beginLoadMap(Render_t* render, int mapNameID);

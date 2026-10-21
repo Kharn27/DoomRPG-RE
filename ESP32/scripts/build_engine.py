@@ -116,6 +116,13 @@ if ("void Render_loadPalettes(Render_t* render)" in native_render_startup or
     raise RuntimeError("Retired Render_loadPalettes ABI revived or native startup owner absent")
 print("[ESP32] Render_loadPalettes retired nativePaletteLoader=private")
 
+# The legacy Render_setGrayPalettes mutator has no native owner or caller.
+# Native grayscale effects, if ever required, must own their own small color
+# state and must not mutate map-wide texture arrays from desktop Render.
+if "void Render_setGrayPalettes(Render_t* render)" in native_render_startup:
+    raise RuntimeError("Unused Render_setGrayPalettes legacy ABI revived")
+print("[ESP32] Render_setGrayPalettes retired nativeGrayPaletteOwner=none")
+
 # No Game.c provider, generated or native bridge, is compiled on ESP32.
 # Game_t is not allocated, the compatibility root pointer stays NULL, and
 # Game_* calls are intentionally unavailable at link time.
