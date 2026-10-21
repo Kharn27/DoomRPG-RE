@@ -123,6 +123,17 @@ if "void Render_setGrayPalettes(Render_t* render)" in native_render_startup:
     raise RuntimeError("Unused Render_setGrayPalettes legacy ABI revived")
 print("[ESP32] Render_setGrayPalettes retired nativeGrayPaletteOwner=none")
 
+# No Render_loadMappings compatibility symbol may remain: CONFIGMAP must call
+# the existing native PAK/framebuffer-scratch mapping owner directly.
+with open(join(project_src_dir, "esp_legacy_config_mappings_startup.c"), "r", encoding="utf-8") as f:
+    native_mapping_owner = f.read()
+if ("boolean Render_loadMappings(Render_t* render)" in native_mapping_owner or
+        "int EspLegacyMappings_load(struct Render_s* renderBase)" not in native_mapping_owner or
+        "mappingsResult = EspLegacyMappings_load(render) ? true : false;" not in native_mapping_owner or
+        "mappingsResult = Render_loadMappings(render);" in native_mapping_owner):
+    raise RuntimeError("Retired Render_loadMappings ABI revived or direct native mapping owner missing")
+print("[ESP32] Render_loadMappings retired nativeMappings=direct-PAK-owned")
+
 # No Game.c provider, generated or native bridge, is compiled on ESP32.
 # Game_t is not allocated, the compatibility root pointer stays NULL, and
 # Game_* calls are intentionally unavailable at link time.

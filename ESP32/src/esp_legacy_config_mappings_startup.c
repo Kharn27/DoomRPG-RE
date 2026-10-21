@@ -232,15 +232,6 @@ int EspLegacyMappings_load(struct Render_s* renderBase) {
     return 1;
 }
 
-/*
- * Direct native ABI entry point for the PAK-backed compact mappings owner.
- * Generated desktop Render_loadMappings is deliberately no longer linked.
- */
-boolean Render_loadMappings(Render_t* render)
-{
-    return EspLegacyMappings_load(render) ? true : false;
-}
-
 int EspLegacyConfigMappingsStartup_start(int renderStartupReady) {
     uint32_t mappingBytes = 0U;
     MappingPlan_t plan;
@@ -283,15 +274,15 @@ int EspLegacyConfigMappingsStartup_start(int renderStartupReady) {
     heapBeforeMappings = heap8Free();
     largestBeforeMappings = largest8Block();
 
-    printf("[MAPPINGS] -> Render_loadMappings() heap8=%u largest8=%u\n",
+    printf("[MAPPINGS] -> EspLegacyMappings_load() heap8=%u largest8=%u\n",
            (unsigned int)heapBeforeMappings,
            (unsigned int)largestBeforeMappings);
 
-    mappingsResult = Render_loadMappings(render);
+    mappingsResult = EspLegacyMappings_load(render) ? true : false;
     plan = installedPlan;
 
     heapAfterMappings = heap8Free();
-    printf("[MAPPINGS] Render_loadMappings result=%d used=%u heap8=%u largest8=%u\n",
+    printf("[MAPPINGS] EspLegacyMappings_load result=%d used=%u heap8=%u largest8=%u\n",
            mappingsResult,
            (unsigned int)(heapBeforeMappings >= heapAfterMappings
                               ? heapBeforeMappings - heapAfterMappings
