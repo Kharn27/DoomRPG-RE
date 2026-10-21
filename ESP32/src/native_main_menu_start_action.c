@@ -9,6 +9,7 @@
 #include "esp_native_menu_state.h"
 #include "esp_native_gameplay_player_state.h"
 #include "Render.h"
+#include "esp_render_startup_bridge.h"
 #include "esp_native_audio_intent.h"
 #include "esp_native_intro_state.h"
 
@@ -103,10 +104,10 @@ int DoomRPG_esp32ReleaseMainMenuMemory(struct DoomRPG_s* doomRpgBase) {
     heapBefore = heap8Free();
     largestBefore = largest8Block();
 
-    /* Render_freeRuntime owns the real legacy render-side cleanup.
+    /* EspNativeRenderRuntime_releaseCompatibility owns legacy render-side cleanup.
      * Game_unloadMapData was an inert compatibility no-op: native
      * resident/session map state is released by its own lifecycle owners. */
-    Render_freeRuntime(render);
+    EspNativeRenderRuntime_releaseCompatibility(render);
 
     printf("[MAINMENU] Runtime cleanup legals=retired heap8=%u->%u gained=%d largest8=%u->%u nodes=%p lines=%p mapSprites=%p mappings=%p/%p shapeData=%p mediaTexels=%p\n",
            (unsigned int)heapBefore,

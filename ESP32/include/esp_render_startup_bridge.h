@@ -20,6 +20,11 @@ extern "C" {
  */
 int EspRenderStartupBridge_start(int preRenderReady);
 
+/* Compatibility slots only, shared between native MENU_MAIN START and fatal
+ * root teardown. Does not own PlatformVideo framebuffer or map-state arenas. */
+struct Render_s;
+void EspNativeRenderRuntime_releaseCompatibility(struct Render_s* render);
+
 #ifdef __cplusplus
 }
 #endif

@@ -98,14 +98,17 @@ if ("void Render_free(Render_t* render, boolean freePtr)" in native_render_start
     raise RuntimeError("Retired Render_free ABI revived or private root teardown absent")
 print("[ESP32] Render_free retired nativeRenderTeardown=private runtimeSlots=separate")
 
-# Retire the remaining Render runtime cleanup ABI; both Render destructor
-# phases now belong privately to the native process root.
+# Two native callers share compatibility Render cleanup. Reject the desktop
+# Render_freeRuntime ABI without accidentally privatizing MENU_MAIN START.
+with open(join(project_src_dir, "native_main_menu_start_action.c"), "r", encoding="utf-8") as f:
+    native_main_start_owner = f.read()
 if ("void Render_freeRuntime(Render_t* render)" in native_render_startup or
-        "static void EspNativeEngineRoot_releaseRenderRuntime(Render_t* render)" not in native_layout_owner or
-        "EspNativeEngineRoot_releaseRenderRuntime(render);" not in native_layout_owner or
-        "Render_freeRuntime(render);" in native_layout_owner):
-    raise RuntimeError("Retired Render_freeRuntime ABI revived or root cleanup absent")
-print("[ESP32] Render_freeRuntime retired nativeRenderRuntimeCleanup=private")
+        "void EspNativeRenderRuntime_releaseCompatibility(Render_t* render)" not in native_render_startup or
+        "EspNativeRenderRuntime_releaseCompatibility(render);" not in native_layout_owner or
+        "EspNativeRenderRuntime_releaseCompatibility(render);" not in native_main_start_owner or
+        "Render_freeRuntime(render);" in native_main_start_owner):
+    raise RuntimeError("Retired Render_freeRuntime ABI revived or native dual-lifetime cleanup absent")
+print("[ESP32] Render_freeRuntime retired nativeRenderRuntimeCleanup=shared-native-two-callers")
 
 # No Game.c provider, generated or native bridge, is compiled on ESP32.
 # Game_t is not allocated, the compatibility root pointer stays NULL, and

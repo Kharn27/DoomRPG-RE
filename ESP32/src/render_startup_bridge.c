@@ -23,6 +23,50 @@ _Static_assert(sizeof(Render_t) == 1532U,
 
 extern DoomRPG_t* doomRpg;
 
+/* Render-shell compatibility slots have two native lifecycle callers:
+ * MENU_MAIN new-game START and fatal root teardown. This is the previous
+ * Render_freeRuntime body with only the native symbol substituted; map-owned
+ * immutable arenas and compact overlays remain independent. */
+void EspNativeRenderRuntime_releaseCompatibility(Render_t* render)
+{
+    int i;
+
+    SDL_free(render->mediaTexels);
+    render->mediaTexels = NULL;
+    SDL_free(render->shapeData);
+    render->shapeData = NULL;
+    SDL_free(render->mapSprites);
+    render->mapSprites = NULL;
+    render->numMapSprites = 0;
+    SDL_free(render->nodes);
+    render->nodes = NULL;
+    SDL_free(render->lines);
+    render->lines = NULL;
+    render->linesLength = 0;
+    SDL_free(render->tileEvents);
+    render->tileEvents = NULL;
+    SDL_free(render->mapByteCode);
+    render->mapByteCode = NULL;
+    for (i = 0; i < render->mapStringCount; i++) {
+        SDL_free(render->mapStringsIDs[i]);
+    }
+    SDL_free(render->mapStringsIDs);
+    render->mapStringCount = 0;
+    render->mapStringsIDs = NULL;
+    SDL_free(render->mediaBitShapeOffsets);
+    render->mediaBitShapeOffsets = NULL;
+    SDL_free(render->mediaTexelOffsets);
+    render->mediaTexelOffsets = NULL;
+    SDL_free(render->mediaTexturesIds);
+    render->mediaTexturesIds = NULL;
+    SDL_free(render->mediaSpriteIds);
+    render->mediaSpriteIds = NULL;
+    SDL_free(render->mapTextureTexels);
+    render->mapTextureTexels = NULL;
+    SDL_free(render->mapSpriteTexels);
+    render->mapSpriteTexels = NULL;
+}
+
 /*
  * Permanent ESP32 owner of the layout Render API root.
  * The original source bodies are preserved exactly, except for one-time

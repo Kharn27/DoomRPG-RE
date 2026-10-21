@@ -19,6 +19,7 @@
 #include "esp_native_menu_storage.h"
 #include "platform_video_config.h"
 #include "platform_video_c_bridge.h"
+#include "esp_render_startup_bridge.h"
 
 /* DoomRPG.h defines its original J2ME-style boolean before ESP-IDF brings in
  * the C99 false/true macros. */
@@ -44,53 +45,10 @@ static void EspNativeEngineRoot_releaseCanvas(DoomCanvas_t* doomCanvas)
     SDL_free(doomCanvas);
 }
 
-/* Retained compatibility Render slots belong to the native process root.
- * Resident map arenas and compact mutable overlays are independent.
- * Preserve exactly the former free/null order and allocation-free behavior. */
-static void EspNativeEngineRoot_releaseRenderRuntime(Render_t* render)
-{
-    int i;
-
-    SDL_free(render->mediaTexels);
-    render->mediaTexels = NULL;
-    SDL_free(render->shapeData);
-    render->shapeData = NULL;
-    SDL_free(render->mapSprites);
-    render->mapSprites = NULL;
-    render->numMapSprites = 0;
-    SDL_free(render->nodes);
-    render->nodes = NULL;
-    SDL_free(render->lines);
-    render->lines = NULL;
-    render->linesLength = 0;
-    SDL_free(render->tileEvents);
-    render->tileEvents = NULL;
-    SDL_free(render->mapByteCode);
-    render->mapByteCode = NULL;
-    for (i = 0; i < render->mapStringCount; i++) {
-        SDL_free(render->mapStringsIDs[i]);
-    }
-    SDL_free(render->mapStringsIDs);
-    render->mapStringCount = 0;
-    render->mapStringsIDs = NULL;
-    SDL_free(render->mediaBitShapeOffsets);
-    render->mediaBitShapeOffsets = NULL;
-    SDL_free(render->mediaTexelOffsets);
-    render->mediaTexelOffsets = NULL;
-    SDL_free(render->mediaTexturesIds);
-    render->mediaTexturesIds = NULL;
-    SDL_free(render->mediaSpriteIds);
-    render->mediaSpriteIds = NULL;
-    SDL_free(render->mapTextureTexels);
-    render->mapTextureTexels = NULL;
-    SDL_free(render->mapSpriteTexels);
-    render->mapSpriteTexels = NULL;
-}
-
 /* Process-root-owned Render destructor. The original native cleanup body and
  * freePtr semantics are retained verbatim apart from the private symbol name.
  * In particular, the shared PlatformVideo framebuffer must be detached before
- * Render_freeRuntime and must never be released by the Render shell.
+ * compatibility cleanup and must never be released by the Render shell.
  * The legacy owner wording in the Serial diagnostic is historical. */
 static void EspNativeEngineRoot_releaseRender(Render_t* render, boolean freePtr)
 {
@@ -102,7 +60,7 @@ static void EspNativeEngineRoot_releaseRender(Render_t* render, boolean freePtr)
     printf("[RENDERFREE] ENTRY owner=esp-native-render-startup direct=yes wrap=no sharedFB=%d freePtr=%d\n",
            sharedFramebuffer, (int)freePtr);
 
-    EspNativeEngineRoot_releaseRenderRuntime(render);
+    EspNativeRenderRuntime_releaseCompatibility(render);
     SDL_free(render->ceilingColor);
     SDL_free(render->floorColor);
     SDL_free(render->columnScale);

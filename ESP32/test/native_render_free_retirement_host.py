@@ -31,9 +31,9 @@ def extract(source, signature):
 name = "EspNativeEngineRoot_releaseRender"
 body = extract(owner, "static void " + name +
                "(Render_t* render, boolean freePtr)")
-runtime = extract(owner, "static void EspNativeEngineRoot_releaseRenderRuntime(Render_t* render)")
+runtime = extract(bridge, "void EspNativeRenderRuntime_releaseCompatibility(Render_t* render)")
 normalized = (body.replace("static void " + name + "(", "void Render_free(")
-              .replace("EspNativeEngineRoot_releaseRenderRuntime(render);",
+              .replace("EspNativeRenderRuntime_releaseCompatibility(render);",
                        "Render_freeRuntime(render);"))
 hash_value = 2166136261
 for b in normalized.encode("utf-8"):
@@ -43,11 +43,15 @@ assert owner.count(name + "(") == 2
 assert "void Render_free(" not in bridge
 assert "nativeRenderTeardown=private" in builder
 assert re.search(r"#ifndef DOOMRPG_ESP32\s+void Render_free\(", header)
-assert "EspNativeEngineRoot_releaseRenderRuntime(render);" in body
-assert owner.count("EspNativeEngineRoot_releaseRenderRuntime(") == 2
+assert "EspNativeRenderRuntime_releaseCompatibility(render);" in body
+assert owner.count("EspNativeRenderRuntime_releaseCompatibility(") == 1
+assert bridge.count("EspNativeRenderRuntime_releaseCompatibility(") == 1
 assert "Render_freeRuntime(" not in bridge
+assert "EspNativeRenderRuntime_releaseCompatibility(render);" in (ROOT / "ESP32/src/native_main_menu_start_action.c").read_text(encoding="utf-8")
+native_header = (ROOT / "ESP32/include/esp_render_startup_bridge.h").read_text(encoding="utf-8")
+assert "EspNativeRenderRuntime_releaseCompatibility(struct Render_s* render);" in native_header
 assert re.search(r"#ifndef DOOMRPG_ESP32\s+void Render_freeRuntime\(", header)
-runtime_original = runtime.replace("static void EspNativeEngineRoot_releaseRenderRuntime(",
+runtime_original = runtime.replace("void EspNativeRenderRuntime_releaseCompatibility(",
                                    "void Render_freeRuntime(")
 runtime_fingerprint = 2166136261
 for b in runtime_original.encode("utf-8"):
@@ -175,8 +179,8 @@ int main(void) {
 """
 # Add an observing wrapper to count REAL runtime calls, without modifying it.
 runtime_instrumented = runtime.replace(
-    "static void EspNativeEngineRoot_releaseRenderRuntime(Render_t* render)\n{",
-    "static void EspNativeEngineRoot_releaseRenderRuntime(Render_t* render)\n{\n    ++runtimeCalls;",
+    "void EspNativeRenderRuntime_releaseCompatibility(Render_t* render)\n{",
+    "void EspNativeRenderRuntime_releaseCompatibility(Render_t* render)\n{\n    ++runtimeCalls;",
     1,
 )
 with tempfile.TemporaryDirectory(prefix="private-render-free-") as temp:
