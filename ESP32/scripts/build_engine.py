@@ -100,12 +100,9 @@ print("[ESP32] Render_free retired nativeRenderTeardown=private runtimeSlots=sep
 
 # Two native callers share compatibility Render cleanup. Reject the desktop
 # Render_freeRuntime ABI without accidentally privatizing MENU_MAIN START.
-with open(join(project_src_dir, "native_main_menu_start_action.c"), "r", encoding="utf-8") as f:
-    native_main_start_owner = f.read()
 if ("void Render_freeRuntime(Render_t* render)" in native_render_startup or
         "void EspNativeRenderRuntime_releaseCompatibility(Render_t* render)" not in native_render_startup or
         "EspNativeRenderRuntime_releaseCompatibility(render);" not in native_layout_owner or
-        "EspNativeRenderRuntime_releaseCompatibility(render);" not in native_main_start_owner or
         "Render_freeRuntime(render);" in native_main_start_owner):
     raise RuntimeError("Retired Render_freeRuntime ABI revived or native dual-lifetime cleanup absent")
 print("[ESP32] Render_freeRuntime retired nativeRenderRuntimeCleanup=shared-native-two-callers")

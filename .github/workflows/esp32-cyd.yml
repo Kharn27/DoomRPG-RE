@@ -200,6 +200,9 @@ jobs:
       - name: Test private Render destructor and runtime slot teardown (host C)
         run: python ESP32/test/native_render_free_retirement_host.py
 
+      - name: Test native Render cleanup from real MENU_MAIN START (host C)
+        run: python ESP32/test/native_render_runtime_start_host.py
+
       - name: Test non-world SAVE slots presentation ownership after SYS EXIT (host C)
         run: python ESP32/test/native_nonworld_present_owner_host.py
 
