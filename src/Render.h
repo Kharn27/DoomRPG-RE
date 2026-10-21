@@ -307,8 +307,10 @@ void Render_setBerserkColor(Render_t* render);
 
 int Render_findEventIndex(Render_t* render, int i);
 
+#ifndef DOOMRPG_ESP32
 void Render_renderFloorAndCeilingBG_Test(Render_t* render);
 void Render_drawPlane_Test(Render_t* render, int x, int y, int planeTexture, int cnt);
 void Render_spanPlane_Test(Render_t* render, int x, int y, int planeTexture, int param_5, int param_6, int param_7, int param_8, int cnt);
+#endif
 
 #endif
