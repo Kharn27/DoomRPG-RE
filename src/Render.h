@@ -270,12 +270,16 @@ void Render_addMapTexture(Render_t* render, int textureIndex);
 void Render_addMapSprites(Render_t* render, int spriteId);
 void Render_addMapSprite(Render_t* render, int spriteIndex);
 
+#ifndef DOOMRPG_ESP32
 void Render_render(Render_t* render, int viewx, int viewy, int viewz, unsigned int viewangle);
+#endif
 void Render_initColumnScale(Render_t* render);
 void Render_renderFloorAndCeilingSolidBG(Render_t* render);
+#ifndef DOOMRPG_ESP32
 void Render_renderFloorAndCeilingBG(Render_t* render);
 void Render_drawplane(Render_t* render, int x, int y, PlaneTextureRef_t* planeTextures, int cnt);
 void Render_spanPlane(Render_t* render, int x, int y, PlaneTextureRef_t* planeTextures, int param_5, int param_6, int param_7, int param_8, int cnt);
+#endif
 #ifndef DOOMRPG_ESP32
 void Render_renderBSP(Render_t* render);
 void Render_renderBSPNoclip(Render_t* render);
