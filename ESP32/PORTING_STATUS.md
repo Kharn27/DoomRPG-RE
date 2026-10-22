@@ -1,5 +1,19 @@
 # Doom RPG ESP32 — état actuel du port
 
+## PR #226 — BSP/map ABI retired: CYD hardware PASS (22 octobre 2026)
+
+Firmware normal `esp32-cyd` testé, code SHA `10ff0b4b7b75095f7e12fa1d0fc0bdf15c18d4df`, branche `agent/esp32-retire-legacy-plane-test-abi`. [PR #226](https://github.com/Kharn27/DoomRPG-RE/pull/226). [CI push SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39688241930) et [CI PR SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39688246727). Builds identiques au précédent code : normal RAM 49 536 B / flash 825 497 B, bringup 49 688 / 846 301 B, trace 49 584 / 842 265 B.
+
+Sept anciennes entrées ESP32 supprimées : `Render_relinkSprite`, `Render_renderBSPNoclip`, `Render_findEventIndex`, `Render_beginLoadMap`, `Render_beginLoadMapData`, `Render_renderBSP`, `Render_walkNode`. Prototypes `Render.h` desktop-only, vrais corps desktop conservés ; CI `native_render_bsp_abi_retirement_host.py` PASS. Quatre stubs raster non concernés restent inchangés.
+
+**Serial START/EXIT** : PSRAM 0, framebuffer 38400 B, PAK 241, MENU_MAIN `0f2c9fc3`, intro `ade0195d`, `INTRODISP recovered=34056`, /intro.bsp CRC `623f34e4`, arena 14095/FNV `c3882516`, FIRST_FRAME `71ca7465`. Deux Armor Shards armure 0→4→8, porte 275 ouverte et fermée en 4 frames, dialogue opcode8/event89 annulé sans mutation. EXIT `saveWrite=no`, `DIALOGCHAIN activeAtTeardown=0`, `RESIDENTRESET released=18008 empty=1`, retour MENU_MAIN `0f2c9fc3`, heap8 après EXIT `159704` largest `110580` stable.
+
+**Serial LOAD/combat** : sauvegarde V11 slot 07, 5604 B, restauration map, overlays et états 30 monstres ; activations 22→24, porte 160, mouvement, deux ripostes après animation HP `30→27→24`, armure `10→8→6`. Extincteur `weapon=1` sans touche `No effect!`, ammo `12→11`. Heap8 `113768`, largest `86004` stable durant LOAD et combat jusqu'à 100s. `shapeData/mediaTexels=NULL`, `NATIVEFRAME BOUNDARY-INLINE` préexistant ; aucun crash ni divergence RNG visible.
+
+**Périmètre** : PASS sur START/EXIT et LOAD/combat, mais second EXIT après LOAD, nouvelle SAVE, autres maps et fatal teardown non testés. SHA de code gelé ; seuls documents modifiés après PASS. Aucun merge dans main.
+
+---
+
 ## PR #226 — Retrait des trois entrées Render planes *_Test : PASS matériel CYD (22 octobre 2026)
 
 **Code exactement présenté au test matériel, firmware normal `esp32-cyd` : `ba758095e82e594c232c410f737e005ccae518fc`**, branche `agent/esp32-retire-legacy-plane-test-abi`, [PR #226](https://github.com/Kharn27/DoomRPG-RE/pull/226), créée depuis le **main mergé** `a7bfffca4f13abd4cbdf5844615ab5559930fb30` (merge PR #225). [CI push #39686642437 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39686642437) et [CI PR #39686742624 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39686742624), trois builds/contrôles d'exports verts. Budgets statiques inchangés : **normal RAM 49 536 B / flash 825 497 B**, **bringup 49 688 / 846 301 B**, **trace 49 584 / 842 265 B**. Ces nombres ne sont pas les mesures du heap pendant le jeu.
