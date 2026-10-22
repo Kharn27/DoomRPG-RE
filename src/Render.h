@@ -253,28 +253,38 @@ void Render_setGrayPalettes(Render_t* render);
 #ifndef DOOMRPG_ESP32
 boolean Render_loadMappings(Render_t* render);
 #endif
+#ifndef DOOMRPG_ESP32
 boolean Render_beginLoadMap(Render_t* render, int mapNameID);
 boolean Render_beginLoadMapData(Render_t* render);
+#endif
 boolean Render_loadBitShapes(Render_t* render);
 boolean Render_loadTexels(Render_t* render);
 int Render_getSTexelOffsets(Render_t* render, int i);
 int Render_getSTexelBufferSize(Render_t* render, int i);
 
+#ifndef DOOMRPG_ESP32
 void Render_relinkSprite(Render_t* render, Sprite_t* sprite);
+#endif
 void Render_addMapTextures(Render_t* render, int textureId);
 void Render_addMapTexture(Render_t* render, int textureIndex);
 void Render_addMapSprites(Render_t* render, int spriteId);
 void Render_addMapSprite(Render_t* render, int spriteIndex);
 
+#ifndef DOOMRPG_ESP32
 void Render_render(Render_t* render, int viewx, int viewy, int viewz, unsigned int viewangle);
+#endif
 void Render_initColumnScale(Render_t* render);
 void Render_renderFloorAndCeilingSolidBG(Render_t* render);
+#ifndef DOOMRPG_ESP32
 void Render_renderFloorAndCeilingBG(Render_t* render);
 void Render_drawplane(Render_t* render, int x, int y, PlaneTextureRef_t* planeTextures, int cnt);
 void Render_spanPlane(Render_t* render, int x, int y, PlaneTextureRef_t* planeTextures, int param_5, int param_6, int param_7, int param_8, int cnt);
+#endif
+#ifndef DOOMRPG_ESP32
 void Render_renderBSP(Render_t* render);
 void Render_renderBSPNoclip(Render_t* render);
 void Render_walkNode(Render_t* render, int i);
+#endif
 boolean Render_cullBoundingBox(Render_t* render, Node_t* node);
 void Render_transform2DVerts(Render_t* render, Vertex_t* vert);
 boolean Render_clipLine(Render_t* render, Line_t* line);
@@ -305,10 +315,14 @@ void Render_draw2DSprite(Render_t* render, int weaponFrame, int flashFrame, int 
 void Render_fadeScreen(Render_t* render, int fade);
 void Render_setBerserkColor(Render_t* render);
 
+#ifndef DOOMRPG_ESP32
 int Render_findEventIndex(Render_t* render, int i);
+#endif
 
+#ifndef DOOMRPG_ESP32
 void Render_renderFloorAndCeilingBG_Test(Render_t* render);
 void Render_drawPlane_Test(Render_t* render, int x, int y, int planeTexture, int cnt);
 void Render_spanPlane_Test(Render_t* render, int x, int y, int planeTexture, int param_5, int param_6, int param_7, int param_8, int cnt);
+#endif
 
 #endif
