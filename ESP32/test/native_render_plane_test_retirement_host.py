@@ -12,7 +12,8 @@ ROOT = Path(__file__).resolve().parents[2]
 HEADER = (ROOT / "src/Render.h").read_text(encoding="latin-1")
 DESKTOP = (ROOT / "src/Render.c").read_text(encoding="latin-1")
 NATIVE = ROOT / "ESP32"
-REJECT = (NATIVE / "src/esp_legacy_render_reject.c").read_text(encoding="utf-8")
+REJECT_PATH = NATIVE / "src/esp_legacy_render_reject.c"
+assert not REJECT_PATH.exists(), "retired legacy Render reject translation unit revived"
 NAMES = (
     "Render_renderFloorAndCeilingBG_Test",
     "Render_drawPlane_Test",
@@ -21,7 +22,6 @@ NAMES = (
 
 for name in NAMES:
     assert re.search(r"\bvoid\s+" + name + r"\s*\(", DESKTOP), name
-    assert not re.search(r"\b" + name + r"\s*\(", REJECT), name
 
 # All three declarations must be in the same desktop-only guard.
 declaration_block = re.search(
