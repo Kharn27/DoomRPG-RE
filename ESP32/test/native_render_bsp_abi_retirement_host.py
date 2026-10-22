@@ -12,7 +12,8 @@ ROOT = Path(__file__).resolve().parents[2]
 NATIVE = ROOT / "ESP32"
 HEADER = (ROOT / "src/Render.h").read_text(encoding="latin-1")
 DESKTOP = (ROOT / "src/Render.c").read_text(encoding="latin-1")
-REJECT = (NATIVE / "src/esp_legacy_render_reject.c").read_text(encoding="utf-8")
+REJECT_PATH = NATIVE / "src/esp_legacy_render_reject.c"
+assert not REJECT_PATH.exists(), "retired legacy Render reject translation unit revived"
 RETIRED = (
     "Render_relinkSprite",
     "Render_renderBSPNoclip",
@@ -32,7 +33,6 @@ REMAINING = (
 # All removed symbols keep their original desktop source implementations.
 for name in RETIRED:
     assert re.search(r"\b(?:void|boolean|int)\s+" + name + r"\s*\(", DESKTOP), name
-    assert not re.search(r"\b" + name + r"\b", REJECT), name
 
 # C preprocessor exposure: each retired prototype must be behind its own or
 # a group #ifndef DOOMRPG_ESP32 guard, not just absent from the native stubs.
@@ -48,10 +48,8 @@ for name in RETIRED:
     )
     assert HEADER.find("#endif", declaration.end()) >= 0, name
 
-# Do not silently remove or replace the four remaining unrelated raster
-# compatibility boundaries in this milestone.
-for name in REMAINING:
-    assert re.search(r"\bvoid\s+" + name + r"\s*\(", REJECT), name
+# The last four raster rejects have now been retired as a separate milestone.
+# Their own host test checks desktop-only declarations and native absence.
 
 # Check every production/bringup/trace C/C++ source + native header, including
 # function pointers (not merely calls). Drop comments and strings so diagnostic
