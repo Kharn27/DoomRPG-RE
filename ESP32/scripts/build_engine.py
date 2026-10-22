@@ -70,6 +70,13 @@ print("[ESP32] Desktop DoomCanvas.c and lifecycle bridge retired; "
 print("[ESP32] Desktop Render.c retired; geometry=esp-render-geometry-primitives "
       "profiles=normal+trace+bringup generated=no")
 
+# The former production Render reject TU is now empty of legitimate owners.
+# Reject its return in every firmware profile: real BSP/plane/map operations
+# belong to compact native modules, not desktop-shaped safety stubs.
+if os.path.isfile(join(project_src_dir, "esp_legacy_render_reject.c")):
+    raise RuntimeError("Legacy Render reject translation unit revived")
+print("[ESP32] Legacy Render reject TU retired nativeBSP+planes=owned")
+
 # Render_setup is private to native layout; guard the exclusive ownership.
 with open(join(project_src_dir, "render_startup_bridge.c"), "r", encoding="utf-8") as f:
     native_render_startup = f.read()
