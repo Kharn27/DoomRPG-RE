@@ -1,5 +1,17 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #226 — Retrait des ABI Render BSP/map/event : contrat et PASS CYD (22 octobre 2026)
+
+**Code exact testé** : `10ff0b4b7b75095f7e12fa1d0fc0bdf15c18d4df`, normal `esp32-cyd`, [PR #226](https://github.com/Kharn27/DoomRPG-RE/pull/226), branch `agent/esp32-retire-legacy-plane-test-abi`. CI [push #39688241930](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39688241930), [PR #39688246727](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39688246727) SUCCESS. Statique normal RAM/flash 49536/825497 B, bringup 49688/846301 B, trace 49584/842265 B.
+
+**Contrat** : `Render_relinkSprite`, `Render_renderBSPNoclip`, `Render_findEventIndex`, `Render_beginLoadMap`, `Render_beginLoadMapData`, `Render_renderBSP`, `Render_walkNode` ne sont plus des ABI ESP32 : ni stub de rejet ni prototype natif visible. `src/Render.c` reste l'oracle desktop, `Render.h` garde ses prototypes uniquement desktop. Gardien CI `ESP32/test/native_render_bsp_abi_retirement_host.py`. Les 4 stubs de rendu `Render_render`, `Render_renderFloorAndCeilingBG`, `Render_drawplane`, `Render_spanPlane` restent inchangés, à auditer dans un prochain jalon. Les cartes, événements, rendu et PAK demeurent natifs compacts sans `shapeData` ni `mediaTexels`.
+
+**Preuves matérielles** : BOOT/MENU/START/INTRO, 2 Armor Shards, porte 275 et dialogue op8 annulé, puis HUB EXIT sans SAVE, résident vide. FNV MENU `0f2c9fc3`, intro `ade0195d`, Entrance CRC `623f34e4`, arena `c3882516`, premier monde `71ca7465`, dispose 34056 B, resident reset 18008 B, heap menu final 159704/110580 stable. LOAD V11 slot07 5604 B, 30 monstres restaurés, 22→24 activations, porte 160, séquence riposte animée + commit HP 30→27→24, armure 10→8→6. Tir arme1 extincteur sans touche, `No effect!`, ammo 12→11. Heap8 pendant combat 113768/largest 86004 stable sur cinq ALIVE. Aucune erreur visible. `NATIVEFRAME BOUNDARY-INLINE` déjà présent auparavant.
+
+**Limites du PASS** : pas de second EXIT depuis la session LOAD, pas de SAVE nouvelle écrite, autres maps, ni fatal teardown. Le code `10ff0b4b` est gelé après cette preuve ; commits post-test docs-only, CI à valider avant merge-ready, merge réservé à l'utilisateur.
+
+---
+
 ## PR #226 — Entrées Render planes *_Test retirées : contrat et PASS CYD (22 octobre 2026)
 
 **Code testé sur firmware normal `esp32-cyd` : `ba758095e82e594c232c410f737e005ccae518fc`**, [PR #226](https://github.com/Kharn27/DoomRPG-RE/pull/226) sur `agent/esp32-retire-legacy-plane-test-abi`, base `main=a7bfffca4f13abd4cbdf5844615ab5559930fb30`. [CI push #39686642437](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39686642437) et [PR #39686742624](https://github.com/Kharn27/DoomRPG-RE/actions/runs/39686742624) **SUCCESS**, budgets statiques inchangés **49 536/825 497 B** (normal), **49 688/846 301 B** (bringup), **49 584/842 265 B** (trace).
