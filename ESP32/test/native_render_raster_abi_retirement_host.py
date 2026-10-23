@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Retirement guard for the final four legacy desktop raster Render entrypoints.
+"""Retirement guard for five unused desktop Render raster/background entrypoints.
 
 Classic CYD uses the compact native BSP/world/plane renderers. The old raster
 reject-only TU has no remaining legitimate symbol, and must not be revived.
@@ -19,10 +19,10 @@ RETIRED = (
     "Render_renderFloorAndCeilingBG",
     "Render_drawplane",
     "Render_spanPlane",
+    "Render_renderFloorAndCeilingSolidBG",
 )
 LIVE_GEOMETRY = (
     "Render_initColumnScale",
-    "Render_renderFloorAndCeilingSolidBG",
     "Render_cullBoundingBox",
     "Render_transform2DVerts",
     "Render_clipLine",
@@ -53,8 +53,7 @@ for name in RETIRED:
 # Permanent native geometry ownership must survive this source retirement.
 for name in LIVE_GEOMETRY:
     assert re.search(r"\b" + name + r"\b", HEADER), name
-    if name != "Render_renderFloorAndCeilingSolidBG":
-        assert re.search(r"\b" + name + r"\s*\(", geometry), name
+    assert re.search(r"\b" + name + r"\s*\(", geometry), name
 
 # Check every production/bringup/trace C/C++ translation unit and header.
 # Bare address-taking, macro expansions and calls are all forbidden.
@@ -72,4 +71,4 @@ for subtree in (NATIVE / "src", NATIVE / "include"):
                 "legacy raster reference", path, name
             )
 
-print("PASS final 4 legacy raster Render ABIs retired; reject TU absent; desktop oracle intact")
+print("PASS five unused desktop Render raster/background ABIs retired; seven live geometry primitives preserved")
