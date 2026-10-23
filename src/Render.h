@@ -300,6 +300,7 @@ void Render_drawWallSpans(Render_t* render, Line_t* line);
 void Render_renderSpriteObject(Render_t* render, Sprite_t* sprite);
 void Render_renderSprite(Render_t* render, int x, int y, int mediaId, int info, byte renderMode);
 void Render_drawSpriteSpan(Render_t* render, Line_t* line);
+#ifndef DOOMRPG_ESP32
 void Render_getSpanMode(Render_t* render, int palOffset, byte spanMode);
 void Render_SpanMode0(Render_t* render, int param_2, int param_3, int param_4, int param_5, int param_6);
 void Render_SpanMode1(Render_t* render, int param_2, int param_3, int param_4, int param_5, int param_6);
@@ -311,6 +312,7 @@ void Render_SpanMode6(Render_t* render, int param_2, int param_3, int param_4, i
 void Render_SpanMode7(Render_t* render, int param_2, int param_3, int param_4, int param_5, int param_6);
 void Render_SpanMode8(Render_t* render, int param_2, int param_3, int param_4, int param_5, int param_6);
 void Render_SpanMode9(Render_t* render, int param_2, int param_3, int param_4, int param_5, int param_6);
+#endif
 
 void Render_draw2DSprite(Render_t* render, int weaponFrame, int flashFrame, int x, int y, byte renderMode, boolean damageBlend);
 
