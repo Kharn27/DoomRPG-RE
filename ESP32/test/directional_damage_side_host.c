@@ -19,9 +19,9 @@ static const Facing cases[4] = {
     {  0, 64, { {0, +64}, {-64, 0}, {0, -64}, {+64, 0} } }
 };
 
-/* Pixel-leasing fixture for the 160x80 viewport: the 2px border remains
- * underneath the band's RESTORE snapshot but is not included in the band's
- * visible BLEND. Snapshots restore LIFO (side -> border -> world). */
+/* Pixel fixture: the 2px border owns only the perimeter; the 10px band
+ * owns only the interior. Assert both restore orders, including a band that
+ * remains lit AFTER the 500ms border lease has expired. No SDL/display. */
 static uint16_t fixture[160U * 120U];
 static uint16_t original[160U * 120U];
 static uint16_t borderPixels[944U];
@@ -51,47 +51,58 @@ static void paintBorder(unsigned int mode) {
 }
 
 static void testOverlayDuringRedBorder(void) {
-    unsigned int side;
-    for (side = 1U; side <= 4U; ++side) {
-        unsigned int x, y, x0 = 0U, y0 = 20U;
-        unsigned int width = 160U, height = 10U;
-        unsigned int n = 0U, pulse;
-        if (side == 2U) { x0 = 150U; width = 10U; height = 80U; }
-        if (side == 3U) y0 = 90U;
-        if (side == 4U) { width = 10U; height = 80U; }
-        for (y = 0U; y < 120U; ++y) {
-            for (x = 0U; x < 160U; ++x) {
-                fixture[y * 160U + x] =
-                    (uint16_t)((y * 59U + x * 13U) & 0xffffU);
-            }
-        }
-        memcpy(original, fixture, sizeof(fixture));
-        paintBorder(0U);
-        for (pulse = 0U; pulse < 2U; ++pulse) {
-            n = 0U;
-            for (y = y0; y < y0 + height; ++y) {
-                for (x = x0; x < x0 + width; ++x) {
-                    uint16_t* p = &fixture[y * 160U + x];
-                    assert(n < 1600U);
-                    cuePixels[n++] = *p;
-                    *p = EspNativeGameplayDamageCue_blend565(
-                        original[y * 160U + x], 0xfa20U);
+    for (unsigned int side = 1U; side <= 4U; ++side) {
+        for (unsigned int expiryOrder = 0U; expiryOrder < 2U; ++expiryOrder) {
+            unsigned int x0 = 2U, y0 = 22U, width = 156U, height = 10U;
+            if (side == 2U) { x0 = 148U; width = 10U; height = 76U; }
+            if (side == 3U) y0 = 88U;
+            if (side == 4U) { width = 10U; height = 76U; }
+            for (unsigned y = 0U; y < 120U; ++y) {
+                for (unsigned x = 0U; x < 160U; ++x) {
+                    fixture[y * 160U + x] =
+                        (uint16_t)((y * 59U + x * 13U) & 0xffffU);
                 }
             }
-            assert(n == width * height);
-            /* At shared border pixels the band is flat over clean world,
-             * without a stronger 2px outline embedded in the 10px strip. */
-            assert(fixture[y0 * 160U + x0] ==
-                   EspNativeGameplayDamageCue_blend565(
-                       original[y0 * 160U + x0], 0xfa20U));
-            n = 0U;
-            for (y = y0; y < y0 + height; ++y)
-                for (x = x0; x < x0 + width; ++x)
-                    fixture[y * 160U + x] = cuePixels[n++];
-            assert(fixture[y0 * 160U + x0] == 0xb800U);
+            memcpy(original, fixture, sizeof(fixture));
+            paintBorder(0U);
+            for (unsigned pulse = 0U; pulse < 2U; ++pulse) {
+                unsigned n = 0U;
+                for (unsigned y = y0; y < y0 + height; ++y) {
+                    for (unsigned x = x0; x < x0 + width; ++x) {
+                        uint16_t* p = &fixture[y * 160U + x];
+                        assert(n < 1600U);
+                        cuePixels[n++] = *p;
+                        *p = EspNativeGameplayDamageCue_blend565(
+                            *p, 0xfa20U);
+                    }
+                }
+                assert(n == width * height);
+                assert(fixture[y0 * 160U + x0] ==
+                       EspNativeGameplayDamageCue_blend565(
+                           original[y0 * 160U + x0], 0xfa20U));
+                /* In particular the red 2px perimeter is never tinted. */
+                assert(fixture[20U * 160U + 80U] ==
+                       (expiryOrder == 1U && pulse == 1U
+                            ? original[20U * 160U + 80U] : 0xb800U));
+                if (expiryOrder == 1U && pulse == 0U) {
+                    paintBorder(1U);
+                    /* Restore the red frame WHILE the first band is ON. */
+                    assert(fixture[20U * 160U + 80U] ==
+                           original[20U * 160U + 80U]);
+                    assert(fixture[y0 * 160U + x0] ==
+                           EspNativeGameplayDamageCue_blend565(
+                               original[y0 * 160U + x0], 0xfa20U));
+                }
+                n = 0U;
+                for (unsigned y = y0; y < y0 + height; ++y)
+                    for (unsigned x = x0; x < x0 + width; ++x)
+                        fixture[y * 160U + x] = cuePixels[n++];
+                assert(fixture[y0 * 160U + x0] ==
+                       original[y0 * 160U + x0]);
+            }
+            if (expiryOrder == 0U) paintBorder(1U);
+            assert(memcmp(fixture, original, sizeof(fixture)) == 0);
         }
-        paintBorder(1U);
-        assert(memcmp(fixture, original, sizeof(fixture)) == 0);
     }
 }
 int main(void) {
@@ -196,6 +207,6 @@ int main(void) {
             &fifo, 600U, 5U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_NONE));
     }
     testOverlayDuringRedBorder();
-    puts("DAMAGECUE host: cardinal=16/16 behind=ok diagonal=ok oblique=ok invalid=ok fifo-order=ok wrap=ok full=guarded red+side=concurrent flat-band=world-base 2-pulses=exact restore=LIFO");
+    puts("DAMAGECUE host: cardinal=16/16 behind=ok diagonal=ok oblique=ok invalid=ok fifo-order=ok wrap=ok full=guarded red+side=disjoint 4-sides 2-pulses=exact both-expiry-orders");
     return 0;
 }
