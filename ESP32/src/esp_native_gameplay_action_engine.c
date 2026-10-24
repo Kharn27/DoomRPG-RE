@@ -1538,40 +1538,6 @@ static int visitViewportBorder(uint16_t* framebuffer,
     return pos == FEEDBACK_BORDER_PIXELS;
 }
 
-/* The red border and the direction band have separate physical lifetimes.
- * Keep the composited (border-inclusive) pixel as the band's RESTORE target,
- * but never use that red pixel as the band's BLEND source: otherwise the
- * 2-pixel border is visibly embedded in the thicker band, and can look like
- * a lingering border fragment when the two leases end on different ticks.
- * Reuse the existing 944-pixel world snapshot, no extra framebuffer/BSS. */
-static uint16_t directionalCueBlendBase(uint32_t x, uint32_t y,
-                                        uint16_t composited) {
-    const uint32_t top = FEEDBACK_VIEW_Y;
-    const uint32_t bottom = FEEDBACK_VIEW_Y + FEEDBACK_VIEW_HEIGHT;
-    const uint32_t edge = FEEDBACK_BORDER_THICKNESS;
-    const uint32_t width = DOOMRPG_LOGICAL_WIDTH;
-    uint32_t index;
-    if (actionState.viewportFlashSnapshotValid == 0U ||
-        (actionState.viewportFlashVisible == 0U &&
-         actionState.viewportFlashPending == 0U) ||
-        actionState.viewportFlashColor565 != FEEDBACK_DAMAGE_RED565 ||
-        x >= width || y < top || y >= bottom)
-        return composited;
-    if (y < top + edge)
-        index = (y - top) * width + x;
-    else if (y >= bottom - edge)
-        index = edge * width + (y - (bottom - edge)) * width + x;
-    else if (x < edge)
-        index = 2U * edge * width + (y - top - edge) * (2U * edge) + x;
-    else if (x >= width - edge)
-        index = 2U * edge * width + (y - top - edge) * (2U * edge) +
-                edge + x - (width - edge);
-    else
-        return composited;
-    return index < FEEDBACK_BORDER_PIXELS
-               ? viewportBorderSnapshot[index] : composited;
-}
-
 static const char* directionCueName(uint8_t side) {
     switch ((EspNativeGameplayDamageSide)side) {
     case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT: return "FRONT";
@@ -1644,15 +1610,18 @@ int EspNativeGameplayActionEngine_queueDirectionalDamage(
     return 1;
 }
 
-/* Visit exactly one side of the 160x80 world viewport, never the HUD bars.
- * mode 0 = capture clean pixels and blend, 1 = restore clean pixels,
- * mode 2 = repaint from the preserved clean snapshot. RGB565 averaging gives
- * 50% alpha; no framebuffer-sized scratch and no read from storage. */
+/* A direction band owns ONLY the viewport interior, never the 2px perimeter.
+ * This is a pixel-ownership boundary, not a cosmetic blend workaround: red
+ * border and cue may expire/repaint in either order without restoring each
+ * other's pixels. Four sides remain 10px thick, inset 2px; bounded snapshot
+ * fits the existing 1600-word buffer. No heap, SD read or full-frame copy.
+ * mode 0 = snapshot and blend; 1 = restore; 2 = repaint from snapshot. */
 static int visitDirectionalCue(uint8_t mode) {
     uint16_t* fb = (uint16_t*)Esp32PlatformVideo_framebuffer();
-    uint32_t x0 = 0U;
-    uint32_t y0 = FEEDBACK_VIEW_Y;
-    uint32_t width = DOOMRPG_LOGICAL_WIDTH;
+    const uint32_t inset = FEEDBACK_BORDER_THICKNESS;
+    uint32_t x0 = inset;
+    uint32_t y0 = FEEDBACK_VIEW_Y + inset;
+    uint32_t width = DOOMRPG_LOGICAL_WIDTH - 2U * inset;
     uint32_t height = DAMAGE_CUE_THICKNESS;
     uint32_t x;
     uint32_t y;
@@ -1666,16 +1635,16 @@ static int visitDirectionalCue(uint8_t mode) {
     case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT:
         break;
     case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK:
-        y0 += FEEDBACK_VIEW_HEIGHT - DAMAGE_CUE_THICKNESS;
+        y0 += FEEDBACK_VIEW_HEIGHT - 2U * inset - DAMAGE_CUE_THICKNESS;
         break;
     case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT:
         width = DAMAGE_CUE_THICKNESS;
-        height = FEEDBACK_VIEW_HEIGHT;
+        height = FEEDBACK_VIEW_HEIGHT - 2U * inset;
         break;
     case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_RIGHT:
-        x0 += DOOMRPG_LOGICAL_WIDTH - DAMAGE_CUE_THICKNESS;
+        x0 += width - DAMAGE_CUE_THICKNESS;
         width = DAMAGE_CUE_THICKNESS;
-        height = FEEDBACK_VIEW_HEIGHT;
+        height = FEEDBACK_VIEW_HEIGHT - 2U * inset;
         break;
     default:
         return 0;
@@ -1694,8 +1663,7 @@ static int visitDirectionalCue(uint8_t mode) {
             if (mode == 1U) *pixel = clean;
             else {
                 *pixel = EspNativeGameplayDamageCue_blend565(
-                    directionalCueBlendBase(x, y, clean),
-                    DAMAGE_CUE_COLOR565);
+                    clean, DAMAGE_CUE_COLOR565);
             }
         }
     }
@@ -2008,24 +1976,14 @@ int __wrap_Esp32PlatformVideo_present(void) {
         }
     }
 
-    /* Layer order: WORLD -> border -> direction. The band restores the
-     * border-inclusive pixels, but blends over clean world at shared edges
-     * so the thin border is not baked into its visible 10px strip. The base
-     * lease remains until any queued/active band has been restored. */
+    /* WORLD -> 2px border AND independent inset directional band. Their
+     * pixel sets are disjoint, including all four corners. No band snapshot
+     * can capture or reinstate border color on a subsequent pulse/expiry. */
     if ((actionState.viewportFlashPending != 0U ||
          actionState.viewportFlashVisible != 0U) &&
         (actionState.viewportFlashPending != 0U ||
          actionState.framebufferFresh != 0U) &&
         directionCue.stageNonlethalBorder == 0U) {
-        /* A second hit may refresh the border while the previous side pulse
-         * is lit. Remove that TOP layer first (except on a fresh world frame)
-         * or the border snapshot/repaint will capture stale band pixels. */
-        if (directionCue.phase == 2U &&
-            directionCue.snapshotValid != 0U &&
-            actionState.framebufferFresh == 0U) {
-            if (!visitDirectionalCue(1U)) return 0;
-            directionCue.needsRepaint = 1U;
-        }
         if (!paintViewportFlash()) {
             printf("[VIEWFLASH] FAILED phase=paint\n");
             return 0;
@@ -2138,11 +2096,9 @@ static int serviceViewportFlashExpiry(void) {
     duration = actionState.viewportFlashDurationMs;
     if (duration == 0U || elapsed < duration) return 1;
     if (EspNativeGameplayControls_isActive()) return 1;
-    /* The side band owns the TOP layer: restoring the base red border while
-     * the band still holds a red-pixel snapshot would leave stale pixels.
-     * Expire the base only after the short side pulse has restored its own
-     * snapshot. This is UI-only; the monster sequencer never waits for it. */
-    if (directionCue.phase != 0U || directionCue.queued.count != 0U) return 1;
+    /* Border and direction bands have disjoint pixel leases. The 500ms
+     * perimeter can expire even during a delayed/on-going direction pulse,
+     * without touching its inset snapshot. No cross-layer lifetime gate. */
     if (!restoreViewportFlash()) {
         printf("[VIEWFLASH] FAILED phase=restore\n");
         return 0;
@@ -2803,7 +2759,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
 
     if (EspNativeResidentGameplay_isAutomapActive()) muteAutomapVisuals();
     if (!serviceDirectionalCue()) return 0;
-    /* Admit a deferred first pulse before expiry can retire its base layer. */
+    /* Admit deferred side intents before servicing independent border expiry. */
     if (!serviceFeedbackExpiry()) return 0;
     /* PASS TURN and future non-SELECT actions may queue transient feedback
      * without owning an ActionPending transaction. If no gameplay redraw has
