@@ -77,7 +77,7 @@ int __real_Esp32PlatformVideo_present(void) {
     if (directionCue.current.side == ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_RIGHT) { x = 159; y = 50; }
     if (directionCue.snapshotValid && directionCue.phase == 1U &&
         pixels[1 + y * 160U + x] ==
-            EspNativeGameplayDamageCue_blend565(0xb800U, DAMAGE_CUE_COLOR565)) {
+            EspNativeGameplayDamageCue_blend565(0x1234U, DAMAGE_CUE_COLOR565)) {
         ++concurrentPresents;
         if (damageGlyphs != 0U) ++groupedTextPresents;
     }
@@ -206,7 +206,7 @@ int main(void) {
            !actionState.viewportFlashPending &&
            actionState.viewportFlashSnapshotValid);
     assert(pixels[1 + 20U * 160U + 80U] ==
-           EspNativeGameplayDamageCue_blend565(0xb800U, DAMAGE_CUE_COLOR565));
+           EspNativeGameplayDamageCue_blend565(0x1234U, DAMAGE_CUE_COLOR565));
     finish(); /* First ON, second ON and GAP all start after 818ms tail. */
     assert(directionCue.observedOnMs[0] == DAMAGE_CUE_ON_MS &&
            directionCue.observedOnMs[1] == DAMAGE_CUE_ON_MS);
@@ -283,11 +283,47 @@ int main(void) {
     finish();
 
     for (unsigned side = 1; side <= 4U; ++side) {
+        unsigned x = 80U, y = 20U;
         seed();
-        assert(EspNativeGameplayActionEngine_queueDirectionalDamage(10, 157, (EspNativeGameplayDamageSide)side));
+        assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
+            10, 157, (EspNativeGameplayDamageSide)side));
         assert(directionCue.phase == 2U && concurrentPresents == 1U);
+        /* A side-only hit must still show a red perimeter on other edges.
+         * Shared pixels blend from the world (not a baked-in 2px frame). */
+        assert(actionState.viewportFlashVisible &&
+               actionState.viewportFlashSnapshotValid);
+        if (side == ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK) y = 99U;
+        if (side == ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT) { x = 0U; y = 50U; }
+        if (side == ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_RIGHT) { x = 159U; y = 50U; }
+        assert(pixels[1 + y * 160U + x] ==
+               EspNativeGameplayDamageCue_blend565(
+                   0x1234U, DAMAGE_CUE_COLOR565));
+        /* The opposite perimeter remains red during the direction pulse. */
+        assert(pixels[1 + (side == ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK
+                               ? 20U : 99U) * 160U + 80U] == 0xb800U ||
+               side == ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT);
         finish();
     }
+
+    /* Regression: a second red flash refreshes while a prior direction band
+     * is still physically lit. The border must snapshot the world, not the
+     * first pulse, and the band must remain the top layer. */
+    seed();
+    assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
+        43U, 157U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT));
+    assert(directionCue.phase == 2U && directionCue.snapshotValid);
+    clockMs += 10U;
+    actionState.viewportFlashPending = 1U;
+    actionState.viewportFlashDurationMs = 500U;
+    actionState.viewportFlashColor565 = FEEDBACK_DAMAGE_RED565;
+    assert(__wrap_Esp32PlatformVideo_present());
+    assert(directionCue.phase == 2U && directionCue.snapshotValid &&
+           actionState.viewportFlashVisible && !directionCue.needsRepaint);
+    assert(pixels[1U + 50U * 160U] ==
+           EspNativeGameplayDamageCue_blend565(
+               0x1234U, DAMAGE_CUE_COLOR565));
+    assert(pixels[1U + 20U * 160U + 80U] == FEEDBACK_DAMAGE_RED565);
+    finish(); /* Includes exact clean world restore after both leases end. */
     seed();
     clockMs = UINT32_MAX - 100U;
     actionState.viewportFlashShownAtMs = clockMs;
