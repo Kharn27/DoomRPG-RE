@@ -239,8 +239,14 @@ static int depthLine(Render_t* r,
         line.vert2 = tmp;
     }
 
-    Render_transform2DVerts(r, &line.vert1);
-    Render_transform2DVerts(r, &line.vert2);
+    EspNativeRenderGeometry_transformPoint(
+        r->viewCos_, r->viewSin_, r->viewSin,
+        r->viewCos, r->viewTransX, r->viewTransY,
+        &line.vert1.x, &line.vert1.y);
+    EspNativeRenderGeometry_transformPoint(
+        r->viewCos_, r->viewSin_, r->viewSin,
+        r->viewCos, r->viewTransX, r->viewTransY,
+        &line.vert2.x, &line.vert2.y);
     if (!Render_clipLine(r, &line)) {
         ++state->clipCull;
         return 1;

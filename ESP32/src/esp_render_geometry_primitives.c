@@ -114,8 +114,14 @@ boolean Render_cullBoundingBox(Render_t* render, Node_t* node)
         line->vert2.y = node->y1;
     }
 
-    Render_transform2DVerts(render, &line->vert1);
-    Render_transform2DVerts(render, &line->vert2);
+    EspNativeRenderGeometry_transformPoint(
+        render->viewCos_, render->viewSin_, render->viewSin,
+        render->viewCos, render->viewTransX, render->viewTransY,
+        &line->vert1.x, &line->vert1.y);
+    EspNativeRenderGeometry_transformPoint(
+        render->viewCos_, render->viewSin_, render->viewSin,
+        render->viewCos, render->viewTransX, render->viewTransY,
+        &line->vert2.x, &line->vert2.y);
 
     if (Render_clipLine(render, line)) {
         EspNativeRenderGeometry_projectVertex(
@@ -140,16 +146,22 @@ boolean Render_cullBoundingBox(Render_t* render, Node_t* node)
     return true;
 }
 
-void Render_transform2DVerts(Render_t* render, Vertex_t* vert)
+void EspNativeRenderGeometry_transformPoint(
+    int viewCosNeg, int viewSinNeg, int viewSin, int viewCos,
+    int viewTransX, int viewTransY, int* x, int* y)
 {
-    int x, y;
-    x = (vert->x * render->viewCos_) +
-        (vert->y * render->viewSin_) + render->viewTransX;
-    y = (vert->x * render->viewSin) +
-        (vert->y * render->viewCos) + render->viewTransY;
+    const int sourceX = *x;
+    const int sourceY = *y;
+    int transformedX;
+    int transformedY;
 
-    vert->x = x;
-    vert->y = y;
+    transformedX = (sourceX * viewCosNeg) +
+                   (sourceY * viewSinNeg) + viewTransX;
+    transformedY = (sourceX * viewSin) +
+                   (sourceY * viewCos) + viewTransY;
+
+    *x = transformedX;
+    *y = transformedY;
 }
 
 boolean Render_clipLine(Render_t* render, Line_t* line)

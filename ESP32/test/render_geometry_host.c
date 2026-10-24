@@ -135,9 +135,41 @@ int main(void) {
         memset(&vertex, 0, sizeof(vertex));
         vertex.x = pick(2048); vertex.y = pick(2048); vertex.z = pick(64);
         refVertex = vertex;
-        Render_transform2DVerts(&native, &vertex);
+        EspNativeRenderGeometry_transformPoint(
+            native.viewCos_, native.viewSin_, native.viewSin,
+            native.viewCos, native.viewTransX, native.viewTransY,
+            &vertex.x, &vertex.y);
         Reference_Render_transform2DVerts(&reference, &refVertex);
         assert(memcmp(&vertex, &refVertex, sizeof(vertex)) == 0);
+        /* Fractional camera coefficients and view translations: compare
+         * the exact desktop C oracle, not a duplicate arithmetic formula.
+         * Restore the orientation fields before BSP culling below. */
+        {
+            Vertex_t actual = {0}, expected;
+            actual.x = (pick(257) - 128) * FRACUNIT + pick(FRACUNIT);
+            actual.y = (pick(257) - 128) * FRACUNIT + pick(FRACUNIT);
+            actual.z = pick(65536) - 32768;
+            expected = actual;
+            reference.viewCos_ = pick(2 * FRACUNIT) - FRACUNIT;
+            reference.viewSin_ = pick(2 * FRACUNIT) - FRACUNIT;
+            reference.viewSin = pick(2 * FRACUNIT) - FRACUNIT;
+            reference.viewCos = pick(2 * FRACUNIT) - FRACUNIT;
+            reference.viewTransX = (pick(1025) - 512) * FRACUNIT;
+            reference.viewTransY = (pick(1025) - 512) * FRACUNIT;
+            EspNativeRenderGeometry_transformPoint(
+                reference.viewCos_, reference.viewSin_,
+                reference.viewSin, reference.viewCos,
+                reference.viewTransX, reference.viewTransY,
+                &actual.x, &actual.y);
+            Reference_Render_transform2DVerts(&reference, &expected);
+            assert(memcmp(&actual, &expected, sizeof(actual)) == 0);
+            reference.viewCos_ = native.viewCos_;
+            reference.viewSin_ = native.viewSin_;
+            reference.viewSin = native.viewSin;
+            reference.viewCos = native.viewCos;
+            reference.viewTransX = native.viewTransX;
+            reference.viewTransY = native.viewTransY;
+        }
         memset(&node, 0, sizeof(node));
         node.x1 = pick(1800); node.y1 = pick(1800);
         node.x2 = node.x1 + pick(248); node.y2 = node.y1 + pick(248);
@@ -146,6 +178,6 @@ int main(void) {
                Reference_Render_cullBoundingBox(&reference, &node));
         sameScratch();
     }
-    puts("render_geometry_host: PASS 10000 seeded geometry cases, native projection, four cardinals and guarded columns");
+    puts("render_geometry_host: PASS 10000 seeded geometry cases, native 2D transforms and projections, four cardinals, fractional matrices and guarded columns");
     return 0;
 }

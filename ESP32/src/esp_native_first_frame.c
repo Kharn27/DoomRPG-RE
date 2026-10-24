@@ -1047,8 +1047,14 @@ static int drawLine(FirstFrameWork* work, uint32_t lineIndex) {
         projected.vert2 = swap;
     }
 
-    Render_transform2DVerts(work->render, &projected.vert1);
-    Render_transform2DVerts(work->render, &projected.vert2);
+    EspNativeRenderGeometry_transformPoint(
+        work->render->viewCos_, work->render->viewSin_, work->render->viewSin,
+        work->render->viewCos, work->render->viewTransX, work->render->viewTransY,
+        &projected.vert1.x, &projected.vert1.y);
+    EspNativeRenderGeometry_transformPoint(
+        work->render->viewCos_, work->render->viewSin_, work->render->viewSin,
+        work->render->viewCos, work->render->viewTransX, work->render->viewTransY,
+        &projected.vert2.x, &projected.vert2.y);
     if (!Render_clipLine(work->render, &projected)) {
         ++work->clipCulled;
         return 1;

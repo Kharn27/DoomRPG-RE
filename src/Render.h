@@ -288,7 +288,9 @@ void Render_renderBSPNoclip(Render_t* render);
 void Render_walkNode(Render_t* render, int i);
 #endif
 boolean Render_cullBoundingBox(Render_t* render, Node_t* node);
+#ifndef DOOMRPG_ESP32
 void Render_transform2DVerts(Render_t* render, Vertex_t* vert);
+#endif
 boolean Render_clipLine(Render_t* render, Line_t* line);
 void Render_clipVertex(Render_t* render, Vertex_t* vert, Line_t* line, int i, int i2);
 #ifndef DOOMRPG_ESP32
