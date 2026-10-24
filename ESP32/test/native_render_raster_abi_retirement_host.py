@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Retirement guard for twenty-one desktop-only raster/background/geometry ABIs.
+"""Retirement guard for twenty-two desktop-only raster/background/geometry ABIs.
 
 Classic CYD uses the compact native BSP/world/plane renderers. The old raster
 reject-only TU has no remaining legitimate symbol, and must not be revived.
@@ -36,9 +36,9 @@ RETIRED = (
     "Render_transform2DVerts",
     "Render_initColumnScale",
     "Render_clipVertex",
+    "Render_cullBoundingBox",
 )
 LIVE_GEOMETRY = (
-    "Render_cullBoundingBox",
     "Render_clipLine",
 )
 
@@ -50,7 +50,7 @@ geometry = (NATIVE / "src/esp_render_geometry_primitives.c").read_text(
 
 for name in RETIRED:
     # The original desktop implementation must remain authoritative.
-    assert re.search(r"\bvoid\s+" + name + r"\s*\(", DESKTOP), name
+    assert re.search(r"\b(?:void|boolean)\s+" + name + r"\s*\(", DESKTOP), name
     declaration = re.search(
         r"(?m)^[^\n]*\b" + name + r"\s*\([^;]*;", HEADER
     )
@@ -84,6 +84,25 @@ for owner in ("esp_native_first_frame.c", "esp_native_bsp_visibility.c",
 assert re.search(r"\bEspNativeRenderGeometry_occludeProjectedSpan\s*\(", geometry)
 for owner in ("esp_native_first_frame.c", "esp_native_bsp_visibility.c"):
     assert "EspNativeRenderGeometry_occludeProjectedSpan" in (NATIVE / "src" / owner).read_text()
+
+# The two native BSP entrypoints must preserve tmpLine around scalar node
+# culling. Losing the old wrapper's save/restore is a real render regression.
+assert "EspNativeRenderGeometry_cullBounds" in native_header
+assert re.search(r"\bint\s+EspNativeRenderGeometry_cullBounds\s*\(", geometry)
+for owner in ("esp_native_first_frame.c", "esp_native_bsp_visibility.c"):
+    src = (NATIVE / "src" / owner).read_text()
+    call = src.index("EspNativeRenderGeometry_cullBounds(")
+    save = src.rfind("savedTmpLine =", 0, call)
+    restore = src.find("->tmpLine = savedTmpLine;", call)
+    assert save >= 0 and call < restore and restore < call + 270, owner
+pio = (NATIVE / "platformio.ini").read_text()
+assert "--wrap=Render_cullBoundingBox" not in pio
+assert "__wrap_Render_cullBoundingBox" not in (
+    NATIVE / "src/native_first_frame_render_wrappers.c"
+).read_text()
+assert "__real_Render_cullBoundingBox" not in (
+    NATIVE / "src/native_first_frame_render_wrappers.c"
+).read_text()
 
 # Column reset formerly carried a hidden --wrap plane-render dependency.
 # Guard the explicit predecessor ordering so the real-CYD WORLD_POST/planes=no
@@ -128,4 +147,4 @@ for subtree in (NATIVE / "src", NATIVE / "include"):
                 "retired desktop raster/span reference", path, name
             )
 
-print("PASS 21 retired Render ABIs; two legacy geometry primitives plus native column reset, transform, projection and occlusion preserved")
+print("PASS 22 retired Render ABIs; one legacy clip geometry primitive plus native scalar BSP culling/columns/transform/projection/occlusion")
