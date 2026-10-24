@@ -14,7 +14,6 @@
 #include "esp_native_graphics_catalog.h"
 #include "esp_native_plane_renderer.h"
 
-void __real_Render_initColumnScale(Render_t* render);
 boolean __real_Render_cullBoundingBox(Render_t* render, Node_t* node);
 
 /* Compact native world rendering is identified by its permanent architecture
@@ -49,30 +48,28 @@ static uint32_t elapsedMicros(int64_t start) {
 }
 #endif
 
-void __wrap_Render_initColumnScale(Render_t* render) {
-    __real_Render_initColumnScale(render);
-    if (nativeCompactWorldContext(render)) {
-#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
-        int64_t start;
-        uint32_t micros;
-        int ok;
+int EspNativeWorldPlane_renderAtColumnReset(struct Render_s* renderBase) {
+    Render_t* render = (Render_t*)renderBase;
+    int ok;
 
-        /* Keep this probe deliberately stack-light. The earlier resident PAK
-         * before/after snapshots cost 2 * sizeof(EspAssetPackResidentStats)
-         * on this already-deep renderer call chain and the real CYD exposed a
-         * loopTask stack canary while regular-door animation added one more
-         * render wrapper layer. Storage correlation is already hardware-proven;
-         * this probe now owns only scalar timing state and changes no heap/BSS. */
-        start = esp_timer_get_time();
-        ok = EspNativePlaneRenderer_render(render);
-        micros = elapsedMicros(start);
-        DRPG_LOGT("[PLANEPROFILE] us=%u ok=%u\n",
-                  (unsigned int)micros,
-                  (unsigned int)(ok != 0));
+    if (!nativeCompactWorldContext(render)) return 0;
+
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
+    int64_t start;
+    uint32_t micros;
+
+    /* Keep the old profile point and its stack-light scalar-only footprint.
+     * Previously this ran as a hidden side effect of an ld --wrap call.
+     * It is now an explicit render-stage dependency. */
+    start = esp_timer_get_time();
+    ok = EspNativePlaneRenderer_render(render);
+    micros = elapsedMicros(start);
+    DRPG_LOGT("[PLANEPROFILE] us=%u ok=%u\n",
+              (unsigned int)micros, (unsigned int)(ok != 0));
 #else
-        (void)EspNativePlaneRenderer_render(render);
+    ok = EspNativePlaneRenderer_render(render);
 #endif
-    }
+    return ok;
 }
 
 boolean __wrap_Render_cullBoundingBox(Render_t* render, Node_t* node) {

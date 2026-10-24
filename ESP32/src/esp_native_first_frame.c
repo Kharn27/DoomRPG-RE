@@ -14,6 +14,7 @@
 #include "esp_map_line_state.h"
 #include "esp_map_runtime.h"
 #include "esp_native_first_frame.h"
+#include "esp_native_plane_renderer.h"
 #include "esp_render_geometry_primitives.h"
 #include "esp_native_wall_indicator_animation.h"
 #include "esp_native_graphics_catalog.h"
@@ -1047,8 +1048,14 @@ static int drawLine(FirstFrameWork* work, uint32_t lineIndex) {
         projected.vert2 = swap;
     }
 
-    Render_transform2DVerts(work->render, &projected.vert1);
-    Render_transform2DVerts(work->render, &projected.vert2);
+    EspNativeRenderGeometry_transformPoint(
+        work->render->viewCos_, work->render->viewSin_, work->render->viewSin,
+        work->render->viewCos, work->render->viewTransX, work->render->viewTransY,
+        &projected.vert1.x, &projected.vert1.y);
+    EspNativeRenderGeometry_transformPoint(
+        work->render->viewCos_, work->render->viewSin_, work->render->viewSin,
+        work->render->viewCos, work->render->viewTransX, work->render->viewTransY,
+        &projected.vert2.x, &projected.vert2.y);
     if (!Render_clipLine(work->render, &projected)) {
         ++work->clipCulled;
         return 1;
@@ -1362,7 +1369,15 @@ static int renderFrame(Render_t* render,
     render->spriteRasterCount = 0;
     render->spanMode = 0;
 
-    Render_initColumnScale(render);
+    EspNativeRenderGeometry_resetColumns(render->columnScale, render->screenWidth);
+    /* Historical --wrap=Render_initColumnScale injected textured floor and
+     * ceiling at exactly this point. The scalar reset retired that wrapper,
+     * so render planes explicitly before walking BSP and fail closed if its
+     * compact-world ownership or PAK lease is invalid. */
+    if (!EspNativeWorldPlane_renderAtColumnReset(render)) {
+        DRPG_LOGE("[NATIVEFRAME] FAILED stage=explicit-native-planes-after-column-reset\n");
+        goto done;
+    }
     if (!walkNodes(work)) {
         if (frameFailure.code == FIRST_FRAME_FAIL_NONE) {
             RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_WALK,

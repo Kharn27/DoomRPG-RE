@@ -273,7 +273,9 @@ void Render_addMapSprite(Render_t* render, int spriteIndex);
 #ifndef DOOMRPG_ESP32
 void Render_render(Render_t* render, int viewx, int viewy, int viewz, unsigned int viewangle);
 #endif
+#ifndef DOOMRPG_ESP32
 void Render_initColumnScale(Render_t* render);
+#endif
 #ifndef DOOMRPG_ESP32
 void Render_renderFloorAndCeilingSolidBG(Render_t* render);
 #endif
@@ -288,9 +290,13 @@ void Render_renderBSPNoclip(Render_t* render);
 void Render_walkNode(Render_t* render, int i);
 #endif
 boolean Render_cullBoundingBox(Render_t* render, Node_t* node);
+#ifndef DOOMRPG_ESP32
 void Render_transform2DVerts(Render_t* render, Vertex_t* vert);
+#endif
 boolean Render_clipLine(Render_t* render, Line_t* line);
+#ifndef DOOMRPG_ESP32
 void Render_clipVertex(Render_t* render, Vertex_t* vert, Line_t* line, int i, int i2);
+#endif
 #ifndef DOOMRPG_ESP32
 void Render_projectVertex(Render_t* render, Vertex_t* vert);
 #endif

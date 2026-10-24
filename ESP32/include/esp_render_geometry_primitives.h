@@ -26,4 +26,25 @@ void EspNativeRenderGeometry_occludeProjectedSpan(
 void EspNativeRenderGeometry_projectVertex(
     int screenWidth, int fracHalfScreenWidth, int* x, int* y, int* z);
 
+/*
+ * Desktop-equivalent view-space 2D transform for one caller-owned (x,y).
+ * Coefficients are the six per-frame Render viewCos_, viewSin_, viewSin,
+ * viewCos, viewTransX and viewTransY scalars, in that order. Source point
+ * coordinates are read before either output is stored; x/y must be distinct.
+ * The inherited integer multiplication, addition order and wrapping semantics
+ * are unchanged. z is deliberately untouched. No renderer object, vertex
+ * object or allocation crosses this boundary.
+ */
+void EspNativeRenderGeometry_transformPoint(
+    int viewCosNeg, int viewSinNeg, int viewSin, int viewCos,
+    int viewTransX, int viewTransY, int* x, int* y);
+
+/*
+ * Initialize an explicitly owned viewport column scratch array to the
+ * inherited COLUMN_SCALE_INIT sentinel. screenWidth is the number of valid
+ * int elements supplied by the caller. Only indices [0, screenWidth) are
+ * touched; width zero is a no-op. No Render object, allocation or map state.
+ */
+void EspNativeRenderGeometry_resetColumns(int* columnScale, int screenWidth);
+
 #endif
