@@ -64,12 +64,26 @@ static void sameScratch(void) {
 }
 
 int main(void) {
+    /* Independent width corpus: the native caller controls bounded storage,
+     * and no element outside the inherited viewport may be modified. */
+    for (int width = 0; width <= 160; ++width) {
+        seed((unsigned)width % 4U);
+        native.screenWidth = reference.screenWidth = width;
+        EspNativeRenderGeometry_resetColumns(native.columnScale, width);
+        Reference_Render_initColumnScale(&reference);
+        sameScratch();
+        for (int column = 0; column < 160; ++column) {
+            assert(columns[column + 1] ==
+                   (column < width ? COLUMN_SCALE_INIT : 0xbeef));
+        }
+    }
     for (unsigned i = 0; i < 10000; ++i) {
         Line_t line, other;
         Vertex_t vertex, refVertex;
         Node_t node;
         seed(i % 4);
-        Render_initColumnScale(&native);
+        EspNativeRenderGeometry_resetColumns(
+            native.columnScale, native.screenWidth);
         Reference_Render_initColumnScale(&reference);
         sameScratch();
         memset(&line, 0, sizeof(line));
@@ -178,6 +192,6 @@ int main(void) {
                Reference_Render_cullBoundingBox(&reference, &node));
         sameScratch();
     }
-    puts("render_geometry_host: PASS 10000 seeded geometry cases, native 2D transforms and projections, four cardinals, fractional matrices and guarded columns");
+    puts("render_geometry_host: PASS 10000 seeded geometry cases, native column reset/2D transforms/projections, four cardinals, fractional matrices and guarded columns");
     return 0;
 }

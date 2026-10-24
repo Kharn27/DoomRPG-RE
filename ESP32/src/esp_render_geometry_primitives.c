@@ -24,10 +24,10 @@
  */
 #if defined(DOOMRPG_ESP32)
 
-void Render_initColumnScale(Render_t* render)
+void EspNativeRenderGeometry_resetColumns(int* columnScale, int screenWidth)
 {
-    for (int i = render->screenWidth; --i >= 0;
-         render->columnScale[i] = COLUMN_SCALE_INIT);
+    for (int i = screenWidth; --i >= 0;
+         columnScale[i] = COLUMN_SCALE_INIT);
 }
 
 boolean Render_cullBoundingBox(Render_t* render, Node_t* node)

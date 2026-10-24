@@ -39,4 +39,12 @@ void EspNativeRenderGeometry_transformPoint(
     int viewCosNeg, int viewSinNeg, int viewSin, int viewCos,
     int viewTransX, int viewTransY, int* x, int* y);
 
+/*
+ * Initialize an explicitly owned viewport column scratch array to the
+ * inherited COLUMN_SCALE_INIT sentinel. screenWidth is the number of valid
+ * int elements supplied by the caller. Only indices [0, screenWidth) are
+ * touched; width zero is a no-op. No Render object, allocation or map state.
+ */
+void EspNativeRenderGeometry_resetColumns(int* columnScale, int screenWidth);
+
 #endif

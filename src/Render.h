@@ -273,7 +273,9 @@ void Render_addMapSprite(Render_t* render, int spriteIndex);
 #ifndef DOOMRPG_ESP32
 void Render_render(Render_t* render, int viewx, int viewy, int viewz, unsigned int viewangle);
 #endif
+#ifndef DOOMRPG_ESP32
 void Render_initColumnScale(Render_t* render);
+#endif
 #ifndef DOOMRPG_ESP32
 void Render_renderFloorAndCeilingSolidBG(Render_t* render);
 #endif

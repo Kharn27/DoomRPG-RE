@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Retirement guard for nineteen desktop-only raster/background/geometry ABIs.
+"""Retirement guard for twenty desktop-only raster/background/geometry ABIs.
 
 Classic CYD uses the compact native BSP/world/plane renderers. The old raster
 reject-only TU has no remaining legitimate symbol, and must not be revived.
@@ -34,9 +34,9 @@ RETIRED = (
     "Render_occludeClippedLine",
     "Render_projectVertex",
     "Render_transform2DVerts",
+    "Render_initColumnScale",
 )
 LIVE_GEOMETRY = (
-    "Render_initColumnScale",
     "Render_cullBoundingBox",
     "Render_clipLine",
     "Render_clipVertex",
@@ -67,6 +67,11 @@ native_header = (NATIVE / "include/esp_render_geometry_primitives.h").read_text(
 assert "Render_t" not in native_header and "Line_t" not in native_header
 assert "EspNativeRenderGeometry_occludeProjectedSpan" in native_header
 assert "EspNativeRenderGeometry_projectVertex" in native_header
+assert "EspNativeRenderGeometry_resetColumns" in native_header
+assert re.search(r"\bEspNativeRenderGeometry_resetColumns\s*\(", geometry)
+assert "EspNativeRenderGeometry_resetColumns" in (
+    NATIVE / "src/esp_native_first_frame.c"
+).read_text()
 assert "EspNativeRenderGeometry_transformPoint" in native_header
 assert re.search(r"\bEspNativeRenderGeometry_transformPoint\s*\(", geometry)
 for owner in ("esp_native_first_frame.c", "esp_native_bsp_visibility.c",
@@ -101,4 +106,4 @@ for subtree in (NATIVE / "src", NATIVE / "include"):
                 "retired desktop raster/span reference", path, name
             )
 
-print("PASS 19 retired Render ABIs; four legacy geometry primitives plus native transform, projection and occlusion preserved")
+print("PASS 20 retired Render ABIs; three legacy geometry primitives plus native column reset, transform, projection and occlusion preserved")

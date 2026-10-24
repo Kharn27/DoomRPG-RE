@@ -1368,7 +1368,7 @@ static int renderFrame(Render_t* render,
     render->spriteRasterCount = 0;
     render->spanMode = 0;
 
-    Render_initColumnScale(render);
+    EspNativeRenderGeometry_resetColumns(render->columnScale, render->screenWidth);
     if (!walkNodes(work)) {
         if (frameFailure.code == FIRST_FRAME_FAIL_NONE) {
             RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_WALK,
