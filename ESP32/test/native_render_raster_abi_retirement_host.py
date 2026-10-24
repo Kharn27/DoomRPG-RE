@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Retirement guard for seventeen desktop-only raster/background/geometry ABIs.
+"""Retirement guard for eighteen desktop-only raster/background/geometry ABIs.
 
 Classic CYD uses the compact native BSP/world/plane renderers. The old raster
 reject-only TU has no remaining legitimate symbol, and must not be revived.
@@ -32,6 +32,7 @@ RETIRED = (
     "Render_SpanMode8",
     "Render_SpanMode9",
     "Render_occludeClippedLine",
+    "Render_projectVertex",
 )
 LIVE_GEOMETRY = (
     "Render_initColumnScale",
@@ -39,7 +40,6 @@ LIVE_GEOMETRY = (
     "Render_transform2DVerts",
     "Render_clipLine",
     "Render_clipVertex",
-    "Render_projectVertex",
 )
 
 assert not REJECT_PATH.exists(), "obsolete reject-only translation unit returned"
@@ -66,6 +66,11 @@ for name in RETIRED:
 native_header = (NATIVE / "include/esp_render_geometry_primitives.h").read_text()
 assert "Render_t" not in native_header and "Line_t" not in native_header
 assert "EspNativeRenderGeometry_occludeProjectedSpan" in native_header
+assert "EspNativeRenderGeometry_projectVertex" in native_header
+assert re.search(r"\bEspNativeRenderGeometry_projectVertex\s*\(", geometry)
+for owner in ("esp_native_first_frame.c", "esp_native_bsp_visibility.c",
+              "esp_native_sprite_renderer.c"):
+    assert "EspNativeRenderGeometry_projectVertex" in (NATIVE / "src" / owner).read_text()
 assert re.search(r"\bEspNativeRenderGeometry_occludeProjectedSpan\s*\(", geometry)
 for owner in ("esp_native_first_frame.c", "esp_native_bsp_visibility.c"):
     assert "EspNativeRenderGeometry_occludeProjectedSpan" in (NATIVE / "src" / owner).read_text()
@@ -91,4 +96,4 @@ for subtree in (NATIVE / "src", NATIVE / "include"):
                 "retired desktop raster/span reference", path, name
             )
 
-print("PASS 17 retired Render ABIs; six legacy geometry primitives and native column occlusion preserved")
+print("PASS 18 retired Render ABIs; five legacy geometry primitives plus native projection and occlusion preserved")

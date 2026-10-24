@@ -86,8 +86,12 @@ int main(void) {
         if (line.vert1.x >= 4 * FRACUNIT && line.vert2.x >= 4 * FRACUNIT &&
             line.vert1.y >= -line.vert1.x && line.vert1.y <= line.vert1.x &&
             line.vert2.y >= -line.vert2.x && line.vert2.y <= line.vert2.x) {
-            Render_projectVertex(&native, &line.vert1);
-            Render_projectVertex(&native, &line.vert2);
+            EspNativeRenderGeometry_projectVertex(
+                native.screenWidth, native.fracHalfScreenWidth,
+                &line.vert1.x, &line.vert1.y, &line.vert1.z);
+            EspNativeRenderGeometry_projectVertex(
+                native.screenWidth, native.fracHalfScreenWidth,
+                &line.vert2.x, &line.vert2.y, &line.vert2.z);
             Reference_Render_projectVertex(&reference, &other.vert1);
             Reference_Render_projectVertex(&reference, &other.vert2);
             assert(memcmp(&line, &other, sizeof(line)) == 0);
@@ -112,6 +116,22 @@ int main(void) {
             Reference_Render_occludeClippedLine(&reference, &projectedRef);
             sameScratch();
         }
+        /* Separate direct projection parity corpus with unaligned positive
+         * depths and both signs of vertical extent, without clipping. */
+        {
+            Vertex_t projected, projectedRef;
+            projected.x = (4 + pick(125)) * FRACUNIT + pick(FRACUNIT);
+            projected.y = (pick(257) - 128) * FRACUNIT;
+            projected.z = pick(65) - 32;
+            projectedRef = projected;
+            EspNativeRenderGeometry_projectVertex(
+                native.screenWidth, native.fracHalfScreenWidth,
+                &projected.x, &projected.y, &projected.z);
+            Reference_Render_projectVertex(&reference, &projectedRef);
+            assert(memcmp(&projected, &projectedRef,
+                          sizeof(projected)) == 0);
+            sameScratch();
+        }
         memset(&vertex, 0, sizeof(vertex));
         vertex.x = pick(2048); vertex.y = pick(2048); vertex.z = pick(64);
         refVertex = vertex;
@@ -126,6 +146,6 @@ int main(void) {
                Reference_Render_cullBoundingBox(&reference, &node));
         sameScratch();
     }
-    puts("render_geometry_host: PASS 10000 seeded geometry cases, four cardinals and guarded columns");
+    puts("render_geometry_host: PASS 10000 seeded geometry cases, native projection, four cardinals and guarded columns");
     return 0;
 }

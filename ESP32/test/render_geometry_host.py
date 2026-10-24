@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Compare six legacy-named native geometry primitives and native column
-occlusion against seven isolated desktop reference bodies.
+"""Compare five legacy-named native geometry primitives plus native projection
+and occlusion against seven isolated desktop reference bodies.
 
 Reference source is test-only, never a firmware build input. Integer wrapping
 matches the inherited 32-bit fixed arithmetic. This is not a hardware render,

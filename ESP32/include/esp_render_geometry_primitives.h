@@ -15,4 +15,15 @@
 void EspNativeRenderGeometry_occludeProjectedSpan(
     int* columnScale, int x1, int x2);
 
+/*
+ * Desktop-equivalent fixed-point perspective projection using scalar frame
+ * parameters and caller-owned coordinates. Input x is a positive, nonzero,
+ * forward-facing camera depth in 16.16; y is camera-relative 16.16; z is
+ * the inherited vertical extent. Output x is projected 16.16 screen x,
+ * y is depth scale and z is scaled vertical extent. Three pointers must
+ * refer to distinct scalar fields. No allocations or engine object inputs.
+ */
+void EspNativeRenderGeometry_projectVertex(
+    int screenWidth, int fracHalfScreenWidth, int* x, int* y, int* z);
+
 #endif

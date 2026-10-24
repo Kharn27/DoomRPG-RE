@@ -245,8 +245,12 @@ static int depthLine(Render_t* r,
         ++state->clipCull;
         return 1;
     }
-    Render_projectVertex(r, &line.vert1);
-    Render_projectVertex(r, &line.vert2);
+    EspNativeRenderGeometry_projectVertex(
+        r->screenWidth, r->fracHalfScreenWidth,
+        &line.vert1.x, &line.vert1.y, &line.vert1.z);
+    EspNativeRenderGeometry_projectVertex(
+        r->screenWidth, r->fracHalfScreenWidth,
+        &line.vert2.x, &line.vert2.y, &line.vert2.z);
 
     if ((line.flags & OCCLUDER) != 0) {
         EspNativeRenderGeometry_occludeProjectedSpan(
