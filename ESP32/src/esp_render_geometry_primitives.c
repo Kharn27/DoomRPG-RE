@@ -164,9 +164,17 @@ void EspNativeRenderGeometry_transformPoint(
     *y = transformedY;
 }
 
+/* The interpolation is an internal clipping detail; no Render_t or public
+ * desktop Render_clipVertex ABI is needed. The input segment endpoints are
+ * sampled before overwriting the selected endpoint, preserving legacy alias
+ * semantics and exact fixed-point arithmetic. */
+static void clipVertex(Vertex_t* vert, Line_t* line, int i, int i2);
+
 boolean Render_clipLine(Render_t* render, Line_t* line)
 {
     int i, i2, i3, i4, i5, i6;
+
+    (void)render; /* Legacy ABI argument is unused in native clip math. */
 
     i = line->vert1.x + line->vert1.y;
     i2 = line->vert2.x + line->vert2.y;
@@ -175,11 +183,11 @@ boolean Render_clipLine(Render_t* render, Line_t* line)
         if (i2 < 0) {
             return false;
         }
-        Render_clipVertex(render, &line->vert1, line, i, i2);
+        clipVertex(&line->vert1, line, i, i2);
     }
     else if (i2 < 0)
     {
-        Render_clipVertex(render, &line->vert2, line, -i, -i2);
+        clipVertex(&line->vert2, line, -i, -i2);
     }
 
     i3 = line->vert1.x - line->vert1.y;
@@ -189,11 +197,11 @@ boolean Render_clipLine(Render_t* render, Line_t* line)
         if (i3 < 0) {
             return false;
         }
-        Render_clipVertex(render, &line->vert2, line, i3, i4);
+        clipVertex(&line->vert2, line, i3, i4);
     }
     else if (i3 < 0)
     {
-        Render_clipVertex(render, &line->vert1, line, -i3, -i4);
+        clipVertex(&line->vert1, line, -i3, -i4);
     }
 
     i5 = line->vert1.x - 0x40000;
@@ -203,17 +211,17 @@ boolean Render_clipLine(Render_t* render, Line_t* line)
         if (i5 < 0) {
             return false;
         }
-        Render_clipVertex(render, &line->vert2, line, i5, i6);
+        clipVertex(&line->vert2, line, i5, i6);
     }
     else if (i5 < 0)
     {
-        Render_clipVertex(render, &line->vert1, line, -i5, -i6);
+        clipVertex(&line->vert1, line, -i5, -i6);
     }
 
     return true;
 }
 
-void Render_clipVertex(Render_t* render, Vertex_t* vert, Line_t* line, int i, int i2)
+static void clipVertex(Vertex_t* vert, Line_t* line, int i, int i2)
 {
 #if FIXED_VERSION == 1
     fixed_t j, j2;

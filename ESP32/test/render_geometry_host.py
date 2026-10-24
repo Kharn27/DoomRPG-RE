@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare four legacy-named native geometry primitives, two native point
+"""Compare remaining legacy-named native geometry primitives, two native point
 operations and occlusion against seven isolated desktop reference bodies.
 
 Reference source is test-only, never a firmware build input. Integer wrapping

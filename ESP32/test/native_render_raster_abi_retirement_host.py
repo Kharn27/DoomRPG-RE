@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Retirement guard for twenty desktop-only raster/background/geometry ABIs.
+"""Retirement guard for twenty-one desktop-only raster/background/geometry ABIs.
 
 Classic CYD uses the compact native BSP/world/plane renderers. The old raster
 reject-only TU has no remaining legitimate symbol, and must not be revived.
@@ -35,11 +35,11 @@ RETIRED = (
     "Render_projectVertex",
     "Render_transform2DVerts",
     "Render_initColumnScale",
+    "Render_clipVertex",
 )
 LIVE_GEOMETRY = (
     "Render_cullBoundingBox",
     "Render_clipLine",
-    "Render_clipVertex",
 )
 
 assert not REJECT_PATH.exists(), "obsolete reject-only translation unit returned"
@@ -103,6 +103,10 @@ planes = frame.index("if (!EspNativeWorldPlane_renderAtColumnReset(render))", po
 bsp = frame.index("if (!walkNodes(work))", point)
 assert point < planes < bsp, "world planes must render after column reset, before BSP"
 
+# Internal interpolation must not expose the desktop ABI or depend on Render_t.
+assert re.search(r"static\s+void\s+clipVertex\s*\(", geometry)
+assert geometry.count("clipVertex(") == 8  # declaration + body + six calls
+
 # Permanent native geometry ownership must survive this source retirement.
 for name in LIVE_GEOMETRY:
     assert re.search(r"\b" + name + r"\b", HEADER), name
@@ -124,4 +128,4 @@ for subtree in (NATIVE / "src", NATIVE / "include"):
                 "retired desktop raster/span reference", path, name
             )
 
-print("PASS 20 retired Render ABIs; three legacy geometry primitives plus native column reset, transform, projection and occlusion preserved")
+print("PASS 21 retired Render ABIs; two legacy geometry primitives plus native column reset, transform, projection and occlusion preserved")
