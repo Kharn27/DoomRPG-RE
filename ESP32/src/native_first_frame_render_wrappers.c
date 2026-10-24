@@ -14,13 +14,12 @@
 #include "esp_native_graphics_catalog.h"
 #include "esp_native_plane_renderer.h"
 
-boolean __real_Render_cullBoundingBox(Render_t* render, Node_t* node);
-
 /* Compact native world rendering is identified by its permanent architecture
  * boundary, not by whether the historical first-frame owner happens to be
  * ready.  The gameplay viewport route deliberately leaves that historical
- * owner untouched, but it still needs the same native plane injection and
- * tmpLine preservation as the hardware-proven boot route. */
+ * owner untouched, but it still needs the same explicit native plane
+ * injection as the hardware-proven boot route. BSP culling now preserves
+ * tmpLine at its own native call sites. */
 static int nativeCompactWorldContext(const Render_t* render) {
     return render != NULL &&
            EspMapRuntime_isLoaded() &&
@@ -72,16 +71,3 @@ int EspNativeWorldPlane_renderAtColumnReset(struct Render_s* renderBase) {
     return ok;
 }
 
-boolean __wrap_Render_cullBoundingBox(Render_t* render, Node_t* node) {
-    boolean result;
-    Line_t savedTmpLine;
-
-    if (!nativeCompactWorldContext(render)) {
-        return __real_Render_cullBoundingBox(render, node);
-    }
-
-    savedTmpLine = render->tmpLine;
-    result = __real_Render_cullBoundingBox(render, node);
-    render->tmpLine = savedTmpLine;
-    return result;
-}
