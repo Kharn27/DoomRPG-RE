@@ -53,11 +53,7 @@ def main():
         body = extract(original, signature)
         assert zlib.crc32(body.encode("latin-1")) == crc, "reference drift: " + signature
         bodies.append(body)
-    solid = "void Render_renderFloorAndCeilingSolidBG(Render_t* render)"
-    # Retain the existing exact-body solid BG contract.
-    assert extract(original, solid) == extract(native, solid)
-    bodies.append(extract(original, solid))
-    names = [re.search(r"\b(Render_\w+)\(", s)[1] for s in list(FUNCTIONS) + [solid]]
+    names = [re.search(r"\b(Render_\w+)\(", s)[1] for s in FUNCTIONS]
     reference = '#include <stdint.h>\n#include <SDL.h>\n#include "DoomRPG.h"\n#include "Render.h"\n#define FIXED_VERSION 1\n'
     reference += "\n".join(bodies)
     reference = "\n".join("#define %s Reference_%s" % (n, n) for n in names) + "\n" + reference

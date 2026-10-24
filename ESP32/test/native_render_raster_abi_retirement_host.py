@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Retirement guard for the final four legacy desktop raster Render entrypoints.
+"""Retirement guard for sixteen desktop-only raster, background and span entrypoints.
 
 Classic CYD uses the compact native BSP/world/plane renderers. The old raster
 reject-only TU has no remaining legitimate symbol, and must not be revived.
@@ -19,10 +19,21 @@ RETIRED = (
     "Render_renderFloorAndCeilingBG",
     "Render_drawplane",
     "Render_spanPlane",
+    "Render_renderFloorAndCeilingSolidBG",
+    "Render_getSpanMode",
+    "Render_SpanMode0",
+    "Render_SpanMode1",
+    "Render_SpanMode2",
+    "Render_SpanMode3",
+    "Render_SpanMode4",
+    "Render_SpanMode5",
+    "Render_SpanMode6",
+    "Render_SpanMode7",
+    "Render_SpanMode8",
+    "Render_SpanMode9",
 )
 LIVE_GEOMETRY = (
     "Render_initColumnScale",
-    "Render_renderFloorAndCeilingSolidBG",
     "Render_cullBoundingBox",
     "Render_transform2DVerts",
     "Render_clipLine",
@@ -47,14 +58,13 @@ for name in RETIRED:
     # The last still-open preprocessing guard is #ifndef DOOMRPG_ESP32.
     open_guard = HEADER.rfind("#ifndef DOOMRPG_ESP32", 0, declaration.start())
     last_close = HEADER.rfind("#endif", 0, declaration.start())
-    assert open_guard > last_close, "ESP32-visible raster ABI: " + name
+    assert open_guard > last_close, "ESP32-visible retired raster/span ABI: " + name
     assert HEADER.find("#endif", declaration.end()) >= 0, name
 
 # Permanent native geometry ownership must survive this source retirement.
 for name in LIVE_GEOMETRY:
     assert re.search(r"\b" + name + r"\b", HEADER), name
-    if name != "Render_renderFloorAndCeilingSolidBG":
-        assert re.search(r"\b" + name + r"\s*\(", geometry), name
+    assert re.search(r"\b" + name + r"\s*\(", geometry), name
 
 # Check every production/bringup/trace C/C++ translation unit and header.
 # Bare address-taking, macro expansions and calls are all forbidden.
@@ -69,7 +79,7 @@ for subtree in (NATIVE / "src", NATIVE / "include"):
         )
         for name in RETIRED:
             assert not re.search(r"\b" + name + r"\b", code), (
-                "legacy raster reference", path, name
+                "retired desktop raster/span reference", path, name
             )
 
-print("PASS final 4 legacy raster Render ABIs retired; reject TU absent; desktop oracle intact")
+print("PASS 16 retired Render raster/background/span ABIs; seven active geometry primitives preserved")

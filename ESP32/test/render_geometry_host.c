@@ -17,7 +17,6 @@ boolean Reference_Render_clipLine(Render_t*, Line_t*);
 void Reference_Render_clipVertex(Render_t*, Vertex_t*, Line_t*, int, int);
 void Reference_Render_projectVertex(Render_t*, Vertex_t*);
 void Reference_Render_occludeClippedLine(Render_t*, Line_t*);
-void Reference_Render_renderFloorAndCeilingSolidBG(Render_t*);
 
 /* Same inherited fixed arithmetic, using multiplication rather than a signed
  * negative left shift so UBSan can check the geometry itself. */
@@ -38,7 +37,6 @@ static int pick(int maximum) {
 }
 static Render_t native, reference;
 static int columns[160 + 2], refColumns[160 + 2];
-static uint16_t pixels[160 * 120 + 2], refPixels[160 * 120 + 2];
 
 static void seed(unsigned angle) {
     const int sine[4] = {0, 65536, 0, -65536};
@@ -55,8 +53,6 @@ static void seed(unsigned angle) {
     reference = native;
     native.columnScale = columns + 1; reference.columnScale = refColumns + 1;
     for (unsigned i = 0; i < 162; ++i) columns[i] = refColumns[i] = 0xbeef;
-    native.framebuffer = (byte*)(pixels + 1);
-    reference.framebuffer = (byte*)(refPixels + 1);
 }
 static void sameScratch(void) {
     assert(memcmp(&native.tmpLine, &reference.tmpLine, sizeof(native.tmpLine)) == 0);
@@ -112,21 +108,6 @@ int main(void) {
                Reference_Render_cullBoundingBox(&reference, &node));
         sameScratch();
     }
-    /* Solid BG is retained but unlinked in the firmware; test its explicit
-     * native ABI without treating this as a hardware invocation witness. */
-    uint16_t ceiling[160], floor[160];
-    seed(0);
-    for (unsigned i = 0; i < 160; ++i) { ceiling[i] = (uint16_t)i; floor[i] = (uint16_t)(0x8000U + i); }
-    for (unsigned i = 0; i < 160 * 120 + 2; ++i) pixels[i] = refPixels[i] = 0xbeef;
-    native.ceilingColor = reference.ceilingColor = (short*)ceiling;
-    native.floorColor = reference.floorColor = (short*)floor;
-    Render_renderFloorAndCeilingSolidBG(&native);
-    Reference_Render_renderFloorAndCeilingSolidBG(&reference);
-    assert(memcmp(pixels, refPixels, sizeof(pixels)) == 0);
-    for (unsigned y = 0; y < 120; ++y) for (unsigned x = 0; x < 160; ++x)
-        assert(pixels[1 + y * 160 + x] == (y < 20 || y >= 100 ? 0xbeef :
-                                              (y < 60 ? ceiling[x] : floor[x])));
-    assert(pixels[0] == 0xbeef && pixels[160 * 120 + 1] == 0xbeef);
-    puts("render_geometry_host: PASS 10000 seeded geometry cases, four cardinals, columns and solid-BG guards");
+    puts("render_geometry_host: PASS 10000 seeded geometry cases, four cardinals and guarded columns");
     return 0;
 }
