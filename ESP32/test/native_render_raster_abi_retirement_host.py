@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Retirement guard for sixteen desktop-only raster, background and span entrypoints.
+"""Retirement guard for seventeen desktop-only raster/background/geometry ABIs.
 
 Classic CYD uses the compact native BSP/world/plane renderers. The old raster
 reject-only TU has no remaining legitimate symbol, and must not be revived.
@@ -31,6 +31,7 @@ RETIRED = (
     "Render_SpanMode7",
     "Render_SpanMode8",
     "Render_SpanMode9",
+    "Render_occludeClippedLine",
 )
 LIVE_GEOMETRY = (
     "Render_initColumnScale",
@@ -39,7 +40,6 @@ LIVE_GEOMETRY = (
     "Render_clipLine",
     "Render_clipVertex",
     "Render_projectVertex",
-    "Render_occludeClippedLine",
 )
 
 assert not REJECT_PATH.exists(), "obsolete reject-only translation unit returned"
@@ -60,6 +60,15 @@ for name in RETIRED:
     last_close = HEADER.rfind("#endif", 0, declaration.start())
     assert open_guard > last_close, "ESP32-visible retired raster/span ABI: " + name
     assert HEADER.find("#endif", declaration.end()) >= 0, name
+
+# The retired Render_t occlusion entrypoint is replaced by an explicit
+# bounded column-scratch contract, consumed at both BSP render sites.
+native_header = (NATIVE / "include/esp_render_geometry_primitives.h").read_text()
+assert "Render_t" not in native_header and "Line_t" not in native_header
+assert "EspNativeRenderGeometry_occludeProjectedSpan" in native_header
+assert re.search(r"\\bEspNativeRenderGeometry_occludeProjectedSpan\\s*\\(", geometry)
+for owner in ("esp_native_first_frame.c", "esp_native_bsp_visibility.c"):
+    assert "EspNativeRenderGeometry_occludeProjectedSpan" in (NATIVE / "src" / owner).read_text()
 
 # Permanent native geometry ownership must survive this source retirement.
 for name in LIVE_GEOMETRY:
@@ -82,4 +91,4 @@ for subtree in (NATIVE / "src", NATIVE / "include"):
                 "retired desktop raster/span reference", path, name
             )
 
-print("PASS 16 retired Render raster/background/span ABIs; seven active geometry primitives preserved")
+print("PASS 17 retired Render ABIs; six legacy geometry primitives and native column occlusion preserved")

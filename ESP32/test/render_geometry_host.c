@@ -9,6 +9,7 @@
 #include <SDL.h>
 #include "DoomRPG.h"
 #include "Render.h"
+#include "esp_render_geometry_primitives.h"
 
 void Reference_Render_initColumnScale(Render_t*);
 boolean Reference_Render_cullBoundingBox(Render_t*, Node_t*);
@@ -90,8 +91,25 @@ int main(void) {
             Reference_Render_projectVertex(&reference, &other.vert1);
             Reference_Render_projectVertex(&reference, &other.vert2);
             assert(memcmp(&line, &other, sizeof(line)) == 0);
-            Render_occludeClippedLine(&native, &line);
+            EspNativeRenderGeometry_occludeProjectedSpan(native.columnScale,
+                                                 line.vert1.x, line.vert2.x);
             Reference_Render_occludeClippedLine(&reference, &other);
+            sameScratch();
+        }
+        /* The column owner must also match desktop for unaligned projected
+         * endpoints, reversed/empty intervals, and the rightmost column. */
+        {
+            Line_t projected = {0};
+            Line_t projectedRef;
+            int from = pick(160);
+            int to = from + pick(161 - from);
+            projected.vert1.x = from * FRACUNIT + pick(FRACUNIT);
+            projected.vert2.x = to * FRACUNIT +
+                                (to == 160 ? 0 : pick(FRACUNIT));
+            projectedRef = projected;
+            EspNativeRenderGeometry_occludeProjectedSpan(native.columnScale,
+                       projected.vert1.x, projected.vert2.x);
+            Reference_Render_occludeClippedLine(&reference, &projectedRef);
             sameScratch();
         }
         memset(&vertex, 0, sizeof(vertex));

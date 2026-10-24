@@ -4,6 +4,7 @@
 
 #include "DoomRPG.h"
 #include "Render.h"
+#include "esp_render_geometry_primitives.h"
 
 /* src/Render.c fixes this mode locally; mirror its exact arithmetic. */
 #define FIXED_VERSION 1
@@ -252,18 +253,16 @@ void Render_projectVertex(Render_t* render, Vertex_t* vert)
 #endif
 }
 
-void Render_occludeClippedLine(Render_t* render, Line_t* line)
+void EspNativeRenderGeometry_occludeProjectedSpan(int* columnScale, int x1, int x2)
 {
-    int x1, x2, i;
+    int i;
 
-    x2 = line->vert2.x;
-    x1 = line->vert1.x;
     if ((x2 - x1) > 0) {
         x1 = (x1 + 0xFFFF) >> FRACBITS;
         x2 = (x2 + 0xFFFF) >> FRACBITS;
 
         for (i = x1; i < x2; ++i) {
-            render->columnScale[i] = COLUMN_SCALE_OCCLUDED;
+            columnScale[i] = COLUMN_SCALE_OCCLUDED;
         }
     }
 }

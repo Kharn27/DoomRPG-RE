@@ -14,6 +14,7 @@
 #include "esp_map_line_state.h"
 #include "esp_map_runtime.h"
 #include "esp_native_first_frame.h"
+#include "esp_render_geometry_primitives.h"
 #include "esp_native_wall_indicator_animation.h"
 #include "esp_native_graphics_catalog.h"
 #include "esp_player_view_state.h"
@@ -1056,7 +1057,8 @@ static int drawLine(FirstFrameWork* work, uint32_t lineIndex) {
     Render_projectVertex(work->render, &projected.vert2);
 
     if ((projected.flags & LINE_FLAG_OCCLUDER_ONLY) != 0) {
-        Render_occludeClippedLine(work->render, &projected);
+        EspNativeRenderGeometry_occludeProjectedSpan(
+                work->render->columnScale, projected.vert1.x, projected.vert2.x);
         ++work->occluderOnly;
         return 1;
     }
