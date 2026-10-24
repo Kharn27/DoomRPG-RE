@@ -19,9 +19,9 @@ static const Facing cases[4] = {
     {  0, 64, { {0, +64}, {-64, 0}, {0, -64}, {+64, 0} } }
 };
 
-/* A pure pixel-leasing fixture for the exact 160x80 gameplay viewport:
- * the red border is the lower layer, then the translucent side. Snapshots
- * must restore LIFO (side -> red -> native world). No other framebuffer. */
+/* Pixel-leasing fixture for the 160x80 viewport: the 2px border remains
+ * underneath the band's RESTORE snapshot but is not included in the band's
+ * visible BLEND. Snapshots restore LIFO (side -> border -> world). */
 static uint16_t fixture[160U * 120U];
 static uint16_t original[160U * 120U];
 static uint16_t borderPixels[944U];
@@ -74,14 +74,16 @@ static void testOverlayDuringRedBorder(void) {
                     uint16_t* p = &fixture[y * 160U + x];
                     assert(n < 1600U);
                     cuePixels[n++] = *p;
-                    *p = EspNativeGameplayDamageCue_blend565(*p, 0xfa20U);
+                    *p = EspNativeGameplayDamageCue_blend565(
+                        original[y * 160U + x], 0xfa20U);
                 }
             }
             assert(n == width * height);
-            /* The overlay really appears OVER the already-painted red,
-             * not as an isolated replacement or a flash scheduled later. */
+            /* At shared border pixels the band is flat over clean world,
+             * without a stronger 2px outline embedded in the 10px strip. */
             assert(fixture[y0 * 160U + x0] ==
-                   EspNativeGameplayDamageCue_blend565(0xb800U, 0xfa20U));
+                   EspNativeGameplayDamageCue_blend565(
+                       original[y0 * 160U + x0], 0xfa20U));
             n = 0U;
             for (y = y0; y < y0 + height; ++y)
                 for (x = x0; x < x0 + width; ++x)
@@ -194,6 +196,6 @@ int main(void) {
             &fifo, 600U, 5U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_NONE));
     }
     testOverlayDuringRedBorder();
-    puts("DAMAGECUE host: cardinal=16/16 behind=ok diagonal=ok oblique=ok invalid=ok fifo-order=ok wrap=ok full=guarded red+side=concurrent 2-pulses=exact restore=LIFO");
+    puts("DAMAGECUE host: cardinal=16/16 behind=ok diagonal=ok oblique=ok invalid=ok fifo-order=ok wrap=ok full=guarded red+side=concurrent flat-band=world-base 2-pulses=exact restore=LIFO");
     return 0;
 }
