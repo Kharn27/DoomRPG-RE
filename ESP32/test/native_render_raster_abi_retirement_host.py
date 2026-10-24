@@ -66,7 +66,7 @@ for name in RETIRED:
 native_header = (NATIVE / "include/esp_render_geometry_primitives.h").read_text()
 assert "Render_t" not in native_header and "Line_t" not in native_header
 assert "EspNativeRenderGeometry_occludeProjectedSpan" in native_header
-assert re.search(r"\\bEspNativeRenderGeometry_occludeProjectedSpan\\s*\\(", geometry)
+assert re.search(r"\bEspNativeRenderGeometry_occludeProjectedSpan\s*\(", geometry)
 for owner in ("esp_native_first_frame.c", "esp_native_bsp_visibility.c"):
     assert "EspNativeRenderGeometry_occludeProjectedSpan" in (NATIVE / "src" / owner).read_text()
 
