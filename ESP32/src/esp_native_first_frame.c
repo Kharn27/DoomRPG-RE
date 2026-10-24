@@ -1173,9 +1173,17 @@ static int walkNodes(FirstFrameWork* work) {
         node.args2 = (int)compact.args2;
 
         ++work->render->nodeCount;
-        if (Render_cullBoundingBox(work->render, &node)) {
-            ++work->nodeCulled;
-            continue;
+        /* Preserve the inherited per-line scratch without a hidden
+         * Render_cullBoundingBox linker wrapper. */
+        {
+            const Line_t savedTmpLine = work->render->tmpLine;
+            const int culled = EspNativeRenderGeometry_cullBounds(
+                work->render, node.x1, node.y1, node.x2, node.y2);
+            work->render->tmpLine = savedTmpLine;
+            if (culled) {
+                ++work->nodeCulled;
+                continue;
+            }
         }
 
         if ((compact.args1 & 0x30000U) == 0U) {
