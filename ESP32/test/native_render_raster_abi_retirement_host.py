@@ -85,6 +85,24 @@ assert re.search(r"\bEspNativeRenderGeometry_occludeProjectedSpan\s*\(", geometr
 for owner in ("esp_native_first_frame.c", "esp_native_bsp_visibility.c"):
     assert "EspNativeRenderGeometry_occludeProjectedSpan" in (NATIVE / "src" / owner).read_text()
 
+# Column reset formerly carried a hidden --wrap plane-render dependency.
+# Guard the explicit predecessor ordering so the real-CYD WORLD_POST/planes=no
+# regression cannot silently recur after differential geometry tests pass.
+frame = (NATIVE / "src/esp_native_first_frame.c").read_text()
+plane_wrapper = (NATIVE / "src/native_first_frame_render_wrappers.c").read_text()
+plane_header = (NATIVE / "include/esp_native_plane_renderer.h").read_text()
+pio = (NATIVE / "platformio.ini").read_text()
+assert "--wrap=Render_initColumnScale" not in pio
+assert "__wrap_Render_initColumnScale" not in plane_wrapper
+assert "__real_Render_initColumnScale" not in plane_wrapper
+assert "EspNativeWorldPlane_renderAtColumnReset" in plane_header
+assert "EspNativeWorldPlane_renderAtColumnReset" in plane_wrapper
+assert "EspNativePlaneRenderer_render(render)" in plane_wrapper
+point = frame.index("EspNativeRenderGeometry_resetColumns(render->columnScale")
+planes = frame.index("if (!EspNativeWorldPlane_renderAtColumnReset(render))", point)
+bsp = frame.index("if (!walkNodes(work))", point)
+assert point < planes < bsp, "world planes must render after column reset, before BSP"
+
 # Permanent native geometry ownership must survive this source retirement.
 for name in LIVE_GEOMETRY:
     assert re.search(r"\b" + name + r"\b", HEADER), name
