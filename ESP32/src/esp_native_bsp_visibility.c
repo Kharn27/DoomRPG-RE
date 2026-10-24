@@ -309,9 +309,17 @@ static int walkNode(Render_t* r,
 
     ++r->nodeCount;
     ++state->nodes;
-    if (Render_cullBoundingBox(r, &node)) {
-        ++state->nodeCull;
-        return 1;
+    /* The old linker wrapper preserved tmpLine for compact BSP traversal.
+     * Keep that same frame-scratch contract explicitly at this call site. */
+    {
+        const Line_t savedTmpLine = r->tmpLine;
+        const int culled = EspNativeRenderGeometry_cullBounds(
+            r, node.x1, node.y1, node.x2, node.y2);
+        r->tmpLine = savedTmpLine;
+        if (culled) {
+            ++state->nodeCull;
+            return 1;
+        }
     }
 
     if ((compact.args1 & 0x30000U) == 0U) {
