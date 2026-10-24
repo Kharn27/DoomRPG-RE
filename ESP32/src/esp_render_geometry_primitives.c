@@ -30,8 +30,15 @@ void EspNativeRenderGeometry_resetColumns(int* columnScale, int screenWidth)
          columnScale[i] = COLUMN_SCALE_INIT);
 }
 
-boolean Render_cullBoundingBox(Render_t* render, Node_t* node)
+/* Native BSP node-bounds culling. Only scalar extents cross the API:
+ * no Node_t alias/copy or desktop Render_cullBoundingBox symbol. This retains
+ * the exact fixed-point transform/clip/projection and column occlusion test
+ * from the desktop oracle. The caller explicitly preserves render->tmpLine
+ * around this scratch-only operation, as the old --wrap contract required. */
+int EspNativeRenderGeometry_cullBounds(struct Render_s* renderBase,
+                                      int x1, int y1, int x2, int y2)
 {
+    Render_t* render = (Render_t*)renderBase;
     Line_t* line;
     int i;
 
@@ -39,79 +46,79 @@ boolean Render_cullBoundingBox(Render_t* render, Node_t* node)
         return false;
     }
 
-    if ((render->viewX >= (node->x1 - 5)) &&
-        (render->viewX <= (node->x2 + 5)) &&
-        (render->viewY >= (node->y1 - 5)) &&
-        (render->viewY <= (node->y2 + 5))) {
+    if ((render->viewX >= (x1 - 5)) &&
+        (render->viewX <= (x2 + 5)) &&
+        (render->viewY >= (y1 - 5)) &&
+        (render->viewY <= (y2 + 5))) {
         return false;
     }
 
     line = &render->tmpLine;
-    if (render->viewX < node->x1)
+    if (render->viewX < x1)
     {
-        if (render->viewY < node->y1)
+        if (render->viewY < y1)
         {
-            line->vert1.x = node->x2;
-            line->vert1.y = node->y1;
-            line->vert2.x = node->x1;
-            line->vert2.y = node->y2;
+            line->vert1.x = x2;
+            line->vert1.y = y1;
+            line->vert2.x = x1;
+            line->vert2.y = y2;
         }
-        else if (render->viewY < node->y2)
+        else if (render->viewY < y2)
         {
-            line->vert1.x = node->x1;
-            line->vert1.y = node->y1;
-            line->vert2.x = node->x1;
-            line->vert2.y = node->y2;
+            line->vert1.x = x1;
+            line->vert1.y = y1;
+            line->vert2.x = x1;
+            line->vert2.y = y2;
         }
         else
         {
-            line->vert1.x = node->x1;
-            line->vert1.y = node->y1;
-            line->vert2.x = node->x2;
-            line->vert2.y = node->y2;
+            line->vert1.x = x1;
+            line->vert1.y = y1;
+            line->vert2.x = x2;
+            line->vert2.y = y2;
         }
     }
-    else if (render->viewX < node->x2)
+    else if (render->viewX < x2)
     {
-        if (render->viewY < node->y1)
+        if (render->viewY < y1)
         {
-            line->vert1.x = node->x2;
-            line->vert1.y = node->y1;
-            line->vert2.x = node->x1;
-            line->vert2.y = node->y1;
+            line->vert1.x = x2;
+            line->vert1.y = y1;
+            line->vert2.x = x1;
+            line->vert2.y = y1;
         }
-        else if (render->viewY < node->y2)
+        else if (render->viewY < y2)
         {
             return false;
         }
         else
         {
-            line->vert1.x = node->x1;
-            line->vert1.y = node->y2;
-            line->vert2.x = node->x2;
-            line->vert2.y = node->y2;
+            line->vert1.x = x1;
+            line->vert1.y = y2;
+            line->vert2.x = x2;
+            line->vert2.y = y2;
         }
     }
-    else if (render->viewY < node->y1)
+    else if (render->viewY < y1)
     {
-        line->vert1.x = node->x2;
-        line->vert1.y = node->y2;
-        line->vert2.x = node->x1;
-        line->vert2.y = node->y1;
+        line->vert1.x = x2;
+        line->vert1.y = y2;
+        line->vert2.x = x1;
+        line->vert2.y = y1;
     }
-    else if (render->viewY < node->y2)
+    else if (render->viewY < y2)
     {
-        line->vert1.x = node->x2;
-        line->vert1.y = node->y2;
-        line->vert2.x = node->x2;
-        line->vert2.y = node->y1;
+        line->vert1.x = x2;
+        line->vert1.y = y2;
+        line->vert2.x = x2;
+        line->vert2.y = y1;
     }
     else
     {
-        line->vert1.x = node->x1;
-        line->vert1.y = node->y2;
-        line->vert2.x = node->x2;
-        line->vert2.y = node->y1;
+        line->vert1.x = x1;
+        line->vert1.y = y2;
+        line->vert2.x = x2;
+        line->vert2.y = y1;
     }
 
     EspNativeRenderGeometry_transformPoint(
