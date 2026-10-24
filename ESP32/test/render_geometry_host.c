@@ -190,7 +190,7 @@ int main(void) {
         native.skipCull = reference.skipCull = (i % 13 == 0);
         assert(EspNativeRenderGeometry_cullBounds(
                    &native, node.x1, node.y1, node.x2, node.y2) ==
-               Reference_Render_cullBoundingBox(&reference, &node));
+               (int)Reference_Render_cullBoundingBox(&reference, &node));
         sameScratch();
     }
     puts("render_geometry_host: PASS 10000 seeded geometry cases, native column reset/2D transforms/projections, four cardinals, fractional matrices and guarded columns");
