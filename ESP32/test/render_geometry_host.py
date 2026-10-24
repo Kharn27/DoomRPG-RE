@@ -56,6 +56,13 @@ def main():
         bodies.append(body)
     names = [re.search(r"\b(Render_\w+)\(", s)[1] for s in FUNCTIONS]
     reference = '#include <stdint.h>\n#include <SDL.h>\n#include "DoomRPG.h"\n#include "Render.h"\n#define FIXED_VERSION 1\n'
+    # These declarations are needed even when the ESP32 production header
+    # intentionally hides retired desktop entrypoints; the oracle remains
+    # entirely test-only and references can call later extracted bodies.
+    reference += "\n".join(
+        signature.replace("Render_", "Reference_Render_", 1) + ";"
+        for signature in FUNCTIONS
+    ) + "\n"
     reference += "\n".join(bodies)
     reference = "\n".join("#define %s Reference_%s" % (n, n) for n in names) + "\n" + reference
     with tempfile.TemporaryDirectory(prefix="doomrpg-geometry-host-") as tmp:
