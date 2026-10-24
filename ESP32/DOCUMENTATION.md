@@ -1,5 +1,17 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #229 / Jalon J — clipping des sommets, PASS CYD (24 octobre 2026)
+
+**Code réel `esp32-cyd` : `70e8af2b66357936eb6e6df39ad98b794e59b949`.** CI [push 40133269693](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40133269693), [PR 40133272703](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40133272703) SUCCESS. `Render_clipVertex` devient desktop-only ; les six appels natifs dans `Render_clipLine` utilisent désormais `static clipVertex` avec calcul x/y/z 16.16 inchangé. Original desktop oracle non modifié, 21 ABI Render retirées, deux primitives géométriques historiques restent `Render_clipLine` et `Render_cullBoundingBox`. Aucun changement aux plans, frames, RNG, gameplay, audio, cache ou SAVE.
+
+**START/EXIT matériel :** INTRO `ade0195d`, arène `14095/c3882516`, BSP CRC `623f34e4`, première frame `71ca7465`, cache et `RESIDENTGAMEPLAY READY`. Rotations 64/0/128/192 et strafes, porte275 ouverture/fermeture différée, Armor Shards 0→8, caisse127 `first254 BREAK_REMOVE`, dialogue89 annulé sans mutation, EXIT `RESIDENTRESET empty=1`, MENU `0f2c9fc3`.
+
+**LOAD/EXIT matériel :** slot04 V11 `5604B`, état de 30 monstres et activation13→14 restaurés sans RNG, sprite324 `CROSS copies4` `draws=4/2/0` et `clip=0/2/4`. Trois ripostes de Malwrath322 avec trois projectiles204 par riposte et leurs drains, shotgun `hp11→8→5→0`, mort, aucun drop (`dropMaterialize=none`). Joueur HP 34→30→26→20, armure 23→19→15→9 puis Flak Jacket →23, Bullet Clips et secret +5XP, porte113 et EXIT. `RESIDENTRESET empty=1`, menu `0f2c9fc3`. Heap8 gameplay `113768` / largest `86004`, menu `159704` / largest `110580`, `shapeData/mediaTexels=NULL`.
+
+**Hors périmètre à diagnostiquer séparément :** journal projectile x décalé de `0x40000000`, `DAMAGECUE delayed=yes` observé une fois (`321/309ms` au lieu de nominal 85ms), `NATIVEFRAME BOUNDARY-INLINE` non fatal. Ne pas inférer la parité pixels toutes cartes. Geler code validé, clôture docs-only puis review ; merge uniquement utilisateur.
+
+---
+
 ## PR #229 / Jalon I — reset colonnes natif et ordre explicite floor/ceiling : PASS CYD (24 octobre 2026)
 
 **Firmware physique validé : `3fe4011cb4b9c2adb1a292f2cbfc718364b66681`** en environnement normal `esp32-cyd`. [PR #229](https://github.com/Kharn27/DoomRPG-RE/pull/229), base main `d249bb5ab6002e93b498bf12459162b4f502f7c5`. CI push [40090695244](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40090695244), PR [40090699598](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40090699598) SUCCESS. La primitive `Render_initColumnScale` (desktop conserve l'oracle) est remplacée par `EspNativeRenderGeometry_resetColumns(int* columns,int width)`, sans `Render_t`/allocation, strictement width colonnes. Le retrait exige une dépendance **explicite** : `EspNativeWorldPlane_renderAtColumnReset(render)` après reset et avant `walkNodes`, avec validation du contexte compact/PAK et échec fail-closed ; suppression de l'ancien `__wrap_Render_initColumnScale` et du `--wrap` ld, wrapper cull inchangé. Le guard host impose reset→planes→BSP et 20 ABI Render retirées (3 primitives géométriques restantes). Tests différentiels 10000 cas + toutes largeurs 0..160.
