@@ -1,5 +1,15 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #228 / Milestone G — PASS classic CYD (24 octobre 2026)
+
+Code exact testé `0484c7c2a4cd3dcf120dc4daec1f4a4ec460c43a`, environnement `esp32-cyd`, CI push #40086814042 et PR #40086817020 SUCCESS. `Render_projectVertex` est maintenant desktop-only, remplacement par `EspNativeRenderGeometry_projectVertex(screenWidth,fracHalfScreenWidth,&x,&y,&z)`. Le renderer natif appelle une primitive scalaire 16.16 sans Render_t ni allocation. Test différentiel desktop sur 10000 cas, 18 ABI retirées, 5 primitives de géométrie encore actives.
+
+CYD START : Intro `ade0195d`, arène `14095/c3882516`, premier monde `71ca7465`, dialogue event88 repris en opcode19, armure 0→8, porte275 ouverte/fermée, EXIT. CYD LOAD V11 slot04 : restauration de 30 monstres et position/topologie, sprite322 Malwrath avec trois projectiles par attaque, dégâts, mort/drop/pickup, EXIT. Deux retours MENU `0f2c9fc3`, gameplay heap8 `113768` et menu heap8 `159704`, resets `empty=1`, shapeData/mediaTexels NULL. Aucun crash ni divergence RNG dans les extraits.
+
+Caisses : legacy et natif piègent seulement pour un octet RNG inférieur à 2 (2/256 = 0,78 %). Tirages observés 254 (vide) et 102 (transformée) ; explosion non testée. L'input est encore bloqué pendant certaines attaques ; auditer séparément la réactivité et le format du log de projectile. Résultat limité aux parcours testés. Code gelé après PASS ; commits docs-only jusqu'à clôture.
+
+---
+
 ## PR #228 / Milestone F — colonne d'occlusion native indépendante de Render_t : PASS CYD ciblé (24 octobre 2026)
 
 **SHA de code réellement testé en firmware normal `esp32-cyd` : `bd34c15e2e9c290deaebe5219ac27660b36ac512`** sur [PR #228](https://github.com/Kharn27/DoomRPG-RE/pull/228), branche `agent/esp32-native-column-occlusion`, issue de `main=c2e3198d1574e411d99066c80258b5fc3e0ea709` (#227 mergée). CI de ce SHA : [push #40082658226](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40082658226) et [PR #40082706235](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40082706235) **SUCCESS** (test différentiel 10 000 cas/four cardinals, garde des ABI, trois builds normal/bringup/trace). Aucun test local ou hardware non fourni n'est revendiqué.

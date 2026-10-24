@@ -1,5 +1,11 @@
 # Doom RPG ESP32 — état actuel du port
 
+## PR #228 / Milestone G — PASS CYD (24 octobre 2026)
+
+Code hardware testé : `0484c7c2a4cd3dcf120dc4daec1f4a4ec460c43a` (`esp32-cyd`). START, INTRO, Entrance, dialogue opcode19, portes et pickups, LOAD V11 slot04, Malwrath trois tirs 204, drop, EXIT x2 : PASS. FNV introduction `ade0195d`, première frame `71ca7465`, menu `0f2c9fc3`, arena `c3882516`, reset `empty=1`, heap8 menu `159704`, gameplay `113768`; les deux CI push/PR sont SUCCESS. `Render_projectVertex` est desktop-only ; 18 ABI Render retirées, 5 primitives restantes. Caisse piégée : origine et port utilisent `first<2` sur octet RNG, 2/256 de chance ; tirages observés 254 (vide), 102 (transformée). Aucun piège effectivement testé. Entrée rejetée pendant combat (`COMBAT-INPUT-BLOCK`) et impression de latence : suivi séparé. Code gelé, docs-only après le test.
+
+---
+
 ## PR #228 / Milestone F — occlusion colonnes projetées native, sans `Render_t` : PASS matériel ciblé (24 octobre 2026)
 
 **Code firmware testé en environnement normal `esp32-cyd` sur le vrai classic CYD sans PSRAM : `bd34c15e2e9c290deaebe5219ac27660b36ac512`.** Branche `agent/esp32-native-column-occlusion`, [PR #228](https://github.com/Kharn27/DoomRPG-RE/pull/228) issue du vrai `main=c2e3198d1574e411d99066c80258b5fc3e0ea709` après merge #227. CI de ce code [push #40082658226](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40082658226) et [PR #40082706235](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40082706235) **SUCCESS** : différentiel hôte, gardes d'ABI, firmwares normal/bringup/trace compilés. Le test physique ci-dessous provient **exclusivement des deux logs Serial utilisateur** ; aucun build ou flash local n'est prétendu.
