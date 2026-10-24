@@ -323,7 +323,20 @@ int main(void) {
            EspNativeGameplayDamageCue_blend565(
                0x1234U, DAMAGE_CUE_COLOR565));
     assert(pixels[1U + 20U * 160U + 80U] == FEEDBACK_DAMAGE_RED565);
-    finish(); /* Includes exact clean world restore after both leases end. */
+    clockMs += DAMAGE_CUE_ON_MS - 10U;
+    poll();
+    clockMs += DAMAGE_CUE_GAP_MS;
+    poll();
+    clockMs += DAMAGE_CUE_ON_MS;
+    poll();
+    assert(directionCue.phase == 0U &&
+           directionCue.observedOnMs[0] == DAMAGE_CUE_ON_MS &&
+           directionCue.observedOnMs[1] == DAMAGE_CUE_ON_MS);
+    clockMs += 501U;
+    poll();
+    assert(!actionState.viewportFlashVisible);
+    for (unsigned i = 0; i < sizeof(pixels) / sizeof(pixels[0]); ++i)
+        assert(pixels[i] == 0x1234);
     seed();
     clockMs = UINT32_MAX - 100U;
     actionState.viewportFlashShownAtMs = clockMs;
