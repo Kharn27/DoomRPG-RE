@@ -1,5 +1,19 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #229 / Jalon I — reset colonnes natif et ordre explicite floor/ceiling : PASS CYD (24 octobre 2026)
+
+**Firmware physique validé : `3fe4011cb4b9c2adb1a292f2cbfc718364b66681`** en environnement normal `esp32-cyd`. [PR #229](https://github.com/Kharn27/DoomRPG-RE/pull/229), base main `d249bb5ab6002e93b498bf12459162b4f502f7c5`. CI push [40090695244](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40090695244), PR [40090699598](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40090699598) SUCCESS. La primitive `Render_initColumnScale` (desktop conserve l'oracle) est remplacée par `EspNativeRenderGeometry_resetColumns(int* columns,int width)`, sans `Render_t`/allocation, strictement width colonnes. Le retrait exige une dépendance **explicite** : `EspNativeWorldPlane_renderAtColumnReset(render)` après reset et avant `walkNodes`, avec validation du contexte compact/PAK et échec fail-closed ; suppression de l'ancien `__wrap_Render_initColumnScale` et du `--wrap` ld, wrapper cull inchangé. Le guard host impose reset→planes→BSP et 20 ABI Render retirées (3 primitives géométriques restantes). Tests différentiels 10000 cas + toutes largeurs 0..160.
+
+**Contre-exemple matériel historique : SHA `d0e102a7ce8b1bb68688522bd3ebcbc549064d4c` FAIL**, `FIRST_FRAME eb943db2`, `WORLD_POST planes=no`, blocage écran de chargement. Les tests purement arithmétiques avaient laissé passer un effet de bord caché du wrapper : injection textures sol/plafond. Ne jamais reprendre un remplacement de fonction avec `--wrap` sans auditer sa sémantique complète.
+
+**Régression matérielle corrigée :** START → INTRO `ade0195d` → Entrance arène `14095/c3882516`, source `623f34e4`, FIRST_FRAME `71ca7465` → cache/RESIDENTGAMEPLAY READY ; déplacements, rotations, strafe, dialogue88 opcode8→19 puis opcode8→11, caisse127 transformée `first131`, armure 0→12, porte275 ; EXIT `RESIDENTRESET released18008 empty=1` / MENU `0f2c9fc3`. LOAD V11 slot04 → restauration 30 monstres et topologie/positions sans RNG, Malwrath322 deux ripostes 3×204, shotgun `hp11→7→0` avec critique et drop d'Armor Shard ramassé, porte113 animée, Flak Jacket, secret +5XP, EXIT avec mêmes témoins. Heap8 gameplay `113768` ou `112624` si journal, menu `159704`; largest gameplay `86004` et menu `110580`. `shapeData/mediaTexels=NULL`, sans crash ni divergence visible.
+
+**Dossiers séparés :** x de journal projectile `10737436xx` contre transient `18xx` (différence constante `0x40000000`, source exacte encore à diagnostiquer), `DAMAGECUE DONE delayed=yes` si rendu synchrone prolonge les impulsions, pas de changement gameplay/animation/cadence dans I. Ne pas raccourcir le code d'invariant pour supprimer les alertes ; préserver RNG et points de commit.
+
+Code I gelé après PASS ; prochain changement sur frontière séparée, build CI + vrai flash requis. Ni merge main ni suppositions hors des scènes testées.
+
+---
+
 ## PR #229 / Jalon H — transformation caméra 2D sans Render_t : PASS CYD (24 octobre 2026)
 
 **Code matériel testé `54b4f8db43c297a2e9b6a6c6d1fd9992c62842d6`**, `esp32-cyd`; base main `d249bb5ab6002e93b498bf12459162b4f502f7c5`, branche `agent/esp32-native-point-transform`, [PR #229](https://github.com/Kharn27/DoomRPG-RE/pull/229). CI push [40088929517](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40088929517) et PR [40088986033](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40088986033) SUCCESS. `Render_transform2DVerts` desktop-only ; `EspNativeRenderGeometry_transformPoint` à six coefficients 2D scalaires + pointeurs x/y, calcul legacy conservé, z inchangé. Host différentiel 10 000 cas/four cardinals/matrices fractionnaires, guard **19 ABI retirées, 4 actives**.
