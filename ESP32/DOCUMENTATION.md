@@ -1,5 +1,17 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #229 / Jalon H — transformation caméra 2D sans Render_t : PASS CYD (24 octobre 2026)
+
+**Code matériel testé `54b4f8db43c297a2e9b6a6c6d1fd9992c62842d6`**, `esp32-cyd`; base main `d249bb5ab6002e93b498bf12459162b4f502f7c5`, branche `agent/esp32-native-point-transform`, [PR #229](https://github.com/Kharn27/DoomRPG-RE/pull/229). CI push [40088929517](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40088929517) et PR [40088986033](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40088986033) SUCCESS. `Render_transform2DVerts` desktop-only ; `EspNativeRenderGeometry_transformPoint` à six coefficients 2D scalaires + pointeurs x/y, calcul legacy conservé, z inchangé. Host différentiel 10 000 cas/four cardinals/matrices fractionnaires, guard **19 ABI retirées, 4 actives**.
+
+**Serial START/EXIT :** INTRO `ade0195d`, Entrance CRC `623f34e4`, arena `14095/c3882516`, FIRST_FRAME `71ca7465`, mouvements/rotations/strafe, crate `first254 BREAK_REMOVE`, dialogue event88 opcode8→19 stateMutation1, armure 0→8, porte275 fermeture différée, EXIT `RESIDENTRESET released18008 empty=1`, menu `0f2c9fc3`.
+
+**Serial LOAD/EXIT :** slot04 V11 5604B, état exact 30 monstres/positions/topologie, activation13→14, porte113, sprite324 multi-copies, Malwrath sprite322 attaque triple projectiles204 à trois reprises ; HP joueur 34→30→26→20 / armor23→19→15→9, shotgun HP monstre 11→8→5→0, mort ; aucun drop sur cet essai, pickup santé et cartouches. EXIT `empty=1`, menu `0f2c9fc3`, heap8 stable gameplay `113768` avant journal et menu `159704`, `shapeData/mediaTexels=NULL`.
+
+**À suivre sans modifier ce jalon :** ressenti d'un gameplay plus nerveux (les previews restent ~93–107ms MOVE et 189–208ms TURN, pas de causalité A/B), différence de représentation de x dans le log projectile, délais `DAMAGECUE` et rareté des caisses piégées (2/256 dans le legacy). Aucun changement de cadence, RNG, PAK, gameplay, SAVE ou cache. Le test sur vrai CYD porte seulement sur ces deux parcours. Gel code H, docs-only après PASS avant nouvel extrait.
+
+---
+
 ## PR #228 / Milestone G — PASS classic CYD (24 octobre 2026)
 
 Code exact testé `0484c7c2a4cd3dcf120dc4daec1f4a4ec460c43a`, environnement `esp32-cyd`, CI push #40086814042 et PR #40086817020 SUCCESS. `Render_projectVertex` est maintenant desktop-only, remplacement par `EspNativeRenderGeometry_projectVertex(screenWidth,fracHalfScreenWidth,&x,&y,&z)`. Le renderer natif appelle une primitive scalaire 16.16 sans Render_t ni allocation. Test différentiel desktop sur 10000 cas, 18 ABI retirées, 5 primitives de géométrie encore actives.

@@ -22,6 +22,11 @@ typedef struct EspNativePlaneRenderStats_s {
 } EspNativePlaneRenderStats;
 
 void EspNativePlaneRenderer_reset(void);
+/* Explicit native first-frame plane injection at the historical column-reset
+ * boundary. This used to be an undocumented --wrap side-effect: every wall
+ * render must paint textured floor/ceiling before BSP traversal. Fail closed
+ * if the exact compact-world/PAK ownership preconditions do not hold. */
+int EspNativeWorldPlane_renderAtColumnReset(struct Render_s* render);
 /* The renderer preserves exact sampling with an adaptive bounded LRU: up to
  * six 2048-byte transient leases are used when available, with one slot as the
  * fail-closed minimum under later gameplay memory pressure. */

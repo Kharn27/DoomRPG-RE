@@ -913,7 +913,10 @@ static int drawWorldDropFrame(Render_t* render,
     memset(&center, 0, sizeof(center));
     center.x = worldX;
     center.y = worldY;
-    Render_transform2DVerts(render, &center);
+    EspNativeRenderGeometry_transformPoint(
+        render->viewCos_, render->viewSin_, render->viewSin,
+        render->viewCos, render->viewTransX, render->viewTransY,
+        &center.x, &center.y);
     center.x -= 0x100000;
     if (center.x < 0x40000) {
         ++stats->nearCulled;
@@ -1098,7 +1101,10 @@ static int drawTransientBatch(Render_t* render,
         memset(&center, 0, sizeof(center));
         center.x = item->worldX;
         center.y = item->worldY;
-        Render_transform2DVerts(render, &center);
+        EspNativeRenderGeometry_transformPoint(
+        render->viewCos_, render->viewSin_, render->viewSin,
+        render->viewCos, render->viewTransX, render->viewTransY,
+        &center.x, &center.y);
         center.x -= 0x100000;
         if (center.x < 0x40000) {
             printf("[NATIVESPRITE] TRANSIENT logical=%u anim=%u batch=%u/%u pos=%d,%d result=near-culled source=bounded-world-effect\n",
@@ -1213,7 +1219,10 @@ static int drawAt(Render_t* render,
         memset(&center, 0, sizeof(center));
         center.x = spriteX;
         center.y = spriteY;
-        Render_transform2DVerts(render, &center);
+        EspNativeRenderGeometry_transformPoint(
+        render->viewCos_, render->viewSin_, render->viewSin,
+        render->viewCos, render->viewTransX, render->viewTransY,
+        &center.x, &center.y);
         center.x -= 0x100000;
         if (center.x < 0x40000) {
             TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=near-culled depth=%d animation=%u glow=%u\n", (unsigned int)parent->index, (int)center.x, (unsigned int)animation, (unsigned int)(glow != 0));
@@ -1279,8 +1288,14 @@ static int drawAt(Render_t* render,
             line.vert2 = swap;
         }
 
-        Render_transform2DVerts(render, &line.vert1);
-        Render_transform2DVerts(render, &line.vert2);
+        EspNativeRenderGeometry_transformPoint(
+            render->viewCos_, render->viewSin_, render->viewSin,
+            render->viewCos, render->viewTransX, render->viewTransY,
+            &line.vert1.x, &line.vert1.y);
+        EspNativeRenderGeometry_transformPoint(
+            render->viewCos_, render->viewSin_, render->viewSin,
+            render->viewCos, render->viewTransX, render->viewTransY,
+            &line.vert2.x, &line.vert2.y);
     }
 
     if (!Render_clipLine(render, &line)) {
