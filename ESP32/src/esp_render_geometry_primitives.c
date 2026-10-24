@@ -4,6 +4,7 @@
 
 #include "DoomRPG.h"
 #include "Render.h"
+#include "esp_render_geometry_primitives.h"
 
 /* src/Render.c fixes this mode locally; mirror its exact arithmetic. */
 #define FIXED_VERSION 1
@@ -117,8 +118,12 @@ boolean Render_cullBoundingBox(Render_t* render, Node_t* node)
     Render_transform2DVerts(render, &line->vert2);
 
     if (Render_clipLine(render, line)) {
-        Render_projectVertex(render, &line->vert1);
-        Render_projectVertex(render, &line->vert2);
+        EspNativeRenderGeometry_projectVertex(
+            render->screenWidth, render->fracHalfScreenWidth,
+            &line->vert1.x, &line->vert1.y, &line->vert1.z);
+        EspNativeRenderGeometry_projectVertex(
+            render->screenWidth, render->fracHalfScreenWidth,
+            &line->vert2.x, &line->vert2.y, &line->vert2.z);
 
         {
             int x1 = (line->vert1.x + 0xFFFF) >> FRACBITS;
@@ -230,40 +235,28 @@ void Render_clipVertex(Render_t* render, Vertex_t* vert, Line_t* line, int i, in
 #endif
 }
 
-void Render_projectVertex(Render_t* render, Vertex_t* vert)
+void EspNativeRenderGeometry_projectVertex(
+    int screenWidth, int fracHalfScreenWidth, int* x, int* y, int* z)
 {
-#if FIXED_VERSION == 1
-    int y;
-    y = vert->y;
+    int sourceY = *y;
+    int depthScale = DoomRPG_FixedDiv(screenWidth << FRACBITS, *x);
 
-    vert->y = DoomRPG_FixedDiv(render->screenWidth << 16, vert->x);
-    vert->x = (DoomRPG_FixedMul(y, vert->y) >> 1);
-    vert->x += render->fracHalfScreenWidth;
-    vert->z *= vert->y;
-#else
-    long long y;
-    y = vert->y;
-
-    vert->y = (int)((((int64_t)render->screenWidth) * 4294967296L) /
-                    ((int64_t)vert->x));
-    vert->x = (int)((((int64_t)y) * ((int64_t)vert->y)) >> 17);
-    vert->x += render->fracHalfScreenWidth;
-    vert->z *= vert->y;
-#endif
+    *y = depthScale;
+    *x = (DoomRPG_FixedMul(sourceY, depthScale) >> 1);
+    *x += fracHalfScreenWidth;
+    *z *= depthScale;
 }
 
-void Render_occludeClippedLine(Render_t* render, Line_t* line)
+void EspNativeRenderGeometry_occludeProjectedSpan(int* columnScale, int x1, int x2)
 {
-    int x1, x2, i;
+    int i;
 
-    x2 = line->vert2.x;
-    x1 = line->vert1.x;
     if ((x2 - x1) > 0) {
         x1 = (x1 + 0xFFFF) >> FRACBITS;
         x2 = (x2 + 0xFFFF) >> FRACBITS;
 
         for (i = x1; i < x2; ++i) {
-            render->columnScale[i] = COLUMN_SCALE_OCCLUDED;
+            columnScale[i] = COLUMN_SCALE_OCCLUDED;
         }
     }
 }

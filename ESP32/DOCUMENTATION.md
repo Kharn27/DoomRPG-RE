@@ -1,5 +1,29 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #228 / Milestone G — PASS classic CYD (24 octobre 2026)
+
+Code exact testé `0484c7c2a4cd3dcf120dc4daec1f4a4ec460c43a`, environnement `esp32-cyd`, CI push #40086814042 et PR #40086817020 SUCCESS. `Render_projectVertex` est maintenant desktop-only, remplacement par `EspNativeRenderGeometry_projectVertex(screenWidth,fracHalfScreenWidth,&x,&y,&z)`. Le renderer natif appelle une primitive scalaire 16.16 sans Render_t ni allocation. Test différentiel desktop sur 10000 cas, 18 ABI retirées, 5 primitives de géométrie encore actives.
+
+CYD START : Intro `ade0195d`, arène `14095/c3882516`, premier monde `71ca7465`, dialogue event88 repris en opcode19, armure 0→8, porte275 ouverte/fermée, EXIT. CYD LOAD V11 slot04 : restauration de 30 monstres et position/topologie, sprite322 Malwrath avec trois projectiles par attaque, dégâts, mort/drop/pickup, EXIT. Deux retours MENU `0f2c9fc3`, gameplay heap8 `113768` et menu heap8 `159704`, resets `empty=1`, shapeData/mediaTexels NULL. Aucun crash ni divergence RNG dans les extraits.
+
+Caisses : legacy et natif piègent seulement pour un octet RNG inférieur à 2 (2/256 = 0,78 %). Tirages observés 254 (vide) et 102 (transformée) ; explosion non testée. L'input est encore bloqué pendant certaines attaques ; auditer séparément la réactivité et le format du log de projectile. Résultat limité aux parcours testés. Code gelé après PASS ; commits docs-only jusqu'à clôture.
+
+---
+
+## PR #228 / Milestone F — colonne d'occlusion native indépendante de Render_t : PASS CYD ciblé (24 octobre 2026)
+
+**SHA de code réellement testé en firmware normal `esp32-cyd` : `bd34c15e2e9c290deaebe5219ac27660b36ac512`** sur [PR #228](https://github.com/Kharn27/DoomRPG-RE/pull/228), branche `agent/esp32-native-column-occlusion`, issue de `main=c2e3198d1574e411d99066c80258b5fc3e0ea709` (#227 mergée). CI de ce SHA : [push #40082658226](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40082658226) et [PR #40082706235](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40082706235) **SUCCESS** (test différentiel 10 000 cas/four cardinals, garde des ABI, trois builds normal/bringup/trace). Aucun test local ou hardware non fourni n'est revendiqué.
+
+**Contrat permanent :** l'ABI `Render_occludeClippedLine(Render_t*, Line_t*)` devient uniquement desktop, corps original conservé dans `src/Render.c`. La nouvelle `EspNativeRenderGeometry_occludeProjectedSpan(int*, int, int)` accepte le tableau de colonnes explicitement possédé par le caller et deux extrémités projetées 16.16, avec arrondi/intervalle semi-ouvert identiques ; elle est appelée par les deux consommateurs BSP natifs. Le test host compare les colonnes et leur sentinelle face au desktop, incluant segments fractionnaires, et `native_render_raster_abi_retirement_host.py` protège les **17 symboles** Render retirés. Six primitives de géométrie historiques restent actives (transform, clip, projection, cull, column reset) ; aucun changement à leurs signatures. Aucune allocation supplémentaire, aucun changement à `Render_t`, aux textures PAK, aux états mutables, à l'input, aux animations ou aux RNG.
+
+**Deux preuves Serial du vrai classic CYD :** (1) START/INTRO `ade0195d` → dispose `34056 B` → `/intro.bsp` `CRC 623f34e4`/arena `14095/c3882516` → première frame `71ca7465`, déplacements, Armor Shards `0→4→8`, porte275 quatre frames, dialogue opcode8 annulé sans état muté, EXIT sans SAVE. Journal dialogue libéré `recovered=1144 activeAtTeardown=0`, résident `released=18008 empty=1`. (2) LOAD V11 slot07/5604 B, 30 monstres et topologie/positions restaurés exactement, activation 22→24, porte160, attaque du sprite7 après animation `HP joueur 30→27/armor 10→8`, tirs pistolet sur sprite7 `HP6→3/ammo38→37` puis sprite6 `HP8→2/ammo37→36`, dernier monster attack `MISS-COMMIT` sans dégâts avec RNG engagé, EXIT sans SAVE. Sur les deux parcours : `shapeData=mediaTexels=NULL`, heap8 gameplay `113768/largest8 86004` avant journal et menu final `159704/largest8 110580` stable, FNV menu `0f2c9fc3`.
+
+**Réactivité signalée :** l'utilisateur ressent un gameplay « un peu moins nerveux ». Previews MOVE ~102–132 ms, rotations ~220–225 ms/2 frames, strafe ~201–218 ms/2 frames ; attaque ennemie `phaseMs=500`, et un tap pendant le tour monstre explicitement rejeté `COMBAT-INPUT-BLOCK queued=no`. Aucun benchmark A/B ni élément suffisant pour attribuer une baisse de réactivité à l'extraction de l'occlusion ; audit distinct, sans retoucher le code hardware testé.
+
+**Clôture :** PASS fonctionnel **ciblé**, non preuve de vitesse identique, de pixels exhaustifs, de SAVE neuf ou de toutes cartes ; `NATIVEFRAME BOUNDARY-INLINE` connu, sans nouvelle anomalie. Code gelé au SHA `bd34c15e2e9c290deaebe5219ac27660b36ac512` ; commits suivants docs-only, vérifier la CI post-doc avant Ready for review, merge réservé à l'utilisateur.
+
+---
+
 ## PR #227 / Milestone E — ABI Render span-mode desktop-only : PASS classic CYD (24 octobre 2026)
 
 **SHA de code testé sur vrai classic CYD par logs Serial, environnement normal `esp32-cyd` : `40e2d2c2a74a0362617d15daf2d49526e9f54cf2`**, même [PR #227](https://github.com/Kharn27/DoomRPG-RE/pull/227), même branche `agent/esp32-retire-solid-bg-render-abi` ; `main` de base `89b7fa27732cababdbe83f8d89ba1ccf649bae4a`. **CI du SHA** : [push #40022218390](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40022218390) SUCCESS, [PR #40022225349](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40022225349) SUCCESS. Tests host, dont garde des ABI raster et test différentiel des primitives géométriques, plus builds normal, bringup et trace PASS. Aucun test matériel non transmis ni build local revendiqué.

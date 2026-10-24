@@ -9,6 +9,7 @@
 #include <SDL.h>
 #include "DoomRPG.h"
 #include "Render.h"
+#include "esp_render_geometry_primitives.h"
 
 void Reference_Render_initColumnScale(Render_t*);
 boolean Reference_Render_cullBoundingBox(Render_t*, Node_t*);
@@ -85,13 +86,50 @@ int main(void) {
         if (line.vert1.x >= 4 * FRACUNIT && line.vert2.x >= 4 * FRACUNIT &&
             line.vert1.y >= -line.vert1.x && line.vert1.y <= line.vert1.x &&
             line.vert2.y >= -line.vert2.x && line.vert2.y <= line.vert2.x) {
-            Render_projectVertex(&native, &line.vert1);
-            Render_projectVertex(&native, &line.vert2);
+            EspNativeRenderGeometry_projectVertex(
+                native.screenWidth, native.fracHalfScreenWidth,
+                &line.vert1.x, &line.vert1.y, &line.vert1.z);
+            EspNativeRenderGeometry_projectVertex(
+                native.screenWidth, native.fracHalfScreenWidth,
+                &line.vert2.x, &line.vert2.y, &line.vert2.z);
             Reference_Render_projectVertex(&reference, &other.vert1);
             Reference_Render_projectVertex(&reference, &other.vert2);
             assert(memcmp(&line, &other, sizeof(line)) == 0);
-            Render_occludeClippedLine(&native, &line);
+            EspNativeRenderGeometry_occludeProjectedSpan(native.columnScale,
+                                                 line.vert1.x, line.vert2.x);
             Reference_Render_occludeClippedLine(&reference, &other);
+            sameScratch();
+        }
+        /* The column owner must also match desktop for unaligned projected
+         * endpoints, reversed/empty intervals, and the rightmost column. */
+        {
+            Line_t projected = {0};
+            Line_t projectedRef;
+            int from = pick(160);
+            int to = from + pick(161 - from);
+            projected.vert1.x = from * FRACUNIT + pick(FRACUNIT);
+            projected.vert2.x = to * FRACUNIT +
+                                (to == 160 ? 0 : pick(FRACUNIT));
+            projectedRef = projected;
+            EspNativeRenderGeometry_occludeProjectedSpan(native.columnScale,
+                       projected.vert1.x, projected.vert2.x);
+            Reference_Render_occludeClippedLine(&reference, &projectedRef);
+            sameScratch();
+        }
+        /* Separate direct projection parity corpus with unaligned positive
+         * depths and both signs of vertical extent, without clipping. */
+        {
+            Vertex_t projected, projectedRef;
+            projected.x = (4 + pick(125)) * FRACUNIT + pick(FRACUNIT);
+            projected.y = (pick(257) - 128) * FRACUNIT;
+            projected.z = pick(65) - 32;
+            projectedRef = projected;
+            EspNativeRenderGeometry_projectVertex(
+                native.screenWidth, native.fracHalfScreenWidth,
+                &projected.x, &projected.y, &projected.z);
+            Reference_Render_projectVertex(&reference, &projectedRef);
+            assert(memcmp(&projected, &projectedRef,
+                          sizeof(projected)) == 0);
             sameScratch();
         }
         memset(&vertex, 0, sizeof(vertex));
@@ -108,6 +146,6 @@ int main(void) {
                Reference_Render_cullBoundingBox(&reference, &node));
         sameScratch();
     }
-    puts("render_geometry_host: PASS 10000 seeded geometry cases, four cardinals and guarded columns");
+    puts("render_geometry_host: PASS 10000 seeded geometry cases, native projection, four cardinals and guarded columns");
     return 0;
 }

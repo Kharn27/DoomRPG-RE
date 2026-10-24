@@ -291,10 +291,14 @@ boolean Render_cullBoundingBox(Render_t* render, Node_t* node);
 void Render_transform2DVerts(Render_t* render, Vertex_t* vert);
 boolean Render_clipLine(Render_t* render, Line_t* line);
 void Render_clipVertex(Render_t* render, Vertex_t* vert, Line_t* line, int i, int i2);
+#ifndef DOOMRPG_ESP32
 void Render_projectVertex(Render_t* render, Vertex_t* vert);
+#endif
 void Render_drawLines(Render_t* render, Line_t* line);
 void Render_drawLine(Render_t* render, Line_t* line);
+#ifndef DOOMRPG_ESP32
 void Render_occludeClippedLine(Render_t* render, Line_t* line);
+#endif
 void Render_drawNodeLines(Render_t* render, Node_t* node);
 void Render_drawWallSpans(Render_t* render, Line_t* line);
 void Render_renderSpriteObject(Render_t* render, Sprite_t* sprite);

@@ -6,6 +6,7 @@
 
 #include "DoomRPG.h"
 #include "Render.h"
+#include "esp_render_geometry_primitives.h"
 #include <esp_timer.h>
 
 #include "esp_asset_pack.h"
@@ -928,8 +929,12 @@ static int drawWorldDropFrame(Render_t* render,
         ++stats->clipCulled;
         return 1;
     }
-    Render_projectVertex(render, &line.vert1);
-    Render_projectVertex(render, &line.vert2);
+    EspNativeRenderGeometry_projectVertex(
+        render->screenWidth, render->fracHalfScreenWidth,
+        &line.vert1.x, &line.vert1.y, &line.vert1.z);
+    EspNativeRenderGeometry_projectVertex(
+        render->screenWidth, render->fracHalfScreenWidth,
+        &line.vert2.x, &line.vert2.y, &line.vert2.z);
     return spans(render, &line, frame, renderMode, 0, stats);
 }
 
@@ -1122,8 +1127,12 @@ static int drawTransientBatch(Render_t* render,
                    (int)item->worldY);
             continue;
         }
-        Render_projectVertex(render, &line.vert1);
-        Render_projectVertex(render, &line.vert2);
+        EspNativeRenderGeometry_projectVertex(
+        render->screenWidth, render->fracHalfScreenWidth,
+        &line.vert1.x, &line.vert1.y, &line.vert1.z);
+        EspNativeRenderGeometry_projectVertex(
+        render->screenWidth, render->fracHalfScreenWidth,
+        &line.vert2.x, &line.vert2.y, &line.vert2.z);
         if (!spans(render, &line, frame,
                    transientWorldBatch.logical == 204U
                        ? RENDER_MODE_ADD
@@ -1280,8 +1289,12 @@ static int drawAt(Render_t* render,
         else ++stats->clipCulled;
         return 1;
     }
-    Render_projectVertex(render, &line.vert1);
-    Render_projectVertex(render, &line.vert2);
+    EspNativeRenderGeometry_projectVertex(
+        render->screenWidth, render->fracHalfScreenWidth,
+        &line.vert1.x, &line.vert1.y, &line.vert1.z);
+    EspNativeRenderGeometry_projectVertex(
+        render->screenWidth, render->fracHalfScreenWidth,
+        &line.vert2.x, &line.vert2.y, &line.vert2.z);
     if (!spans(render, &line, frame, renderMode, glow, stats)) {
         TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=span-failed animation=%u glow=%u\n", (unsigned int)parent->index, (unsigned int)animation, (unsigned int)(glow != 0));
         return 0;

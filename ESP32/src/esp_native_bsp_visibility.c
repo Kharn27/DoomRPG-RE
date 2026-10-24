@@ -9,6 +9,7 @@
 #include "esp_map_automap_state.h"
 #include "esp_map_runtime.h"
 #include "esp_native_bsp_visibility.h"
+#include "esp_render_geometry_primitives.h"
 #include "esp_native_sprite_visual_legacy.h"
 #include "esp_player_view_state.h"
 
@@ -244,11 +245,16 @@ static int depthLine(Render_t* r,
         ++state->clipCull;
         return 1;
     }
-    Render_projectVertex(r, &line.vert1);
-    Render_projectVertex(r, &line.vert2);
+    EspNativeRenderGeometry_projectVertex(
+        r->screenWidth, r->fracHalfScreenWidth,
+        &line.vert1.x, &line.vert1.y, &line.vert1.z);
+    EspNativeRenderGeometry_projectVertex(
+        r->screenWidth, r->fracHalfScreenWidth,
+        &line.vert2.x, &line.vert2.y, &line.vert2.z);
 
     if ((line.flags & OCCLUDER) != 0) {
-        Render_occludeClippedLine(r, &line);
+        EspNativeRenderGeometry_occludeProjectedSpan(
+            r->columnScale, line.vert1.x, line.vert2.x);
         ++state->occluders;
         return 1;
     }
