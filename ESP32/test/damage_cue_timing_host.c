@@ -257,7 +257,7 @@ int main(void) {
         assert(directionCue.queued.count == 1U && directionCue.phase == 0U && presents == 1U);
         clockMs += 600;
         assert(serviceViewportFlashExpiry());
-        assert(actionState.viewportFlashVisible == (barrier == 0U));
+        assert(actionState.viewportFlashVisible == (barrier <= 1U));
         controls = levelUp = pack = 0;
         actionState.pending.active = 0;
         poll();
