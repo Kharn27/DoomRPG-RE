@@ -49,9 +49,6 @@ typedef struct EspNativeSpriteStats_s {
     uint32_t depthClipCulled;
     uint32_t depthOccluders;
     uint32_t depthSpriteSpans;
-    /* Temporary time split: bounded BSP visibility + draw-view setup only.
-     * Does not alter sprite admission, cache or framebuffer composition. */
-    uint32_t visibilityMicros;
     uint32_t orderFNV1a;
     uint32_t ambientCandidates;
     uint32_t ambientFastCandidates;
