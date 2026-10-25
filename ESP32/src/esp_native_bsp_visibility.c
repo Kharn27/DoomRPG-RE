@@ -353,8 +353,10 @@ static int walkNode(Render_t* r,
                walkNode(r, runtime, second, depth + 1U,
                         cullView, cullScratch, state);
     }
-    return walkNode(r, runtime, second, depth + 1U, state) &&
-           walkNode(r, runtime, first, depth + 1U, state);
+    return walkNode(r, runtime, second, depth + 1U,
+                    cullView, cullScratch, state) &&
+           walkNode(r, runtime, first, depth + 1U,
+                    cullView, cullScratch, state);
 }
 
 static int spriteLeaf(const EspMapRuntimeView* runtime,
