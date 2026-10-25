@@ -94,7 +94,7 @@ int main(void) {
         line.vert2.y = (pick(65) - 32) * FRACUNIT;
         line.vert2.z = pick(13) * FRACUNIT;
         other = line;
-        assert(EspNativeRenderGeometry_clipLine(&line) == Reference_Render_clipLine(&reference, &other));
+        assert(EspNativeRenderGeometry_clipLine(&line) == (int)Reference_Render_clipLine(&reference, &other));
         assert(memcmp(&line, &other, sizeof(line)) == 0);
         /* Exercise project/occlude only on admitted, forward-facing segments. */
         if (line.vert1.x >= 4 * FRACUNIT && line.vert2.x >= 4 * FRACUNIT &&
