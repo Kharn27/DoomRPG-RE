@@ -1450,6 +1450,7 @@ static int renderImpl(struct Render_s* renderBase,
     uint32_t dropIndex = 0U;
     int opened = 0;
     int ok = 0;
+    int64_t visibilityStartUs = 0;
 
     if (outStats != NULL) memset(outStats, 0, sizeof(*outStats));
     if (render == NULL || outStats == NULL || runtime == NULL || view == NULL ||
@@ -1480,6 +1481,7 @@ static int renderImpl(struct Render_s* renderBase,
     }
 
     ambientSampleMs = (uint32_t)(esp_timer_get_time()/1000LL);
+    visibilityStartUs = esp_timer_get_time();
     if (!(preview
               ? EspNativeBspVisibility_buildForView(
                     render, view, &workspace->visibility)
@@ -1487,6 +1489,8 @@ static int renderImpl(struct Render_s* renderBase,
         !setupDrawView(render, view, &workspace->visibility)) {
         goto done;
     }
+    stats.visibilityMicros =
+        (uint32_t)(esp_timer_get_time() - visibilityStartUs);
 
     stats.depthNodes = workspace->visibility.nodes;
     stats.depthLeaves = workspace->visibility.leaves;
