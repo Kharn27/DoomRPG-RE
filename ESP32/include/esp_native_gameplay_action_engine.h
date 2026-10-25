@@ -130,15 +130,6 @@ int EspNativeGameplayActionEngine_queueDirectionalDamage(
     uint32_t attackProbe, uint16_t attackerSprite,
     EspNativeGameplayDamageSide side);
 
-/* Integer 50%-alpha RGB565 blend, called on the existing framebuffer only.
- * A band snapshot is taken AFTER the base red border: restoring it returns
- * the red border, then its own owner restores the original world pixels. */
-static inline uint16_t EspNativeGameplayDamageCue_blend565(
-    uint16_t base, uint16_t overlay) {
-    return (uint16_t)(((base & 0xf7deU) >> 1U) +
-                      ((overlay & 0xf7deU) >> 1U));
-}
-
 /* Legacy Hud keeps at most five queued messages. This bounded batch API is
  * intentionally narrow: it lets one committed multi-pickup tile publish the
  * same ordered "Got ..." sequence without importing Hud_t or heap ownership. */
