@@ -100,73 +100,32 @@ EspNativeGameplayDamageSide_fromWorld(int32_t playerX, int32_t playerY,
                      : ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT;
 }
 
-/* Bounded, allocation-free FIFO. The presentation owner consumes the oldest
- * committed attack first; repeated sides remain distinct when attacker/probe
- * IDs differ. This small pure contract also runs as a host regression. */
-#define ESP_NATIVE_GAMEPLAY_DAMAGE_CUE_QUEUE_CAP 8U
+/* Direction is a scalar attribute of the EXISTING red viewport flash:
+ * one 500ms timer, one border paint, one restore. No directional FIFO or
+ * independent pulse scheduler belongs in firmware. */
 typedef struct EspNativeGameplayDamageCue_s {
     uint32_t probe;
     uint16_t attackerSprite;
     uint8_t side;
     uint8_t reserved;
 } EspNativeGameplayDamageCue;
-typedef struct EspNativeGameplayDamageCueQueue_s {
-    EspNativeGameplayDamageCue entries[ESP_NATIVE_GAMEPLAY_DAMAGE_CUE_QUEUE_CAP];
-    uint8_t head;
-    uint8_t count;
-} EspNativeGameplayDamageCueQueue;
-
-static inline int EspNativeGameplayDamageCueQueue_push(
-    EspNativeGameplayDamageCueQueue* fifo,
-    uint32_t probe, uint16_t attackerSprite,
-    EspNativeGameplayDamageSide side) {
-    uint8_t tail;
-    if (fifo == NULL || probe == 0U || attackerSprite == 0xffffU ||
-        side < ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT ||
-        side > ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT ||
-        fifo->count >= ESP_NATIVE_GAMEPLAY_DAMAGE_CUE_QUEUE_CAP) return 0;
-    tail = (uint8_t)((fifo->head + fifo->count) %
-                     ESP_NATIVE_GAMEPLAY_DAMAGE_CUE_QUEUE_CAP);
-    fifo->entries[tail].probe = probe;
-    fifo->entries[tail].attackerSprite = attackerSprite;
-    fifo->entries[tail].side = (uint8_t)side;
-    fifo->entries[tail].reserved = 0U;
-    ++fifo->count;
-    return 1;
-}
-
-static inline int EspNativeGameplayDamageCueQueue_pop(
-    EspNativeGameplayDamageCueQueue* fifo,
-    EspNativeGameplayDamageCue* outCue) {
-    if (fifo == NULL || outCue == NULL || fifo->count == 0U ||
-        fifo->count > ESP_NATIVE_GAMEPLAY_DAMAGE_CUE_QUEUE_CAP) return 0;
-    *outCue = fifo->entries[fifo->head];
-    fifo->head = (uint8_t)((fifo->head + 1U) %
-                           ESP_NATIVE_GAMEPLAY_DAMAGE_CUE_QUEUE_CAP);
-    --fifo->count;
-    return 1;
-}
 
 /* Bracket synchronous retaliation -> ordered-member -> FX work.
- * The direction UI intent is queued at COMMIT, but its first physical ON
- * begins after potentially slow work in that same loopTask iteration.
- * Independent queuing outside this bracket still starts immediately. */
+ * The direction scalar is attached at COMMIT; one ordinary border paint
+ * follows synchronous FX work in this same loopTask iteration. */
 void EspNativeGameplayActionEngine_beginMonsterVisualWork(void);
 void EspNativeGameplayActionEngine_endMonsterVisualWork(void);
 
 /* Opt-in only for nonlethal monster retaliation: its frame/feedback is still
- * committed as usual, but postpone the 2px damage border until the first
- * directional pulse can be physically presented in that SAME display frame.
+ * committed as usual, but postpone the existing border and text until
+ * the current monster-visual work ends so both paint in ONE frame.
  * Lethal deaths, traps and barrel damage never opt in. Presentation-only. */
 void EspNativeGameplayActionEngine_stageNonlethalMonsterFlash(void);
 
-/* Independent presentation-only FIFO. Every committed monster hit keeps
- * its existing red 500 ms border; the direction band blinks concurrently on
- * top of it. Post-COMMIT enqueue publishes intent immediately and starts
- * physical ON when the current synchronous monster work has completed.
- * Touch/PAK/level-up/transaction barriers defer that UI paint;
- * presentation failure is retried and never rolls back committed gameplay.
- * No wait for the blink cadence or new world render is introduced. */
+/* Attach the committed attack's side to its already-queued red flash.
+ * Multiple hits in one turn resolve to the most recently committed side.
+ * No new present or timer is created here; the ordinary viewport flash
+ * paints the 10px side with its 2px perimeter and restores both at 500ms. */
 int EspNativeGameplayActionEngine_queueDirectionalDamage(
     uint32_t attackProbe, uint16_t attackerSprite,
     EspNativeGameplayDamageSide side);
