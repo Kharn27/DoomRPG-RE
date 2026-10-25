@@ -1,5 +1,17 @@
 # Doom RPG ESP32 — état actuel du port
 
+## PR #231 / 2e jalon — culling BSP indépendant de Render_t, PASS CYD (26 octobre 2026)
+
+**Code exact testé matériellement en `esp32-cyd` : `efad8a2ffe018bb8319298e29b20065845c5360e`**, branche `agent/esp32-retire-last-render-clip-abi`, base `main=4e9efc4b064ce65eb311fbaa4fedd4b4f84632a6`. CI [push #40236074792](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40236074792) et [PR #40236078052](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40236078052) **SUCCESS**, différentiel hôte 10 000 cas, 23 ABI Render et builds normal/bringup/trace. Ce PASS est **postérieur et distinct** du premier PASS clipping `1c1a715e8c23f562f53f301b02449e8ada8b09ce` documenté ci-dessous.
+
+**API native validée :** `EspNativeRenderGeometry_cullBounds` ne reçoit plus `Render_t` ni `Node_t` : vue `EspNativeRenderCullView` capturée une fois par traversal, colonne d'occlusion `const int*` consultée en direct et scratch de ligne local (copié depuis `render->tmpLine` avant chaque cull). Le culler ne touche plus le vrai `tmpLine`. Deux consommateurs : `esp_native_first_frame.c` et `esp_native_bsp_visibility.c`, les deux ordres récursifs couverts. Clipping interne pur, adaptation de z des portes animées seulement via l'adaptateur explicite. Les autres usages du graphe Render n'ont pas été retirés.
+
+**START / INTRO / Entrance / EXIT :** `FIRST_FRAME=71ca7465`, BSP CRC `623f34e4`, arène `14095/c3882516`, MOVE/TURN/STRAFE, caisse127, pickups armure 0→4→8→12, dialogue88 BACK-cancel, porte275 4 frames et HOLD/RELEASE différé ; EXIT `RESIDENTRESET released=18008 empty=1`, MENU `0f2c9fc3`. **LOAD slot04 / Malwrath / EXIT :** monstres30 `beaeaccc`, topologie `50e16fe3`, position `e2a9d90a` restaurés ; porte113 4 frames, activation monstre322 13→14, clipping sprite324 `draws 4→2→0`, quatre ripostes Malwrath à trois projectiles204 chacune résolues après animation, shotgun HP monstre `11→8→5→0`, drop ramassé, secret +5XP, sortie `empty=1`, même MENU FNV. Utilisateur : « pas vu de glitch ou autre ».
+
+**RAM / limites :** `shapeData=mediaTexels=NULL`, `heap8=113936/largest8=86004` en gameplay, MENU `159872/110580` après EXIT, sans erreur `WORLD_POST`, panique ou anomalie RNG visible. Fluidité jugée encore peu nerveuse : previews MOVE ~102–128ms, TURN ~219–234ms, LARGE-WARM START 117.846ms / LOAD 81.884ms (sans A/B contrôlé). `NATIVEFRAME BOUNDARY-INLINE` et abscisse loggée des projectiles restent à auditer séparément. Ne pas inférer all-maps, pixel parity exhaustive, SAVE neuf ou gain de performance. **Code hardware figé au SHA `efad8a2f` ; commits suivants docs-only, CI post-doc, merge exclusivement par l'utilisateur.**
+
+---
+
 ## PR #231 — dernière ABI Render_clipLine retirée : PASS matériel CYD (25 octobre 2026)
 
 **Code exact testé en firmware normal `esp32-cyd` : `1c1a715e8c23f562f53f301b02449e8ada8b09ce`**, branche `agent/esp32-retire-last-render-clip-abi` créée à partir du vrai `main=4e9efc4b064ce65eb311fbaa4fedd4b4f84632a6` (merge #230). [PR #231](https://github.com/Kharn27/DoomRPG-RE/pull/231). CI **SUCCESS** sur ce même code, [push #40215912165](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40215912165) et [PR #40215950660](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40215950660) : tests hôte, différentiel géométrique sur 10 000 cas, garde des **23 ABI Render retirées**, builds PlatformIO normal/bringup/trace. Les SHAs intermédiaires en échec CI, avant correctifs du comparateur de types et du garde header, ne sont **pas** des firmwares validés.
