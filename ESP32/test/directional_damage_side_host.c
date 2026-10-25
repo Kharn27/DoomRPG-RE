@@ -19,26 +19,29 @@ static const Facing cases[4] = {
     {  0, 64, { {0, +64}, {-64, 0}, {0, -64}, {+64, 0} } }
 };
 
-/* One physical red border: exactly 2px everywhere, 10px toward the
- * attacker. One common capture, one common expiry; no overlapping separately
- * timed layers, no orange tint, no extra present. */
+/* One red 2px perimeter and exactly one translucent INNER 10px zone.
+ * The two use the SAME ON/OFF timeline and clean world baseline. */
 static uint16_t fixture[160U * 120U];
 static uint16_t original[160U * 120U];
 static uint16_t borderPixels[944U];
-static uint16_t extraPixels[1248U];
+static uint16_t extraPixels[1560U];
+static uint16_t blend565(uint16_t world) {
+    return (uint16_t)(((world & 0xf7deU) >> 1U) +
+                      ((0xfa20U & 0xf7deU) >> 1U));
+}
 static int isOuter(unsigned x, unsigned y) {
     return y < 22U || y >= 98U || x < 2U || x >= 158U;
 }
 static int isInner(unsigned x, unsigned y, unsigned side) {
     switch (side) {
-    case 1U: return y >= 22U && y < 30U && x >= 2U && x < 158U;
-    case 2U: return x >= 150U && x < 158U && y >= 22U && y < 98U;
-    case 3U: return y >= 90U && y < 98U && x >= 2U && x < 158U;
-    case 4U: return x >= 2U && x < 10U && y >= 22U && y < 98U;
+    case 1U: return y >= 22U && y < 32U && x >= 2U && x < 158U;
+    case 2U: return x >= 148U && x < 158U && y >= 22U && y < 98U;
+    case 3U: return y >= 88U && y < 98U && x >= 2U && x < 158U;
+    case 4U: return x >= 2U && x < 12U && y >= 22U && y < 98U;
     default: return 0;
     }
 }
-static void testUnifiedRedBorder(void) {
+static void testUnifiedBlinkGeometry(void) {
     for (unsigned side = 0U; side <= 4U; ++side) {
         unsigned outerAt = 0U, innerAt = 0U;
         for (unsigned y = 0U; y < 120U; ++y)
@@ -46,39 +49,46 @@ static void testUnifiedRedBorder(void) {
                 fixture[y * 160U + x] =
                     (uint16_t)((x * 13U + y * 59U) & 0xffffU);
         memcpy(original, fixture, sizeof(fixture));
-        for (unsigned y = 20U; y < 100U; ++y)
-            for (unsigned x = 0U; x < 160U; ++x) {
-                uint16_t* p = &fixture[y * 160U + x];
-                if (isOuter(x, y)) {
-                    assert(outerAt < 944U);
-                    borderPixels[outerAt++] = *p;
-                    *p = 0xb800U;
+        for (unsigned pulse = 0U; pulse < 3U; ++pulse) {
+            outerAt = innerAt = 0U;
+            for (unsigned y = 20U; y < 100U; ++y)
+                for (unsigned x = 0U; x < 160U; ++x) {
+                    uint16_t* p = &fixture[y * 160U + x];
+                    if (isOuter(x, y)) {
+                        assert(outerAt < 944U);
+                        if (pulse == 0U) borderPixels[outerAt] = *p;
+                        *p = 0xb800U;
+                        ++outerAt;
+                    }
+                    else if (isInner(x, y, side)) {
+                        assert(innerAt < 1560U);
+                        if (pulse == 0U) extraPixels[innerAt] = *p;
+                        *p = blend565(extraPixels[innerAt]);
+                        ++innerAt;
+                    }
                 }
-                else if (isInner(x, y, side)) {
-                    assert(innerAt < 1248U);
-                    extraPixels[innerAt++] = *p;
-                    *p = 0xb800U;
-                }
+            assert(outerAt == 944U);
+            assert(innerAt == (side == 0U ? 0U :
+                             side == 1U || side == 3U ? 1560U : 760U));
+            assert(fixture[20U * 160U + 80U] == 0xb800U);
+            if (side != 0U) {
+                const unsigned x = side == 2U ? 148U :
+                                   side == 4U ? 2U : 80U;
+                const unsigned y = side == 1U ? 31U :
+                                   side == 3U ? 88U : 50U;
+                assert(fixture[y * 160U + x] ==
+                       blend565(original[y * 160U + x]));
             }
-        assert(outerAt == 944U);
-        assert(innerAt == (side == 0U ? 0U :
-                         side == 1U || side == 3U ? 1248U : 608U));
-        assert(fixture[20U * 160U + 80U] == 0xb800U);
-        if (side != 0U) {
-            const unsigned x = side == 2U ? 150U :
-                               side == 4U ? 2U : 80U;
-            const unsigned y = side == 1U ? 29U :
-                               side == 3U ? 90U : 50U;
-            assert(fixture[y * 160U + x] == 0xb800U);
+            outerAt = innerAt = 0U;
+            for (unsigned y = 20U; y < 100U; ++y)
+                for (unsigned x = 0U; x < 160U; ++x) {
+                    uint16_t* p = &fixture[y * 160U + x];
+                    if (isOuter(x, y)) *p = borderPixels[outerAt++];
+                    else if (isInner(x, y, side)) *p = extraPixels[innerAt++];
+                }
+            /* Every OFF frame restores the EXACT original world. */
+            assert(memcmp(fixture, original, sizeof(fixture)) == 0);
         }
-        outerAt = innerAt = 0U;
-        for (unsigned y = 20U; y < 100U; ++y)
-            for (unsigned x = 0U; x < 160U; ++x) {
-                uint16_t* p = &fixture[y * 160U + x];
-                if (isOuter(x, y)) *p = borderPixels[outerAt++];
-                else if (isInner(x, y, side)) *p = extraPixels[innerAt++];
-            }
-        assert(memcmp(fixture, original, sizeof(fixture)) == 0);
     }
 }
 int main(void) {
@@ -126,7 +136,7 @@ int main(void) {
     assert(EspNativeGameplayDamageSide_fromWorld(
         736, 1504, 64, 0, 736, 1504) ==
         ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_NONE);
-    testUnifiedRedBorder();
-    puts("DAMAGEBORDER host: cardinal=16/16 behind=ok diagonal=ok oblique=ok invalid=ok one-red-frame=944px + direction-8px, 4-sides, one-restore, exact-world");
+    testUnifiedBlinkGeometry();
+    puts("DAMAGEBORDER host: cardinal=16/16 behind=ok diagonal=ok oblique=ok invalid=ok single-500ms-clock=3-pulses, opaque-2px + translucent-inner-10px, 4-sides, 3 exact-restores");
     return 0;
 }
