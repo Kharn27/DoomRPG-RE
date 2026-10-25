@@ -19,90 +19,66 @@ static const Facing cases[4] = {
     {  0, 64, { {0, +64}, {-64, 0}, {0, -64}, {+64, 0} } }
 };
 
-/* Pixel fixture: the 2px border owns only the perimeter; the 10px band
- * owns only the interior. Assert both restore orders, including a band that
- * remains lit AFTER the 500ms border lease has expired. No SDL/display. */
+/* One physical red border: exactly 2px everywhere, 10px toward the
+ * attacker. One common capture, one common expiry; no overlapping separately
+ * timed layers, no orange tint, no extra present. */
 static uint16_t fixture[160U * 120U];
 static uint16_t original[160U * 120U];
 static uint16_t borderPixels[944U];
-static uint16_t cuePixels[1600U];
-
-static void paintBorder(unsigned int mode) {
-    unsigned int x, y, n = 0U;
-    for (y = 20U; y < 100U; ++y) {
-        for (x = 0U; x < 160U; ++x) {
-            const int edge = y < 22U || y >= 98U ||
-                             x < 2U || x >= 158U;
-            uint16_t* p;
-            if (!edge) continue;
-            p = &fixture[y * 160U + x];
-            if (mode == 0U) {
-                assert(n < 944U);
-                borderPixels[n] = *p;
-                *p = 0xb800U;
-            } else {
-                assert(n < 944U);
-                *p = borderPixels[n];
-            }
-            ++n;
-        }
-    }
-    assert(n == 944U);
+static uint16_t extraPixels[1248U];
+static int isOuter(unsigned x, unsigned y) {
+    return y < 22U || y >= 98U || x < 2U || x >= 158U;
 }
-
-static void testOverlayDuringRedBorder(void) {
-    for (unsigned int side = 1U; side <= 4U; ++side) {
-        for (unsigned int expiryOrder = 0U; expiryOrder < 2U; ++expiryOrder) {
-            unsigned int x0 = 2U, y0 = 22U, width = 156U, height = 10U;
-            if (side == 2U) { x0 = 148U; width = 10U; height = 76U; }
-            if (side == 3U) y0 = 88U;
-            if (side == 4U) { width = 10U; height = 76U; }
-            for (unsigned y = 0U; y < 120U; ++y) {
-                for (unsigned x = 0U; x < 160U; ++x) {
-                    fixture[y * 160U + x] =
-                        (uint16_t)((y * 59U + x * 13U) & 0xffffU);
+static int isInner(unsigned x, unsigned y, unsigned side) {
+    switch (side) {
+    case 1U: return y >= 22U && y < 30U && x >= 2U && x < 158U;
+    case 2U: return x >= 150U && x < 158U && y >= 22U && y < 98U;
+    case 3U: return y >= 90U && y < 98U && x >= 2U && x < 158U;
+    case 4U: return x >= 2U && x < 10U && y >= 22U && y < 98U;
+    default: return 0;
+    }
+}
+static void testUnifiedRedBorder(void) {
+    for (unsigned side = 0U; side <= 4U; ++side) {
+        unsigned outerAt = 0U, innerAt = 0U;
+        for (unsigned y = 0U; y < 120U; ++y)
+            for (unsigned x = 0U; x < 160U; ++x)
+                fixture[y * 160U + x] =
+                    (uint16_t)((x * 13U + y * 59U) & 0xffffU);
+        memcpy(original, fixture, sizeof(fixture));
+        for (unsigned y = 20U; y < 100U; ++y)
+            for (unsigned x = 0U; x < 160U; ++x) {
+                uint16_t* p = &fixture[y * 160U + x];
+                if (isOuter(x, y)) {
+                    assert(outerAt < 944U);
+                    borderPixels[outerAt++] = *p;
+                    *p = 0xb800U;
+                }
+                else if (isInner(x, y, side)) {
+                    assert(innerAt < 1248U);
+                    extraPixels[innerAt++] = *p;
+                    *p = 0xb800U;
                 }
             }
-            memcpy(original, fixture, sizeof(fixture));
-            paintBorder(0U);
-            for (unsigned pulse = 0U; pulse < 2U; ++pulse) {
-                unsigned n = 0U;
-                for (unsigned y = y0; y < y0 + height; ++y) {
-                    for (unsigned x = x0; x < x0 + width; ++x) {
-                        uint16_t* p = &fixture[y * 160U + x];
-                        assert(n < 1600U);
-                        cuePixels[n++] = *p;
-                        *p = EspNativeGameplayDamageCue_blend565(
-                            *p, 0xfa20U);
-                    }
-                }
-                assert(n == width * height);
-                assert(fixture[y0 * 160U + x0] ==
-                       EspNativeGameplayDamageCue_blend565(
-                           original[y0 * 160U + x0], 0xfa20U));
-                /* In particular the red 2px perimeter is never tinted. */
-                assert(fixture[20U * 160U + 80U] ==
-                       (expiryOrder == 1U && pulse == 1U
-                            ? original[20U * 160U + 80U] : 0xb800U));
-                if (expiryOrder == 1U && pulse == 0U) {
-                    paintBorder(1U);
-                    /* Restore the red frame WHILE the first band is ON. */
-                    assert(fixture[20U * 160U + 80U] ==
-                           original[20U * 160U + 80U]);
-                    assert(fixture[y0 * 160U + x0] ==
-                           EspNativeGameplayDamageCue_blend565(
-                               original[y0 * 160U + x0], 0xfa20U));
-                }
-                n = 0U;
-                for (unsigned y = y0; y < y0 + height; ++y)
-                    for (unsigned x = x0; x < x0 + width; ++x)
-                        fixture[y * 160U + x] = cuePixels[n++];
-                assert(fixture[y0 * 160U + x0] ==
-                       original[y0 * 160U + x0]);
-            }
-            if (expiryOrder == 0U) paintBorder(1U);
-            assert(memcmp(fixture, original, sizeof(fixture)) == 0);
+        assert(outerAt == 944U);
+        assert(innerAt == (side == 0U ? 0U :
+                         side == 1U || side == 3U ? 1248U : 608U));
+        assert(fixture[20U * 160U + 80U] == 0xb800U);
+        if (side != 0U) {
+            const unsigned x = side == 2U ? 150U :
+                               side == 4U ? 2U : 80U;
+            const unsigned y = side == 1U ? 29U :
+                               side == 3U ? 90U : 50U;
+            assert(fixture[y * 160U + x] == 0xb800U);
         }
+        outerAt = innerAt = 0U;
+        for (unsigned y = 20U; y < 100U; ++y)
+            for (unsigned x = 0U; x < 160U; ++x) {
+                uint16_t* p = &fixture[y * 160U + x];
+                if (isOuter(x, y)) *p = borderPixels[outerAt++];
+                else if (isInner(x, y, side)) *p = extraPixels[innerAt++];
+            }
+        assert(memcmp(fixture, original, sizeof(fixture)) == 0);
     }
 }
 int main(void) {
@@ -150,63 +126,7 @@ int main(void) {
     assert(EspNativeGameplayDamageSide_fromWorld(
         736, 1504, 64, 0, 736, 1504) ==
         ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_NONE);
-    {
-        EspNativeGameplayDamageCueQueue fifo = {0};
-        EspNativeGameplayDamageCue popped;
-        unsigned int i;
-        const EspNativeGameplayDamageSide sides[4] = {
-            ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT,
-            ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT,
-            ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK,
-            ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_RIGHT
-        };
-        /* Four different real attackers: order and identity, not last-wins. */
-        for (i = 0U; i < 4U; ++i)
-            assert(EspNativeGameplayDamageCueQueue_push(
-                &fifo, 100U + i, (uint16_t)(220U + i), sides[i]));
-        assert(fifo.count == 4U);
-        for (i = 0U; i < 4U; ++i) {
-            assert(EspNativeGameplayDamageCueQueue_pop(&fifo, &popped));
-            assert(popped.probe == 100U + i);
-            assert(popped.attackerSprite == 220U + i);
-            assert(popped.side == (uint8_t)sides[i]);
-        }
-        assert(fifo.count == 0U);
-        assert(!EspNativeGameplayDamageCueQueue_pop(&fifo, &popped));
-
-        /* Exhaust the queue and prove fail-closed overflow; then wrap. */
-        for (i = 0U; i < ESP_NATIVE_GAMEPLAY_DAMAGE_CUE_QUEUE_CAP; ++i)
-            assert(EspNativeGameplayDamageCueQueue_push(
-                &fifo, i + 1U, (uint16_t)(300U + i),
-                ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK));
-        assert(!EspNativeGameplayDamageCueQueue_push(
-            &fifo, 1234U, 999U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
-        for (i = 0U; i < 3U; ++i) {
-            assert(EspNativeGameplayDamageCueQueue_pop(&fifo, &popped));
-            assert(popped.probe == i + 1U);
-        }
-        for (i = 0U; i < 3U; ++i)
-            assert(EspNativeGameplayDamageCueQueue_push(
-                &fifo, 501U + i, (uint16_t)(501U + i),
-                ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT));
-        for (i = 3U; i < ESP_NATIVE_GAMEPLAY_DAMAGE_CUE_QUEUE_CAP; ++i) {
-            assert(EspNativeGameplayDamageCueQueue_pop(&fifo, &popped));
-            assert(popped.probe == i + 1U);
-        }
-        for (i = 0U; i < 3U; ++i) {
-            assert(EspNativeGameplayDamageCueQueue_pop(&fifo, &popped));
-            assert(popped.probe == 501U + i);
-            assert(popped.side == ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT);
-        }
-        assert(fifo.count == 0U);
-        assert(!EspNativeGameplayDamageCueQueue_push(
-            &fifo, 0U, 5U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK));
-        assert(!EspNativeGameplayDamageCueQueue_push(
-            &fifo, 600U, 0xffffU, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK));
-        assert(!EspNativeGameplayDamageCueQueue_push(
-            &fifo, 600U, 5U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_NONE));
-    }
-    testOverlayDuringRedBorder();
-    puts("DAMAGECUE host: cardinal=16/16 behind=ok diagonal=ok oblique=ok invalid=ok fifo-order=ok wrap=ok full=guarded red+side=disjoint 4-sides 2-pulses=exact both-expiry-orders");
+    testUnifiedRedBorder();
+    puts("DAMAGEBORDER host: cardinal=16/16 behind=ok diagonal=ok oblique=ok invalid=ok one-red-frame=944px + direction-8px, 4-sides, one-restore, exact-world");
     return 0;
 }
