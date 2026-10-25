@@ -1676,8 +1676,9 @@ static int paintViewportFlash(void) {
         Esp32PlatformVideo_framebufferSizeBytes() != expected) return 0;
     if (directionCue.snapshotValid != 0U) {
         if (!keepClean) {
+            /* World redraw invalidates PIXELS, not the committed attack's
+             * directional metadata. Next shared ON recaptures this side. */
             directionCue.snapshotValid = 0U;
-            directionCue.activeSide = 0U;
         }
         else if (newSide != directionCue.activeSide) {
             if (!visitDamageBorderInner(1U, directionCue.activeSide)) return 0;
@@ -2001,7 +2002,8 @@ int __wrap_Esp32PlatformVideo_present(void) {
             /* Clean world framebuffer supplied by renderer during a GAP. */
             actionState.viewportFlashSnapshotValid = 0U;
             directionCue.snapshotValid = 0U;
-            directionCue.activeSide = 0U;
+            /* Keep activeSide across this clean-frame GAP; recapture its
+             * translucent pixels from the new camera pose on next ON. */
             actionState.viewportFlashLit = 0U;
         }
     }
