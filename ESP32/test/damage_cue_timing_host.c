@@ -127,7 +127,14 @@ static void expectBorder(unsigned side, uint16_t clean, uint16_t outer) {
                  x >= 148U && x < 158U && y >= 22U && y < 98U);
             const uint16_t expected = edge ? outer :
                                       extra ? tinted(clean) : clean;
-            assert(pixels[1U + y * 160U + x] == expected);
+            if (pixels[1U + y * 160U + x] != expected) {
+                fprintf(stderr, "[BLINK-HOST] mismatch x=%u y=%u side=%u observed=%04x expected=%04x lit=%u snapshot=%u present=%u clock=%u color=%04x\n",
+                        x, y, side, pixels[1U + y * 160U + x],
+                        expected, actionState.viewportFlashLit,
+                        directionCue.snapshotValid, presents, clockMs,
+                        actionState.viewportFlashColor565);
+                assert(0 && "red border and translucent side diverged");
+            }
             if (edge || extra) ++count;
         }
     }
