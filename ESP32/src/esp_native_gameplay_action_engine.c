@@ -1563,8 +1563,8 @@ void EspNativeGameplayActionEngine_endMonsterVisualWork(void) {
     directionCue.workActive = 0U;
     directionCue.stageNonlethalBorder = 0U;
     if (staged != 0U && actionState.viewportFlashPending != 0U) {
-        /* The ordinary present paints text, 2px border and red expanded
-         * side together, starting their single 500ms lease at this present. */
+        /* The ordinary present paints text + 2px red contour + translucent
+         * side together, starting their ONE 500ms blink at this present. */
         (void)__wrap_Esp32PlatformVideo_present();
     }
 }
@@ -2014,12 +2014,13 @@ int __wrap_Esp32PlatformVideo_present(void) {
         actionState.viewportFlashLit = 1U;
         if (directionCue.pendingValid != 0U &&
             actionState.viewportFlashColor565 == FEEDBACK_DAMAGE_RED565) {
-            printf("[DAMAGEBORDER] PAINT probe=%u sprite=%u side=%s thickness=%u color565=%04x lease=viewport-flash-500ms additionalPresent=no\n",
+            printf("[DAMAGEBORDER] PAINT probe=%u sprite=%u side=%s thickness=%u contour565=%04x innerTint565=%04x innerAlpha=50pct blink=shared-500ms additionalPresent=no\n",
                    (unsigned int)directionCue.pending.probe,
                    (unsigned int)directionCue.pending.attackerSprite,
                    directionCueName(directionCue.pending.side),
                    (unsigned int)DAMAGE_BORDER_DIRECTION_THICKNESS,
-                   (unsigned int)FEEDBACK_DAMAGE_RED565);
+                   (unsigned int)FEEDBACK_DAMAGE_RED565,
+                   (unsigned int)DAMAGE_BORDER_TINT565);
         }
         directionCue.pendingValid = 0U;
     }
@@ -2028,7 +2029,7 @@ int __wrap_Esp32PlatformVideo_present(void) {
         actionState.viewportFlashPending = 0U;
         actionState.viewportFlashVisible = 1U;
         actionState.viewportFlashShownAtMs = actionNowMs();
-        printf("[VIEWFLASH] PAINT color565=%04x viewport=0,%u,%u,%u thickness=%u pixels=%u durationMs=%u snapshot=bounded present=caller feedback=%u\n",
+        printf("[VIEWFLASH] PAINT color565=%04x viewport=0,%u,%u,%u thickness=%u pixels=%u durationMs=%u snapshot=bounded present=caller feedback=%u blink=%s\n",
                (unsigned int)actionState.viewportFlashColor565,
                (unsigned int)FEEDBACK_VIEW_Y,
                (unsigned int)DOOMRPG_LOGICAL_WIDTH,
@@ -2036,7 +2037,9 @@ int __wrap_Esp32PlatformVideo_present(void) {
                (unsigned int)FEEDBACK_BORDER_THICKNESS,
                (unsigned int)FEEDBACK_BORDER_PIXELS,
                (unsigned int)actionState.viewportFlashDurationMs,
-               (unsigned int)feedback);
+               (unsigned int)feedback,
+               actionState.viewportFlashColor565 == FEEDBACK_DAMAGE_RED565
+                   ? "3x105ms-on/65ms-off" : "steady");
     }
     actionState.framebufferFresh = 0U;
 
@@ -2100,9 +2103,11 @@ static int serviceViewportFlashExpiry(void) {
         directionCue.snapshotValid = 0U;
         directionCue.activeSide = 0U;
         directionCue.pendingValid = 0U;
-        printf("[VIEWFLASH] EXPIRE elapsedMs=%u targetMs=%u color565=%04x restored=one-border-including-direction blink=shared\n",
+        printf("[VIEWFLASH] EXPIRE elapsedMs=%u targetMs=%u color565=%04x restored=one-border-including-direction blink=%s\n",
                (unsigned int)elapsed, (unsigned int)duration,
-               (unsigned int)actionState.viewportFlashColor565);
+               (unsigned int)actionState.viewportFlashColor565,
+               actionState.viewportFlashColor565 == FEEDBACK_DAMAGE_RED565
+                   ? "shared" : "steady");
         actionState.viewportFlashColor565 = 0U;
         return 1;
     }
