@@ -1875,6 +1875,7 @@ static void muteAutomapVisuals(void) {
     actionState.viewportFlashPending = 0U;
     actionState.viewportFlashVisible = 0U;
     actionState.viewportFlashSnapshotValid = 0U;
+    actionState.viewportFlashLit = 0U;
     actionState.viewportFlashShownAtMs = 0U;
     actionState.viewportFlashDurationMs = 0U;
     actionState.viewportFlashColor565 = 0U;
@@ -1927,12 +1928,9 @@ int __wrap_Esp32PlatformVideo_present(void) {
     }
 
     if (actionState.feedbackPending != 0U) {
-        /* Nonlethal monster retaliation stages the thin red border until
-         * its first directional band. Hold its DAMAGE text in the same
-         * pending feedback owner through the early committed world frame.
-         * The end-of-monster-work present will paint text, border, and side
-         * together, and only THEN start the 1200ms text lease. All other
-         * feedback, including lethal damage, keeps original behavior. */
+        /* Keep the nonlethal DAMAGE text, border and directional tint
+         * grouped AFTER synchronous monster visual work. They share one
+         * first physical present and then ONE flash clock. */
         if (directionCue.stageNonlethalBorder == 0U ||
             actionState.feedbackKind != ACTION_FEEDBACK_DAMAGE) {
             feedback = actionState.feedbackKind;
@@ -1976,24 +1974,42 @@ int __wrap_Esp32PlatformVideo_present(void) {
         }
     }
 
-    /* ONE red flash: ordinary 2px perimeter, optionally a 10px hit side.
-     * Painting and expiry both happen with the EXISTING viewport flash. */
+    /* ONE flash clock and ON bit. World redraws while the shared flash is
+     * OFF must stay clean; never paint a frame that the clock says is OFF.
+     * A fresh world render invalidates old snapshots in that case. */
     if ((actionState.viewportFlashPending != 0U ||
          actionState.viewportFlashVisible != 0U) &&
-        (actionState.viewportFlashPending != 0U ||
-         actionState.framebufferFresh != 0U ||
-         directionCue.pendingValid != 0U) &&
         directionCue.stageNonlethalBorder == 0U) {
-        if (!paintViewportFlash()) {
-            printf("[VIEWFLASH] FAILED phase=paint\n");
-            return 0;
+        const int shouldPaint =
+            actionState.viewportFlashPending != 0U ||
+            (actionState.viewportFlashVisible != 0U &&
+             (actionState.viewportFlashColor565 != FEEDBACK_DAMAGE_RED565 ||
+              viewportDamageBlinkLit(
+                  actionNowMs() - actionState.viewportFlashShownAtMs)));
+        if (shouldPaint &&
+            (actionState.viewportFlashPending != 0U ||
+             actionState.framebufferFresh != 0U ||
+             (directionCue.pendingValid != 0U &&
+              actionState.viewportFlashLit != 0U))) {
+            if (!paintViewportFlash()) {
+                printf("[VIEWFLASH] FAILED phase=paint\n");
+                return 0;
+            }
+            flashPainted = 1;
         }
-        flashPainted = 1;
+        else if (!shouldPaint && actionState.framebufferFresh != 0U) {
+            /* Clean world framebuffer supplied by renderer during a GAP. */
+            actionState.viewportFlashSnapshotValid = 0U;
+            directionCue.snapshotValid = 0U;
+            directionCue.activeSide = 0U;
+            actionState.viewportFlashLit = 0U;
+        }
     }
 
     ok = __real_Esp32PlatformVideo_present();
     if (!ok) return 0;
     if (flashPainted) {
+        actionState.viewportFlashLit = 1U;
         if (directionCue.pendingValid != 0U &&
             actionState.viewportFlashColor565 == FEEDBACK_DAMAGE_RED565) {
             printf("[DAMAGEBORDER] PAINT probe=%u sprite=%u side=%s thickness=%u color565=%04x lease=viewport-flash-500ms additionalPresent=no\n",
@@ -2043,30 +2059,85 @@ int __wrap_Esp32PlatformVideo_present(void) {
     return 1;
 }
 
+/* The existing viewport flash's ONE service drives both the opaque 2px
+ * contour and its translucent 10px directional extension. Transition
+ * 105ms ON / 65ms OFF / 105ms ON / 65ms OFF / 105ms ON, then clean until
+ * original 500ms expiry. NO independent side cadence or physical presents.
+ * Missed transitions are skipped if a world render stalls: no catch-up burst. */
 static int serviceViewportFlashExpiry(void) {
-    uint32_t now;
-    uint32_t elapsed;
+    uint32_t elapsed, now;
     uint16_t duration;
+    int nextLit;
+    if (actionState.viewportFlashVisible == 0U ||
+        actionState.viewportFlashPending != 0U) return 1;
+    if (EspNativeGameplayLevelUp_isActive() ||
+        EspNativeGameplayControls_isActive()) return 1;
 
-    if (actionState.viewportFlashVisible == 0U) return 1;
-    if (EspNativeGameplayLevelUp_isActive()) return 1;
     now = actionNowMs();
     elapsed = now - actionState.viewportFlashShownAtMs;
     duration = actionState.viewportFlashDurationMs;
-    if (duration == 0U || elapsed < duration) return 1;
-    if (EspNativeGameplayControls_isActive()) return 1;
-    if (!restoreViewportFlash()) {
-        printf("[VIEWFLASH] FAILED phase=restore\n");
-        return 0;
+    if (duration == 0U || elapsed >= duration) {
+        if (actionState.viewportFlashLit != 0U) {
+            if (!restoreViewportFlash(0)) {
+                printf("[VIEWFLASH] FAILED phase=expiry-restore\n");
+                return 0;
+            }
+            if (!__real_Esp32PlatformVideo_present()) {
+                /* Physical screen still shows ON: restore the framebuffer
+                 * to that same state before retrying the expiry. */
+                if (!paintViewportFlash()) return 0;
+                return 0;
+            }
+            actionState.viewportFlashLit = 0U;
+        }
+        actionState.viewportFlashSnapshotValid = 0U;
+        actionState.viewportFlashVisible = 0U;
+        actionState.viewportFlashLit = 0U;
+        actionState.viewportFlashShownAtMs = 0U;
+        actionState.viewportFlashDurationMs = 0U;
+        directionCue.snapshotValid = 0U;
+        directionCue.activeSide = 0U;
+        directionCue.pendingValid = 0U;
+        printf("[VIEWFLASH] EXPIRE elapsedMs=%u targetMs=%u color565=%04x restored=one-border-including-direction blink=shared\n",
+               (unsigned int)elapsed, (unsigned int)duration,
+               (unsigned int)actionState.viewportFlashColor565);
+        actionState.viewportFlashColor565 = 0U;
+        return 1;
     }
-    if (!__real_Esp32PlatformVideo_present()) return 0;
-    printf("[VIEWFLASH] EXPIRE elapsedMs=%u targetMs=%u color565=%04x restored=one-border-including-direction\n",
-           (unsigned int)elapsed, (unsigned int)duration,
-           (unsigned int)actionState.viewportFlashColor565);
-    actionState.viewportFlashVisible = 0U;
-    actionState.viewportFlashShownAtMs = 0U;
-    actionState.viewportFlashDurationMs = 0U;
-    actionState.viewportFlashColor565 = 0U;
+
+    /* White pickups and other non-damage flashes keep the original single
+     * solid paint + 500ms expiry. Only red damage uses quick blinking. */
+    if (actionState.viewportFlashColor565 != FEEDBACK_DAMAGE_RED565)
+        return 1;
+    nextLit = viewportDamageBlinkLit(elapsed);
+    if (nextLit == (actionState.viewportFlashLit != 0U)) return 1;
+
+    if (nextLit) {
+        if (!paintViewportFlash()) {
+            printf("[VIEWFLASH] FAILED phase=blink-paint\n");
+            return 0;
+        }
+        if (!__real_Esp32PlatformVideo_present()) {
+            /* Screen was OFF, keep it OFF when present fails. */
+            if (!restoreViewportFlash(0)) return 0;
+            return 0;
+        }
+        actionState.viewportFlashLit = 1U;
+    }
+    else {
+        if (!restoreViewportFlash(0)) {
+            printf("[VIEWFLASH] FAILED phase=blink-restore\n");
+            return 0;
+        }
+        if (!__real_Esp32PlatformVideo_present()) {
+            if (!paintViewportFlash()) return 0;
+            return 0;
+        }
+        actionState.viewportFlashLit = 0U;
+    }
+    DRPG_LOGT("[VIEWFLASH] BLINK elapsedMs=%u lit=%u color565=%04x shared=border+direction\n",
+              (unsigned int)elapsed, (unsigned int)nextLit,
+              (unsigned int)actionState.viewportFlashColor565);
     return 1;
 }
 
@@ -2611,6 +2682,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
         (actionState.feedbackPending != 0U ||
          (directionCue.pendingValid != 0U &&
           actionState.viewportFlashVisible != 0U &&
+          actionState.viewportFlashLit != 0U &&
           directionCue.workActive == 0U))) {
         if (EspAssetPack_isOpen()) return 1;
         if (!__wrap_Esp32PlatformVideo_present()) return 0;
