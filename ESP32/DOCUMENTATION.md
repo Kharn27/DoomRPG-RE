@@ -1,5 +1,11 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #231 — BSP culling natif — PASS CYD 2026-10-26 (code efad8a2ffe018bb8319298e29b20065845c5360e)
+
+`EspNativeRenderGeometry_cullBounds` utilise une `EspNativeRenderCullView` scalaire et des colonnes d'occlusion live, avec scratch local sans mutation de `render->tmpLine`. Test matériel normal START/EXIT, LOAD slot04/Malwrath/EXIT : FIRST_FRAME=71ca7465, portes275/113 OK, sprite324 clip OK, RAM gameplay 113936/86004, menu 159872/110580, nettoyage exact. CI push 40236074792 / PR 40236078052 SUCCESS. Fluidité encore peu nerveuse, mesures non contrôlées ; performance hors scope. Aucun changement de code après le PASS.
+
+---
+
 ## PR #231 — clipping natif sans dernière ABI Render : PASS CYD (25 octobre 2026)
 
 **SHA firmware réellement testé `esp32-cyd` : `1c1a715e8c23f562f53f301b02449e8ada8b09ce`** ; [PR #231](https://github.com/Kharn27/DoomRPG-RE/pull/231), branche `agent/esp32-retire-last-render-clip-abi`, base exacte `main=4e9efc4b064ce65eb311fbaa4fedd4b4f84632a6`. CI du code testé : [push #40215912165](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40215912165) et [PR #40215950660](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40215950660), **SUCCESS** (host différentiel 10 000 cas, garde 23 anciennes ABI Render, builds normal/bringup/trace). Le code testé est gelé, les commits post-PASS doivent rester docs-only.
