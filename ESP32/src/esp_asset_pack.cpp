@@ -1988,16 +1988,28 @@ int EspAssetPack_readRange(const EspAssetPackEntry* entry,
         }
     }
     else if (physicalUsesMapFlash) {
+        const int64_t startUs = residentEnabled ? esp_timer_get_time() : 0;
         uint32_t flashOffset = 0U;
         if (!mapFlashTranslate(absoluteOffset, (uint32_t)length, &flashOffset) ||
             !mapFlashRead(flashOffset, destination, length, true)) {
             logMapFlashStrictMiss(entry, relativeOffset, length);
             return 0;
         }
+        if (residentEnabled) {
+            ++residentStats.backingFlashReads;
+            residentStats.backingFlashMicros +=
+                (uint32_t)(esp_timer_get_time() - startUs);
+        }
     }
     else {
+        const int64_t startUs = residentEnabled ? esp_timer_get_time() : 0;
         if (!packFile.seek(absoluteOffset) || !readSdExact(destination, length)) {
             return 0;
+        }
+        if (residentEnabled) {
+            ++residentStats.backingSdReads;
+            residentStats.backingSdMicros +=
+                (uint32_t)(esp_timer_get_time() - startUs);
         }
     }
 
