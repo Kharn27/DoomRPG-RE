@@ -101,8 +101,9 @@ EspNativeGameplayDamageSide_fromWorld(int32_t playerX, int32_t playerY,
 }
 
 /* Direction is a scalar attribute of the EXISTING red viewport flash:
- * one 500ms timer, one border paint, one restore. No directional FIFO or
- * independent pulse scheduler belongs in firmware. */
+ * ONE 500ms timer owns three shared 105ms ON / 65ms GAP pulses, for both
+ * the 2px red contour and the 10px translucent inner side (12px total).
+ * No independent direction FIFO, tick or pulse scheduler belongs here. */
 typedef struct EspNativeGameplayDamageCue_s {
     uint32_t probe;
     uint16_t attackerSprite;
@@ -122,10 +123,11 @@ void EspNativeGameplayActionEngine_endMonsterVisualWork(void);
  * Lethal deaths, traps and barrel damage never opt in. Presentation-only. */
 void EspNativeGameplayActionEngine_stageNonlethalMonsterFlash(void);
 
-/* Attach the committed attack's side to its already-queued red flash.
+/* Attach the committed attack's side to the existing red flash.
  * Multiple hits in one turn resolve to the most recently committed side.
- * No new present or timer is created here; the ordinary viewport flash
- * paints the 10px side with its 2px perimeter and restores both at 500ms. */
+ * The existing viewport flash drives ALL three pulses: 2px opaque perimeter
+ * and 10px translucent inner direction are painted/restored TOGETHER.
+ * This call itself allocates no new presentation, timestamp or timer. */
 int EspNativeGameplayActionEngine_queueDirectionalDamage(
     uint32_t attackProbe, uint16_t attackerSprite,
     EspNativeGameplayDamageSide side);
