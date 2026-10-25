@@ -28,13 +28,6 @@ typedef struct EspAssetPackResidentStats_s {
     uint32_t residentReuses;
     uint32_t physicalReads;
     uint32_t physicalBytes;
-    /* Temporary bounded normal-firmware regression probe: timings of the
-     * actual uncached backing reads, including SD seek (not cache hits).
-     * Reset with residentResetStats; never affects cache admission. */
-    uint32_t backingFlashReads;
-    uint32_t backingFlashMicros;
-    uint32_t backingSdReads;
-    uint32_t backingSdMicros;
     uint32_t entryCacheHits;
     uint32_t entryCacheMisses;
     uint32_t rangeCacheHits;
