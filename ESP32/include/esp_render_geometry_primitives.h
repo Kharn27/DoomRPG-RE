@@ -3,7 +3,7 @@
 
 /* Pure in-place frustum clipping on caller-owned transient 16.16 line data.
  * The original interpolation preserves x/y/z aliasing and endpoint order;
- * no Render_t, dynamic door scope, PAK or heap allocation is required. */
+ * no renderer graph, dynamic door scope, PAK or heap is required. */
 struct Line_s;
 typedef int (*EspNativeRenderGeometryClipFn)(struct Line_s* line);
 int EspNativeRenderGeometry_clipLine(struct Line_s* line);
