@@ -175,16 +175,6 @@ static void printPackFrame(const char* label,
            (unsigned int)frame->presentMicros,
            (unsigned int)frame->totalMicros,
            (unsigned int)frame->frameAfterFNV);
-    /* Diagnostic-only source split; no new reads or cache mutations. */
-    printf("[ENGINECACHE] SOURCE-IO stage=%s directFlash=%u/%uus directSD=%u/%uus physical=%u/%uB sprite=%uus\n",
-           label,
-           (unsigned int)pack->backingFlashReads,
-           (unsigned int)pack->backingFlashMicros,
-           (unsigned int)pack->backingSdReads,
-           (unsigned int)pack->backingSdMicros,
-           (unsigned int)pack->physicalReads,
-           (unsigned int)pack->physicalBytes,
-           (unsigned int)frame->spriteMicros);
 }
 
 static int renderCacheWitness(struct DoomRPG_s* doomRpgBase,
