@@ -113,14 +113,21 @@
 #define FEEDBACK_VIEW_Y FEEDBACK_TOP_HEIGHT
 #define FEEDBACK_VIEW_HEIGHT (DOOMRPG_LOGICAL_HEIGHT - (FEEDBACK_TOP_HEIGHT * 2U))
 #define FEEDBACK_BORDER_THICKNESS 2U
-/* Damage direction is the INNER 8px of ONE 10px RED border side; the
- * outer 2px already belong to the existing 500ms viewport flash. */
-#define DAMAGE_BORDER_DIRECTION_THICKNESS 10U
+/* One shared 500ms flash clock: the frame and direction are ALWAYS in
+ * the same ON/OFF state. Three brisk pulses: 105ms ON / 65ms OFF.
+ * Only a change of the combined border state requests physical present. */
+#define FEEDBACK_DAMAGE_BLINK_ON_MS 105U
+#define FEEDBACK_DAMAGE_BLINK_GAP_MS 65U
+#define FEEDBACK_DAMAGE_BLINK_PULSES 3U
+/* The original border remains 2px opaque. The direction adds 10px of
+ * 50%-alpha RGB565 red-orange inside it: 12px total, 24px physical. */
+#define DAMAGE_BORDER_DIRECTION_THICKNESS 12U
 #define DAMAGE_BORDER_INNER_THICKNESS \
     (DAMAGE_BORDER_DIRECTION_THICKNESS - FEEDBACK_BORDER_THICKNESS)
 #define DAMAGE_BORDER_INNER_MAX_PIXELS \
     ((DOOMRPG_LOGICAL_WIDTH - 2U * FEEDBACK_BORDER_THICKNESS) * \
      DAMAGE_BORDER_INNER_THICKNESS)
+#define DAMAGE_BORDER_TINT565 0xfa20U
 #define FEEDBACK_BORDER_PIXELS \
     ((DOOMRPG_LOGICAL_WIDTH * FEEDBACK_BORDER_THICKNESS * 2U) + \
      ((FEEDBACK_VIEW_HEIGHT - (FEEDBACK_BORDER_THICKNESS * 2U)) * \
@@ -213,6 +220,7 @@ typedef struct ActionEngineState_s {
     uint8_t viewportFlashPending;
     uint8_t viewportFlashVisible;
     uint8_t viewportFlashSnapshotValid;
+    uint8_t viewportFlashLit; /* shared border+side ON bit, NO second clock */
     uint8_t framebufferFresh;
     char feedbackText[FEEDBACK_DYNAMIC_TEXT_BYTES];
     char feedbackFollowupText[FEEDBACK_FOLLOWUP_MAX]
@@ -235,10 +243,8 @@ typedef struct FeedbackScratch_s {
 static ActionEngineState actionState;
 static uint16_t viewportBorderSnapshot[FEEDBACK_BORDER_PIXELS];
 
-/* ONE 500ms damage-border owner. Side is pure presentation metadata on the
- * existing viewportFlash lease, not a separate animation or timer. No cue
- * FIFO, phase service or second physical present. Only the chosen side's
- * 8px INNER pixels need an additional bounded snapshot, kept in BSS. */
+/* One 500ms flash owner, one shared ON/OFF bit. The inner 10px of the
+ * chosen side is tinted translucently, never a separate pulse lease. */
 typedef struct DirectionalCueOwner_s {
     EspNativeGameplayDamageCue pending;
     uint16_t snapshotPixels;
@@ -250,8 +256,8 @@ typedef struct DirectionalCueOwner_s {
 } DirectionalCueOwner;
 static DirectionalCueOwner directionCue;
 static uint16_t directionCueSnapshot[DAMAGE_BORDER_INNER_MAX_PIXELS];
-_Static_assert(DAMAGE_BORDER_INNER_MAX_PIXELS == 1248U,
-               "red directional border interior must use <= 2.5KB BSS");
+_Static_assert(DAMAGE_BORDER_INNER_MAX_PIXELS == 1560U,
+               "directional tint snapshot must stay within 3.2 KB BSS");
 
 EspNativeGameplayActionStatus __real_EspNativeGameplayAction_executeSelect(
     const EspNativeGameplayInputState* intent,
@@ -1572,7 +1578,7 @@ int EspNativeGameplayActionEngine_queueDirectionalDamage(
         actionState.viewportFlashColor565 != FEEDBACK_DAMAGE_RED565 ||
         (actionState.viewportFlashPending == 0U &&
          actionState.viewportFlashVisible == 0U)) {
-        printf("[DAMAGEBORDER] SKIP probe=%u sprite=%u side=%s redLease=absent-or-invalid gameplay=unchanged\\n",
+        printf("[DAMAGEBORDER] SKIP probe=%u sprite=%u side=%s redLease=absent-or-invalid gameplay=unchanged\n",
                (unsigned int)attackProbe, (unsigned int)attackerSprite,
                directionCueName((uint8_t)side));
         return 0;
@@ -1583,16 +1589,16 @@ int EspNativeGameplayActionEngine_queueDirectionalDamage(
     directionCue.pending.attackerSprite = attackerSprite;
     directionCue.pending.side = (uint8_t)side;
     directionCue.pendingValid = 1U;
-    printf("[DAMAGEBORDER] DIRECTION probe=%u sprite=%u side=%s owner=existing-red-flash timer=shared draw=next-flash-present\\n",
+    printf("[DAMAGEBORDER] DIRECTION probe=%u sprite=%u side=%s owner=existing-red-flash timer=shared draw=next-flash-present\n",
            (unsigned int)attackProbe, (unsigned int)attackerSprite,
            directionCueName((uint8_t)side));
     return 1;
 }
 
-/* The ordinary border snapshot owns all 944 outer pixels; this returns the
- * disjoint EXTRA 8px of exactly one side. All pixels are painted in the same
- * RED color by paintViewportFlash(), and restored in the same expiry.
- * 0=capture, 1=restore, 2=repaint from ORIGINAL snapshot. */
+/* The existing outer 2px red border owns its original 944 pixels. The
+ * extra INNER 10px uses a 50%-alpha tint over the saved world texels.
+ * This function paints/restores ONLY as part of the SAME border pulse.
+ * 0=capture, 1=restore, 2=repaint from original snapshot. */
 static int visitDamageBorderInner(uint8_t mode, uint8_t side) {
     uint16_t* fb = (uint16_t*)Esp32PlatformVideo_framebuffer();
     const uint32_t inset = FEEDBACK_BORDER_THICKNESS;
@@ -1629,8 +1635,10 @@ static int visitDamageBorderInner(uint8_t mode, uint8_t side) {
         for (x = x0; x < x0 + width; ++x) {
             uint16_t* pixel = &fb[y * DOOMRPG_LOGICAL_WIDTH + x];
             if (mode == 0U) directionCueSnapshot[i] = *pixel;
-            *pixel = mode == 1U ? directionCueSnapshot[i]
-                                : FEEDBACK_DAMAGE_RED565;
+            *pixel = mode == 1U
+                ? directionCueSnapshot[i]
+                : (uint16_t)(((directionCueSnapshot[i] & 0xf7deU) >> 1U) +
+                             ((DAMAGE_BORDER_TINT565 & 0xf7deU) >> 1U));
             ++i;
         }
     if (mode == 0U) {
@@ -1639,6 +1647,16 @@ static int visitDamageBorderInner(uint8_t mode, uint8_t side) {
         directionCue.activeSide = side;
     }
     return 1;
+}
+
+/* Derived entirely from the EXISTING flash start: no second direction
+ * timestamp, tick queue or animation worker. Other white/pickup flashes
+ * retain their original continuous 500ms behavior. */
+static int viewportDamageBlinkLit(uint32_t elapsedMs) {
+    const uint32_t period = FEEDBACK_DAMAGE_BLINK_ON_MS +
+                            FEEDBACK_DAMAGE_BLINK_GAP_MS;
+    return elapsedMs < period * FEEDBACK_DAMAGE_BLINK_PULSES &&
+           elapsedMs % period < FEEDBACK_DAMAGE_BLINK_ON_MS;
 }
 
 static int paintViewportFlash(void) {
@@ -1681,7 +1699,7 @@ static int paintViewportFlash(void) {
     return 1;
 }
 
-static int restoreViewportFlash(void) {
+static int restoreViewportFlash(int discardSnapshot) {
     uint16_t* framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
     const size_t expected = (size_t)DOOMRPG_LOGICAL_WIDTH *
         DOOMRPG_LOGICAL_HEIGHT * sizeof(uint16_t);
@@ -1691,10 +1709,12 @@ static int restoreViewportFlash(void) {
     if (directionCue.snapshotValid != 0U &&
         !visitDamageBorderInner(1U, directionCue.activeSide)) return 0;
     if (!visitViewportBorder(framebuffer, 1, 0U)) return 0;
-    actionState.viewportFlashSnapshotValid = 0U;
-    directionCue.snapshotValid = 0U;
-    directionCue.activeSide = 0U;
-    directionCue.pendingValid = 0U;
+    if (discardSnapshot != 0) {
+        actionState.viewportFlashSnapshotValid = 0U;
+        directionCue.snapshotValid = 0U;
+        directionCue.activeSide = 0U;
+        directionCue.pendingValid = 0U;
+    }
     return 1;
 }
 
