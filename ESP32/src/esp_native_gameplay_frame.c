@@ -251,26 +251,6 @@ static int renderComposed(
     renderAfterSpritesFNV = fnv1a(render, (uint32_t)sizeof(*render));
     stats->spriteMicros = elapsedMicros(phaseStart);
     EspAssetPack_residentGetStats(&spriteStorageAfter);
-    /* Bounded regression witness. Timers/reads were already performed by
-     * the real sprite pass; print only after recording spriteMicros so UART
-     * does not contaminate the measured phase. Do not re-run visibility. */
-    {
-        static uint32_t sample = 0U;
-        const uint32_t count = ++sample;
-        if (count <= 8U || (count & 15U) == 0U) {
-            const uint32_t visibilityUs = sprites->visibilityMicros;
-            printf("[SPRITEPHASE] sample=%u preview=%u visUs=%u otherUs=%u spriteUs=%u nodes=%u leaves=%u lines=%u packReads=%u\n",
-                   (unsigned int)count, (unsigned int)(preview != 0),
-                   (unsigned int)visibilityUs,
-                   (unsigned int)(stats->spriteMicros >= visibilityUs ?
-                                  stats->spriteMicros - visibilityUs : 0U),
-                   (unsigned int)stats->spriteMicros,
-                   (unsigned int)sprites->depthNodes,
-                   (unsigned int)sprites->depthLeaves,
-                   (unsigned int)sprites->depthLines,
-                   (unsigned int)sprites->packReads);
-        }
-    }
     DRPG_LOGT("[SPRITEPROFILE] us=%u logicalReads=%u frameLoads=%u glowLoads=%u unique=%u frameBytes=%u glowBytes=%u physicalReads=%u physicalBytes=%u range=%uH/%uM/%uS/%uB entry=%uH/%uM resident=%u cache=%u/%u entries=%u/%u large=%u\n",
            (unsigned int)stats->spriteMicros,
            (unsigned int)sprites->packReads,
