@@ -112,15 +112,15 @@
 #define FEEDBACK_DAMAGE_RED565 0xb800U
 #define FEEDBACK_VIEW_Y FEEDBACK_TOP_HEIGHT
 #define FEEDBACK_VIEW_HEIGHT (DOOMRPG_LOGICAL_HEIGHT - (FEEDBACK_TOP_HEIGHT * 2U))
-#define DAMAGE_CUE_THICKNESS 10U /* 20 physical px after 2x scaling */
-#define DAMAGE_CUE_ON_MS 85U
-#define DAMAGE_CUE_GAP_MS 45U
-#define DAMAGE_CUE_PULSES 2U
-#define DAMAGE_CUE_MAX_PHASE_MS 1500U
-#define DAMAGE_CUE_QUEUE_MAX ESP_NATIVE_GAMEPLAY_DAMAGE_CUE_QUEUE_CAP
-#define DAMAGE_CUE_MAX_PIXELS (DOOMRPG_LOGICAL_WIDTH * DAMAGE_CUE_THICKNESS)
-#define DAMAGE_CUE_COLOR565 0xfa20U
 #define FEEDBACK_BORDER_THICKNESS 2U
+/* Damage direction is the INNER 8px of ONE 10px RED border side; the
+ * outer 2px already belong to the existing 500ms viewport flash. */
+#define DAMAGE_BORDER_DIRECTION_THICKNESS 10U
+#define DAMAGE_BORDER_INNER_THICKNESS \
+    (DAMAGE_BORDER_DIRECTION_THICKNESS - FEEDBACK_BORDER_THICKNESS)
+#define DAMAGE_BORDER_INNER_MAX_PIXELS \
+    ((DOOMRPG_LOGICAL_WIDTH - 2U * FEEDBACK_BORDER_THICKNESS) * \
+     DAMAGE_BORDER_INNER_THICKNESS)
 #define FEEDBACK_BORDER_PIXELS \
     ((DOOMRPG_LOGICAL_WIDTH * FEEDBACK_BORDER_THICKNESS * 2U) + \
      ((FEEDBACK_VIEW_HEIGHT - (FEEDBACK_BORDER_THICKNESS * 2U)) * \
@@ -235,32 +235,23 @@ typedef struct FeedbackScratch_s {
 static ActionEngineState actionState;
 static uint16_t viewportBorderSnapshot[FEEDBACK_BORDER_PIXELS];
 
-/* Pure presentation FIFO: attack probe -> immutable screen-relative side.
- * No references to MonsterState after queueing, no heap/PAK or gameplay RNG.
- * One BSS snapshot stores only the largest possible 160x10 viewport band.
- * Keep this overlay inside the existing action-feedback presenter: a second
- * --wrap_Esp32PlatformVideo_present would violate the established chain. */
+/* ONE 500ms damage-border owner. Side is pure presentation metadata on the
+ * existing viewportFlash lease, not a separate animation or timer. No cue
+ * FIFO, phase service or second physical present. Only the chosen side's
+ * 8px INNER pixels need an additional bounded snapshot, kept in BSS. */
 typedef struct DirectionalCueOwner_s {
-    EspNativeGameplayDamageCueQueue queued;
-    EspNativeGameplayDamageCue current;
-    uint32_t phaseAtMs;
-    uint32_t startedAtMs;
-    /* Physical ON/OFF presentation timings: diagnostic-only, 12 B static.
-     * No cadence, framebuffer, combat, or scheduler modification. */
-    uint32_t observedOnMs[2];
-    uint32_t observedGapMs;
+    EspNativeGameplayDamageCue pending;
     uint16_t snapshotPixels;
-    uint8_t phase; /* 0 idle, 1 requested-on, 2 lit, 3 gap */
-    uint8_t pulsesShown;
+    uint8_t pendingValid;
+    uint8_t activeSide;
     uint8_t snapshotValid;
-    uint8_t needsRepaint;
-    uint8_t deferFirstPulse; /* UI boundary only; FIFO/RNG untouched */
-    uint8_t stageNonlethalBorder; /* no player/turn effect; same-frame cue */
+    uint8_t workActive;
+    uint8_t stageNonlethalBorder;
 } DirectionalCueOwner;
 static DirectionalCueOwner directionCue;
-static uint16_t directionCueSnapshot[DAMAGE_CUE_MAX_PIXELS];
-_Static_assert(DAMAGE_CUE_MAX_PIXELS == 1600U,
-               "directional overlay must stay within one 3.2 KB band");
+static uint16_t directionCueSnapshot[DAMAGE_BORDER_INNER_MAX_PIXELS];
+_Static_assert(DAMAGE_BORDER_INNER_MAX_PIXELS == 1248U,
+               "red directional border interior must use <= 2.5KB BSS");
 
 EspNativeGameplayActionStatus __real_EspNativeGameplayAction_executeSelect(
     const EspNativeGameplayInputState* intent,
@@ -1548,38 +1539,26 @@ static const char* directionCueName(uint8_t side) {
     }
 }
 
-static int serviceDirectionalCue(void);
-
-/* The native session is single-threaded on loopTask. Never defer an existing
- * pulse or a logical monster transaction: only the first physical ON after a
- * post-COMMIT enqueue is gated through the ordered-member/FX tail. */
+/* Keep the existing nonlethal text and red flash grouped AFTER the
+ * synchronous monster FX tail. No direction-specific presentation occurs. */
 void EspNativeGameplayActionEngine_beginMonsterVisualWork(void) {
-    directionCue.deferFirstPulse = 1U;
+    directionCue.workActive = 1U;
 }
 
 void EspNativeGameplayActionEngine_stageNonlethalMonsterFlash(void) {
-    /* The retaliation body opts in ONLY after nonlethal player pain is
-     * committed and its DAMAGE feedback is queued. A render rollback cancels
-     * the flash and never publishes a side intent. */
-    if (directionCue.deferFirstPulse != 0U &&
+    if (directionCue.workActive != 0U &&
         actionState.viewportFlashPending != 0U &&
         actionState.viewportFlashColor565 == FEEDBACK_DAMAGE_RED565)
         directionCue.stageNonlethalBorder = 1U;
 }
 
 void EspNativeGameplayActionEngine_endMonsterVisualWork(void) {
-    const uint8_t stagedBorder = directionCue.stageNonlethalBorder;
-    directionCue.deferFirstPulse = 0U;
+    const uint8_t staged = directionCue.stageNonlethalBorder;
+    directionCue.workActive = 0U;
     directionCue.stageNonlethalBorder = 0U;
-    if (directionCue.phase == 0U && directionCue.queued.count != 0U) {
-        /* __wrap_Esp32PlatformVideo_present paints pending border FIRST,
-         * then the side blend, and presents both atomically. */
-        (void)serviceDirectionalCue();
-    } else if (stagedBorder != 0U &&
-               actionState.viewportFlashPending != 0U &&
-               directionCue.phase == 0U) {
-        /* Failed/unsupported direction admission must not strand the red
-         * border forever: retain the original non-directional feedback. */
+    if (staged != 0U && actionState.viewportFlashPending != 0U) {
+        /* The ordinary present paints text, 2px border and red expanded
+         * side together, starting their single 500ms lease at this present. */
         (void)__wrap_Esp32PlatformVideo_present();
     }
 }
@@ -1587,89 +1566,77 @@ void EspNativeGameplayActionEngine_endMonsterVisualWork(void) {
 int EspNativeGameplayActionEngine_queueDirectionalDamage(
     uint32_t attackProbe, uint16_t attackerSprite,
     EspNativeGameplayDamageSide side) {
-    if (!EspNativeGameplayDamageCueQueue_push(
-            &directionCue.queued, attackProbe, attackerSprite, side)) {
-        printf("[DAMAGECUE] DEFER probe=%u sprite=%u side=%s cause=fifo-full cap=%u gameplay=unchanged\n",
+    if (attackProbe == 0U || attackerSprite == 0xffffU ||
+        side < ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT ||
+        side > ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT ||
+        actionState.viewportFlashColor565 != FEEDBACK_DAMAGE_RED565 ||
+        (actionState.viewportFlashPending == 0U &&
+         actionState.viewportFlashVisible == 0U)) {
+        printf("[DAMAGEBORDER] SKIP probe=%u sprite=%u side=%s redLease=absent-or-invalid gameplay=unchanged\\n",
                (unsigned int)attackProbe, (unsigned int)attackerSprite,
-               directionCueName((uint8_t)side), (unsigned int)DAMAGE_CUE_QUEUE_MAX);
+               directionCueName((uint8_t)side));
         return 0;
     }
-    printf("[DAMAGECUE] QUEUE probe=%u sprite=%u side=%s depth=%u source=%s\n",
+    /* Several hits in one turn share ONE border lease. The most recently
+     * committed attacker determines the one highlighted side. */
+    directionCue.pending.probe = attackProbe;
+    directionCue.pending.attackerSprite = attackerSprite;
+    directionCue.pending.side = (uint8_t)side;
+    directionCue.pendingValid = 1U;
+    printf("[DAMAGEBORDER] DIRECTION probe=%u sprite=%u side=%s owner=existing-red-flash timer=shared draw=next-flash-present\\n",
            (unsigned int)attackProbe, (unsigned int)attackerSprite,
-           directionCueName((uint8_t)side),
-           (unsigned int)directionCue.queued.count,
-           (attackProbe & 0x80000000UL) != 0U
-               ? "committed-barrel-blast" : "committed-monster-hit");
-    /* This is a post-COMMIT UI intent. Start its first pulse before the
-     * sequencer resumes other members/redraws, which can consume the entire
-     * red-border lease. Reuse the existing compositor, never redraw the world
-     * or wait for the pulse cadence here. Strict leases defer it; a failed
-     * physical present keeps the queued/current cue for the normal retry. */
-    if (directionCue.deferFirstPulse == 0U)
-        (void)serviceDirectionalCue();
+           directionCueName((uint8_t)side));
     return 1;
 }
 
-/* A direction band owns ONLY the viewport interior, never the 2px perimeter.
- * This is a pixel-ownership boundary, not a cosmetic blend workaround: red
- * border and cue may expire/repaint in either order without restoring each
- * other's pixels. Four sides remain 10px thick, inset 2px; bounded snapshot
- * fits the existing 1600-word buffer. No heap, SD read or full-frame copy.
- * mode 0 = snapshot and blend; 1 = restore; 2 = repaint from snapshot. */
-static int visitDirectionalCue(uint8_t mode) {
+/* The ordinary border snapshot owns all 944 outer pixels; this returns the
+ * disjoint EXTRA 8px of exactly one side. All pixels are painted in the same
+ * RED color by paintViewportFlash(), and restored in the same expiry.
+ * 0=capture, 1=restore, 2=repaint from ORIGINAL snapshot. */
+static int visitDamageBorderInner(uint8_t mode, uint8_t side) {
     uint16_t* fb = (uint16_t*)Esp32PlatformVideo_framebuffer();
     const uint32_t inset = FEEDBACK_BORDER_THICKNESS;
-    uint32_t x0 = inset;
-    uint32_t y0 = FEEDBACK_VIEW_Y + inset;
+    uint32_t x0 = inset, y0 = FEEDBACK_VIEW_Y + inset;
     uint32_t width = DOOMRPG_LOGICAL_WIDTH - 2U * inset;
-    uint32_t height = DAMAGE_CUE_THICKNESS;
-    uint32_t x;
-    uint32_t y;
-    uint32_t at = 0U;
-    uint32_t pixels;
+    uint32_t height = DAMAGE_BORDER_INNER_THICKNESS;
+    uint32_t i = 0U, x, y;
     if (fb == NULL || mode > 2U ||
         Esp32PlatformVideo_framebufferSizeBytes() !=
             (size_t)DOOMRPG_LOGICAL_WIDTH * DOOMRPG_LOGICAL_HEIGHT *
                 sizeof(uint16_t)) return 0;
-    switch ((EspNativeGameplayDamageSide)directionCue.current.side) {
-    case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT:
-        break;
+    switch ((EspNativeGameplayDamageSide)side) {
+    case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT: break;
     case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK:
-        y0 += FEEDBACK_VIEW_HEIGHT - 2U * inset - DAMAGE_CUE_THICKNESS;
+        y0 = FEEDBACK_VIEW_Y + FEEDBACK_VIEW_HEIGHT -
+             DAMAGE_BORDER_DIRECTION_THICKNESS;
         break;
     case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT:
-        width = DAMAGE_CUE_THICKNESS;
+        width = DAMAGE_BORDER_INNER_THICKNESS;
         height = FEEDBACK_VIEW_HEIGHT - 2U * inset;
         break;
     case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_RIGHT:
-        x0 += width - DAMAGE_CUE_THICKNESS;
-        width = DAMAGE_CUE_THICKNESS;
+        x0 = DOOMRPG_LOGICAL_WIDTH - DAMAGE_BORDER_DIRECTION_THICKNESS;
+        width = DAMAGE_BORDER_INNER_THICKNESS;
         height = FEEDBACK_VIEW_HEIGHT - 2U * inset;
         break;
-    default:
-        return 0;
+    default: return 0;
     }
-    pixels = width * height;
-    if (pixels > DAMAGE_CUE_MAX_PIXELS ||
-        (mode != 0U &&
-         (!directionCue.snapshotValid ||
-          directionCue.snapshotPixels != pixels))) return 0;
-    for (y = y0; y < y0 + height; ++y) {
+    if (width * height > DAMAGE_BORDER_INNER_MAX_PIXELS ||
+        (mode != 0U && (!directionCue.snapshotValid ||
+                        directionCue.snapshotPixels != width * height ||
+                        directionCue.activeSide != side))) return 0;
+    for (y = y0; y < y0 + height; ++y)
         for (x = x0; x < x0 + width; ++x) {
             uint16_t* pixel = &fb[y * DOOMRPG_LOGICAL_WIDTH + x];
-            uint16_t clean;
-            if (mode == 0U) directionCueSnapshot[at] = *pixel;
-            clean = directionCueSnapshot[at++];
-            if (mode == 1U) *pixel = clean;
-            else {
-                *pixel = EspNativeGameplayDamageCue_blend565(
-                    clean, DAMAGE_CUE_COLOR565);
-            }
+            if (mode == 0U) directionCueSnapshot[i] = *pixel;
+            *pixel = mode == 1U ? directionCueSnapshot[i]
+                                : FEEDBACK_DAMAGE_RED565;
+            ++i;
         }
-    }
     if (mode == 0U) {
-        directionCue.snapshotPixels = (uint16_t)pixels;
+        directionCue.snapshotPixels = (uint16_t)i;
         directionCue.snapshotValid = 1U;
+        directionCue.activeSide = side;
     }
     return 1;
 }
