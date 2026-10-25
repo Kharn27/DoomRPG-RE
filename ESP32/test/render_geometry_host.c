@@ -94,7 +94,7 @@ int main(void) {
         line.vert2.y = (pick(65) - 32) * FRACUNIT;
         line.vert2.z = pick(13) * FRACUNIT;
         other = line;
-        assert(Render_clipLine(&native, &line) == Reference_Render_clipLine(&reference, &other));
+        assert(EspNativeRenderGeometry_clipLine(&line) == Reference_Render_clipLine(&reference, &other));
         assert(memcmp(&line, &other, sizeof(line)) == 0);
         /* Exercise project/occlude only on admitted, forward-facing segments. */
         if (line.vert1.x >= 4 * FRACUNIT && line.vert2.x >= 4 * FRACUNIT &&
@@ -189,7 +189,8 @@ int main(void) {
         node.x2 = node.x1 + pick(248); node.y2 = node.y1 + pick(248);
         native.skipCull = reference.skipCull = (i % 13 == 0);
         assert(EspNativeRenderGeometry_cullBounds(
-                   &native, node.x1, node.y1, node.x2, node.y2) ==
+                   &native, node.x1, node.y1, node.x2, node.y2,
+                   EspNativeRenderGeometry_clipLine) ==
                (int)Reference_Render_cullBoundingBox(&reference, &node));
         sameScratch();
     }

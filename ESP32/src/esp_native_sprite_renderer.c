@@ -7,6 +7,7 @@
 #include "DoomRPG.h"
 #include "Render.h"
 #include "esp_render_geometry_primitives.h"
+#include "esp_native_dynamic_clip.h"
 #include <esp_timer.h>
 
 #include "esp_asset_pack.h"
@@ -928,7 +929,7 @@ static int drawWorldDropFrame(Render_t* render,
     line.vert2.y = center.y + (maximum << 16);
     line.vert2.z = maximum - minimum;
     line.vert1.y += minimum << 16;
-    if (!Render_clipLine(render, &line)) {
+    if (!EspNativeDynamicLineRender_clipLine(&line)) {
         ++stats->clipCulled;
         return 1;
     }
@@ -1123,7 +1124,7 @@ static int drawTransientBatch(Render_t* render,
         line.vert2.z = maximum - minimum;
         line.vert1.y += minimum << 16;
 
-        if (!Render_clipLine(render, &line)) {
+        if (!EspNativeDynamicLineRender_clipLine(&line)) {
             printf("[NATIVESPRITE] TRANSIENT logical=%u anim=%u batch=%u/%u pos=%d,%d result=clip-culled source=bounded-world-effect\n",
                    (unsigned int)transientWorldBatch.logical,
                    (unsigned int)transientWorldBatch.animation,
@@ -1298,7 +1299,7 @@ static int drawAt(Render_t* render,
             &line.vert2.x, &line.vert2.y);
     }
 
-    if (!Render_clipLine(render, &line)) {
+    if (!EspNativeDynamicLineRender_clipLine(&line)) {
         TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=clip-culled animation=%u glow=%u\n", (unsigned int)parent->index, (unsigned int)animation, (unsigned int)(glow != 0));
         if (glow) ++stats->glowClipCulled;
         else ++stats->clipCulled;
