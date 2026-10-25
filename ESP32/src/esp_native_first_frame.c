@@ -1179,8 +1179,7 @@ static int walkNodes(FirstFrameWork* work) {
         {
             const Line_t savedTmpLine = work->render->tmpLine;
             const int culled = EspNativeRenderGeometry_cullBounds(
-                work->render, node.x1, node.y1, node.x2, node.y2,
-                EspNativeDynamicLineRender_clipLine);
+                work->render, node.x1, node.y1, node.x2, node.y2);
             work->render->tmpLine = savedTmpLine;
             if (culled) {
                 ++work->nodeCulled;

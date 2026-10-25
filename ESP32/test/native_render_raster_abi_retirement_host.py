@@ -113,10 +113,10 @@ for owner in ("esp_native_first_frame.c", "esp_native_bsp_visibility.c",
     src = (NATIVE / "src" / owner).read_text()
     assert "EspNativeDynamicLineRender_clipLine" in src
     assert not re.search(r"\bRender_clipLine\s*\(", src)
-for owner in ("esp_native_first_frame.c", "esp_native_bsp_visibility.c"):
-    src = (NATIVE / "src" / owner).read_text()
-    call = src.index("EspNativeRenderGeometry_cullBounds(")
-    assert "EspNativeDynamicLineRender_clipLine)" in src[call:call + 270]
+# Same-TU culling formerly called the unwrapped Render_clipLine directly.
+# Preserve that pure internal clip; external wall/BSP-depth/sprite calls
+# explicitly own the transient animated-door z adaptation.
+assert "if (EspNativeRenderGeometry_clipLine(line))" in geometry
 assert "__wrap_Render_cullBoundingBox" not in (
     NATIVE / "src/native_first_frame_render_wrappers.c"
 ).read_text()

@@ -5,7 +5,6 @@
  * The original interpolation preserves x/y/z aliasing and endpoint order;
  * no renderer graph, dynamic door scope, PAK or heap is required. */
 struct Line_s;
-typedef int (*EspNativeRenderGeometryClipFn)(struct Line_s* line);
 int EspNativeRenderGeometry_clipLine(struct Line_s* line);
 
 
@@ -56,8 +55,7 @@ void EspNativeRenderGeometry_transformPoint(
  */
 struct Render_s;
 int EspNativeRenderGeometry_cullBounds(
-    struct Render_s* render, int x1, int y1, int x2, int y2,
-    EspNativeRenderGeometryClipFn clipLine);
+    struct Render_s* render, int x1, int y1, int x2, int y2);
 
 /*
  * Initialize an explicitly owned viewport column scratch array to the

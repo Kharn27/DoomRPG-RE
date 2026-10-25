@@ -189,8 +189,7 @@ int main(void) {
         node.x2 = node.x1 + pick(248); node.y2 = node.y1 + pick(248);
         native.skipCull = reference.skipCull = (i % 13 == 0);
         assert(EspNativeRenderGeometry_cullBounds(
-                   &native, node.x1, node.y1, node.x2, node.y2,
-                   EspNativeRenderGeometry_clipLine) ==
+                   &native, node.x1, node.y1, node.x2, node.y2) ==
                (int)Reference_Render_cullBoundingBox(&reference, &node));
         sameScratch();
     }

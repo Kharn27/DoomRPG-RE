@@ -36,8 +36,7 @@ void EspNativeRenderGeometry_resetColumns(int* columnScale, int screenWidth)
  * from the desktop oracle. The caller explicitly preserves render->tmpLine
  * around this scratch-only operation, as the old --wrap contract required. */
 int EspNativeRenderGeometry_cullBounds(struct Render_s* renderBase,
-                                      int x1, int y1, int x2, int y2,
-                                      EspNativeRenderGeometryClipFn clipLine)
+                                      int x1, int y1, int x2, int y2)
 {
     Render_t* render = (Render_t*)renderBase;
     Line_t* line;
@@ -131,7 +130,7 @@ int EspNativeRenderGeometry_cullBounds(struct Render_s* renderBase,
         render->viewCos, render->viewTransX, render->viewTransY,
         &line->vert2.x, &line->vert2.y);
 
-    if (clipLine != NULL && clipLine(line)) {
+    if (EspNativeRenderGeometry_clipLine(line)) {
         EspNativeRenderGeometry_projectVertex(
             render->screenWidth, render->fracHalfScreenWidth,
             &line->vert1.x, &line->vert1.y, &line->vert1.z);
