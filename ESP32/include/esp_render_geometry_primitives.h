@@ -47,15 +47,37 @@ void EspNativeRenderGeometry_transformPoint(
     int viewTransX, int viewTransY, int* x, int* y);
 
 /*
- * Native BSP culling from immutable node's four scalar bounds. This is a
- * transitional, frame-scratch-only API: the caller owns the Render-compatible
- * camera/column scratch and MUST save/restore its tmpLine across the call.
- * No desktop Node_t object, map-wide graph or allocation enters the culler.
- * Return 1 when culled, 0 when potentially visible (matching desktop).
+ * Per-pass camera values for allocation-free native BSP node culling.
+ * Capture once after view setup; columnScale points at the live caller-owned
+ * occlusion array (not a snapshot). Every scalar is immutable during a BSP
+ * walk. This API contains no desktop renderer/map/node object.
  */
-struct Render_s;
+typedef struct EspNativeRenderCullView_s {
+    int viewX;
+    int viewY;
+    int skipCull;
+    int viewCosNeg;
+    int viewSinNeg;
+    int viewSin;
+    int viewCos;
+    int viewTransX;
+    int viewTransY;
+    int screenWidth;
+    int fracHalfScreenWidth;
+    const int* columnScale;
+} EspNativeRenderCullView;
+
+/*
+ * Exact desktop bounds/camera/frustum/occlusion decision from four immutable
+ * bounds and a borrowed local line scratch. The caller seeds scratch from its
+ * pre-cull line state; this function may mutate only that local line.
+ * In particular it cannot mutate renderer tmpLine or the column array.
+ * Return 1 when culled, 0 when potentially visible (desktop semantics).
+ */
+struct Line_s;
 int EspNativeRenderGeometry_cullBounds(
-    struct Render_s* render, int x1, int y1, int x2, int y2);
+    const EspNativeRenderCullView* view,
+    int x1, int y1, int x2, int y2, struct Line_s* scratch);
 
 /*
  * Initialize an explicitly owned viewport column scratch array to the
