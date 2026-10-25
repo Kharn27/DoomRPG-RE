@@ -10,6 +10,7 @@
 #include "esp_map_runtime.h"
 #include "esp_native_bsp_visibility.h"
 #include "esp_render_geometry_primitives.h"
+#include "esp_native_dynamic_clip.h"
 #include "esp_native_sprite_visual_legacy.h"
 #include "esp_player_view_state.h"
 
@@ -247,7 +248,7 @@ static int depthLine(Render_t* r,
         r->viewCos_, r->viewSin_, r->viewSin,
         r->viewCos, r->viewTransX, r->viewTransY,
         &line.vert2.x, &line.vert2.y);
-    if (!Render_clipLine(r, &line)) {
+    if (!EspNativeDynamicLineRender_clipLine(&line)) {
         ++state->clipCull;
         return 1;
     }
@@ -314,7 +315,8 @@ static int walkNode(Render_t* r,
     {
         const Line_t savedTmpLine = r->tmpLine;
         const int culled = EspNativeRenderGeometry_cullBounds(
-            r, node.x1, node.y1, node.x2, node.y2);
+            r, node.x1, node.y1, node.x2, node.y2,
+            EspNativeDynamicLineRender_clipLine);
         r->tmpLine = savedTmpLine;
         if (culled) {
             ++state->nodeCull;

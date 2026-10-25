@@ -1,6 +1,14 @@
 #ifndef ESP_RENDER_GEOMETRY_PRIMITIVES_H
 #define ESP_RENDER_GEOMETRY_PRIMITIVES_H
 
+/* Pure in-place frustum clipping on caller-owned transient 16.16 line data.
+ * The original interpolation preserves x/y/z aliasing and endpoint order;
+ * no Render_t, dynamic door scope, PAK or heap allocation is required. */
+struct Line_s;
+typedef int (*EspNativeRenderGeometryClipFn)(struct Line_s* line);
+int EspNativeRenderGeometry_clipLine(struct Line_s* line);
+
+
 /*
  * Bounded native frame-scratch occlusion. x1/x2 are projected 16.16
  * screen coordinates, as produced by the unchanged legacy-equivalent
@@ -48,7 +56,8 @@ void EspNativeRenderGeometry_transformPoint(
  */
 struct Render_s;
 int EspNativeRenderGeometry_cullBounds(
-    struct Render_s* render, int x1, int y1, int x2, int y2);
+    struct Render_s* render, int x1, int y1, int x2, int y2,
+    EspNativeRenderGeometryClipFn clipLine);
 
 /*
  * Initialize an explicitly owned viewport column scratch array to the

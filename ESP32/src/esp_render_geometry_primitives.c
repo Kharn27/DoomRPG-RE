@@ -36,7 +36,8 @@ void EspNativeRenderGeometry_resetColumns(int* columnScale, int screenWidth)
  * from the desktop oracle. The caller explicitly preserves render->tmpLine
  * around this scratch-only operation, as the old --wrap contract required. */
 int EspNativeRenderGeometry_cullBounds(struct Render_s* renderBase,
-                                      int x1, int y1, int x2, int y2)
+                                      int x1, int y1, int x2, int y2,
+                                      EspNativeRenderGeometryClipFn clipLine)
 {
     Render_t* render = (Render_t*)renderBase;
     Line_t* line;
@@ -130,7 +131,7 @@ int EspNativeRenderGeometry_cullBounds(struct Render_s* renderBase,
         render->viewCos, render->viewTransX, render->viewTransY,
         &line->vert2.x, &line->vert2.y);
 
-    if (Render_clipLine(render, line)) {
+    if (clipLine != NULL && clipLine(line)) {
         EspNativeRenderGeometry_projectVertex(
             render->screenWidth, render->fracHalfScreenWidth,
             &line->vert1.x, &line->vert1.y, &line->vert1.z);
@@ -177,11 +178,10 @@ void EspNativeRenderGeometry_transformPoint(
  * semantics and exact fixed-point arithmetic. */
 static void clipVertex(Vertex_t* vert, Line_t* line, int i, int i2);
 
-boolean Render_clipLine(Render_t* render, Line_t* line)
+int EspNativeRenderGeometry_clipLine(struct Line_s* lineBase)
 {
+    Line_t* line = (Line_t*)lineBase;
     int i, i2, i3, i4, i5, i6;
-
-    (void)render; /* Legacy ABI argument is unused in native clip math. */
 
     i = line->vert1.x + line->vert1.y;
     i2 = line->vert2.x + line->vert2.y;

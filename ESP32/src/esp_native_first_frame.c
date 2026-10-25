@@ -16,6 +16,7 @@
 #include "esp_native_first_frame.h"
 #include "esp_native_plane_renderer.h"
 #include "esp_render_geometry_primitives.h"
+#include "esp_native_dynamic_clip.h"
 #include "esp_native_wall_indicator_animation.h"
 #include "esp_native_graphics_catalog.h"
 #include "esp_player_view_state.h"
@@ -1056,7 +1057,7 @@ static int drawLine(FirstFrameWork* work, uint32_t lineIndex) {
         work->render->viewCos_, work->render->viewSin_, work->render->viewSin,
         work->render->viewCos, work->render->viewTransX, work->render->viewTransY,
         &projected.vert2.x, &projected.vert2.y);
-    if (!Render_clipLine(work->render, &projected)) {
+    if (!EspNativeDynamicLineRender_clipLine(&projected)) {
         ++work->clipCulled;
         return 1;
     }
@@ -1178,7 +1179,8 @@ static int walkNodes(FirstFrameWork* work) {
         {
             const Line_t savedTmpLine = work->render->tmpLine;
             const int culled = EspNativeRenderGeometry_cullBounds(
-                work->render, node.x1, node.y1, node.x2, node.y2);
+                work->render, node.x1, node.y1, node.x2, node.y2,
+                EspNativeDynamicLineRender_clipLine);
             work->render->tmpLine = savedTmpLine;
             if (culled) {
                 ++work->nodeCulled;
