@@ -40,6 +40,17 @@ void EspNativeRenderGeometry_transformPoint(
     int viewTransX, int viewTransY, int* x, int* y);
 
 /*
+ * Native BSP culling from immutable node's four scalar bounds. This is a
+ * transitional, frame-scratch-only API: the caller owns the Render-compatible
+ * camera/column scratch and MUST save/restore its tmpLine across the call.
+ * No desktop Node_t object, map-wide graph or allocation enters the culler.
+ * Return 1 when culled, 0 when potentially visible (matching desktop).
+ */
+struct Render_s;
+int EspNativeRenderGeometry_cullBounds(
+    struct Render_s* render, int x1, int y1, int x2, int y2);
+
+/*
  * Initialize an explicitly owned viewport column scratch array to the
  * inherited COLUMN_SCALE_INIT sentinel. screenWidth is the number of valid
  * int elements supplied by the caller. Only indices [0, screenWidth) are

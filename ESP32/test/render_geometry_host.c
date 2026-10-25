@@ -188,8 +188,9 @@ int main(void) {
         node.x1 = pick(1800); node.y1 = pick(1800);
         node.x2 = node.x1 + pick(248); node.y2 = node.y1 + pick(248);
         native.skipCull = reference.skipCull = (i % 13 == 0);
-        assert(Render_cullBoundingBox(&native, &node) ==
-               Reference_Render_cullBoundingBox(&reference, &node));
+        assert(EspNativeRenderGeometry_cullBounds(
+                   &native, node.x1, node.y1, node.x2, node.y2) ==
+               (int)Reference_Render_cullBoundingBox(&reference, &node));
         sameScratch();
     }
     puts("render_geometry_host: PASS 10000 seeded geometry cases, native column reset/2D transforms/projections, four cardinals, fractional matrices and guarded columns");

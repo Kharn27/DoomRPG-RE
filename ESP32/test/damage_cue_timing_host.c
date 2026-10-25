@@ -70,15 +70,10 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_blit(
 }
 int __real_Esp32PlatformVideo_present(void) {
     ++presents;
-    if (failPresent) { --failPresent; return 0; }
-    unsigned x = 80U, y = 20U;
-    if (directionCue.current.side == ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK) y = 99U;
-    if (directionCue.current.side == ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT) { x = 0; y = 50; }
-    if (directionCue.current.side == ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_RIGHT) { x = 159; y = 50; }
-    if (directionCue.snapshotValid && directionCue.phase == 1U &&
-        pixels[1 + y * 160U + x] ==
-            EspNativeGameplayDamageCue_blend565(0xb800U, DAMAGE_CUE_COLOR565)) {
-        ++concurrentPresents;
+    if (failPresent != 0) { --failPresent; return 0; }
+    if (directionCue.pendingValid != 0U &&
+        pixels[1U + 20U * 160U + 80U] == FEEDBACK_DAMAGE_RED565) {
+        ++concurrentPresents; /* same real framebuffer present as red border */
         if (damageGlyphs != 0U) ++groupedTextPresents;
     }
     return 1;
@@ -86,303 +81,300 @@ int __real_Esp32PlatformVideo_present(void) {
 static void seedUnpainted(void) {
     memset(&actionState, 0, sizeof(actionState));
     memset(&directionCue, 0, sizeof(directionCue));
-    for (unsigned i = 0; i < sizeof(pixels) / sizeof(pixels[0]); ++i) pixels[i] = 0x1234;
-    clockMs = 1000;
+    for (unsigned i = 0U; i < sizeof(pixels) / sizeof(pixels[0]); ++i)
+        pixels[i] = 0x1234U;
+    clockMs = 1000U;
     controls = levelUp = pack = failPresent = automapOwner = facingDirty = 0;
     worldActive = 1;
     firstWorldLease = 0;
-    topBarTiles = 0;
-    presents = concurrentPresents = damageGlyphs = groupedTextPresents = 0;
-    actionState.viewportFlashPending = 1;
-    actionState.viewportFlashColor565 = 0xb800;
-    actionState.viewportFlashDurationMs = 500;
+    topBarTiles = 0U;
+    presents = concurrentPresents = damageGlyphs = groupedTextPresents = 0U;
 }
-static void seed(void) {
-    seedUnpainted();
-    assert(__wrap_Esp32PlatformVideo_present());
-    assert(actionState.viewportFlashVisible && presents == 1);
+static void armRed(void) {
+    actionState.viewportFlashPending = 1U;
+    actionState.viewportFlashDurationMs = 500U;
+    actionState.viewportFlashColor565 = FEEDBACK_DAMAGE_RED565;
 }
 static void poll(void) {
-    /* Real production entry: no SELECT transaction, so only UI work runs.
-     * -O2 specializes the NULL runtime to discard unreachable world branches. */
     assert(EspNativeGameplayActionEngine_service(NULL));
 }
-static void finish(void) {
-    clockMs += DAMAGE_CUE_ON_MS;
-    poll();
-    clockMs += DAMAGE_CUE_GAP_MS;
-    poll();
-    clockMs += DAMAGE_CUE_ON_MS;
-    poll();
-    assert(directionCue.phase == 0U);
-    assert(directionCue.observedOnMs[0] == DAMAGE_CUE_ON_MS);
-    assert(directionCue.observedOnMs[1] == DAMAGE_CUE_ON_MS);
-    assert(directionCue.observedGapMs == DAMAGE_CUE_GAP_MS);
-    clockMs += 501;
-    poll();
-    assert(!actionState.viewportFlashVisible);
-    for (unsigned i = 0; i < sizeof(pixels) / sizeof(pixels[0]); ++i) assert(pixels[i] == 0x1234);
+static void expectClean(uint16_t world) {
+    assert(pixels[0] == 0x1234U &&
+           pixels[160U * 120U + 1U] == 0x1234U);
+    for (unsigned y = 0U; y < 120U; ++y)
+        for (unsigned x = 0U; x < 160U; ++x)
+            assert(pixels[1U + y * 160U + x] ==
+                   (y >= 20U && y < 100U ? world : 0x1234U));
+}
+static uint16_t tinted(uint16_t world) {
+    return (uint16_t)(((world & 0xf7deU) >> 1U) +
+                      ((DAMAGE_BORDER_TINT565 & 0xf7deU) >> 1U));
+}
+static void expectBorder(unsigned side, uint16_t clean, uint16_t outer) {
+    unsigned count = 0U;
+    for (unsigned y = 20U; y < 100U; ++y) {
+        for (unsigned x = 0U; x < 160U; ++x) {
+            const int edge = y < 22U || y >= 98U ||
+                             x < 2U || x >= 158U;
+            const int extra =
+                (side == ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT &&
+                 y >= 22U && y < 32U && x >= 2U && x < 158U) ||
+                (side == ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK &&
+                 y >= 88U && y < 98U && x >= 2U && x < 158U) ||
+                (side == ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT &&
+                 x >= 2U && x < 12U && y >= 22U && y < 98U) ||
+                (side == ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_RIGHT &&
+                 x >= 148U && x < 158U && y >= 22U && y < 98U);
+            const uint16_t expected = edge ? outer :
+                                      extra ? tinted(clean) : clean;
+            if (pixels[1U + y * 160U + x] != expected) {
+                fprintf(stderr, "[BLINK-HOST] mismatch x=%u y=%u side=%u observed=%04x expected=%04x lit=%u snapshot=%u present=%u clock=%u color=%04x\n",
+                        x, y, side, pixels[1U + y * 160U + x],
+                        expected, actionState.viewportFlashLit,
+                        directionCue.snapshotValid, presents, clockMs,
+                        actionState.viewportFlashColor565);
+                assert(0 && "red border and translucent side diverged");
+            }
+            if (edge || extra) ++count;
+        }
+    }
+    assert(count == FEEDBACK_BORDER_PIXELS +
+           (side == 0U ? 0U : (side == 1U || side == 3U
+                                      ? 1560U : 760U)));
+}
+static void finishBlink(unsigned before, uint16_t world) {
+    const unsigned schedule[6] = {105U, 65U, 105U, 65U, 105U, 55U};
+    for (unsigned i = 0; i < 6U; ++i) {
+        clockMs += schedule[i];
+        poll();
+        assert(actionState.viewportFlashLit == ((i % 2U) == 1U && i < 5U));
+        assert(presents == before + (i < 5U ? i + 1U : 5U));
+        if (i < 5U) {
+            if (actionState.viewportFlashLit)
+                expectBorder(directionCue.activeSide, world,
+                             actionState.viewportFlashColor565);
+            else expectClean(world);
+        }
+    }
+    assert(!actionState.viewportFlashVisible &&
+           !actionState.viewportFlashSnapshotValid &&
+           !directionCue.snapshotValid);
+    expectClean(world);
 }
 int main(void) {
-    seed();
-    assert(EspNativeGameplayActionEngine_queueDirectionalDamage(5, 157, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
-    /* Before any other monster/member runs, the first pulse is already ON. */
-    assert(directionCue.phase == 2U && concurrentPresents == 1U);
-    clockMs += 818; /* Original ranged witness: next service arrives too late. */
-    poll();
-    assert(actionState.viewportFlashVisible && directionCue.phase == 3U);
-    assert(directionCue.observedOnMs[0] == 818U);
-    assert(directionCue.observedOnMs[1] == 0U);
-    clockMs += DAMAGE_CUE_GAP_MS;
-    poll();
-    clockMs += DAMAGE_CUE_ON_MS;
-    poll();
-    assert(directionCue.phase == 0U && !actionState.viewportFlashVisible);
-    assert(directionCue.observedOnMs[0] == 818U);
-    assert(directionCue.observedOnMs[1] == DAMAGE_CUE_ON_MS);
-    assert(directionCue.observedGapMs == DAMAGE_CUE_GAP_MS);
-    for (unsigned i = 0; i < sizeof(pixels) / sizeof(pixels[0]); ++i) assert(pixels[i] == 0x1234);
+    /* The SAME red border/tint turns ON+OFF three times using the existing
+     * 500ms flash clock, with exactly one present for each visual state
+     * change and NONE at the final already-OFF expiry. */
+    for (unsigned side = 1U; side <= 4U; ++side) {
+        seedUnpainted();
+        armRed();
+        assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
+            10U + side, 157U, (EspNativeGameplayDamageSide)side));
+        assert(presents == 0U);
+        assert(__wrap_Esp32PlatformVideo_present());
+        assert(presents == 1U && concurrentPresents == 1U);
+        assert(actionState.viewportFlashLit &&
+               actionState.viewportFlashVisible &&
+               directionCue.activeSide == side);
+        expectBorder(side, 0x1234U, FEEDBACK_DAMAGE_RED565);
+        clockMs += 104U;
+        poll();
+        assert(presents == 1U);
+        expectBorder(side, 0x1234U, FEEDBACK_DAMAGE_RED565);
+        /* We are 104ms into the first ON; first OFF starts at 105ms. */
+        clockMs -= 104U;
+        finishBlink(1U, 0x1234U);
+    }
 
-    /* Real CYD witness: after a monster hit, the synchronous 818ms turn tail
-     * used to extend the already-lit first pulse. Start only after that tail;
-     * do not wait for pulses or change attack/turn ordering. */
-    seed();
-    EspNativeGameplayActionEngine_beginMonsterVisualWork();
-    assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
-        14, 157, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
-    assert(directionCue.queued.count == 1U &&
-           directionCue.phase == 0U && presents == 1U);
-    clockMs += 818U; /* simulated heavy member/FX tail on loopTask */
-    EspNativeGameplayActionEngine_endMonsterVisualWork();
-    assert(directionCue.phase == 2U && directionCue.queued.count == 0U &&
-           concurrentPresents == 1U && presents == 2U);
-    finish();
-    assert(directionCue.observedOnMs[0] == 85U &&
-           directionCue.observedOnMs[1] == 85U);
-
-    /* Real sprite-157 CYD regression: earlier correction moved the first side
-     * ON past an ~800ms monster tail, but left the thin red flash visible for
-     * that full wait. Nonlethal staging now atomically paints base+side after
-     * the synchronous work, while the validated hit can render earlier. */
+    /* The nonlethal damage text and BOTH parts of the flash are committed
+     * together after slow 818ms monster FX work, with ONE first present. */
     seedUnpainted();
+    armRed();
     actionState.feedbackPending = 1U;
     actionState.feedbackKind = ACTION_FEEDBACK_DAMAGE;
-    memcpy(actionState.feedbackText, "8 damage!", sizeof("8 damage!"));
+    strcpy(actionState.feedbackText, "8 damage!");
     EspNativeGameplayActionEngine_beginMonsterVisualWork();
     EspNativeGameplayActionEngine_stageNonlethalMonsterFlash();
-    assert(directionCue.stageNonlethalBorder == 1U);
     assert(__wrap_Esp32PlatformVideo_present());
-    assert(presents == 1U && damageGlyphs == 0U &&
-           groupedTextPresents == 0U &&
-           actionState.feedbackPending == 1U &&
-           actionState.feedbackVisible == 0U &&
-           actionState.feedbackShownAtMs == 0U &&
-           actionState.viewportFlashPending &&
-           !actionState.viewportFlashVisible &&
-           !actionState.viewportFlashSnapshotValid);
-    assert(pixels[1 + 20U * 160U + 80U] == 0x1234);
+    assert(presents == 1U && !actionState.viewportFlashVisible &&
+           actionState.feedbackPending && !damageGlyphs);
     assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
-        17, 157, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
-    assert(directionCue.queued.count == 1U && directionCue.phase == 0U);
+        77U, 322U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
     clockMs += 818U;
     EspNativeGameplayActionEngine_endMonsterVisualWork();
-    fprintf(stderr,
-            "[DAMAGEGROUP-HOST] presents=%u concurrent=%u grouped=%u glyphs=%u feedbackVisibleKind=%u damageKind=%u feedbackVisible=%u feedbackPending=%u feedbackShown=%u clock=%u phase=%u flashVisible=%u flashShown=%u flashPending=%u snapshot=%u\n",
-            presents, concurrentPresents, groupedTextPresents, damageGlyphs,
-            actionState.feedbackVisibleKind, ACTION_FEEDBACK_DAMAGE,
-            actionState.feedbackVisible, actionState.feedbackPending,
-            actionState.feedbackShownAtMs, clockMs, directionCue.phase,
-            actionState.viewportFlashVisible, actionState.viewportFlashShownAtMs,
-            actionState.viewportFlashPending,
-            actionState.viewportFlashSnapshotValid);
     assert(presents == 2U && concurrentPresents == 1U &&
-           groupedTextPresents == 1U && damageGlyphs != 0U &&
-           actionState.feedbackVisibleKind == ACTION_FEEDBACK_DAMAGE &&
-           actionState.feedbackVisible == 1U &&
-           actionState.feedbackPending == 0U &&
-           actionState.feedbackShownAtMs == clockMs &&
-           directionCue.phase == 2U && actionState.viewportFlashVisible &&
-           actionState.viewportFlashShownAtMs == clockMs &&
-           !actionState.viewportFlashPending &&
-           actionState.viewportFlashSnapshotValid);
-    assert(pixels[1 + 20U * 160U + 80U] ==
-           EspNativeGameplayDamageCue_blend565(0xb800U, DAMAGE_CUE_COLOR565));
-    finish(); /* First ON, second ON and GAP all start after 818ms tail. */
-    assert(directionCue.observedOnMs[0] == DAMAGE_CUE_ON_MS &&
-           directionCue.observedOnMs[1] == DAMAGE_CUE_ON_MS);
-    /* No direction: both text and border must still appear, together. */
+           groupedTextPresents == 1U && damageGlyphs != 0U);
+    assert(actionState.viewportFlashVisible &&
+           actionState.viewportFlashShownAtMs == clockMs);
+    assert(actionState.feedbackShownAtMs == clockMs);
+    expectBorder(ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT, 0x1234U,
+                 FEEDBACK_DAMAGE_RED565);
+    finishBlink(2U, 0x1234U);
+
+    /* White pickup flash is still solid white and uses no blink frames. */
     seedUnpainted();
-    actionState.feedbackPending = 1U;
-    actionState.feedbackKind = ACTION_FEEDBACK_DAMAGE;
-    memcpy(actionState.feedbackText, "7 damage!", sizeof("7 damage!"));
-    EspNativeGameplayActionEngine_beginMonsterVisualWork();
-    EspNativeGameplayActionEngine_stageNonlethalMonsterFlash();
+    actionState.viewportFlashPending = 1U;
+    actionState.viewportFlashColor565 = 0xffffU;
+    actionState.viewportFlashDurationMs = 500U;
     assert(__wrap_Esp32PlatformVideo_present());
-    assert(!actionState.viewportFlashVisible && presents == 1U &&
-           damageGlyphs == 0U && actionState.feedbackPending == 1U);
-    clockMs += 818U;
-    EspNativeGameplayActionEngine_endMonsterVisualWork();
-    assert(actionState.viewportFlashVisible && !actionState.viewportFlashPending &&
-           actionState.feedbackPending == 0U &&
-           actionState.feedbackVisibleKind == ACTION_FEEDBACK_DAMAGE &&
-           damageGlyphs != 0U && directionCue.phase == 0U && presents == 2U);
-    clockMs += 501U;
+    expectBorder(0U, 0x1234U, 0xffffU);
+    clockMs += 320U;
+    poll();
+    assert(presents == 1U);
+    clockMs += 181U;
+    poll();
+    assert(presents == 2U && !actionState.viewportFlashVisible);
+    expectClean(0x1234U);
+
+    /* A second hit refreshes the SAME lease and changes the tinted side
+     * without leaving a ghost of the earlier red/tinted side. */
+    seedUnpainted();
+    armRed();
+    assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
+        10U, 157U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
+    assert(__wrap_Esp32PlatformVideo_present());
+    clockMs += 10U;
+    armRed();
+    assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
+        11U, 159U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT));
+    assert(__wrap_Esp32PlatformVideo_present());
+    assert(presents == 2U && concurrentPresents == 2U);
+    expectBorder(ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT, 0x1234U,
+                 FEEDBACK_DAMAGE_RED565);
+    finishBlink(2U, 0x1234U);
+
+    /* A failed first physical present retries the snapshot instead of
+     * capturing already-tinted or already-red pixels as its world baseline. */
+    seedUnpainted();
+    armRed();
+    assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
+        12U, 157U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK));
+    failPresent = 1;
+    assert(!__wrap_Esp32PlatformVideo_present());
+    assert(presents == 1U && !actionState.viewportFlashVisible &&
+           actionState.viewportFlashSnapshotValid);
+    assert(__wrap_Esp32PlatformVideo_present());
+    assert(presents == 2U && actionState.viewportFlashLit);
+    expectBorder(ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK, 0x1234U,
+                 FEEDBACK_DAMAGE_RED565);
+    finishBlink(2U, 0x1234U);
+
+    /* Fail one shared OFF and then one shared ON; the pending state is
+     * retried without exposing an incomplete border/side snapshot. */
+    seedUnpainted();
+    armRed();
+    assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
+        20U, 157U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_RIGHT));
+    assert(__wrap_Esp32PlatformVideo_present());
+    clockMs += 105U;
+    failPresent = 1;
+    assert(!serviceViewportFlashExpiry());
+    assert(actionState.viewportFlashLit);
+    expectBorder(ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_RIGHT, 0x1234U,
+                 FEEDBACK_DAMAGE_RED565);
+    assert(serviceViewportFlashExpiry());
+    assert(!actionState.viewportFlashLit);
+    expectClean(0x1234U);
+    clockMs += 65U;
+    failPresent = 1;
+    assert(!serviceViewportFlashExpiry());
+    assert(!actionState.viewportFlashLit);
+    expectClean(0x1234U);
+    assert(serviceViewportFlashExpiry());
+    assert(actionState.viewportFlashLit);
+    expectBorder(ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_RIGHT, 0x1234U,
+                 FEEDBACK_DAMAGE_RED565);
+    clockMs += 330U;
     poll();
     assert(!actionState.viewportFlashVisible);
-    /* Lethal / non-staged DAMAGE keeps original immediate presentation. */
+    expectClean(0x1234U);
+
+    /* Clean world redraw while ON adopts the NEW world pixels for BOTH
+     * snapshots, preserving them through all following shared blinks. */
     seedUnpainted();
-    actionState.feedbackPending = 1U;
-    actionState.feedbackKind = ACTION_FEEDBACK_DAMAGE;
-    memcpy(actionState.feedbackText, "9 damage!", sizeof("9 damage!"));
-    EspNativeGameplayActionEngine_beginMonsterVisualWork();
+    armRed();
+    assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
+        13U, 157U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_RIGHT));
     assert(__wrap_Esp32PlatformVideo_present());
-    assert(actionState.viewportFlashVisible && presents == 1U &&
-           damageGlyphs != 0U && actionState.feedbackVisible == 1U &&
-           actionState.feedbackPending == 0U);
-    EspNativeGameplayActionEngine_endMonsterVisualWork();
-    assert(presents == 1U);
-
-    /* Every strict UI/transaction barrier defers paint, not intent or gameplay. */
-    for (unsigned barrier = 0; barrier < 4U; ++barrier) {
-        seed();
-        if (barrier == 0) controls = 1;
-        if (barrier == 1) levelUp = 1;
-        if (barrier == 2) pack = 1;
-        if (barrier == 3) actionState.pending.active = 1;
-        assert(EspNativeGameplayActionEngine_queueDirectionalDamage(6, 159, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
-        assert(directionCue.queued.count == 1U && directionCue.phase == 0U && presents == 1U);
-        clockMs += 600;
-        assert(serviceViewportFlashExpiry() && actionState.viewportFlashVisible);
-        controls = levelUp = pack = 0;
-        actionState.pending.active = 0;
-        poll();
-        assert(directionCue.phase == 2U && concurrentPresents == 1U);
-        finish();
-    }
-    seed();
-    failPresent = 1;
-    assert(EspNativeGameplayActionEngine_queueDirectionalDamage(7, 159, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
-    assert(directionCue.phase == 1U && directionCue.needsRepaint && concurrentPresents == 0U);
-    clockMs += 600;
-    poll();
-    assert(directionCue.phase == 2U && concurrentPresents == 1U);
-    finish();
-
-    seed();
-    assert(EspNativeGameplayActionEngine_queueDirectionalDamage(8, 157, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
-    assert(EspNativeGameplayActionEngine_queueDirectionalDamage(9, 159, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
-    assert(directionCue.current.probe == 8 && directionCue.queued.count == 1);
-    clockMs += DAMAGE_CUE_ON_MS; poll();
-    clockMs += DAMAGE_CUE_GAP_MS; poll();
-    clockMs += DAMAGE_CUE_ON_MS; poll();
-    assert(directionCue.phase == 0U && directionCue.queued.count == 1);
-    clockMs += 600;
-    assert(serviceViewportFlashExpiry() && actionState.viewportFlashVisible);
-    poll();
-    assert(directionCue.current.probe == 9 && directionCue.phase == 2U);
-    finish();
-
-    for (unsigned side = 1; side <= 4U; ++side) {
-        seed();
-        assert(EspNativeGameplayActionEngine_queueDirectionalDamage(10, 157, (EspNativeGameplayDamageSide)side));
-        assert(directionCue.phase == 2U && concurrentPresents == 1U);
-        finish();
-    }
-    seed();
-    clockMs = UINT32_MAX - 100U;
-    actionState.viewportFlashShownAtMs = clockMs;
-    assert(EspNativeGameplayActionEngine_queueDirectionalDamage(11, 157, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
-    finish(); /* Cross clock wrap during the two pulses. */
-
-    seed();
-    failPresent = 100;
-    assert(EspNativeGameplayActionEngine_queueDirectionalDamage(12, 157, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
-    clockMs += DAMAGE_CUE_MAX_PHASE_MS;
-    failPresent = 0;
-    poll();
-    assert(directionCue.phase == 0U && !actionState.viewportFlashVisible);
-    for (unsigned i = 0; i < sizeof(pixels) / sizeof(pixels[0]); ++i) assert(pixels[i] == 0x1234);
-
-    seed();
-    actionState.pending.active = 1;
-    for (unsigned i = 0; i < DAMAGE_CUE_QUEUE_MAX; ++i)
-        assert(EspNativeGameplayActionEngine_queueDirectionalDamage(i + 20, 157, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
-    DirectionalCueOwner beforeOverflow = directionCue;
-    assert(!EspNativeGameplayActionEngine_queueDirectionalDamage(99, 159, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
-    assert(memcmp(&beforeOverflow, &directionCue, sizeof(directionCue)) == 0 && presents == 1U);
-
-    seed();
-    assert(EspNativeGameplayActionEngine_queueDirectionalDamage(13, 157, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
-    /* Fresh world repaint during pulse: both snapshots must adopt new pixels. */
-    for (unsigned y = 20; y < 100; ++y)
-        for (unsigned x = 0; x < 160; ++x) pixels[1 + y * 160 + x] = 0x5678;
+    for (unsigned y = 20U; y < 100U; ++y)
+        for (unsigned x = 0U; x < 160U; ++x)
+            pixels[1U + y * 160U + x] = 0x5678U;
     EspNativeGameplayActionEngine_markFreshFrame();
     assert(__wrap_Esp32PlatformVideo_present());
-    clockMs += DAMAGE_CUE_ON_MS; poll();
-    clockMs += DAMAGE_CUE_GAP_MS; poll();
-    clockMs += DAMAGE_CUE_ON_MS; poll();
-    clockMs += 501; poll();
-    assert(!actionState.viewportFlashVisible && directionCue.phase == 0U);
-    assert(pixels[0] == 0x1234 && pixels[160U * 120U + 1U] == 0x1234);
-    for (unsigned y = 0; y < 120; ++y)
-        for (unsigned x = 0; x < 160; ++x)
-            assert(pixels[1 + y * 160 + x] == (y >= 20 && y < 100 ? 0x5678 : 0x1234));
-    /* Full-screen automap takes priority over all transient 3D effects.
-     * Neither queued monster hits nor timed restores may touch map pixels. */
+    expectBorder(ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_RIGHT, 0x5678U,
+                 FEEDBACK_DAMAGE_RED565);
+    finishBlink(2U, 0x5678U);
+
+    /* A redraw during an OFF interval is NEVER tinted early and the
+     * next ON captures its new world baseline, not stale pre-move pixels. */
+    seedUnpainted();
+    armRed();
+    assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
+        14U, 157U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
+    assert(__wrap_Esp32PlatformVideo_present());
+    clockMs += 105U;
+    poll();
+    assert(!actionState.viewportFlashLit);
+    for (unsigned y = 20U; y < 100U; ++y)
+        for (unsigned x = 0U; x < 160U; ++x)
+            pixels[1U + y * 160U + x] = 0x5678U;
+    EspNativeGameplayActionEngine_markFreshFrame();
+    assert(__wrap_Esp32PlatformVideo_present());
+    assert(presents == 3U && !actionState.viewportFlashLit);
+    expectClean(0x5678U);
+    clockMs += 65U;
+    poll();
+    assert(actionState.viewportFlashLit);
+    expectBorder(ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT, 0x5678U,
+                 FEEDBACK_DAMAGE_RED565);
+    clockMs += 330U;
+    poll();
+    assert(!actionState.viewportFlashVisible);
+    expectClean(0x5678U);
+
+    /* No framebuffer mutations while the touch lease or AUTOMAP own it. */
+    seedUnpainted();
+    armRed();
+    assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
+        15U, 157U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
+    controls = 1;
+    assert(__wrap_Esp32PlatformVideo_present());
+    assert(presents == 1U && !actionState.viewportFlashSnapshotValid);
+    controls = 0;
+    assert(__wrap_Esp32PlatformVideo_present());
+    assert(actionState.viewportFlashSnapshotValid);
+    finishBlink(2U, 0x1234U);
+
     seedUnpainted();
     automapOwner = 1;
-    for (unsigned i = 1U; i < 160U * 120U + 1U; ++i) pixels[i] = 0x4567U;
-    actionState.feedbackPending = 1U;
-    actionState.feedbackKind = ACTION_FEEDBACK_DAMAGE;
-    strcpy(actionState.feedbackText, "5 damage!");
-    EspNativeGameplayActionEngine_beginMonsterVisualWork();
-    EspNativeGameplayActionEngine_stageNonlethalMonsterFlash();
+    armRed();
+    for (unsigned i = 1U; i <= 160U * 120U; ++i) pixels[i] = 0x4567U;
     assert(__wrap_Esp32PlatformVideo_present());
-    assert(presents == 1U && damageGlyphs == 0U);
-    assert(!actionState.feedbackPending && !actionState.feedbackVisible);
-    assert(!actionState.viewportFlashPending &&
-           !actionState.viewportFlashVisible &&
-           !actionState.viewportFlashSnapshotValid);
-    assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
-        31U, 7U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
-    EspNativeGameplayActionEngine_endMonsterVisualWork();
-    assert(directionCue.phase == 0U && directionCue.queued.count == 0U);
+    assert(presents == 1U && !actionState.viewportFlashPending &&
+           !actionState.viewportFlashVisible);
+    assert(!EspNativeGameplayActionEngine_queueDirectionalDamage(
+        16U, 7U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
     clockMs += 2000U;
     poll();
-    assert(presents == 1U && damageGlyphs == 0U);
-    for (unsigned i = 1U; i < 160U * 120U + 1U; ++i)
+    assert(presents == 1U && !directionCue.snapshotValid);
+    for (unsigned i = 1U; i <= 160U * 120U; ++i)
         assert(pixels[i] == 0x4567U);
-    automapOwner = 0;
-    poll();
-    assert(presents == 1U && !actionState.feedbackVisible &&
-           !actionState.viewportFlashVisible &&
-           directionCue.phase == 0U);
-    /* Real compositor wrapper regression: EXIT resets facing.dirty, but the
-     * first full-frame SAVESLOTS present belongs to MENU_MAIN, not gameplay.
-     * The old code retiled k.bmp onto the first 20 pixels rows, exactly once;
-     * a second LOAD was clean because the dirty flag had been consumed. */
+
+    /* Opaque menu/SAVESLOTS cannot inherit world-level blink or dirty bar. */
     seedUnpainted();
-    actionState.viewportFlashPending = 0U;
     worldActive = 0;
     facingDirty = 1;
     assert(__wrap_Esp32PlatformVideo_present());
-    assert(topBarTiles == 0U && facingDirty == 1 && presents == 1U);
     assert(__wrap_Esp32PlatformVideo_present());
     assert(topBarTiles == 0U && facingDirty == 1 && presents == 2U);
-    /* CODE REVIEW P2: the first WORLD present is before active=1. */
     firstWorldLease = 1;
     assert(__wrap_Esp32PlatformVideo_present());
     assert(topBarTiles == 1U && facingDirty == 0 && presents == 3U);
     firstWorldLease = 0;
     worldActive = 1;
     assert(__wrap_Esp32PlatformVideo_present());
-    assert(topBarTiles == 1U && presents == 4U);
-    /* First-world lease must never survive an EXIT/failure. */
-    worldActive = 0;
-    facingDirty = 1;
-    failPresent = 1;
-    assert(!__wrap_Esp32PlatformVideo_present());
-    assert(topBarTiles == 1U && facingDirty == 1 && presents == 5U);
-    puts("damage_cue_timing_host: PASS fullscreen AUTOMAP mutes transient damage UI without framebuffer writes; normal DAMAGE timing/restoration/failures unchanged; EXIT->LOAD + initial-WORLD compositor lease");
+    assert(presents == 4U);
+
+    puts("damage_cue_timing_host: PASS shared 3-pulse red+translucent direction, one 500ms clock, failed ON/OFF retry, exact new-world restore, white pickup unaffected, automap, menu isolation");
     return 0;
 }

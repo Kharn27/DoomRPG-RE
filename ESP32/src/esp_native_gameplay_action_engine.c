@@ -112,15 +112,22 @@
 #define FEEDBACK_DAMAGE_RED565 0xb800U
 #define FEEDBACK_VIEW_Y FEEDBACK_TOP_HEIGHT
 #define FEEDBACK_VIEW_HEIGHT (DOOMRPG_LOGICAL_HEIGHT - (FEEDBACK_TOP_HEIGHT * 2U))
-#define DAMAGE_CUE_THICKNESS 10U /* 20 physical px after 2x scaling */
-#define DAMAGE_CUE_ON_MS 85U
-#define DAMAGE_CUE_GAP_MS 45U
-#define DAMAGE_CUE_PULSES 2U
-#define DAMAGE_CUE_MAX_PHASE_MS 1500U
-#define DAMAGE_CUE_QUEUE_MAX ESP_NATIVE_GAMEPLAY_DAMAGE_CUE_QUEUE_CAP
-#define DAMAGE_CUE_MAX_PIXELS (DOOMRPG_LOGICAL_WIDTH * DAMAGE_CUE_THICKNESS)
-#define DAMAGE_CUE_COLOR565 0xfa20U
 #define FEEDBACK_BORDER_THICKNESS 2U
+/* One shared 500ms flash clock: the frame and direction are ALWAYS in
+ * the same ON/OFF state. Three brisk pulses: 105ms ON / 65ms OFF.
+ * Only a change of the combined border state requests physical present. */
+#define FEEDBACK_DAMAGE_BLINK_ON_MS 105U
+#define FEEDBACK_DAMAGE_BLINK_GAP_MS 65U
+#define FEEDBACK_DAMAGE_BLINK_PULSES 3U
+/* The original border remains 2px opaque. The direction adds 10px of
+ * 50%-alpha RGB565 red-orange inside it: 12px total, 24px physical. */
+#define DAMAGE_BORDER_DIRECTION_THICKNESS 12U
+#define DAMAGE_BORDER_INNER_THICKNESS \
+    (DAMAGE_BORDER_DIRECTION_THICKNESS - FEEDBACK_BORDER_THICKNESS)
+#define DAMAGE_BORDER_INNER_MAX_PIXELS \
+    ((DOOMRPG_LOGICAL_WIDTH - 2U * FEEDBACK_BORDER_THICKNESS) * \
+     DAMAGE_BORDER_INNER_THICKNESS)
+#define DAMAGE_BORDER_TINT565 0xfa20U
 #define FEEDBACK_BORDER_PIXELS \
     ((DOOMRPG_LOGICAL_WIDTH * FEEDBACK_BORDER_THICKNESS * 2U) + \
      ((FEEDBACK_VIEW_HEIGHT - (FEEDBACK_BORDER_THICKNESS * 2U)) * \
@@ -213,6 +220,7 @@ typedef struct ActionEngineState_s {
     uint8_t viewportFlashPending;
     uint8_t viewportFlashVisible;
     uint8_t viewportFlashSnapshotValid;
+    uint8_t viewportFlashLit; /* shared border+side ON bit, NO second clock */
     uint8_t framebufferFresh;
     char feedbackText[FEEDBACK_DYNAMIC_TEXT_BYTES];
     char feedbackFollowupText[FEEDBACK_FOLLOWUP_MAX]
@@ -235,32 +243,21 @@ typedef struct FeedbackScratch_s {
 static ActionEngineState actionState;
 static uint16_t viewportBorderSnapshot[FEEDBACK_BORDER_PIXELS];
 
-/* Pure presentation FIFO: attack probe -> immutable screen-relative side.
- * No references to MonsterState after queueing, no heap/PAK or gameplay RNG.
- * One BSS snapshot stores only the largest possible 160x10 viewport band.
- * Keep this overlay inside the existing action-feedback presenter: a second
- * --wrap_Esp32PlatformVideo_present would violate the established chain. */
+/* One 500ms flash owner, one shared ON/OFF bit. The inner 10px of the
+ * chosen side is tinted translucently, never a separate pulse lease. */
 typedef struct DirectionalCueOwner_s {
-    EspNativeGameplayDamageCueQueue queued;
-    EspNativeGameplayDamageCue current;
-    uint32_t phaseAtMs;
-    uint32_t startedAtMs;
-    /* Physical ON/OFF presentation timings: diagnostic-only, 12 B static.
-     * No cadence, framebuffer, combat, or scheduler modification. */
-    uint32_t observedOnMs[2];
-    uint32_t observedGapMs;
+    EspNativeGameplayDamageCue pending;
     uint16_t snapshotPixels;
-    uint8_t phase; /* 0 idle, 1 requested-on, 2 lit, 3 gap */
-    uint8_t pulsesShown;
+    uint8_t pendingValid;
+    uint8_t activeSide;
     uint8_t snapshotValid;
-    uint8_t needsRepaint;
-    uint8_t deferFirstPulse; /* UI boundary only; FIFO/RNG untouched */
-    uint8_t stageNonlethalBorder; /* no player/turn effect; same-frame cue */
+    uint8_t workActive;
+    uint8_t stageNonlethalBorder;
 } DirectionalCueOwner;
 static DirectionalCueOwner directionCue;
-static uint16_t directionCueSnapshot[DAMAGE_CUE_MAX_PIXELS];
-_Static_assert(DAMAGE_CUE_MAX_PIXELS == 1600U,
-               "directional overlay must stay within one 3.2 KB band");
+static uint16_t directionCueSnapshot[DAMAGE_BORDER_INNER_MAX_PIXELS];
+_Static_assert(DAMAGE_BORDER_INNER_MAX_PIXELS == 1560U,
+               "directional tint snapshot must stay within 3.2 KB BSS");
 
 EspNativeGameplayActionStatus __real_EspNativeGameplayAction_executeSelect(
     const EspNativeGameplayInputState* intent,
@@ -1548,38 +1545,26 @@ static const char* directionCueName(uint8_t side) {
     }
 }
 
-static int serviceDirectionalCue(void);
-
-/* The native session is single-threaded on loopTask. Never defer an existing
- * pulse or a logical monster transaction: only the first physical ON after a
- * post-COMMIT enqueue is gated through the ordered-member/FX tail. */
+/* Keep the existing nonlethal text and red flash grouped AFTER the
+ * synchronous monster FX tail. No direction-specific presentation occurs. */
 void EspNativeGameplayActionEngine_beginMonsterVisualWork(void) {
-    directionCue.deferFirstPulse = 1U;
+    directionCue.workActive = 1U;
 }
 
 void EspNativeGameplayActionEngine_stageNonlethalMonsterFlash(void) {
-    /* The retaliation body opts in ONLY after nonlethal player pain is
-     * committed and its DAMAGE feedback is queued. A render rollback cancels
-     * the flash and never publishes a side intent. */
-    if (directionCue.deferFirstPulse != 0U &&
+    if (directionCue.workActive != 0U &&
         actionState.viewportFlashPending != 0U &&
         actionState.viewportFlashColor565 == FEEDBACK_DAMAGE_RED565)
         directionCue.stageNonlethalBorder = 1U;
 }
 
 void EspNativeGameplayActionEngine_endMonsterVisualWork(void) {
-    const uint8_t stagedBorder = directionCue.stageNonlethalBorder;
-    directionCue.deferFirstPulse = 0U;
+    const uint8_t staged = directionCue.stageNonlethalBorder;
+    directionCue.workActive = 0U;
     directionCue.stageNonlethalBorder = 0U;
-    if (directionCue.phase == 0U && directionCue.queued.count != 0U) {
-        /* __wrap_Esp32PlatformVideo_present paints pending border FIRST,
-         * then the side blend, and presents both atomically. */
-        (void)serviceDirectionalCue();
-    } else if (stagedBorder != 0U &&
-               actionState.viewportFlashPending != 0U &&
-               directionCue.phase == 0U) {
-        /* Failed/unsupported direction admission must not strand the red
-         * border forever: retain the original non-directional feedback. */
+    if (staged != 0U && actionState.viewportFlashPending != 0U) {
+        /* The ordinary present paints text + 2px red contour + translucent
+         * side together, starting their ONE 500ms blink at this present. */
         (void)__wrap_Esp32PlatformVideo_present();
     }
 }
@@ -1587,130 +1572,150 @@ void EspNativeGameplayActionEngine_endMonsterVisualWork(void) {
 int EspNativeGameplayActionEngine_queueDirectionalDamage(
     uint32_t attackProbe, uint16_t attackerSprite,
     EspNativeGameplayDamageSide side) {
-    if (!EspNativeGameplayDamageCueQueue_push(
-            &directionCue.queued, attackProbe, attackerSprite, side)) {
-        printf("[DAMAGECUE] DEFER probe=%u sprite=%u side=%s cause=fifo-full cap=%u gameplay=unchanged\n",
+    if (attackProbe == 0U || attackerSprite == 0xffffU ||
+        side < ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT ||
+        side > ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT ||
+        actionState.viewportFlashColor565 != FEEDBACK_DAMAGE_RED565 ||
+        (actionState.viewportFlashPending == 0U &&
+         actionState.viewportFlashVisible == 0U)) {
+        printf("[DAMAGEBORDER] SKIP probe=%u sprite=%u side=%s redLease=absent-or-invalid gameplay=unchanged\n",
                (unsigned int)attackProbe, (unsigned int)attackerSprite,
-               directionCueName((uint8_t)side), (unsigned int)DAMAGE_CUE_QUEUE_MAX);
+               directionCueName((uint8_t)side));
         return 0;
     }
-    printf("[DAMAGECUE] QUEUE probe=%u sprite=%u side=%s depth=%u source=%s\n",
+    /* Several hits in one turn share ONE border lease. The most recently
+     * committed attacker determines the one highlighted side. */
+    directionCue.pending.probe = attackProbe;
+    directionCue.pending.attackerSprite = attackerSprite;
+    directionCue.pending.side = (uint8_t)side;
+    directionCue.pendingValid = 1U;
+    printf("[DAMAGEBORDER] DIRECTION probe=%u sprite=%u side=%s owner=existing-red-flash timer=shared draw=next-flash-present\n",
            (unsigned int)attackProbe, (unsigned int)attackerSprite,
-           directionCueName((uint8_t)side),
-           (unsigned int)directionCue.queued.count,
-           (attackProbe & 0x80000000UL) != 0U
-               ? "committed-barrel-blast" : "committed-monster-hit");
-    /* This is a post-COMMIT UI intent. Start its first pulse before the
-     * sequencer resumes other members/redraws, which can consume the entire
-     * red-border lease. Reuse the existing compositor, never redraw the world
-     * or wait for the pulse cadence here. Strict leases defer it; a failed
-     * physical present keeps the queued/current cue for the normal retry. */
-    if (directionCue.deferFirstPulse == 0U)
-        (void)serviceDirectionalCue();
+           directionCueName((uint8_t)side));
     return 1;
 }
 
-/* Visit exactly one side of the 160x80 world viewport, never the HUD bars.
- * mode 0 = capture clean pixels and blend, 1 = restore clean pixels,
- * mode 2 = repaint from the preserved clean snapshot. RGB565 averaging gives
- * 50% alpha; no framebuffer-sized scratch and no read from storage. */
-static int visitDirectionalCue(uint8_t mode) {
+/* The existing outer 2px red border owns its original 944 pixels. The
+ * extra INNER 10px uses a 50%-alpha tint over the saved world texels.
+ * This function paints/restores ONLY as part of the SAME border pulse.
+ * 0=capture, 1=restore, 2=repaint from original snapshot. */
+static int visitDamageBorderInner(uint8_t mode, uint8_t side) {
     uint16_t* fb = (uint16_t*)Esp32PlatformVideo_framebuffer();
-    uint32_t x0 = 0U;
-    uint32_t y0 = FEEDBACK_VIEW_Y;
-    uint32_t width = DOOMRPG_LOGICAL_WIDTH;
-    uint32_t height = DAMAGE_CUE_THICKNESS;
-    uint32_t x;
-    uint32_t y;
-    uint32_t at = 0U;
-    uint32_t pixels;
+    const uint32_t inset = FEEDBACK_BORDER_THICKNESS;
+    uint32_t x0 = inset, y0 = FEEDBACK_VIEW_Y + inset;
+    uint32_t width = DOOMRPG_LOGICAL_WIDTH - 2U * inset;
+    uint32_t height = DAMAGE_BORDER_INNER_THICKNESS;
+    uint32_t i = 0U, x, y;
     if (fb == NULL || mode > 2U ||
         Esp32PlatformVideo_framebufferSizeBytes() !=
             (size_t)DOOMRPG_LOGICAL_WIDTH * DOOMRPG_LOGICAL_HEIGHT *
                 sizeof(uint16_t)) return 0;
-    switch ((EspNativeGameplayDamageSide)directionCue.current.side) {
-    case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT:
-        break;
+    switch ((EspNativeGameplayDamageSide)side) {
+    case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT: break;
     case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK:
-        y0 += FEEDBACK_VIEW_HEIGHT - DAMAGE_CUE_THICKNESS;
+        y0 = FEEDBACK_VIEW_Y + FEEDBACK_VIEW_HEIGHT -
+             DAMAGE_BORDER_DIRECTION_THICKNESS;
         break;
     case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT:
-        width = DAMAGE_CUE_THICKNESS;
-        height = FEEDBACK_VIEW_HEIGHT;
+        width = DAMAGE_BORDER_INNER_THICKNESS;
+        height = FEEDBACK_VIEW_HEIGHT - 2U * inset;
         break;
     case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_RIGHT:
-        x0 += DOOMRPG_LOGICAL_WIDTH - DAMAGE_CUE_THICKNESS;
-        width = DAMAGE_CUE_THICKNESS;
-        height = FEEDBACK_VIEW_HEIGHT;
+        x0 = DOOMRPG_LOGICAL_WIDTH - DAMAGE_BORDER_DIRECTION_THICKNESS;
+        width = DAMAGE_BORDER_INNER_THICKNESS;
+        height = FEEDBACK_VIEW_HEIGHT - 2U * inset;
         break;
-    default:
-        return 0;
+    default: return 0;
     }
-    pixels = width * height;
-    if (pixels > DAMAGE_CUE_MAX_PIXELS ||
-        (mode != 0U &&
-         (!directionCue.snapshotValid ||
-          directionCue.snapshotPixels != pixels))) return 0;
-    for (y = y0; y < y0 + height; ++y) {
+    if (width * height > DAMAGE_BORDER_INNER_MAX_PIXELS ||
+        (mode != 0U && (!directionCue.snapshotValid ||
+                        directionCue.snapshotPixels != width * height ||
+                        directionCue.activeSide != side))) return 0;
+    for (y = y0; y < y0 + height; ++y)
         for (x = x0; x < x0 + width; ++x) {
             uint16_t* pixel = &fb[y * DOOMRPG_LOGICAL_WIDTH + x];
-            uint16_t clean;
-            if (mode == 0U) directionCueSnapshot[at] = *pixel;
-            clean = directionCueSnapshot[at++];
-            if (mode == 1U) *pixel = clean;
-            else {
-                *pixel = EspNativeGameplayDamageCue_blend565(
-                    clean, DAMAGE_CUE_COLOR565);
-            }
+            if (mode == 0U) directionCueSnapshot[i] = *pixel;
+            *pixel = mode == 1U
+                ? directionCueSnapshot[i]
+                : (uint16_t)(((directionCueSnapshot[i] & 0xf7deU) >> 1U) +
+                             ((DAMAGE_BORDER_TINT565 & 0xf7deU) >> 1U));
+            ++i;
         }
-    }
     if (mode == 0U) {
-        directionCue.snapshotPixels = (uint16_t)pixels;
+        directionCue.snapshotPixels = (uint16_t)i;
         directionCue.snapshotValid = 1U;
+        directionCue.activeSide = side;
     }
     return 1;
+}
+
+/* Derived entirely from the EXISTING flash start: no second direction
+ * timestamp, tick queue or animation worker. Other white/pickup flashes
+ * retain their original continuous 500ms behavior. */
+static int viewportDamageBlinkLit(uint32_t elapsedMs) {
+    const uint32_t period = FEEDBACK_DAMAGE_BLINK_ON_MS +
+                            FEEDBACK_DAMAGE_BLINK_GAP_MS;
+    return elapsedMs < period * FEEDBACK_DAMAGE_BLINK_PULSES &&
+           elapsedMs % period < FEEDBACK_DAMAGE_BLINK_ON_MS;
 }
 
 static int paintViewportFlash(void) {
     uint16_t* framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
-    size_t expected = (size_t)DOOMRPG_LOGICAL_WIDTH *
-            DOOMRPG_LOGICAL_HEIGHT * sizeof(uint16_t);
-    uint16_t color = actionState.viewportFlashColor565 != 0U
-                         ? actionState.viewportFlashColor565 : 0xffffU;
-    int preserveSnapshot;
-    if (framebuffer == NULL || Esp32PlatformVideo_framebufferSizeBytes() != expected) {
-        return 0;
+    const size_t expected = (size_t)DOOMRPG_LOGICAL_WIDTH *
+        DOOMRPG_LOGICAL_HEIGHT * sizeof(uint16_t);
+    const uint16_t color = actionState.viewportFlashColor565 != 0U
+        ? actionState.viewportFlashColor565 : 0xffffU;
+    const uint8_t newSide =
+        color == FEEDBACK_DAMAGE_RED565
+            ? (directionCue.pendingValid != 0U
+                ? directionCue.pending.side : directionCue.activeSide)
+            : 0U;
+    const int keepClean = actionState.viewportFlashSnapshotValid != 0U &&
+                          actionState.framebufferFresh == 0U;
+    if (framebuffer == NULL ||
+        Esp32PlatformVideo_framebufferSizeBytes() != expected) return 0;
+    if (directionCue.snapshotValid != 0U) {
+        if (!keepClean) {
+            /* World redraw invalidates PIXELS, not the committed attack's
+             * directional metadata. Next shared ON recaptures this side. */
+            directionCue.snapshotValid = 0U;
+        }
+        else if (newSide != directionCue.activeSide) {
+            if (!visitDamageBorderInner(1U, directionCue.activeSide)) return 0;
+            directionCue.snapshotValid = 0U;
+            directionCue.activeSide = 0U;
+        }
     }
-    /* A second damage/pickup flash may arrive before the first 500 ms lease
-     * expires. In that case the framebuffer border is already painted. Never
-     * snapshot those painted pixels as the restore target: keep the original
-     * pre-flash snapshot and only repaint/reset the lease. A real full-frame
-     * redraw marks framebufferFresh, so the snapshot must then be refreshed
-     * from the newly rendered clean border instead. */
-    preserveSnapshot = actionState.viewportFlashVisible != 0U &&
-                       actionState.viewportFlashSnapshotValid != 0U &&
-                       actionState.framebufferFresh == 0U;
-    if (!visitViewportBorder(framebuffer, preserveSnapshot ? 2 : 0, color)) {
+    if (!visitViewportBorder(framebuffer, keepClean ? 2 : 0, color))
         return 0;
+    actionState.viewportFlashSnapshotValid = 1U;
+    if (newSide != 0U) {
+        const uint8_t mode = directionCue.snapshotValid != 0U ? 2U : 0U;
+        if (!visitDamageBorderInner(mode, newSide)) return 0;
     }
-    if (!preserveSnapshot) actionState.viewportFlashSnapshotValid = 1U;
-    else {
-        printf("[VIEWFLASH] REFRESH color565=%04x snapshot=preserved framebufferFresh=0\n",
-               (unsigned int)color);
+    if (keepClean) {
+        DRPG_LOGT("[VIEWFLASH] REFRESH color565=%04x snapshot=preserved framebufferFresh=0\n",
+                  (unsigned int)color);
     }
     return 1;
 }
 
-static int restoreViewportFlash(void) {
+static int restoreViewportFlash(int discardSnapshot) {
     uint16_t* framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
-    size_t expected = (size_t)DOOMRPG_LOGICAL_WIDTH *
-            DOOMRPG_LOGICAL_HEIGHT * sizeof(uint16_t);
+    const size_t expected = (size_t)DOOMRPG_LOGICAL_WIDTH *
+        DOOMRPG_LOGICAL_HEIGHT * sizeof(uint16_t);
     if (actionState.viewportFlashSnapshotValid == 0U) return 1;
-    if (framebuffer == NULL || Esp32PlatformVideo_framebufferSizeBytes() != expected ||
-        !visitViewportBorder(framebuffer, 1, 0U)) {
-        return 0;
+    if (framebuffer == NULL ||
+        Esp32PlatformVideo_framebufferSizeBytes() != expected) return 0;
+    if (directionCue.snapshotValid != 0U &&
+        !visitDamageBorderInner(1U, directionCue.activeSide)) return 0;
+    if (!visitViewportBorder(framebuffer, 1, 0U)) return 0;
+    if (discardSnapshot != 0) {
+        actionState.viewportFlashSnapshotValid = 0U;
+        directionCue.snapshotValid = 0U;
+        directionCue.activeSide = 0U;
+        directionCue.pendingValid = 0U;
     }
-    actionState.viewportFlashSnapshotValid = 0U;
     return 1;
 }
 
@@ -1856,9 +1861,9 @@ static void muteAutomapVisuals(void) {
         actionState.viewportFlashVisible != 0U ||
         actionState.viewportFlashSnapshotValid != 0U ||
         actionState.feedbackFollowupCount != 0U ||
-        directionCue.phase != 0U ||
-        directionCue.queued.count != 0U ||
-        directionCue.deferFirstPulse != 0U ||
+        directionCue.pendingValid != 0U ||
+        directionCue.snapshotValid != 0U ||
+        directionCue.workActive != 0U ||
         directionCue.stageNonlethalBorder != 0U;
     if (!hadVisual) return;
     actionState.feedbackPending = 0U;
@@ -1871,6 +1876,7 @@ static void muteAutomapVisuals(void) {
     actionState.viewportFlashPending = 0U;
     actionState.viewportFlashVisible = 0U;
     actionState.viewportFlashSnapshotValid = 0U;
+    actionState.viewportFlashLit = 0U;
     actionState.viewportFlashShownAtMs = 0U;
     actionState.viewportFlashDurationMs = 0U;
     actionState.viewportFlashColor565 = 0U;
@@ -1883,7 +1889,6 @@ int __wrap_Esp32PlatformVideo_present(void) {
     uint8_t feedback = ACTION_FEEDBACK_NONE;
     int hadFeedback = 0;
     int flashPainted = 0;
-    int directionalPainted = 0;
     int ok;
 
     /*
@@ -1924,12 +1929,9 @@ int __wrap_Esp32PlatformVideo_present(void) {
     }
 
     if (actionState.feedbackPending != 0U) {
-        /* Nonlethal monster retaliation stages the thin red border until
-         * its first directional band. Hold its DAMAGE text in the same
-         * pending feedback owner through the early committed world frame.
-         * The end-of-monster-work present will paint text, border, and side
-         * together, and only THEN start the 1200ms text lease. All other
-         * feedback, including lethal damage, keeps original behavior. */
+        /* Keep the nonlethal DAMAGE text, border and directional tint
+         * grouped AFTER synchronous monster visual work. They share one
+         * first physical present and then ONE flash clock. */
         if (directionCue.stageNonlethalBorder == 0U ||
             actionState.feedbackKind != ACTION_FEEDBACK_DAMAGE) {
             feedback = actionState.feedbackKind;
@@ -1973,84 +1975,61 @@ int __wrap_Esp32PlatformVideo_present(void) {
         }
     }
 
-    /* Layer order is strict: base WORLD -> 2px red viewport border ->
-     * translucent 10px attacker side. The direction snapshot contains the
-     * red border underneath it, never replaces its original world snapshot.
-     * The first pulse overlaps the red lease; a delayed loop must retain the
-     * base until queued/active side snapshots can be released safely. */
+    /* ONE flash clock and ON bit. World redraws while the shared flash is
+     * OFF must stay clean; never paint a frame that the clock says is OFF.
+     * A fresh world render invalidates old snapshots in that case. */
     if ((actionState.viewportFlashPending != 0U ||
          actionState.viewportFlashVisible != 0U) &&
-        (actionState.viewportFlashPending != 0U ||
-         actionState.framebufferFresh != 0U) &&
         directionCue.stageNonlethalBorder == 0U) {
-        if (!paintViewportFlash()) {
-            printf("[VIEWFLASH] FAILED phase=paint\n");
-            return 0;
+        const int shouldPaint =
+            actionState.viewportFlashPending != 0U ||
+            (actionState.viewportFlashVisible != 0U &&
+             (actionState.viewportFlashColor565 != FEEDBACK_DAMAGE_RED565 ||
+              viewportDamageBlinkLit(
+                  actionNowMs() - actionState.viewportFlashShownAtMs)));
+        if (shouldPaint &&
+            (actionState.viewportFlashPending != 0U ||
+             actionState.framebufferFresh != 0U ||
+             (directionCue.pendingValid != 0U &&
+              actionState.viewportFlashLit != 0U))) {
+            if (!paintViewportFlash()) {
+                printf("[VIEWFLASH] FAILED phase=paint\n");
+                return 0;
+            }
+            flashPainted = 1;
         }
-        flashPainted = 1;
-    }
-
-    if (directionCue.phase == 1U ||
-        (directionCue.phase == 2U &&
-         (actionState.framebufferFresh != 0U ||
-          directionCue.needsRepaint != 0U))) {
-        if (!visitDirectionalCue(0U)) {
-            printf("[DAMAGECUE] FAILED phase=paint probe=%u\n",
-                   (unsigned int)directionCue.current.probe);
-            return 0;
+        else if (!shouldPaint && actionState.framebufferFresh != 0U) {
+            /* Clean world framebuffer supplied by renderer during a GAP. */
+            actionState.viewportFlashSnapshotValid = 0U;
+            directionCue.snapshotValid = 0U;
+            /* Keep activeSide across this clean-frame GAP; recapture its
+             * translucent pixels from the new camera pose on next ON. */
+            actionState.viewportFlashLit = 0U;
         }
-        directionalPainted = 1;
     }
 
     ok = __real_Esp32PlatformVideo_present();
-    if (!ok) {
-        if (directionalPainted != 0 && visitDirectionalCue(1U)) {
-            directionCue.snapshotValid = 0U;
-            directionCue.needsRepaint = 1U;
+    if (!ok) return 0;
+    if (flashPainted) {
+        actionState.viewportFlashLit = 1U;
+        if (directionCue.pendingValid != 0U &&
+            actionState.viewportFlashColor565 == FEEDBACK_DAMAGE_RED565) {
+            printf("[DAMAGEBORDER] PAINT probe=%u sprite=%u side=%s thickness=%u contour565=%04x innerTint565=%04x innerAlpha=50pct blink=shared-500ms additionalPresent=no\n",
+                   (unsigned int)directionCue.pending.probe,
+                   (unsigned int)directionCue.pending.attackerSprite,
+                   directionCueName(directionCue.pending.side),
+                   (unsigned int)DAMAGE_BORDER_DIRECTION_THICKNESS,
+                   (unsigned int)FEEDBACK_DAMAGE_RED565,
+                   (unsigned int)DAMAGE_BORDER_TINT565);
         }
-        return 0;
-    }
-
-    if (directionalPainted) {
-        directionCue.needsRepaint = 0U;
-        if (directionCue.phase == 1U) {
-            directionCue.phase = 2U;
-            /* The gap ends only when the second ON frame is presented. */
-            if (directionCue.pulsesShown == 1U) {
-                directionCue.observedGapMs =
-                    actionNowMs() - directionCue.phaseAtMs;
-            }
-            directionCue.phaseAtMs = actionNowMs();
-            if (directionCue.pulsesShown == 0U) {
-                /* This witness is AFTER the physical present, not an intent.
-                 * Useful to prove the side was actually over the red border
-                 * during the same 500ms damage flash on the real CYD. */
-                printf("[DAMAGECUE] ON probe=%u sprite=%u side=%s pulse=1/%u redBorder=%s presented=1 concurrent=yes\n",
-                       (unsigned int)directionCue.current.probe,
-                       (unsigned int)directionCue.current.attackerSprite,
-                       directionCueName(directionCue.current.side),
-                       (unsigned int)DAMAGE_CUE_PULSES,
-                       actionState.viewportFlashPending != 0U ||
-                           actionState.viewportFlashVisible != 0U
-                           ? "visible" : "none");
-            }
-            else {
-                DRPG_LOGT("[DAMAGECUE] ON probe=%u sprite=%u side=%s pulse=%u/%u pixels=%u\n",
-                          (unsigned int)directionCue.current.probe,
-                          (unsigned int)directionCue.current.attackerSprite,
-                          directionCueName(directionCue.current.side),
-                          (unsigned int)(directionCue.pulsesShown + 1U),
-                          (unsigned int)DAMAGE_CUE_PULSES,
-                          (unsigned int)directionCue.snapshotPixels);
-            }
-        }
+        directionCue.pendingValid = 0U;
     }
 
     if (flashPainted && actionState.viewportFlashPending != 0U) {
         actionState.viewportFlashPending = 0U;
         actionState.viewportFlashVisible = 1U;
         actionState.viewportFlashShownAtMs = actionNowMs();
-        printf("[VIEWFLASH] PAINT color565=%04x viewport=0,%u,%u,%u thickness=%u pixels=%u durationMs=%u snapshot=bounded present=caller feedback=%u\n",
+        printf("[VIEWFLASH] PAINT color565=%04x viewport=0,%u,%u,%u thickness=%u pixels=%u durationMs=%u snapshot=bounded present=caller feedback=%u blink=%s\n",
                (unsigned int)actionState.viewportFlashColor565,
                (unsigned int)FEEDBACK_VIEW_Y,
                (unsigned int)DOOMRPG_LOGICAL_WIDTH,
@@ -2058,7 +2037,9 @@ int __wrap_Esp32PlatformVideo_present(void) {
                (unsigned int)FEEDBACK_BORDER_THICKNESS,
                (unsigned int)FEEDBACK_BORDER_PIXELS,
                (unsigned int)actionState.viewportFlashDurationMs,
-               (unsigned int)feedback);
+               (unsigned int)feedback,
+               actionState.viewportFlashColor565 == FEEDBACK_DAMAGE_RED565
+                   ? "3x105ms-on/65ms-off" : "steady");
     }
     actionState.framebufferFresh = 0U;
 
@@ -2083,148 +2064,87 @@ int __wrap_Esp32PlatformVideo_present(void) {
     return 1;
 }
 
+/* The existing viewport flash's ONE service drives both the opaque 2px
+ * contour and its translucent 10px directional extension. Transition
+ * 105ms ON / 65ms OFF / 105ms ON / 65ms OFF / 105ms ON, then clean until
+ * original 500ms expiry. NO independent side cadence or physical presents.
+ * Missed transitions are skipped if a world render stalls: no catch-up burst. */
 static int serviceViewportFlashExpiry(void) {
-    uint32_t now;
-    uint32_t elapsed;
+    uint32_t elapsed, now;
     uint16_t duration;
+    int nextLit;
+    if (actionState.viewportFlashVisible == 0U ||
+        actionState.viewportFlashPending != 0U) return 1;
+    if (EspNativeGameplayLevelUp_isActive() ||
+        EspNativeGameplayControls_isActive()) return 1;
 
-    if (actionState.viewportFlashVisible == 0U) return 1;
-    if (EspNativeGameplayLevelUp_isActive()) return 1;
     now = actionNowMs();
     elapsed = now - actionState.viewportFlashShownAtMs;
     duration = actionState.viewportFlashDurationMs;
-    if (duration == 0U || elapsed < duration) return 1;
-    if (EspNativeGameplayControls_isActive()) return 1;
-    /* The side band owns the TOP layer: restoring the base red border while
-     * the band still holds a red-pixel snapshot would leave stale pixels.
-     * Expire the base only after the short side pulse has restored its own
-     * snapshot. This is UI-only; the monster sequencer never waits for it. */
-    if (directionCue.phase != 0U || directionCue.queued.count != 0U) return 1;
-    if (!restoreViewportFlash()) {
-        printf("[VIEWFLASH] FAILED phase=restore\n");
-        return 0;
-    }
-    if (!__real_Esp32PlatformVideo_present()) return 0;
-    printf("[VIEWFLASH] EXPIRE elapsedMs=%u targetMs=%u color565=%04x restored=viewport-border-only\n",
-           (unsigned int)elapsed, (unsigned int)duration,
-           (unsigned int)actionState.viewportFlashColor565);
-    actionState.viewportFlashVisible = 0U;
-    actionState.viewportFlashShownAtMs = 0U;
-    actionState.viewportFlashDurationMs = 0U;
-    actionState.viewportFlashColor565 = 0U;
-    return 1;
-}
-
-/* Timed two-pulse FIFO, paced by the existing loopTask service. Never hold
- * a gameplay transaction, nor paint below touch/level-up/PAK leases. A failed
- * physical present retries the same phase without dropping the attacker. */
-static int serviceDirectionalCue(void) {
-    uint32_t now = actionNowMs();
-    if (EspNativeResidentGameplay_isAutomapActive()) {
-        muteAutomapVisuals();
-        return 1;
-    }
-    if (EspNativeGameplayControls_isActive() ||
-        EspNativeGameplayLevelUp_isActive() ||
-        EspAssetPack_isOpen() || actionState.pending.active != 0U) return 1;
-    if (directionCue.phase == 0U) {
-        if (directionCue.queued.count == 0U) return 1;
-        if (!EspNativeGameplayDamageCueQueue_pop(
-                &directionCue.queued, &directionCue.current)) return 1;
-        directionCue.phase = 1U;
-        directionCue.startedAtMs = now;
-        directionCue.pulsesShown = 0U;
-        directionCue.observedOnMs[0] = 0U;
-        directionCue.observedOnMs[1] = 0U;
-        directionCue.observedGapMs = 0U;
-        directionCue.snapshotValid = 0U;
-        directionCue.snapshotPixels = 0U;
-        directionCue.needsRepaint = 0U;
-        DRPG_LOGT("[DAMAGECUE] BEGIN probe=%u sprite=%u side=%s redBorder=%s phase=overlay-concurrent sequencer=unblocked\n",
-               (unsigned int)directionCue.current.probe,
-               (unsigned int)directionCue.current.attackerSprite,
-               directionCueName(directionCue.current.side),
-               actionState.viewportFlashVisible != 0U ||
-                   actionState.viewportFlashPending != 0U ? "visible" : "none");
-    }
-    /* A failing presentation must not hold a logical monster turn forever.
-     * This explicit fail-open policy applies ONLY to UI timing, never to
-     * combat/RNG. The warning stays visible in playtest captures. */
-    if (directionCue.phase != 0U &&
-        (uint32_t)(now - directionCue.startedAtMs) >= DAMAGE_CUE_MAX_PHASE_MS) {
-        uint8_t phase = directionCue.phase;
-        if (phase == 2U && directionCue.snapshotValid != 0U &&
-            visitDirectionalCue(1U)) {
-            (void)__real_Esp32PlatformVideo_present();
+    if (duration == 0U || elapsed >= duration) {
+        if (actionState.viewportFlashLit != 0U) {
+            if (!restoreViewportFlash(0)) {
+                printf("[VIEWFLASH] FAILED phase=expiry-restore\n");
+                return 0;
+            }
+            if (!__real_Esp32PlatformVideo_present()) {
+                /* Physical screen still shows ON: restore the framebuffer
+                 * to that same state before retrying the expiry. */
+                if (!paintViewportFlash()) return 0;
+                return 0;
+            }
+            actionState.viewportFlashLit = 0U;
         }
-        printf("[DAMAGECUE] TIMEOUT probe=%u sprite=%u side=%s phase=%u afterMs=%u cue=discarded combat=untouched sequencer=never-blocked\n",
-               (unsigned int)directionCue.current.probe,
-               (unsigned int)directionCue.current.attackerSprite,
-               directionCueName(directionCue.current.side),
-               (unsigned int)phase,
-               (unsigned int)(now - directionCue.startedAtMs));
-        directionCue.phase = 0U;
+        actionState.viewportFlashSnapshotValid = 0U;
+        actionState.viewportFlashVisible = 0U;
+        actionState.viewportFlashLit = 0U;
+        actionState.viewportFlashShownAtMs = 0U;
+        actionState.viewportFlashDurationMs = 0U;
         directionCue.snapshotValid = 0U;
-        directionCue.needsRepaint = 0U;
+        directionCue.activeSide = 0U;
+        directionCue.pendingValid = 0U;
+        printf("[VIEWFLASH] EXPIRE elapsedMs=%u targetMs=%u color565=%04x restored=one-border-including-direction blink=%s\n",
+               (unsigned int)elapsed, (unsigned int)duration,
+               (unsigned int)actionState.viewportFlashColor565,
+               actionState.viewportFlashColor565 == FEEDBACK_DAMAGE_RED565
+                   ? "shared" : "steady");
+        actionState.viewportFlashColor565 = 0U;
         return 1;
     }
-    /* A failed physical publish may have restored the clean framebuffer
-     * while the *screen* still shows the previous pulse. Repaint first;
-     * otherwise expiry would attempt a restore with no valid snapshot and
-     * leave the cue stuck indefinitely. No gameplay retry is involved. */
-    if (directionCue.phase == 2U && directionCue.needsRepaint != 0U) {
-        (void)__wrap_Esp32PlatformVideo_present();
+
+    /* White pickups and other non-damage flashes keep the original single
+     * solid paint + 500ms expiry. Only red damage uses quick blinking. */
+    if (actionState.viewportFlashColor565 != FEEDBACK_DAMAGE_RED565)
         return 1;
-    }
-    if (directionCue.phase == 2U &&
-        (uint32_t)(now - directionCue.phaseAtMs) >= DAMAGE_CUE_ON_MS) {
-        if (!visitDirectionalCue(1U)) {
-            printf("[DAMAGECUE] FAILED phase=restore probe=%u\n",
-                   (unsigned int)directionCue.current.probe);
-            return 1;
+    nextLit = viewportDamageBlinkLit(elapsed);
+    if (nextLit == (actionState.viewportFlashLit != 0U)) return 1;
+
+    if (nextLit) {
+        if (!paintViewportFlash()) {
+            printf("[VIEWFLASH] FAILED phase=blink-paint\n");
+            return 0;
         }
         if (!__real_Esp32PlatformVideo_present()) {
-            (void)visitDirectionalCue(2U);
-            return 1;
+            /* Screen was OFF, keep it OFF when present fails. */
+            if (!restoreViewportFlash(0)) return 0;
+            return 0;
         }
-        /* Measure from physical ON completion through physical OFF completion;
-         * a stalled gameplay loop prolongs the displayed band, even though
-         * the requested on-interval is only 85 ms. */
-        directionCue.observedOnMs[directionCue.pulsesShown] =
-            actionNowMs() - directionCue.phaseAtMs;
-        ++directionCue.pulsesShown;
-        directionCue.snapshotValid = 0U;
-        if (directionCue.pulsesShown == DAMAGE_CUE_PULSES) {
-            /* One timing witness per cue; never turn this into per-frame spam. */
-            printf("[DAMAGECUE] DONE probe=%u sprite=%u side=%s pulses=%u onMs=%u/%u gapMs=%u nominalOnMs=%u nominalGapMs=%u delayed=%s ordered=yes gameplay=unblocked\n",
-                   (unsigned int)directionCue.current.probe,
-                   (unsigned int)directionCue.current.attackerSprite,
-                   directionCueName(directionCue.current.side),
-                   (unsigned int)directionCue.pulsesShown,
-                   (unsigned int)directionCue.observedOnMs[0],
-                   (unsigned int)directionCue.observedOnMs[1],
-                   (unsigned int)directionCue.observedGapMs,
-                   (unsigned int)DAMAGE_CUE_ON_MS,
-                   (unsigned int)DAMAGE_CUE_GAP_MS,
-                   directionCue.observedOnMs[0] > 200U ||
-                   directionCue.observedOnMs[1] > 200U ||
-                   directionCue.observedGapMs > 180U ? "yes" : "no");
-            directionCue.phase = 0U;
-            return 1;
+        actionState.viewportFlashLit = 1U;
+    }
+    else {
+        if (!restoreViewportFlash(0)) {
+            printf("[VIEWFLASH] FAILED phase=blink-restore\n");
+            return 0;
         }
-        directionCue.phase = 3U;
-        directionCue.phaseAtMs = actionNowMs();
-        return 1;
+        if (!__real_Esp32PlatformVideo_present()) {
+            if (!paintViewportFlash()) return 0;
+            return 0;
+        }
+        actionState.viewportFlashLit = 0U;
     }
-    if (directionCue.phase == 3U &&
-        (uint32_t)(now - directionCue.phaseAtMs) >= DAMAGE_CUE_GAP_MS) {
-        directionCue.phase = 1U;
-        directionCue.snapshotValid = 0U;
-    }
-    if (directionCue.phase == 1U) {
-        /* The wrapper owns blending + the physical present. */
-        (void)__wrap_Esp32PlatformVideo_present();
-    }
+    DRPG_LOGT("[VIEWFLASH] BLINK elapsedMs=%u lit=%u color565=%04x shared=border+direction\n",
+              (unsigned int)elapsed, (unsigned int)nextLit,
+              (unsigned int)actionState.viewportFlashColor565);
     return 1;
 }
 
@@ -2759,15 +2679,18 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
     ActionPending pending;
 
     if (EspNativeResidentGameplay_isAutomapActive()) muteAutomapVisuals();
-    if (!serviceDirectionalCue()) return 0;
-    /* Admit a deferred first pulse before expiry can retire its base layer. */
     if (!serviceFeedbackExpiry()) return 0;
     /* PASS TURN and future non-SELECT actions may queue transient feedback
      * without owning an ActionPending transaction. If no gameplay redraw has
      * consumed it yet, present the existing framebuffer with the queued topbar.
      * A native dialog may currently own the PAK, in which case the feedback
      * painter must simply wait for that bounded owner to release it. */
-    if (actionState.pending.active == 0U && actionState.feedbackPending != 0U) {
+    if (actionState.pending.active == 0U &&
+        (actionState.feedbackPending != 0U ||
+         (directionCue.pendingValid != 0U &&
+          actionState.viewportFlashVisible != 0U &&
+          actionState.viewportFlashLit != 0U &&
+          directionCue.workActive == 0U))) {
         if (EspAssetPack_isOpen()) return 1;
         if (!__wrap_Esp32PlatformVideo_present()) return 0;
     }
