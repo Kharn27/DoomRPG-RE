@@ -143,6 +143,28 @@ for owner in ("esp_native_first_frame.c", "esp_native_bsp_visibility.c"):
         src,
     ), owner
 
+
+# A single captured camera snapshot owns both native BSP bounds culling and
+# near/far child order. The original bit flags, signed split comparison and
+# front-to-back traversal order remain unchanged in either implementation.
+first_src = (NATIVE / "src/esp_native_first_frame.c").read_text()
+first_walk = first_src[first_src.index("while (pending != 0U)"):
+                       first_src.index("static void fillBackground(")]
+assert "cullView.viewX <= (int)split" in first_walk
+assert "cullView.viewY <= (int)split" in first_walk
+assert "work->render->viewX" not in first_walk
+assert "work->render->viewY" not in first_walk
+assert "nearNode = first;" in first_walk and "farNode = second;" in first_walk
+assert "nearNode = second;" in first_walk and "farNode = first;" in first_walk
+bsp_src = (NATIVE / "src/esp_native_bsp_visibility.c").read_text()
+bsp_walk = bsp_src[bsp_src.index("static int walkNode("):
+                   bsp_src.index("static int spriteLeaf(")]
+assert "cullView->viewX <= (int)split" in bsp_walk
+assert "cullView->viewY <= (int)split" in bsp_walk
+assert "r->viewX" not in bsp_walk and "r->viewY" not in bsp_walk
+assert "return walkNode(r, runtime, first" in bsp_walk
+assert "return walkNode(r, runtime, second" in bsp_walk
+
 # Same-TU culling formerly called the unwrapped Render_clipLine directly.
 # Preserve that pure internal clip; external wall/BSP-depth/sprite calls
 # explicitly own the transient animated-door z adaptation.

@@ -1221,11 +1221,13 @@ static int walkNodes(FirstFrameWork* work) {
             return 0;
         }
 
+        /* Child ordering consumes the same immutable per-pass camera
+         * snapshot as culling. No live desktop Render view dependency. */
         split = compact.args1 & 0xFFFFU;
         if (((compact.args1 & 0x20000U) == 0U ||
-             work->render->viewY <= (int)split) &&
+             cullView.viewY <= (int)split) &&
             ((compact.args1 & 0x10000U) == 0U ||
-             work->render->viewX <= (int)split)) {
+             cullView.viewX <= (int)split)) {
             nearNode = first;
             farNode = second;
         }

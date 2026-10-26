@@ -337,9 +337,11 @@ static int walkNode(Render_t* r,
     second = compact.args2 & 0xffffU;
     if (first >= runtime->nodeCount || second >= runtime->nodeCount) return 0;
 
+    /* Order against the captured view used by the native bounds culler,
+     * not against a mutable Render_t camera field. */
     split = compact.args1 & 0xffffU;
-    if (((compact.args1 & 0x20000U) == 0U || r->viewY <= (int)split) &&
-        ((compact.args1 & 0x10000U) == 0U || r->viewX <= (int)split)) {
+    if (((compact.args1 & 0x20000U) == 0U || cullView->viewY <= (int)split) &&
+        ((compact.args1 & 0x10000U) == 0U || cullView->viewX <= (int)split)) {
         return walkNode(r, runtime, first, depth + 1U,
                         cullView, cullScratch, state) &&
                walkNode(r, runtime, second, depth + 1U,
