@@ -1162,7 +1162,6 @@ static int walkNodes(FirstFrameWork* work) {
 
     while (pending != 0U) {
         EspMapNode compact;
-        Node_t node;
         uint32_t lineStart;
         uint32_t lineCount;
         uint32_t i;
@@ -1184,21 +1183,14 @@ static int walkNodes(FirstFrameWork* work) {
             return 0;
         }
 
-        memset(&node, 0, sizeof(node));
-        node.x1 = (short)compact.x1;
-        node.y1 = (short)compact.y1;
-        node.x2 = (short)compact.x2;
-        node.y2 = (short)compact.y2;
-        node.args1 = (int)compact.args1;
-        node.args2 = (int)compact.args2;
-
         ++work->render->nodeCount;
         /* Culling borrows a local copy; the wall raster's original
          * tmpLine stays untouched, including its inherited z values. */
         {
             cullScratch = work->render->tmpLine;
             const int culled = EspNativeRenderGeometry_cullBounds(
-                &cullView, node.x1, node.y1, node.x2, node.y2, &cullScratch);
+                &cullView, (short)compact.x1, (short)compact.y1,
+                (short)compact.x2, (short)compact.y2, &cullScratch);
             if (culled) {
                 ++work->nodeCulled;
                 continue;
