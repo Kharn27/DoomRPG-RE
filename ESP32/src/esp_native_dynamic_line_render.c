@@ -13,6 +13,8 @@
 #include "esp_native_door_animator.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_move_events.h"
+#include "esp_render_geometry_primitives.h"
+#include "esp_native_dynamic_clip.h"
 
 #define RENDER_LINE_FLAG_REGULAR_DOOR  0x00000004UL
 #define RENDER_LINE_FLAG_X_NUDGE       0x00000200UL
@@ -97,7 +99,6 @@ int __real_EspNativeGameplayFrame_renderVisualMove(
     EspNativeGameplayFrameStats* outStats);
 int __real_EspMapRuntime_getLine(uint32_t index, EspMapLine* outLine);
 const EspMapLineStateView* __real_EspMapLineState_view(void);
-boolean __real_Render_clipLine(Render_t* render, Line_t* line);
 
 static void compactLineZ(const EspMapLine* line,
                          int32_t* outZ1,
@@ -244,7 +245,8 @@ int __wrap_EspMapRuntime_getLine(uint32_t index, EspMapLine* outLine) {
     return 1;
 }
 
-boolean __wrap_Render_clipLine(Render_t* render, Line_t* line) {
+int EspNativeDynamicLineRender_clipLine(struct Line_s* lineBase) {
+    Line_t* line = (Line_t*)lineBase;
     if (dynamicFrameActive && animatedClip.valid != 0U && line != NULL) {
         if (line->vert1.z == animatedClip.builtZ1 &&
             line->vert2.z == animatedClip.builtZ2) {
@@ -272,7 +274,7 @@ boolean __wrap_Render_clipLine(Render_t* render, Line_t* line) {
         }
         animatedClip.valid = 0U;
     }
-    return __real_Render_clipLine(render, line);
+    return EspNativeRenderGeometry_clipLine(line);
 }
 
 const EspMapLineStateView* __wrap_EspMapLineState_view(void) {

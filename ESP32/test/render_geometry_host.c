@@ -94,7 +94,7 @@ int main(void) {
         line.vert2.y = (pick(65) - 32) * FRACUNIT;
         line.vert2.z = pick(13) * FRACUNIT;
         other = line;
-        assert(Render_clipLine(&native, &line) == Reference_Render_clipLine(&reference, &other));
+        assert(EspNativeRenderGeometry_clipLine(&line) == (int)Reference_Render_clipLine(&reference, &other));
         assert(memcmp(&line, &other, sizeof(line)) == 0);
         /* Exercise project/occlude only on admitted, forward-facing segments. */
         if (line.vert1.x >= 4 * FRACUNIT && line.vert2.x >= 4 * FRACUNIT &&
@@ -188,11 +188,51 @@ int main(void) {
         node.x1 = pick(1800); node.y1 = pick(1800);
         node.x2 = node.x1 + pick(248); node.y2 = node.y1 + pick(248);
         native.skipCull = reference.skipCull = (i % 13 == 0);
-        assert(EspNativeRenderGeometry_cullBounds(
-                   &native, node.x1, node.y1, node.x2, node.y2) ==
-               (int)Reference_Render_cullBoundingBox(&reference, &node));
-        sameScratch();
+        /* The columns stay live after the camera was captured: occlusion
+         * writes elsewhere in the BSP walk must be observed by the culler. */
+        {
+            EspNativeRenderCullView cullView = {
+                .viewX = native.viewX,
+                .viewY = native.viewY,
+                .skipCull = native.skipCull,
+                .viewCosNeg = native.viewCos_,
+                .viewSinNeg = native.viewSin_,
+                .viewSin = native.viewSin,
+                .viewCos = native.viewCos,
+                .viewTransX = native.viewTransX,
+                .viewTransY = native.viewTransY,
+                .screenWidth = native.screenWidth,
+                .fracHalfScreenWidth = native.fracHalfScreenWidth,
+                .columnScale = native.columnScale,
+            };
+            Line_t callerLine;
+            Line_t cullScratch;
+            int result, expected;
+            assert(sizeof(EspNativeRenderCullView) <= 64U);
+            native.tmpLine.vert1.z = reference.tmpLine.vert1.z =
+                (pick(17) - 8) * FRACUNIT;
+            native.tmpLine.vert2.z = reference.tmpLine.vert2.z =
+                (pick(17) - 8) * FRACUNIT;
+            callerLine = native.tmpLine;
+            cullScratch = callerLine;
+            {
+                const int column = pick(160);
+                native.columnScale[column] = COLUMN_SCALE_OCCLUDED;
+                reference.columnScale[column] = COLUMN_SCALE_OCCLUDED;
+            }
+            result = EspNativeRenderGeometry_cullBounds(
+                &cullView, node.x1, node.y1, node.x2, node.y2, &cullScratch);
+            expected = (int)Reference_Render_cullBoundingBox(&reference, &node);
+            assert(result == expected);
+            /* Exact oracle scratch mutation, but only in caller-local copy. */
+            assert(memcmp(&cullScratch, &reference.tmpLine,
+                          sizeof(cullScratch)) == 0);
+            assert(memcmp(&native.tmpLine, &callerLine,
+                          sizeof(callerLine)) == 0);
+            reference.tmpLine = callerLine; /* desktop wrapper's restore */
+            sameScratch();
+        }
     }
-    puts("render_geometry_host: PASS 10000 seeded geometry cases, native column reset/2D transforms/projections, four cardinals, fractional matrices and guarded columns");
+    puts("render_geometry_host: PASS 10000 seeded geometry cases, caller-owned BSP cull scratch and live columns, native reset/2D transforms/projections, cardinals and fractional matrices");
     return 0;
 }

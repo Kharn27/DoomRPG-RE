@@ -18,8 +18,8 @@
  * Permanent CYD owner for the legacy-named projection/culling
  * primitives still consumed by the ESP32-native world and sprite renderers.
  *
- * These functions intentionally preserve the desktop arithmetic/ABI exactly.
- * They mutate only Render_t frame scratch. They do not own map topology,
+ * These functions intentionally preserve the desktop arithmetic exactly.
+ * They mutate only explicitly passed, caller-owned scratch. No map topology,
  * texels, shapes, entities or gameplay state.
  */
 #if defined(DOOMRPG_ESP32)
@@ -30,40 +30,41 @@ void EspNativeRenderGeometry_resetColumns(int* columnScale, int screenWidth)
          columnScale[i] = COLUMN_SCALE_INIT);
 }
 
-/* Native BSP node-bounds culling. Only scalar extents cross the API:
- * no Node_t alias/copy or desktop Render_cullBoundingBox symbol. This retains
- * the exact fixed-point transform/clip/projection and column occlusion test
- * from the desktop oracle. The caller explicitly preserves render->tmpLine
- * around this scratch-only operation, as the old --wrap contract required. */
-int EspNativeRenderGeometry_cullBounds(struct Render_s* renderBase,
-                                      int x1, int y1, int x2, int y2)
+/* Native BSP culling uses a camera snapshot and caller-owned local line
+ * scratch, never a desktop render graph. Column occlusion is read live and
+ * the same-TU clip remains pure (the former linker wrapper was bypassed). */
+int EspNativeRenderGeometry_cullBounds(const EspNativeRenderCullView* view,
+                                      int x1, int y1, int x2, int y2,
+                                      struct Line_s* scratch)
 {
-    Render_t* render = (Render_t*)renderBase;
-    Line_t* line;
+    Line_t* line = (Line_t*)scratch;
     int i;
 
-    if (render->skipCull) {
+    if (view == NULL || line == NULL || view->columnScale == NULL) {
         return false;
     }
 
-    if ((render->viewX >= (x1 - 5)) &&
-        (render->viewX <= (x2 + 5)) &&
-        (render->viewY >= (y1 - 5)) &&
-        (render->viewY <= (y2 + 5))) {
+    if (view->skipCull) {
         return false;
     }
 
-    line = &render->tmpLine;
-    if (render->viewX < x1)
+    if ((view->viewX >= (x1 - 5)) &&
+        (view->viewX <= (x2 + 5)) &&
+        (view->viewY >= (y1 - 5)) &&
+        (view->viewY <= (y2 + 5))) {
+        return false;
+    }
+
+    if (view->viewX < x1)
     {
-        if (render->viewY < y1)
+        if (view->viewY < y1)
         {
             line->vert1.x = x2;
             line->vert1.y = y1;
             line->vert2.x = x1;
             line->vert2.y = y2;
         }
-        else if (render->viewY < y2)
+        else if (view->viewY < y2)
         {
             line->vert1.x = x1;
             line->vert1.y = y1;
@@ -78,16 +79,16 @@ int EspNativeRenderGeometry_cullBounds(struct Render_s* renderBase,
             line->vert2.y = y2;
         }
     }
-    else if (render->viewX < x2)
+    else if (view->viewX < x2)
     {
-        if (render->viewY < y1)
+        if (view->viewY < y1)
         {
             line->vert1.x = x2;
             line->vert1.y = y1;
             line->vert2.x = x1;
             line->vert2.y = y1;
         }
-        else if (render->viewY < y2)
+        else if (view->viewY < y2)
         {
             return false;
         }
@@ -99,14 +100,14 @@ int EspNativeRenderGeometry_cullBounds(struct Render_s* renderBase,
             line->vert2.y = y2;
         }
     }
-    else if (render->viewY < y1)
+    else if (view->viewY < y1)
     {
         line->vert1.x = x2;
         line->vert1.y = y2;
         line->vert2.x = x1;
         line->vert2.y = y1;
     }
-    else if (render->viewY < y2)
+    else if (view->viewY < y2)
     {
         line->vert1.x = x2;
         line->vert1.y = y2;
@@ -122,20 +123,20 @@ int EspNativeRenderGeometry_cullBounds(struct Render_s* renderBase,
     }
 
     EspNativeRenderGeometry_transformPoint(
-        render->viewCos_, render->viewSin_, render->viewSin,
-        render->viewCos, render->viewTransX, render->viewTransY,
+        view->viewCosNeg, view->viewSinNeg, view->viewSin,
+        view->viewCos, view->viewTransX, view->viewTransY,
         &line->vert1.x, &line->vert1.y);
     EspNativeRenderGeometry_transformPoint(
-        render->viewCos_, render->viewSin_, render->viewSin,
-        render->viewCos, render->viewTransX, render->viewTransY,
+        view->viewCosNeg, view->viewSinNeg, view->viewSin,
+        view->viewCos, view->viewTransX, view->viewTransY,
         &line->vert2.x, &line->vert2.y);
 
-    if (Render_clipLine(render, line)) {
+    if (EspNativeRenderGeometry_clipLine(line)) {
         EspNativeRenderGeometry_projectVertex(
-            render->screenWidth, render->fracHalfScreenWidth,
+            view->screenWidth, view->fracHalfScreenWidth,
             &line->vert1.x, &line->vert1.y, &line->vert1.z);
         EspNativeRenderGeometry_projectVertex(
-            render->screenWidth, render->fracHalfScreenWidth,
+            view->screenWidth, view->fracHalfScreenWidth,
             &line->vert2.x, &line->vert2.y, &line->vert2.z);
 
         {
@@ -143,7 +144,7 @@ int EspNativeRenderGeometry_cullBounds(struct Render_s* renderBase,
             int x2 = (line->vert2.x + 0xFFFF) >> FRACBITS;
 
             for (i = x1; i < x2; ++i) {
-                if (render->columnScale[i] == COLUMN_SCALE_INIT) {
+                if (view->columnScale[i] == COLUMN_SCALE_INIT) {
                     return false;
                 }
             }
@@ -177,11 +178,10 @@ void EspNativeRenderGeometry_transformPoint(
  * semantics and exact fixed-point arithmetic. */
 static void clipVertex(Vertex_t* vert, Line_t* line, int i, int i2);
 
-boolean Render_clipLine(Render_t* render, Line_t* line)
+int EspNativeRenderGeometry_clipLine(struct Line_s* lineBase)
 {
+    Line_t* line = (Line_t*)lineBase;
     int i, i2, i3, i4, i5, i6;
-
-    (void)render; /* Legacy ABI argument is unused in native clip math. */
 
     i = line->vert1.x + line->vert1.y;
     i2 = line->vert2.x + line->vert2.y;

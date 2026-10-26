@@ -10,6 +10,7 @@
 #include "esp_map_runtime.h"
 #include "esp_native_bsp_visibility.h"
 #include "esp_render_geometry_primitives.h"
+#include "esp_native_dynamic_clip.h"
 #include "esp_native_sprite_visual_legacy.h"
 #include "esp_player_view_state.h"
 
@@ -247,7 +248,7 @@ static int depthLine(Render_t* r,
         r->viewCos_, r->viewSin_, r->viewSin,
         r->viewCos, r->viewTransX, r->viewTransY,
         &line.vert2.x, &line.vert2.y);
-    if (!Render_clipLine(r, &line)) {
+    if (!EspNativeDynamicLineRender_clipLine(&line)) {
         ++state->clipCull;
         return 1;
     }
@@ -281,6 +282,8 @@ static int walkNode(Render_t* r,
                     const EspMapRuntimeView* runtime,
                     uint32_t nodeIndex,
                     uint32_t depth,
+                    const EspNativeRenderCullView* cullView,
+                    Line_t* cullScratch,
                     EspNativeBspVisibilityState* state) {
     EspMapNode compact;
     Node_t node;
@@ -309,13 +312,12 @@ static int walkNode(Render_t* r,
 
     ++r->nodeCount;
     ++state->nodes;
-    /* The old linker wrapper preserved tmpLine for compact BSP traversal.
-     * Keep that same frame-scratch contract explicitly at this call site. */
+    /* Keep the borrowed renderer line untouched. The only mutable
+     * culling line is this caller-owned scratch, shared across recursion. */
     {
-        const Line_t savedTmpLine = r->tmpLine;
+        *cullScratch = r->tmpLine;
         const int culled = EspNativeRenderGeometry_cullBounds(
-            r, node.x1, node.y1, node.x2, node.y2);
-        r->tmpLine = savedTmpLine;
+            cullView, node.x1, node.y1, node.x2, node.y2, cullScratch);
         if (culled) {
             ++state->nodeCull;
             return 1;
@@ -346,11 +348,15 @@ static int walkNode(Render_t* r,
     split = compact.args1 & 0xffffU;
     if (((compact.args1 & 0x20000U) == 0U || r->viewY <= (int)split) &&
         ((compact.args1 & 0x10000U) == 0U || r->viewX <= (int)split)) {
-        return walkNode(r, runtime, first, depth + 1U, state) &&
-               walkNode(r, runtime, second, depth + 1U, state);
+        return walkNode(r, runtime, first, depth + 1U,
+                        cullView, cullScratch, state) &&
+               walkNode(r, runtime, second, depth + 1U,
+                        cullView, cullScratch, state);
     }
-    return walkNode(r, runtime, second, depth + 1U, state) &&
-           walkNode(r, runtime, first, depth + 1U, state);
+    return walkNode(r, runtime, second, depth + 1U,
+                    cullView, cullScratch, state) &&
+           walkNode(r, runtime, first, depth + 1U,
+                    cullView, cullScratch, state);
 }
 
 static int spriteLeaf(const EspMapRuntimeView* runtime,
@@ -412,6 +418,8 @@ int EspNativeBspVisibility_buildForView(struct Render_s* renderBase,
     const EspPlayerViewState* view = (const EspPlayerViewState*)pose;
     Scratch before;
     Scratch after;
+    EspNativeRenderCullView cullView;
+    Line_t cullScratch;
     int ok = 0;
 
     if (outState != NULL) memset(outState, 0, sizeof(*outState));
@@ -427,10 +435,29 @@ int EspNativeBspVisibility_buildForView(struct Render_s* renderBase,
     }
 
     saveScratch(render, &before);
-    if (setupView(render, view) && walkNode(render, runtime, 0U, 0U, outState)) {
-        memcpy(outState->columnScale, render->columnScale,
-               sizeof(outState->columnScale));
-        ok = 1;
+    if (setupView(render, view)) {
+        /* Capture only after setupView: preview pose and reset columnScale
+         * are now authoritative; recursion reads that live array. */
+        cullView = (EspNativeRenderCullView){
+        .viewX = render->viewX,
+        .viewY = render->viewY,
+        .skipCull = render->skipCull,
+        .viewCosNeg = render->viewCos_,
+        .viewSinNeg = render->viewSin_,
+        .viewSin = render->viewSin,
+        .viewCos = render->viewCos,
+        .viewTransX = render->viewTransX,
+        .viewTransY = render->viewTransY,
+        .screenWidth = render->screenWidth,
+        .fracHalfScreenWidth = render->fracHalfScreenWidth,
+        .columnScale = render->columnScale
+    };
+        if (walkNode(render, runtime, 0U, 0U,
+                     &cullView, &cullScratch, outState)) {
+            memcpy(outState->columnScale, render->columnScale,
+                   sizeof(outState->columnScale));
+            ok = 1;
+        }
     }
     restoreScratch(render, &before);
     saveScratch(render, &after);

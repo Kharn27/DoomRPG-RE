@@ -16,6 +16,7 @@
 #include "esp_native_first_frame.h"
 #include "esp_native_plane_renderer.h"
 #include "esp_render_geometry_primitives.h"
+#include "esp_native_dynamic_clip.h"
 #include "esp_native_wall_indicator_animation.h"
 #include "esp_native_graphics_catalog.h"
 #include "esp_player_view_state.h"
@@ -1056,7 +1057,7 @@ static int drawLine(FirstFrameWork* work, uint32_t lineIndex) {
         work->render->viewCos_, work->render->viewSin_, work->render->viewSin,
         work->render->viewCos, work->render->viewTransX, work->render->viewTransY,
         &projected.vert2.x, &projected.vert2.y);
-    if (!Render_clipLine(work->render, &projected)) {
+    if (!EspNativeDynamicLineRender_clipLine(&projected)) {
         ++work->clipCulled;
         return 1;
     }
@@ -1129,12 +1130,31 @@ static int drawLine(FirstFrameWork* work, uint32_t lineIndex) {
 static int walkNodes(FirstFrameWork* work) {
     uint16_t nodeStack[MAX_BSP_DEPTH + 1U];
     uint8_t depthStack[MAX_BSP_DEPTH + 1U];
+    EspNativeRenderCullView cullView;
+    Line_t cullScratch;
     uint32_t pending = 0U;
 
     if (work == NULL || work->runtime == NULL || work->runtime->nodeCount == 0U ||
         work->runtime->nodeCount > (uint32_t)UINT16_MAX + 1U) {
         return 0;
     }
+
+    /* Capture projection scalars once, but observe the live column scale
+     * throughout the BSP walk. Only local cullScratch is ever modified. */
+    cullView = (EspNativeRenderCullView){
+        .viewX = work->render->viewX,
+        .viewY = work->render->viewY,
+        .skipCull = work->render->skipCull,
+        .viewCosNeg = work->render->viewCos_,
+        .viewSinNeg = work->render->viewSin_,
+        .viewSin = work->render->viewSin,
+        .viewCos = work->render->viewCos,
+        .viewTransX = work->render->viewTransX,
+        .viewTransY = work->render->viewTransY,
+        .screenWidth = work->render->screenWidth,
+        .fracHalfScreenWidth = work->render->fracHalfScreenWidth,
+        .columnScale = work->render->columnScale
+    };
 
     nodeStack[pending] = 0U;
     depthStack[pending] = 0U;
@@ -1173,13 +1193,12 @@ static int walkNodes(FirstFrameWork* work) {
         node.args2 = (int)compact.args2;
 
         ++work->render->nodeCount;
-        /* Preserve the inherited per-line scratch without a hidden
-         * Render_cullBoundingBox linker wrapper. */
+        /* Culling borrows a local copy; the wall raster's original
+         * tmpLine stays untouched, including its inherited z values. */
         {
-            const Line_t savedTmpLine = work->render->tmpLine;
+            cullScratch = work->render->tmpLine;
             const int culled = EspNativeRenderGeometry_cullBounds(
-                work->render, node.x1, node.y1, node.x2, node.y2);
-            work->render->tmpLine = savedTmpLine;
+                &cullView, node.x1, node.y1, node.x2, node.y2, &cullScratch);
             if (culled) {
                 ++work->nodeCulled;
                 continue;

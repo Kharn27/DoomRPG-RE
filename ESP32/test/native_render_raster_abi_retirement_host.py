@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Retirement guard for twenty-two desktop-only raster/background/geometry ABIs.
+"""Retirement guard for twenty-three desktop-only raster/background/geometry ABIs.
 
 Classic CYD uses the compact native BSP/world/plane renderers. The old raster
 reject-only TU has no remaining legitimate symbol, and must not be revived.
@@ -37,10 +37,9 @@ RETIRED = (
     "Render_initColumnScale",
     "Render_clipVertex",
     "Render_cullBoundingBox",
-)
-LIVE_GEOMETRY = (
     "Render_clipLine",
 )
+LIVE_GEOMETRY = ()
 
 assert not REJECT_PATH.exists(), "obsolete reject-only translation unit returned"
 assert (NATIVE / "src/esp_native_plane_renderer.c").is_file()
@@ -67,6 +66,9 @@ native_header = (NATIVE / "include/esp_render_geometry_primitives.h").read_text(
 assert "Render_t" not in native_header and "Line_t" not in native_header
 assert "EspNativeRenderGeometry_occludeProjectedSpan" in native_header
 assert "EspNativeRenderGeometry_projectVertex" in native_header
+assert "EspNativeRenderGeometry_clipLine" in native_header
+assert re.search(r"\bint\s+EspNativeRenderGeometry_clipLine\s*\(", geometry)
+assert not re.search(r"\bRender_clipLine\s*\(", geometry)
 assert "EspNativeRenderGeometry_resetColumns" in native_header
 assert re.search(r"\bEspNativeRenderGeometry_resetColumns\s*\(", geometry)
 assert "EspNativeRenderGeometry_resetColumns" in (
@@ -85,18 +87,50 @@ assert re.search(r"\bEspNativeRenderGeometry_occludeProjectedSpan\s*\(", geometr
 for owner in ("esp_native_first_frame.c", "esp_native_bsp_visibility.c"):
     assert "EspNativeRenderGeometry_occludeProjectedSpan" in (NATIVE / "src" / owner).read_text()
 
-# The two native BSP entrypoints must preserve tmpLine around scalar node
-# culling. Losing the old wrapper's save/restore is a real render regression.
+# Native BSP culling may only borrow scalar camera values, a live read-only
+# column array and a caller-owned line copy. Never regain render-graph access
+# or modify the historical render->tmpLine during either traversal.
+assert "EspNativeRenderCullView" in native_header
+assert "struct Render_s" not in native_header
+assert "const int* columnScale;" in native_header
+assert "struct Line_s* scratch" in native_header
 assert "EspNativeRenderGeometry_cullBounds" in native_header
 assert re.search(r"\bint\s+EspNativeRenderGeometry_cullBounds\s*\(", geometry)
+assert re.search(
+    r"EspNativeRenderGeometry_cullBounds\(const EspNativeRenderCullView\* view",
+    geometry)
+cull_body = geometry[geometry.index("int EspNativeRenderGeometry_cullBounds("):
+                     geometry.index("void EspNativeRenderGeometry_transformPoint(")]
+assert "Render_t" not in cull_body and "render->" not in cull_body
+assert "view->columnScale[i]" in cull_body
 for owner in ("esp_native_first_frame.c", "esp_native_bsp_visibility.c"):
     src = (NATIVE / "src" / owner).read_text()
-    call = src.index("EspNativeRenderGeometry_cullBounds(")
-    save = src.rfind("savedTmpLine =", 0, call)
-    restore = src.find("->tmpLine = savedTmpLine;", call)
-    assert save >= 0 and call < restore and restore < call + 270, owner
+    assert "EspNativeRenderCullView cullView;" in src, owner
+    assert "EspNativeRenderGeometry_cullBounds(" in src, owner
+    assert "cullScratch = " in src, owner
+    assert "->tmpLine = savedTmpLine;" not in src, owner
+    assert "savedTmpLine" not in src, owner
+    assert ".columnScale = " in src, owner
 pio = (NATIVE / "platformio.ini").read_text()
 assert "--wrap=Render_cullBoundingBox" not in pio
+assert "--wrap=Render_clipLine" not in pio
+dynamic = (NATIVE / "src/esp_native_dynamic_line_render.c").read_text()
+assert "EspNativeDynamicLineRender_clipLine" in dynamic
+assert "__wrap_Render_clipLine" not in dynamic
+assert "__real_Render_clipLine" not in dynamic
+assert "return EspNativeRenderGeometry_clipLine(line);" in dynamic
+assert "EspNativeDynamicLineRender_clipLine" in (
+    NATIVE / "include/esp_native_dynamic_clip.h"
+).read_text()
+for owner in ("esp_native_first_frame.c", "esp_native_bsp_visibility.c",
+              "esp_native_sprite_renderer.c"):
+    src = (NATIVE / "src" / owner).read_text()
+    assert "EspNativeDynamicLineRender_clipLine" in src
+    assert not re.search(r"\bRender_clipLine\s*\(", src)
+# Same-TU culling formerly called the unwrapped Render_clipLine directly.
+# Preserve that pure internal clip; external wall/BSP-depth/sprite calls
+# explicitly own the transient animated-door z adaptation.
+assert "if (EspNativeRenderGeometry_clipLine(line))" in geometry
 assert "__wrap_Render_cullBoundingBox" not in (
     NATIVE / "src/native_first_frame_render_wrappers.c"
 ).read_text()
@@ -147,4 +181,4 @@ for subtree in (NATIVE / "src", NATIVE / "include"):
                 "retired desktop raster/span reference", path, name
             )
 
-print("PASS 22 retired Render ABIs; one legacy clip geometry primitive plus native scalar BSP culling/columns/transform/projection/occlusion")
+print("PASS 23 retired Render ABIs; pure native frustum clip and explicit animated-door adapter plus scalar BSP geometry")
