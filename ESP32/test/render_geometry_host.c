@@ -206,7 +206,6 @@ int main(void) {
                 .columnScale = native.columnScale,
             };
             Line_t callerLine;
-            Line_t cullScratch;
             int result, expected;
             assert(sizeof(EspNativeRenderCullView) <= 64U);
             native.tmpLine.vert1.z = reference.tmpLine.vert1.z =
@@ -214,25 +213,23 @@ int main(void) {
             native.tmpLine.vert2.z = reference.tmpLine.vert2.z =
                 (pick(17) - 8) * FRACUNIT;
             callerLine = native.tmpLine;
-            cullScratch = callerLine;
             {
                 const int column = pick(160);
                 native.columnScale[column] = COLUMN_SCALE_OCCLUDED;
                 reference.columnScale[column] = COLUMN_SCALE_OCCLUDED;
             }
             result = EspNativeRenderGeometry_cullBounds(
-                &cullView, node.x1, node.y1, node.x2, node.y2, &cullScratch);
+                &cullView, node.x1, node.y1, node.x2, node.y2);
             expected = (int)Reference_Render_cullBoundingBox(&reference, &node);
             assert(result == expected);
-            /* Exact oracle scratch mutation, but only in caller-local copy. */
-            assert(memcmp(&cullScratch, &reference.tmpLine,
-                          sizeof(cullScratch)) == 0);
+            /* The oracle rewrites tmpLine and interpolates z; the native
+             * culler returns the exact decision using private zeroed scratch. */
             assert(memcmp(&native.tmpLine, &callerLine,
                           sizeof(callerLine)) == 0);
             reference.tmpLine = callerLine; /* desktop wrapper's restore */
             sameScratch();
         }
     }
-    puts("render_geometry_host: PASS 10000 seeded geometry cases, caller-owned BSP cull scratch and live columns, native reset/2D transforms/projections, cardinals and fractional matrices");
+    puts("render_geometry_host: PASS 10000 seeded geometry cases, function-private BSP cull scratch and live columns, native reset/2D transforms/projections, cardinals and fractional matrices");
     return 0;
 }

@@ -30,17 +30,18 @@ void EspNativeRenderGeometry_resetColumns(int* columnScale, int screenWidth)
          columnScale[i] = COLUMN_SCALE_INIT);
 }
 
-/* Native BSP culling uses a camera snapshot and caller-owned local line
- * scratch, never a desktop render graph. Column occlusion is read live and
- * the same-TU clip remains pure (the former linker wrapper was bypassed). */
+/* Native BSP culling uses a camera snapshot and function-private transient
+ * line, never the renderer tmpLine or a desktop render graph. Its x/y are
+ * overwritten before clipping; z is not observed by the cull decision.
+ * Column occlusion is read live; the same-TU clip remains pure. */
 int EspNativeRenderGeometry_cullBounds(const EspNativeRenderCullView* view,
-                                      int x1, int y1, int x2, int y2,
-                                      struct Line_s* scratch)
+                                      int x1, int y1, int x2, int y2)
 {
-    Line_t* line = (Line_t*)scratch;
+    Line_t localLine = {0};
+    Line_t* line = &localLine;
     int i;
 
-    if (view == NULL || line == NULL || view->columnScale == NULL) {
+    if (view == NULL || view->columnScale == NULL) {
         return false;
     }
 

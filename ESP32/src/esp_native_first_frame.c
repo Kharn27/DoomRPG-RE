@@ -1131,7 +1131,6 @@ static int walkNodes(FirstFrameWork* work) {
     uint16_t nodeStack[MAX_BSP_DEPTH + 1U];
     uint8_t depthStack[MAX_BSP_DEPTH + 1U];
     EspNativeRenderCullView cullView;
-    Line_t cullScratch;
     uint32_t pending = 0U;
 
     if (work == NULL || work->runtime == NULL || work->runtime->nodeCount == 0U ||
@@ -1139,8 +1138,8 @@ static int walkNodes(FirstFrameWork* work) {
         return 0;
     }
 
-    /* Capture projection scalars once, but observe the live column scale
-     * throughout the BSP walk. Only local cullScratch is ever modified. */
+    /* Capture projection scalars once and observe live column occlusion.
+     * Every cull owns its transient line; no Render tmpLine borrowing. */
     cullView = (EspNativeRenderCullView){
         .viewX = work->render->viewX,
         .viewY = work->render->viewY,
@@ -1184,13 +1183,11 @@ static int walkNodes(FirstFrameWork* work) {
         }
 
         ++work->render->nodeCount;
-        /* Culling borrows a local copy; the wall raster's original
-         * tmpLine stays untouched, including its inherited z values. */
+        /* Culling is independent of the renderer's inherited tmpLine. */
         {
-            cullScratch = work->render->tmpLine;
             const int culled = EspNativeRenderGeometry_cullBounds(
                 &cullView, (short)compact.x1, (short)compact.y1,
-                (short)compact.x2, (short)compact.y2, &cullScratch);
+                (short)compact.x2, (short)compact.y2);
             if (culled) {
                 ++work->nodeCulled;
                 continue;

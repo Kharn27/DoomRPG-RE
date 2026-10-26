@@ -87,13 +87,14 @@ assert re.search(r"\bEspNativeRenderGeometry_occludeProjectedSpan\s*\(", geometr
 for owner in ("esp_native_first_frame.c", "esp_native_bsp_visibility.c"):
     assert "EspNativeRenderGeometry_occludeProjectedSpan" in (NATIVE / "src" / owner).read_text()
 
-# Native BSP culling may only borrow scalar camera values, a live read-only
-# column array and a caller-owned line copy. Never regain render-graph access
-# or modify the historical render->tmpLine during either traversal.
+# Native BSP culling borrows only scalar camera values and a live read-only
+# column array. No caller-owned Line_t or renderer tmpLine is read/copied;
+# all mutable line scratch remains inside the culling function.
 assert "EspNativeRenderCullView" in native_header
 assert "struct Render_s" not in native_header
 assert "const int* columnScale;" in native_header
-assert "struct Line_s* scratch" in native_header
+assert "struct Line_s* scratch" not in native_header
+assert "int x1, int y1, int x2, int y2);" in native_header
 assert "EspNativeRenderGeometry_cullBounds" in native_header
 assert re.search(r"\bint\s+EspNativeRenderGeometry_cullBounds\s*\(", geometry)
 assert re.search(
@@ -102,12 +103,14 @@ assert re.search(
 cull_body = geometry[geometry.index("int EspNativeRenderGeometry_cullBounds("):
                      geometry.index("void EspNativeRenderGeometry_transformPoint(")]
 assert "Render_t" not in cull_body and "render->" not in cull_body
+assert "Line_t localLine = {0};" in cull_body
+assert "struct Line_s* scratch" not in cull_body
 assert "view->columnScale[i]" in cull_body
 for owner in ("esp_native_first_frame.c", "esp_native_bsp_visibility.c"):
     src = (NATIVE / "src" / owner).read_text()
     assert "EspNativeRenderCullView cullView;" in src, owner
     assert "EspNativeRenderGeometry_cullBounds(" in src, owner
-    assert "cullScratch = " in src, owner
+    assert "cullScratch" not in src, owner
     assert "->tmpLine = savedTmpLine;" not in src, owner
     assert "savedTmpLine" not in src, owner
     assert ".columnScale = " in src, owner
@@ -139,7 +142,7 @@ for owner in ("esp_native_first_frame.c", "esp_native_bsp_visibility.c"):
     assert re.search(
         r"EspNativeRenderGeometry_cullBounds\(\s*(?:&cullView|cullView),"
         r"\s*\(short\)compact\.x1,\s*\(short\)compact\.y1,"
-        r"\s*\(short\)compact\.x2,\s*\(short\)compact\.y2,",
+        r"\s*\(short\)compact\.x2,\s*\(short\)compact\.y2\)",
         src,
     ), owner
 
@@ -197,4 +200,4 @@ for subtree in (NATIVE / "src", NATIVE / "include"):
                 "retired desktop raster/span reference", path, name
             )
 
-print("PASS 23 retired Render ABIs; pure native frustum clip and explicit animated-door adapter plus scalar BSP geometry")
+print("PASS 23 retired Render ABIs; private BSP cull scratch, pure frustum clip, explicit animated-door adapter")
