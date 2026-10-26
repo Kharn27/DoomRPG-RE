@@ -127,6 +127,22 @@ for owner in ("esp_native_first_frame.c", "esp_native_bsp_visibility.c",
     src = (NATIVE / "src" / owner).read_text()
     assert "EspNativeDynamicLineRender_clipLine" in src
     assert not re.search(r"\bRender_clipLine\s*\(", src)
+
+# Both native BSP traversal owners feed compact immutable node bounds directly
+# to the culler. Explicit 16-bit signed conversions preserve legacy short
+# widening, including any unusual source coordinates. No desktop Node_t copy.
+for owner in ("esp_native_first_frame.c", "esp_native_bsp_visibility.c"):
+    src = (NATIVE / "src" / owner).read_text()
+    assert not re.search(r"\bNode_t\b", src), owner
+    assert "EspMapNode compact;" in src, owner
+    assert "EspMapRuntime_getNode(" in src, owner
+    assert re.search(
+        r"EspNativeRenderGeometry_cullBounds\(\s*(?:&cullView|cullView),"
+        r"\s*\(short\)compact\.x1,\s*\(short\)compact\.y1,"
+        r"\s*\(short\)compact\.x2,\s*\(short\)compact\.y2,",
+        src,
+    ), owner
+
 # Same-TU culling formerly called the unwrapped Render_clipLine directly.
 # Preserve that pure internal clip; external wall/BSP-depth/sprite calls
 # explicitly own the transient animated-door z adaptation.

@@ -286,7 +286,6 @@ static int walkNode(Render_t* r,
                     Line_t* cullScratch,
                     EspNativeBspVisibilityState* state) {
     EspMapNode compact;
-    Node_t node;
     uint32_t lineStart;
     uint32_t lineCount;
     uint32_t first;
@@ -302,14 +301,6 @@ static int walkNode(Render_t* r,
         return 0;
     }
 
-    memset(&node, 0, sizeof(node));
-    node.x1 = (short)compact.x1;
-    node.y1 = (short)compact.y1;
-    node.x2 = (short)compact.x2;
-    node.y2 = (short)compact.y2;
-    node.args1 = (int)compact.args1;
-    node.args2 = (int)compact.args2;
-
     ++r->nodeCount;
     ++state->nodes;
     /* Keep the borrowed renderer line untouched. The only mutable
@@ -317,7 +308,8 @@ static int walkNode(Render_t* r,
     {
         *cullScratch = r->tmpLine;
         const int culled = EspNativeRenderGeometry_cullBounds(
-            cullView, node.x1, node.y1, node.x2, node.y2, cullScratch);
+            cullView, (short)compact.x1, (short)compact.y1,
+            (short)compact.x2, (short)compact.y2, cullScratch);
         if (culled) {
             ++state->nodeCull;
             return 1;
