@@ -1,5 +1,11 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #232 — deuxième témoin START/LOAD/EXIT CYD, code gelé (26 octobre 2026)
+
+[PR #232](https://github.com/Kharn27/DoomRPG-RE/pull/232) retire les `Node_t` temporaires dans les deux traversées du BSP au profit des bornes `EspMapNode` (casts `(short)` préservés). Code testé précédemment : `a6bbb6b44d55ce58148482114c57ec68ba3d178d`, base `main=3f6875ee7f2d3572eff867e2426c5072dc0e267c`. Les essais additionnels Serial START/intro/Entrance/EXIT puis LOAD slot04/Malwrath/EXIT confirment `FIRST_FRAME=71ca7465`, dialogue88/89→opcode19, caisse127 BREAK_REMOVE, caisse56 TRANSFORM puis pickup, porte275 avec HOLD/RELEASE, restauration exacte des monstres/topologie/positions `beaeaccc/50e16fe3/e2a9d90a`, porte113, sprite324 `draws 4→2→0`, deux ripostes Malwrath à trois projectiles et drop récupéré. Deux EXIT `RESIDENTRESET released=18008 empty=1`, menu `0f2c9fc3`, RAM gameplay `113936/86004` et menu `159872/110580`, `shapeData=mediaTexels=NULL`. Aucune erreur fatale visible. `NATIVEFRAME BOUNDARY-INLINE` et x projectile déjà connus sont hors-scope ; cadence non optimisée. Aucun SHA de firmware imprimé dans cet extrait : ne pas prétendre qu'il identifie le binaire. Détails dans `PORTING_STATUS.md`. **Code inchangé et merge exclusivement utilisateur.**
+
+---
+
 ## PR #231 — BSP culling natif — PASS CYD 2026-10-26 (code efad8a2ffe018bb8319298e29b20065845c5360e)
 
 `EspNativeRenderGeometry_cullBounds` utilise une `EspNativeRenderCullView` scalaire et des colonnes d'occlusion live, avec scratch local sans mutation de `render->tmpLine`. Test matériel normal START/EXIT, LOAD slot04/Malwrath/EXIT : FIRST_FRAME=71ca7465, portes275/113 OK, sprite324 clip OK, RAM gameplay 113936/86004, menu 159872/110580, nettoyage exact. CI push 40236074792 / PR 40236078052 SUCCESS. Fluidité encore peu nerveuse, mesures non contrôlées ; performance hors scope. Aucun changement de code après le PASS.
