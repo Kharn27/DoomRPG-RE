@@ -1,5 +1,13 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #236 — jalon B : PASS fonctionnel, suspicion de ralentissement à investiguer (27 octobre 2026)
+
+Code matériel `5efbf3966f06d18ebdac761945e84e53e48131c6`, même branche `agent/esp32-render-retire-desktop-handles`, [PR #236](https://github.com/Kharn27/DoomRPG-RE/pull/236). Sept drapeaux du raster desktop réservés à `src/Render.h` non-ESP32 ; `skipCull` et `spanMode` natifs conservés. `Render_t=1428 B` au boot (−28), `Total=2232`. CI push [#40576934369](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40576934369) et PR [#40576943390](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40576943390) SUCCESS. START/INTRO/Entrance/dialogues88/89/porte275/EXIT et LOAD slot04 V11/porte113/Malwrath triprojectile×2/loot/secret/EXIT : PASS fonctionnel, `FIRST_FRAME=71ca7465`, `arenaFNV=c3882516`, `menuFNV=0f2c9fc3`, deux `RESIDENTRESET released=18008 empty=1`. Heap8 `114044` gameplay et `159980` menu (+40/+28 vs A), plus gros blocs inchangés.
+
+**NE PAS CLOTURER PERFORMANCE** : le gameplay paraît moins nerveux et les temps de phase sprites sont significativement plus élevés, à lectures physiques quasi équivalentes et frames identiques. LOAD `SMALL-WARM sprites 37952→71700 us`, `LARGE-WARM 34117→67693 us`, premier tir Malwrath `45715→79133 us` ; world/present stables ; MOVE +~24 %, TURN +~24 %. Backing flash natif `MAPFLASH REUSE HIT` (ne pas accuser SD). Aucune preuve de causalité directe par les flags retirés ; comparer des sessions A/B contrôlées avant d'optimiser ou de marquer PR merge-ready. Nouvelle caisse127 vide `BREAK_REMOVE` due au RNG différent, non explosive. `BOUNDARY-INLINE` et log x projectiles préexistants. Voir `MILESTONE_PR236_RENDER_RASTER_FLAGS.md`.
+
+---
+
 ## PR #236 — jalon A PASS classic CYD : retrait `spanFunction` et `piDIB` (27 octobre 2026)
 
 [PR #236](https://github.com/Kharn27/DoomRPG-RE/pull/236), base `main=3635b17fbab573ac67343034c1cdbb8408244623`, code matériel A `5a90de29184f0cf28ce88d2cdecc6618d6b886c3` (attribution par campagne flash ; logs sans fingerprint). CI hôte + firmwares trois profils : [push #40566333068](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40566333068), [PR #40566344525](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40566344525), **SUCCESS**. Les deux champs desktop `Render_t::spanFunction` / `piDIB` et la destruction SDL associée disparaissent de la build CYD ; Render `1464→1456 B` au vrai boot, aucun deuxième framebuffer.
