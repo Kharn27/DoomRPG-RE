@@ -52,6 +52,9 @@ typedef struct GameplayFrameScratch_s {
  * the generic gameplay session owns the proven cold/warm/large-cache lifecycle.
  */
 static GameplayFrameScratch frameScratch;
+/* PR236 B diagnostic is capped: cache preflight and earliest gameplay
+ * renders only; no per-range/sprite serial output. */
+static uint8_t spriteFlashProfileFrames = 0U;
 
 static uint32_t fnv1aUpdate(uint32_t hash, const void* data, uint32_t bytes) {
     const uint8_t* p = (const uint8_t*)data;
@@ -167,6 +170,8 @@ static int renderComposed(
     uint32_t renderBeforeSpritesFNV;
     uint32_t renderAfterSpritesFNV;
     uint32_t hudAfterWorldFNV;
+    uint32_t flashReadBefore = 0U;
+    uint32_t flashReadDuringSprites = 0U;
     int64_t totalStart;
     int64_t phaseStart;
     int strictSpriteWitness;
@@ -243,6 +248,7 @@ static int renderComposed(
     }
 
     EspAssetPack_residentGetStats(&spriteStorageBefore);
+    flashReadBefore = EspAssetPack_mapFlashRuntimeReadMicros();
     phaseStart = esp_timer_get_time();
     renderBeforeSpritesFNV = fnv1a(render, (uint32_t)sizeof(*render));
     strictSpriteWitness = preview
@@ -250,7 +256,24 @@ static int renderComposed(
         : EspNativeSpriteRenderer_render(render, sprites);
     renderAfterSpritesFNV = fnv1a(render, (uint32_t)sizeof(*render));
     stats->spriteMicros = elapsedMicros(phaseStart);
+    flashReadDuringSprites =
+        EspAssetPack_mapFlashRuntimeReadMicros() - flashReadBefore;
     EspAssetPack_residentGetStats(&spriteStorageAfter);
+    if (spriteFlashProfileFrames < 16U && EspAssetPack_isMapFlashActive()) {
+        ++spriteFlashProfileFrames;
+        printf("[SPRITEFLASH] sample=%u preview=%u spriteUs=%u flashReadUs=%u otherUs=%u reads=%u bytes=%u backing=raw-partition\n",
+               (unsigned int)spriteFlashProfileFrames,
+               (unsigned int)preview,
+               (unsigned int)stats->spriteMicros,
+               (unsigned int)flashReadDuringSprites,
+               (unsigned int)(stats->spriteMicros >= flashReadDuringSprites
+                                  ? stats->spriteMicros - flashReadDuringSprites
+                                  : 0U),
+               (unsigned int)(spriteStorageAfter.physicalReads -
+                              spriteStorageBefore.physicalReads),
+               (unsigned int)(spriteStorageAfter.physicalBytes -
+                              spriteStorageBefore.physicalBytes));
+    }
     DRPG_LOGT("[SPRITEPROFILE] us=%u logicalReads=%u frameLoads=%u glowLoads=%u unique=%u frameBytes=%u glowBytes=%u physicalReads=%u physicalBytes=%u range=%uH/%uM/%uS/%uB entry=%uH/%uM resident=%u cache=%u/%u entries=%u/%u large=%u\n",
            (unsigned int)stats->spriteMicros,
            (unsigned int)sprites->packReads,

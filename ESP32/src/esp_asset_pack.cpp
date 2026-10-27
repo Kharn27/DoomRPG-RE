@@ -132,6 +132,8 @@ bool residentEnabled = false;
 bool residentLargeRangeEnabled = false;
 ResidentCache* residentCache = nullptr;
 EspAssetPackResidentStats residentStats = {};
+/* PR236 B timing witness; uint32 subtraction is valid over one bounded frame. */
+uint32_t mapFlashRuntimeReadMicros = 0U;
 MapFlashState mapFlash = {};
 EspAssetPackMapFlashProgressCallback mapFlashProgressCallback = nullptr;
 
@@ -276,9 +278,18 @@ bool mapFlashRead(uint32_t offset, void* destination, size_t length,
         length > (size_t)(mapFlash.partition->size - offset)) {
         return false;
     }
-    if (esp_partition_read(mapFlash.partition, offset, destination, length) != ESP_OK) {
-        return false;
+    /* Two timestamps per runtime raw-flash read; no extra I/O or log here. */
+    const int64_t readStart = (countRuntime && residentEnabled)
+                                  ? esp_timer_get_time() : 0LL;
+    const esp_err_t readResult =
+        esp_partition_read(mapFlash.partition, offset, destination, length);
+    if (readStart != 0LL) {
+        const int64_t elapsed = esp_timer_get_time() - readStart;
+        if (elapsed > 0LL) {
+            mapFlashRuntimeReadMicros += (uint32_t)elapsed;
+        }
     }
+    if (readResult != ESP_OK) return false;
     if (countRuntime) {
         ++mapFlash.stats.flashReads;
         mapFlash.stats.flashBytes += (uint32_t)length;
@@ -1779,6 +1790,12 @@ int EspAssetPack_isResident(void)
 void EspAssetPack_residentResetStats(void)
 {
     memset(&residentStats, 0, sizeof(residentStats));
+    mapFlashRuntimeReadMicros = 0U;
+}
+
+uint32_t EspAssetPack_mapFlashRuntimeReadMicros(void)
+{
+    return mapFlashRuntimeReadMicros;
 }
 
 void EspAssetPack_residentGetStats(EspAssetPackResidentStats* outStats)

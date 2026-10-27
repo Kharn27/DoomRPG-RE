@@ -265,4 +265,20 @@ for subtree in (NATIVE / "src", NATIVE / "include"):
                 "retired desktop raster/span reference", path, name
             )
 
-print("PASS 23 retired Render ABIs; CYD Render_t omits seven raster flags and desktop handles; skipCull remains native")
+
+# PR236 B bounded hardware diagnosis: identify raw-flash I/O vs sprite work.
+# No new reads, textures, heap buffers, or per-range logging.
+profile_header = (NATIVE / "include/esp_asset_pack.h").read_text()
+profile_pack = (NATIVE / "src/esp_asset_pack.cpp").read_text()
+profile_frame = (NATIVE / "src/esp_native_gameplay_frame.c").read_text()
+assert "EspAssetPack_mapFlashRuntimeReadMicros(void);" in profile_header
+assert "const esp_err_t readResult =" in profile_pack
+assert "esp_partition_read(mapFlash.partition, offset, destination, length)" in profile_pack
+assert "mapFlashRuntimeReadMicros += (uint32_t)elapsed;" in profile_pack
+assert "mapFlashRuntimeReadMicros = 0U;" in profile_pack
+assert "flashReadBefore = EspAssetPack_mapFlashRuntimeReadMicros();" in profile_frame
+assert "flashReadDuringSprites =" in profile_frame
+assert "[SPRITEFLASH] sample=" in profile_frame
+assert "spriteFlashProfileFrames < 16U" in profile_frame
+
+print("PASS 23 retired Render ABIs; CYD Render_t omits seven raster flags and desktop handles; skipCull remains native; bounded PR236 sprite-flash profiler wired")

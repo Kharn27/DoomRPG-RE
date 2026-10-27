@@ -165,6 +165,11 @@ int EspAssetPack_residentLargeRangeBegin(void);
 int EspAssetPack_residentLargeRangeEnd(void);
 int EspAssetPack_isResidentLargeRangeEnabled(void);
 
+/* Temporary PR236 B latency probe: cumulative microseconds inside runtime
+ * esp_partition_read() only. No extra read/allocation, sample differences
+ * around one sprite-render phase; reset with resident counters. */
+uint32_t EspAssetPack_mapFlashRuntimeReadMicros(void);
+
 /* Returns one fixed-size source-index record by ordinal. The active backing may
  * be SD or the verified raw-flash copy, but callers always see original PAK
  * offsets/size/CRC/flags.
