@@ -3,6 +3,10 @@
 #include <assert.h>
 #include "../src/esp_native_sprite_renderer.c"
 
+/* The admission test passes NULL for the on-device profiling sink.
+ * Resolve the timer symbol without adding a dependency on ESP-IDF. */
+int64_t esp_timer_get_time(void) { return 0LL; }
+
 static unsigned mapReads, visualReads, entityReads, liveQueries, previewQueries;
 static EspMapSprite fixture = {544, 928, 1};
 static uint8_t fixtureVisual;
