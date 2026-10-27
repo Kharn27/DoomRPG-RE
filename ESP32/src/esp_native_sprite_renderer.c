@@ -169,6 +169,11 @@ typedef struct TransientWorldBatch_s {
 static TransientWorldBatch transientWorldBatch;
 static uint8_t scratchOwnerLogged;
 
+/* PR236 bounded sprite phase witness: no extra reads or allocations, no
+ * per-object logging. Each measurement is inside the existing renderer.
+ * The cap includes 5 load/warm renders plus the first gameplay previews. */
+static uint8_t spritePhaseSampleCount;
+
 static uint16_t le16(const uint8_t* p) {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
 }
@@ -1450,6 +1455,13 @@ static int renderImpl(struct Render_s* renderBase,
     uint32_t dropOrderCount = 0U;
     uint32_t i;
     uint32_t dropIndex = 0U;
+    int64_t profileT0 = 0LL;
+    int64_t profileT1 = 0LL;
+    int64_t profileT2 = 0LL;
+    int64_t profileT3 = 0LL;
+    int64_t profileT4 = 0LL;
+    int64_t profileT5 = 0LL;
+    int64_t profileT6 = 0LL;
     int opened = 0;
     int ok = 0;
 
@@ -1463,6 +1475,7 @@ static int renderImpl(struct Render_s* renderBase,
         return 0;
     }
 
+    profileT0 = esp_timer_get_time();
     workspace = (SpriteWorkspace*)malloc(sizeof(*workspace));
     if (workspace == NULL) return 0;
     saved = (Scratch*)malloc(sizeof(*saved));
@@ -1481,6 +1494,7 @@ static int renderImpl(struct Render_s* renderBase,
                (unsigned int)sizeof(*workspace));
     }
 
+    profileT1 = esp_timer_get_time();
     ambientSampleMs = (uint32_t)(esp_timer_get_time()/1000LL);
     if (!(preview
               ? EspNativeBspVisibility_buildForView(
@@ -1489,6 +1503,8 @@ static int renderImpl(struct Render_s* renderBase,
         !setupDrawView(render, view, &workspace->visibility)) {
         goto done;
     }
+
+    profileT2 = esp_timer_get_time();
 
     stats.depthNodes = workspace->visibility.nodes;
     stats.depthLeaves = workspace->visibility.leaves;
@@ -1523,9 +1539,11 @@ static int renderImpl(struct Render_s* renderBase,
                    (unsigned int)spritesMutated);
         }
     }
+    profileT3 = esp_timer_get_time();
     if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) goto done;
     opened = 1;
     if (!initSources(&sources, &stats)) goto done;
+    profileT4 = esp_timer_get_time();
 
     i = 0U;
     dropIndex = 0U;
@@ -1559,6 +1577,8 @@ static int renderImpl(struct Render_s* renderBase,
         goto done;
     }
 
+    profileT5 = esp_timer_get_time();
+
     /* A complete frame need not contain a visible additive sprite or glow.
      * Those nonzero witnesses happened to hold on Entrance and Junction,
      * but not on every sector/camera pose. Accept only if *every* real map
@@ -1574,6 +1594,7 @@ static int renderImpl(struct Render_s* renderBase,
              stats.bspCandidates &&
          stats.glowDraws + stats.glowNearCulled + stats.glowClipCulled ==
              stats.glowCompanions;
+    profileT6 = esp_timer_get_time();
 
 done:
     if (opened || EspAssetPack_isOpen()) EspAssetPack_close();
@@ -1589,6 +1610,27 @@ done:
         ambientRapidCandidates=(uint8_t)(stats.ambientRapidCandidates!=0U);
     } else EspNativeSpriteRenderer_suspendAmbient();
     *outStats = stats;
+    if (ok && spritePhaseSampleCount < 16U && profileT0 != 0LL &&
+        profileT1 >= profileT0 && profileT2 >= profileT1 &&
+        profileT3 >= profileT2 && profileT4 >= profileT3 &&
+        profileT5 >= profileT4 && profileT6 >= profileT5) {
+        const int64_t finished = esp_timer_get_time();
+        ++spritePhaseSampleCount;
+        printf("[SPRITEPHASE] sample=%u preview=%u allocUs=%u visibilityUs=%u orderUs=%u sourcesUs=%u drawUs=%u validateUs=%u cleanupUs=%u sprites=%u drops=%u draws=%u pixels=%u\\n",
+               (unsigned int)spritePhaseSampleCount,
+               (unsigned int)preview,
+               (unsigned int)(profileT1 - profileT0),
+               (unsigned int)(profileT2 - profileT1),
+               (unsigned int)(profileT3 - profileT2),
+               (unsigned int)(profileT4 - profileT3),
+               (unsigned int)(profileT5 - profileT4),
+               (unsigned int)(profileT6 - profileT5),
+               (unsigned int)(finished - profileT6),
+               (unsigned int)orderCount,
+               (unsigned int)dropOrderCount,
+               (unsigned int)stats.draws,
+               (unsigned int)stats.pixelsDrawn);
+    }
     return ok;
 }
 

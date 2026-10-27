@@ -147,10 +147,6 @@ typedef struct Render_s
 #ifndef DOOMRPG_ESP32
 	boolean skipStretch;
 	boolean unk4;
-#else
-	/* PR236 B temporary controlled A-layout witness: keep the prior two
-	 * four-byte field offsets, but do not reintroduce desktop flag APIs. */
-	int espRasterLayoutBeforeCull[2];
 #endif
 	boolean skipCull;
 #ifndef DOOMRPG_ESP32
@@ -159,10 +155,6 @@ typedef struct Render_s
 	boolean unk5;
 	boolean skipSprites;
 	boolean skipViewNudge;
-#else
-	/* Prior five four-byte desktop slots: offset-only experiment.
-	 * Remove these reserves after the CYD A/B timing diagnosis. */
-	int espRasterLayoutAfterCull[5];
 #endif
 	int lineCount;
 	int lineRasterCount;

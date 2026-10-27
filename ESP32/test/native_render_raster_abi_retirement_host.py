@@ -158,9 +158,15 @@ assert "SDL_DestroyTexture(render->piDIB)" not in root
 assert "render->framebuffer = sharedFramebuffer;" in startup
 assert "render->framebuffer = NULL;" in root
 
-# The seven desktop flags remain API-inaccessible on CYD. This PR236
-# temporary A-offset experiment pads precisely their old word positions,
-# while preserving active skipCull and spanMode. Detailed guards below.
+# The seven desktop raster gate flags are removed from the CYD layout.
+# Preserve skipCull: native BSP geometry still reads it. Never accidentally
+# delete active spanMode or the culling camera/column scratch.
+assert re.search(
+    r"#ifndef DOOMRPG_ESP32\s+boolean skipStretch;\s+boolean unk4;\s+#endif"
+    r"\s+boolean skipCull;\s+#ifndef DOOMRPG_ESP32"
+    r"\s+boolean skipBSP;\s+boolean skipLines;\s+boolean unk5;"
+    r"\s+boolean skipSprites;\s+boolean skipViewNudge;\s+#endif", HEADER
+), "retired raster gates must be desktop-only; skipCull must remain native"
 assert "render->skipCull = 0;" in root
 
 # The sprite renderer is the other owner of transactional frame scratch.
@@ -170,21 +176,8 @@ sprite = (NATIVE / "src/esp_native_sprite_renderer.c").read_text()
 assert "Line_t tmpLine;" not in sprite
 assert "->tmpLine" not in sprite
 assert "_Static_assert(sizeof(Scratch) <= 740U" in sprite
-assert "sizeof(Render_t) == 1456U" in (
+assert "sizeof(Render_t) == 1428U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
-assert "int espRasterLayoutBeforeCull[2];" in HEADER
-assert "int espRasterLayoutAfterCull[5];" in HEADER
-assert re.search(
-    r"#ifndef DOOMRPG_ESP32\s+boolean skipStretch;\s+boolean unk4;"
-    r"\s+#else\s+/\*.*?\*/\s+int espRasterLayoutBeforeCull\[2\];\s+#endif"
-    r"\s+boolean skipCull;", HEADER, flags=re.S
-), "A-layout probe must pad before native skipCull without reviving flags"
-assert re.search(
-    r"#ifndef DOOMRPG_ESP32\s+boolean skipBSP;\s+boolean skipLines;"
-    r"\s+boolean unk5;\s+boolean skipSprites;\s+boolean skipViewNudge;"
-    r"\s+#else\s+/\*.*?\*/\s+int espRasterLayoutAfterCull\[5\];"
-    r"\s+#endif", HEADER, flags=re.S
-), "A-layout probe must pad after native skipCull without reviving flags"
 assert re.search(
     r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
     r"\s+struct Line_s tmpLine;\s+#endif", HEADER
@@ -290,4 +283,16 @@ assert "spriteFlashProfileFrames < 16U" in profile_frame
 assert profile_frame.count("#if defined(ARDUINO_ARCH_ESP32)") >= 4
 assert "#endif\n    DRPG_LOGT(\"[SPRITEPROFILE]" in profile_frame
 
-print("PASS 23 retired Render ABIs; CYD Render_t omits seven raster flags and desktop handles; skipCull remains native; bounded PR236 sprite-flash profiler wired, temporary A-offsets probe")
+# PR236 second-stage bounded phase breakdown must not log per sprite.
+sprite_phase = (NATIVE / "src/esp_native_sprite_renderer.c").read_text()
+assert "spritePhaseSampleCount < 16U" in sprite_phase
+assert "[SPRITEPHASE] sample=" in sprite_phase
+assert "visibilityUs=%u orderUs=%u sourcesUs=%u drawUs=%u" in sprite_phase
+assert "profileT1 = esp_timer_get_time();" in sprite_phase
+assert "profileT2 = esp_timer_get_time();" in sprite_phase
+assert "profileT3 = esp_timer_get_time();" in sprite_phase
+assert "profileT4 = esp_timer_get_time();" in sprite_phase
+assert "profileT5 = esp_timer_get_time();" in sprite_phase
+assert "profileT6 = esp_timer_get_time();" in sprite_phase
+
+print("PASS 23 retired Render ABIs; CYD Render_t omits seven raster flags and desktop handles; bounded PR236 sprite-phase probe")
