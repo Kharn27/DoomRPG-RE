@@ -15,9 +15,11 @@
 /* Include ESP-IDF bool macros only after DoomRPG's legacy boolean enum. */
 #include <esp_heap_caps.h>
 #if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
-/* Desktop/bringup retain the original legacy BSP flags; production does not. */
-_Static_assert(sizeof(Render_t) == 1428U,
-               "Render_t must omit retired desktop raster controls and storage");
+/* PR236 B performance isolation: preserve A field offsets using inert
+ * reservations, not desktop flag APIs. This is a temporary hardware probe.
+ * Remove the reserves when the slowdown mechanism has been characterized. */
+_Static_assert(sizeof(Render_t) == 1456U,
+               "PR236 A-layout probe must exactly restore the 1456-byte shell");
 #endif
 
 
