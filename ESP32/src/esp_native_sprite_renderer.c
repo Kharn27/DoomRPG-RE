@@ -1616,7 +1616,7 @@ done:
         profileT5 >= profileT4 && profileT6 >= profileT5) {
         const int64_t finished = esp_timer_get_time();
         ++spritePhaseSampleCount;
-        printf("[SPRITEPHASE] sample=%u preview=%u allocUs=%u visibilityUs=%u orderUs=%u sourcesUs=%u drawUs=%u validateUs=%u cleanupUs=%u sprites=%u drops=%u draws=%u pixels=%u\\n",
+        printf("[SPRITEPHASE] sample=%u preview=%u allocUs=%u visibilityUs=%u orderUs=%u sourcesUs=%u drawUs=%u validateUs=%u cleanupUs=%u sprites=%u drops=%u draws=%u pixels=%u\n",
                (unsigned int)spritePhaseSampleCount,
                (unsigned int)preview,
                (unsigned int)(profileT1 - profileT0),
