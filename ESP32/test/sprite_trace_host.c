@@ -66,7 +66,7 @@ int main(void) {
             fixtureVisible = outcome == 2;
             memset(&stats, 0, sizeof(stats));
             assert(buildOrder(&render, &runtime, &visibility, order, &stats,
-                              &count, (int)preview));
+                              &count, (int)preview, NULL));
             assert(count == (outcome == 2 ? 2U : 0U));
             assert(stats.hidden == (outcome == 0 ? 2U : 0U));
             assert(stats.bspRejected == (outcome == 1 ? 2U : 0U));
