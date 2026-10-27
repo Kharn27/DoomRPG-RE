@@ -1,5 +1,11 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #235 — jalon A : PASS CYD (27 octobre 2026)
+
+Code A `89f22d69a2e4e7d4f6b08bde14f8c8564357ff62` (branche `agent/esp32-render-retire-tmpline`, base `main=47466adb`, PR #235). CI push #40547512112 / PR #40547636830 SUCCESS. Retrait du dernier `Render_t::tmpLine` des firmwares : `Render_t` 1532→1500 B, transaction sprites -32 B, oracle desktop préservé. START/INTRO/Entrance/EXIT et LOAD V11 slot04/Malwrath/EXIT passés matériellement : intro `ade0195d`, FIRST_FRAME `71ca7465`, sprite324 draws 4→2→0, deux salves de projectiles204 drainées, deux `RESIDENTRESET released=18008 empty=1` et menu `0f2c9fc3`. Heap8 gameplay 113972 et menu 159908 (+36 B vs #234), `shapeData=mediaTexels=NULL`. Anomalies préexistantes BOUNDARY-INLINE et abscisses projectiles inchangées ; ni toutes-cartes ni SAVE neuf. Détails dans `ESP32/MILESTONE_PR235_RENDER_TMLINE.md`. Code A gelé ; jalon B sur la même branche, avec nouveaux tests CYD et merge exclusivement utilisateur.
+
+---
+
 ## PR #234 — jalon B PASS CYD, visibilité BSP sans snapshot `tmpLine` (27 octobre 2026)
 
 **Code B testé : `675611bb274e89dc39bee12698274dc2d0f033b2`**, branche conservée `agent/esp32-bsp-cull-private-scratch`, [PR #234](https://github.com/Kharn27/DoomRPG-RE/pull/234) sur `main=47d30a74f830720590527b6edc6459d97cf66f6d`. [CI code B #40470486448](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40470486448) SUCCESS. Les logs Serial n'ont pas de fingerprint SHA du firmware ; l'identification du code testé repose sur la procédure flash/branche. Jalon A déjà PASS et documenté plus bas, avec commit docs-only `33b07408`, CI post-doc A `#40470052349` SUCCESS.
