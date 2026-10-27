@@ -1,6 +1,7 @@
 /* Differential geometry versus the seven desktop reference bodies extracted
- * by render_geometry_host.py. No live game RNG, raster, SD or CYD is mocked
- * into existence: these pure frame-scratch operations have no such owners. */
+ * by render_geometry_host.py. This host-only oracle fixture retains the desktop
+ * tmpLine field; actual ESP32 Render_t has no such field. No live game RNG,
+ * raster, SD or CYD is mocked into existence here. */
 #include <assert.h>
 #include <limits.h>
 #include <stdint.h>

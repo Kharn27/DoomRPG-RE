@@ -134,9 +134,14 @@ typedef struct Scratch_s {
     int numLines;
     byte spanMode;
     short* pixels;
-    Line_t tmpLine;
     int columnScale[SCREEN_W];
 } Scratch;
+
+/* Sprite projection/clipping uses local Line_t values, so this transactional
+ * frame snapshot must never carry the retired Render_t::tmpLine. Keep the
+ * heap-allocated scratch bounded on both 32-bit CYD and 64-bit host. */
+_Static_assert(sizeof(Scratch) <= 740U,
+               "sprite frame scratch must not retain desktop tmpLine");
 
 typedef struct PersistentDropOrder_s {
     uint8_t slot;
@@ -301,7 +306,6 @@ static void saveScratch(Render_t* render, Scratch* scratch) {
     scratch->numLines = render->numLines;
     scratch->spanMode = render->spanMode;
     scratch->pixels = render->pixels;
-    scratch->tmpLine = render->tmpLine;
     memcpy(scratch->columnScale, render->columnScale,
            sizeof(scratch->columnScale));
 }
@@ -330,7 +334,6 @@ static void restoreScratch(Render_t* render, const Scratch* scratch) {
     render->numLines = scratch->numLines;
     render->spanMode = scratch->spanMode;
     render->pixels = scratch->pixels;
-    render->tmpLine = scratch->tmpLine;
     memcpy(render->columnScale, scratch->columnScale,
            sizeof(scratch->columnScale));
 }
@@ -360,8 +363,6 @@ static int scratchMatches(const Render_t* render, const Scratch* scratch) {
            render->numLines == scratch->numLines &&
            render->spanMode == scratch->spanMode &&
            render->pixels == scratch->pixels &&
-           memcmp(&render->tmpLine, &scratch->tmpLine,
-                  sizeof(scratch->tmpLine)) == 0 &&
            memcmp(render->columnScale, scratch->columnScale,
                   sizeof(scratch->columnScale)) == 0;
 }

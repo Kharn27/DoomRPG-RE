@@ -1,5 +1,21 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #235 — jalon B PASS classic CYD : palettes desktop span retirées (27 octobre 2026)
+
+**Code testé : `ff28238ad441fa6dafc307c326fdd59680f80332`**, branche `agent/esp32-render-retire-tmpline`, base `main=47466adb879c2e4be0965fd0e62de0bf1b6fb242`, [PR #235](https://github.com/Kharn27/DoomRPG-RE/pull/235). [CI code push #40560076246](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40560076246) et [PR #40560086753](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40560086753) SUCCESS. `Render_t::spanPalettes` et `newSpanPalette[16]` réservés à `src/Render.c` desktop, exclus du build ESP32 : **`sizeof(Render_t)=1464`** (vs 1500 pour A) confirmé par le boot CYD, `Game=0 Canvas=44 Total=2268`. Garde hôte native ajoutée. Pas de changement de raster, PAK, RNG, gameplay ni sauvegarde.
+
+**START→INTRO→Entrance→EXIT** : intro `ade0195d`, BSP CRC `623f34e4`, arène `14095/c3882516`, première frame **`71ca7465`**, déplacements/strafe/rotations, caisse127→Armor Shard, armure 0→4→8→12, dialogue88 opcode8→19 et annulation seconde boîte, porte275 animée ouverte puis refermée après monster turn, caisse56→Rocket ramassée. **LOAD slot04 V11→Malwrath→EXIT** : checkpoint 5604B, `beaeaccc/50e16fe3/e2a9d90a`, porte113, sprite324 copies4/draws4→2→0, deux ripostes de trois projectiles204 drainés avant dégâts, Malwrath HP11→6→2→0 (shotgun+shotgun+pistolet), drop Health Vial tile284, Bullet Clips sprite324 tile317, Flak Jacket tile253, secret portes112/111 +5XP. Deux `RESIDENTRESET 141928→159936 released=18008 empty=1` ; deux menus `0f2c9fc3`, sortie sans SAVE, `shapeData=mediaTexels=NULL`. Heap8 gameplay `113988/86004` (+16B vs A), menu `159936/110580` (+28B vs A), bloc max inchangé.
+
+Aucun fatal/RNG fail visible, mais `BOUNDARY-INLINE` et décalage de coordonnées x des projectiles de `0x40000000` toujours présents. Ni SAVE neuf, ni endurance/toutes-cartes, ni A/B vitesse ou fingerprint du SHA embarqué. Détails dans `ESP32/MILESTONE_PR235_RENDER_SPAN_PALETTE.md`. **Geler code B `ff28238ad`, terminer uniquement par documentation + CI post-doc, puis PR merge-ready ; merge utilisateur uniquement.**
+
+---
+
+## PR #235 — jalon A : PASS CYD (27 octobre 2026)
+
+Code A `89f22d69a2e4e7d4f6b08bde14f8c8564357ff62` (branche `agent/esp32-render-retire-tmpline`, base `main=47466adb`, PR #235). CI push #40547512112 / PR #40547636830 SUCCESS. Retrait du dernier `Render_t::tmpLine` des firmwares : `Render_t` 1532→1500 B, transaction sprites -32 B, oracle desktop préservé. START/INTRO/Entrance/EXIT et LOAD V11 slot04/Malwrath/EXIT passés matériellement : intro `ade0195d`, FIRST_FRAME `71ca7465`, sprite324 draws 4→2→0, deux salves de projectiles204 drainées, deux `RESIDENTRESET released=18008 empty=1` et menu `0f2c9fc3`. Heap8 gameplay 113972 et menu 159908 (+36 B vs #234), `shapeData=mediaTexels=NULL`. Anomalies préexistantes BOUNDARY-INLINE et abscisses projectiles inchangées ; ni toutes-cartes ni SAVE neuf. Détails dans `ESP32/MILESTONE_PR235_RENDER_TMLINE.md`. Code A gelé ; jalon B sur la même branche, avec nouveaux tests CYD et merge exclusivement utilisateur.
+
+---
+
 ## PR #234 — jalon B PASS CYD, visibilité BSP sans snapshot `tmpLine` (27 octobre 2026)
 
 **Code B testé : `675611bb274e89dc39bee12698274dc2d0f033b2`**, branche conservée `agent/esp32-bsp-cull-private-scratch`, [PR #234](https://github.com/Kharn27/DoomRPG-RE/pull/234) sur `main=47d30a74f830720590527b6edc6459d97cf66f6d`. [CI code B #40470486448](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40470486448) SUCCESS. Les logs Serial n'ont pas de fingerprint SHA du firmware ; l'identification du code testé repose sur la procédure flash/branche. Jalon A déjà PASS et documenté plus bas, avec commit docs-only `33b07408`, CI post-doc A `#40470052349` SUCCESS.
