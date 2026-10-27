@@ -280,5 +280,7 @@ assert "flashReadBefore = EspAssetPack_mapFlashRuntimeReadMicros();" in profile_
 assert "flashReadDuringSprites =" in profile_frame
 assert "[SPRITEFLASH] sample=" in profile_frame
 assert "spriteFlashProfileFrames < 16U" in profile_frame
+assert profile_frame.count("#if defined(ARDUINO_ARCH_ESP32)") >= 4
+assert "#endif\n    DRPG_LOGT(\"[SPRITEPROFILE]" in profile_frame
 
 print("PASS 23 retired Render ABIs; CYD Render_t omits seven raster flags and desktop handles; skipCull remains native; bounded PR236 sprite-flash profiler wired")

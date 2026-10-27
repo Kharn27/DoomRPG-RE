@@ -52,9 +52,12 @@ typedef struct GameplayFrameScratch_s {
  * the generic gameplay session owns the proven cold/warm/large-cache lifecycle.
  */
 static GameplayFrameScratch frameScratch;
-/* PR236 B diagnostic is capped: cache preflight and earliest gameplay
- * renders only; no per-range/sprite serial output. */
+/* PR236 B probe uses the real ESP32 flash driver. Host-only fixtures link
+ * the frame compositor without any physical partition and must not depend
+ * on its metrics; this guard also avoids adding fixture mock state. */
+#if defined(ARDUINO_ARCH_ESP32)
 static uint8_t spriteFlashProfileFrames = 0U;
+#endif
 
 static uint32_t fnv1aUpdate(uint32_t hash, const void* data, uint32_t bytes) {
     const uint8_t* p = (const uint8_t*)data;
@@ -170,8 +173,10 @@ static int renderComposed(
     uint32_t renderBeforeSpritesFNV;
     uint32_t renderAfterSpritesFNV;
     uint32_t hudAfterWorldFNV;
+#if defined(ARDUINO_ARCH_ESP32)
     uint32_t flashReadBefore = 0U;
     uint32_t flashReadDuringSprites = 0U;
+#endif
     int64_t totalStart;
     int64_t phaseStart;
     int strictSpriteWitness;
@@ -248,7 +253,9 @@ static int renderComposed(
     }
 
     EspAssetPack_residentGetStats(&spriteStorageBefore);
+#if defined(ARDUINO_ARCH_ESP32)
     flashReadBefore = EspAssetPack_mapFlashRuntimeReadMicros();
+#endif
     phaseStart = esp_timer_get_time();
     renderBeforeSpritesFNV = fnv1a(render, (uint32_t)sizeof(*render));
     strictSpriteWitness = preview
@@ -256,9 +263,12 @@ static int renderComposed(
         : EspNativeSpriteRenderer_render(render, sprites);
     renderAfterSpritesFNV = fnv1a(render, (uint32_t)sizeof(*render));
     stats->spriteMicros = elapsedMicros(phaseStart);
+#if defined(ARDUINO_ARCH_ESP32)
     flashReadDuringSprites =
         EspAssetPack_mapFlashRuntimeReadMicros() - flashReadBefore;
+#endif
     EspAssetPack_residentGetStats(&spriteStorageAfter);
+#if defined(ARDUINO_ARCH_ESP32)
     if (spriteFlashProfileFrames < 16U && EspAssetPack_isMapFlashActive()) {
         ++spriteFlashProfileFrames;
         printf("[SPRITEFLASH] sample=%u preview=%u spriteUs=%u flashReadUs=%u otherUs=%u reads=%u bytes=%u backing=raw-partition\n",
@@ -274,6 +284,7 @@ static int renderComposed(
                (unsigned int)(spriteStorageAfter.physicalBytes -
                               spriteStorageBefore.physicalBytes));
     }
+#endif
     DRPG_LOGT("[SPRITEPROFILE] us=%u logicalReads=%u frameLoads=%u glowLoads=%u unique=%u frameBytes=%u glowBytes=%u physicalReads=%u physicalBytes=%u range=%uH/%uM/%uS/%uB entry=%uH/%uM resident=%u cache=%u/%u entries=%u/%u large=%u\n",
            (unsigned int)stats->spriteMicros,
            (unsigned int)sprites->packReads,
