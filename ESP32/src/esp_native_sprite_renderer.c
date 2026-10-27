@@ -174,6 +174,17 @@ static uint8_t scratchOwnerLogged;
  * The cap includes 5 load/warm renders plus the first gameplay previews. */
 static uint8_t spritePhaseSampleCount;
 
+/* Additional bounded breakdown of the map-wide admission scan. Timers
+ * touch only already-executed operations, keep semantic access intact,
+ * and are disabled after the same first 16 successful sprite renders. */
+typedef struct SpriteOrderProbe_s {
+    uint32_t recordUs;
+    uint32_t leafQueryUs;
+    uint32_t records;
+    uint32_t hidden;
+    uint32_t queried;
+} SpriteOrderProbe;
+
 static uint16_t le16(const uint8_t* p) {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
 }
@@ -622,7 +633,8 @@ static int buildOrder(Render_t* render,
                       Order order[MAX_VISIBLE_SPRITES],
                       EspNativeSpriteStats* stats,
                       uint32_t* outCount,
-                      int preview) {
+                      int preview,
+                      SpriteOrderProbe* probe) {
     uint32_t i;
     uint32_t count = 0U;
     uint32_t hash = 2166136261U;
@@ -649,11 +661,18 @@ static int buildOrder(Render_t* render,
         int visualX;
         int visualY;
         int32_t sortZ;
+        const int64_t recordStarted = probe != NULL
+                                          ? esp_timer_get_time() : 0LL;
 
         if (!EspMapRuntime_getMapSprite(i, &sprite) ||
             !EspMapSpriteTopology_getVisualState(i, &visual) ||
             !EspMapSpriteTopology_getEntity(i, &type, &subtype, &link, &ordinal)) {
             return 0;
+        }
+        if (probe != NULL) {
+            probe->recordUs += (uint32_t)(esp_timer_get_time() -
+                                          recordStarted);
+            ++probe->records;
         }
         (void)subtype;
         (void)link;
@@ -675,12 +694,22 @@ static int buildOrder(Render_t* render,
         if ((info & HIDDEN) != 0U) {
             TRACE_SPRITE(i, "[SPRITETRACE] ADMISSION sprite=%u result=hidden\n", (unsigned int)i);
             ++stats->hidden;
+            if (probe != NULL) ++probe->hidden;
             continue;
         }
 
-        visible = preview
-            ? EspNativeBspVisibility_mapSpriteVisibleReadOnly(visibility, i, &leaf)
-            : EspNativeBspVisibility_mapSpriteVisible(visibility, i, &leaf);
+        {
+            const int64_t queryStarted = probe != NULL
+                                               ? esp_timer_get_time() : 0LL;
+            visible = preview
+                ? EspNativeBspVisibility_mapSpriteVisibleReadOnly(visibility, i, &leaf)
+                : EspNativeBspVisibility_mapSpriteVisible(visibility, i, &leaf);
+            if (probe != NULL) {
+                probe->leafQueryUs += (uint32_t)(esp_timer_get_time() -
+                                                 queryStarted);
+                ++probe->queried;
+            }
+        }
         if (!visible) {
             TRACE_SPRITE(i, "[SPRITETRACE] ADMISSION sprite=%u result=bsp-rejected leaf=%u\n", (unsigned int)i, (unsigned int)leaf);
             if (leaf == UINT32_MAX) return 0;
@@ -1455,6 +1484,8 @@ static int renderImpl(struct Render_s* renderBase,
     uint32_t dropOrderCount = 0U;
     uint32_t i;
     uint32_t dropIndex = 0U;
+    SpriteOrderProbe orderProbe;
+    int64_t orderScanDone = 0LL;
     int64_t profileT0 = 0LL;
     int64_t profileT1 = 0LL;
     int64_t profileT2 = 0LL;
@@ -1486,6 +1517,7 @@ static int renderImpl(struct Render_s* renderBase,
     memset(workspace, 0, sizeof(*workspace));
     memset(saved, 0, sizeof(*saved));
     memset(&stats, 0, sizeof(stats));
+    memset(&orderProbe, 0, sizeof(orderProbe));
     saveScratch(render, saved);
     if (scratchOwnerLogged == 0U) {
         scratchOwnerLogged = 1U;
@@ -1516,9 +1548,11 @@ static int renderImpl(struct Render_s* renderBase,
     stats.depthSpriteSpans = workspace->visibility.spriteSpans;
 
     if (!buildOrder(render, runtime, &workspace->visibility,
-                    workspace->order, &stats, &orderCount, preview)) {
+                    workspace->order, &stats, &orderCount, preview,
+                    spritePhaseSampleCount < 16U ? &orderProbe : NULL)) {
         goto done;
     }
+    orderScanDone = esp_timer_get_time();
     if (!buildPersistentDropOrder(render, workspace->dropOrder,
                                   &dropOrderCount)) {
         goto done;
@@ -1616,6 +1650,25 @@ done:
         profileT5 >= profileT4 && profileT6 >= profileT5) {
         const int64_t finished = esp_timer_get_time();
         ++spritePhaseSampleCount;
+        if (orderScanDone >= profileT2 && profileT3 >= orderScanDone) {
+            const uint32_t scanUs =
+                (uint32_t)(orderScanDone - profileT2);
+            const uint32_t recordsAndLeaves =
+                orderProbe.recordUs + orderProbe.leafQueryUs;
+            printf("[SPRITEORDER] sample=%u preview=%u records=%u hidden=%u queried=%u recordUs=%u leafUs=%u otherScanUs=%u scanUs=%u postScanUs=%u candidates=%u\n",
+                   (unsigned int)spritePhaseSampleCount,
+                   (unsigned int)preview,
+                   (unsigned int)orderProbe.records,
+                   (unsigned int)orderProbe.hidden,
+                   (unsigned int)orderProbe.queried,
+                   (unsigned int)orderProbe.recordUs,
+                   (unsigned int)orderProbe.leafQueryUs,
+                   (unsigned int)(scanUs >= recordsAndLeaves
+                                      ? scanUs - recordsAndLeaves : 0U),
+                   (unsigned int)scanUs,
+                   (unsigned int)(profileT3 - orderScanDone),
+                   (unsigned int)orderCount);
+        }
         printf("[SPRITEPHASE] sample=%u preview=%u allocUs=%u visibilityUs=%u orderUs=%u sourcesUs=%u drawUs=%u validateUs=%u cleanupUs=%u sprites=%u drops=%u draws=%u pixels=%u\n",
                (unsigned int)spritePhaseSampleCount,
                (unsigned int)preview,

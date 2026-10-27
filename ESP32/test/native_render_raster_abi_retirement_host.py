@@ -295,4 +295,14 @@ assert "profileT4 = esp_timer_get_time();" in sprite_phase
 assert "profileT5 = esp_timer_get_time();" in sprite_phase
 assert "profileT6 = esp_timer_get_time();" in sprite_phase
 
+# Third-stage probe splits the heavy map-wide scan by pure read-only calls.
+# Hardware timings determine whether immutable BSP leaf indexing is warranted.
+assert "typedef struct SpriteOrderProbe_s" in sprite_phase
+assert "spritePhaseSampleCount < 16U ? &orderProbe : NULL" in sprite_phase
+assert "recordUs += (uint32_t)(esp_timer_get_time()" in sprite_phase
+assert "leafQueryUs += (uint32_t)(esp_timer_get_time()" in sprite_phase
+assert "[SPRITEORDER] sample=" in sprite_phase
+assert "postScanUs=%u candidates=%u" in sprite_phase
+assert "orderScanDone = esp_timer_get_time();" in sprite_phase
+
 print("PASS 23 retired Render ABIs; CYD Render_t omits seven raster flags and desktop handles; bounded PR236 sprite-phase probe")
