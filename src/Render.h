@@ -142,14 +142,20 @@ typedef struct Render_s
 	int viewCos;
 	int viewTransY;
 	int sinTable[256];
+	/* Native BSP frustum culling still consumes skipCull. All other flags
+     * in this cluster exclusively controlled the retired desktop raster. */
+#ifndef DOOMRPG_ESP32
 	boolean skipStretch;
 	boolean unk4;
+#endif
 	boolean skipCull;
+#ifndef DOOMRPG_ESP32
 	boolean skipBSP;
 	boolean skipLines;
 	boolean unk5;
 	boolean skipSprites;
 	boolean skipViewNudge;
+#endif
 	int lineCount;
 	int lineRasterCount;
 	int nodeCount;

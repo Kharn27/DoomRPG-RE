@@ -16,8 +16,8 @@
 #include <esp_heap_caps.h>
 #if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 /* Desktop/bringup retain the original legacy BSP flags; production does not. */
-_Static_assert(sizeof(Render_t) == 1456U,
-               "Render_t must omit legacy BSP/plane/line/span palette state");
+_Static_assert(sizeof(Render_t) == 1428U,
+               "Render_t must omit retired desktop raster controls and storage");
 #endif
 
 
