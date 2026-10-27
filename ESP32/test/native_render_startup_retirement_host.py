@@ -32,7 +32,7 @@ normalized = (body.replace("static int " + name + "(", "int Render_startup(")
 h = 2166136261
 for byte in normalized.encode("utf-8"):
     h = ((h ^ byte) * 16777619) & 0xffffffff
-assert h == 0xf6343a76, f"Render_startup implementation drift: {h:08x}"
+assert h == 0x0ca067c4, f"Render_startup implementation drift: {h:08x}"
 
 # Reject any ESP32 C/C++ call/definition with the retired name, ignoring
 # comments and diagnostic strings (which intentionally retain old labels).
@@ -59,7 +59,6 @@ typedef struct Render_s {
     SDL_Rect clipRect;
     int pitch;
     byte* framebuffer;
-    void* piDIB;
     short* mediaPalettes;
     int mediaPalettesLength;
 } Render_t;
@@ -121,10 +120,9 @@ int main(void) {
     for (int n=0;n<4096;++n) {
         resetProbes();
         render.framebuffer=NULL;
-        render.piDIB=(void*)1;
         assert(EspNativeRenderStartup_initialize(&render)==1);
         assert(render.pitch==320);
-        assert(render.framebuffer==framebuffer && render.piDIB==NULL);
+        assert(render.framebuffer==framebuffer);
         assert(render.clipRect.x==0 && render.clipRect.y==0);
         assert(render.clipRect.w==160 && render.clipRect.h==120);
         assert(framebuffer[0]==255 && framebuffer[sizeof(framebuffer)-1]==255);
@@ -169,4 +167,4 @@ with tempfile.TemporaryDirectory(prefix="private-render-startup-") as d:
                     "-Wall", "-Wextra", "-Werror", str(src), "-o", exe],
                    check=True)
     subprocess.run([exe], check=True)
-print("PASS Render_startup retired; private native Render init FNV=f6343a76")
+print("PASS Render_startup retired; shared framebuffer only, native init FNV=0ca067c4")
