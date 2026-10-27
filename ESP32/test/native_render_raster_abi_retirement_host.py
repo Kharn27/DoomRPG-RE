@@ -131,6 +131,17 @@ for owner in ("esp_native_first_frame.c", "esp_native_bsp_visibility.c",
     assert "EspNativeDynamicLineRender_clipLine" in src
     assert not re.search(r"\bRender_clipLine\s*\(", src)
 
+# The visibility query must not snapshot or restore the old Render tmpLine.
+# The culler now creates its own zeroed line and all depth/projection lines
+# are function-local, so the query's transactional scratch excludes tmpLine.
+visibility = (NATIVE / "src/esp_native_bsp_visibility.c").read_text()
+assert "Line_t tmpLine;" not in visibility
+assert "->tmpLine" not in visibility
+assert "_Static_assert(sizeof(Scratch) <= 740U" in visibility
+assert "saveScratch(render, &before);" in visibility
+assert "restoreScratch(render, &before);" in visibility
+assert "if (memcmp(&before, &after, sizeof(before)) != 0)" in visibility
+
 # Both native BSP traversal owners feed compact immutable node bounds directly
 # to the culler. Explicit 16-bit signed conversions preserve legacy short
 # widening, including any unusual source coordinates. No desktop Node_t copy.
@@ -200,4 +211,4 @@ for subtree in (NATIVE / "src", NATIVE / "include"):
                 "retired desktop raster/span reference", path, name
             )
 
-print("PASS 23 retired Render ABIs; private BSP cull scratch, pure frustum clip, explicit animated-door adapter")
+print("PASS 23 retired Render ABIs; private BSP cull scratch, visibility without Render tmpLine snapshot, pure frustum clip")

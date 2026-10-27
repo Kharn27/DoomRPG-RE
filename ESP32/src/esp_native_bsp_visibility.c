@@ -52,9 +52,16 @@ typedef struct Scratch_s {
     int numLines;
     byte spanMode;
     short* pixels;
-    Line_t tmpLine;
     int columnScale[SCREEN_W];
 } Scratch;
+
+/* Visibility takes two stack snapshots (before/after). The culler now owns
+ * all its transient Line_t scratch, while depthLine only modifies its own
+ * local line. No visibility path writes the legacy Render_t::tmpLine, so it
+ * must not be copied/restored by this transaction. This cap covers 32-bit
+ * classic CYD (732 bytes) plus 64-bit host pointer alignment (740 bytes). */
+_Static_assert(sizeof(Scratch) <= 740U,
+               "BSP visibility scratch must remain bounded without tmpLine");
 
 static void saveScratch(Render_t* r, Scratch* s) {
     memset(s, 0, sizeof(*s));
@@ -81,7 +88,6 @@ static void saveScratch(Render_t* r, Scratch* s) {
     s->numLines = r->numLines;
     s->spanMode = r->spanMode;
     s->pixels = r->pixels;
-    s->tmpLine = r->tmpLine;
     memcpy(s->columnScale, r->columnScale, sizeof(s->columnScale));
 }
 
@@ -109,7 +115,6 @@ static void restoreScratch(Render_t* r, const Scratch* s) {
     r->numLines = s->numLines;
     r->spanMode = s->spanMode;
     r->pixels = s->pixels;
-    r->tmpLine = s->tmpLine;
     memcpy(r->columnScale, s->columnScale, sizeof(s->columnScale));
 }
 
