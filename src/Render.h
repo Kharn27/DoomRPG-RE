@@ -73,7 +73,9 @@ typedef short* PlaneTextureRef_t;
 
 typedef struct Render_s
 {
+#ifndef DOOMRPG_ESP32
 	span_t spanFunction;
+#endif
 	int unk0;
 	int screenWidth;
 	int screenHeight;
@@ -200,10 +202,11 @@ typedef struct Render_s
 	int frameTime;
 	struct DoomRPG_s* doomRpg;
 	SDL_Rect clipRect;
+#ifndef DOOMRPG_ESP32
 	SDL_Texture* piDIB;
+#endif
 	int pitch;
 	byte* framebuffer;
-	//IDIB* piDIB;
 	int screenLeft;
 	int screenTop;
 	int screenRight;

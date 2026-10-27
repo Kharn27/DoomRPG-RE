@@ -46,7 +46,7 @@ static void EspNativeEngineRoot_releaseCanvas(DoomCanvas_t* doomCanvas)
 }
 
 /* Process-root-owned Render destructor. The original native cleanup body and
- * freePtr semantics are retained verbatim apart from the private symbol name.
+ * freePtr semantics are preserved, minus the desktop-only SDL texture handle.
  * In particular, the shared PlatformVideo framebuffer must be detached before
  * compatibility cleanup and must never be released by the Render shell.
  * The legacy owner wording in the Serial diagnostic is historical. */
@@ -68,11 +68,6 @@ static void EspNativeEngineRoot_releaseRender(Render_t* render, boolean freePtr)
 
     SDL_free(render->framebuffer);
     render->framebuffer = NULL;
-
-    if (render->piDIB) {
-        SDL_DestroyTexture(render->piDIB);
-        render->piDIB = NULL;
-    }
 
     if (freePtr) {
         SDL_free(render);

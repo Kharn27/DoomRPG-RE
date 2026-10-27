@@ -145,6 +145,19 @@ assert re.search(
     r"\s+unsigned short newSpanPalette\[16\];\s+#endif", HEADER
 ), "desktop span palette fields must be excluded from CYD"
 
+# The native CYD uses one shared PlatformVideo framebuffer, never the
+# desktop span callback or SDL streaming texture handle. The desktop
+# Render.c / Render.h retain the unchanged callback and texture semantics.
+assert re.search(r"#ifndef DOOMRPG_ESP32\s+span_t spanFunction;\s+#endif", HEADER)
+assert re.search(r"#ifndef DOOMRPG_ESP32\s+SDL_Texture\* piDIB;\s+#endif", HEADER)
+startup = (NATIVE / "src/render_startup_bridge.c").read_text()
+root = (NATIVE / "src/engine_stubs.c").read_text()
+assert "render->piDIB" not in startup
+assert "render->piDIB" not in root
+assert "SDL_DestroyTexture(render->piDIB)" not in root
+assert "render->framebuffer = sharedFramebuffer;" in startup
+assert "render->framebuffer = NULL;" in root
+
 # The sprite renderer is the other owner of transactional frame scratch.
 # Its clipping/projection lines are function-local too. No CYD Render_t
 # member or native source may retain desktop tmpLine after this milestone.
@@ -152,7 +165,7 @@ sprite = (NATIVE / "src/esp_native_sprite_renderer.c").read_text()
 assert "Line_t tmpLine;" not in sprite
 assert "->tmpLine" not in sprite
 assert "_Static_assert(sizeof(Scratch) <= 740U" in sprite
-assert "sizeof(Render_t) == 1464U" in (
+assert "sizeof(Render_t) == 1456U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 assert re.search(
     r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
@@ -230,7 +243,7 @@ for subtree in (NATIVE / "src", NATIVE / "include"):
         assert not re.search(r"(?:->|\.)tmpLine\b", code), (
             "retired desktop scratch member reference", path
         )
-        for member in ("spanPalettes", "newSpanPalette"):
+        for member in ("spanPalettes", "newSpanPalette", "spanFunction", "piDIB"):
             assert not re.search(r"(?:->|\.)" + member + r"\b", code), (
                 "desktop-only span scratch accessed from native source", path, member
             )
@@ -239,4 +252,4 @@ for subtree in (NATIVE / "src", NATIVE / "include"):
                 "retired desktop raster/span reference", path, name
             )
 
-print("PASS 23 retired Render ABIs; BSP/sprite scratch private, CYD Render_t without tmpLine, pure frustum clip")
+print("PASS 23 retired Render ABIs; CYD Render_t omits desktop span callback/SDL texture; private BSP/sprite scratch")
