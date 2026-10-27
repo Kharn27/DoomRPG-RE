@@ -158,15 +158,9 @@ assert "SDL_DestroyTexture(render->piDIB)" not in root
 assert "render->framebuffer = sharedFramebuffer;" in startup
 assert "render->framebuffer = NULL;" in root
 
-# The seven desktop raster gate flags are removed from the CYD layout.
-# Preserve skipCull: native BSP geometry still reads it. Never accidentally
-# delete active spanMode or the culling camera/column scratch.
-assert re.search(
-    r"#ifndef DOOMRPG_ESP32\s+boolean skipStretch;\s+boolean unk4;\s+#endif"
-    r"\s+boolean skipCull;\s+#ifndef DOOMRPG_ESP32"
-    r"\s+boolean skipBSP;\s+boolean skipLines;\s+boolean unk5;"
-    r"\s+boolean skipSprites;\s+boolean skipViewNudge;\s+#endif", HEADER
-), "retired raster gates must be desktop-only; skipCull must remain native"
+# The seven desktop flags remain API-inaccessible on CYD. This PR236
+# temporary A-offset experiment pads precisely their old word positions,
+# while preserving active skipCull and spanMode. Detailed guards below.
 assert "render->skipCull = 0;" in root
 
 # The sprite renderer is the other owner of transactional frame scratch.
