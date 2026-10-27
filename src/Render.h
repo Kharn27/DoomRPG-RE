@@ -181,8 +181,11 @@ typedef struct Render_s
 	int* mediaBitShapeOffsets;
 	short* mediaTexturesIds;
 	short* mediaSpriteIds;
+/* The desktop Render_SpanMode palette scratch has no CYD native consumer. */
+#ifndef DOOMRPG_ESP32
 	unsigned short* spanPalettes;
 	unsigned short newSpanPalette[16];
+#endif
 /* Desktop culling owns a temporary line. CYD native BSP/sprite paths use
      * private function-local Line_t values instead; the host differential
      * geometry oracle deliberately retains the desktop field in its fixture. */

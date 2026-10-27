@@ -138,6 +138,13 @@ visibility = (NATIVE / "src/esp_native_bsp_visibility.c").read_text()
 assert "Line_t tmpLine;" not in visibility
 assert "->tmpLine" not in visibility
 
+# Desktop-only span palette scratch belongs to Render_SpanMode*, not the
+# native BSP/wall/sprite rasterizer (normal, bringup or trace).
+assert re.search(
+    r"#ifndef DOOMRPG_ESP32\s+unsigned short\* spanPalettes;"
+    r"\s+unsigned short newSpanPalette\[16\];\s+#endif", HEADER
+), "desktop span palette fields must be excluded from CYD"
+
 # The sprite renderer is the other owner of transactional frame scratch.
 # Its clipping/projection lines are function-local too. No CYD Render_t
 # member or native source may retain desktop tmpLine after this milestone.
@@ -145,7 +152,7 @@ sprite = (NATIVE / "src/esp_native_sprite_renderer.c").read_text()
 assert "Line_t tmpLine;" not in sprite
 assert "->tmpLine" not in sprite
 assert "_Static_assert(sizeof(Scratch) <= 740U" in sprite
-assert "sizeof(Render_t) == 1500U" in (
+assert "sizeof(Render_t) == 1464U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 assert re.search(
     r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
@@ -223,6 +230,10 @@ for subtree in (NATIVE / "src", NATIVE / "include"):
         assert not re.search(r"(?:->|\.)tmpLine\b", code), (
             "retired desktop scratch member reference", path
         )
+        for member in ("spanPalettes", "newSpanPalette"):
+            assert not re.search(r"(?:->|\.)" + member + r"\b", code), (
+                "desktop-only span scratch accessed from native source", path, member
+            )
         for name in RETIRED:
             assert not re.search(r"\b" + name + r"\b", code), (
                 "retired desktop raster/span reference", path, name
