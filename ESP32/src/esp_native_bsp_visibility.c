@@ -52,9 +52,16 @@ typedef struct Scratch_s {
     int numLines;
     byte spanMode;
     short* pixels;
-    Line_t tmpLine;
     int columnScale[SCREEN_W];
 } Scratch;
+
+/* Visibility takes two stack snapshots (before/after). The culler now owns
+ * all its transient Line_t scratch, while depthLine only modifies its own
+ * local line. No visibility path writes the legacy Render_t::tmpLine, so it
+ * must not be copied/restored by this transaction. This cap covers 32-bit
+ * classic CYD (732 bytes) plus 64-bit host pointer alignment (740 bytes). */
+_Static_assert(sizeof(Scratch) <= 740U,
+               "BSP visibility scratch must remain bounded without tmpLine");
 
 static void saveScratch(Render_t* r, Scratch* s) {
     memset(s, 0, sizeof(*s));
@@ -81,7 +88,6 @@ static void saveScratch(Render_t* r, Scratch* s) {
     s->numLines = r->numLines;
     s->spanMode = r->spanMode;
     s->pixels = r->pixels;
-    s->tmpLine = r->tmpLine;
     memcpy(s->columnScale, r->columnScale, sizeof(s->columnScale));
 }
 
@@ -109,7 +115,6 @@ static void restoreScratch(Render_t* r, const Scratch* s) {
     r->numLines = s->numLines;
     r->spanMode = s->spanMode;
     r->pixels = s->pixels;
-    r->tmpLine = s->tmpLine;
     memcpy(r->columnScale, s->columnScale, sizeof(s->columnScale));
 }
 
@@ -283,7 +288,6 @@ static int walkNode(Render_t* r,
                     uint32_t nodeIndex,
                     uint32_t depth,
                     const EspNativeRenderCullView* cullView,
-                    Line_t* cullScratch,
                     EspNativeBspVisibilityState* state) {
     EspMapNode compact;
     uint32_t lineStart;
@@ -303,13 +307,11 @@ static int walkNode(Render_t* r,
 
     ++r->nodeCount;
     ++state->nodes;
-    /* Keep the borrowed renderer line untouched. The only mutable
-     * culling line is this caller-owned scratch, shared across recursion. */
+    /* Private transient scratch is owned inside the culler: no tmpLine read. */
     {
-        *cullScratch = r->tmpLine;
         const int culled = EspNativeRenderGeometry_cullBounds(
             cullView, (short)compact.x1, (short)compact.y1,
-            (short)compact.x2, (short)compact.y2, cullScratch);
+            (short)compact.x2, (short)compact.y2);
         if (culled) {
             ++state->nodeCull;
             return 1;
@@ -341,14 +343,14 @@ static int walkNode(Render_t* r,
     if (((compact.args1 & 0x20000U) == 0U || r->viewY <= (int)split) &&
         ((compact.args1 & 0x10000U) == 0U || r->viewX <= (int)split)) {
         return walkNode(r, runtime, first, depth + 1U,
-                        cullView, cullScratch, state) &&
+                        cullView, state) &&
                walkNode(r, runtime, second, depth + 1U,
-                        cullView, cullScratch, state);
+                        cullView, state);
     }
     return walkNode(r, runtime, second, depth + 1U,
-                    cullView, cullScratch, state) &&
+                    cullView, state) &&
            walkNode(r, runtime, first, depth + 1U,
-                    cullView, cullScratch, state);
+                    cullView, state);
 }
 
 static int spriteLeaf(const EspMapRuntimeView* runtime,
@@ -411,7 +413,6 @@ int EspNativeBspVisibility_buildForView(struct Render_s* renderBase,
     Scratch before;
     Scratch after;
     EspNativeRenderCullView cullView;
-    Line_t cullScratch;
     int ok = 0;
 
     if (outState != NULL) memset(outState, 0, sizeof(*outState));
@@ -445,7 +446,7 @@ int EspNativeBspVisibility_buildForView(struct Render_s* renderBase,
         .columnScale = render->columnScale
     };
         if (walkNode(render, runtime, 0U, 0U,
-                     &cullView, &cullScratch, outState)) {
+                     &cullView, outState)) {
             memcpy(outState->columnScale, render->columnScale,
                    sizeof(outState->columnScale));
             ok = 1;

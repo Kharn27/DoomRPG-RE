@@ -69,15 +69,15 @@ typedef struct EspNativeRenderCullView_s {
 
 /*
  * Exact desktop bounds/camera/frustum/occlusion decision from four immutable
- * bounds and a borrowed local line scratch. The caller seeds scratch from its
- * pre-cull line state; this function may mutate only that local line.
- * In particular it cannot mutate renderer tmpLine or the column array.
+ * bounds and an internal zero-initialized transient line. The prior renderer
+ * tmpLine contents (including z) cannot affect the cull decision: interpolation
+ * of z is discarded, while x/y and the live occlusion columns determine it.
+ * Neither renderer tmpLine nor the column array is mutated.
  * Return 1 when culled, 0 when potentially visible (desktop semantics).
  */
-struct Line_s;
 int EspNativeRenderGeometry_cullBounds(
     const EspNativeRenderCullView* view,
-    int x1, int y1, int x2, int y2, struct Line_s* scratch);
+    int x1, int y1, int x2, int y2);
 
 /*
  * Initialize an explicitly owned viewport column scratch array to the
