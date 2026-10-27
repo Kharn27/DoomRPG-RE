@@ -1,5 +1,7 @@
 # Doom RPG ESP32 — guide de travail
 
+Retest performance B, toujours le 27 octobre 2026 : nouveau flash puis deux LOAD slot04 successifs. `ENGINECACHE SMALL-WARM spriteMicros=71667/71698 µs`, `LARGE-WARM=67636/67690 µs`, premier MOVE `116594/116798 µs`. Forte reproductibilité par rapport au B précédent `71700/67693/116296 µs`. Le ralentissement relatif à A reste à confirmer par reflash du code A dans les mêmes conditions ; pas de correction speculative de `PlatformVideo_present()`. Premier EXIT propre, second run fini en mort avec `DEATHMENU MAIN` fail-closed explicitement deferred. PR #236 reste DRAFT.
+
 ## PR #236 — jalon B : PASS fonctionnel, suspicion de ralentissement à investiguer (27 octobre 2026)
 
 Code matériel `5efbf3966f06d18ebdac761945e84e53e48131c6`, même branche `agent/esp32-render-retire-desktop-handles`, [PR #236](https://github.com/Kharn27/DoomRPG-RE/pull/236). Sept drapeaux du raster desktop réservés à `src/Render.h` non-ESP32 ; `skipCull` et `spanMode` natifs conservés. `Render_t=1428 B` au boot (−28), `Total=2232`. CI push [#40576934369](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40576934369) et PR [#40576943390](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40576943390) SUCCESS. START/INTRO/Entrance/dialogues88/89/porte275/EXIT et LOAD slot04 V11/porte113/Malwrath triprojectile×2/loot/secret/EXIT : PASS fonctionnel, `FIRST_FRAME=71ca7465`, `arenaFNV=c3882516`, `menuFNV=0f2c9fc3`, deux `RESIDENTRESET released=18008 empty=1`. Heap8 `114044` gameplay et `159980` menu (+40/+28 vs A), plus gros blocs inchangés.

@@ -34,6 +34,22 @@ L'utilisateur rapporte gameplay moins nerveux. Comparaison basée sur les logs C
 
 Parité témoins LOAD warm : `frame=6f93d442` dans A et B ; lecture LARGE-WARM `physical 18/30744B (A)` versus `19/30776B (B)`. `world`, `hud`, `present` similaires ; surcoût concentré sur `EspNativeSpriteRenderer_render()`, incluant lectures pack dans cette phase. `MAPFLASH REUSE HIT` : données utiles servies par **partition raw flash** et cache, non par SD directe à ce stade. La suppression des flags n'a aucune référence/lecture native dans les routines sprites ; aucun mécanisme direct démontré. Hypothèses à distinguer : variations du coût d'accès flash, disposition code/données et cache, environnement/logging ; **ne pas conclure à une cause sans mesure contrôlée**, ni optimiser la présentation. `BOUNDARY-INLINE` et l'écart de log `MALWRATHPROJECTILE.x=TRANSIENT.x+0x40000000` sont préexistants.
 
+## Retest B — nouveau flash, deux LOAD du même slot04
+
+Campagne matérielle postérieure à la première validation du code B, environnement normal, nouveau flash puis `LOAD slot04→EXIT→LOAD slot04→PLAYERDEATH`, sans nouveau code, sur la même branche B (absence de SHA binaire embarqué). Première sortie : `[RESIDENTRESET] heap8=141972->159980 released=18008 empty=1`, menu `0f2c9fc3`. Deuxième LOAD sans nouveau reboot : réinitialisation de la même arène `14095/c3882516`, checkpoint monstre/topologie/positions `beaeaccc/50e16fe3/e2a9d90a`, RAM `114044/largest86004`, porte113 et Malwrath, deux tirs supplémentaires, troisième riposte après déplacement, puis `[PLAYERDEATH] READY`. L'action MAIN dans le menu de mort affiche explicitement `[DEATHMENU] DEFER action=MAIN reason=route-backend-unowned`, **pas un EXIT** ; comportement actuellement fail-closed sans blocage/crash observé.
+
+| Mesure | B initial | B reflash / LOAD #1 | B reflash / LOAD #2 |
+| --- | ---: | ---: | ---: |
+| SMALL-WARM sprites (µs) | 71700 | 71667 | 71698 |
+| SMALL-WARM monde (µs) | 35481 | 35419 | 35503 |
+| SMALL-WARM total (µs) | 122265 | 122182 | 122301 |
+| LARGE-WARM sprites (µs) | 67693 | 67636 | 67690 |
+| LARGE-WARM monde (µs) | 24939 | 24973 | 24744 |
+| LARGE-WARM total (µs) | 104583 | 104553 | 104384 |
+| Premier MOVE (µs) | 116296 | 116594 | 116798 |
+
+Les écarts internes B sont inférieurs à 0,2 % pour le coût sprites ; après nouveau flash la lenteur ne disparaît pas. Le deuxième LOAD conserve `LARGE-WARM frame=6f93d442` ; le premier LOAD post-reflash affiche `92d59b31`, sans dérive des statistiques de sprites. Lecture `LARGE-WARM` B reflash #2 `17/30736B`, pratiquement équivalente au témoin A `18/30744B`. L'énorme différence avec A en phase sprites (`37952/34117 µs`) persiste comme **signal de régression potentielle entre binaires A/B**, mais n'a PAS encore été isolée par un retour matériel au SHA A `5a90de29...`. La causalité de la suppression des sept flags n'est pas établie ; ne ni optimiser ni merger sur cette seule corrélation. Procédure discriminante : recompiler/flasher exactement A, normal `esp32-cyd`, LOAD slot04, capturer SMALL-WARM/LARGE-WARM et premier MOVE, puis revenir B si besoin ; surveiller FNV et compte lectures. L'environnement build/test B doit rester inchangé.
+
 ## Décision
 
 **PASS fonctionnel B / performance à élucider**, PR #236 demeure DRAFT, pas merge-ready. Le commit de cette note ne change aucun code. Recommander un redémarrage à froid B identique puis un témoin A et un B à scène et cadence comparables, sans logs TRACE ; comparer `ENGINECACHE SMALL-WARM/LARGE-WARM time world/sprites/hud/present`, volumes/frames FNV, et `VIEWANIM totalUs`. Si le surcoût B persiste de manière reproductible, ouvrir un diagnostic borné des lectures de la partition raw flash / coût renderer avant de nouvelles suppressions de champs. Ne jamais prétendre que toutes cartes, endurance, nouveau SAVE, binaire SHA ou parité exhaustive sont validés.
