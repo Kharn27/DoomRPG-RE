@@ -1,5 +1,13 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #236 — jalon A PASS classic CYD : retrait `spanFunction` et `piDIB` (27 octobre 2026)
+
+[PR #236](https://github.com/Kharn27/DoomRPG-RE/pull/236), base `main=3635b17fbab573ac67343034c1cdbb8408244623`, code matériel A `5a90de29184f0cf28ce88d2cdecc6618d6b886c3` (attribution par campagne flash ; logs sans fingerprint). CI hôte + firmwares trois profils : [push #40566333068](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40566333068), [PR #40566344525](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40566344525), **SUCCESS**. Les deux champs desktop `Render_t::spanFunction` / `piDIB` et la destruction SDL associée disparaissent de la build CYD ; Render `1464→1456 B` au vrai boot, aucun deuxième framebuffer.
+
+Scénarios matériels START/intro/Entrance/dialogues88-89/porte275/EXIT et LOAD V11 slot04/Malwrath triple projectile×2/porte113/sprite324/loot/secret/EXIT : PASS ciblé. FNV : INTRO `ade0195d`, arène `c3882516`, FIRST_FRAME `71ca7465`, MENU `0f2c9fc3`. Deux reset `released=18008 empty=1` ; heap8 gameplay `114004`, post-menu `159952` (blocs max `86004/110580`). `shapeData/mediaTexels=NULL`. Traces BOUNDARY-INLINE et x projectile décalé encore présentes. Pas de test SAVE neuf / toutes cartes / fingerprint firmware. Détails : `MILESTONE_PR236_RENDER_DESKTOP_HANDLES.md`. **Gel code A, clôture docs-only puis nouveau jalon B sur la même branche, nouveaux tests matériels avant merge par l'utilisateur.**
+
+---
+
 ## PR #235 — jalon B PASS classic CYD : palettes desktop span retirées (27 octobre 2026)
 
 **Code testé : `ff28238ad441fa6dafc307c326fdd59680f80332`**, branche `agent/esp32-render-retire-tmpline`, base `main=47466adb879c2e4be0965fd0e62de0bf1b6fb242`, [PR #235](https://github.com/Kharn27/DoomRPG-RE/pull/235). [CI code push #40560076246](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40560076246) et [PR #40560086753](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40560086753) SUCCESS. `Render_t::spanPalettes` et `newSpanPalette[16]` réservés à `src/Render.c` desktop, exclus du build ESP32 : **`sizeof(Render_t)=1464`** (vs 1500 pour A) confirmé par le boot CYD, `Game=0 Canvas=44 Total=2268`. Garde hôte native ajoutée. Pas de changement de raster, PAK, RNG, gameplay ni sauvegarde.

@@ -1,5 +1,15 @@
 # Doom RPG ESP32 — état actuel du port
 
+## PR #236 / jalon A — retrait handles desktop `Render_t` : PASS CYD (27 octobre 2026)
+
+**Code A flashé (attribution par branche, pas de SHA embarqué) : `5a90de29184f0cf28ce88d2cdecc6618d6b886c3`** sur `agent/esp32-render-retire-desktop-handles` depuis le vrai `main=3635b17fbab573ac67343034c1cdbb8408244623`, [PR #236](https://github.com/Kharn27/DoomRPG-RE/pull/236). [CI push #40566333068](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40566333068) et [PR #40566344525](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40566344525) **SUCCESS**, après mise à jour tests-only des oracles de lifecycle sur une première CI en échec. `Render_t::spanFunction` et `piDIB` desktop-only, aucun texel/shape map-wide ; **Render=1456 B (−8 B), Game=0 Canvas=44 Total=2260** confirmé par boot réel. Shared framebuffer 38400 B intact ; autres propriétaires natifs inchangés.
+
+**START→INTRO→Entrance→EXIT** : intro `ade0195d`, BSP `623f34e4`, arène `14095/c3882516`, première frame `71ca7465`, déplacements/rotations/strafe, Armor Shards `0→4→8→12`, dialogues88/89→opcode19, porte275 4 frames+HOLD/RELEASE, caisse56→Rocket, retour menu `0f2c9fc3`. **LOAD slot04 V11→Malwrath→EXIT** : monstres/topologie/positions `beaeaccc/50e16fe3/e2a9d90a`, porte113, sprite324 draws `4→2→0`, Malwrath HP `11→6→2→0`, deux ripostes de 3 projectiles204 drainées avant dégâts, drop Health Vial, Flak Jacket, secret +5XP. Deux `RESIDENTRESET 141944→159952 released=18008 empty=1` ; SAVE non écrit ; `shapeData=mediaTexels=NULL`.
+
+Heap8 gameplay `114004/largest86004` et menu `159952/largest110580` (vs #235B : +16/+16 B libres) ; aucun crash ou divergence RNG visible. `BOUNDARY-INLINE` et décalage x `0x40000000` des logs projectile préexistants, non corrigés. Pas de SAVE neuf, toutes cartes, endurance, fingerprint ni parité pixel exhaustive. Voir `ESP32/MILESTONE_PR236_RENDER_DESKTOP_HANDLES.md`. **Code A gelé au SHA ci-dessus ; clôture docs-only et CI post-doc, puis jalon B distinct sur cette même branche. Aucune fusion sans utilisateur.**
+
+---
+
 ## PR #235 / jalon B — suppression du scratch palettes `Render_t` desktop : PASS CYD (27 octobre 2026)
 
 **Code B testé sur le vrai classic CYD sans PSRAM, environnement normal `esp32-cyd` : `ff28238ad441fa6dafc307c326fdd59680f80332`**, branche `agent/esp32-render-retire-tmpline`, [PR #235](https://github.com/Kharn27/DoomRPG-RE/pull/235), base `main=47466adb879c2e4be0965fd0e62de0bf1b6fb242`. SHA attribué par campagne/branche flash (pas de fingerprint de binaire dans les logs). [CI code B push #40560076246](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40560076246) et [PR #40560086753](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40560086753) **SUCCESS** (tests hôte et builds normal/bringup/trace). Jalon A PASS gelé à `89f22d69`, docs-only `15bb6e4f3a504dbb8ef3469d03b11827c170ed30`, CI docs push #40559669053/PR #40559679524 SUCCESS.
