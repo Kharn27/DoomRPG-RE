@@ -183,7 +183,12 @@ typedef struct Render_s
 	short* mediaSpriteIds;
 	unsigned short* spanPalettes;
 	unsigned short newSpanPalette[16];
+/* Desktop culling owns a temporary line. CYD native BSP/sprite paths use
+     * private function-local Line_t values instead; the host differential
+     * geometry oracle deliberately retains the desktop field in its fixture. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	struct Line_s tmpLine;
+#endif
 	byte spanMode;
 	int numLines;
 	int animFrameTime;

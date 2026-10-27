@@ -137,6 +137,20 @@ for owner in ("esp_native_first_frame.c", "esp_native_bsp_visibility.c",
 visibility = (NATIVE / "src/esp_native_bsp_visibility.c").read_text()
 assert "Line_t tmpLine;" not in visibility
 assert "->tmpLine" not in visibility
+
+# The sprite renderer is the other owner of transactional frame scratch.
+# Its clipping/projection lines are function-local too. No CYD Render_t
+# member or native source may retain desktop tmpLine after this milestone.
+sprite = (NATIVE / "src/esp_native_sprite_renderer.c").read_text()
+assert "Line_t tmpLine;" not in sprite
+assert "->tmpLine" not in sprite
+assert "_Static_assert(sizeof(Scratch) <= 740U" in sprite
+assert "sizeof(Render_t) == 1500U" in (
+    NATIVE / "src/render_startup_bridge.c").read_text()
+assert re.search(
+    r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
+    r"\s+struct Line_s tmpLine;\s+#endif", HEADER
+), "desktop tmpLine must be absent from normal/bringup/trace native layout"
 assert "_Static_assert(sizeof(Scratch) <= 740U" in visibility
 assert "saveScratch(render, &before);" in visibility
 assert "restoreScratch(render, &before);" in visibility
@@ -206,9 +220,12 @@ for subtree in (NATIVE / "src", NATIVE / "include"):
             r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"',
             " ", source, flags=re.S,
         )
+        assert not re.search(r"(?:->|\.)tmpLine\b", code), (
+            "retired desktop scratch member reference", path
+        )
         for name in RETIRED:
             assert not re.search(r"\b" + name + r"\b", code), (
                 "retired desktop raster/span reference", path, name
             )
 
-print("PASS 23 retired Render ABIs; private BSP cull scratch, visibility without Render tmpLine snapshot, pure frustum clip")
+print("PASS 23 retired Render ABIs; BSP/sprite scratch private, CYD Render_t without tmpLine, pure frustum clip")

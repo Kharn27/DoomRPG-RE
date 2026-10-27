@@ -16,8 +16,8 @@
 #include <esp_heap_caps.h>
 #if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 /* Desktop/bringup retain the original legacy BSP flags; production does not. */
-_Static_assert(sizeof(Render_t) == 1532U,
-               "Render_t must exclude 1024 B BSP flags plus 2048 B legacy plane tiles");
+_Static_assert(sizeof(Render_t) == 1500U,
+               "Render_t must omit BSP flags, legacy plane tiles and desktop tmpLine");
 #endif
 
 
