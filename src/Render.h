@@ -211,9 +211,14 @@ typedef struct Render_s
 	byte spanMode;
 	int numLines;
 	int animFrameTime;
+	/* The three phase timestamps belong to desktop Render_render().
+	 * Native CYD frame/flash probes own their timing independently.
+	 * Keep animFrameTime, which is still initialized by the native root. */
+#ifndef DOOMRPG_ESP32
 	int currentFrameTime;
 	int horizonFrameTime;
 	int frameTime;
+#endif
 	struct DoomRPG_s* doomRpg;
 	SDL_Rect clipRect;
 #ifndef DOOMRPG_ESP32
