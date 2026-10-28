@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Exercise REAL private Render destructor + runtime cleanup with bounded mocks.
 
-The source-body FNV pins the pre-retirement behavior. Test both framebuffer
+The source-body FNV pins the native no-SDL-texture behavior. Test both framebuffer
 ownership paths, both freePtr paths and partially populated compatibility
 objects. This is a host C test, not a physical CYD fatal-teardown claim.
 """
@@ -38,7 +38,9 @@ normalized = (body.replace("static void " + name + "(", "void Render_free(")
 hash_value = 2166136261
 for b in normalized.encode("utf-8"):
     hash_value = ((hash_value ^ b) * 16777619) & 0xffffffff
-assert hash_value == 0x7e988863, f"Render_free body drift {hash_value:08x}"
+assert hash_value == 0x6ebb123a, f"Render_free body drift {hash_value:08x}"
+assert "render->piDIB" not in body
+assert "SDL_DestroyTexture" not in body
 assert owner.count(name + "(") == 2
 assert "void Render_free(" not in bridge
 assert "nativeRenderTeardown=private" in builder
@@ -84,10 +86,9 @@ typedef struct Render_s {
     void *mediaSpriteIds, *mapTextureTexels, *mapSpriteTexels;
     void *ceilingColor, *floorColor, *columnScale, *mediaPalettes;
     byte *framebuffer;
-    void *piDIB;
 } Render_t;
 static byte platformFramebuffer[160 * 120 * 2];
-static int outstanding, freeCalls, runtimeCalls, textureDestroys;
+static int outstanding, freeCalls, runtimeCalls;
 static void* owned(size_t n) {
     void* p = malloc(n);
     assert(p);
@@ -102,16 +103,10 @@ static void trackedFree(void* p) {
     ++freeCalls;
     free(p);
 }
-static void trackedDestroyTexture(void* p) {
-    assert(p);
-    ++textureDestroys;
-    trackedFree(p);
-}
 static byte* Esp32PlatformVideo_framebuffer(void) {
     return platformFramebuffer;
 }
 #define SDL_free trackedFree
-#define SDL_DestroyTexture trackedDestroyTexture
 #define printf(...) ((void)0)
 """
 # A macro keeps every legacy compatibility slot populated on full cycles.
@@ -142,7 +137,6 @@ static void populate(Render_t* render, int full, int shared) {
         ALLOC_SLOT(floorColor);
         ALLOC_SLOT(columnScale);
         ALLOC_SLOT(mediaPalettes);
-        render->piDIB = owned(8);
     }
     render->framebuffer = shared ? platformFramebuffer : (byte*)owned(160*120*2);
 }
@@ -154,14 +148,12 @@ int main(void) {
         const int full = (i % 3) != 0;
         Render_t* render = freePtr ? (Render_t*)owned(sizeof(Render_t)) : &stack;
         if (freePtr) memset(render, 0, sizeof(*render));
-        const int destroysBefore = textureDestroys;
         populate(render, full, shared);
         EspNativeEngineRoot_releaseRender(render, freePtr);
         assert(runtimeCalls == i + 1);
         assert(outstanding == 0);
-        assert(textureDestroys == destroysBefore + full);
         if (!freePtr) {
-            assert(render->framebuffer == NULL && render->piDIB == NULL);
+            assert(render->framebuffer == NULL);
             assert(render->mediaTexels == NULL && render->shapeData == NULL);
             assert(render->mapSprites == NULL && render->numMapSprites == 0);
             assert(render->lines == NULL && render->linesLength == 0);
@@ -192,4 +184,4 @@ with tempfile.TemporaryDirectory(prefix="private-render-free-") as temp:
                     "-Wall", "-Wextra", "-Werror", str(p), "-o", str(exe)],
                    check=True)
     subprocess.run([str(exe)], check=True)
-print("PASS Render_free=retired FNV=7e988863 Render_freeRuntime=retired FNV=8042d34c")
+print("PASS Render_free=retired FNV=6ebb123a no SDL texture; Render_freeRuntime FNV=8042d34c")

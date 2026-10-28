@@ -46,7 +46,7 @@ static void EspNativeEngineRoot_releaseCanvas(DoomCanvas_t* doomCanvas)
 }
 
 /* Process-root-owned Render destructor. The original native cleanup body and
- * freePtr semantics are retained verbatim apart from the private symbol name.
+ * freePtr semantics are preserved, minus the desktop-only SDL texture handle.
  * In particular, the shared PlatformVideo framebuffer must be detached before
  * compatibility cleanup and must never be released by the Render shell.
  * The legacy owner wording in the Serial diagnostic is historical. */
@@ -68,11 +68,6 @@ static void EspNativeEngineRoot_releaseRender(Render_t* render, boolean freePtr)
 
     SDL_free(render->framebuffer);
     render->framebuffer = NULL;
-
-    if (render->piDIB) {
-        SDL_DestroyTexture(render->piDIB);
-        render->piDIB = NULL;
-    }
 
     if (freePtr) {
         SDL_free(render);
@@ -368,14 +363,7 @@ static Render_t* EspNativeEngineRoot_initRender(Render_t* render, DoomRPG_t* doo
 
 	//resourceAsStream.Init(&renderClass->mapFile, doomRPGClass, 1);
 	render->doomRpg = doomRpg;
-	render->skipStretch = 0;
-	render->unk4 = 0;
 	render->skipCull = 0;
-	render->skipBSP = 0;
-	render->skipLines = 0;
-	render->unk5 = 0;
-	render->skipSprites = 0;
-	render->skipViewNudge = 0;
 	render->ioBufferPos = 0;
 	render->lines = NULL;
 	render->nodes = NULL;

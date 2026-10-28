@@ -145,6 +145,30 @@ assert re.search(
     r"\s+unsigned short newSpanPalette\[16\];\s+#endif", HEADER
 ), "desktop span palette fields must be excluded from CYD"
 
+# The native CYD uses one shared PlatformVideo framebuffer, never the
+# desktop span callback or SDL streaming texture handle. The desktop
+# Render.c / Render.h retain the unchanged callback and texture semantics.
+assert re.search(r"#ifndef DOOMRPG_ESP32\s+span_t spanFunction;\s+#endif", HEADER)
+assert re.search(r"#ifndef DOOMRPG_ESP32\s+SDL_Texture\* piDIB;\s+#endif", HEADER)
+startup = (NATIVE / "src/render_startup_bridge.c").read_text()
+root = (NATIVE / "src/engine_stubs.c").read_text()
+assert "render->piDIB" not in startup
+assert "render->piDIB" not in root
+assert "SDL_DestroyTexture(render->piDIB)" not in root
+assert "render->framebuffer = sharedFramebuffer;" in startup
+assert "render->framebuffer = NULL;" in root
+
+# The seven desktop raster gate flags are removed from the CYD layout.
+# Preserve skipCull: native BSP geometry still reads it. Never accidentally
+# delete active spanMode or the culling camera/column scratch.
+assert re.search(
+    r"#ifndef DOOMRPG_ESP32\s+boolean skipStretch;\s+boolean unk4;\s+#endif"
+    r"\s+boolean skipCull;\s+#ifndef DOOMRPG_ESP32"
+    r"\s+boolean skipBSP;\s+boolean skipLines;\s+boolean unk5;"
+    r"\s+boolean skipSprites;\s+boolean skipViewNudge;\s+#endif", HEADER
+), "retired raster gates must be desktop-only; skipCull must remain native"
+assert "render->skipCull = 0;" in root
+
 # The sprite renderer is the other owner of transactional frame scratch.
 # Its clipping/projection lines are function-local too. No CYD Render_t
 # member or native source may retain desktop tmpLine after this milestone.
@@ -152,7 +176,7 @@ sprite = (NATIVE / "src/esp_native_sprite_renderer.c").read_text()
 assert "Line_t tmpLine;" not in sprite
 assert "->tmpLine" not in sprite
 assert "_Static_assert(sizeof(Scratch) <= 740U" in sprite
-assert "sizeof(Render_t) == 1464U" in (
+assert "sizeof(Render_t) == 1428U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 assert re.search(
     r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
@@ -230,7 +254,9 @@ for subtree in (NATIVE / "src", NATIVE / "include"):
         assert not re.search(r"(?:->|\.)tmpLine\b", code), (
             "retired desktop scratch member reference", path
         )
-        for member in ("spanPalettes", "newSpanPalette"):
+        for member in ("spanPalettes", "newSpanPalette", "spanFunction", "piDIB",
+                       "skipStretch", "unk4", "skipBSP", "skipLines",
+                       "unk5", "skipSprites", "skipViewNudge"):
             assert not re.search(r"(?:->|\.)" + member + r"\b", code), (
                 "desktop-only span scratch accessed from native source", path, member
             )
@@ -239,4 +265,57 @@ for subtree in (NATIVE / "src", NATIVE / "include"):
                 "retired desktop raster/span reference", path, name
             )
 
-print("PASS 23 retired Render ABIs; BSP/sprite scratch private, CYD Render_t without tmpLine, pure frustum clip")
+
+# PR236 B bounded hardware diagnosis: identify raw-flash I/O vs sprite work.
+# No new reads, textures, heap buffers, or per-range logging.
+profile_header = (NATIVE / "include/esp_asset_pack.h").read_text()
+profile_pack = (NATIVE / "src/esp_asset_pack.cpp").read_text()
+profile_frame = (NATIVE / "src/esp_native_gameplay_frame.c").read_text()
+assert "EspAssetPack_mapFlashRuntimeReadMicros(void);" in profile_header
+assert "const esp_err_t readResult =" in profile_pack
+assert "esp_partition_read(mapFlash.partition, offset, destination, length)" in profile_pack
+assert "mapFlashRuntimeReadMicros += (uint32_t)elapsed;" in profile_pack
+assert "mapFlashRuntimeReadMicros = 0U;" in profile_pack
+assert "flashReadBefore = EspAssetPack_mapFlashRuntimeReadMicros();" in profile_frame
+assert "flashReadDuringSprites =" in profile_frame
+assert "[SPRITEFLASH] sample=" in profile_frame
+assert "spriteFlashProfileFrames < 16U" in profile_frame
+assert profile_frame.count("#if defined(ARDUINO_ARCH_ESP32)") >= 4
+assert "#endif\n    DRPG_LOGT(\"[SPRITEPROFILE]" in profile_frame
+
+# PR236 second-stage bounded phase breakdown must not log per sprite.
+sprite_phase = (NATIVE / "src/esp_native_sprite_renderer.c").read_text()
+assert "spritePhaseSampleCount < 16U" in sprite_phase
+assert "[SPRITEPHASE] sample=" in sprite_phase
+assert "visibilityUs=%u orderUs=%u sourcesUs=%u drawUs=%u" in sprite_phase
+assert "profileT1 = esp_timer_get_time();" in sprite_phase
+assert "profileT2 = esp_timer_get_time();" in sprite_phase
+assert "profileT3 = esp_timer_get_time();" in sprite_phase
+assert "profileT4 = esp_timer_get_time();" in sprite_phase
+assert "profileT5 = esp_timer_get_time();" in sprite_phase
+assert "profileT6 = esp_timer_get_time();" in sprite_phase
+
+# Third-stage probe splits the heavy map-wide scan by pure read-only calls.
+# Hardware timings determine whether immutable BSP leaf indexing is warranted.
+assert "typedef struct SpriteOrderProbe_s" in sprite_phase
+assert "spritePhaseSampleCount < 16U ? &orderProbe : NULL" in sprite_phase
+assert "recordUs += (uint32_t)(esp_timer_get_time()" in sprite_phase
+assert "leafQueryUs += (uint32_t)(esp_timer_get_time()" in sprite_phase
+assert "[SPRITEORDER] sample=" in sprite_phase
+assert "postScanUs=%u candidates=%u" in sprite_phase
+assert "orderScanDone = esp_timer_get_time();" in sprite_phase
+
+# The immutable BSP leaf sidecar must be bounded, fail closed and never copy
+# map-wide textures or mutable topology into the cache.
+leaf_visibility = (NATIVE / "src/esp_native_bsp_visibility.c").read_text()
+assert "#define MAX_CACHED_SPRITE_LEAVES 1024U" in leaf_visibility
+assert "sizeof(spriteLeafCache.leaf) == 2048U" in leaf_visibility
+assert "spriteLeafCache.arenaFNV1a != runtime->arenaFNV1a" in leaf_visibility
+assert "spriteLeafCache.nodeCount != runtime->nodeCount" in leaf_visibility
+assert "spriteLeafCache.spriteCount != runtime->mapSpriteCount" in leaf_visibility
+assert "runtime->mapSpriteCount > MAX_CACHED_SPRITE_LEAVES" in leaf_visibility
+assert "spriteLeaf(runtime, &sprite, outLeaf)" in leaf_visibility
+assert "spriteLeafCache.leaf[spriteIndex] = (uint16_t)leaf;" in leaf_visibility
+assert "!cachedSpriteLeaf(runtime, mapSpriteIndex, &leaf)" in leaf_visibility
+
+print("PASS 23 retired Render ABIs; CYD Render_t omits seven raster flags; bounded 2KB immutable BSP leaf cache and PR236 sprite probes")

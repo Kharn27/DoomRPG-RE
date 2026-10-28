@@ -16,8 +16,8 @@
 #include <esp_heap_caps.h>
 #if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 /* Desktop/bringup retain the original legacy BSP flags; production does not. */
-_Static_assert(sizeof(Render_t) == 1464U,
-               "Render_t must omit legacy BSP/plane/line/span palette state");
+_Static_assert(sizeof(Render_t) == 1428U,
+               "Render_t must omit retired desktop raster controls and storage");
 #endif
 
 
@@ -227,9 +227,8 @@ static int EspNativeRenderStartup_initialize(Render_t* render) {
      * Desktop Render_startup() owns both a streaming SDL texture and a second
      * RGB565 framebuffer. On the CYD the SDL renderer already draws directly
      * into PlatformVideo's 160x120 RGB565 framebuffer, so Render uses that same
-     * storage and piDIB deliberately stays NULL.
+     * storage. The desktop-only piDIB handle is not part of CYD Render_t.
      */
-    render->piDIB = NULL;
     render->framebuffer = sharedFramebuffer;
     memset(render->framebuffer, 0xff, framebufferBytes);
 
@@ -310,14 +309,13 @@ int EspRenderStartupBridge_start(int preRenderReady) {
     expectedPitch = ((sdlVideo.rendererW * (int)sizeof(uint16_t)) + 3) & ~3;
 
     if (!result || render->framebuffer != expectedFramebuffer ||
-        render->piDIB != NULL || render->pitch != expectedPitch ||
+        render->pitch != expectedPitch ||
         render->clipRect.w != DOOMRPG_CANVAS_WIDTH ||
         render->clipRect.h != DOOMRPG_CANVAS_HEIGHT ||
         render->mediaPalettes == NULL || render->mediaPalettesLength <= 0) {
-        printf("[RENDERSTART] FAILED fb=%p expected=%p piDIB=%p pitch=%d/%d clip=%dx%d palettes=%p len=%d\n",
+        printf("[RENDERSTART] FAILED fb=%p expected=%p pitch=%d/%d clip=%dx%d palettes=%p len=%d\n",
                (void*)render->framebuffer,
                (void*)expectedFramebuffer,
-               (void*)render->piDIB,
                render->pitch, expectedPitch,
                render->clipRect.w, render->clipRect.h,
                (void*)render->mediaPalettes,
