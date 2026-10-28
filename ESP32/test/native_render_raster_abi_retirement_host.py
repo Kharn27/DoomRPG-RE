@@ -242,8 +242,9 @@ for type_, field in (
         r"#ifndef DOOMRPG_ESP32\s+" + declaration + r"\s+#endif",
         HEADER,
     ), ("desktop-only opaque Render field must remain hidden on CYD", field)
-    # Source content is stripped of comments and string literals to avoid
-    # false positives in diagnostics or prose.
+    # Match Render pointer receivers only. PlayerView and spawn snapshot
+    # legitimately use viewZOld as a separate native-owned member.
+    # Strip comments and string literals before scanning native sources.
     for tree in (NATIVE / "src", NATIVE / "include"):
         for path in sorted(tree.rglob("*")):
             if path.suffix not in (".c", ".cpp", ".h"):
@@ -254,7 +255,8 @@ for type_, field in (
                 " ", code, flags=re.S,
             )
             assert not re.search(
-                r"(?:->|\.)\s*" + field + r"\b", code,
+                r"\b(?:render|renderBase|rootRender|r)\s*(?:->|\.)\s*"
+                + field + r"\b", code,
             ), ("retired opaque Render field accessed by native owner", path, field)
 assert "render->animFrameTime = 0;" in root
 assert "render->skipCull = 0;" in root
