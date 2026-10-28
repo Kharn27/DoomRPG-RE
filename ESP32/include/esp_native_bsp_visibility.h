@@ -58,8 +58,11 @@ int EspNativeBspVisibility_mapSpriteVisibleReadOnly(
     uint32_t mapSpriteIndex,
     uint32_t* outLeafIndex);
 
-/* Resolve one compact map sprite through the legacy Render_relinkSprite BSP
- * ownership rule, then report whether its leaf was admitted by outState. */
+/* Resolve one compact source map sprite through the original BSP ownership
+ * rule, then report whether its leaf was admitted by outState. Immutable leaf
+ * traversal is cached per source arena in a bounded 2KB native sidecar
+ * (maps with >1024 sprites use checked uncached traversal); mutable visibility,
+ * overlay state and gameplay activation remain outside this pure query. */
 int EspNativeBspVisibility_mapSpriteVisible(
     const EspNativeBspVisibilityState* state,
     uint32_t mapSpriteIndex,

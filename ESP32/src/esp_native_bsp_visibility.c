@@ -15,6 +15,11 @@
 #include "esp_player_view_state.h"
 
 #define MAX_BSP_DEPTH 64U
+/* Small immutable BSP leaf lookup sidecar: 2 KB BSS max, no map-expanded
+ * sprites/nodes, no PSRAM, and no gameplay-visible mutation. Huge maps still
+ * use the original checked traversal instead of becoming unsupported. */
+#define MAX_CACHED_SPRITE_LEAVES 1024U
+#define UNCACHED_SPRITE_LEAF UINT16_MAX
 #define SCREEN_W 160
 #define SCREEN_H 80
 
@@ -353,6 +358,19 @@ static int walkNode(Render_t* r,
                     cullView, state);
 }
 
+static struct {
+    const uint8_t* arena;
+    uint32_t arenaFNV1a;
+    uint32_t nodeCount;
+    uint32_t spriteCount;
+    uint16_t leaf[MAX_CACHED_SPRITE_LEAVES];
+} spriteLeafCache;
+
+_Static_assert(sizeof(spriteLeafCache.leaf) == 2048U,
+               "immutable sprite leaf index must remain a 2KB bound");
+
+/* Resolves source BSP geometry only; mutable visual state, topology and
+ * visibility are always evaluated at draw/query time. */
 static int spriteLeaf(const EspMapRuntimeView* runtime,
                       const EspMapSprite* sprite,
                       uint32_t* outLeaf) {
@@ -402,6 +420,50 @@ static int spriteLeaf(const EspMapRuntimeView* runtime,
         nodeIndex = child;
     }
     return 0;
+}
+
+/* Lazy cache, invalidated by compact arena identity. The mapping derives
+ * exclusively from the immutable 5-byte source sprite and 10-byte BSP nodes.
+ * In particular, a relink/move/animation never changes the original source
+ * leaf query used by the desktop-derived visibility contract. */
+static int cachedSpriteLeaf(const EspMapRuntimeView* runtime,
+                            uint32_t spriteIndex,
+                            uint32_t* outLeaf) {
+    EspMapSprite sprite;
+    uint32_t leaf;
+
+    if (runtime == NULL || outLeaf == NULL ||
+        spriteIndex >= runtime->mapSpriteCount) return 0;
+
+    if (runtime->mapSpriteCount > MAX_CACHED_SPRITE_LEAVES) {
+        return EspMapRuntime_getMapSprite(spriteIndex, &sprite) &&
+               spriteLeaf(runtime, &sprite, outLeaf);
+    }
+
+    if (spriteLeafCache.arena != runtime->arena ||
+        spriteLeafCache.arenaFNV1a != runtime->arenaFNV1a ||
+        spriteLeafCache.nodeCount != runtime->nodeCount ||
+        spriteLeafCache.spriteCount != runtime->mapSpriteCount) {
+        spriteLeafCache.arena = runtime->arena;
+        spriteLeafCache.arenaFNV1a = runtime->arenaFNV1a;
+        spriteLeafCache.nodeCount = runtime->nodeCount;
+        spriteLeafCache.spriteCount = runtime->mapSpriteCount;
+        memset(spriteLeafCache.leaf, 0xff, sizeof(spriteLeafCache.leaf));
+    }
+
+    leaf = spriteLeafCache.leaf[spriteIndex];
+    if (leaf == UNCACHED_SPRITE_LEAF) {
+        if (!EspMapRuntime_getMapSprite(spriteIndex, &sprite) ||
+            !spriteLeaf(runtime, &sprite, &leaf) ||
+            leaf >= ESP_NATIVE_BSP_VISIBILITY_MAX_NODES ||
+            leaf >= UNCACHED_SPRITE_LEAF) {
+            return 0;
+        }
+        spriteLeafCache.leaf[spriteIndex] = (uint16_t)leaf;
+    }
+
+    *outLeaf = leaf;
+    return 1;
 }
 
 int EspNativeBspVisibility_buildForView(struct Render_s* renderBase,
@@ -472,14 +534,12 @@ int EspNativeBspVisibility_mapSpriteVisibleReadOnly(
     uint32_t mapSpriteIndex,
     uint32_t* outLeafIndex) {
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
-    EspMapSprite sprite;
     uint32_t leaf;
 
     if (outLeafIndex != NULL) *outLeafIndex = UINT32_MAX;
     if (state == NULL || runtime == NULL ||
         mapSpriteIndex >= runtime->mapSpriteCount ||
-        !EspMapRuntime_getMapSprite(mapSpriteIndex, &sprite) ||
-        !spriteLeaf(runtime, &sprite, &leaf) ||
+        !cachedSpriteLeaf(runtime, mapSpriteIndex, &leaf) ||
         leaf >= ESP_NATIVE_BSP_VISIBILITY_MAX_NODES) {
         return 0;
     }

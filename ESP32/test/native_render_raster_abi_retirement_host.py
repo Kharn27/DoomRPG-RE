@@ -305,4 +305,17 @@ assert "[SPRITEORDER] sample=" in sprite_phase
 assert "postScanUs=%u candidates=%u" in sprite_phase
 assert "orderScanDone = esp_timer_get_time();" in sprite_phase
 
-print("PASS 23 retired Render ABIs; CYD Render_t omits seven raster flags and desktop handles; bounded PR236 sprite-phase probe")
+# The immutable BSP leaf sidecar must be bounded, fail closed and never copy
+# map-wide textures or mutable topology into the cache.
+leaf_visibility = (NATIVE / "src/esp_native_bsp_visibility.c").read_text()
+assert "#define MAX_CACHED_SPRITE_LEAVES 1024U" in leaf_visibility
+assert "sizeof(spriteLeafCache.leaf) == 2048U" in leaf_visibility
+assert "spriteLeafCache.arenaFNV1a != runtime->arenaFNV1a" in leaf_visibility
+assert "spriteLeafCache.nodeCount != runtime->nodeCount" in leaf_visibility
+assert "spriteLeafCache.spriteCount != runtime->mapSpriteCount" in leaf_visibility
+assert "runtime->mapSpriteCount > MAX_CACHED_SPRITE_LEAVES" in leaf_visibility
+assert "spriteLeaf(runtime, &sprite, outLeaf)" in leaf_visibility
+assert "spriteLeafCache.leaf[spriteIndex] = (uint16_t)leaf;" in leaf_visibility
+assert "!cachedSpriteLeaf(runtime, mapSpriteIndex, &leaf)" in leaf_visibility
+
+print("PASS 23 retired Render ABIs; CYD Render_t omits seven raster flags; bounded 2KB immutable BSP leaf cache and PR236 sprite probes")
