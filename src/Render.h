@@ -118,6 +118,11 @@ typedef struct Render_s
 	int firstDropSprite;
 #endif
 	int unk2;
+	/* The ten desktop map/texture memory ledgers below are bookkeeping
+	 * from retired loaders. CYD owns compact native map arenas and bounded
+	 * asset caches, not these desktop counters. Palette accounting is
+	 * deliberately retained: the native palette loader still writes it. */
+#ifndef DOOMRPG_ESP32
 	int mapMemory;
 	int stringMem;
 	int eventMem;
@@ -127,8 +132,11 @@ typedef struct Render_s
 	int spriteMem;
 	int nodeMem;
 	int texelMemory;
+#endif
 	int paletteMemory;
+#ifndef DOOMRPG_ESP32
 	int mappingMemory;
+#endif
 	short* ceilingColor;
 	short* floorColor;
 	byte floorTex;
