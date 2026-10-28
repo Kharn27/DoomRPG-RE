@@ -1,5 +1,21 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #238 — timers raster desktop retirés du Render_t CYD, PASS matériel (28 octobre 2026)
+
+**Base :** `main=0883682baa32ae218a6369c2e43b5689060d10dc` ; **SHA du code flashé selon campagne utilisateur :** `5fc43a920dcd9c9f7124d9f199d70bc980efb03d`. [PR #238](https://github.com/Kharn27/DoomRPG-RE/pull/238), CI code [push #40777521640](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40777521640) et [PR #40777530334](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40777530334), SUCCESS 75/75 chacune. Aucun SHA binaire sérialisé par le firmware.
+
+Trois horodatages de `Render_render()` desktop (`currentFrameTime`, `horizonFrameTime`, `frameTime`) sont maintenant desktop-only sous `#ifndef DOOMRPG_ESP32`. Le champ `animFrameTime`, les compteurs live de parcours BSP/sprites, l'ABI desktop, la géométrie et le raster natif restent inchangés. Garde hôte `native_render_raster_abi_retirement_host.py` : pas de référence aux champs retirés dans les owners ESP32, assertions `Render_t==1376`, desktop toujours présent. Sur vrai CYD normal, boot `Render=1376 Game=0 Canvas=44 Total=2180`, `RENDERCORE INIT bytes=1376`, soit −12 B de structure ; `heap8=112020` en LOAD et `157956` au menu après EXIT, soit **+8 B libres vs #237**, largest8 `86004/110580`. Ne pas confondre taille de structure et delta heap effectif.
+
+**Parcours matériel validé :** LOAD checkpoint V11 slot04/5604 B arène `c3882516`, monstres/topologie/positions `beaeaccc/50e16fe3/e2a9d90a`, flash `REUSE HIT rebuild=no` ; porte113, Malwrath322 et deux ripostes projectile204 triple et drainées avant COMMIT, sprite324 draws4→2→0, pickup, secret +5 XP, HUB EXIT. START après EXIT : intro `ade0195d`, FIRST_FRAME Entrance `71ca7465`, caisse127, Armor Shard, dialogue88 reprenant opcode19, porte275, EXIT. Deux `RESIDENTRESET released=18008 empty=1` ; menu `0f2c9fc3`, sans SAVE, `shapeData/mediaTexels=NULL`.
+
+**Cadence comparable avec probes actifs :** #237 LARGE-WARM sprite/total `37736/84599 µs`, premier MOVE `117793 µs` ; #238 `37775/84756 µs`, MOVE `117796 µs`. START premier MOVE `99869 µs`, pas de ralentissement répété détecté dans ce parcours. Les traces de phase s'arrêtent après 16 échantillons ; ne pas mêler aux LOAD retest de #237 sans probes (MOVE ~90 ms). `BOUNDARY-INLINE`, positions x de projectiles offset et `HUB CLOSE exactHud=NO` demeurent des observations préexistantes et non résolues. Aucune preuve de parité pixel exhaustive, de SAVE neuf, de all-maps ou d'endurance. Détails : `MILESTONE_PR238_RENDER_DESKTOP_FRAME_TIMERS.md`.
+
+**Captures Serial moins pénibles, sans modifier le firmware validé :** depuis `ESP32/`, utiliser `pio device monitor --port /dev/ttyUSB0 --baud 115200 --filter default --filter log2file` (ou ajouter le filtre `log2file` dans son moniteur PlatformIO). Le filtre intégré sauvegarde un `platformio-device-monitor-*.log` dans le répertoire de travail / dossier de logs selon la version. Flasher d'abord, lancer l'enregistrement, puis faire **toute** la session de test ; joindre **un seul fichier .log** à la conversation, avec au plus une phrase indiquant le parcours et les anomalies visuelles ressenties. Ne plus interrompre le gameplay pour copier-coller des blocs. Référence : https://docs.platformio.org/en/latest/core/userguide/device/cmd_monitor.html.
+
+**Décision : code gelé au SHA ci-dessus, clôture docs-only**, CI post-doc et Ready-for-review après contrôle ; merge réservé à l'utilisateur.
+
+---
+
 ## PR #237 — retrait des dix compteurs mémoire desktop du shell Render, PASS CYD (28 octobre 2026)
 
 **Version code hardware `ba1f713c620afc5a79b667da1b290c948125525e`**, [PR #237](https://github.com/Kharn27/DoomRPG-RE/pull/237), `main=b90e9dc8b8cc169ba8440ac80d795ad7f0489f31`. CI code push [#40619473318](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40619473318) et PR [#40619478493](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40619478493) **SUCCESS 75/75 étapes**. Aucun fingerprint embarqué du SHA ; attribution par la procédure de flash.
