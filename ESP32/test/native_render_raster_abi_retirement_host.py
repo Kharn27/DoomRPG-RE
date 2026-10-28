@@ -169,6 +169,33 @@ assert re.search(
 ), "retired raster gates must be desktop-only; skipCull must remain native"
 assert "render->skipCull = 0;" in root
 
+# PR237: only ten desktop memory ledgers disappear from the ESP32 shell;
+# the live paletteMemory accounting and all geometry/pixel members remain.
+ledger = (
+    "mapMemory", "stringMem", "eventMem", "memory", "bitShapeMemory",
+    "lineMem", "spriteMem", "nodeMem", "texelMemory", "mappingMemory",
+)
+for name in ledger:
+    assert len(re.findall(r"\bint " + name + r";", HEADER)) == 1, name
+assert re.search(
+    r"#ifndef DOOMRPG_ESP32\s+int mapMemory;.*?int texelMemory;\s+#endif"
+    r"\s+int paletteMemory;\s+#ifndef DOOMRPG_ESP32\s+int mappingMemory;\s+#endif",
+    HEADER, re.S,
+), "desktop ledgers must be conditional and native paletteMemory retained"
+assert "render->paletteMemory = DoomRPG_freeMemory();" in (
+    NATIVE / "src/render_startup_bridge.c"
+).read_text()
+for path in (NATIVE / "src").rglob("*"):
+    if path.suffix not in (".c", ".cpp"):
+        continue
+    code = path.read_text(encoding="latin-1")
+    code = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ", code, flags=re.S)
+    for name in ledger:
+        # SDL_RWops itself owns a distinct generic "memory" pointer.
+        # This scan must not reject its legitimate non-Render member.
+        receiver = r"\b(?:render|renderBase|r)\s*->" if name == "memory" else r"->"
+        assert not re.search(receiver + r"\s*" + name + r"\b", code), (path, name)
+
 # The sprite renderer is the other owner of transactional frame scratch.
 # Its clipping/projection lines are function-local too. No CYD Render_t
 # member or native source may retain desktop tmpLine after this milestone.
@@ -176,7 +203,7 @@ sprite = (NATIVE / "src/esp_native_sprite_renderer.c").read_text()
 assert "Line_t tmpLine;" not in sprite
 assert "->tmpLine" not in sprite
 assert "_Static_assert(sizeof(Scratch) <= 740U" in sprite
-assert "sizeof(Render_t) == 1428U" in (
+assert "sizeof(Render_t) == 1388U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 assert re.search(
     r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
@@ -318,4 +345,4 @@ assert "spriteLeaf(runtime, &sprite, outLeaf)" in leaf_visibility
 assert "spriteLeafCache.leaf[spriteIndex] = (uint16_t)leaf;" in leaf_visibility
 assert "!cachedSpriteLeaf(runtime, mapSpriteIndex, &leaf)" in leaf_visibility
 
-print("PASS 23 retired Render ABIs; CYD Render_t omits seven raster flags; bounded 2KB immutable BSP leaf cache and PR236 sprite probes")
+print("PASS 23 retired Render ABIs; CYD Render_t omits seven raster flags + ten memory ledgers; BSP leaf cache retained")

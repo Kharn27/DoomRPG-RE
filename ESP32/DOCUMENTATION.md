@@ -1,5 +1,20 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #237 — retrait des dix compteurs mémoire desktop du shell Render, PASS CYD (28 octobre 2026)
+
+**Version code hardware `ba1f713c620afc5a79b667da1b290c948125525e`**, [PR #237](https://github.com/Kharn27/DoomRPG-RE/pull/237), `main=b90e9dc8b8cc169ba8440ac80d795ad7f0489f31`. CI code push [#40619473318](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40619473318) et PR [#40619478493](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40619478493) **SUCCESS 75/75 étapes**. Aucun fingerprint embarqué du SHA ; attribution par la procédure de flash.
+
+Les dix compteurs des loaders desktop (`mapMemory`, `stringMem`, `eventMem`, `memory`, `bitShapeMemory`, `lineMem`, `spriteMem`, `nodeMem`, `texelMemory`, `mappingMemory`) ne figurent plus dans `Render_t` ESP32, mais restent dans l'ABI desktop. **`paletteMemory` reste** utilisé par le chargeur palette natif. `Render_t=1388` au boot vrai CYD (−40 B), `Game=0 Canvas=44 Total=2192`, framebuffer 38400 B, PSRAM=0. Cache leaf BSP immutable 2048 B de #236 intact ; pas de changement gameplay/raster/sauvegarde/PAK/`PlatformVideo_present()`.
+
+**Preuves sur le normal `esp32-cyd` :** trois LOAD slot04 V11/5604B et EXIT sans SAVE ; restore exact 30 monstres `beaeaccc`, topo `50e16fe3`, pos `e2a9d90a`, arène `c3882516` ; `MAPFLASH REUSE HIT`, porte113, sprite324 4→2→0 draws, combats/ripostes Malwrath (projectiles drainés avant dégâts), drops, pickups, secret +5XP, HUB. START après EXIT : intro `ade0195d`, première frame Entrance `71ca7465`, dialogues88 et79, porte275, caisse et collectibles. À chaque EXIT : `RESIDENTRESET released=18008 empty=1`, menu `0f2c9fc3`. `shapeData/mediaTexels=NULL`. Heap8 gameplay `112012/largest86004`, menu `157948/largest110580` : +40 B libre vs #236 à chaque frontière, stable entre LOADs.
+
+**Performances :** initial LOAD avec traces de sprites : LARGE-WARM `37736 µs` sprites / `84599 µs` total, conforme à #236 instrumenté `37950/85205 µs`. Premier MOVE initial `117793 µs` : alerte vérifiée par **deux retests même firmware et même sauvegarde** après épuisement du quota de 16 échantillons ; LARGE-WARM sprites `19814/19920 µs`, total `56644/56538 µs`, premier MOVE `90042/89920 µs`. Ralentissement non reproductible dans cette configuration ; différence probes actifs/inactifs plausible, non isolée causalement, donc ne jamais mélanger ces métriques en A/B strict. FNV frame warm `6f93d442` et `92d59b31` selon contexte : aucune parité pixel exhaustive revendiquée. Les traces `BOUNDARY-INLINE` / décalage de position projectile sont préexistantes, non réglées.
+
+**Décision : PASS matériel ciblé, code figé au SHA ci-dessus, clôture post-test docs-only**, CI post-doc obligatoire puis PR Ready-for-review ; l'utilisateur fera le merge. Pas de test all-maps, endurance ou SAVE neuf. Voir `MILESTONE_PR237_RENDER_MEMORY_ACCOUNTING.md`.
+
+---
+
+
 ## PR #236 — cache de feuilles BSP natives, PASS CYD ciblé (28 octobre 2026)
 
 Version matérielle testée : `b21b4c651f517749964fbedec316a8020d2f0a85`, PR [#236](https://github.com/Kharn27/DoomRPG-RE/pull/236), base `main=3635b17fbab573ac67343034c1cdbb8408244623`, normal `esp32-cyd`. CI du code testé : [push](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40609389808) et [PR](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40609395639), **SUCCESS**, 75 étapes chacun. Ce résultat **supplante les avertissements antérieurs « B lente, Draft » ci-dessous**, conservés seulement comme historique de diagnostic ; le retrait des sept flags desktop reste actif, `skipCull/spanMode` conservés. Aucun merge fait par l'agent.
