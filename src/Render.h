@@ -211,7 +211,7 @@ typedef struct Render_s
 	byte spanMode;
 	int numLines;
 	int animFrameTime;
-	/* The three phase timestamps belong to desktop Render_render().
+	/* Desktop raster phase timestamps are not native CYD state.
 	 * Native CYD frame/flash probes own their timing independently.
 	 * Keep animFrameTime, which is still initialized by the native root. */
 #ifndef DOOMRPG_ESP32

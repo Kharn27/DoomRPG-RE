@@ -207,8 +207,8 @@ for field in ("currentFrameTime", "horizonFrameTime", "frameTime"):
         DESKTOP,
     ), ("desktop Render_render timestamp missing", field)
 assert re.search(
-    r"int animFrameTime;\s+/\* The three phase timestamps belong to desktop "
-    r"Render_render\(\)\..*?\*/\s+#ifndef DOOMRPG_ESP32"
+    r"int animFrameTime;\s+/\* Desktop raster phase timestamps are not "
+    r"native CYD state\..*?\*/\s+#ifndef DOOMRPG_ESP32"
     r"\s+int currentFrameTime;\s+int horizonFrameTime;"
     r"\s+int frameTime;\s+#endif\s+struct DoomRPG_s\* doomRpg;",
     HEADER, re.S,
