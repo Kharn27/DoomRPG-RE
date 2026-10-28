@@ -229,6 +229,38 @@ for source_dir in (NATIVE / "src", NATIVE / "include"):
                 code,
             ), ("retired Render_t desktop frame timer referenced", path, field)
 
+# PR238 stage B: five opaque desktop-only Render_t spares have no native
+# reader or writer. In particular, the 16-bit and byte members may merely
+# remove padding, so confirm the complete 32-bit Render_t size separately.
+for type_, field in (
+    ("int", "unk0"), ("int", "viewZOld"), ("short", "unk1"),
+    ("int", "unk2"), ("byte", "unk3"),
+):
+    declaration = r"\b" + type_ + r"\s+" + field + r";"
+    assert len(re.findall(declaration, HEADER)) == 1, field
+    assert re.search(
+        r"#ifndef DOOMRPG_ESP32\s+" + declaration + r"\s+#endif",
+        HEADER,
+    ), ("desktop-only opaque Render field must remain hidden on CYD", field)
+    # Source content is stripped of comments and string literals to avoid
+    # false positives in diagnostics or prose.
+    for tree in (NATIVE / "src", NATIVE / "include"):
+        for path in sorted(tree.rglob("*")):
+            if path.suffix not in (".c", ".cpp", ".h"):
+                continue
+            code = path.read_text(encoding="latin-1")
+            code = re.sub(
+                r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"',
+                " ", code, flags=re.S,
+            )
+            assert not re.search(
+                r"(?:->|\.)\s*" + field + r"\b", code,
+            ), ("retired opaque Render field accessed by native owner", path, field)
+assert "render->animFrameTime = 0;" in root
+assert "render->skipCull = 0;" in root
+assert "int lineRasterCount;" in HEADER and "int nodeRasterCount;" in HEADER
+assert "int spriteRasterCount;" in HEADER
+
 # The sprite renderer is the other owner of transactional frame scratch.
 # Its clipping/projection lines are function-local too. No CYD Render_t
 # member or native source may retain desktop tmpLine after this milestone.
@@ -236,7 +268,7 @@ sprite = (NATIVE / "src/esp_native_sprite_renderer.c").read_text()
 assert "Line_t tmpLine;" not in sprite
 assert "->tmpLine" not in sprite
 assert "_Static_assert(sizeof(Scratch) <= 740U" in sprite
-assert "sizeof(Render_t) == 1376U" in (
+assert "sizeof(Render_t) == 1364U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 assert re.search(
     r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
@@ -378,4 +410,4 @@ assert "spriteLeaf(runtime, &sprite, outLeaf)" in leaf_visibility
 assert "spriteLeafCache.leaf[spriteIndex] = (uint16_t)leaf;" in leaf_visibility
 assert "!cachedSpriteLeaf(runtime, mapSpriteIndex, &leaf)" in leaf_visibility
 
-print("PASS 23 retired Render ABIs; CYD Render_t omits seven raster flags + ten memory ledgers + three frame timestamps; BSP leaf cache retained")
+print("PASS 23 retired Render ABIs; CYD Render_t omits seven raster flags + ten memory ledgers + three frame timestamps + five opaque desktop fields; BSP leaf cache retained")
