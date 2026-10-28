@@ -54,6 +54,10 @@ def main():
             lines = [line for line in output.splitlines() if line.startswith("[SPRITETRACE]")]
             assert len(lines) == (12 if name == "trace" else 0)
             assert all("sprite=0 " in line for line in lines), lines
+        binary = str(Path(temp) / "leaf-cache")
+        run(CC + FLAGS + ["ESP32/test/native_bsp_sprite_leaf_cache_host.c",
+                          "-Wl,--gc-sections", "-o", binary])
+        assert "PASS" in run([binary])
         binary = str(Path(temp) / "startup")
         run(CC + FLAGS + ["-DDOOMRPG_ESP32=1", "ESP32/test/startup_regressions_host.c",
                          "ESP32/src/native_story_fit.c", "ESP32/src/esp_native_text_format.c",
