@@ -191,7 +191,10 @@ for path in (NATIVE / "src").rglob("*"):
     code = path.read_text(encoding="latin-1")
     code = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ", code, flags=re.S)
     for name in ledger:
-        assert not re.search(r"->\s*" + name + r"\b", code), (path, name)
+        # SDL_RWops itself owns a distinct generic "memory" pointer.
+        # This scan must not reject its legitimate non-Render member.
+        receiver = r"\b(?:render|renderBase|r)\s*->" if name == "memory" else r"->"
+        assert not re.search(receiver + r"\s*" + name + r"\b", code), (path, name)
 
 # The sprite renderer is the other owner of transactional frame scratch.
 # Its clipping/projection lines are function-local too. No CYD Render_t
