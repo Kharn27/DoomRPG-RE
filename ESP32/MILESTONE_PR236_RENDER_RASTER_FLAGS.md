@@ -1,4 +1,34 @@
-# PR #236 — Jalon B : 7 flags desktop Render_t retirés, comportement PASS, latence en investigation
+# PR #236 — Jalon B : 7 flags desktop retirés, cache leaf BSP natif, PASS CYD ciblé
+
+## Mise à jour finale — 28 octobre 2026 : performance restaurée, PASS ciblé
+
+**Cette mise à jour supplante les anciennes conclusions « performance NON VALIDÉE / DRAFT » plus bas, qui décrivent les essais historiques avant correction.** Version de code réellement flashée et testée sur le classic CYD `esp32-cyd` : `b21b4c651f517749964fbedec316a8020d2f0a85` ; absence de SHA binaire embarqué (attribution par démarche de flash). Base main `3635b17fbab573ac67343034c1cdbb8408244623`. CI code : push [#40609389808](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40609389808) et PR [#40609395639](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40609395639), SUCCESS 75 étapes chacun.
+
+### Diagnostic confirmé et modification permanente
+
+Le probe `eab4252` décomposait `[SPRITEORDER]` : LOAD slot04 `records=344 hidden=76 queried=268`, `recordUs≈23500`, `leafUs≈13400`, `postScanUs≈17080` (deuxième scan automap), `orderUs≈54600`. Chaque frame recalculait par traversées de nœuds BSP les feuilles des **sprites source immuables** ; la lenteur n'était pas expliquée par les quelques lectures brutes flash (`~0,25 ms` après warm). Aucun lien causal direct n'a été démontré avec le retrait des sept flags `Render_t`.
+
+Le code `f49194f` conserve la règle de visibilité existante mais introduit dans `esp_native_bsp_visibility.c` un petit sidecar BSS de 2048 B : un ID de feuille `uint16_t` par sprite source pour 1024 sprites max, initialisation lazy et invalidation sur arène/FNV, nombre de nœuds, nombre de sprites. Pour plus de 1024 sprites, l'ancien parcours est toujours utilisé ; données corrompues restent fail-closed. Les overlays world/monster, la pose, les bitsets BSP visibles et la publication automap sont **lus à chaque passage**, jamais figés dans le cache. `b21b4c6` ajoute un fixture hôte exécutant le vrai chemin BSP sur mini-arbre, contrôle visibilité, hit, invalidation, oversize, fail-closed. Pas de ZIP runtime, `shapeData/mediaTexels`, heap alloué par frame ni PSRAM. Le coût BSS fait diminuer la heap libre d'environ 2064 B au boot, plus gros bloc stable.
+
+### Résultats sur CYD (même sauvegarde slot04)
+
+| Phase/mesure | Avant cache, `eab4252` | Cache, `b21b4c6` | Lecture |
+| --- | ---: | ---: | --- |
+| `[SPRITEORDER] leafUs` warm | 13405 µs | 460 µs | −96,6 % |
+| `postScanUs` warm | 17058 µs | 349 µs | −98,0 % |
+| `orderUs` warm | 54605 µs | 17469 µs | −68,0 % |
+| `ENGINECACHE SMALL-WARM spriteUs` | 79188 µs | 41957 µs | −47,0 % |
+| `ENGINECACHE LARGE-WARM spriteUs` | 75565 µs | 37950 µs | −49,8 % |
+| `ENGINECACHE LARGE-WARM totalUs` | 122638 µs | 85205 µs | −30,5 % |
+| `VIEWANIM` première avance | 139697 µs | 91560 µs | −34,5 % |
+
+Les deux binaires **ont le même type de sondes chronométrées** ; le chiffre absolu inclut la sérialisation de `[SPRITEORDER]` dans le chemin rendu, donc ne pas extrapoler ces mesures à une version sans diagnostics. Le vrai contraste est confirmé par le ressenti « pas l'air mal par contre là ». Les tirs n'emploient pas forcément la même arme entre les deux runs et ne constituent donc pas une comparaison contrôlée de vitesse combat. `worldUs≈25 ms` LARGE-WARM stable. `frameFNV=92d59b31` (warm de cette session, déjà observé sur une autre campagne de LOAD selon l'animation) n'est pas identique au warm `6f93d442` précédent ; `SMALL-COLD frame=f60b7166` contre `8c4fd719` : **ne pas revendiquer une égalité image pixel-à-pixel intersessions**, aucun artefact visuel signalé. `MAPRT arenaFNV=c3882516`, `monsters=beaeaccc`, `topology=50e16fe3`, `positions=e2a9d90a`, menu `0f2c9fc3` stables.
+
+**Scénario matériel PASS ciblé :** LOAD V11 slot04 5604B, 344 sprites, 30 monstres et restore exact, cache SMALL/LARGE/final, changement d'arme via HUD, avance et rotation, ouverture/fermeture animée porte113 `HOLD/RELEASE`, Malwrath322 activé après ouverture, attaques triple projectile204 CLEAR avant COMMIT, tirs joueur, mort et loot dynamique, mouvement sur drop et pickup Health Vial, Flak Jacket, secret 112/111 +5 XP, HUB/inventaire, EXIT sans save, `RESIDENTRESET heap8=139900→157908 released=18008 empty=1`, `[SYSEXIT] MENU-READY frame=0f2c9fc3`. Heap8 gameplay `111972`, largest8 `86004`, `RAMBUDGET HEADROOM_OK`, menu post-reset `157908`, `shapeData/mediaTexels=0`. Pas de crash, fuite ou mutation anormale visible.
+
+**Décision actualisée :** PASS fonctionnel + gain performance matériel contrôlé sur slot04, **merge-ready après commits docs-only et revue** ; aucun merge vers main par l'agent. Limites : tests d'autres maps, nouvelles sauvegardes, endurance prolongée, comparaison binaire FNV et parité pixel déterministe ne sont pas couverts. Garder les sondes bornées dans le code testé pour ce jalon ; leur retrait demande une nouvelle campagne CYD. Les anciennes recommandations B/A plus bas restent uniquement la trace historique du diagnostic.
+
+---
 
 Date : 27 octobre 2026. PR [#236](https://github.com/Kharn27/DoomRPG-RE/pull/236), branche `agent/esp32-render-retire-desktop-handles`; base `main=3635b17fbab573ac67343034c1cdbb8408244623`. Code B flashé par l'utilisateur : `5efbf3966f06d18ebdac761945e84e53e48131c6` selon la branche/version demandée, pas de SHA binaire dans les logs. Code A précédent testé : `5a90de29184f0cf28ce88d2cdecc6618d6b886c3`; documentation A : `9a11ae92b8583575b67282ca94f021d5bbff22a3`.
 
@@ -50,6 +80,6 @@ Campagne matérielle postérieure à la première validation du code B, environn
 
 Les écarts internes B sont inférieurs à 0,2 % pour le coût sprites ; après nouveau flash la lenteur ne disparaît pas. Le deuxième LOAD conserve `LARGE-WARM frame=6f93d442` ; le premier LOAD post-reflash affiche `92d59b31`, sans dérive des statistiques de sprites. Lecture `LARGE-WARM` B reflash #2 `17/30736B`, pratiquement équivalente au témoin A `18/30744B`. L'énorme différence avec A en phase sprites (`37952/34117 µs`) persiste comme **signal de régression potentielle entre binaires A/B**, mais n'a PAS encore été isolée par un retour matériel au SHA A `5a90de29...`. La causalité de la suppression des sept flags n'est pas établie ; ne ni optimiser ni merger sur cette seule corrélation. Procédure discriminante : recompiler/flasher exactement A, normal `esp32-cyd`, LOAD slot04, capturer SMALL-WARM/LARGE-WARM et premier MOVE, puis revenir B si besoin ; surveiller FNV et compte lectures. L'environnement build/test B doit rester inchangé.
 
-## Décision
+## Décision historique avant cache (supplantée le 28 octobre)
 
 **PASS fonctionnel B / performance à élucider**, PR #236 demeure DRAFT, pas merge-ready. Le commit de cette note ne change aucun code. Recommander un redémarrage à froid B identique puis un témoin A et un B à scène et cadence comparables, sans logs TRACE ; comparer `ENGINECACHE SMALL-WARM/LARGE-WARM time world/sprites/hud/present`, volumes/frames FNV, et `VIEWANIM totalUs`. Si le surcoût B persiste de manière reproductible, ouvrir un diagnostic borné des lectures de la partition raw flash / coût renderer avant de nouvelles suppressions de champs. Ne jamais prétendre que toutes cartes, endurance, nouveau SAVE, binaire SHA ou parité exhaustive sont validés.
