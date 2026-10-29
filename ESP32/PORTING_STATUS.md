@@ -1,5 +1,16 @@
 # Doom RPG ESP32 — état actuel du port
 
+## PR #239 — Jalon A : code compilé, **validation CYD NON CONFIRMÉE** (29 octobre 2026)
+
+**Source de vérité matérielle contradictoire avec le code #239** : branche `agent/esp32-render-retire-legacy-bsp-buffer`, base main `f605f855f4d9f9e3b1b6edf47072bb8a3cea6196` après merge #238 ; candidat code `11d0ec6cfc25a08b4c77247fdde5021dbc864f7f`. Les deux champs `Render_t::ioBuffer` et `Render_t::ioBufferPos` sont desktop-only, taille **1356 B attendue et assertée** dans `render_startup_bridge.c`; tests hôte et CI code **SUCCESS 75/75** push [#40930116152](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40930116152) et PR [#40930129599](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40930129599). La cible desktop/les parses PAK, BSP natif, RNG, gameplay, framebuffer, save et render restent inchangés.
+
+**Le boot complet communiqué ensuite affiche pourtant `Engine structs: Render=1364 Game=0 Canvas=44 Total=2168`, `[RENDERCORE] INIT ... bytes=1364`, `CORE Render used=1380` et `CORE READY used=2332`** — c'est le layout #238B, incompatible avec l'assertion 1356 de la CI #239. Le fichier Serial de gameplay `device-monitor-261029-231601.log` (1047 lignes, sans boot) documente un parcours **fonctionnel** LOAD slot04 V11/5604B → Malwrath/projectiles204/porte113/secret → EXIT → START/intro/Entrance/event79/porte275 → EXIT, deux `RESIDENTRESET released=18008 empty=1`, menu `0f2c9fc3`, `shapeData/mediaTexels=NULL`, `heap8 LOAD=112028`, `menu EXIT=157972`. **Ce parcours ne valide pas PR #239**, l'identité du binaire exécuté n'étant pas établie. Les traces `BOUNDARY-INLINE` et abscisses projectile +0x40000000 restent préexistantes.
+
+**Statut correctif : NON PASS PR #239 ; PR Draft.** Documentation antérieure indiquant « PASS CYD » rétractée. Garder le candidat code inchangé ; reconstruire proprement + reflasher le **normal `esp32-cyd` depuis la branche agent**, relever `RENDERCORE bytes=1356` puis refaire LOAD/EXIT et START/EXIT avant de documenter un PASS ou commencer le jalon B sur cette même branche. Détails : `ESP32/MILESTONE_PR239A_RENDER_BSP_IO_BUFFER.md`. Aucun merge automatique.
+
+---
+
+
 ## PR #238 — jalon B, retrait des cinq champs opaques Render desktop, PASS CYD (29 octobre 2026)
 
 **Code B testé sur le CYD avec firmware normal `esp32-cyd` selon la campagne utilisateur : `fd39dee47205b5cd50fe6be7d0353f92773eb0fc`**, sur la **même PR #238 / branche** `agent/esp32-render-retire-desktop-frame-timers` ; base `main=0883682baa32ae218a6369c2e43b5689060d10dc`. Code du jalon A, déjà validé sur matériel et conservé historiquement : `5fc43a920dcd9c9f7124d9f199d70bc980efb03d` ; documentation A : `MILESTONE_PR238_RENDER_DESKTOP_FRAME_TIMERS.md`. CI code B : [push #40791105911](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40791105911), [PR #40791111176](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40791111176), **SUCCESS 75/75 étapes chacune**, tests hôte et firmwares normal / bringup / trace. Aucun SHA embarqué ni nouvelle mesure PSRAM dans le fichier Serial (capture commence après les premières lignes boot).
