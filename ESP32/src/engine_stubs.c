@@ -364,7 +364,6 @@ static Render_t* EspNativeEngineRoot_initRender(Render_t* render, DoomRPG_t* doo
 	//resourceAsStream.Init(&renderClass->mapFile, doomRPGClass, 1);
 	render->doomRpg = doomRpg;
 	render->skipCull = 0;
-	render->ioBufferPos = 0;
 	render->lines = NULL;
 	render->nodes = NULL;
 	render->mapSprites = NULL;

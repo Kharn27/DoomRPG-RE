@@ -263,6 +263,35 @@ assert "render->skipCull = 0;" in root
 assert "int lineRasterCount;" in HEADER and "int nodeRasterCount;" in HEADER
 assert "int spriteRasterCount;" in HEADER
 
+
+# PR239: map-wide BSP I/O buffer and read cursor only exist in desktop
+# Render_beginLoadMap/Data. The ESP32 reads native immutable BSP inventory
+# from the PAK and owns no legacy decoder buffer or cursor in Render_t.
+assert re.search(
+    r"#ifndef DOOMRPG_ESP32\s+char\* ioBuffer;\s+int ioBufferPos;\s+#endif",
+    HEADER,
+), "legacy BSP parser buffer/cursor must be desktop-only"
+for field in ("ioBuffer", "ioBufferPos"):
+    assert re.search(r"\brender->" + field + r"\b", DESKTOP), field
+for source_dir in (NATIVE / "src", NATIVE / "include"):
+    for path in sorted(source_dir.rglob("*")):
+        if path.suffix not in (".c", ".cpp", ".h"):
+            continue
+        code = path.read_text(encoding="latin-1")
+        code = re.sub(
+            r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"',
+            " ", code, flags=re.S,
+        )
+        assert not re.search(
+            r"\b(?:render|renderBase|rootRender|r)\s*->\s*"
+            r"(?:ioBuffer|ioBufferPos)\b",
+            code,
+        ), ("retired desktop BSP parser storage referenced", path)
+assert "render->ioBuffer == NULL" not in (
+    NATIVE / "src/esp_native_startup.c"
+).read_text()
+assert "render->ioBufferPos = 0;" not in root
+
 # The sprite renderer is the other owner of transactional frame scratch.
 # Its clipping/projection lines are function-local too. No CYD Render_t
 # member or native source may retain desktop tmpLine after this milestone.
@@ -270,7 +299,7 @@ sprite = (NATIVE / "src/esp_native_sprite_renderer.c").read_text()
 assert "Line_t tmpLine;" not in sprite
 assert "->tmpLine" not in sprite
 assert "_Static_assert(sizeof(Scratch) <= 740U" in sprite
-assert "sizeof(Render_t) == 1364U" in (
+assert "sizeof(Render_t) == 1356U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 assert re.search(
     r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"

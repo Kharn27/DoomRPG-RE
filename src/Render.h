@@ -195,8 +195,12 @@ typedef struct Render_s
 	int mapTextureTexelsCount;
 	int* mapSpriteTexels;
 	int mapSpriteTexelsCount;
+/* The desktop BSP parser alone owns its map-wide read buffer and cursor.
+ * Native CYD inventory/arena parsing uses EspBspReader, never this state. */
+#ifndef DOOMRPG_ESP32
 	char* ioBuffer;
 	int ioBufferPos;
+#endif
 	int screenX;
 	int screenY;
 	byte* mediaTexels;
