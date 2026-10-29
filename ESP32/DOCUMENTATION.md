@@ -1,5 +1,19 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #238, jalon B — cinq champs opaques Render desktop retirés, PASS CYD (29 octobre 2026)
+
+**Statut :** même branche/PR que le jalon A, sans merge intermédiaire, base `main=0883682baa32ae218a6369c2e43b5689060d10dc` ; **code matériel B attribué à la campagne de flash `fd39dee47205b5cd50fe6be7d0353f92773eb0fc`** (jalon A matériel antérieur `5fc43a920dcd9c9f7124d9f199d70bc980efb03d`). CI code B [push #40791105911](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40791105911) et [PR #40791111176](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40791111176) : **SUCCESS 75/75 chacune**.
+
+`Render_t` CYD ne porte plus `unk0`, `viewZOld`, `unk1`, `unk2`, `unk3`, réservés desktop dans `src/Render.h` ; **1364 B** compilés et `[RENDERCORE] INIT ... bytes=1364` relevés sur le CYD (−12 B vs A), `CORE used=2332`. L'ABI desktop et **le véritable `EspPlayerView.viewZOld` sauvegardé** sont conservés. Le premier échec CI de garde hôte était un faux positif `PlayerView.viewZOld` ; correctif de portée sans changer le gameplay. Aucun changement de renderer, SD/PAK, carte, RNG, sauvegarde, caches, framebuffer ou `PlatformVideo_present()`.
+
+**Fichier de test complet :** `device-monitor-261029-185143.log` (1398 lignes), commence après les premières lignes de boot ; la ligne `Engine structs ... Total=2168` attendue n'a donc **pas été capturée**. LOAD slot04 V11/5604 B, arène `14095/c3882516`, FNV monstres/topologie/positions `beaeaccc/50e16fe3/e2a9d90a`, exact restore, cache `MAPFLASH REUSE HIT rebuild=no`. Porte113 quatre frames, Malwrath322 trois coups mort, deux attaques triple-projectile `CLEAR` avant dégâts, drop et pickup, secret+5XP, EXIT. START après EXIT, intro `ade0195d`, première frame `71ca7465`, crate127 et pickups, dialogues événements88/89/79 puis 84 cancel sans reprise, porte275, EXIT. **Deux sorties** `RESIDENTRESET released=18008 empty=1`, `menuFNV=0f2c9fc3`, `saveWrite=no`; `shapeData/mediaTexels=NULL`.
+
+**Mémoire (A→B) :** Render 1376→1364 (−12B), heap8 LOAD 112020→112028 (+8 B libre), menu EXIT 157956→157972 (+16B), START cache 112832→112848 (+16B), START dialog journal 110876→110884 (+8B). Largest8 gameplay 86004, menu 110580 ; `RAMBUDGET HEADROOM_OK`. **Chronométrie probe-on comparable :** LOAD LARGE-WARM sprite 37775→33910 µs et total 84756→81621 µs ; premier MOVE après NEXT_WEAPON 117796→115111 µs. Échantillons ponctuels, pas de causalité d'optimisation établie ; surtout ne pas comparer aux retests silencieux. Observations `BOUNDARY-INLINE` (cinq traces), x projectile loggé avec offset restent préexistantes ; pas de HUB CLOSE sur cette campagne, seulement EXIT. Pas de SAVE neuf, full-map, parité pixel exhaustive ou endurance testée.
+
+**Conclusion :** PASS CYD ciblé, code B gelé au SHA ci-dessus ; seuls commits de clôture documentaires après ce test, vérification du diff et de la CI post-doc avant Ready-for-review. Merge à la main par l'utilisateur. Détails : `MILESTONE_PR238B_RENDER_OPAQUE_SLOTS.md`. Pour les futurs tests, `pio device monitor --port /dev/ttyUSB0 --baud 115200 --filter default --filter log2file` permet de joindre un seul journal complet.
+
+---
+
 ## PR #238 — timers raster desktop retirés du Render_t CYD, PASS matériel (28 octobre 2026)
 
 **Base :** `main=0883682baa32ae218a6369c2e43b5689060d10dc` ; **SHA du code flashé selon campagne utilisateur :** `5fc43a920dcd9c9f7124d9f199d70bc980efb03d`. [PR #238](https://github.com/Kharn27/DoomRPG-RE/pull/238), CI code [push #40777521640](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40777521640) et [PR #40777530334](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40777530334), SUCCESS 75/75 chacune. Aucun SHA binaire sérialisé par le firmware.
