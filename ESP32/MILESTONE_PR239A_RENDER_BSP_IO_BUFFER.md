@@ -1,6 +1,6 @@
-# PR #239 — Jalon A : retirer le buffer et curseur BSP desktop de Render_t — PASS CYD
+# PR #239 — Jalon A : retrait du buffer/curseur BSP desktop — validation matérielle non attribuable
 
-Campagne matérielle : **29 octobre 2026**. Branche `agent/esp32-render-retire-legacy-bsp-buffer`, PR https://github.com/Kharn27/DoomRPG-RE/pull/239. Base **main** `f605f855f4d9f9e3b1b6edf47072bb8a3cea6196` (merge #238). **Code testé attribué à la campagne de flash de l'utilisateur : `11d0ec6cfc25a08b4c77247fdde5021dbc864f7f`** ; fichier Serial sans fingerprint SHA embarqué.
+Campagne matérielle : **29 octobre 2026**. Branche `agent/esp32-render-retire-legacy-bsp-buffer`, PR https://github.com/Kharn27/DoomRPG-RE/pull/239. Base **main** `f605f855f4d9f9e3b1b6edf47072bb8a3cea6196` (merge #238). **Code candidat pour test : `11d0ec6cfc25a08b4c77247fdde5021dbc864f7f`** ; **non validé matériellement** au 29 octobre : le boot complet transmis après la session montre la disposition #238B (Render 1364 B), pas le layout compilé #239 (1356 B). Le binaire ne publie aucun fingerprint SHA.
 
 ## Périmètre code A
 
@@ -12,9 +12,9 @@ Campagne matérielle : **29 octobre 2026**. Branche `agent/esp32-render-retire-l
 
 La première CI du commit `0e9e663fe58a49c951e8c866b1ee676f10c5e835` échouait sur le **fingerprint historique** du constructeur hôte ; correction ciblée de ce fixture puis code final `11d0ec6cfc25a08b4c77247fdde5021dbc864f7f`. **CI code final SUCCESS, 75/75 étapes chacune** : [push #40930116152](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40930116152) et [PR #40930129599](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40930129599), tests hôtes et builds normal, bringup, trace.
 
-## Preuve réelle — firmware normal esp32-cyd
+## Observations fonctionnelles — attribution à #239 non confirmée
 
-Source unique : `device-monitor-261029-231601.log`, **1047 lignes** (capture depuis `[ALIVE] uptime=30004`, pas le boot initial). Deux sessions consécutives **LOAD slot04 → EXIT → START → EXIT**. Aucun log `Engine structs`, `[RENDERCORE] INIT bytes=1356` ni PSRAM n'est présent dans **ce fichier** : **ne pas transformer** l'assertion CI en mesure Serial.
+Source gameplay : `device-monitor-261029-231601.log`, **1047 lignes** (capture depuis `[ALIVE] uptime=30004`, sans le boot initial). Deux sessions consécutives **LOAD slot04 → EXIT → START → EXIT**, fonctionnelles. **Boot complet transmis ensuite par l'utilisateur** : `Engine structs: Render=1364 Game=0 Canvas=44 Total=2168 bytes`, `[RENDERCORE] INIT ... bytes=1364`, `[CORE] Render used=1380`, `[CORE] READY ... used=2332`, `PSRAM: 0 bytes`, flash `827312 bytes`, hash vérifié. **Écart bloquant** : le code candidat #239 contient `_Static_assert(sizeof(Render_t)==1356U)` dans le build normal, tandis que le boot montre **1364 B, exactement la taille de #238B**. Impossible d'attribuer cette session gameplay au code #239 ; source binaire/branche locale ou artefact de flash à vérifier. La CI prouve seulement la compilation #239, pas l'identité du firmware physique.
 
 ### LOAD V11 slot04 → combat/secret → EXIT
 
@@ -32,10 +32,10 @@ Source unique : `device-monitor-261029-231601.log`, **1047 lignes** (capture dep
 
 ### RAM / signaux non résolus
 
-- Heap8 en gameplay LOAD après cache `112028/largest8=86004`, en START après prime `112848/86004`, START avec journal dialogue `110884/86004`, menu après chacun des EXIT `157972/110580`. **Valeurs identiques aux frontières relevées #238B** malgré la taille structure CI plus petite ; ne pas réclamer +8B de heap effectif. Deux `RAMBUDGET ... advisory=HEADROOM_OK`.
+- Heap8 en gameplay LOAD après cache `112028/largest8=86004`, en START après prime `112848/86004`, START avec journal dialogue `110884/86004`, menu après chacun des EXIT `157972/110580`. **Valeurs identiques aux frontières relevées #238B**, cohérentes avec le layout 1364 du boot. Aucune mesure RAM #239 attribuable ; ne pas réclamer +8B de heap effectif. Deux `RAMBUDGET ... advisory=HEADROOM_OK`.
 - Zéro `ERROR`, `FAILED`, panic, WDT ou fallback dans le fichier ; deux `NATIVEFRAME BOUNDARY-INLINE` (préexistant) et abscisses projetiles `+0x40000000` (préexistant), non corrigées. Le `HUB CLOSE exactHud=NO` n'est pas exploré (EXIT seulement).
-- Pas de boot complet / empreinte binaire, autre carte, SAVE neuf, endurance, pixel parity exhaustive ni ressenti visuel indépendant. **PASS matériel ciblé, non certification générale.**
+- Pas de boot complet / empreinte binaire, autre carte, SAVE neuf, endurance, pixel parity exhaustive ni ressenti visuel indépendant. **Parcours fonctionnel observé sur firmware dont l'identité est incompatible avec le code #239 ; aucun PASS #239.**
 
 ## Décision
 
-**Code A gelé `11d0ec6cfc25a08b4c77247fdde5021dbc864f7f`.** Clôture de ce jalon en commits **strictement documentaires**, vérification du diff A→docs et CI post-doc. L'utilisateur a demandé de **poursuivre sur la même branche / PR #239** : un futur jalon B est permis seulement **après** la clôture A et nécessitera sa propre CI + nouvelle campagne matérielle. Aucun merge par l'agent.
+**Code A candidat inchangé `11d0ec6cfc25a08b4c77247fdde5021dbc864f7f`. STATUT : NON VALIDÉ sur matériel.** Les commits qui suivent ce constat ne doivent corriger que les documents, sans altérer le candidat. Prochaine étape obligatoire : se placer sur `agent/esp32-render-retire-legacy-bsp-buffer`, reconstruire proprement le profil normal `esp32-cyd`, flasher, vérifier **`Engine structs: Render=1356` et `[RENDERCORE] INIT bytes=1356`** dans un nouveau boot, puis refaire un parcours matériel ciblé (au minimum LOAD/EXIT et START/EXIT). Comparer heap/timings uniquement sur ce firmware identifié. Ne pas engager le jalon B ni mettre la PR ready-for-review avant ce PASS. Branche/PR conservées ; merge à l'utilisateur.
