@@ -76,14 +76,18 @@ typedef struct Render_s
 #ifndef DOOMRPG_ESP32
 	span_t spanFunction;
 #endif
+#ifndef DOOMRPG_ESP32
 	int unk0;
+#endif
 	int screenWidth;
 	int screenHeight;
 	int halfScreenHeight;
 	int halfScreenWidth;
 	int fracHalfScreenWidth;
 	int fracHalfScreenHeight;
+#ifndef DOOMRPG_ESP32
 	int viewZOld;
+#endif
 	struct Node_s* nodes;
 	int nodesLength;
 	struct Line_s* lines;
@@ -103,7 +107,9 @@ typedef struct Render_s
 	byte mapFlags[1024];
 #endif
 	char mapName[MAPNAMESTRLEN];
+#ifndef DOOMRPG_ESP32
 	short unk1;
+#endif
 	short mapNameID;
 	int loadMapID;
 	int introColor;
@@ -117,7 +123,9 @@ typedef struct Render_s
 	struct Sprite_s* dropSprites[MAX_DROP_SPRITES];
 	int firstDropSprite;
 #endif
+#ifndef DOOMRPG_ESP32
 	int unk2;
+#endif
 	/* The ten desktop map/texture memory ledgers below are bookkeeping
 	 * from retired loaders. CYD owns compact native map arenas and bounded
 	 * asset caches, not these desktop counters. Palette accounting is
@@ -141,7 +149,9 @@ typedef struct Render_s
 	short* floorColor;
 	byte floorTex;
 	byte ceilingTex;
+#ifndef DOOMRPG_ESP32
 	byte unk3;
+#endif
 	boolean damageBlend;
 	int viewCos_;
 	int viewSin_;
@@ -211,9 +221,14 @@ typedef struct Render_s
 	byte spanMode;
 	int numLines;
 	int animFrameTime;
+	/* Desktop raster phase timestamps are not native CYD state.
+	 * Native CYD frame/flash probes own their timing independently.
+	 * Keep animFrameTime, which is still initialized by the native root. */
+#ifndef DOOMRPG_ESP32
 	int currentFrameTime;
 	int horizonFrameTime;
 	int frameTime;
+#endif
 	struct DoomRPG_s* doomRpg;
 	SDL_Rect clipRect;
 #ifndef DOOMRPG_ESP32
