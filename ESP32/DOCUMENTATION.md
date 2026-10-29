@@ -1,5 +1,14 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #239A — boot matériel non conforme au layout candidat, **ne pas déclarer PASS** (29 octobre 2026)
+
+Sur `agent/esp32-render-retire-legacy-bsp-buffer`, le code candidat `11d0ec6cfc25a08b4c77247fdde5021dbc864f7f` exclut le buffer et le curseur BSP desktop de `Render_t`, avec `sizeof(Render_t)==1356U` vérifié en CI push [#40930116152](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40930116152) et PR [#40930129599](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40930129599) (75/75 étapes chaque). Le journal `device-monitor-261029-231601.log`, sans boot, illustre deux parcours fonctionnels LOAD/EXIT puis START/EXIT, mais **le boot transmis séparément annonce `Render=1364`, `RENDERCORE bytes=1364`, `CORE used=2332`**, valeurs #238B. Le firmware de cette session ne peut donc pas être attesté comme #239. RAM LOAD `112028` et EXIT `157972` identiques à #238B ; ne pas attribuer de gain.
+
+**Reprise** : rester sur `agent/esp32-render-retire-legacy-bsp-buffer`, exécuter depuis `ESP32/` `pio run -e esp32-cyd -t clean`, puis `pio run -e esp32-cyd -t upload`, capturer **le boot complet** depuis le flash. Vérifier `Engine structs: Render=1356` et `[RENDERCORE] INIT ... bytes=1356`; si 1364 persiste, examiner branche Git courante, arbre et `platformio.ini` avant de considérer le test comme valide. Une fois 1356 observé, refaire un test LOAD→EXIT/START→EXIT et envoyer le log. Ne pas modifier le code candidat post-test ni préparer le jalon B tant que l'attribution n'est pas solide. Voir `MILESTONE_PR239A_RENDER_BSP_IO_BUFFER.md`.
+
+---
+
+
 ## PR #238, jalon B — cinq champs opaques Render desktop retirés, PASS CYD (29 octobre 2026)
 
 **Statut :** même branche/PR que le jalon A, sans merge intermédiaire, base `main=0883682baa32ae218a6369c2e43b5689060d10dc` ; **code matériel B attribué à la campagne de flash `fd39dee47205b5cd50fe6be7d0353f92773eb0fc`** (jalon A matériel antérieur `5fc43a920dcd9c9f7124d9f199d70bc980efb03d`). CI code B [push #40791105911](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40791105911) et [PR #40791111176](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40791111176) : **SUCCESS 75/75 chacune**.
