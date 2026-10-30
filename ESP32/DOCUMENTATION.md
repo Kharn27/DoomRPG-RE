@@ -1,5 +1,19 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #239B — PASS matériel des compteurs natifs de mappings (31 octobre 2026)
+
+Après le **jalon A PASS** (Render 1356 B), le code B **`f901938c70338bd782364b78e2e8a7845adbc022`** sur la même branche `agent/esp32-render-retire-legacy-bsp-buffer` réserve `Render_t::textureCnt` et `spriteCnt` au desktop. Attention : ces compteurs étaient **encore utilisés** côté ESP32 ! La première CI a exposé les références, puis `ESP32/src/esp_legacy_config_mappings_startup.c` a été corrigé pour lire les comptes de l'owner natif existant `MappingPlan_t installedPlan`. Assertion compilée `sizeof(Render_t)==1348U`, garde hôte, CI [push #41141371978](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41141371978) et [PR #41141377102](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41141377102) **SUCCESS**.
+
+**Boot réel normal `esp32-cyd`**, `device-monitor-261031-004416.log` : `Render=1348 Game=0 Canvas=44 Total=2152`, `RENDERCORE bytes=1348`, `CORE used=2316`, mappings `textures=152 sprites=252` / payload `8376 B` et `CONFIGMAP READY`, PSRAM 0. Attribution via HEAD local vérifié et reflash ; **le log antérieur `device-monitor-261031-000547.log` affichait encore A (1356) et ne doit pas être compté comme B**.
+
+**Parcours B hardware (1727 lignes)** : LOAD slot04 V11 → porte113, Malwrath322 et trois ripostes triple projectile204 correctement drainées, mort/drop, secret +5XP, EXIT ; START intro/Entrance `FIRST_FRAME 71ca7465`, caisse→Shell Clip, porte275, dialogues88/89/79, longue chaîne event60 avec transitions natives show/hide/unlock, EXIT. Deux reset résident `released=18008 empty=1` et menu `0f2c9fc3` ; journal dialogue libéré, `shapeData/mediaTexels=NULL`, `HEADROOM_OK`, pas de crash/WDT/assertion. **Heap8 vs A :** menu initial 153136→153144, LOAD prime 112044→112052, START prime 112856→112864, START avec journal 110900→110908, EXIT 157980→157988 ; largest8 `86004/110580` constant. Les six `NATIVEFRAME BOUNDARY-INLINE` et x projectile décalés sont préexistants ; les durées de rendu ne démontrent pas de lien causal avec −8 B.
+
+**Conclusion : PASS ciblé A+B, code B gelé, post-test docs-only, merge réservé à l'utilisateur**. Pas de preuve de SAVE neuf, endurance, toutes cartes, pixel parity, audio ou équivalence exacte de chaque frame. Référence détaillée : `MILESTONE_PR239B_RENDER_MAPPING_COUNTS.md`, et pour A : `MILESTONE_PR239A_RENDER_BSP_IO_BUFFER.md`.
+
+---
+
+
+
 ## PR #239A — PASS matériel après reflash vérifié (30 octobre 2026)
 
 Le code `11d0ec6cfc25a08b4c77247fdde5021dbc864f7f` sur `agent/esp32-render-retire-legacy-bsp-buffer` réserve désormais `Render_t::ioBuffer` et `ioBufferPos` au desktop, sans modifier le reader BSP compact du PAK. La compilation normale `esp32-cyd` impose `_Static_assert(sizeof(Render_t)==1356U)`, et le **boot du vrai CYD** `device-monitor-261030-223628.log` fournit `Engine structs: Render=1356 Game=0 Canvas=44 Total=2160`, `RENDERCORE INIT bytes=1356`, `CORE used=2324`, heap8 menu `153136`. PSRAM zéro ; invariants `shapeData/mediaTexels=NULL`.
