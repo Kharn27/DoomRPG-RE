@@ -33,7 +33,7 @@ mapper=extract("int EspLegacyMappings_load(struct Render_s* renderBase)")
 fnv=2166136261
 for b in mapper.encode("utf-8"):
     fnv=((fnv^b)*16777619)&0xffffffff
-assert fnv==0xda45ea1f, f"Native PAK mapper drift: {fnv:08x}"
+assert fnv==0x4ab5b50f, f"Native PAK mapper drift: {fnv:08x}"
 entry=extract("int EspLegacyConfigMappingsStartup_start(int renderStartupReady)")
 assert "mappingsResult = EspLegacyMappings_load(render) ? true : false;" in entry
 assert "Render_loadMappings(render)" not in entry
@@ -62,7 +62,6 @@ typedef enum { false, true } boolean;
 typedef struct Render_s {
     void *mediaTexelOffsets, *mediaBitShapeOffsets;
     void *mediaTexturesIds, *mediaSpriteIds;
-    int textureCnt, spriteCnt;
 } Render_t;
 typedef struct DoomRPG_s {
     void *game;
@@ -95,8 +94,6 @@ static int EspLegacyMappings_load(Render_t* render) {
     render->mediaBitShapeOffsets=&owned[1];
     render->mediaTexturesIds=&owned[2];
     render->mediaSpriteIds=&owned[3];
-    render->textureCnt=152;
-    render->spriteCnt=252;
     installedPlan.textureCnt=152;
     installedPlan.spriteCnt=252;
     installedPlan.persistentBytes=8376U;
@@ -122,7 +119,7 @@ int main(void) {
         assert(EspLegacyConfigMappingsStartup_start(1)==1);
         assert(mapperCalls==old+1);
         assert(configMappingsReady==1);
-        assert(render.textureCnt==152 && render.spriteCnt==252);
+        assert(installedPlan.textureCnt==152 && installedPlan.spriteCnt==252);
         assert(render.mediaTexelOffsets && render.mediaBitShapeOffsets);
         assert(render.mediaTexturesIds && render.mediaSpriteIds);
         assert(installedPlan.persistentBytes==8376U);
