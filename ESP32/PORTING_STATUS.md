@@ -1,5 +1,19 @@
 # Doom RPG ESP32 — état actuel du port
 
+## PR #239 — Jalon B PASS classic CYD (31 octobre 2026), compteurs de mappings natifs
+
+**PASS matériel après reflash du firmware normal `esp32-cyd`**, code B **`f901938c70338bd782364b78e2e8a7845adbc022`**, branche `agent/esp32-render-retire-legacy-bsp-buffer`, base `main=f605f855f4d9f9e3b1b6edf47072bb8a3cea6196`. L'utilisateur a confirmé HEAD local exact, branche non détachée et `_Static_assert(sizeof(Render_t)==1348U)`. **Le premier log du 31/10 (`device-monitor-261031-000547.log`) était encore A à 1356 B et ne prouve pas B ; le nouveau log complet `device-monitor-261031-004416.log` (1727 lignes) établit B à 1348 B.** Pas de SHA de firmware embarqué ; attribution par campagne locale et signature de structure au boot.
+
+**Frontière permanente :** `Render_t::textureCnt` et `spriteCnt` restent desktop-only (le desktop `src/Render.c` continue de les utiliser), et le chargeur ESP32 des mappings natifs stocke désormais les comptes dans `MappingPlan_t installedPlan` **déjà existant**, pas dans Render. La première CI avait légitimement identifié l'accès encore actif dans le loader ; il a été corrigé, pas masqué. Tests hôtes/normal/bringup/trace : CI B [push #41141371978](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41141371978) et [PR #41141377102](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41141377102) **SUCCESS**. Boot CYD B : `Engine structs: Render=1348 Game=0 Canvas=44 Total=2152`, `RENDERCORE bytes=1348`, `CORE Render used=1364`, `CORE READY used=2316` (−8B vs A) ; `[MAPPINGS] Header texelOffsets=592 bitShapeOffsets=1300 textures=152 sprites=252`, `INSTALLED payload=8376`, `CONFIGMAP READY`.
+
+**Deux sessions validées dans le même log** : LOAD slot04 V11/5604 B, `/intro.bsp` CRC `623f34e4`/arène `c3882516`, restauration monstres/topologie/positions/activation exactes, porte113 et Malwrath322 HP 11→7→3→0, trois ripostes x3 projectile204 avec `CLEAR` avant dégât, drop/pickup, Flak Jacket/secret+5XP/EXIT ; START avec intro, `FIRST_FRAME 71ca7465`, caisse127→Shell Clip, portes et pickups, dialogues 88/89/79 et longue chaîne event60 avec `DIALOGCHAIN RESUME` show/hide/unlock, puis EXIT. **Deux `RESIDENTRESET heap8=139980→157988 released=18008 empty=1` et deux `SYSEXIT MENU-READY frame=0f2c9fc3`**, pas d'écriture save ; `shapeData=mediaTexels=NULL`, deux `RAMBUDGET HEADROOM_OK`, pas de panic/WDT/assertion.
+
+**Mémoire #239A→B :** `Render_t 1356→1348` (−8 B), `CORE used 2324→2316` (−8 B), heap8 MENU `153136→153144`, LOAD prime `112044→112052`, START prime `112856→112864`, START journal `110900→110908`, EXIT `157980→157988` (**+8 B libres** aux frontières mesurées). Largest8 gameplay/menu inchangé `86004/110580`. Six traces `NATIVEFRAME BOUNDARY-INLINE` et positions x des projectiles `+0x40000000` préexistantes à suivre séparément, sans attribution au layout ; timings non causalement comparables. Pas de SAVE neuf, endurance, toutes cartes, pixel parity exhaustive ou test audio. **Code B gelé ; clôture post-test uniquement docs**, voir `ESP32/MILESTONE_PR239B_RENDER_MAPPING_COUNTS.md` et jalon A `MILESTONE_PR239A_RENDER_BSP_IO_BUFFER.md`.
+
+---
+
+
+
 ## PR #239 — Jalon A PASS classic CYD (30 octobre 2026), retrait buffer BSP desktop
 
 **PASS matériel confirmé sur le code `11d0ec6cfc25a08b4c77247fdde5021dbc864f7f`** après reconstruction/flash du firmware normal `esp32-cyd` sur la branche `agent/esp32-render-retire-legacy-bsp-buffer` ; main de base `f605f855f4d9f9e3b1b6edf47072bb8a3cea6196`. L'écart précédent (boot `Render=1364`) est résolu : `device-monitor-261030-223628.log` affiche **`Render=1356`**, `RENDERCORE bytes=1356`, `CORE Render used=1372`, `CORE used=2324`, menu heap8 **153136** (+8B vs #238B), PSRAM zéro, PAK 241, framebuffer 160×120/38400B. Assertion compilation `sizeof(Render_t)==1356U` cohérente avec le Serial. Pas de SHA binaire embarqué.
