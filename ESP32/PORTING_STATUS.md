@@ -1,5 +1,16 @@
 # Doom RPG ESP32 — état actuel du port
 
+## PR #239 — Jalon A PASS classic CYD (30 octobre 2026), retrait buffer BSP desktop
+
+**PASS matériel confirmé sur le code `11d0ec6cfc25a08b4c77247fdde5021dbc864f7f`** après reconstruction/flash du firmware normal `esp32-cyd` sur la branche `agent/esp32-render-retire-legacy-bsp-buffer` ; main de base `f605f855f4d9f9e3b1b6edf47072bb8a3cea6196`. L'écart précédent (boot `Render=1364`) est résolu : `device-monitor-261030-223628.log` affiche **`Render=1356`**, `RENDERCORE bytes=1356`, `CORE Render used=1372`, `CORE used=2324`, menu heap8 **153136** (+8B vs #238B), PSRAM zéro, PAK 241, framebuffer 160×120/38400B. Assertion compilation `sizeof(Render_t)==1356U` cohérente avec le Serial. Pas de SHA binaire embarqué.
+
+**Validation gameplay `device-monitor-261030-234936.log` (1045 lignes)** : LOAD checkpoint slot04 V11/5604B, source `/intro.bsp` CRC `623f34e4`, arena 14095/`c3882516`, monstres/topologie/positions/activation `beaeaccc/50e16fe3/e2a9d90a/df419482`, Malwrath322 HP11→7→3→0 et deux ripostes x3 projectile204 drainées avant COMMIT ; porte113 et fermeture post-tour, drop/pickup et secret +5XP, HUB EXIT. START, intro `ade0195d`, première frame `71ca7465`, crate/Armor Shards, porte275, dialogue88 repris opcode19, dialogue89 annulé sans mutation ; second EXIT. **Deux `RESIDENTRESET released=18008 empty=1`, deux `menu=0f2c9fc3`, `saveWrite=no`**, `shapeData/mediaTexels=NULL`, HEADROOM_OK, aucune trace panic/WDT/assertion.
+
+Heap8 prime LOAD `112044` (+16B vs #238B), START `112856` (+8B), dialogue START `110900` (+16B), EXIT **`157980`** (+8B), largest8 gameplay `86004`, menu `110580`. Timings mesurés, **pas d'interprétation causale**. Pas de SAVE neuf/endurance/pixel parity exhaustive. Anciennes captures affichant 1364 **restent historiquement non attribuables** et ne doivent pas être transformées en PASS #239. **Code A gelé, post-test docs-only** ; poursuivre un éventuel jalon B sur la même branche avant de marquer PR #239 prête. Voir `MILESTONE_PR239A_RENDER_BSP_IO_BUFFER.md`.
+
+---
+
+
 ## PR #239 — Jalon A : code compilé, **validation CYD NON CONFIRMÉE** (29 octobre 2026)
 
 **Source de vérité matérielle contradictoire avec le code #239** : branche `agent/esp32-render-retire-legacy-bsp-buffer`, base main `f605f855f4d9f9e3b1b6edf47072bb8a3cea6196` après merge #238 ; candidat code `11d0ec6cfc25a08b4c77247fdde5021dbc864f7f`. Les deux champs `Render_t::ioBuffer` et `Render_t::ioBufferPos` sont desktop-only, taille **1356 B attendue et assertée** dans `render_startup_bridge.c`; tests hôte et CI code **SUCCESS 75/75** push [#40930116152](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40930116152) et PR [#40930129599](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40930129599). La cible desktop/les parses PAK, BSP natif, RNG, gameplay, framebuffer, save et render restent inchangés.
