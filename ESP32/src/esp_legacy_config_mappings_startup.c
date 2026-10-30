@@ -178,7 +178,7 @@ int EspLegacyMappings_load(struct Render_s* renderBase) {
         render->mediaTexturesIds != NULL &&
         render->mediaSpriteIds != NULL) {
         printf("[MAPPINGS] REUSE immutable arrays textures=%d sprites=%d reload=no\n",
-               render->textureCnt, render->spriteCnt);
+               installedPlan.textureCnt, installedPlan.spriteCnt);
         return 1;
     }
 
@@ -203,8 +203,6 @@ int EspLegacyMappings_load(struct Render_s* renderBase) {
     }
 
     data = render->framebuffer;
-    render->textureCnt = plan.textureCnt;
-    render->spriteCnt = plan.spriteCnt;
     for (i = 0; i < plan.texelsCnt; ++i) {
         render->mediaTexelOffsets[i] = DoomRPG_intAtNext(data, &dataPos);
     }
@@ -294,16 +292,13 @@ int EspLegacyConfigMappingsStartup_start(int renderStartupReady) {
         render->mediaTexelOffsets == NULL ||
         render->mediaBitShapeOffsets == NULL ||
         render->mediaTexturesIds == NULL ||
-        render->mediaSpriteIds == NULL ||
-        render->textureCnt != plan.textureCnt ||
-        render->spriteCnt != plan.spriteCnt) {
-        printf("[MAPPINGS] FAILED texel=%p bitShape=%p texIds=%p spriteIds=%p textures=%d/%d sprites=%d/%d\n",
+        render->mediaSpriteIds == NULL) {
+        printf("[MAPPINGS] FAILED texel=%p bitShape=%p texIds=%p spriteIds=%p textures=%d sprites=%d\n",
                (void*)render->mediaTexelOffsets,
                (void*)render->mediaBitShapeOffsets,
                (void*)render->mediaTexturesIds,
                (void*)render->mediaSpriteIds,
-               render->textureCnt, plan.textureCnt,
-               render->spriteCnt, plan.spriteCnt);
+               plan.textureCnt, plan.spriteCnt);
         return 0;
     }
 
