@@ -265,9 +265,13 @@ typedef struct Render_s
 	PlaneTextureRef_t planeTextures[1024*2];
 #endif
 
-	// New [GEC]
-	// Needed to avoid buffer overflows like in sector 5
+/* Desktop mappings parser bounds: Render_loadMappings owns these
+	 * counts for the original texture/sprite lookup tables. CYD native
+	 * mappings/catalog have their own bounded counts and never consult
+	 * these legacy Render_t fields. */
+#ifndef DOOMRPG_ESP32
 	int textureCnt, spriteCnt;
+#endif
 } Render_t;
 
 #ifndef DOOMRPG_ESP32
