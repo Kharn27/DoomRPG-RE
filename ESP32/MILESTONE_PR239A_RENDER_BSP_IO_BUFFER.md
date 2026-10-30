@@ -1,4 +1,23 @@
-# PR #239 — Jalon A : retrait du buffer/curseur BSP desktop — validation matérielle non attribuable
+# PR #239 — Jalon A : retrait buffer/curseur BSP desktop — PASS CYD (30 octobre 2026)
+
+## Validation finale matérielle (30 octobre 2026) — PASS ciblé
+
+**Source exacte du changement de code** : `11d0ec6cfc25a08b4c77247fdde5021dbc864f7f` sur `agent/esp32-render-retire-legacy-bsp-buffer`, base main `f605f855f4d9f9e3b1b6edf47072bb8a3cea6196` ; les commits suivants de documentation et de script de monitoring n'affectent pas les moteurs ESP32. **Profil firmware** normal `esp32-cyd`, classic ESP32-D0WD-V3 sans PSRAM. Attribution par assertion vérifiée localement, disposition et retour Serial (pas de SHA binaire embarqué).
+
+**Preuve boot** `device-monitor-261030-223628.log` (30 octobre) : `Engine structs: Render=1356 Game=0 Canvas=44 Total=2160 bytes`, `[RENDERCORE] INIT ... bytes=1356`, `[CORE] Render used=1372`, `[CORE] READY ... used=2324`. Ancien #238B : respectivement 1364, 1364, 1380, 2332. **−8 B** de structure et −8 B de root alloué, `heap8 MENU_MAIN 153128→153136` (+8 B disponibles), `PSRAM=0`, framebuffer 160×120×2 = 38400B, PAK 241 entrées, menu `frame=0f2c9fc3`.
+
+**Preuve gameplay** `device-monitor-261030-234936.log` (1045 lignes), dans la même campagne / boot, sans reboot signalé (uptime initial 4 385 000 ms) : deux séquences **LOAD slot04 → EXIT → START → EXIT**, aucune trace panic, WDT, assertion. LOAD V11 5604B exact : `/intro.bsp` 21823B/CRC `623f34e4`, arène 14095B/`c3882516`, monstre `beaeaccc`, topologie `50e16fe3`, position `e2a9d90a`, activation `df419482`; MAPFLASH REUSE HIT et HEADROOM_OK. NEXT_WEAPON, porte113 quatre frames, animation/collision HOLD→RELEASE→POST-MONSTER-COMPLETE, Malwrath322 HP `11→7→3→0` avec deux ripostes x3 projectile204, CLEAR avant COMMIT, drop Health Vial et pickup, Flak Jacket, secret +5 XP (deux portes). Le premier EXIT retourne `RESIDENTRESET heap8=139972→157980 released=18008 empty=1`, `SYSEXIT menu=0f2c9fc3 saveWrite=no`.
+
+Après START : nouveau player `e745fce9`, intro première frame `ade0195d`, libération `INTRODISP recovered=34056`, BSP/arena identiques, `FIRST_FRAME 71ca7465` (8 murs, 4430 pixels), caisses et Armor Shards, porte275 ouverture/fermeture différée, dialogue88 opcode8 avec continuation opcode19, dialogue89 opcode8 annulé en `back-cancel` sans mutation. Propriétaire `DIALOGCHAIN` libéré à la sortie (1144B récupérés). Deuxième EXIT : **même** `RESIDENTRESET heap8=139972→157980 released=18008 empty=1`, menu `0f2c9fc3`, aucun saveWrite. `shapeData=0x0` et `mediaTexels=0x0` aux frontières.
+
+**Comparaison RAM #238B→#239A** (même profil normal, sessions de gameplay voisines) : heap8 LOAD prime `112028→112044` (+16B libres), START prime `112848→112856` (+8B), START dialogue `110884→110900` (+16B), EXIT `157972→157980` (+8B) ; largest8 gameplay `86004`, menu `110580` constants. Différences de blocs alloués non strictement égales aux −8B du shell. LOAD LARGE-WARM mesure ponctuelle `spriteUs=37858 µs, total=85195 µs`, premier MOVE `119420 µs`, contre le précédent log #238B `34577/82370` et `114742` : **ne pas attribuer causalement ces variations au retrait de deux champs** ; cache/charge/instrumentation diffèrent.
+
+**Limites conservées** : `NATIVEFRAME BOUNDARY-INLINE` observé une fois, abscisses projectile journalisées avec décalage `+0x40000000` déjà présent, pas de SAVE neuf, ni endurance exhaustive, ni parité pixel toutes cartes, ni validation indépendante de la sensation écran. Ce PASS porte sur la frontière Render layout et les régressions couvertes, non sur tout le moteur. **Code A gelé à `11d0ec6…` ; clôture après test docs-only.** La PR #239 reste Draft tant que les éventuels jalons suivants sur cette branche ne sont pas validés.
+
+---
+
+## Historique de l'attribution erronée (29 octobre 2026, résolu par le boot + test du 30 octobre)
+
 
 Campagne matérielle : **29 octobre 2026**. Branche `agent/esp32-render-retire-legacy-bsp-buffer`, PR https://github.com/Kharn27/DoomRPG-RE/pull/239. Base **main** `f605f855f4d9f9e3b1b6edf47072bb8a3cea6196` (merge #238). **Code candidat pour test : `11d0ec6cfc25a08b4c77247fdde5021dbc864f7f`** ; **non validé matériellement** au 29 octobre : le boot complet transmis après la session montre la disposition #238B (Render 1364 B), pas le layout compilé #239 (1356 B). Le binaire ne publie aucun fingerprint SHA.
 
