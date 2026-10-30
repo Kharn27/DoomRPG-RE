@@ -1,5 +1,14 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #239A — PASS matériel après reflash vérifié (30 octobre 2026)
+
+Le code `11d0ec6cfc25a08b4c77247fdde5021dbc864f7f` sur `agent/esp32-render-retire-legacy-bsp-buffer` réserve désormais `Render_t::ioBuffer` et `ioBufferPos` au desktop, sans modifier le reader BSP compact du PAK. La compilation normale `esp32-cyd` impose `_Static_assert(sizeof(Render_t)==1356U)`, et le **boot du vrai CYD** `device-monitor-261030-223628.log` fournit `Engine structs: Render=1356 Game=0 Canvas=44 Total=2160`, `RENDERCORE INIT bytes=1356`, `CORE used=2324`, heap8 menu `153136`. PSRAM zéro ; invariants `shapeData/mediaTexels=NULL`.
+
+Dans `device-monitor-261030-234936.log` (1045 lignes) : reprise LOAD slot04 V11 / Malwrath triple projectile / porte / loot / secret → EXIT, puis START / intro / native frame `71ca7465` / crate / dialogue88 reprise / dialogue89 annulé sans mutation / porte275 → EXIT. **Deux reset résident `empty=1 released=18008`, menu `0f2c9fc3`, heap8 après EXIT `157980`**, aucun crash/WDT. Prime gameplay : LOAD `112044`, START `112856`, largest8 `86004`, HEADROOM_OK. Les anciennes captures `Render=1364` n'étaient pas attribuables à #239 ; elles demeurent des témoins historiques, **ce diagnostic est maintenant résolu**. Validation ciblée, pas une preuve de SAVE neuf, endurance ou pixel parity exhaustive. Code A gelé ; clôture docs-only puis prochain jalon sur la même PR si poursuivi. Lire `MILESTONE_PR239A_RENDER_BSP_IO_BUFFER.md`.
+
+---
+
+
 ## PR #239A — boot matériel non conforme au layout candidat, **ne pas déclarer PASS** (29 octobre 2026)
 
 Sur `agent/esp32-render-retire-legacy-bsp-buffer`, le code candidat `11d0ec6cfc25a08b4c77247fdde5021dbc864f7f` exclut le buffer et le curseur BSP desktop de `Render_t`, avec `sizeof(Render_t)==1356U` vérifié en CI push [#40930116152](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40930116152) et PR [#40930129599](https://github.com/Kharn27/DoomRPG-RE/actions/runs/40930129599) (75/75 étapes chaque). Le journal `device-monitor-261029-231601.log`, sans boot, illustre deux parcours fonctionnels LOAD/EXIT puis START/EXIT, mais **le boot transmis séparément annonce `Render=1364`, `RENDERCORE bytes=1364`, `CORE used=2332`**, valeurs #238B. Le firmware de cette session ne peut donc pas être attesté comme #239. RAM LOAD `112028` et EXIT `157972` identiques à #238B ; ne pas attribuer de gain.
