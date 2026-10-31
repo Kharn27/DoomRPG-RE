@@ -664,23 +664,34 @@ static int buildOrder(Render_t* render,
         const int64_t recordStarted = probe != NULL
                                           ? esp_timer_get_time() : 0LL;
 
+        /* Normal frames first ask the compact visual owner whether the BSP
+         * even admitted this sprite. Only visible candidates need immutable
+         * sprite decoding or entity topology. The trace profile deliberately
+         * retains its full per-index record witness. */
+#if defined(DOOMRPG_ESP32_TRACE_SPRITE)
         if (!EspMapRuntime_getMapSprite(i, &sprite) ||
             !EspMapSpriteTopology_getVisualState(i, &visual) ||
             !EspMapSpriteTopology_getEntity(i, &type, &subtype, &link, &ordinal)) {
             return 0;
         }
+#else
+        if (!EspMapSpriteTopology_getVisualState(i, &visual)) return 0;
+#endif
         if (probe != NULL) {
             probe->recordUs += (uint32_t)(esp_timer_get_time() -
                                           recordStarted);
             ++probe->records;
         }
-        (void)subtype;
-        (void)link;
-        (void)ordinal;
         ++stats->objects;
 
+#if defined(DOOMRPG_ESP32_TRACE_SPRITE)
         info = (sprite.info & ~VISUAL_MASK) | ((uint32_t)visual << 9);
         id = info & 511U;
+#else
+        /* The hidden bit (0x10000) belongs entirely to the mutable visual
+         * byte, never to the immutable sprite record. */
+        info = ((uint32_t)visual << 9);
+#endif
         TRACE_SPRITE(i, "[SPRITETRACE] STATE sprite=%u pos=%u,%u tile=%u type=%u subtype=%u linked=%u alive=%u visual=%02x info=%08x camera=%d,%d preview=%u\n",
                      (unsigned int)i, (unsigned int)sprite.x,
                      (unsigned int)sprite.y,
@@ -716,6 +727,20 @@ static int buildOrder(Render_t* render,
             ++stats->bspRejected;
             continue;
         }
+#if !defined(DOOMRPG_ESP32_TRACE_SPRITE)
+        /* The source arena and topology have already been validated at map
+         * construction. Preserve fail-closed access for every admitted
+         * sprite; reject malformed leaves above instead of admitting them. */
+        if (!EspMapRuntime_getMapSprite(i, &sprite) ||
+            !EspMapSpriteTopology_getEntity(i, &type, &subtype, &link, &ordinal)) {
+            return 0;
+        }
+        info = (sprite.info & ~VISUAL_MASK) | ((uint32_t)visual << 9);
+        id = info & 511U;
+#endif
+        (void)subtype;
+        (void)link;
+        (void)ordinal;
         ++stats->bspCandidates;
         TRACE_SPRITE(i, "[SPRITETRACE] ADMISSION sprite=%u result=candidate leaf=%u\n", (unsigned int)i, (unsigned int)leaf);
 
