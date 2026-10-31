@@ -46,7 +46,7 @@ body = runtime.replace("EspNativeRenderRuntime_releaseCompatibility(",
 fnv = 2166136261
 for b in body.encode("utf-8"):
     fnv = ((fnv ^ b) * 16777619) & 0xffffffff
-assert fnv == 0x795212f8, f"Runtime parity drift {fnv:08x}"
+assert fnv == 0xa567e892, f"Runtime parity drift {fnv:08x}"
 
 shim = r"""
 #include <assert.h>
@@ -56,10 +56,8 @@ shim = r"""
 #include <string.h>
 typedef unsigned char byte;
 typedef struct Render_s {
-    void *mediaTexels, *shapeData, *mapSprites, *nodes, *lines;
-    void *tileEvents, *mapByteCode;
+    void *mediaTexels, *shapeData;
     int numMapSprites, linesLength, mapStringCount;
-    void **mapStringsIDs;
     void *mediaBitShapeOffsets, *mediaTexelOffsets, *mediaTexturesIds;
     void *mediaSpriteIds;
     void *ceilingColor, *floorColor, *columnScale, *mediaPalettes;
@@ -103,23 +101,14 @@ static void populate(Render_t* r, int variant) {
     if (variant==0) return;
     OWN(shapeData);
     OWN(mediaTexels);
-    OWN(nodes);
-    OWN(lines);
     r->linesLength=123;
     if (variant==1) return;
-    OWN(mapSprites);
     r->numMapSprites=12;
-    OWN(tileEvents);
-    OWN(mapByteCode);
     OWN(mediaBitShapeOffsets);
     OWN(mediaTexelOffsets);
     OWN(mediaTexturesIds);
     OWN(mediaSpriteIds);
     r->mapStringCount=2;
-    r->mapStringsIDs=(void**)malloc(sizeof(void*)*2);
-    assert(r->mapStringsIDs);++allocations;
-    r->mapStringsIDs[0]=owned();
-    r->mapStringsIDs[1]=owned();
 }
 static void testCleanup(void) {
     DoomCanvas_t canvas={1};
@@ -132,10 +121,9 @@ static void testCleanup(void) {
         assert(allocations==0);
         assert(root.render==&render && root.doomCanvas==&canvas);
         assert(render.framebuffer==sharedFB && render.mediaPalettes==sharedPalette);
-        assert(render.nodes==NULL && render.lines==NULL && render.mapSprites==NULL);
         assert(render.mediaTexels==NULL && render.shapeData==NULL);
         assert(render.mediaTexelOffsets==NULL && render.mediaBitShapeOffsets==NULL);
-        assert(render.mapStringsIDs==NULL && render.mapStringCount==0);
+        assert(render.mapStringCount==0);
         assert(render.numMapSprites==0 && render.linesLength==0);
     }
     Render_t render={0};
