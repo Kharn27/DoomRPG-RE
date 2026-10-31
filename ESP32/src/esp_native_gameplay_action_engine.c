@@ -1984,7 +1984,7 @@ int __wrap_Esp32PlatformVideo_present(void) {
             actionState.viewportFlashPending != 0U ||
             (actionState.viewportFlashVisible != 0U &&
              viewportFeedbackBlinkLit(
-                 actionNowMs() - actionState.viewportFlashShownAtMs)));
+                 actionNowMs() - actionState.viewportFlashShownAtMs));
         if (shouldPaint &&
             (actionState.viewportFlashPending != 0U ||
              actionState.framebufferFresh != 0U ||
