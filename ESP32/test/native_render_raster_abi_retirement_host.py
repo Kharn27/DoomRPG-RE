@@ -324,17 +324,17 @@ for field in ("mediaTexelOffsets", "mediaBitShapeOffsets",
 # PR242: native world data is owned by immutable EspMapRuntime and its
 # bounded overlays, never by six pointer-heavy desktop Render mirrors.
 # Explicit bringup probes may still exercise the historical ABI.
-legacy_guard = (r"#if !defined\\(DOOMRPG_ESP32\\) \\| "
-                r"defined\\(DOOMRPG_ESP32_BRINGUP_PROBES\\)")
-for decl in (r"struct Node_s\\* nodes;", r"struct Line_s\\* lines;",
-             r"struct Sprite_s\\* mapSprites;", r"int\\* tileEvents;"):
-    assert re.search(legacy_guard + r"\\s+" + decl + r"\\s+#endif", HEADER), decl
-assert re.search(legacy_guard + r"\\s+int\\* mapByteCode;\\s+"
-                 r"char\\*\\* mapStringsIDs;\\s+#endif", HEADER)
+legacy_guard = (r"#if !defined\(DOOMRPG_ESP32\) \| "
+                r"defined\(DOOMRPG_ESP32_BRINGUP_PROBES\)")
+for decl in (r"struct Node_s\* nodes;", r"struct Line_s\* lines;",
+             r"struct Sprite_s\* mapSprites;", r"int\* tileEvents;"):
+    assert re.search(legacy_guard + r"\s+" + decl + r"\s+#endif", HEADER), decl
+assert re.search(legacy_guard + r"\s+int\* mapByteCode;\s+"
+                 r"char\*\* mapStringsIDs;\s+#endif", HEADER)
 for field in ("nodes", "lines", "mapSprites", "tileEvents",
               "mapByteCode", "mapStringsIDs"):
     assert "render->" + field not in root, field
-    assert re.search(r"\\brender->" + field + r"\\b", DESKTOP), field
+    assert re.search(r"\brender->" + field + r"\b", DESKTOP), field
 
 # The sprite renderer is the other owner of transactional frame scratch.
 # Its clipping/projection lines are function-local too. No CYD Render_t
