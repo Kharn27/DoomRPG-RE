@@ -78,9 +78,11 @@ static int boundaryIsSafe(const DoomRPG_t* doomRpg) {
            introState->imgLinesLayer.imgBitmap != NULL &&
            introState->imgPlanetLayer.imgBitmap != NULL &&
            introState->imgSpaceship.imgBitmap != NULL &&
+#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)
            render->nodes == NULL &&
            render->lines == NULL &&
            render->mapSprites == NULL &&
+#endif
            render->mediaTexelOffsets == NULL &&
            render->mediaBitShapeOffsets == NULL &&
            render->shapeData == NULL &&

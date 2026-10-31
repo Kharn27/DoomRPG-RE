@@ -488,8 +488,10 @@ static void restoreRenderScratch(Render_t* render, const RenderScratch* scratch)
 
 static int legacyGraphicsRuntimeClear(const Render_t* render) {
     return render != NULL &&
+#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)
            render->lines == NULL && render->nodes == NULL &&
            render->mapSprites == NULL &&
+#endif
            render->mediaTexelOffsets == NULL &&
            render->mediaBitShapeOffsets == NULL &&
            render->mediaTexturesIds == NULL &&

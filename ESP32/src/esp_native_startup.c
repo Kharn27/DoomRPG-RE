@@ -69,12 +69,14 @@ static int introResourcesAreReleased(const DoomRPG_t* doomRpg) {
 
 static int legacyRuntimeIsClear(const Render_t* render) {
     return render != NULL &&
+#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)
            render->nodes == NULL &&
            render->lines == NULL &&
            render->mapSprites == NULL &&
            render->tileEvents == NULL &&
            render->mapByteCode == NULL &&
            render->mapStringsIDs == NULL &&
+#endif
            render->mediaTexelOffsets == NULL &&
            render->mediaBitShapeOffsets == NULL &&
            render->mediaTexturesIds == NULL &&

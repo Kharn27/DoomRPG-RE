@@ -29,8 +29,10 @@ static int nativeCompactWorldContext(const Render_t* render) {
            render->screenWidth == 160 && render->screenHeight == 80 &&
            render->screenLeft == 0 && render->screenTop == 0 &&
            render->screenRight == 160 && render->screenBottom == 80 &&
+#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)
            render->lines == NULL && render->nodes == NULL &&
            render->mapSprites == NULL &&
+#endif
            render->mediaTexelOffsets == NULL &&
            render->mediaBitShapeOffsets == NULL &&
            render->mediaTexturesIds == NULL &&

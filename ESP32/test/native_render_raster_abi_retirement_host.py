@@ -321,6 +321,21 @@ for field in ("mediaTexelOffsets", "mediaBitShapeOffsets",
         NATIVE / "src/esp_legacy_config_mappings_startup.c"
     ).read_text(), field
 
+# PR243: native world data is owned by immutable EspMapRuntime and its
+# bounded overlays, never by six pointer-heavy desktop Render mirrors.
+# Explicit bringup probes may still exercise the historical ABI.
+legacy_guard = (r"#if !defined\(DOOMRPG_ESP32\) \|\| "
+                r"defined\(DOOMRPG_ESP32_BRINGUP_PROBES\)")
+for decl in (r"struct Node_s\* nodes;", r"struct Line_s\* lines;",
+             r"struct Sprite_s\* mapSprites;", r"int\* tileEvents;"):
+    assert re.search(legacy_guard + r"\s+" + decl + r"\s+#endif", HEADER), decl
+assert re.search(legacy_guard + r"\s+int\* mapByteCode;\s+"
+                 r"char\*\* mapStringsIDs;\s+#endif", HEADER)
+for field in ("nodes", "lines", "mapSprites", "tileEvents",
+              "mapByteCode", "mapStringsIDs"):
+    assert not re.search(r"\brender->" + field + r"\b", root), field
+    assert re.search(r"\brender->" + field + r"\b", DESKTOP), field
+
 # The sprite renderer is the other owner of transactional frame scratch.
 # Its clipping/projection lines are function-local too. No CYD Render_t
 # member or native source may retain desktop tmpLine after this milestone.
@@ -328,7 +343,7 @@ sprite = (NATIVE / "src/esp_native_sprite_renderer.c").read_text()
 assert "Line_t tmpLine;" not in sprite
 assert "->tmpLine" not in sprite
 assert "_Static_assert(sizeof(Scratch) <= 740U" in sprite
-assert "sizeof(Render_t) == 1332U" in (
+assert "sizeof(Render_t) == 1308U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 assert re.search(
     r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"

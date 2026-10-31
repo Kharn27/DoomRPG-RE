@@ -63,9 +63,11 @@ static uint32_t framebufferHash(void) {
 
 static int runtimePoolsAreReleased(const Render_t* render) {
     return render != NULL &&
+#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)
            render->nodes == NULL &&
            render->lines == NULL &&
            render->mapSprites == NULL &&
+#endif
            render->mediaTexelOffsets == NULL &&
            render->mediaBitShapeOffsets == NULL &&
            render->shapeData == NULL &&
@@ -283,14 +285,11 @@ void Esp32IntroDispose_service(struct DoomRPG_s* doomRpgBase) {
            (int)heapAfter - (int)heapBefore,
            (unsigned int)largestBefore,
            (unsigned int)largestAfter);
-    printf("[INTRODISP] PARK state=%d startupMap=%d shapeData=%p mediaTexels=%p nodes=%p lines=%p mapSprites=%p; next milestone owns map loading\n",
+    printf("[INTRODISP] PARK state=%d startupMap=%d shapeData=%p mediaTexels=%p legacyWorld=retired; next milestone owns map loading\n",
            canvas->state,
            canvas->startupMap,
            (void*)doomRpg->render->shapeData,
-           (void*)doomRpg->render->mediaTexels,
-           (void*)doomRpg->render->nodes,
-           (void*)doomRpg->render->lines,
-           (void*)doomRpg->render->mapSprites);
+           (void*)doomRpg->render->mediaTexels);
 }
 
 int Esp32IntroDispose_isDone(void) {
