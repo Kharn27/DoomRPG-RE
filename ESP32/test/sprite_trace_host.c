@@ -81,7 +81,14 @@ int main(void) {
             }
         }
     }
+    /* The trace build must still inspect every source record. In the
+     * production/bringup renderer only four admitted records are decoded,
+     * but all twelve mutable visual states and eight BSP queries remain. */
+#if defined(DOOMRPG_ESP32_TRACE_SPRITE)
     assert(mapReads == 12U && visualReads == 12U && entityReads == 12U);
+#else
+    assert(mapReads == 4U && visualReads == 12U && entityReads == 4U);
+#endif
     assert(liveQueries == 4U && previewQueries == 4U);
     assert(fixture.x == 544 && fixture.y == 928 && fixture.info == 1);
     puts("sprite_trace_host: PASS hidden/BSP/admitted, preview/live paths, exact read counts and unchanged fixtures");
