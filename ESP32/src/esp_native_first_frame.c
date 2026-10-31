@@ -494,8 +494,7 @@ static int legacyGraphicsRuntimeClear(const Render_t* render) {
            render->mediaBitShapeOffsets == NULL &&
            render->mediaTexturesIds == NULL &&
            render->mediaSpriteIds == NULL &&
-           render->shapeData == NULL && render->mediaTexels == NULL &&
-           render->mapTextureTexels == NULL && render->mapSpriteTexels == NULL;
+           render->shapeData == NULL && render->mediaTexels == NULL;
 }
 
 static const ResolvedWallTexture* findResolved(const FirstFrameWork* work,

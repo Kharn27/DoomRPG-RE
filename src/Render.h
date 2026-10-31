@@ -191,10 +191,14 @@ typedef struct Render_s
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	struct Node_s viewNodes;
 #endif
+/* Legacy per-map texture/sprite texel pointer lists are desktop-only.
+ * Native CYD resolves bounded PAK-backed graphics instead of map-wide lists. */
+#ifndef DOOMRPG_ESP32
 	int* mapTextureTexels;
 	int mapTextureTexelsCount;
 	int* mapSpriteTexels;
 	int mapSpriteTexelsCount;
+#endif
 /* The desktop BSP parser alone owns its map-wide read buffer and cursor.
  * Native CYD inventory/arena parsing uses EspBspReader, never this state. */
 #ifndef DOOMRPG_ESP32

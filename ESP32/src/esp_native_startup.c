@@ -79,8 +79,6 @@ static int legacyRuntimeIsClear(const Render_t* render) {
            render->mediaBitShapeOffsets == NULL &&
            render->mediaTexturesIds == NULL &&
            render->mediaSpriteIds == NULL &&
-           render->mapTextureTexels == NULL &&
-           render->mapSpriteTexels == NULL &&
            render->shapeData == NULL &&
            render->mediaTexels == NULL &&
            /* Desktop BSP I/O buffer/cursor are absent from native Render_t. */
