@@ -211,20 +211,15 @@ int main(void) {
                  FEEDBACK_DAMAGE_RED565);
     finishBlink(2U, 0x1234U);
 
-    /* White pickup flash is still solid white and uses no blink frames. */
+    /* Real white pickup compositor: three pulses, zero directional tint,
+     * exact pixel restoration and no redundant final physical present. */
     seedUnpainted();
     actionState.viewportFlashPending = 1U;
     actionState.viewportFlashColor565 = 0xffffU;
     actionState.viewportFlashDurationMs = 500U;
     assert(__wrap_Esp32PlatformVideo_present());
     expectBorder(0U, 0x1234U, 0xffffU);
-    clockMs += 320U;
-    poll();
-    assert(presents == 1U);
-    clockMs += 181U;
-    poll();
-    assert(presents == 2U && !actionState.viewportFlashVisible);
-    expectClean(0x1234U);
+    finishBlink(1U, 0x1234U);
 
     /* A second hit refreshes the SAME lease and changes the tinted side
      * without leaving a ghost of the earlier red/tinted side. */
@@ -375,6 +370,6 @@ int main(void) {
     assert(__wrap_Esp32PlatformVideo_present());
     assert(presents == 4U);
 
-    puts("damage_cue_timing_host: PASS shared 3-pulse red+translucent direction, one 500ms clock, failed ON/OFF retry, exact new-world restore, white pickup unaffected, automap, menu isolation");
+    puts("damage_cue_timing_host: PASS shared 3-pulse red+translucent direction, one 500ms clock, failed ON/OFF retry, exact new-world restore, white pickup 3-pulse exact restore, automap, menu isolation");
     return 0;
 }

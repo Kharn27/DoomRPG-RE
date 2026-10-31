@@ -306,6 +306,13 @@ static void onGameplayTap(int16_t screenX,
     ++gameplayState.taps;
     status = EspNativeGameplayInput_route(&hit, logicalX, logicalY);
     if (status == ESP_NATIVE_GAMEPLAY_INPUT_OK) {
+        /* Replace any prior touch pixel lease before drawing a new one.
+         * World input is already admitted; no time-based cooldown. */
+        if (EspNativeGameplayControls_isActive() &&
+            !EspNativeGameplayControls_restore(0, NULL)) {
+            disableGameplay("touch-feedback-replace");
+            return;
+        }
         memset(&feedbackStats, 0, sizeof(feedbackStats));
         if (!EspNativeGameplayControls_begin(&hit, &feedbackStats)) {
             /* Feedback is cosmetic. The semantic input is already queued and
@@ -2190,8 +2197,13 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
         return;
     }
 
+    /* The 120ms cue is cosmetic, not a dispatch cooldown. Release its
+     * bounded pixel journal before any admitted action can draw/mutate.
+     * Present the restored baseline even for actions that do not redraw. */
+    pending = EspNativeGameplayInput_peek();
     if (EspNativeGameplayControls_isActive()) {
-        if (!EspNativeGameplayControls_isExpired()) return;
+        const int inputReady = pending != NULL && pending->pending != 0U;
+        if (!inputReady && !EspNativeGameplayControls_isExpired()) return;
         memset(&feedbackStats, 0, sizeof(feedbackStats));
         if (!EspNativeGameplayControls_restore(1, &feedbackStats)) {
             disableGameplay("touch-feedback-restore");
