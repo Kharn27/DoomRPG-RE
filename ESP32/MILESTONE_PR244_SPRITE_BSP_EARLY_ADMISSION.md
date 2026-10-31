@@ -22,4 +22,6 @@ The `DOOMRPG_ESP32_TRACE_SPRITE` profile retains original per-record immutable/e
 4. Look for non-regression of monster activation, automap reveal, preview-only world mutation, native input immediacy, FNV, cache/PAK, two `RESIDENTRESET released=18008 empty=1` and two `SYSEXIT MENU-READY frame=0f2c9fc3`. Runtime no crash/watchdog. **Record subjective response separately** from numeric timings.
 5. No hardware PASS, measured speedup or merge-ready declaration before actual Serial + user feedback. If software/hardware fails, correct code on this branch and rerun. After hardware PASS freeze code, docs-only closing commits, then user decides merges.
 
-Status: **candidate, software CI pending, real CYD pending, PR draft**.
+Status: **software CI SUCCESS (77/77), real CYD pending, PR draft**. Code/test head `ea6e8fa12c376bd36fa099e6ebbaaa2de698aae1`; [GitHub Actions 41246087961](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41246087961) validated host tests, normal `esp32-cyd`, bringup, trace, source audits and artifact upload. No local firmware build or hardware test claimed.
+
+**Profiling comparability:** `SPRITEORDER.scanUs` measures the complete ordering pass and is the proper before/after metric for this milestone; `recordUs` becomes visual-only on normal frames and full-record on trace builds, so do **not** compare its new sub-breakdown directly with #243 as if the boundary stayed fixed. The first 16 instrumented renders remain a sample, not an FPS assertion.
