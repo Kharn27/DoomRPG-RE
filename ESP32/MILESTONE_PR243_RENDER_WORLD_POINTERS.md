@@ -10,6 +10,20 @@ Native process-root construction continues zeroing `Render_t`, without redundant
 
 **Expected** 32-bit production layout: `Render_t 1332 -> 1308 B` (-24 B), `CORE READY used 2300 -> 2276 B` if all else remains fixed. Actual heap8 delta is allocator-dependent; no timing gain is claimed. `shapeData == mediaTexels == NULL` must remain true and no extra SD/ZIP path is authorized.
 
+## Hardware run — 31 October 2026, normal esp32-cyd
+
+**Functional/memory PASS on the tested routes, subjective rhythm reservation remains open.** Evidence: `device-monitor-261031-201843.log` (1373 lines), user-tested classic CYD firmware corresponding to the candidate layout. Boot verifies `Render=1308 Game=0 Canvas=44 Total=2112`, `[RENDERCORE] ... bytes=1308`, `[CORE] READY ... used=2276`; 4 MB flash and PSRAM=0. Native mapping payload remains 8376 B (textures=152, sprites=252). `shapeData/mediaTexels=NULL` throughout.
+
+Compared with the prior #241 documented boot values: menu heap8 153160 -> **153184** (+24 B free); START cache prime 112880 -> **112904** (+24 B); LOAD slot04 prime 112068 -> **112092** (+24 B); EXIT menu 158004 -> **158028** (+24 B). Largest block unchanged: 86004 gameplay / 110580 menu. This is observed allocator headroom, not evidence of a frame-time improvement.
+
+START /intro.bsp Entrance: native arena=14095, FNV=c3882516, first frame=71ca7465, crates, six pickups, doors/dialog events 88/89/79, EXIT. LOAD slot04 V11 (5604 B): same map arena/FNV, monster state beaeaccc, topology 50e16fe3 and position e2a9d90a, door113, Malwrath322 hits 11->7->3->0, two triple-projectile204 responses cleared before their retaliation commits, death/drop, pickup/secret, EXIT. Two `[RESIDENTRESET] released=18008 empty=1`; two `[SYSEXIT] MENU-READY frame=0f2c9fc3`; `HEADROOM_OK`; no panic/WDT observed. White 500ms pickup blink remains enabled; movement tile738->706 begins before `VIEWFLASH EXPIRE`, so the visual flash does not impose a 500ms input block.
+
+**UX reserve, explicitly reported by the tester:** gameplay feels *slightly less nervous* and less close to traditional Doom than it did immediately after PR #241. Quantitative inspection of this trace (not an A/B timing comparison): 25 `VIEWANIM FRAME mode=move` median ~104.7ms, 20 rotation frames median ~104.3ms each (two frames per 90deg turn), nine `PLAYERRES FRAME` median ~108.6ms, six `MONSTERCOMBAT FRAME` mean ~120.0ms, and 16 `SPRITEORDER` samples median ~21.6ms scanning 344 map sprites with 9–25 candidates. Sprite order scans are an existing hot path, not changed by #243. Full `#243` diff confirms no gameplay animation, input, renderer, combat or presentation changes; no causal performance regression is established. The older #241 log's comparable per-action timings are not available here for controlled statistics.
+
+**Disposition:** freeze tested code. Hardware behavior and ownership validation passed, but do **not** declare performance/UX PASS or merge-ready until the subjective reservation is addressed or an equivalent route A/B comparison rules out regression. Investigate bounded native sprite-order admission as a separate performance milestone; avoid editing `PlatformVideo_present()`, gameplay cadence or the already-proven #241 immediate touch dispatch as a guess.
+
+## Original pre-hardware gate (historical candidate plan)
+
 ## Validation gate (not yet run on hardware)
 
 1. Host C/Python tests and normal `esp32-cyd`, bringup and trace builds must succeed in CI. Verify new `_Static_assert(sizeof(Render_t) == 1308U)` and ensure no unguarded desktop pointer use remains; fix compile failures rather than weakening ownership.
