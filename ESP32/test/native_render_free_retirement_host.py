@@ -2,7 +2,7 @@
 """Exercise REAL private Render destructor + runtime cleanup with bounded mocks.
 
 The source-body FNV pins the native no-SDL-texture behavior. Test both framebuffer
-ownership paths, both freePtr paths and partially populated compatibility
+ownership paths, both freePtr paths and partially populated native-owned
 objects. This is a host C test, not a physical CYD fatal-teardown claim.
 """
 from pathlib import Path
@@ -58,7 +58,7 @@ runtime_original = runtime.replace("void EspNativeRenderRuntime_releaseCompatibi
 runtime_fingerprint = 2166136261
 for b in runtime_original.encode("utf-8"):
     runtime_fingerprint = ((runtime_fingerprint ^ b) * 16777619) & 0xffffffff
-assert runtime_fingerprint == 0x795212f8, f"Render_freeRuntime body drift {runtime_fingerprint:08x}"
+assert runtime_fingerprint == 0xa567e892, f"Render_freeRuntime body drift {runtime_fingerprint:08x}"
 assert "EspNativeEngineRoot_releaseRender(doomrpg->render, true);" in owner
 # No linked ESP32 C/C++ caller or implementation may resurrect this ABI.
 for p in sorted((ROOT / "ESP32/src").rglob("*")):
@@ -78,10 +78,8 @@ shim = r"""
 typedef unsigned char byte;
 typedef int boolean;
 typedef struct Render_s {
-    void *mediaTexels, *shapeData, *mapSprites, *nodes, *lines;
-    void *tileEvents, *mapByteCode;
+    void *mediaTexels, *shapeData;
     int numMapSprites, linesLength, mapStringCount;
-    void **mapStringsIDs;
     void *mediaBitShapeOffsets, *mediaTexelOffsets, *mediaTexturesIds;
     void *mediaSpriteIds;
     void *ceilingColor, *floorColor, *columnScale, *mediaPalettes;
@@ -116,15 +114,8 @@ static void populate(Render_t* render, int full, int shared) {
     if (full) {
         ALLOC_SLOT(mediaTexels);
         ALLOC_SLOT(shapeData);
-        ALLOC_SLOT(mapSprites);
-        ALLOC_SLOT(nodes);
-        ALLOC_SLOT(lines);
-        ALLOC_SLOT(tileEvents);
-        ALLOC_SLOT(mapByteCode);
+        /* Production has no desktop world pointers to allocate. */
         render->mapStringCount = 2;
-        render->mapStringsIDs = (void**)owned(2 * sizeof(void*));
-        render->mapStringsIDs[0] = owned(8);
-        render->mapStringsIDs[1] = owned(8);
         render->numMapSprites = 12;
         render->linesLength = 34;
         ALLOC_SLOT(mediaBitShapeOffsets);
@@ -153,9 +144,8 @@ int main(void) {
         if (!freePtr) {
             assert(render->framebuffer == NULL);
             assert(render->mediaTexels == NULL && render->shapeData == NULL);
-            assert(render->mapSprites == NULL && render->numMapSprites == 0);
-            assert(render->lines == NULL && render->linesLength == 0);
-            assert(render->mapStringsIDs == NULL && render->mapStringCount == 0);
+            assert(render->numMapSprites == 0 && render->linesLength == 0);
+            assert(render->mapStringCount == 0);
             assert(render->mediaTexelOffsets == NULL);
         }
         /* PlatformVideo memory is never touched or released by this cleanup. */
@@ -182,4 +172,4 @@ with tempfile.TemporaryDirectory(prefix="private-render-free-") as temp:
                     "-Wall", "-Wextra", "-Werror", str(p), "-o", str(exe)],
                    check=True)
     subprocess.run([str(exe)], check=True)
-print("PASS Render_free=retired FNV=6ebb123a no SDL texture; Render_freeRuntime FNV=795212f8")
+print("PASS Render_free=retired FNV=6ebb123a no SDL texture; Render_freeRuntime FNV=a567e892")
