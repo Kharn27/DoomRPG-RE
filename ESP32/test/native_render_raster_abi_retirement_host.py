@@ -333,7 +333,7 @@ assert re.search(legacy_guard + r"\s+int\* mapByteCode;\s+"
                  r"char\*\* mapStringsIDs;\s+#endif", HEADER)
 for field in ("nodes", "lines", "mapSprites", "tileEvents",
               "mapByteCode", "mapStringsIDs"):
-    assert "render->" + field not in root, field
+    assert not re.search(r"\brender->" + field + r"\b", root), field
     assert re.search(r"\brender->" + field + r"\b", DESKTOP), field
 
 # The sprite renderer is the other owner of transactional frame scratch.
