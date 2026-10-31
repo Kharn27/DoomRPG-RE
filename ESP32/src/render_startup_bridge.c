@@ -29,20 +29,27 @@ extern DoomRPG_t* doomRpg;
  * immutable arenas and compact overlays remain independent. */
 void EspNativeRenderRuntime_releaseCompatibility(Render_t* render)
 {
+#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)
     int i;
+#endif
 
     SDL_free(render->mediaTexels);
     render->mediaTexels = NULL;
     SDL_free(render->shapeData);
     render->shapeData = NULL;
+    /* Desktop BSP/sprite/event/string pointer lists no longer exist in
+     * production Render_t. Keep their original release on probe builds. */
+#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)
     SDL_free(render->mapSprites);
     render->mapSprites = NULL;
-    render->numMapSprites = 0;
     SDL_free(render->nodes);
     render->nodes = NULL;
     SDL_free(render->lines);
     render->lines = NULL;
+#endif
+    render->numMapSprites = 0;
     render->linesLength = 0;
+#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)
     SDL_free(render->tileEvents);
     render->tileEvents = NULL;
     SDL_free(render->mapByteCode);
@@ -51,8 +58,9 @@ void EspNativeRenderRuntime_releaseCompatibility(Render_t* render)
         SDL_free(render->mapStringsIDs[i]);
     }
     SDL_free(render->mapStringsIDs);
-    render->mapStringCount = 0;
     render->mapStringsIDs = NULL;
+#endif
+    render->mapStringCount = 0;
     SDL_free(render->mediaBitShapeOffsets);
     render->mediaBitShapeOffsets = NULL;
     SDL_free(render->mediaTexelOffsets);
