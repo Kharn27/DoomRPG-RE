@@ -364,9 +364,6 @@ static Render_t* EspNativeEngineRoot_initRender(Render_t* render, DoomRPG_t* doo
 	//resourceAsStream.Init(&renderClass->mapFile, doomRPGClass, 1);
 	render->doomRpg = doomRpg;
 	render->skipCull = 0;
-	render->lines = NULL;
-	render->nodes = NULL;
-	render->mapSprites = NULL;
 	render->mapCameraSpawnIndex = 0;
 	render->floorColor = NULL;
 	render->ceilingColor = NULL;
@@ -374,7 +371,6 @@ static Render_t* EspNativeEngineRoot_initRender(Render_t* render, DoomRPG_t* doo
 	render->floorTex = 0;
 	render->columnScale = NULL;
 	render->animFrameTime = 0;
-	render->mapStringsIDs = NULL;
 	render->mapStringCount = 0;
 
 	printf("[RENDERCORE] INIT owner=esp-native-bridge bytes=%u\n", (unsigned int)sizeof(*render));
