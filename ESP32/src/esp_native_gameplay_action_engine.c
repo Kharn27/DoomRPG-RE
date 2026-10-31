@@ -1649,10 +1649,9 @@ static int visitDamageBorderInner(uint8_t mode, uint8_t side) {
     return 1;
 }
 
-/* Derived entirely from the EXISTING flash start: no second direction
- * timestamp, tick queue or animation worker. Other white/pickup flashes
- * retain their original continuous 500ms behavior. */
-static int viewportDamageBlinkLit(uint32_t elapsedMs) {
+/* One existing 500ms clock, three pulses for white pickup and red damage.
+ * Only red damage owns the extra directional translucent contour. */
+static int viewportFeedbackBlinkLit(uint32_t elapsedMs) {
     const uint32_t period = FEEDBACK_DAMAGE_BLINK_ON_MS +
                             FEEDBACK_DAMAGE_BLINK_GAP_MS;
     return elapsedMs < period * FEEDBACK_DAMAGE_BLINK_PULSES &&
@@ -1984,9 +1983,8 @@ int __wrap_Esp32PlatformVideo_present(void) {
         const int shouldPaint =
             actionState.viewportFlashPending != 0U ||
             (actionState.viewportFlashVisible != 0U &&
-             (actionState.viewportFlashColor565 != FEEDBACK_DAMAGE_RED565 ||
-              viewportDamageBlinkLit(
-                  actionNowMs() - actionState.viewportFlashShownAtMs)));
+             viewportFeedbackBlinkLit(
+                 actionNowMs() - actionState.viewportFlashShownAtMs)));
         if (shouldPaint &&
             (actionState.viewportFlashPending != 0U ||
              actionState.framebufferFresh != 0U ||
@@ -2038,8 +2036,7 @@ int __wrap_Esp32PlatformVideo_present(void) {
                (unsigned int)FEEDBACK_BORDER_PIXELS,
                (unsigned int)actionState.viewportFlashDurationMs,
                (unsigned int)feedback,
-               actionState.viewportFlashColor565 == FEEDBACK_DAMAGE_RED565
-                   ? "3x105ms-on/65ms-off" : "steady");
+               "3x105ms-on/65ms-off");
     }
     actionState.framebufferFresh = 0U;
 
@@ -2106,17 +2103,14 @@ static int serviceViewportFlashExpiry(void) {
         printf("[VIEWFLASH] EXPIRE elapsedMs=%u targetMs=%u color565=%04x restored=one-border-including-direction blink=%s\n",
                (unsigned int)elapsed, (unsigned int)duration,
                (unsigned int)actionState.viewportFlashColor565,
-               actionState.viewportFlashColor565 == FEEDBACK_DAMAGE_RED565
-                   ? "shared" : "steady");
+               "shared");
         actionState.viewportFlashColor565 = 0U;
         return 1;
     }
 
-    /* White pickups and other non-damage flashes keep the original single
-     * solid paint + 500ms expiry. Only red damage uses quick blinking. */
-    if (actionState.viewportFlashColor565 != FEEDBACK_DAMAGE_RED565)
-        return 1;
-    nextLit = viewportDamageBlinkLit(elapsed);
+    /* Purely visual: white and red pulse on the same original clock;
+     * no impact on resource commits, world inputs or player turns. */
+    nextLit = viewportFeedbackBlinkLit(elapsed);
     if (nextLit == (actionState.viewportFlashLit != 0U)) return 1;
 
     if (nextLit) {
