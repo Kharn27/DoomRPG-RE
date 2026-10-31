@@ -128,8 +128,6 @@ int DoomRPG_esp32ReleaseMainMenuMemory(struct DoomRPG_s* doomRpgBase) {
            render->mapSprites == NULL &&
            render->mediaTexelOffsets == NULL &&
            render->mediaBitShapeOffsets == NULL &&
-           render->mapTextureTexels == NULL &&
-           render->mapSpriteTexels == NULL &&
            render->shapeData == NULL &&
            render->mediaTexels == NULL &&
            !EspNativeWallCache_isActive() &&

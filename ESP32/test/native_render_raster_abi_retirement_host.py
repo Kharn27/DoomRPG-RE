@@ -296,6 +296,31 @@ assert "render->ioBuffer == NULL" not in (
 ).read_text()
 assert "render->ioBufferPos = 0;" not in root
 
+# PR240: desktop map-wide per-map texel pointer lists are absent from the
+# native shell. The four *live* installed mapping arrays remain untouched.
+assert re.search(
+    r"#ifndef DOOMRPG_ESP32\s+int\* mapTextureTexels;\s+"
+    r"int mapTextureTexelsCount;\s+int\* mapSpriteTexels;\s+"
+    r"int mapSpriteTexelsCount;\s+#endif", HEADER,
+), "desktop map texel lists must be conditional"
+for field in ("mapTextureTexels", "mapTextureTexelsCount",
+              "mapSpriteTexels", "mapSpriteTexelsCount"):
+    assert re.search(r"\brender->" + field + r"\b", DESKTOP), field
+    for tree in (NATIVE / "src", NATIVE / "include"):
+        for path in sorted(tree.rglob("*")):
+            if path.suffix not in (".c", ".cpp", ".h"):
+                continue
+            code = path.read_text(encoding="latin-1")
+            code = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"',
+                          " ", code, flags=re.S)
+            assert not re.search(r"(?:->|\.)" + field + r"\b", code), (path, field)
+for field in ("mediaTexelOffsets", "mediaBitShapeOffsets",
+              "mediaTexturesIds", "mediaSpriteIds"):
+    assert field in HEADER
+    assert "render->" + field in (
+        NATIVE / "src/esp_legacy_config_mappings_startup.c"
+    ).read_text(), field
+
 # The sprite renderer is the other owner of transactional frame scratch.
 # Its clipping/projection lines are function-local too. No CYD Render_t
 # member or native source may retain desktop tmpLine after this milestone.
@@ -303,7 +328,7 @@ sprite = (NATIVE / "src/esp_native_sprite_renderer.c").read_text()
 assert "Line_t tmpLine;" not in sprite
 assert "->tmpLine" not in sprite
 assert "_Static_assert(sizeof(Scratch) <= 740U" in sprite
-assert "sizeof(Render_t) == 1348U" in (
+assert "sizeof(Render_t) == 1332U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 assert re.search(
     r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"

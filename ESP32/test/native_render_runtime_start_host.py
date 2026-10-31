@@ -46,7 +46,7 @@ body = runtime.replace("EspNativeRenderRuntime_releaseCompatibility(",
 fnv = 2166136261
 for b in body.encode("utf-8"):
     fnv = ((fnv ^ b) * 16777619) & 0xffffffff
-assert fnv == 0x8042d34c, f"Runtime parity drift {fnv:08x}"
+assert fnv == 0x795212f8, f"Runtime parity drift {fnv:08x}"
 
 shim = r"""
 #include <assert.h>
@@ -61,7 +61,7 @@ typedef struct Render_s {
     int numMapSprites, linesLength, mapStringCount;
     void **mapStringsIDs;
     void *mediaBitShapeOffsets, *mediaTexelOffsets, *mediaTexturesIds;
-    void *mediaSpriteIds, *mapTextureTexels, *mapSpriteTexels;
+    void *mediaSpriteIds;
     void *ceilingColor, *floorColor, *columnScale, *mediaPalettes;
     byte *framebuffer;
     void *piDIB;
@@ -115,8 +115,6 @@ static void populate(Render_t* r, int variant) {
     OWN(mediaTexelOffsets);
     OWN(mediaTexturesIds);
     OWN(mediaSpriteIds);
-    OWN(mapTextureTexels);
-    OWN(mapSpriteTexels);
     r->mapStringCount=2;
     r->mapStringsIDs=(void**)malloc(sizeof(void*)*2);
     assert(r->mapStringsIDs);++allocations;

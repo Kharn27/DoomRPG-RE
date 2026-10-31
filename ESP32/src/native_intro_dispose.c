@@ -68,8 +68,6 @@ static int runtimePoolsAreReleased(const Render_t* render) {
            render->mapSprites == NULL &&
            render->mediaTexelOffsets == NULL &&
            render->mediaBitShapeOffsets == NULL &&
-           render->mapTextureTexels == NULL &&
-           render->mapSpriteTexels == NULL &&
            render->shapeData == NULL &&
            render->mediaTexels == NULL &&
            !EspNativeWallCache_isActive() &&

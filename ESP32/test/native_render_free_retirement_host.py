@@ -58,7 +58,7 @@ runtime_original = runtime.replace("void EspNativeRenderRuntime_releaseCompatibi
 runtime_fingerprint = 2166136261
 for b in runtime_original.encode("utf-8"):
     runtime_fingerprint = ((runtime_fingerprint ^ b) * 16777619) & 0xffffffff
-assert runtime_fingerprint == 0x8042d34c, f"Render_freeRuntime body drift {runtime_fingerprint:08x}"
+assert runtime_fingerprint == 0x795212f8, f"Render_freeRuntime body drift {runtime_fingerprint:08x}"
 assert "EspNativeEngineRoot_releaseRender(doomrpg->render, true);" in owner
 # No linked ESP32 C/C++ caller or implementation may resurrect this ABI.
 for p in sorted((ROOT / "ESP32/src").rglob("*")):
@@ -83,7 +83,7 @@ typedef struct Render_s {
     int numMapSprites, linesLength, mapStringCount;
     void **mapStringsIDs;
     void *mediaBitShapeOffsets, *mediaTexelOffsets, *mediaTexturesIds;
-    void *mediaSpriteIds, *mapTextureTexels, *mapSpriteTexels;
+    void *mediaSpriteIds;
     void *ceilingColor, *floorColor, *columnScale, *mediaPalettes;
     byte *framebuffer;
 } Render_t;
@@ -131,8 +131,6 @@ static void populate(Render_t* render, int full, int shared) {
         ALLOC_SLOT(mediaTexelOffsets);
         ALLOC_SLOT(mediaTexturesIds);
         ALLOC_SLOT(mediaSpriteIds);
-        ALLOC_SLOT(mapTextureTexels);
-        ALLOC_SLOT(mapSpriteTexels);
         ALLOC_SLOT(ceilingColor);
         ALLOC_SLOT(floorColor);
         ALLOC_SLOT(columnScale);
@@ -184,4 +182,4 @@ with tempfile.TemporaryDirectory(prefix="private-render-free-") as temp:
                     "-Wall", "-Wextra", "-Werror", str(p), "-o", str(exe)],
                    check=True)
     subprocess.run([str(exe)], check=True)
-print("PASS Render_free=retired FNV=6ebb123a no SDL texture; Render_freeRuntime FNV=8042d34c")
+print("PASS Render_free=retired FNV=6ebb123a no SDL texture; Render_freeRuntime FNV=795212f8")
