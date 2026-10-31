@@ -321,10 +321,10 @@ for field in ("mediaTexelOffsets", "mediaBitShapeOffsets",
         NATIVE / "src/esp_legacy_config_mappings_startup.c"
     ).read_text(), field
 
-# PR242: native world data is owned by immutable EspMapRuntime and its
+# PR243: native world data is owned by immutable EspMapRuntime and its
 # bounded overlays, never by six pointer-heavy desktop Render mirrors.
 # Explicit bringup probes may still exercise the historical ABI.
-legacy_guard = (r"#if !defined\(DOOMRPG_ESP32\) \| "
+legacy_guard = (r"#if !defined\(DOOMRPG_ESP32\) \|\| "
                 r"defined\(DOOMRPG_ESP32_BRINGUP_PROBES\)")
 for decl in (r"struct Node_s\* nodes;", r"struct Line_s\* lines;",
              r"struct Sprite_s\* mapSprites;", r"int\* tileEvents;"):
