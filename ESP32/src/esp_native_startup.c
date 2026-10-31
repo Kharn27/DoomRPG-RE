@@ -83,7 +83,7 @@ static int legacyRuntimeIsClear(const Render_t* render) {
            render->mapSpriteTexels == NULL &&
            render->shapeData == NULL &&
            render->mediaTexels == NULL &&
-           render->ioBuffer == NULL &&
+           /* Desktop BSP I/O buffer/cursor are absent from native Render_t. */
            !EspNativeWallCache_isActive() &&
            !EspNativeSpriteCache_isActive();
 }
