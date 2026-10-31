@@ -1,5 +1,11 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #240 — PASS CYD du retrait des listes texels desktop (31 octobre 2026)
+
+Code testé `c23d8925ab0b56f2752e23f9f6c344341d931f31`, `device-monitor-261031-021905.log` : `sizeof(Render_t)=1332` (−16B vs #239B), `CORE used=2300`, heap8 menu `153160`, LOAD prime `112068`, START prime `112880`, EXIT `158004`, largest8 gameplay `86004`/menu `110580`, `shapeData/mediaTexels=NULL`. Mappings 152/252, payload 8376B. Parcours LOAD/Malwrath triple projectile, drop/secret/EXIT puis START intro/caisse/dialogues/EXIT. Deux resets résident `released=18008 empty=1`, deux menus `0f2c9fc3`, première frame `71ca7465`, PSRAM 0. Statut layout/régression : **PASS ciblé** ; firmware normal `esp32-cyd`. CI push et PR code **SUCCESS** ; commits post-test strictement documentaires.
+
+L'utilisateur a néanmoins identifié un déficit de nervosité perçu dans le combat Malwrath, ainsi qu'un flash blanc fixe pour les pickups. Cette appréciation ne prouve pas de ralentissement causé par −16B. Le jalon feedback/saisie distinct PR #241, empilé sur #240, traite le délai visuel de 120ms comme présentation et fait pulser le flash blanc ; son propre test matériel reste à réaliser. Ne pas considérer ce jalon graphique comme validation de l'audio ni de l'ensemble des familles gameplay.
+
 ## PR #239B — PASS matériel des compteurs natifs de mappings (31 octobre 2026)
 
 Après le **jalon A PASS** (Render 1356 B), le code B **`f901938c70338bd782364b78e2e8a7845adbc022`** sur la même branche `agent/esp32-render-retire-legacy-bsp-buffer` réserve `Render_t::textureCnt` et `spriteCnt` au desktop. Attention : ces compteurs étaient **encore utilisés** côté ESP32 ! La première CI a exposé les références, puis `ESP32/src/esp_legacy_config_mappings_startup.c` a été corrigé pour lire les comptes de l'owner natif existant `MappingPlan_t installedPlan`. Assertion compilée `sizeof(Render_t)==1348U`, garde hôte, CI [push #41141371978](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41141371978) et [PR #41141377102](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41141377102) **SUCCESS**.

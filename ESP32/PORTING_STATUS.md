@@ -1,5 +1,15 @@
 # Doom RPG ESP32 — état actuel du port
 
+## PR #240 — PASS structurel classic CYD (31 octobre 2026), retrait listes texels desktop
+
+**HEAD matériel code :** `c23d8925ab0b56f2752e23f9f6c344341d931f31` sur `agent/esp32-render-retire-map-texel-lists`, main base `37bf3546321572fb31c772d428ecf129c56b1eb3`. Le log `device-monitor-261031-021905.log` établit `Render=1332 Game=0 Canvas=44 Total=2136`, `RENDERCORE INIT bytes=1332`, `CORE READY used=2300`, PSRAM 0, mappings `textures=152 sprites=252`, payload 8376B ; `shapeData/mediaTexels=NULL`.
+
+**Parcours matériels :** LOAD slot04 V11 : Malwrath sprite322, deux ripostes triple projectile204 suivies de COMMIT, mort et drop, pickups/secret et EXIT ; START intro Entrance `FIRST_FRAME=71ca7465`, caisse/pickups/portes/dialogues puis EXIT. Deux `RESIDENTRESET released=18008 empty=1`, deux `SYSEXIT MENU-READY frame=0f2c9fc3`, aucun panic/WDT connu. Heap8 versus #239B : menu `153144→153160`, LOAD prime `112052→112068`, START prime `112864→112880`, après EXIT `157988→158004`; largest8 inchangé `86004` in-game / `110580` au menu. Les quatre champs texel-map desktop-only retirent exactement 16B sans changer le renderer natif.
+
+**Limite de validation :** l'utilisateur rapporte un ressenti moins nerveux autour du Malwrath et le flash pickup blanc fixe 500ms. Ce log démontre qu'on peut bouger avant l'expiration du flash mais n'établit aucune comparaison causale de temps #239B→#240. La lease de feedback tactile 120ms et la cadence des projectiles sont des propriétaires distincts. Un jalon indépendant de réactivité (branche empilée `agent/esp32-feedback-input-no-wait-pickup-blink`, PR #241) conserve #240 gelée. Les résultats de #241 ne doivent PAS être attribués à #240.
+
+**Statut : PASS matériel ciblé de retrait ABI/Layout et non-régression fonctionnelle observée ; code #240 gelé, commits post-test docs-only ; merge réservé à l'utilisateur.** Pas de validation de nervosité subjective, audio, toutes cartes, armes ou comportements du desktop.
+
 ## PR #239 — Jalon B PASS classic CYD (31 octobre 2026), compteurs de mappings natifs
 
 **PASS matériel après reflash du firmware normal `esp32-cyd`**, code B **`f901938c70338bd782364b78e2e8a7845adbc022`**, branche `agent/esp32-render-retire-legacy-bsp-buffer`, base `main=f605f855f4d9f9e3b1b6edf47072bb8a3cea6196`. L'utilisateur a confirmé HEAD local exact, branche non détachée et `_Static_assert(sizeof(Render_t)==1348U)`. **Le premier log du 31/10 (`device-monitor-261031-000547.log`) était encore A à 1356 B et ne prouve pas B ; le nouveau log complet `device-monitor-261031-004416.log` (1727 lignes) établit B à 1348 B.** Pas de SHA de firmware embarqué ; attribution par campagne locale et signature de structure au boot.
