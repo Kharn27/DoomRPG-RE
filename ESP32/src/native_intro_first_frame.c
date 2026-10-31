@@ -85,9 +85,11 @@ static int introBoundaryIsSafe(const DoomRPG_t* doomRpg) {
            introState->imgLinesLayer.imgBitmap != NULL &&
            introState->imgPlanetLayer.imgBitmap != NULL &&
            introState->imgSpaceship.imgBitmap != NULL &&
+#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)
            render->nodes == NULL &&
            render->lines == NULL &&
            render->mapSprites == NULL &&
+#endif
            render->mediaTexelOffsets == NULL &&
            render->mediaBitShapeOffsets == NULL &&
            render->shapeData == NULL &&
@@ -166,10 +168,7 @@ int DoomRPG_esp32RenderFirstIntroFrame(struct DoomRPG_s* doomRpgBase) {
            introState->storyTextPage);
 
     if (!introBoundaryIsSafe(doomRpg)) {
-        printf("[INTRO1] FAILED boundary changed after draw nodes=%p lines=%p mapSprites=%p shapeData=%p mediaTexels=%p wallCache=%d spriteCache=%d\n",
-               (void*)render->nodes,
-               (void*)render->lines,
-               (void*)render->mapSprites,
+        printf("[INTRO1] FAILED boundary changed after draw legacyWorld=retired shapeData=%p mediaTexels=%p wallCache=%d spriteCache=%d\n",
                (void*)render->shapeData,
                (void*)render->mediaTexels,
                EspNativeWallCache_isActive(),
