@@ -1,4 +1,4 @@
-# PR #244 — bounded BSP sprite admission before immutable decode (CANDIDATE)
+# PR #244 — bounded BSP sprite admission before immutable decode (CYD PASS)
 
 ## Source of truth and separation
 
@@ -14,7 +14,21 @@ The `DOOMRPG_ESP32_TRACE_SPRITE` profile retains original per-record immutable/e
 
 `ESP32/test/native_sprite_bsp_early_admission_host.py` extracts the **actual C function** from the source tree, builds an old-call-order reference from the same function (not a separately written algorithm) and checks normal/preview/trace paths with 344 synthetic sprites, hidden and BSP rejects, identical candidate order/sort/hash/stats, and fail-closed malformed leaf. For healthy frames, expected source/entity decode requests drop from 344 to the BSP candidate count; real duration/subjective improvement **must be confirmed by hardware**, not estimated from host calls.
 
-## Gate and hardware itinerary
+## Real classic CYD hardware result — PASS targeted, 1 November 2026
+
+**Hardware user feedback:** “Franchement ca marche plutot as mal” (clearly positive, though not a claim of perfect smoothness). The complete log `device-monitor-261101-101936.log` (1303 lines) is the hardware evidence for this milestone; the firmware's boot signature `Render=1332 Game=0 Canvas=44 Total=2136`, `[RENDERCORE] bytes=1332`, `[CORE] READY used=2300`, normal SD/PAK startup and PSRAM=0 all match the **#241 / #244 branch**, not the unmerged #243 1308-byte variant. Github Actions for the tested code `ea6e8fa12c376bd36fa099e6ebbaaa2de698aae1` was 77/77 SUCCESS (run #41246087961), and the pre-hardware docs-only `8677d094980f5076d0c22eefe03989ccaa90a53a` CI was also SUCCESS (#41246281612). There is no boot-embedded commit SHA: source attribution is from the user’s selected branch/build procedure together with the hardware layout signature.
+
+**Observed sprite order cost (first 16 instrumented samples):** 344 records per pass, 11 hidden, 333 leaf queries, 7–25 admitted candidates. Median `SPRITEORDER.scanUs=3,082 µs` (**vs #243 median ~21,600 µs, −85.7%**), warm samples clustered 2,834–3,644 µs, first cold sample 16,670 µs. This proves the _measured order-phase reduction in the sampled runs_, not a whole-frame 7× speedup. `recordUs` now measures the cheap mutable visual read in normal builds, so cannot be directly paired with old `recordUs` that included immutable sprite/entity decoding.
+
+**Observed frame timings vs earlier #243 trace (different run and pose distribution; suggestive, not controlled A/B):** move preview frames n=25 median **87,721 µs** vs 104,651 µs (~−16%); rotate completed previews n=8 mean **176,335 µs** vs ~219,000 µs (~−19%); resource-pickup redraws n=8 median **89,152 µs** vs 108,607 µs (~−18%); combat frames n=6 mean **96,150 µs** vs 119,980 µs (~−20%). The actions show no new gameplay wait or extra render samples; these are not latency-from-touch measurements, and the runtime scan only consumes part of each frame.
+
+**Exact gameplay and resources:** START new-game Intro -> Entrance first frame `71ca7465`, native arena `c3882516`, move/rotate/strafe, crate, 5 resource pickups with white blinking 500 ms feedback, doors, dialogue events 88/89/79, automap and HUB then EXIT. LOAD slot04 V11 / `/intro.bsp` restores monsters `beaeaccc`, topology `50e16fe3`, positions `e2a9d90a`, activation `df419482`; door113, Malwrath sprite322 HP 11->7->3->0, **two** three-shot projectile204 retaliation sequences completed and cleared before `MONSTERRETAL COMMIT`, monster drop/health vial, Flak Jacket and secret +5XP, then EXIT. One source `NATIVEFRAME BOUNDARY-INLINE` witness and high-bit projectile x positions are pre-existing known observations; not silently “fixed” by this perf change.
+
+**Memory and teardown:** heap8 menu 153160, START prime 112880, LOAD prime 112068, after both EXIT 158004, largest8 gameplay 86004 / menu 110580, same #241 baseline (and **24 B less free than the independent unmerged #243**, as expected). Two `[RESIDENTRESET] ... released=18008 ... empty=1`; two `[SYSEXIT] MENU-READY frame=0f2c9fc3`, zero save writes. `shapeData=mediaTexels=NULL`, `HEADROOM_OK` twice, no panic/WDT/UNSUPPORTED/fatal in supplied log. No observed loss of activation, automap reveal, dialog/script continuation, or combat ordering.
+
+**Conclusion:** Targeted **CYD hardware PASS, software PASS, measured order-phase acceleration, positive user UX feedback**. Code is frozen at `ea6e8fa12c376bd36fa099e6ebbaaa2de698aae1`; later commits are documentation only. PR #244 can be marked ready for review/merge by user; **never auto-merge**. PR #243 remains an independent draft with its own subjective-responsiveness reservation. Not validated: all maps/monsters/weapons, sound, exhaustive pixel parity, thermal/endurance, or precise causal touch-to-pixel A/B.
+
+## Original hardware itinerary (historical pre-test plan)
 
 1. GitHub Actions host parity (normal+trace), original host suite, normal `esp32-cyd`, bringup, trace and audits pass before asking for CYD run. Build locally only if actually available; don't pretend a host build occurred otherwise.
 2. On the classic CYD, clean upload firmware normal `esp32-cyd` from the exact head of this branch. Boot should reflect **main/#241 layout `Render=1332`**, not the unmerged #243 layout 1308. PSRAM=0 and `shapeData=mediaTexels=NULL` must remain. Explicitly avoid conflating #243 and #244.
@@ -22,6 +36,6 @@ The `DOOMRPG_ESP32_TRACE_SPRITE` profile retains original per-record immutable/e
 4. Look for non-regression of monster activation, automap reveal, preview-only world mutation, native input immediacy, FNV, cache/PAK, two `RESIDENTRESET released=18008 empty=1` and two `SYSEXIT MENU-READY frame=0f2c9fc3`. Runtime no crash/watchdog. **Record subjective response separately** from numeric timings.
 5. No hardware PASS, measured speedup or merge-ready declaration before actual Serial + user feedback. If software/hardware fails, correct code on this branch and rerun. After hardware PASS freeze code, docs-only closing commits, then user decides merges.
 
-Status: **software CI SUCCESS (77/77), real CYD pending, PR draft**. Code/test head `ea6e8fa12c376bd36fa099e6ebbaaa2de698aae1`; [GitHub Actions 41246087961](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41246087961) validated host tests, normal `esp32-cyd`, bringup, trace, source audits and artifact upload. No local firmware build or hardware test claimed.
+Status before the 1 November test: **software CI SUCCESS (77/77), real CYD pending, PR draft**. The authoritative result is the hardware PASS section above. Code/test head `ea6e8fa12c376bd36fa099e6ebbaaa2de698aae1`; [GitHub Actions 41246087961](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41246087961) validated host tests, normal `esp32-cyd`, bringup, trace, source audits and artifact upload. No local firmware build or hardware test claimed.
 
 **Profiling comparability:** `SPRITEORDER.scanUs` measures the complete ordering pass and is the proper before/after metric for this milestone; `recordUs` becomes visual-only on normal frames and full-record on trace builds, so do **not** compare its new sub-breakdown directly with #243 as if the boundary stayed fixed. The first 16 instrumented renders remain a sample, not an FPS assertion.
