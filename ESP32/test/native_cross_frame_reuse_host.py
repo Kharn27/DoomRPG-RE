@@ -83,7 +83,7 @@ shim = r'''
 #define ORIENT_WEST  0x00400000UL
 #define RENDER_MODE_NORMAL 0U
 #define RENDER_MODE_ADD 7U
-#define TRACE_SPRITE(...) do {} while (0)
+#define TRACE_SPRITE(...) do { if (0) printf(__VA_ARGS__); } while (0)
 
 typedef struct { int x,y,z; } Vertex_t;
 typedef struct { Vertex_t vert1, vert2; } Line_t;
