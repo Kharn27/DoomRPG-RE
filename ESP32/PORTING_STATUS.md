@@ -1,3 +1,17 @@
+## PR #244 — PASS matériel classic CYD : accélération admission sprites BSP (1er novembre 2026)
+
+Sur `agent/esp32-sprite-bsp-early-admission` depuis le vrai `main=fe3bf6cf005d0f87d534b51daf938c3473b6cdb6` (après #241), code testé `ea6e8fa12c376bd36fa099e6ebbaaa2de698aae1`, CI code [#41246087961](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41246087961) **SUCCESS 77/77** (tests hôte, parité C réelle normal/trace, normal/bringup/trace), CI docs [#41246281612](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41246281612) **SUCCESS**. Log réel `device-monitor-261101-101936.log` (1303 lignes), utilisateur : « Franchement ca marche plutot as mal » — retour positif de fluidité, sans affirmation de perfection.
+
+**Technique :** `buildOrder()` saute le décodage immutable `EspMapRuntime_getMapSprite` et le détail `EspMapSpriteTopology_getEntity` pour les sprites cachés ou rejetés par BSP ; garde identiques recherche de feuille, activation/side effects du mode normal, preview read-only, tri, FNV, fail-closed, pixels/PAK et nombre d'images d'animation. `DOOMRPG_ESP32_TRACE_SPRITE` conserve le parcours historique. Aucun nouveau buffer/alloc résident. 344 sprites source, 11 hidden, 333 feuilles interrogées, seulement 7–25 candidats visibles. Les **16 `SPRITEORDER.scanUs`** donnent médiane `3 082 µs` vs médiane #243 `~21 600 µs` (**−85,7 % du scan**), première frame froide `16 670 µs`, suivantes `2 834–3 644 µs`. Pas de revendication « FPS ×7 » ; `recordUs` n'a plus le même périmètre.
+
+**Timings observés vs log #243 (campagnes différentes, comparaison indicative) :** 25 frames MOVE median `87 721 µs` vs `104 651 µs` ; 8 rotations complètes moyenne `176 335 µs` vs `~219 000 µs` ; 8 redraws pickups median `89 152 µs` vs `108 607 µs` ; 6 frames combat moyenne `96 150 µs` vs `119 980 µs`. Ce sont des durées de présentation et non un protocole A/B doigt→pixel contrôlé.
+
+**Parcours :** START intro/Entrance première frame `71ca7465`, caisse, pickups blancs pulsés, portes, dialogues 88/89/79, automap, HUB EXIT ; LOAD slot04 V11, état arène `c3882516`, restore monstres `beaeaccc`, topology `50e16fe3`, positions `e2a9d90a`, activation `df419482`, porte113, Malwrath322 HP 11→7→3→0, **deux ripostes triples projectile204** terminées avant COMMIT, drop, pickup, secret +5XP, EXIT. Deux `RESIDENTRESET released=18008 empty=1` et deux `SYSEXIT MENU-READY frame=0f2c9fc3` ; pas de panic/WDT/UNSUPPORTED. Boot `Render=1332 Game=0 Canvas=44 Total=2136`, `CORE used=2300`, PSRAM=0, `shapeData/mediaTexels=NULL`. Heap8 menu `153160`, START prime `112880`, LOAD prime `112068`, EXIT `158004`, largest8 jeu/menu `86004/110580`, `HEADROOM_OK` deux fois. Les témoins inline et abscisses projectile décalées préexistants ne sont pas revendiqués corrigés.
+
+**Statut : PASS matériel ciblé, code gelé, clôture docs-only, PR #244 merge-ready sous validation de l'utilisateur.** Aucune fusion automatique. La PR #243 reste indépendante et non mergée (Render=1308, tests de disposition mémoire PASS mais réserve UX) ; ne pas attribuer à #244 les 24 B de retrait Render de #243. Détails `ESP32/MILESTONE_PR244_SPRITE_BSP_EARLY_ADMISSION.md`. Audio, toutes cartes/armes/monstres, endurance et parité pixel exhaustive non validés.
+
+---
+
 # Doom RPG ESP32 — état actuel du port
 
 ## PR #240 — PASS structurel classic CYD (31 octobre 2026), retrait listes texels desktop
