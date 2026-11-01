@@ -22,4 +22,10 @@ On #244A after admission, 16 early `SPRITEORDER.scanUs` passes fell to median ~3
 4. Check save restoration, monster activation, door animations, preview read-only, HUD, no new unsupported/fail-closed error, RNG/heap invariants, two exact menu FNV `0f2c9fc3` and two `RESIDENTRESET released=18008 empty=1`; note subjectively whether frames are smoother. No audio or all-map coverage implied.
 5. Only after hardware PASS document the results, freeze B code, docs-only closing commits and mark PR #244 merge-ready again. **User merges; agent never merges main.**
 
-**Status: new B candidate, CYD hardware NOT tested.** Prior A PASS remains valid only for the old code.
+## Software gate — PASS (candidate for CYD)
+
+**GitHub Actions [#41302501979](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41302501979): SUCCESS 78/78 steps** on source+tests HEAD `e211246de7d76d3b47d83508a8588d9687d22cb7`. The new actual-C dual-path test passed in **normal and sprite-trace**: deterministic draw witness FNV `93af917d`, four physically drawn copies collapsed to one logical draw, `frameLoads 4→1`, and harness `packReads 28→7` (mock values, **not** a measurement of physical PAK traffic). Both initial-load failure and synthetic mid-group animation drift stayed fail-closed. Previous sprite BSP admission host parity, native gameplay tests, normal `esp32-cyd`, bringup and trace firmware builds, and all source audits also passed. The CI job uploaded compiled firmware artifacts; no claim of a local build or CYD test.
+
+**Change audit:** from A docs HEAD `4e64fe81b13da99fcaedacd814e2b09806bc0d5f` to B code+test HEAD, only four paths differ: `ESP32/src/esp_native_sprite_renderer.c` (+24/−8), new `ESP32/test/native_cross_frame_reuse_host.py`, workflow CI registration, and this milestone. No `PlatformVideo_present()`, gameplay or input file changes.
+
+**Status: #244B SOFTWARE PASS, real CYD hardware NOT tested, PR remains DRAFT**. Prior A PASS remains valid only for the old code. Do not label B merge-ready until fresh user Serial and visual feedback.
