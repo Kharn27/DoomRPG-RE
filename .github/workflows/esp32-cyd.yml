@@ -169,6 +169,9 @@ jobs:
       - name: Test real native sprite admission parity and fail-closed (host C)
         run: python ESP32/test/native_sprite_bsp_early_admission_host.py
 
+      - name: Test CROSS billboards share exactly one frame load (host C)
+        run: python ESP32/test/native_cross_frame_reuse_host.py
+
       - name: Test input dispatch without 120ms touch cooldown (host Python)
         run: python ESP32/test/native_input_latency_host.py
 
