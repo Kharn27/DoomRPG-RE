@@ -103,7 +103,7 @@ typedef struct {
     uint32_t unsupported,frameLoads,frameBytes,packReads;
 } EspNativeSpriteStats;
 static unsigned reads, rasters, entities, mapReads, failRead, corruptFrame, animationDrift;
-static uint32_t clockFrame, seenAnimation, lastOffsets[16];
+static uint32_t clockFrame, lastOffsets[16];
 static int EspMapRuntime_getMapSprite(uint32_t index, EspMapSprite *out) {
     ++mapReads;
     *out=(EspMapSprite){(uint16_t)(512+index),928U,0};
