@@ -1,3 +1,9 @@
+## PR #244 — accélération BSP native, hardware PASS (1er novembre 2026)
+
+Firmware normal `esp32-cyd` testé sur le vrai classic CYD, log `device-monitor-261101-101936.log`, code `ea6e8fa12c376bd36fa099e6ebbaaa2de698aae1`, branche `agent/esp32-sprite-bsp-early-admission` depuis main après #241. CI [#41246087961](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41246087961) **77/77 PASS**, incluant tests de parité C réel, normal, bringup, trace. Retour utilisateur positif (« Franchement ca marche plutot as mal »). L'admission lit d'abord état visuel/HIDDEN et visibilité de feuille BSP : seuls les sprites admis subissent ensuite les décodages sprite/entity ; tri, FNV, previews read-only, activation/automap, fail-closed, sprites transitoires, PAK et cadence gameplay restent inchangés. Le profil trace conserve ses accès diagnostiques complets.
+
+Sur 16 scans instrumentés, 344 sources / 11 hidden / 333 BSP queries / 7–25 candidats, `SPRITEORDER.scanUs` médiane **3,082 ms** contre **~21,6 ms** pour #243 (~−85,7 % du scan), après une première frame froide à 16,67 ms. Les autres timings d'animation et combat baissent également dans les campagnes observées, sans A/B strict ; pas une preuve que la latence totale du toucher a diminué de 86 %. START intro/Entrance, pickups/clignotement, dialogues/automap/EXIT, puis LOAD slot04 V11, Malwrath triples projectiles deux fois, drop/secret/EXIT validés. Deux `RESIDENTRESET released=18008 empty=1`, deux menus `0f2c9fc3`, `HEADROOM_OK`, zéro PSRAM/crash observé, Render **1332** B, `CORE used=2300`, mémoire baseline #241 inchangée. **#243 indépendant n'est pas inclus** (Render 1308B) et conserve sa réserve UX ; ne pas mélanger les statuts. Code #244 gelé, post-test uniquement docs ; PR prête pour review, merge utilisateur. Voir `MILESTONE_PR244_SPRITE_BSP_EARLY_ADMISSION.md`.
+
 # Doom RPG ESP32 — guide de travail
 
 ## PR #240 — PASS CYD du retrait des listes texels desktop (31 octobre 2026)
