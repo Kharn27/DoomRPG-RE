@@ -1232,7 +1232,8 @@ static int drawAt(Render_t* render,
                   int offsetY,
                   Frame* frame,
                   uint32_t seenLogical[8],
-                  EspNativeSpriteStats* stats) {
+                  EspNativeSpriteStats* stats,
+                  uint32_t* crossAnimation) {
     EspMapSprite sprite;
     Vertex_t center;
     Vertex_t swap;
@@ -1264,10 +1265,24 @@ static int drawAt(Render_t* render,
     animation = EspNativeAmbientSprite_frame(parent->info,entityType,
                                               entitySubtype,
                                               parent->index,ambientSampleMs);
-    if (!loadFrame(sources, logical, animation, glow,
-                   frame, seenLogical, stats)) {
-        TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=frame-failed logical=%u animation=%u glow=%u\n", (unsigned int)parent->index, (unsigned int)logical, (unsigned int)animation, (unsigned int)(glow != 0));
-        return 0;
+    /* All four CROSS billboards use the same immutable logical frame and
+     * one presentation clock sample. Reuse the caller-owned Frame only
+     * within this four-copy group; never retain pixels or PAK offsets
+     * across parents, map loads, or render calls. A frame-key mismatch
+     * fails closed instead of silently rasterizing stale artwork. */
+    if (crossAnimation != NULL && *crossAnimation != UINT32_MAX) {
+        if (*crossAnimation != animation || frame->logical != logical) {
+            TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=cross-frame-mismatch logical=%u animation=%u\n", (unsigned int)parent->index, (unsigned int)logical, (unsigned int)animation);
+            return 0;
+        }
+    }
+    else {
+        if (!loadFrame(sources, logical, animation, glow,
+                       frame, seenLogical, stats)) {
+            TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=frame-failed logical=%u animation=%u glow=%u\n", (unsigned int)parent->index, (unsigned int)logical, (unsigned int)animation, (unsigned int)(glow != 0));
+            return 0;
+        }
+        if (crossAnimation != NULL) *crossAnimation = animation;
     }
 
     minimum = frame->xMin - 32;
@@ -1411,6 +1426,7 @@ static int drawLegacyCross(Render_t* render,
     uint32_t subNear;
     uint32_t subClip;
     uint32_t i;
+    uint32_t crossAnimation = UINT32_MAX;
 
     if (parent == NULL || !isLegacyCrossLogical(parent->logical) ||
         (parent->info & CROSS) == 0U ||
@@ -1434,7 +1450,7 @@ static int drawLegacyCross(Render_t* render,
         if (!drawAt(render, sources, parent, resourceLogical,
                     RENDER_MODE_NORMAL, 0,
                     offsets[i][0], offsets[i][1],
-                    frame, seenLogical, stats)) {
+                    frame, seenLogical, stats, &crossAnimation)) {
             return 0;
         }
     }
@@ -1478,7 +1494,7 @@ static int drawParentAndGlow(Render_t* render,
 
     if (!drawAt(render, sources, parent, parent->logical,
                 spriteRenderMode(parent->logical), 0, 0, 0,
-                frame, seenLogical, stats)) {
+                frame, seenLogical, stats, NULL)) {
         return 0;
     }
 
@@ -1491,7 +1507,7 @@ static int drawParentAndGlow(Render_t* render,
     }
     return drawAt(render, sources, parent, glowLogical,
                   RENDER_MODE_ADD, 1, 0, 0,
-                  frame, seenLogical, stats);
+                  frame, seenLogical, stats, NULL);
 }
 
 static int renderImpl(struct Render_s* renderBase,
