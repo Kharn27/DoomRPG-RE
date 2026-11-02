@@ -1,6 +1,7 @@
 #include "platform_input.h"
 
 #include "board_config.h"
+#include "esp_native_orientation.h"
 #include "esp_native_gameplay_transition_handoff.h"
 #include "platform_touch_events.h"
 
@@ -108,10 +109,30 @@ bool PlatformInput::readTouch(PlatformTouchPoint& point) {
                       cyd::kScreenWidth - 1);
     point.y = mapAxis(sample.x, cyd::kTouchRawMinX, cyd::kTouchRawMaxX,
                       cyd::kScreenHeight - 1);
+    /* Calibrate once for rotation 1, then invert both axes once for rotation
+     * 3. TFT_eSPI does NOT transform these raw XPT2046 samples. */
+    if (!Esp32Orientation_transformTouch(Esp32Orientation_get(), &point.x, &point.y)) {
+        return false;
+    }
 
     if (!tapDelivered_ && !gRequireFreshRelease) {
         tapDelivered_ = true;
         releaseSince_ = 0;
+        /* Log only the first four press edges after each orientation change. */
+        static uint8_t lastOrientation = 0xffU;
+        static uint8_t loggedTouches = 0U;
+        const uint8_t orientation = Esp32Orientation_get();
+        if (orientation != lastOrientation) {
+            lastOrientation = orientation;
+            loggedTouches = 0U;
+        }
+        if (loggedTouches < 4U) {
+            ++loggedTouches;
+            Serial.printf("[ORIENTATION] TOUCH mode=%s raw=%u,%u physical=%d,%d logical=%d,%d sample=%u/4\\n",
+                          orientation ? "INVERSE" : "NORMAL",
+                          point.rawX, point.rawY, point.x, point.y,
+                          point.x / 2, point.y / 2, (unsigned)loggedTouches);
+        }
 
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
         /* Bring-up diagnostics observe the calibrated semantic press before any
