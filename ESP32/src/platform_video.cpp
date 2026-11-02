@@ -246,7 +246,7 @@ extern "C" uint8_t Esp32Orientation_get(void) {
 
 extern "C" int Esp32Orientation_set(uint8_t orientation) {
     if (!Esp32Orientation_valid(orientation) || !Esp32Orientation_isReady()) {
-        Serial.printf("[ORIENTATION] REJECT requested=%u current=%u ready=%d\\n",
+        Serial.printf("[ORIENTATION] REJECT requested=%u current=%u ready=%d\n",
                       (unsigned)orientation, (unsigned)currentOrientation,
                       Esp32Orientation_isReady());
         return 0;
@@ -259,13 +259,13 @@ extern "C" int Esp32Orientation_set(uint8_t orientation) {
         platformDisplay->height() != DOOMRPG_PHYSICAL_HEIGHT) {
         platformDisplay->setRotation(before == ESP32_ORIENTATION_INVERSE ? 3U : 1U);
         applyCydInvertedGammaProfile();
-        Serial.printf("[ORIENTATION] ROLLBACK invalid-dimensions requested=%u restored=%u\\n",
+        Serial.printf("[ORIENTATION] ROLLBACK invalid-dimensions requested=%u restored=%u\n",
                       (unsigned)orientation, (unsigned)before);
         return 0;
     }
     applyCydInvertedGammaProfile(); /* Hardware gamma/inversion remain unchanged. */
     currentOrientation = orientation; /* Input consults the same owner, never its own copy. */
-    Serial.printf("[ORIENTATION] SET %s->%s rotation=%u physical=%dx%d framebuffer=untouched gamma=preserved\\n",
+    Serial.printf("[ORIENTATION] SET %s->%s rotation=%u physical=%dx%d framebuffer=untouched gamma=preserved\n",
                   before ? "INVERSE" : "NORMAL", orientation ? "INVERSE" : "NORMAL",
                   (unsigned)rotation, platformDisplay->width(), platformDisplay->height());
     return 1;

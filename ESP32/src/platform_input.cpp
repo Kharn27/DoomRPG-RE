@@ -128,7 +128,7 @@ bool PlatformInput::readTouch(PlatformTouchPoint& point) {
         }
         if (loggedTouches < 4U) {
             ++loggedTouches;
-            Serial.printf("[ORIENTATION] TOUCH mode=%s raw=%u,%u physical=%d,%d logical=%d,%d sample=%u/4\\n",
+            Serial.printf("[ORIENTATION] TOUCH mode=%s raw=%u,%u physical=%d,%d logical=%d,%d sample=%u/4\n",
                           orientation ? "INVERSE" : "NORMAL",
                           point.rawX, point.rawY, point.x, point.y,
                           point.x / 2, point.y / 2, (unsigned)loggedTouches);

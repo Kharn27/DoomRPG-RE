@@ -147,12 +147,12 @@ static int paintOrientationState(void) {
     uint32_t nextHash = 0U;
     if (!DoomRPG_esp32PaintMainMenuOrientationDashboard(
             optionsDoomRpg, &nextHash)) {
-        printf("[OPTIONSORIENTATION] FAILED paint child\\n");
+        printf("[OPTIONSORIENTATION] FAILED paint child\n");
         return 0;
     }
     optionsExpectedFrameFNV = nextHash;
     SDL_RenderPresent(NULL);
-    printf("[OPTIONSORIENTATION] VISUAL mode=%s framebufferFNV=%08x\\n",
+    printf("[OPTIONSORIENTATION] VISUAL mode=%s framebufferFNV=%08x\n",
            Esp32Orientation_get() ? "INVERSE" : "NORMAL",
            (unsigned int)nextHash);
     return 1;
@@ -269,13 +269,13 @@ static void optionsBackTap(int16_t screenX,
             if (after != before) {
                 /* Durable commit before touching PWM; SD failures remain fail-closed. */
                 if (!EspNativeConfig_saveBrightness(after)) {
-                    printf("[OPTIONSBRIGHTNESS] FAILED persist percent=%u->%u pwm=unchanged\\n",
+                    printf("[OPTIONSBRIGHTNESS] FAILED persist percent=%u->%u pwm=unchanged\n",
                            (unsigned int)before, (unsigned int)after);
                     return;
                 }
                 if (!Esp32Backlight_setPercent(after)) {
                     (void)EspNativeConfig_saveBrightness(before);
-                    printf("[OPTIONSBRIGHTNESS] FAILED pwm percent=%u->%u configRollback=attempted\\n",
+                    printf("[OPTIONSBRIGHTNESS] FAILED pwm percent=%u->%u configRollback=attempted\n",
                            (unsigned int)before, (unsigned int)after);
                     return;
                 }
@@ -310,7 +310,7 @@ static void optionsBackTap(int16_t screenX,
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
             registerOptionsHitboxOverlay();
 #endif
-            printf("[OPTIONSORIENTATION] BACK to=Options mode=%s mutation=ui-only\\n",
+            printf("[OPTIONSORIENTATION] BACK to=Options mode=%s mutation=ui-only\n",
                    Esp32Orientation_get() ? "INVERSE" : "NORMAL");
             return;
         }
@@ -322,13 +322,13 @@ static void optionsBackTap(int16_t screenX,
                 /* SD commit precedes hardware: a failed write cannot change
                  * either TFT or XPT orientation. */
                 if (!EspNativeConfig_saveOrientation(after)) {
-                    printf("[OPTIONSORIENTATION] ROLLBACK reason=sd-save-failed requested=%u retained=%u screen=unchanged touch=unchanged\\n",
+                    printf("[OPTIONSORIENTATION] ROLLBACK reason=sd-save-failed requested=%u retained=%u screen=unchanged touch=unchanged\n",
                            (unsigned)after, (unsigned)before);
                     return;
                 }
                 if (!Esp32Orientation_set(after)) {
                     const int restored = EspNativeConfig_saveOrientation(before);
-                    printf("[OPTIONSORIENTATION] ROLLBACK reason=tft-rejected persistRestored=%d screen=unchanged touch=unchanged\\n",
+                    printf("[OPTIONSORIENTATION] ROLLBACK reason=tft-rejected persistRestored=%d screen=unchanged touch=unchanged\n",
                            restored);
                     return;
                 }
@@ -336,7 +336,7 @@ static void optionsBackTap(int16_t screenX,
                 if (!paintOrientationState()) {
                     const int hwRestored = Esp32Orientation_set(before);
                     const int sdRestored = EspNativeConfig_saveOrientation(before);
-                    printf("[OPTIONSORIENTATION] ROLLBACK reason=repaint-failed hwRestored=%d sdRestored=%d\\n",
+                    printf("[OPTIONSORIENTATION] ROLLBACK reason=repaint-failed hwRestored=%d sdRestored=%d\n",
                            hwRestored, sdRestored);
                     optionsBackActive = 0;
                     PlatformInput_setTapCallback(NULL);
@@ -345,13 +345,13 @@ static void optionsBackTap(int16_t screenX,
                     return;
                 }
             }
-            printf("[OPTIONSORIENTATION] SELECT %s->%s changed=%s directTap=yes persistence=sd-v2 gameplayTurn=no framebuffer=single\\n",
+            printf("[OPTIONSORIENTATION] SELECT %s->%s changed=%s directTap=yes persistence=sd-v2 gameplayTurn=no framebuffer=single\n",
                    before ? "INVERSE" : "NORMAL",
                    after ? "INVERSE" : "NORMAL",
                    after == before ? "no" : "yes");
             return;
         }
-        printf("[OPTIONSORIENTATION] MISS outside-choices no-action\\n");
+        printf("[OPTIONSORIENTATION] MISS outside-choices no-action\n");
         return;
     }
 
@@ -400,7 +400,7 @@ static void optionsBackTap(int16_t screenX,
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
         registerOptionsHitboxOverlay();
 #endif
-        printf("[OPTIONSORIENTATION] OPEN from=Options mode=%s choices=NORMAL/INVERSE directTap=yes\\n",
+        printf("[OPTIONSORIENTATION] OPEN from=Options mode=%s choices=NORMAL/INVERSE directTap=yes\n",
                Esp32Orientation_get() ? "INVERSE" : "NORMAL");
         return;
     }

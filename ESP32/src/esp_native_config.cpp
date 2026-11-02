@@ -61,7 +61,7 @@ void applyLoaded(const char* source, const ConfigSettings& loaded,
                  const char* primaryState) {
     const int rotationOk = Esp32Orientation_set(loaded.orientation);
     const int pwmOk = Esp32Backlight_setPercent(loaded.brightness);
-    Serial.printf("[NATIVECONFIG] LOAD source=%s result=%s version=%u bytes=12 brightness=%u orientation=%s primary=%s write=no\\n",
+    Serial.printf("[NATIVECONFIG] LOAD source=%s result=%s version=%u bytes=12 brightness=%u orientation=%s primary=%s write=no\n",
                   source, rotationOk && pwmOk ? "valid" : "hardware-rejected",
                   (unsigned)loaded.version, (unsigned)loaded.brightness,
                   loaded.orientation ? "INVERSE" : "NORMAL", primaryState);
@@ -75,14 +75,14 @@ int saveSettings(uint8_t percent, uint8_t orientation) {
         !Esp32Orientation_isReady() ||
         (percent != 25U && percent != 50U && percent != 75U && percent != 100U) ||
         !Esp32Orientation_valid(orientation)) {
-        Serial.printf("[NATIVECONFIG] SAVE rejected brightness=%u orientation=%u sd=%d pwm=%d orientationReady=%d\\n",
+        Serial.printf("[NATIVECONFIG] SAVE rejected brightness=%u orientation=%u sd=%d pwm=%d orientationReady=%d\n",
                       (unsigned)percent, (unsigned)orientation, configSdReady,
                       Esp32Backlight_isReady(), Esp32Orientation_isReady());
         return 0;
     }
 
     if (verify(kConfigPath, percent, orientation)) {
-        Serial.printf("[NATIVECONFIG] SAVE unchanged brightness=%u orientation=%u version=2 write=no\\n",
+        Serial.printf("[NATIVECONFIG] SAVE unchanged brightness=%u orientation=%u version=2 write=no\n",
                       (unsigned)percent, (unsigned)orientation);
         return 1;
     }
@@ -133,7 +133,7 @@ int saveSettings(uint8_t percent, uint8_t orientation) {
     }
 
     if (SD.exists(kBackupPath)) (void)SD.remove(kBackupPath);
-    Serial.printf("[NATIVECONFIG] SAVE result=committed version=2 brightness=%u orientation=%s bytes=12 path=%s backup=retired\\n",
+    Serial.printf("[NATIVECONFIG] SAVE result=committed version=2 brightness=%u orientation=%s bytes=12 path=%s backup=retired\n",
                   (unsigned)percent, orientation ? "INVERSE" : "NORMAL", kConfigPath);
     return 1;
 }
