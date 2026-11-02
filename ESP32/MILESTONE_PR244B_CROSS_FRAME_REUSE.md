@@ -1,4 +1,4 @@
-# PR #244B — one immutable frame decode for four legacy CROSS billboards (CANDIDATE)
+# PR #244B — one immutable frame decode for four legacy CROSS billboards (classic CYD PASS)
 
 ## Baseline and A/B separation
 
@@ -22,10 +22,24 @@ On #244A after admission, 16 early `SPRITEORDER.scanUs` passes fell to median ~3
 4. Check save restoration, monster activation, door animations, preview read-only, HUD, no new unsupported/fail-closed error, RNG/heap invariants, two exact menu FNV `0f2c9fc3` and two `RESIDENTRESET released=18008 empty=1`; note subjectively whether frames are smoother. No audio or all-map coverage implied.
 5. Only after hardware PASS document the results, freeze B code, docs-only closing commits and mark PR #244 merge-ready again. **User merges; agent never merges main.**
 
-## Software gate — PASS (candidate for CYD)
+## Real classic CYD — 2 November 2026: functional, memory and user UX PASS
+
+**Tested code:** `e211246de7d76d3b47d83508a8588d9687d22cb7`; post-code `ca52e83f614a14e007d9861b21bdcb52c714d1c0` was a milestone-doc-only commit. Software CI: [#41302501979](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41302501979) **78/78 SUCCESS**, plus docs-only [#41302722057](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41302722057) **78/78 SUCCESS**. Full on-device normal `esp32-cyd` log `device-monitor-261102-011654.log`, 1,651 lines. User explicitly confirms **“Franchement c'était bien nerveux là !!”**. The log has no embedded Git SHA; the test campaign and unchanged layout identify the tested branch, not an on-device SHA attestation.
+
+**CROSS correctness:** 98 lines `[NATIVESPRITE] CROSS` across resource81/index141, resource83/index77 and resource83/index324 (Malwrath scene); all `copies=4 accounting=1`, with expected full/partial/near/clip outcomes and no mismatch/fail-closed in tested path. The normal+trace host test of actual `drawAt` and `drawLegacyCross` C bodies proved identical deterministic raster input fingerprint `93af917d`, frame loads **4→1**, host PAK-read witnesses **28→7**, guard behavior fail-closed. **No on-device per-CROSS read counter after first 16 early samples**: cannot assert that the log itself measured 4→1 physical SD/PAK calls, or that all 98 renders are byte-for-byte pixel-identical across every camera angle.
+
+**Functional route:** START intro/Entrance source arena `c3882516`, first world frame `71ca7465`; 24 moves, 9 turns, crates remove/transform, pickups incl. Fire Ext and blinking white feedback, dialogs 88/89/79 plus multi-part event60 and show/hide/unlock, doors275/352, automap, HUB/EXIT. LOAD slot04 V11 restores monsters `beaeaccc`, topology `50e16fe3`, positions `e2a9d90a`, activation `df419482`; door113, Malwrath sprite322 HP 11→7→3→0 with two complete **three-shot projectile204** retaliations before their commits, death/drop/pickup/secret +5XP, EXIT. No source reset, panic, watchdog, unsupported opcode/resource, unexpected world mutation or save write evident.
+
+**Memory/exits:** `Render=1332 Game=0 Canvas=44 Total=2136`, `CORE READY used=2300`, 4 MB flash, PSRAM=0, `shapeData/mediaTexels=NULL`; heap8 menu 153160, START primed 112880, LOAD primed 112068, post-EXIT 158004. Largest8 gameplay/menu 86004/110580. Two `HEADROOM_OK`, two `RESIDENTRESET released=18008 empty=1` and two `SYSEXIT MENU-READY frame=0f2c9fc3`. No RAM regression versus #244A in these witnesses.
+
+**Performance discipline:** #244A → #244B, different campaign/scenes: `SPRITEORDER.scanUs` median 3,082→3,081.5 µs (first 16 samples, before logged CROSS), `VIEWANIM FRAME mode=move.totalUs` median 87,721 µs (n25)→87,670 µs (n35), full rotate mean 176,335 µs (n8)→177,124 µs (n10), combat total mean 96,150 µs (n6)→96,781 µs (n6), combat sprite subphase 15,745→15,365 µs mean. No global benchmark speedup demonstrated or claimed: improvement from B is bounded to reducing redundant work for CROSS frames; subjective user experience is **positive and hardware-confirmed**, not an invented 4× total speedup. The large ~86% order scan improvement remains #244A's earlier measured effect.
+
+**Disposition:** targeted **#244B real CYD functional+RAM+subjective UX PASS**, no claims for audio, exhaustive pixel parity or long endurance. Freeze B code at `e211246de7d76d3b47d83508a8588d9687d22cb7`. Only documentation commits after the hardware pass; PR #244 may be marked **ready for review/merge** after CI. User retains merging authority. Workflow correction: separate unmerged PR #243 **closed without merge**, branch `agent/esp32-render-retire-legacy-world-pointers` and 24 B legacy Render pointer retirement preserved for later after #244 merge and exact fresh `main` SHA. No code from #243 is present in #244; do not conflate `Render=1308` with current `1332`.
+
+## Software gate — PASS (historical pre-hardware)
 
 **GitHub Actions [#41302501979](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41302501979): SUCCESS 78/78 steps** on source+tests HEAD `e211246de7d76d3b47d83508a8588d9687d22cb7`. The new actual-C dual-path test passed in **normal and sprite-trace**: deterministic draw witness FNV `93af917d`, four physically drawn copies collapsed to one logical draw, `frameLoads 4→1`, and harness `packReads 28→7` (mock values, **not** a measurement of physical PAK traffic). Both initial-load failure and synthetic mid-group animation drift stayed fail-closed. Previous sprite BSP admission host parity, native gameplay tests, normal `esp32-cyd`, bringup and trace firmware builds, and all source audits also passed. The CI job uploaded compiled firmware artifacts; no claim of a local build or CYD test.
 
 **Change audit:** from A docs HEAD `4e64fe81b13da99fcaedacd814e2b09806bc0d5f` to B code+test HEAD, only four paths differ: `ESP32/src/esp_native_sprite_renderer.c` (+24/−8), new `ESP32/test/native_cross_frame_reuse_host.py`, workflow CI registration, and this milestone. No `PlatformVideo_present()`, gameplay or input file changes.
 
-**Status: #244B SOFTWARE PASS, real CYD hardware NOT tested, PR remains DRAFT**. Prior A PASS remains valid only for the old code. Do not label B merge-ready until fresh user Serial and visual feedback.
+**Historical gate status:** B was software PASS before the real CYD validation. The hardware PASS and user acceptance are recorded in the new section above. The code is frozen and review-ready, no automatic merge.
