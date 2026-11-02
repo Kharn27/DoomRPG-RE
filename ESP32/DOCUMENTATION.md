@@ -1,3 +1,9 @@
+## Post-#245 — retrait de la copie desktop d'en-tête BSP dans Render_t (candidat, 2 novembre 2026)
+
+Merge #245 vérifié : **main exact `3142432f5b6870c5a8579a5cd293f82e39f0fa8f`** ; nouvelle et unique branche `agent/esp32-render-retire-legacy-map-header` ; code candidat `23f57b9758c47990abc1b5df4347ccc6ba0d7daa`. `Render_t::{mapName[16],mapNameID,loadMapID,introColor,mapSpawnIndex,mapSpawnDir,mapCameraSpawnIndex}` devient desktop/bringup-only. Le reader BSP, la session native et les données de spawn possèdent déjà ces métadonnées ; **aucun changement BSP runtime, gameplay, sprite/CROSS, preview, présentation, RNG, save ou PAK**. `EspNativeEngineRoot_initRender` ne peut plus écrire le slot `mapCameraSpawnIndex` retiré. Garde C ABI et tests hôte renouvelés. **Attendu, non encore mesuré sur CYD : Render_t 1296→1256 B (−40 B) et CORE used 2264→2224 B** ; baseline #245B normal menu/START prime/LOAD prime/EXIT `153196/112916/112104/158040` heap8, largest8 jeu/menu `86004/110580`. Source de vérité `ESP32/MILESTONE_POST245_RENDER_MAP_HEADER.md`. CI + test utilisateur firmware normal `esp32-cyd` requis avant PASS ; une PR Draft, merge exclusivement utilisateur.
+
+---
+
 ## PR #245B — trois slots Render desktop supplémentaires retirés, PASS vrai CYD (2 novembre 2026)
 
 Même branche `agent/esp32-render-world-pointers-post244`, même PR #245, nouveau code `4f81d31665e671283181147a34c00ff13b2602a2`. CI logicielle [push #41371923424](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41371923424) et [PR #41371928441](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41371928441) **SUCCESS 78/78 chacune**. Les pointeurs de liste visible `viewSprites` et les comptes desktop `numSprites/numTileEvents` sont exclus du layout ESP32 normal/trace ; ABI desktop/bringup et tous les compteurs raster actifs sont préservés. Pas de retouche de la boucle sprite #244A/B ni de l'input.
