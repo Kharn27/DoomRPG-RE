@@ -109,23 +109,23 @@ int DoomRPG_esp32ReleaseMainMenuMemory(struct DoomRPG_s* doomRpgBase) {
      * resident/session map state is released by its own lifecycle owners. */
     EspNativeRenderRuntime_releaseCompatibility(render);
 
-    printf("[MAINMENU] Runtime cleanup legals=retired heap8=%u->%u gained=%d largest8=%u->%u nodes=%p lines=%p mapSprites=%p mappings=%p/%p shapeData=%p mediaTexels=%p\n",
+    printf("[MAINMENU] Runtime cleanup legals=retired heap8=%u->%u gained=%d largest8=%u->%u legacyWorld=retired mappings=%p/%p shapeData=%p mediaTexels=%p\n",
            (unsigned int)heapBefore,
            (unsigned int)heap8Free(),
            (int)heap8Free() - (int)heapBefore,
            (unsigned int)largestBefore,
            (unsigned int)largest8Block(),
-           (void*)render->nodes,
-           (void*)render->lines,
-           (void*)render->mapSprites,
            (void*)render->mediaTexelOffsets,
            (void*)render->mediaBitShapeOffsets,
            (void*)render->shapeData,
            (void*)render->mediaTexels);
 
-    return render->nodes == NULL &&
+    return
+#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)
+           render->nodes == NULL &&
            render->lines == NULL &&
            render->mapSprites == NULL &&
+#endif
            render->mediaTexelOffsets == NULL &&
            render->mediaBitShapeOffsets == NULL &&
            render->shapeData == NULL &&
