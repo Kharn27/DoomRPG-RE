@@ -122,16 +122,22 @@ typedef struct Render_s
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	byte mapFlags[1024];
 #endif
+/* Retired desktop BSP map-header copy; native CYD owns this via
+ * EspBspReader/EspMapRuntime. Retained only for desktop/bringup. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	char mapName[MAPNAMESTRLEN];
+#endif
 #ifndef DOOMRPG_ESP32
 	short unk1;
 #endif
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	short mapNameID;
 	int loadMapID;
 	int introColor;
 	int mapSpawnIndex;
 	int mapSpawnDir;
 	int mapCameraSpawnIndex;
+#endif
 	/* Legacy map-wide sprite pointer lists. Normal CYD native sprite
 	 * topology and drops own these semantics without Render mirrors. */
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)

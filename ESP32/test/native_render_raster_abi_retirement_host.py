@@ -360,6 +360,36 @@ for field in ("viewSprites", "numSprites", "numTileEvents"):
                 + field + r"\b", code,
             ), ("retired desktop view/list/count member accessed", path, field)
 
+
+# Post-#245: the desktop BSP header/spawn fields have permanent native owners
+# in EspBspReader/EspMapRuntime, not in the production/trace Render shell.
+map_header_guard = (r"#if !defined\(DOOMRPG_ESP32\) \|\| "
+                    r"defined\(DOOMRPG_ESP32_BRINGUP_PROBES\)")
+assert re.search(
+    map_header_guard + r"\s+char mapName\[MAPNAMESTRLEN\];\s+#endif", HEADER)
+assert re.search(
+    map_header_guard + r"\s+short mapNameID;\s+int loadMapID;\s+"
+    r"int introColor;\s+int mapSpawnIndex;\s+int mapSpawnDir;\s+"
+    r"int mapCameraSpawnIndex;\s+#endif", HEADER)
+for member in ("mapName", "mapNameID", "loadMapID", "introColor",
+               "mapSpawnIndex", "mapSpawnDir", "mapCameraSpawnIndex"):
+    assert re.search(r"\brender->" + member + r"\b", DESKTOP), member
+    for tree in (NATIVE / "src", NATIVE / "include"):
+        for path in sorted(tree.rglob("*")):
+            if path.suffix not in (".c", ".cpp", ".h"):
+                continue
+            source = path.read_text(encoding="latin-1")
+            clean = re.sub(
+                r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"',
+                " ", source, flags=re.S)
+            assert not re.search(
+                r"\b(?:render|renderBase|rootRender|r)\s*(?:->|\.)\s*"
+                + member + r"\b", clean), (
+                "retired map-header Render field referenced by native", path, member)
+assert "render->mapCameraSpawnIndex = 0;" not in root
+assert "sizeof(Render_t) == 1256U" in (
+    NATIVE / "src/render_startup_bridge.c").read_text()
+
 # The sprite renderer is the other owner of transactional frame scratch.
 # Its clipping/projection lines are function-local too. No CYD Render_t
 # member or native source may retain desktop tmpLine after this milestone.
@@ -367,7 +397,7 @@ sprite = (NATIVE / "src/esp_native_sprite_renderer.c").read_text()
 assert "Line_t tmpLine;" not in sprite
 assert "->tmpLine" not in sprite
 assert "_Static_assert(sizeof(Scratch) <= 740U" in sprite
-assert "sizeof(Render_t) == 1296U" in (
+assert "sizeof(Render_t) == 1256U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 assert re.search(
     r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
@@ -509,4 +539,4 @@ assert "spriteLeaf(runtime, &sprite, outLeaf)" in leaf_visibility
 assert "spriteLeafCache.leaf[spriteIndex] = (uint16_t)leaf;" in leaf_visibility
 assert "!cachedSpriteLeaf(runtime, mapSpriteIndex, &leaf)" in leaf_visibility
 
-print("PASS 23 retired Render ABIs; CYD Render_t omits seven raster flags + ten memory ledgers + three frame timestamps + five opaque desktop fields + three view/list counters; BSP leaf cache retained")
+print("PASS 23 retired Render ABIs; CYD Render_t omits seven raster flags + ten memory ledgers + three frame timestamps + five opaque desktop fields + three view/list counters + seven map-header fields; BSP leaf cache retained")
