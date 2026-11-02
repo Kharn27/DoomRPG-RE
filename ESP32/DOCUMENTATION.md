@@ -1,3 +1,11 @@
+## #246 : A validé sur CYD, B compteurs BSP candidat (2 novembre 2026)
+
+Toujours sur la même branche agent/esp32-render-retire-legacy-map-header et PR #246. A testé sur le vrai CYD normal : Render 1256 B, CORE 2224 B, heap8 menu/START/LOAD/EXIT 153236/112956/112144/158080 B, largest8 jeu/menu 86004/110580, PAK241, arène 14095/c3882516, frame 71ca7465, START/EXIT et LOAD slot04 V11 Malwrath/EXIT, deux resets exacts et aucune anomalie matérielle constatée ; utilisateur satisfait. A code 23f57b9758c47990abc1b5df4347ccc6ba0d7daa, CI push et PR SUCCESS.
+
+B candidate source a6d3b621abc61022f70827fca7c5795362c64529 : quatre compteurs du parser BSP desktop exclus du Render_t normal/trace, conservés en desktop/bringup. Les fixtures/fingerprints hôte ont été adaptés sur la même PR ; Render_t=1240 B et CORE=2208 B **prévus**, pas encore confirmés sur CYD. CI finale et log hardware B nécessaires avant PASS, puis clôture docs-only et Ready for review. Merge réservé à l'utilisateur. Voir [le protocole B](MILESTONE_POST245_RENDER_BSP_COUNTERS.md).
+
+---
+
 ## Post-#245 — retrait de la copie desktop d'en-tête BSP dans Render_t (candidat, 2 novembre 2026)
 
 Merge #245 vérifié : **main exact `3142432f5b6870c5a8579a5cd293f82e39f0fa8f`** ; nouvelle et unique branche `agent/esp32-render-retire-legacy-map-header` ; code candidat `23f57b9758c47990abc1b5df4347ccc6ba0d7daa`. `Render_t::{mapName[16],mapNameID,loadMapID,introColor,mapSpawnIndex,mapSpawnDir,mapCameraSpawnIndex}` devient desktop/bringup-only. Le reader BSP, la session native et les données de spawn possèdent déjà ces métadonnées ; **aucun changement BSP runtime, gameplay, sprite/CROSS, preview, présentation, RNG, save ou PAK**. `EspNativeEngineRoot_initRender` ne peut plus écrire le slot `mapCameraSpawnIndex` retiré. Garde C ABI et tests hôte renouvelés. **Attendu, non encore mesuré sur CYD : Render_t 1296→1256 B (−40 B) et CORE used 2264→2224 B** ; baseline #245B normal menu/START prime/LOAD prime/EXIT `153196/112916/112104/158040` heap8, largest8 jeu/menu `86004/110580`. Source de vérité `ESP32/MILESTONE_POST245_RENDER_MAP_HEADER.md`. CI + test utilisateur firmware normal `esp32-cyd` requis avant PASS ; une PR Draft, merge exclusivement utilisateur.
