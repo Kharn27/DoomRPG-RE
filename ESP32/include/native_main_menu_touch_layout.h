@@ -46,6 +46,12 @@ int DoomRPG_esp32PaintBrightnessPresetCards(
     uint8_t activePercent,
     uint32_t* framebufferFNV);
 
+/* Same bounded right-rail layout as brightness: Back/Normal/Inverse. */
+int DoomRPG_esp32PaintOrientationPresetCards(
+    struct DoomRPG_s* doomRpg,
+    uint8_t activeOrientation,
+    uint32_t* framebufferFNV);
+
 #ifdef __cplusplus
 }
 #endif

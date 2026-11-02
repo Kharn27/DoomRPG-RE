@@ -59,6 +59,7 @@
  * MenuSystem model. Five 54x20 cards fit the same right rail with 2px gaps.
  * Card 0: Back; 1..4: 25/50/75/100 percent. Shared paint/touch geometry. */
 #define DOOMRPG_ESP32_BRIGHTNESS_CARD_COUNT 5
+#define DOOMRPG_ESP32_ORIENTATION_CARD_COUNT 3
 #define DOOMRPG_ESP32_BRIGHTNESS_CARD_FIRST_TOP 6
 #define DOOMRPG_ESP32_BRIGHTNESS_CARD_HEIGHT 20
 #define DOOMRPG_ESP32_BRIGHTNESS_CARD_PITCH 22
