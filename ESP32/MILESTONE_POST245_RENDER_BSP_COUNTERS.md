@@ -1,4 +1,4 @@
-# PR #246B — quatre comptes BSP desktop hors Render_t natif (CANDIDAT)
+# PR #246B — quatre comptes BSP desktop hors Render_t natif (PASS matériel ciblé)
 
 ## Base et état de A
 
@@ -20,3 +20,10 @@ Tests hôtes alignés d9719e4db855ab554f232797cbf81d14e281aeae et 8a3683b96fb798
 6. Jusqu'au **PASS matériel B**, PR #246 reste Draft. Après PASS : geler le code, documentation seule, CI post-doc/diff contrôlé, Ready for review et merge par l'utilisateur uniquement.
 
 NATIVEFRAME BOUNDARY-INLINE et positions x décalées dans les logs projectile sont préexistants. Audio, automap-open, SAVE neuf, toutes cartes, endurance et parité pixel exhaustive hors scope.
+
+
+## Résultat matériel réel — PASS B (2 novembre 2026)
+
+L'utilisateur a flashé le **normal esp32-cyd** à la suite du HEAD préhardware a4dd92552eee3121ab6c8d4277fc89e581fa3dfb, et partagé son log complet dans cette conversation avec le verdict « Visuellement RAS, on continue sur cette branche ! ». **Render_t=1240 B, CORE=2208 B, total structs=2044 B**, PSRAM0, PAK241, shapeData/mediaTexels 0. Heap8 B menu=153240, START prime=112960, LOAD prime=112148, EXIT=158084 (+4 B vs A malgré −16 B objet grâce à l'arrondi de tas) ; largest8 gameplay=86004, menu=110580 ; HEADROOM_OK. FIRST_FRAME 71ca7465, arène c3882516 ; START dialogue 88/89/79, caisses, ressources, porte275, CROSS, EXIT. LOAD slot04 V11 restauré exactement (monsters beaeaccc, topology 50e16fe3, pos e2a9d90a, activation df419482) ; trois séquences Malwrath triple projectile204 complètes avant COMMIT, HP 11→7→3→0, drop Sm Medkit et pickup, secret +5XP, EXIT. Deux RESIDENTRESET released=18008 empty=1, menus FNV 0f2c9fc3, aucun panic/WDT vu. RNG initial non identique à la session A, mais la restauration V11 et l'ordre runtime restent cohérents ; aucun déterminisme cross-boot de nouvelle partie revendiqué.
+
+Le protocole ci-dessus était la **liste de gates préhardware** : il est satisfait pour les scénarios couverts par ce log, et son statut « candidat » historique n'est plus actuel. Aucune preuve sur audio, SAVE neuf, endurance ou parité complète. Le code B est gelé ; la PR **reste Draft uniquement parce que l'utilisateur demande de poursuivre un jalon C sur la même branche**. CI préhardware B : [push #41528336540](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41528336540) et [PR #41528344232](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41528344232), SUCCESS 78/78.

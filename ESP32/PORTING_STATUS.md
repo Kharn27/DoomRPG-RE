@@ -1,3 +1,15 @@
+## PR #246B — PASS matériel sur classic CYD, continuité sur même PR (2 novembre 2026)
+
+**Code B validé sur le CYD normal** : source a6d3b621abc61022f70827fca7c5795362c64529, corrections de tests d9719e4db855ab554f232797cbf81d14e281aeae + 8a3683b96fb798d2cd7afa1c857c910171d2a58f, HEAD pré-test a4dd92552eee3121ab6c8d4277fc89e581fa3dfb (code identique, documentation préparatoire). CI du dernier HEAD **push #41528336540 / PR #41528344232 SUCCESS 78/78** ; log Serial complet utilisateur dans la conversation du 2 novembre : « Visuellement RAS, on continue sur cette branche ! ». **B PASS ciblé matériel**, code B gelé ; la présente entrée est une clôture documentaire avant le jalon suivant sur **la même PR #246**.
+
+Boot **Render_t=1240 B / Game=0 / Canvas=44 / Total=2044**, CORE used **2208 B** : −16 B de structure vs A. Heap8 réel B menu/START prime/LOAD prime/EXIT **153240/112960/112148/158084 B** (+4 B vs A : taille d'alloc arrondie), largest8 gameplay/menu **86004/110580**. PSRAM=0, PAK=241, mapping=152/252, \`shapeData/mediaTexels=NULL\`, 2x HEADROOM_OK. BSP immutable \`14095/c3882516\`, FIRST_FRAME \`71ca7465\`, images/PACK stables.
+
+START Intro/Entrance, caisses/pickups, dialogues 88/89/79 + reprise opcode19, porte275 + fermeture différée, CROSS, HUB/EXIT. LOAD slot04 V11 : état exact monstres/topologie/positions/activation **beaeaccc/50e16fe3/e2a9d90a/df419482**, porte113, Malwrath322 HP11→7→3→0, **trois** ripostes triples projectile204 terminées avant commit, drop medkit/pickup, secret +5XP, HUB/EXIT. **Deux** RESIDENTRESET released=18008 empty=1, **deux** menus FNV 0f2c9fc3, saveWrite=no, aucun panic/WDT observé. RNG startup/monstre varie entre démarrages, sans preuve de régression : le mécanisme natif continue de rapporter ses rollbacks et la restauration exacte. Les diagnostics BOUNDARY-INLINE / x projectile préexistaient. Pas de test audio/SAVE neuf/toutes cartes/endurance ; appréciation visuelle positive seulement, aucun gain de vitesse causal revendiqué.
+
+Rapport : [MILESTONE_POST245_RENDER_BSP_COUNTERS.md](MILESTONE_POST245_RENDER_BSP_COUNTERS.md). **PR #246 maintenue Draft pour le jalon C demandé par l'utilisateur, aucune autre PR ni merge.**
+
+---
+
 ## PR #246A — PASS CYD, suivi de #246B sur la même branche (2 novembre 2026)
 
 **Une seule PR #246** : agent/esp32-render-retire-legacy-map-header, fondée sur main SHA 3142432f5b6870c5a8579a5cd293f82e39f0fa8f. Code A 23f57b9758c47990abc1b5df4347ccc6ba0d7daa ; CI A [push](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41492050151) et [PR](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41492107380) SUCCESS. Log réel classic CYD normal fourni dans la conversation ; ressenti positif : « Plus on en retire plus ça marche bien !!! ». **A PASS ciblé** : Render=1256, CORE used=2224 B, heap8 menu/START prime/LOAD prime/EXIT **153236/112956/112144/158080 B** (+40 vs #245B), largest8 gameplay/menu **86004/110580**, 0 PSRAM, shapeData/mediaTexels NULL, PAK241, arena 14095/c3882516, FIRST_FRAME 71ca7465, deux HEADROOM_OK.

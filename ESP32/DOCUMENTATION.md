@@ -1,3 +1,9 @@
+## #246B PASS CYD / même PR pour la suite (2 novembre 2026)
+
+Retrait B de quatre compteurs BSP desktop (normal/trace ; desktop/bringup préservés) testé **PASS sur vrai CYD normal** : Render=1240 B, CORE=2208 B, heap8 menu/START prime/LOAD prime/EXIT=153240/112960/112148/158084 B (+4 B vs A malgré −16 B de Render), largest8 jeu/menu 86004/110580 B. START intro/Entrance, dialogues/portes/ressources/HUB EXIT ; LOAD slot04 V11 exact, Malwrath322 avec trois ripostes triples, mort/drop/secret et EXIT ; 2 RESIDENTRESET released=18008 empty=1, 2 menus 0f2c9fc3, HEADROOM_OK, shapeData/mediaTexels NULL. L'utilisateur confirme « Visuellement RAS » ; pas de preuve de latence causale. Code B gelé au HEAD pré-test a4dd92552eee3121ab6c8d4277fc89e581fa3dfb ; CI push/PR SUCCESS (78/78). Continuer **sur la même branche et PR #246** en jalons bornés ; PR reste Draft pour le candidat C, merge utilisateur uniquement. [Rapport B](MILESTONE_POST245_RENDER_BSP_COUNTERS.md).
+
+---
+
 ## #246 : A validé sur CYD, B compteurs BSP candidat (2 novembre 2026)
 
 Toujours sur la même branche agent/esp32-render-retire-legacy-map-header et PR #246. A testé sur le vrai CYD normal : Render 1256 B, CORE 2224 B, heap8 menu/START/LOAD/EXIT 153236/112956/112144/158080 B, largest8 jeu/menu 86004/110580, PAK241, arène 14095/c3882516, frame 71ca7465, START/EXIT et LOAD slot04 V11 Malwrath/EXIT, deux resets exacts et aucune anomalie matérielle constatée ; utilisateur satisfait. A code 23f57b9758c47990abc1b5df4347ccc6ba0d7daa, CI push et PR SUCCESS.
