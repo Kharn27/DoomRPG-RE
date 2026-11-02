@@ -1,3 +1,14 @@
+## PR #246 — A/B/C PASS matériel, merge-ready (3 novembre 2026)
+
+**PR unique #246**, branche `agent/esp32-render-retire-legacy-map-header`, base `main=3142432f5b6870c5a8579a5cd293f82e39f0fa8f`. A et B PASS déjà documentés ; **C PASS sur vrai classic CYD avec firmware normal esp32-cyd** après code C gelé au SHA `7710aefc6e5dfdcdcf939216c8a9930cb9f2b47b`, suivi uniquement de préparation documentaire `31503d6047f9b31ab1e381af29e2a84728c3a86d`. Retour utilisateur : « Toujours impeccable !!! on va pouvoir merger si c'est ok pour toi ». Le nouveau log Serial complet contient START puis LOAD slot04, chacun terminé par EXIT propre. Aucun autre jalon code, aucune nouvelle branche, aucun merge dans main.
+
+**Mesures C** : Render_t=**1228 B** / Game=0 / Canvas=44 / total structs=2032 B ; CORE used=**2196 B** (−12 B vs B). Heap8 réel menu/START prime/LOAD prime/EXIT **153264/112984/112172/158108 B** (**+24 B** vs B), largest8 gameplay/menu **86004/110580 B**, 2x HEADROOM_OK, 0 PSRAM, PAK 241, shapeData/mediaTexels toujours NULL. La RAM libre progresse, sans attribution causale à une vitesse de jeu. FIRST_FRAME **71ca7465**, arène native **14095 B / c3882516**, mappings 152/252.
+
+START : Intro/Entrance, caisses, pickups/flash blanc, dialogues 88/89/**84**/79 et continuations opcode19, porte275 ouverture/fermeture différée, CROSS, récupération Fire Ext + aide, HUB puis EXIT. LOAD slot04 V11 : monstres/topologie/positions/activation restaurés exactement **beaeaccc/50e16fe3/e2a9d90a/df419482** ; porte113 ; Malwrath sprite322 HP11→7→3→0, **3 ripostes triples projectile204 drainées avant chaque commit de dégâts**, overlays rouge/blanc ; **drop monster=none dans ce tirage RNG** (ne pas inventer de medkit), secret +5XP ; HUB puis EXIT.
+
+**2× RESIDENTRESET released=18008 empty=1**, **2× SYSEXIT MENU-READY frame=0f2c9fc3** sans saveWrite ; aucun panic/WDT vu. Diagnostics BOUNDARY-INLINE et x décallé projectile204 déjà connus hors périmètre. Audio backend silent, SAVE neuf, endurance, toutes cartes et automap ouverte non évalués ; pas de benchmark A/B causal. CI pour SHA testé **push #41540821024 et PR #41540830861 SUCCESS 78/78**. Après ce test : **documenter uniquement**, recontrôler CI et diff docs-only, déclarer #246 ready for review et **laisser le merge à l'utilisateur**. Rapport [MILESTONE_POST245_RENDER_RASTER_RESIDUE.md](MILESTONE_POST245_RENDER_RASTER_RESIDUE.md).
+
+---
 ## PR #246C — résidus desktop raster hors Render_t natif (candidat CI, 2 novembre 2026)
 
 **On reste sur la même PR #246** / branche \`agent/esp32-render-retire-legacy-map-header\`, base main \`3142432f5b6870c5a8579a5cd293f82e39f0fa8f\` ; A et B ont déjà **PASS matériel** sur classic CYD normal. **B gelé** au code et aux tests du HEAD \`a4dd92552eee3121ab6c8d4277fc89e581fa3dfb\`, fermeture PASS docs-only \`c988ff2e0d4d90330a8435d0c7a9f11597ed644e\`.

@@ -1,4 +1,4 @@
-# PR #246C — retirer les ultimes résidus raster desktop évidents de Render_t (CANDIDAT)
+# PR #246C — retirer les ultimes résidus raster desktop évidents de Render_t (PASS MATÉRIEL — CODE GELÉ)
 
 ## Lignée et source de vérité
 
@@ -24,4 +24,16 @@ Le vrai log B du 2 novembre rapporte Render=1240, CORE used=2208, heap8 menu/STA
 5. Deux \`RESIDENTRESET released=18008 empty=1\`, deux \`SYSEXIT MENU-READY frame=0f2c9fc3\`, HEADROOM_OK et aucun WDT/panic. Comparer heap8 réel et largest8 avec B ci-dessus, mais ne pas déduire un gain de vitesse à partir de trajets non identiques ; recueillir le ressenti visuel/rythme.
 6. **C non PASS sans nouveau log sur CYD**. Après PASS, ne faire que la documentation de clôture, contrôler CI post-doc et diff code-free, mettre la même PR #246 review-ready, laisser le merge à l'utilisateur. Diagnostics NATIVEFRAME BOUNDARY-INLINE et x=0x40000000 du projectile persistent hors périmètre.
 
-**Statut actuel : C CI PASS ; matériel non testé, PR #246 Draft.**
+**Statut de ce protocole avant hardware : C CI PASS, matériel encore non testé. Résultat matériel après exécution : voir clôture ci-dessous.**
+
+## Clôture après vrai classic CYD normal — PASS C (3 novembre 2026)
+
+L'utilisateur a flashé le candidat C testé au HEAD `31503d6047f9b31ab1e381af29e2a84728c3a86d` (code depuis `7710aefc6e5dfdcdcf939216c8a9930cb9f2b47b`) et fourni le long log Serial normal. Retour : **« Toujours impeccable !!! on va pouvoir merger si c'est ok pour toi »**. Aucun changement de code nécessaire suite au test.
+
+Mesures prouvées : **Render=1228 Game=0 Canvas=44 Total=2032 B ; CORE used=2196 B**, contre B Render=1240, CORE=2208 (−12 B natifs). Heap8 C menu **153264**, START prime **112984**, LOAD prime **112172**, EXIT **158108** (+24 B à chaque point vs B **153240/112960/112148/158084**), largest8 game/menu **86004/110580** inchangé, **HEADROOM_OK** deux fois, PAK 241, PSRAM0, `shapeData/mediaTexels=NULL`. `FIRST_FRAME=71ca7465`, BSP arena **14095 B / c3882516**.
+
+**START** : intro et disposer sans fuite, Entrance, caisses et drops de caisses dépendant du RNG, pickups avec flash blanc qui expire, dialogues événements **88, 89, 84, 79** avec reprise native **opcode19**, mouvement et rotation animés, porte275 fermeture différée après tour, CROSS `copies=4 accounting=1`, collecte Fire Ext avec dialogue d'aide standalone, HUB puis EXIT. **LOAD slot04 V11** : sauvegarde 5604 B lue, FNV monstre/topologie/position/activation **beaeaccc/50e16fe3/e2a9d90a/df419482** rétablis, porte113, Malwrath322 inflige trois séquences triples projectile204 terminées et drainées **avant les commits retaliation** ; HP monstre **11→7→3→0**, décès native et XP6. `MONSTERCOMBAT dropMaterialize=none` et pas de drop dans **cette** séquence RNG (le drop medkit B n'est pas attendu pour C). Secret event15 +5XP, HUB et EXIT.
+
+**Deux** `RESIDENTRESET released=18008 before=1/1/1/1/1/1/1 after=0/0/0/0/0/0/0 empty=1`, **deux** `SYSEXIT MENU-READY frame=0f2c9fc3 session=off resident=empty saveWrite=no`, aucun panic/WDT. Aucun conflit de layout/rendu détecté sur les scénarios, user confirme l'excellent ressenti. `NATIVEFRAME BOUNDARY-INLINE` et trace x=1073743664 des projectiles sont des diagnostics préexistants, non nouveaux. Pas de test sonore (backend silent), SAVE neuf, toutes cartes ou endurance ; aucune accélération causale affirmée à partir de cette seule session.
+
+**CI HEAD testé** : [push 41540821024](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41540821024) et [PR 41540830861](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41540830861), **SUCCESS 78/78** chacune. **Code C gelé** : les modifications post-hardware sont limitées à ce rapport, `ESP32/PORTING_STATUS.md` et `ESP32/DOCUMENTATION.md`. Vérifier les CI de clôture puis passer PR #246 **Ready for review**, ne pas merger (l'utilisateur merge lui-même).
