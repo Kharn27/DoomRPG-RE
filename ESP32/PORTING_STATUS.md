@@ -1,3 +1,52 @@
+## PR #246 — A/B/C PASS matériel, merge-ready (3 novembre 2026)
+
+**PR unique #246**, branche `agent/esp32-render-retire-legacy-map-header`, base `main=3142432f5b6870c5a8579a5cd293f82e39f0fa8f`. A et B PASS déjà documentés ; **C PASS sur vrai classic CYD avec firmware normal esp32-cyd** après code C gelé au SHA `7710aefc6e5dfdcdcf939216c8a9930cb9f2b47b`, suivi uniquement de préparation documentaire `31503d6047f9b31ab1e381af29e2a84728c3a86d`. Retour utilisateur : « Toujours impeccable !!! on va pouvoir merger si c'est ok pour toi ». Le nouveau log Serial complet contient START puis LOAD slot04, chacun terminé par EXIT propre. Aucun autre jalon code, aucune nouvelle branche, aucun merge dans main.
+
+**Mesures C** : Render_t=**1228 B** / Game=0 / Canvas=44 / total structs=2032 B ; CORE used=**2196 B** (−12 B vs B). Heap8 réel menu/START prime/LOAD prime/EXIT **153264/112984/112172/158108 B** (**+24 B** vs B), largest8 gameplay/menu **86004/110580 B**, 2x HEADROOM_OK, 0 PSRAM, PAK 241, shapeData/mediaTexels toujours NULL. La RAM libre progresse, sans attribution causale à une vitesse de jeu. FIRST_FRAME **71ca7465**, arène native **14095 B / c3882516**, mappings 152/252.
+
+START : Intro/Entrance, caisses, pickups/flash blanc, dialogues 88/89/**84**/79 et continuations opcode19, porte275 ouverture/fermeture différée, CROSS, récupération Fire Ext + aide, HUB puis EXIT. LOAD slot04 V11 : monstres/topologie/positions/activation restaurés exactement **beaeaccc/50e16fe3/e2a9d90a/df419482** ; porte113 ; Malwrath sprite322 HP11→7→3→0, **3 ripostes triples projectile204 drainées avant chaque commit de dégâts**, overlays rouge/blanc ; **drop monster=none dans ce tirage RNG** (ne pas inventer de medkit), secret +5XP ; HUB puis EXIT.
+
+**2× RESIDENTRESET released=18008 empty=1**, **2× SYSEXIT MENU-READY frame=0f2c9fc3** sans saveWrite ; aucun panic/WDT vu. Diagnostics BOUNDARY-INLINE et x décallé projectile204 déjà connus hors périmètre. Audio backend silent, SAVE neuf, endurance, toutes cartes et automap ouverte non évalués ; pas de benchmark A/B causal. CI pour SHA testé **push #41540821024 et PR #41540830861 SUCCESS 78/78**. Après ce test : **documenter uniquement**, recontrôler CI et diff docs-only, déclarer #246 ready for review et **laisser le merge à l'utilisateur**. Rapport [MILESTONE_POST245_RENDER_RASTER_RESIDUE.md](MILESTONE_POST245_RENDER_RASTER_RESIDUE.md).
+
+---
+## PR #246C — résidus desktop raster hors Render_t natif (candidat CI, 2 novembre 2026)
+
+**On reste sur la même PR #246** / branche \`agent/esp32-render-retire-legacy-map-header\`, base main \`3142432f5b6870c5a8579a5cd293f82e39f0fa8f\` ; A et B ont déjà **PASS matériel** sur classic CYD normal. **B gelé** au code et aux tests du HEAD \`a4dd92552eee3121ab6c8d4277fc89e581fa3dfb\`, fermeture PASS docs-only \`c988ff2e0d4d90330a8435d0c7a9f11597ed644e\`.
+
+**C logiciel candidat** : code \`272b6c0bb2f764b0938395250dbe865a94f7d730\`, corrections **tests/layout uniquement** \`09631ff87a2a07a28808c9194292e7550c295bf0\` et \`7710aefc6e5dfdcdcf939216c8a9930cb9f2b47b\`. Retire des profils ESP32 normaux/bringup/trace quatre champs desktop \`Render_t::{floorTex,ceilingTex,damageBlend,animFrameTime}\`, conservés dans \`src/Render.c\` et le layout desktop ; le constructeur natif ne remet plus à zéro trois valeurs inutiles. Lecture BSP native, planes, animations, feedback, palette, renderer sprite CROSS, gameplay, RNG, UI, PAK, save, framebuffer, timing et caches **inchangés**. Les membres \`spanMode\`, \`numLines\`, \`skipCull\`, statistiques, clipping, caméra et \`sinTable\` restent vivants. \`_Static_assert(sizeof(Render_t)==1228U)\` (−12 B vs B) **compilé, pas encore mesuré sur hardware** ; CORE used attendu **2196 B**, mémoire réelle non prédite.
+
+CI C [push #41540422502](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41540422502) **SUCCESS 78/78** (hôtes + esp32-cyd/bringup/trace), CI PR/finale après documentation à contrôler. **La PR #246 reste Draft jusqu'au PASS C matériel**, aucune deuxième branche ni fusion. Contrat et tests : [MILESTONE_POST245_RENDER_RASTER_RESIDUE.md](MILESTONE_POST245_RENDER_RASTER_RESIDUE.md).
+
+---
+
+## PR #246B — PASS matériel sur classic CYD, continuité sur même PR (2 novembre 2026)
+
+**Code B validé sur le CYD normal** : source a6d3b621abc61022f70827fca7c5795362c64529, corrections de tests d9719e4db855ab554f232797cbf81d14e281aeae + 8a3683b96fb798d2cd7afa1c857c910171d2a58f, HEAD pré-test a4dd92552eee3121ab6c8d4277fc89e581fa3dfb (code identique, documentation préparatoire). CI du dernier HEAD **push #41528336540 / PR #41528344232 SUCCESS 78/78** ; log Serial complet utilisateur dans la conversation du 2 novembre : « Visuellement RAS, on continue sur cette branche ! ». **B PASS ciblé matériel**, code B gelé ; la présente entrée est une clôture documentaire avant le jalon suivant sur **la même PR #246**.
+
+Boot **Render_t=1240 B / Game=0 / Canvas=44 / Total=2044**, CORE used **2208 B** : −16 B de structure vs A. Heap8 réel B menu/START prime/LOAD prime/EXIT **153240/112960/112148/158084 B** (+4 B vs A : taille d'alloc arrondie), largest8 gameplay/menu **86004/110580**. PSRAM=0, PAK=241, mapping=152/252, \`shapeData/mediaTexels=NULL\`, 2x HEADROOM_OK. BSP immutable \`14095/c3882516\`, FIRST_FRAME \`71ca7465\`, images/PACK stables.
+
+START Intro/Entrance, caisses/pickups, dialogues 88/89/79 + reprise opcode19, porte275 + fermeture différée, CROSS, HUB/EXIT. LOAD slot04 V11 : état exact monstres/topologie/positions/activation **beaeaccc/50e16fe3/e2a9d90a/df419482**, porte113, Malwrath322 HP11→7→3→0, **trois** ripostes triples projectile204 terminées avant commit, drop medkit/pickup, secret +5XP, HUB/EXIT. **Deux** RESIDENTRESET released=18008 empty=1, **deux** menus FNV 0f2c9fc3, saveWrite=no, aucun panic/WDT observé. RNG startup/monstre varie entre démarrages, sans preuve de régression : le mécanisme natif continue de rapporter ses rollbacks et la restauration exacte. Les diagnostics BOUNDARY-INLINE / x projectile préexistaient. Pas de test audio/SAVE neuf/toutes cartes/endurance ; appréciation visuelle positive seulement, aucun gain de vitesse causal revendiqué.
+
+Rapport : [MILESTONE_POST245_RENDER_BSP_COUNTERS.md](MILESTONE_POST245_RENDER_BSP_COUNTERS.md). **PR #246 maintenue Draft pour le jalon C demandé par l'utilisateur, aucune autre PR ni merge.**
+
+---
+
+## PR #246A — PASS CYD, suivi de #246B sur la même branche (2 novembre 2026)
+
+**Une seule PR #246** : agent/esp32-render-retire-legacy-map-header, fondée sur main SHA 3142432f5b6870c5a8579a5cd293f82e39f0fa8f. Code A 23f57b9758c47990abc1b5df4347ccc6ba0d7daa ; CI A [push](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41492050151) et [PR](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41492107380) SUCCESS. Log réel classic CYD normal fourni dans la conversation ; ressenti positif : « Plus on en retire plus ça marche bien !!! ». **A PASS ciblé** : Render=1256, CORE used=2224 B, heap8 menu/START prime/LOAD prime/EXIT **153236/112956/112144/158080 B** (+40 vs #245B), largest8 gameplay/menu **86004/110580**, 0 PSRAM, shapeData/mediaTexels NULL, PAK241, arena 14095/c3882516, FIRST_FRAME 71ca7465, deux HEADROOM_OK.
+
+START Intro/Entrance : caisses, pickups, dialogues 88/89/79 avec reprise opcode19, portes et CROSS, HUB/EXIT. LOAD slot04 V11 : FNV monstres/topologie/positions/activation **beaeaccc/50e16fe3/e2a9d90a/df419482**, Malwrath sprite322 HP11→7→3→0, **deux** ripostes triples projectile204 drainées avant dégâts, drop/pickup, secret+5XP/EXIT. Deux RESIDENTRESET released=18008 empty=1, deux menus 0f2c9fc3, pas de WDT/panic constaté. Audio, SAVE neuf, toutes cartes et endurance non prouvés.
+
+**B candidat, pas encore testé hardware** : toujours PR #246, source a6d3b621abc61022f70827fca7c5795362c64529, tests hôte actualisés d9719e4db855ab554f232797cbf81d14e281aeae et 8a3683b96fb798d2cd7afa1c857c910171d2a58f. Les quatre comptes Render_t nodesLength/linesLength/numMapSprites/mapStringCount restent desktop/bringup seulement ; ESP32 normal/trace ne les porte plus. **Render_t=1240 B et CORE used=2208 B attendus, non mesurés.** CI B + reflash normal + log B et ressenti obligatoires. PR **Draft**, pas de merge. Détails : [MILESTONE_POST245_RENDER_BSP_COUNTERS.md](MILESTONE_POST245_RENDER_BSP_COUNTERS.md).
+
+---
+
+## Post-#245 — retrait de la copie desktop d'en-tête BSP dans Render_t (candidat, 2 novembre 2026)
+
+Merge #245 vérifié : **main exact `3142432f5b6870c5a8579a5cd293f82e39f0fa8f`** ; nouvelle et unique branche `agent/esp32-render-retire-legacy-map-header` ; code candidat `23f57b9758c47990abc1b5df4347ccc6ba0d7daa`. `Render_t::{mapName[16],mapNameID,loadMapID,introColor,mapSpawnIndex,mapSpawnDir,mapCameraSpawnIndex}` devient desktop/bringup-only. Le reader BSP, la session native et les données de spawn possèdent déjà ces métadonnées ; **aucun changement BSP runtime, gameplay, sprite/CROSS, preview, présentation, RNG, save ou PAK**. `EspNativeEngineRoot_initRender` ne peut plus écrire le slot `mapCameraSpawnIndex` retiré. Garde C ABI et tests hôte renouvelés. **Attendu, non encore mesuré sur CYD : Render_t 1296→1256 B (−40 B) et CORE used 2264→2224 B** ; baseline #245B normal menu/START prime/LOAD prime/EXIT `153196/112916/112104/158040` heap8, largest8 jeu/menu `86004/110580`. Source de vérité `ESP32/MILESTONE_POST245_RENDER_MAP_HEADER.md`. CI + test utilisateur firmware normal `esp32-cyd` requis avant PASS ; une PR Draft, merge exclusivement utilisateur.
+
+---
+
 ## PR #245B — PASS matériel classic CYD du retrait de trois champs Render (2 novembre 2026)
 
 **Même** `agent/esp32-render-world-pointers-post244` / **même PR #245** après le PASS A, code B testé `4f81d31665e671283181147a34c00ff13b2602a2` ; CI code [push #41371923424](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41371923424) et [PR #41371928441](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41371928441) **SUCCESS 78/78 chacune**. Les champs desktop `Render_t::viewSprites`, `numSprites` et `numTileEvents` restent uniquement desktop/bringup ; tous les compteurs raster natifs, les caches, #244A/B et la logique gameplay sont conservés. **Log normal CYD `device-monitor-261102-022338.log` (1519 lignes)** ; retour utilisateur **« Nervosité inchangée pour moi pour l'instant »**.

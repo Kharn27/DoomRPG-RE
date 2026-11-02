@@ -46,7 +46,7 @@ body = runtime.replace("EspNativeRenderRuntime_releaseCompatibility(",
 fnv = 2166136261
 for b in body.encode("utf-8"):
     fnv = ((fnv ^ b) * 16777619) & 0xffffffff
-assert fnv == 0xa567e892, f"Runtime parity drift {fnv:08x}"
+assert fnv == 0x90894947, f"Runtime parity drift {fnv:08x}"
 
 shim = r"""
 #include <assert.h>
@@ -57,7 +57,6 @@ shim = r"""
 typedef unsigned char byte;
 typedef struct Render_s {
     void *mediaTexels, *shapeData;
-    int numMapSprites, linesLength, mapStringCount;
     void *mediaBitShapeOffsets, *mediaTexelOffsets, *mediaTexturesIds;
     void *mediaSpriteIds;
     void *ceilingColor, *floorColor, *columnScale, *mediaPalettes;
@@ -101,14 +100,11 @@ static void populate(Render_t* r, int variant) {
     if (variant==0) return;
     OWN(shapeData);
     OWN(mediaTexels);
-    r->linesLength=123;
     if (variant==1) return;
-    r->numMapSprites=12;
     OWN(mediaBitShapeOffsets);
     OWN(mediaTexelOffsets);
     OWN(mediaTexturesIds);
     OWN(mediaSpriteIds);
-    r->mapStringCount=2;
 }
 static void testCleanup(void) {
     DoomCanvas_t canvas={1};
@@ -123,8 +119,6 @@ static void testCleanup(void) {
         assert(render.framebuffer==sharedFB && render.mediaPalettes==sharedPalette);
         assert(render.mediaTexels==NULL && render.shapeData==NULL);
         assert(render.mediaTexelOffsets==NULL && render.mediaBitShapeOffsets==NULL);
-        assert(render.mapStringCount==0);
-        assert(render.numMapSprites==0 && render.linesLength==0);
     }
     Render_t render={0};
     DoomRPG_t root={&canvas,&render,NULL};

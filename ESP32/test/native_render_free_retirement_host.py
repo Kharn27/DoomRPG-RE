@@ -58,7 +58,7 @@ runtime_original = runtime.replace("void EspNativeRenderRuntime_releaseCompatibi
 runtime_fingerprint = 2166136261
 for b in runtime_original.encode("utf-8"):
     runtime_fingerprint = ((runtime_fingerprint ^ b) * 16777619) & 0xffffffff
-assert runtime_fingerprint == 0xa567e892, f"Render_freeRuntime body drift {runtime_fingerprint:08x}"
+assert runtime_fingerprint == 0x90894947, f"Render_freeRuntime body drift {runtime_fingerprint:08x}"
 assert "EspNativeEngineRoot_releaseRender(doomrpg->render, true);" in owner
 # No linked ESP32 C/C++ caller or implementation may resurrect this ABI.
 for p in sorted((ROOT / "ESP32/src").rglob("*")):
@@ -79,7 +79,6 @@ typedef unsigned char byte;
 typedef int boolean;
 typedef struct Render_s {
     void *mediaTexels, *shapeData;
-    int numMapSprites, linesLength, mapStringCount;
     void *mediaBitShapeOffsets, *mediaTexelOffsets, *mediaTexturesIds;
     void *mediaSpriteIds;
     void *ceilingColor, *floorColor, *columnScale, *mediaPalettes;
@@ -115,9 +114,6 @@ static void populate(Render_t* render, int full, int shared) {
         ALLOC_SLOT(mediaTexels);
         ALLOC_SLOT(shapeData);
         /* Production has no desktop world pointers to allocate. */
-        render->mapStringCount = 2;
-        render->numMapSprites = 12;
-        render->linesLength = 34;
         ALLOC_SLOT(mediaBitShapeOffsets);
         ALLOC_SLOT(mediaTexelOffsets);
         ALLOC_SLOT(mediaTexturesIds);
@@ -144,8 +140,6 @@ int main(void) {
         if (!freePtr) {
             assert(render->framebuffer == NULL);
             assert(render->mediaTexels == NULL && render->shapeData == NULL);
-            assert(render->numMapSprites == 0 && render->linesLength == 0);
-            assert(render->mapStringCount == 0);
             assert(render->mediaTexelOffsets == NULL);
         }
         /* PlatformVideo memory is never touched or released by this cleanup. */
@@ -172,4 +166,4 @@ with tempfile.TemporaryDirectory(prefix="private-render-free-") as temp:
                     "-Wall", "-Wextra", "-Werror", str(p), "-o", str(exe)],
                    check=True)
     subprocess.run([str(exe)], check=True)
-print("PASS Render_free=retired FNV=6ebb123a no SDL texture; Render_freeRuntime FNV=a567e892")
+print("PASS Render_free=retired FNV=6ebb123a no SDL texture; Render_freeRuntime FNV=90894947")

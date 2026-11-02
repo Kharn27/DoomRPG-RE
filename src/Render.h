@@ -92,15 +92,24 @@ typedef struct Render_s
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	struct Node_s* nodes;
 #endif
+/* Desktop BSP bookkeeping; native runtime owns compact inventory. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	int nodesLength;
+#endif
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	struct Line_s* lines;
 #endif
+/* Desktop BSP bookkeeping; native runtime owns compact inventory. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	int linesLength;
+#endif
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	struct Sprite_s* mapSprites;
 #endif
+/* Desktop BSP bookkeeping; native runtime owns compact inventory. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	int numMapSprites;
+#endif
 	/* Legacy map-wide allocation bound, not native sprite topology count. */
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	int numSprites;
@@ -115,23 +124,32 @@ typedef struct Render_s
 	int* mapByteCode;
 	char** mapStringsIDs;
 #endif
+/* Desktop BSP bookkeeping; native runtime owns compact inventory. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	int mapStringCount;
+#endif
 	/* Legacy BSP tile flags: only the desktop parser and the explicit CYD
      * bringup parser still retain this 1 KiB map-wide mirror. Production
      * automap uses EspMapState and EspMapAutomapState instead. */
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	byte mapFlags[1024];
 #endif
+/* Retired desktop BSP map-header copy; native CYD owns this via
+ * EspBspReader/EspMapRuntime. Retained only for desktop/bringup. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	char mapName[MAPNAMESTRLEN];
+#endif
 #ifndef DOOMRPG_ESP32
 	short unk1;
 #endif
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	short mapNameID;
 	int loadMapID;
 	int introColor;
 	int mapSpawnIndex;
 	int mapSpawnDir;
 	int mapCameraSpawnIndex;
+#endif
 	/* Legacy map-wide sprite pointer lists. Normal CYD native sprite
 	 * topology and drops own these semantics without Render mirrors. */
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
@@ -163,12 +181,18 @@ typedef struct Render_s
 #endif
 	short* ceilingColor;
 	short* floorColor;
+#ifndef DOOMRPG_ESP32
+	/* Original desktop map parser owns these BSP material IDs. */
 	byte floorTex;
 	byte ceilingTex;
+#endif
 #ifndef DOOMRPG_ESP32
 	byte unk3;
 #endif
+#ifndef DOOMRPG_ESP32
+	/* Desktop Render_draw2DSprite / Render_renderSprite blend state. */
 	boolean damageBlend;
+#endif
 	int viewCos_;
 	int viewSin_;
 	int viewTransX;
@@ -246,11 +270,10 @@ typedef struct Render_s
 #endif
 	byte spanMode;
 	int numLines;
-	int animFrameTime;
-	/* Desktop raster phase timestamps are not native CYD state.
-	 * Native CYD frame/flash probes own their timing independently.
-	 * Keep animFrameTime, which is still initialized by the native root. */
+	/* Desktop-only animation clock and raster phase timestamps.
+	 * Native ESP32 animation/flash clocks belong to bounded owners. */
 #ifndef DOOMRPG_ESP32
+	int animFrameTime;
 	int currentFrameTime;
 	int horizonFrameTime;
 	int frameTime;

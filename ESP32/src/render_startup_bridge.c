@@ -16,8 +16,8 @@
 #include <esp_heap_caps.h>
 #if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 /* Desktop/bringup retain the original legacy BSP flags; production does not. */
-_Static_assert(sizeof(Render_t) == 1296U,
-               "Render_t must omit retired raster, accounting, desktop world pointers and view/event list fields");
+_Static_assert(sizeof(Render_t) == 1228U,
+               "Render_t must omit retired raster state, accounting, desktop world, BSP header and allocation counts");
 #endif
 
 
@@ -46,10 +46,8 @@ void EspNativeRenderRuntime_releaseCompatibility(Render_t* render)
     render->nodes = NULL;
     SDL_free(render->lines);
     render->lines = NULL;
-#endif
     render->numMapSprites = 0;
     render->linesLength = 0;
-#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)
     SDL_free(render->tileEvents);
     render->tileEvents = NULL;
     SDL_free(render->mapByteCode);
@@ -59,8 +57,8 @@ void EspNativeRenderRuntime_releaseCompatibility(Render_t* render)
     }
     SDL_free(render->mapStringsIDs);
     render->mapStringsIDs = NULL;
-#endif
     render->mapStringCount = 0;
+#endif
     SDL_free(render->mediaBitShapeOffsets);
     render->mediaBitShapeOffsets = NULL;
     SDL_free(render->mediaTexelOffsets);

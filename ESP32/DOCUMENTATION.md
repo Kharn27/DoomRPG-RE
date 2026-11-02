@@ -1,3 +1,34 @@
+## #246 — C PASS hardware ; trois retraits Render prêts au merge (3 novembre 2026)
+
+Même `agent/esp32-render-retire-legacy-map-header` / PR #246 : A puis B et maintenant **C PASS CYD normal**, confirmé par log complet utilisateur et retour « Toujours impeccable !!! ». C : Render=**1228 B**, CORE=**2196 B**, 0 PSRAM, heap8 menu/START prime/LOAD prime/EXIT **153264/112984/112172/158108 B** (+24 B vs B), largest8 jeu/menu **86004/110580**, 2 HEADROOM_OK, shapeData/mediaTexels NULL, arène c3882516, first frame 71ca7465. START Intro/Entrance, dialogues 88/89/84/79, portes, pickups, CROSS, Fire Ext + aide et EXIT. LOAD slot04 V11 exact : Malwrath 11→7→3→0 et trois ripostes triples, **pas de drop dans ce tirage**, secret +5 XP, EXIT. **2× RESIDENTRESET released=18008 empty=1**, 2 menus 0f2c9fc3. CI pré-test et pré-clôture : [push 41540821024](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41540821024) et [PR 41540830861](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41540830861) **SUCCESS 78/78**. Code C gelé ; commit de clôture **docs-only**, CI de ce commit encore à vérifier avant Ready for review. Aucun merge automatique. [Rapport C](MILESTONE_POST245_RENDER_RASTER_RESIDUE.md).
+
+---
+## #246C — nouveaux résidus Render desktop retirés, en attente du CYD (2 novembre 2026)
+
+Sur la même PR #246, A et B **PASS matériel** (voir rapports map-header et BSP-counters). B code gelé, documentation PASS c988ff2e0d4d90330a8435d0c7a9f11597ed644e. Code C 272b6c0bb2f764b0938395250dbe865a94f7d730 : \`floorTex\`, \`ceilingTex\`, \`damageBlend\`, \`animFrameTime\` desktop-only ; références natives supprimées du constructeur, ABI desktop préservée, pas d'autre code fonctionnel changé. Fixtures et assertions ajustées 09631ff87a2a07a28808c9194292e7550c295bf0 / 7710aefc6e5dfdcdcf939216c8a9930cb9f2b47b ; CI push 78/78 SUCCESS. Nouveau \`sizeof(Render_t)=1228U\` compilé ; **CORE used 2196 B attendu et heap8/latence inconnus** jusqu'au vrai normal CYD. Aucun effet voulu sur les animations natives, bruit, RNG, géométrie, CROSS, PAK ou save. Nouveau protocole [MILESTONE_POST245_RENDER_RASTER_RESIDUE.md](MILESTONE_POST245_RENDER_RASTER_RESIDUE.md). PR Draft ; pas de merge par l'agent.
+
+---
+
+## #246B PASS CYD / même PR pour la suite (2 novembre 2026)
+
+Retrait B de quatre compteurs BSP desktop (normal/trace ; desktop/bringup préservés) testé **PASS sur vrai CYD normal** : Render=1240 B, CORE=2208 B, heap8 menu/START prime/LOAD prime/EXIT=153240/112960/112148/158084 B (+4 B vs A malgré −16 B de Render), largest8 jeu/menu 86004/110580 B. START intro/Entrance, dialogues/portes/ressources/HUB EXIT ; LOAD slot04 V11 exact, Malwrath322 avec trois ripostes triples, mort/drop/secret et EXIT ; 2 RESIDENTRESET released=18008 empty=1, 2 menus 0f2c9fc3, HEADROOM_OK, shapeData/mediaTexels NULL. L'utilisateur confirme « Visuellement RAS » ; pas de preuve de latence causale. Code B gelé au HEAD pré-test a4dd92552eee3121ab6c8d4277fc89e581fa3dfb ; CI push/PR SUCCESS (78/78). Continuer **sur la même branche et PR #246** en jalons bornés ; PR reste Draft pour le candidat C, merge utilisateur uniquement. [Rapport B](MILESTONE_POST245_RENDER_BSP_COUNTERS.md).
+
+---
+
+## #246 : A validé sur CYD, B compteurs BSP candidat (2 novembre 2026)
+
+Toujours sur la même branche agent/esp32-render-retire-legacy-map-header et PR #246. A testé sur le vrai CYD normal : Render 1256 B, CORE 2224 B, heap8 menu/START/LOAD/EXIT 153236/112956/112144/158080 B, largest8 jeu/menu 86004/110580, PAK241, arène 14095/c3882516, frame 71ca7465, START/EXIT et LOAD slot04 V11 Malwrath/EXIT, deux resets exacts et aucune anomalie matérielle constatée ; utilisateur satisfait. A code 23f57b9758c47990abc1b5df4347ccc6ba0d7daa, CI push et PR SUCCESS.
+
+B candidate source a6d3b621abc61022f70827fca7c5795362c64529 : quatre compteurs du parser BSP desktop exclus du Render_t normal/trace, conservés en desktop/bringup. Les fixtures/fingerprints hôte ont été adaptés sur la même PR ; Render_t=1240 B et CORE=2208 B **prévus**, pas encore confirmés sur CYD. CI finale et log hardware B nécessaires avant PASS, puis clôture docs-only et Ready for review. Merge réservé à l'utilisateur. Voir [le protocole B](MILESTONE_POST245_RENDER_BSP_COUNTERS.md).
+
+---
+
+## Post-#245 — retrait de la copie desktop d'en-tête BSP dans Render_t (candidat, 2 novembre 2026)
+
+Merge #245 vérifié : **main exact `3142432f5b6870c5a8579a5cd293f82e39f0fa8f`** ; nouvelle et unique branche `agent/esp32-render-retire-legacy-map-header` ; code candidat `23f57b9758c47990abc1b5df4347ccc6ba0d7daa`. `Render_t::{mapName[16],mapNameID,loadMapID,introColor,mapSpawnIndex,mapSpawnDir,mapCameraSpawnIndex}` devient desktop/bringup-only. Le reader BSP, la session native et les données de spawn possèdent déjà ces métadonnées ; **aucun changement BSP runtime, gameplay, sprite/CROSS, preview, présentation, RNG, save ou PAK**. `EspNativeEngineRoot_initRender` ne peut plus écrire le slot `mapCameraSpawnIndex` retiré. Garde C ABI et tests hôte renouvelés. **Attendu, non encore mesuré sur CYD : Render_t 1296→1256 B (−40 B) et CORE used 2264→2224 B** ; baseline #245B normal menu/START prime/LOAD prime/EXIT `153196/112916/112104/158040` heap8, largest8 jeu/menu `86004/110580`. Source de vérité `ESP32/MILESTONE_POST245_RENDER_MAP_HEADER.md`. CI + test utilisateur firmware normal `esp32-cyd` requis avant PASS ; une PR Draft, merge exclusivement utilisateur.
+
+---
+
 ## PR #245B — trois slots Render desktop supplémentaires retirés, PASS vrai CYD (2 novembre 2026)
 
 Même branche `agent/esp32-render-world-pointers-post244`, même PR #245, nouveau code `4f81d31665e671283181147a34c00ff13b2602a2`. CI logicielle [push #41371923424](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41371923424) et [PR #41371928441](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41371928441) **SUCCESS 78/78 chacune**. Les pointeurs de liste visible `viewSprites` et les comptes desktop `numSprites/numTileEvents` sont exclus du layout ESP32 normal/trace ; ABI desktop/bringup et tous les compteurs raster actifs sont préservés. Pas de retouche de la boucle sprite #244A/B ni de l'input.

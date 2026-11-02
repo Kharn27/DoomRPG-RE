@@ -198,8 +198,8 @@ for path in (NATIVE / "src").rglob("*"):
 
 # PR238: the three timings sampled inside desktop Render_render() are not
 # native Render_t state. The native frame clock/profilers own their own values.
-# Keep animFrameTime (initialized by the native constructor) and all six
-# live per-frame raster counters / native geometry fields unchanged.
+# All six live per-frame raster counters / native geometry fields stay native.
+# PR246C retires desktop-only animFrameTime.
 for field in ("currentFrameTime", "horizonFrameTime", "frameTime"):
     assert len(re.findall(r"\bint " + field + r";", HEADER)) == 1, field
     assert re.search(
@@ -207,13 +207,12 @@ for field in ("currentFrameTime", "horizonFrameTime", "frameTime"):
         DESKTOP,
     ), ("desktop Render_render timestamp missing", field)
 assert re.search(
-    r"int animFrameTime;\s+/\* Desktop raster phase timestamps are not "
-    r"native CYD state\..*?\*/\s+#ifndef DOOMRPG_ESP32"
-    r"\s+int currentFrameTime;\s+int horizonFrameTime;"
+    r"#ifndef DOOMRPG_ESP32\s+int animFrameTime;\s+"
+    r"int currentFrameTime;\s+int horizonFrameTime;"
     r"\s+int frameTime;\s+#endif\s+struct DoomRPG_s\* doomRpg;",
     HEADER, re.S,
-), "desktop-only frame timestamps; keep animFrameTime native"
-assert "render->animFrameTime = 0;" in root
+), "desktop-only animation and frame timestamps"
+assert "render->animFrameTime = 0;" not in root
 for source_dir in (NATIVE / "src", NATIVE / "include"):
     for path in sorted(source_dir.rglob("*")):
         if path.suffix not in (".c", ".cpp", ".h"):
@@ -258,11 +257,45 @@ for type_, field in (
                 r"\b(?:render|renderBase|rootRender|r)\s*(?:->|\.)\s*"
                 + field + r"\b", code,
             ), ("retired opaque Render field accessed by native owner", path, field)
-assert "render->animFrameTime = 0;" in root
+assert "render->animFrameTime = 0;" not in root
 assert "render->skipCull = 0;" in root
 assert "int lineRasterCount;" in HEADER and "int nodeRasterCount;" in HEADER
 assert "int spriteRasterCount;" in HEADER
 
+
+# PR246C: desktop BSP material IDs / sprite blend / animation clock are no
+# longer Render_t native fields. Source ABI remains intact for desktop.
+for ty, field in (
+    ("byte", "floorTex"), ("byte", "ceilingTex"),
+    ("boolean", "damageBlend"), ("int", "animFrameTime"),
+):
+    decl = r"\b" + ty + r"\s+" + field + r";"
+    assert len(re.findall(decl, HEADER)) == 1, field
+    assert re.search(
+        r"#ifndef DOOMRPG_ESP32\b(?:(?!#endif)[\s\S])*?" + decl
+        + r"(?:(?!#endif)[\s\S])*?#endif", HEADER,
+    ), ("desktop-only Render raster slot must not exist on CYD", field)
+    assert re.search(r"\brender->" + field + r"\b", DESKTOP), field
+    for native_tree in (NATIVE / "src", NATIVE / "include"):
+        for source_path in sorted(native_tree.rglob("*")):
+            if source_path.suffix not in (".c", ".cpp", ".h"):
+                continue
+            code = source_path.read_text(encoding="latin-1")
+            code = re.sub(
+                r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"',
+                " ", code, flags=re.S,
+            )
+            assert not re.search(
+                r"\b(?:render|renderBase|rootRender|r)\s*->\s*"
+                + field + r"\b", code,
+            ), ("retired desktop raster slot referenced by native owner",
+                source_path, field)
+assert "int lineRasterCount;" in HEADER
+assert "int nodeRasterCount;" in HEADER
+assert "int spriteRasterCount;" in HEADER
+assert "byte spanMode;" in HEADER and "int numLines;" in HEADER
+assert "boolean skipCull;" in HEADER
+assert "sizeof(Render_t) == 1228U" in startup
 
 # PR239: map-wide BSP I/O buffer and read cursor only exist in desktop
 # Render_beginLoadMap/Data. The ESP32 reads native immutable BSP inventory
@@ -360,6 +393,56 @@ for field in ("viewSprites", "numSprites", "numTileEvents"):
                 + field + r"\b", code,
             ), ("retired desktop view/list/count member accessed", path, field)
 
+
+# Post-#245: the desktop BSP header/spawn fields have permanent native owners
+# in EspBspReader/EspMapRuntime, not in the production/trace Render shell.
+map_header_guard = (r"#if !defined\(DOOMRPG_ESP32\) \|\| "
+                    r"defined\(DOOMRPG_ESP32_BRINGUP_PROBES\)")
+assert re.search(
+    map_header_guard + r"\s+char mapName\[MAPNAMESTRLEN\];\s+#endif", HEADER)
+assert re.search(
+    map_header_guard + r"\s+short mapNameID;\s+int loadMapID;\s+"
+    r"int introColor;\s+int mapSpawnIndex;\s+int mapSpawnDir;\s+"
+    r"int mapCameraSpawnIndex;\s+#endif", HEADER)
+for member in ("mapName", "mapNameID", "loadMapID", "introColor",
+               "mapSpawnIndex", "mapSpawnDir", "mapCameraSpawnIndex"):
+    assert re.search(r"\brender->" + member + r"\b", DESKTOP), member
+    for tree in (NATIVE / "src", NATIVE / "include"):
+        for path in sorted(tree.rglob("*")):
+            if path.suffix not in (".c", ".cpp", ".h"):
+                continue
+            source = path.read_text(encoding="latin-1")
+            clean = re.sub(
+                r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"',
+                " ", source, flags=re.S)
+            assert not re.search(
+                r"\b(?:render|renderBase|rootRender|r)\s*(?:->|\.)\s*"
+                + member + r"\b", clean), (
+                "retired map-header Render field referenced by native", path, member)
+assert "render->mapCameraSpawnIndex = 0;" not in root
+assert "sizeof(Render_t) == 1228U" in (
+    NATIVE / "src/render_startup_bridge.c").read_text()
+
+# Post-#245-B on the same PR: desktop BSP allocation/inventory counts
+# cannot be authority for production or trace; those counts live in
+# EspMapRuntime. Bringup alone still frees its legacy pointer arrays.
+for decl in (r"int nodesLength;", r"int linesLength;",
+             r"int numMapSprites;", r"int mapStringCount;"):
+    assert re.search(legacy_guard + r"\s+" + decl + r"\s+#endif", HEADER), decl
+for field in ("nodesLength", "linesLength", "numMapSprites", "mapStringCount"):
+    assert re.search(r"\brender->" + field + r"\b", DESKTOP), field
+assert re.search(
+    r"#if defined\(DOOMRPG_ESP32_BRINGUP_PROBES\)\s+"
+    r"render->mapStringCount = 0;\s+#endif", root)
+assert re.search(
+    r"render->lines = NULL;\s+render->numMapSprites = 0;\s+"
+    r"render->linesLength = 0;\s+SDL_free\(render->tileEvents\);",
+    startup)
+assert re.search(
+    r"render->mapStringsIDs = NULL;\s+render->mapStringCount = 0;\s+#endif",
+    startup)
+assert "sizeof(Render_t) == 1228U" in startup
+
 # The sprite renderer is the other owner of transactional frame scratch.
 # Its clipping/projection lines are function-local too. No CYD Render_t
 # member or native source may retain desktop tmpLine after this milestone.
@@ -367,7 +450,7 @@ sprite = (NATIVE / "src/esp_native_sprite_renderer.c").read_text()
 assert "Line_t tmpLine;" not in sprite
 assert "->tmpLine" not in sprite
 assert "_Static_assert(sizeof(Scratch) <= 740U" in sprite
-assert "sizeof(Render_t) == 1296U" in (
+assert "sizeof(Render_t) == 1228U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 assert re.search(
     r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
@@ -509,4 +592,4 @@ assert "spriteLeaf(runtime, &sprite, outLeaf)" in leaf_visibility
 assert "spriteLeafCache.leaf[spriteIndex] = (uint16_t)leaf;" in leaf_visibility
 assert "!cachedSpriteLeaf(runtime, mapSpriteIndex, &leaf)" in leaf_visibility
 
-print("PASS 23 retired Render ABIs; CYD Render_t omits seven raster flags + ten memory ledgers + three frame timestamps + five opaque desktop fields + three view/list counters; BSP leaf cache retained")
+print("PASS 23 retired Render ABIs; CYD Render_t omits seven raster flags + ten memory ledgers + three frame timestamps + five opaque desktop fields + three view/list counters + seven map-header fields; BSP leaf cache retained")
