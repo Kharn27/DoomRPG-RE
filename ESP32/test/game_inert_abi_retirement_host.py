@@ -69,7 +69,8 @@ for name in guards:
 cleanup = (SRC / "native_main_menu_start_action.c").read_text(encoding="latin-1")
 assert "EspNativeRenderRuntime_releaseCompatibility(render);" in cleanup
 assert "Render_freeRuntime(render);" not in cleanup
-assert "return render->nodes == NULL" in cleanup
+assert "render->mediaTexelOffsets == NULL" in cleanup
+assert "legacyWorld=retired" in cleanup
 assert "!EspNativeWallCache_isActive()" in cleanup
 assert "!EspNativeSpriteCache_isActive()" in cleanup
 

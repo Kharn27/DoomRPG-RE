@@ -88,17 +88,28 @@ typedef struct Render_s
 #ifndef DOOMRPG_ESP32
 	int viewZOld;
 #endif
+	/* Legacy BSP heap graph: desktop and explicit bringup only. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	struct Node_s* nodes;
+#endif
 	int nodesLength;
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	struct Line_s* lines;
+#endif
 	int linesLength;
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	struct Sprite_s* mapSprites;
+#endif
 	int numMapSprites;
 	int numSprites;
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	int* tileEvents;
+#endif
 	int numTileEvents;
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	int* mapByteCode;
 	char** mapStringsIDs;
+#endif
 	int mapStringCount;
 	/* Legacy BSP tile flags: only the desktop parser and the explicit CYD
      * bringup parser still retain this 1 KiB map-wide mirror. Production
