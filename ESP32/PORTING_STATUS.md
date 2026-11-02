@@ -1,3 +1,13 @@
+## PR #246C — résidus desktop raster hors Render_t natif (candidat CI, 2 novembre 2026)
+
+**On reste sur la même PR #246** / branche \`agent/esp32-render-retire-legacy-map-header\`, base main \`3142432f5b6870c5a8579a5cd293f82e39f0fa8f\` ; A et B ont déjà **PASS matériel** sur classic CYD normal. **B gelé** au code et aux tests du HEAD \`a4dd92552eee3121ab6c8d4277fc89e581fa3dfb\`, fermeture PASS docs-only \`c988ff2e0d4d90330a8435d0c7a9f11597ed644e\`.
+
+**C logiciel candidat** : code \`272b6c0bb2f764b0938395250dbe865a94f7d730\`, corrections **tests/layout uniquement** \`09631ff87a2a07a28808c9194292e7550c295bf0\` et \`7710aefc6e5dfdcdcf939216c8a9930cb9f2b47b\`. Retire des profils ESP32 normaux/bringup/trace quatre champs desktop \`Render_t::{floorTex,ceilingTex,damageBlend,animFrameTime}\`, conservés dans \`src/Render.c\` et le layout desktop ; le constructeur natif ne remet plus à zéro trois valeurs inutiles. Lecture BSP native, planes, animations, feedback, palette, renderer sprite CROSS, gameplay, RNG, UI, PAK, save, framebuffer, timing et caches **inchangés**. Les membres \`spanMode\`, \`numLines\`, \`skipCull\`, statistiques, clipping, caméra et \`sinTable\` restent vivants. \`_Static_assert(sizeof(Render_t)==1228U)\` (−12 B vs B) **compilé, pas encore mesuré sur hardware** ; CORE used attendu **2196 B**, mémoire réelle non prédite.
+
+CI C [push #41540422502](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41540422502) **SUCCESS 78/78** (hôtes + esp32-cyd/bringup/trace), CI PR/finale après documentation à contrôler. **La PR #246 reste Draft jusqu'au PASS C matériel**, aucune deuxième branche ni fusion. Contrat et tests : [MILESTONE_POST245_RENDER_RASTER_RESIDUE.md](MILESTONE_POST245_RENDER_RASTER_RESIDUE.md).
+
+---
+
 ## PR #246B — PASS matériel sur classic CYD, continuité sur même PR (2 novembre 2026)
 
 **Code B validé sur le CYD normal** : source a6d3b621abc61022f70827fca7c5795362c64529, corrections de tests d9719e4db855ab554f232797cbf81d14e281aeae + 8a3683b96fb798d2cd7afa1c857c910171d2a58f, HEAD pré-test a4dd92552eee3121ab6c8d4277fc89e581fa3dfb (code identique, documentation préparatoire). CI du dernier HEAD **push #41528336540 / PR #41528344232 SUCCESS 78/78** ; log Serial complet utilisateur dans la conversation du 2 novembre : « Visuellement RAS, on continue sur cette branche ! ». **B PASS ciblé matériel**, code B gelé ; la présente entrée est une clôture documentaire avant le jalon suivant sur **la même PR #246**.

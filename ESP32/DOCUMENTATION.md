@@ -1,3 +1,9 @@
+## #246C — nouveaux résidus Render desktop retirés, en attente du CYD (2 novembre 2026)
+
+Sur la même PR #246, A et B **PASS matériel** (voir rapports map-header et BSP-counters). B code gelé, documentation PASS c988ff2e0d4d90330a8435d0c7a9f11597ed644e. Code C 272b6c0bb2f764b0938395250dbe865a94f7d730 : \`floorTex\`, \`ceilingTex\`, \`damageBlend\`, \`animFrameTime\` desktop-only ; références natives supprimées du constructeur, ABI desktop préservée, pas d'autre code fonctionnel changé. Fixtures et assertions ajustées 09631ff87a2a07a28808c9194292e7550c295bf0 / 7710aefc6e5dfdcdcf939216c8a9930cb9f2b47b ; CI push 78/78 SUCCESS. Nouveau \`sizeof(Render_t)=1228U\` compilé ; **CORE used 2196 B attendu et heap8/latence inconnus** jusqu'au vrai normal CYD. Aucun effet voulu sur les animations natives, bruit, RNG, géométrie, CROSS, PAK ou save. Nouveau protocole [MILESTONE_POST245_RENDER_RASTER_RESIDUE.md](MILESTONE_POST245_RENDER_RASTER_RESIDUE.md). PR Draft ; pas de merge par l'agent.
+
+---
+
 ## #246B PASS CYD / même PR pour la suite (2 novembre 2026)
 
 Retrait B de quatre compteurs BSP desktop (normal/trace ; desktop/bringup préservés) testé **PASS sur vrai CYD normal** : Render=1240 B, CORE=2208 B, heap8 menu/START prime/LOAD prime/EXIT=153240/112960/112148/158084 B (+4 B vs A malgré −16 B de Render), largest8 jeu/menu 86004/110580 B. START intro/Entrance, dialogues/portes/ressources/HUB EXIT ; LOAD slot04 V11 exact, Malwrath322 avec trois ripostes triples, mort/drop/secret et EXIT ; 2 RESIDENTRESET released=18008 empty=1, 2 menus 0f2c9fc3, HEADROOM_OK, shapeData/mediaTexels NULL. L'utilisateur confirme « Visuellement RAS » ; pas de preuve de latence causale. Code B gelé au HEAD pré-test a4dd92552eee3121ab6c8d4277fc89e581fa3dfb ; CI push/PR SUCCESS (78/78). Continuer **sur la même branche et PR #246** en jalons bornés ; PR reste Draft pour le candidat C, merge utilisateur uniquement. [Rapport B](MILESTONE_POST245_RENDER_BSP_COUNTERS.md).
