@@ -181,12 +181,14 @@ typedef struct Render_s
 #endif
 	short* ceilingColor;
 	short* floorColor;
+#ifndef DOOMRPG_ESP32
+	/* Original desktop map parser owns these BSP material IDs. */
 	byte floorTex;
 	byte ceilingTex;
-#ifndef DOOMRPG_ESP32
 	byte unk3;
-#endif
+	/* Desktop Render_draw2DSprite / Render_renderSprite blend state. */
 	boolean damageBlend;
+#endif
 	int viewCos_;
 	int viewSin_;
 	int viewTransX;
@@ -264,11 +266,10 @@ typedef struct Render_s
 #endif
 	byte spanMode;
 	int numLines;
-	int animFrameTime;
-	/* Desktop raster phase timestamps are not native CYD state.
-	 * Native CYD frame/flash probes own their timing independently.
-	 * Keep animFrameTime, which is still initialized by the native root. */
+	/* Desktop-only animation clock and raster phase timestamps.
+	 * Native ESP32 animation/flash clocks belong to bounded owners. */
 #ifndef DOOMRPG_ESP32
+	int animFrameTime;
 	int currentFrameTime;
 	int horizonFrameTime;
 	int frameTime;

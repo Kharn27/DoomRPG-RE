@@ -198,8 +198,8 @@ for path in (NATIVE / "src").rglob("*"):
 
 # PR238: the three timings sampled inside desktop Render_render() are not
 # native Render_t state. The native frame clock/profilers own their own values.
-# Keep animFrameTime (initialized by the native constructor) and all six
-# live per-frame raster counters / native geometry fields unchanged.
+# All six live per-frame raster counters / native geometry fields stay native.
+# PR246C retires desktop-only animFrameTime.
 for field in ("currentFrameTime", "horizonFrameTime", "frameTime"):
     assert len(re.findall(r"\bint " + field + r";", HEADER)) == 1, field
     assert re.search(
@@ -207,13 +207,12 @@ for field in ("currentFrameTime", "horizonFrameTime", "frameTime"):
         DESKTOP,
     ), ("desktop Render_render timestamp missing", field)
 assert re.search(
-    r"int animFrameTime;\s+/\* Desktop raster phase timestamps are not "
-    r"native CYD state\..*?\*/\s+#ifndef DOOMRPG_ESP32"
-    r"\s+int currentFrameTime;\s+int horizonFrameTime;"
+    r"#ifndef DOOMRPG_ESP32\s+int animFrameTime;\s+"
+    r"int currentFrameTime;\s+int horizonFrameTime;"
     r"\s+int frameTime;\s+#endif\s+struct DoomRPG_s\* doomRpg;",
     HEADER, re.S,
-), "desktop-only frame timestamps; keep animFrameTime native"
-assert "render->animFrameTime = 0;" in root
+), "desktop-only animation and frame timestamps"
+assert "render->animFrameTime = 0;" not in root
 for source_dir in (NATIVE / "src", NATIVE / "include"):
     for path in sorted(source_dir.rglob("*")):
         if path.suffix not in (".c", ".cpp", ".h"):
@@ -258,11 +257,45 @@ for type_, field in (
                 r"\b(?:render|renderBase|rootRender|r)\s*(?:->|\.)\s*"
                 + field + r"\b", code,
             ), ("retired opaque Render field accessed by native owner", path, field)
-assert "render->animFrameTime = 0;" in root
+assert "render->animFrameTime = 0;" not in root
 assert "render->skipCull = 0;" in root
 assert "int lineRasterCount;" in HEADER and "int nodeRasterCount;" in HEADER
 assert "int spriteRasterCount;" in HEADER
 
+
+# PR246C: desktop BSP material IDs / sprite blend / animation clock are no
+# longer Render_t native fields. Source ABI remains intact for desktop.
+for ty, field in (
+    ("byte", "floorTex"), ("byte", "ceilingTex"),
+    ("boolean", "damageBlend"), ("int", "animFrameTime"),
+):
+    decl = r"\b" + ty + r"\s+" + field + r";"
+    assert len(re.findall(decl, HEADER)) == 1, field
+    assert re.search(
+        r"#ifndef DOOMRPG_ESP32\b(?:(?!#endif)[\s\S])*?" + decl
+        + r"(?:(?!#endif)[\s\S])*?#endif", HEADER,
+    ), ("desktop-only Render raster slot must not exist on CYD", field)
+    assert re.search(r"\brender->" + field + r"\b", DESKTOP), field
+    for native_tree in (NATIVE / "src", NATIVE / "include"):
+        for source_path in sorted(native_tree.rglob("*")):
+            if source_path.suffix not in (".c", ".cpp", ".h"):
+                continue
+            code = source_path.read_text(encoding="latin-1")
+            code = re.sub(
+                r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"',
+                " ", code, flags=re.S,
+            )
+            assert not re.search(
+                r"\b(?:render|renderBase|rootRender|r)\s*->\s*"
+                + field + r"\b", code,
+            ), ("retired desktop raster slot referenced by native owner",
+                source_path, field)
+assert "int lineRasterCount;" in HEADER
+assert "int nodeRasterCount;" in HEADER
+assert "int spriteRasterCount;" in HEADER
+assert "byte spanMode;" in HEADER and "int numLines;" in HEADER
+assert "boolean skipCull;" in HEADER
+assert "sizeof(Render_t) == 1228U" in startup
 
 # PR239: map-wide BSP I/O buffer and read cursor only exist in desktop
 # Render_beginLoadMap/Data. The ESP32 reads native immutable BSP inventory

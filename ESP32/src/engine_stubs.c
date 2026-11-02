@@ -366,10 +366,7 @@ static Render_t* EspNativeEngineRoot_initRender(Render_t* render, DoomRPG_t* doo
 	render->skipCull = 0;
 	render->floorColor = NULL;
 	render->ceilingColor = NULL;
-	render->ceilingTex = 0;
-	render->floorTex = 0;
 	render->columnScale = NULL;
-	render->animFrameTime = 0;
 	/* Only explicit bringup retains the old map-string pointer array. */
 #if defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	render->mapStringCount = 0;
