@@ -387,8 +387,28 @@ for member in ("mapName", "mapNameID", "loadMapID", "introColor",
                 + member + r"\b", clean), (
                 "retired map-header Render field referenced by native", path, member)
 assert "render->mapCameraSpawnIndex = 0;" not in root
-assert "sizeof(Render_t) == 1256U" in (
+assert "sizeof(Render_t) == 1240U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
+
+# Post-#245-B on the same PR: desktop BSP allocation/inventory counts
+# cannot be authority for production or trace; those counts live in
+# EspMapRuntime. Bringup alone still frees its legacy pointer arrays.
+for decl in (r"int nodesLength;", r"int linesLength;",
+             r"int numMapSprites;", r"int mapStringCount;"):
+    assert re.search(legacy_guard + r"\s+" + decl + r"\s+#endif", HEADER), decl
+for field in ("nodesLength", "linesLength", "numMapSprites", "mapStringCount"):
+    assert re.search(r"\brender->" + field + r"\b", DESKTOP), field
+assert re.search(
+    r"#if defined\(DOOMRPG_ESP32_BRINGUP_PROBES\)\s+"
+    r"render->mapStringCount = 0;\s+#endif", root)
+assert re.search(
+    r"render->lines = NULL;\s+render->numMapSprites = 0;\s+"
+    r"render->linesLength = 0;\s+SDL_free\(render->tileEvents\);",
+    startup)
+assert re.search(
+    r"render->mapStringsIDs = NULL;\s+render->mapStringCount = 0;\s+#endif",
+    startup)
+assert "sizeof(Render_t) == 1240U" in startup
 
 # The sprite renderer is the other owner of transactional frame scratch.
 # Its clipping/projection lines are function-local too. No CYD Render_t
@@ -397,7 +417,7 @@ sprite = (NATIVE / "src/esp_native_sprite_renderer.c").read_text()
 assert "Line_t tmpLine;" not in sprite
 assert "->tmpLine" not in sprite
 assert "_Static_assert(sizeof(Scratch) <= 740U" in sprite
-assert "sizeof(Render_t) == 1256U" in (
+assert "sizeof(Render_t) == 1240U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 assert re.search(
     r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"

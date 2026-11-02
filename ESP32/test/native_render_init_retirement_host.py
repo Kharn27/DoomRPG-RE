@@ -26,7 +26,7 @@ normalized = body.replace("static Render_t* " + name + "(", "Render_t* Render_in
 h = 2166136261
 for byte in normalized.rstrip().encode("utf-8"):
     h = ((h ^ byte) * 16777619) & 0xffffffff
-assert h == 0x1e6db3c5, f"Render ctor body drift {h:08x}"
+assert h == 0xe72704f0, f"Render ctor body drift {h:08x}"
 for source in sorted((ROOT / "ESP32/src").rglob("*")):
     if source.suffix not in (".c", ".cpp"):
         continue
@@ -43,7 +43,7 @@ typedef struct DoomRPG_s { unsigned id; } DoomRPG_t;
 typedef struct Render_s {
     DoomRPG_t *doomRpg;
     int skipCull;
-    int ceilingTex,floorTex,animFrameTime,mapStringCount;
+    int ceilingTex,floorTex,animFrameTime;
     void *floorColor,*ceilingColor,*columnScale;
     unsigned char untouched[13];
 } Render_t;
@@ -84,4 +84,4 @@ with tempfile.TemporaryDirectory(prefix="native-render-init-") as d:
     subprocess.run([shutil.which("cc") or "cc", "-std=c11", "-O2",
                     "-Wall", "-Wextra", "-Werror", str(p), "-o", exe], check=True)
     subprocess.run([exe], check=True)
-print("PASS Render_init=retired nativeRoot=yes bodyFNV=1e6db3c5 raster-flags=desktop-only")
+print("PASS Render_init=retired nativeRoot=yes bodyFNV=e72704f0 raster-flags=desktop-only")

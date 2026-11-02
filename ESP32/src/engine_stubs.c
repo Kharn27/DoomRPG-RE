@@ -370,7 +370,10 @@ static Render_t* EspNativeEngineRoot_initRender(Render_t* render, DoomRPG_t* doo
 	render->floorTex = 0;
 	render->columnScale = NULL;
 	render->animFrameTime = 0;
+	/* Only explicit bringup retains the old map-string pointer array. */
+#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	render->mapStringCount = 0;
+#endif
 
 	printf("[RENDERCORE] INIT owner=esp-native-bridge bytes=%u\n", (unsigned int)sizeof(*render));
 	return render;

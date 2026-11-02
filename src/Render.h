@@ -92,15 +92,24 @@ typedef struct Render_s
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	struct Node_s* nodes;
 #endif
+/* Desktop BSP bookkeeping; native runtime owns compact inventory. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	int nodesLength;
+#endif
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	struct Line_s* lines;
 #endif
+/* Desktop BSP bookkeeping; native runtime owns compact inventory. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	int linesLength;
+#endif
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	struct Sprite_s* mapSprites;
 #endif
+/* Desktop BSP bookkeeping; native runtime owns compact inventory. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	int numMapSprites;
+#endif
 	/* Legacy map-wide allocation bound, not native sprite topology count. */
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	int numSprites;
@@ -115,7 +124,10 @@ typedef struct Render_s
 	int* mapByteCode;
 	char** mapStringsIDs;
 #endif
+/* Desktop BSP bookkeeping; native runtime owns compact inventory. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	int mapStringCount;
+#endif
 	/* Legacy BSP tile flags: only the desktop parser and the explicit CYD
      * bringup parser still retain this 1 KiB map-wide mirror. Production
      * automap uses EspMapState and EspMapAutomapState instead. */
