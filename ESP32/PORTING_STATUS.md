@@ -1,3 +1,9 @@
+## PR #245B — même branche/PR #245, nouveau retrait ciblé en attente du CYD (2 novembre 2026)
+
+Après PASS matériel du jalon A (Render 1308/CORE 2276), poursuite **sur `agent/esp32-render-world-pointers-post244` sans autre PR** : retrait des champs desktop `viewSprites`, `numSprites`, `numTileEvents` du seul layout ESP32 normal/trace. Desktop/bringup inchangés ; vrais compteurs raster + snapshots, cache #244A/B, input et rendu natif conservés. **Attendu code B : Render 1296, CORE used 2264 (−12 B) ; aucun PASS matériel B encore revendiqué.** CI code B puis vrai flash normal requis. #245 repassée Draft avant nouveau code ; merge utilisateur uniquement. Protocole : `ESP32/MILESTONE_POST244_RENDER_VIEW_LIST_COUNTERS.md`. Le rapport PASS A reste valable exclusivement pour son SHA matériel antérieur.
+
+---
+
 ## PR #245 — PASS matériel du retrait des six pointeurs Render desktop (2 novembre 2026)
 
 Branche `agent/esp32-render-world-pointers-post244` depuis **main fusionné #244** SHA `2ec2353ddcbc83203a3012d854d25a7c2b6f539f`, code testé `4aa6eb643e68f81820da5f27dd46e6c9be1baff4`, **78/78 SUCCESS** sur les CI [push #41367931341](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41367931341) et [PR #41367989410](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41367989410). Les six pointeurs `Render_t::{nodes,lines,mapSprites,tileEvents,mapByteCode,mapStringsIDs}` sont desktop/bringup-only ; #244A admission BSP et #244B optimisation CROSS restent inchangées. Fermeture de #243 sans merge maintenue ; #245 est le seul jalon actif.

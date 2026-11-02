@@ -336,6 +336,30 @@ for field in ("nodes", "lines", "mapSprites", "tileEvents",
     assert not re.search(r"\brender->" + field + r"\b", root), field
     assert re.search(r"\brender->" + field + r"\b", DESKTOP), field
 
+# PR245-B (same PR, new hardware gate): legacy desktop view-linked list,
+# overallocated sprite count and tile-event count have no native owner.
+# Keep the original desktop ABI and bringup diagnostics; production/trace
+# must not carry these three dormant members.
+for decl in (r"int numSprites;", r"int numTileEvents;",
+             r"struct Sprite_s\* viewSprites;"):
+    assert re.search(legacy_guard + r"\s+" + decl + r"\s+#endif", HEADER), decl
+for field in ("viewSprites", "numSprites", "numTileEvents"):
+    assert re.search(r"\brender->" + field + r"\b", DESKTOP), field
+    assert not re.search(r"\brender->" + field + r"\b", root), field
+    for subtree in (NATIVE / "src", NATIVE / "include"):
+        for path in sorted(subtree.rglob("*")):
+            if path.suffix not in (".c", ".cpp", ".h"):
+                continue
+            source = path.read_text(encoding="latin-1")
+            code = re.sub(
+                r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"',
+                " ", source, flags=re.S,
+            )
+            assert not re.search(
+                r"\b(?:render|renderBase|rootRender|r)\s*(?:->|\.)\s*"
+                + field + r"\b", code,
+            ), ("retired desktop view/list/count member accessed", path, field)
+
 # The sprite renderer is the other owner of transactional frame scratch.
 # Its clipping/projection lines are function-local too. No CYD Render_t
 # member or native source may retain desktop tmpLine after this milestone.
@@ -343,7 +367,7 @@ sprite = (NATIVE / "src/esp_native_sprite_renderer.c").read_text()
 assert "Line_t tmpLine;" not in sprite
 assert "->tmpLine" not in sprite
 assert "_Static_assert(sizeof(Scratch) <= 740U" in sprite
-assert "sizeof(Render_t) == 1308U" in (
+assert "sizeof(Render_t) == 1296U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 assert re.search(
     r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
@@ -485,4 +509,4 @@ assert "spriteLeaf(runtime, &sprite, outLeaf)" in leaf_visibility
 assert "spriteLeafCache.leaf[spriteIndex] = (uint16_t)leaf;" in leaf_visibility
 assert "!cachedSpriteLeaf(runtime, mapSpriteIndex, &leaf)" in leaf_visibility
 
-print("PASS 23 retired Render ABIs; CYD Render_t omits seven raster flags + ten memory ledgers + three frame timestamps + five opaque desktop fields; BSP leaf cache retained")
+print("PASS 23 retired Render ABIs; CYD Render_t omits seven raster flags + ten memory ledgers + three frame timestamps + five opaque desktop fields + three view/list counters; BSP leaf cache retained")

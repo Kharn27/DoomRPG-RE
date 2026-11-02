@@ -101,11 +101,16 @@ typedef struct Render_s
 	struct Sprite_s* mapSprites;
 #endif
 	int numMapSprites;
+	/* Legacy map-wide allocation bound, not native sprite topology count. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	int numSprites;
+#endif
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	int* tileEvents;
 #endif
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	int numTileEvents;
+#endif
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	int* mapByteCode;
 	char** mapStringsIDs;
@@ -196,7 +201,9 @@ typedef struct Render_s
 	int viewZ;
 	int viewAngle;
 	int* columnScale;
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	struct Sprite_s* viewSprites;
+#endif
 	/* Legacy BSP linked-list sentinel. Production uses native
 	 * bounded world visibility instead of Render_renderBSP traversal. */
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
