@@ -12,6 +12,7 @@
 #include "native_main_menu_actions.h"
 #include "esp_native_backlight.h"
 #include "esp_native_config.h"
+#include "esp_native_orientation.h"
 #include "native_main_menu_options_action.h"
 #include "native_main_menu_options_back.h"
 #include "native_main_menu_touch.h"
@@ -33,11 +34,13 @@
 #define OPTIONS_ITEM_COUNT 4
 #define OPTIONS_BACK_ITEM 0
 #define OPTIONS_VIDEO_ITEM 1
+#define OPTIONS_ORIENTATION_ITEM 2
 
 static DoomRPG_t* optionsDoomRpg = NULL;
 static int optionsBackActive = 0;
-static int armedItem = -1; /* Parent only: -1=none, 0=Back, 1=Luminosite */
+static int armedItem = -1; /* Parent: -1=none, 0=Back, 1=Luminosite, 2=Orientation */
 static uint8_t luminositeOpen = 0U; /* Child uses direct single taps. */
+static uint8_t orientationOpen = 0U;
 static uint32_t optionsTapCount = 0;
 static uint32_t optionsExpectedFrameFNV = 0U;
 
@@ -67,15 +70,29 @@ static int luminositeItemAt(int16_t screenX, int16_t screenY) {
     return -1;
 }
 
+static int orientationItemAt(int16_t screenX, int16_t screenY) {
+    const int logicalX = screenX / DOOMRPG_INTEGER_SCALE;
+    const int logicalY = screenY / DOOMRPG_INTEGER_SCALE;
+    int item;
+    for (item = 0; item < DOOMRPG_ESP32_ORIENTATION_CARD_COUNT; ++item) {
+        int left, top, right, bottom;
+        DoomRPG_esp32BrightnessCardRect(item, &left, &top, &right, &bottom);
+        if (logicalX >= left && logicalX <= right &&
+            logicalY >= top && logicalY <= bottom) return item;
+    }
+    return -1;
+}
+
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
 static void registerOptionsHitboxOverlay(void) {
     int item;
     Esp32PlatformVideo_debugOverlayClear();
-    const int count = luminositeOpen ?
-        DOOMRPG_ESP32_BRIGHTNESS_CARD_COUNT : OPTIONS_ITEM_COUNT;
+    const int count = luminositeOpen ? DOOMRPG_ESP32_BRIGHTNESS_CARD_COUNT :
+                      (orientationOpen ? DOOMRPG_ESP32_ORIENTATION_CARD_COUNT :
+                                         OPTIONS_ITEM_COUNT);
     for (item = 0; item < count; ++item) {
         int left, top, right, bottom;
-        if (luminositeOpen) {
+        if (luminositeOpen || orientationOpen) {
             DoomRPG_esp32BrightnessCardRect(item, &left, &top, &right, &bottom);
         } else {
             DoomRPG_esp32MainMenuCardRect(item, &left, &top, &right, &bottom);
@@ -88,7 +105,7 @@ static void registerOptionsHitboxOverlay(void) {
     }
     Esp32PlatformVideo_debugOverlayRefresh();
     printf("[HITBOX] OPTIONS split-rail overlay zones=%d layer=%s framebuffer=untouched\n",
-           count, luminositeOpen ? "luminosite" : "options");
+           count, luminositeOpen ? "luminosite" : (orientationOpen ? "orientation" : "options"));
 }
 
 #endif
@@ -126,6 +143,21 @@ static int paintLuminositeState(void) {
     return 1;
 }
 
+static int paintOrientationState(void) {
+    uint32_t nextHash = 0U;
+    if (!DoomRPG_esp32PaintMainMenuOrientationDashboard(
+            optionsDoomRpg, &nextHash)) {
+        printf("[OPTIONSORIENTATION] FAILED paint child\\n");
+        return 0;
+    }
+    optionsExpectedFrameFNV = nextHash;
+    SDL_RenderPresent(NULL);
+    printf("[OPTIONSORIENTATION] VISUAL mode=%s framebufferFNV=%08x\\n",
+           Esp32Orientation_get() ? "INVERSE" : "NORMAL",
+           (unsigned int)nextHash);
+    return 1;
+}
+
 static int returnToMainMenu(DoomRPG_t* doomRpg) {
     EspNativeMenuState_t* menuSystem = doomRpg->menuSystem;
     Render_t* render = doomRpg->render;
@@ -143,7 +175,7 @@ static int returnToMainMenu(DoomRPG_t* doomRpg) {
     if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
         menuSystem->menu != MENU_MAIN_OPTIONS ||
         menuSystem->selectedIndex != OPTIONS_BACK_ITEM ||
-        luminositeOpen != 0U ||
+        luminositeOpen != 0U || orientationOpen != 0U ||
         optionsExpectedFrameFNV == 0U ||
         DoomRPG_esp32MainMenuFramebufferHash(render) != optionsExpectedFrameFNV) {
         printf("[OPTIONBACK] FAILED precondition safe=%d menu=%d selected=%d framebuffer=%08x expected=%08x\n",
@@ -189,12 +221,13 @@ static void optionsBackTap(int16_t screenX,
 
     optionsTapCount++;
     item = luminositeOpen ? luminositeItemAt(screenX, screenY) :
-                            optionsItemAt(screenX, screenY);
+           (orientationOpen ? orientationItemAt(screenX, screenY) :
+                              optionsItemAt(screenX, screenY));
     printf("[OPTIONBACK] TAP n=%u raw=%u,%u pressure=%u physical=%d,%d logical=%d,%d layer=%s item=%d armedItem=%d\n",
            (unsigned int)optionsTapCount, rawX, rawY, pressure,
            screenX, screenY, screenX / DOOMRPG_INTEGER_SCALE,
            screenY / DOOMRPG_INTEGER_SCALE,
-           luminositeOpen ? "luminosite" : "options", item, armedItem);
+           luminositeOpen ? "luminosite" : (orientationOpen ? "orientation" : "options"), item, armedItem);
 
     if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(optionsDoomRpg) ||
         optionsDoomRpg->menuSystem->menu != MENU_MAIN_OPTIONS ||
@@ -263,9 +296,69 @@ static void optionsBackTap(int16_t screenX,
         return;
     }
 
-    /* Input/Sound stay fail-closed. Unavailable PWM also makes Luminosite inert. */
+    if (orientationOpen) {
+        if (item == 0) {
+            if (!paintOptionsState(OPTIONS_BACK_ITEM, 0)) {
+                optionsBackActive = 0;
+                PlatformInput_setTapCallback(NULL);
+                DoomRPG_esp32MainMenuRecover(optionsDoomRpg,
+                                             "orientation-back-repaint-failed");
+                return;
+            }
+            orientationOpen = 0U;
+            armedItem = -1;
+#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
+            registerOptionsHitboxOverlay();
+#endif
+            printf("[OPTIONSORIENTATION] BACK to=Options mode=%s mutation=ui-only\\n",
+                   Esp32Orientation_get() ? "INVERSE" : "NORMAL");
+            return;
+        }
+        if (item == 1 || item == 2) {
+            const uint8_t before = Esp32Orientation_get();
+            const uint8_t after = item == 2 ? ESP32_ORIENTATION_INVERSE :
+                                              ESP32_ORIENTATION_NORMAL;
+            if (after != before) {
+                /* SD commit precedes hardware: a failed write cannot change
+                 * either TFT or XPT orientation. */
+                if (!EspNativeConfig_saveOrientation(after)) {
+                    printf("[OPTIONSORIENTATION] ROLLBACK reason=sd-save-failed requested=%u retained=%u screen=unchanged touch=unchanged\\n",
+                           (unsigned)after, (unsigned)before);
+                    return;
+                }
+                if (!Esp32Orientation_set(after)) {
+                    const int restored = EspNativeConfig_saveOrientation(before);
+                    printf("[OPTIONSORIENTATION] ROLLBACK reason=tft-rejected persistRestored=%d screen=unchanged touch=unchanged\\n",
+                           restored);
+                    return;
+                }
+                PlatformInput_requireFreshTapAfterRelease();
+                if (!paintOrientationState()) {
+                    const int hwRestored = Esp32Orientation_set(before);
+                    const int sdRestored = EspNativeConfig_saveOrientation(before);
+                    printf("[OPTIONSORIENTATION] ROLLBACK reason=repaint-failed hwRestored=%d sdRestored=%d\\n",
+                           hwRestored, sdRestored);
+                    optionsBackActive = 0;
+                    PlatformInput_setTapCallback(NULL);
+                    DoomRPG_esp32MainMenuRecover(optionsDoomRpg,
+                                                 "orientation-set-repaint-failed");
+                    return;
+                }
+            }
+            printf("[OPTIONSORIENTATION] SELECT %s->%s changed=%s directTap=yes persistence=sd-v2 gameplayTurn=no framebuffer=single\\n",
+                   before ? "INVERSE" : "NORMAL",
+                   after ? "INVERSE" : "NORMAL",
+                   after == before ? "no" : "yes");
+            return;
+        }
+        printf("[OPTIONSORIENTATION] MISS outside-choices no-action\\n");
+        return;
+    }
+
+    /* Sound stays fail-closed; unavailable PWM disables Luminosite. */
     if (item != OPTIONS_BACK_ITEM &&
-        (item != OPTIONS_VIDEO_ITEM || !Esp32Backlight_isReady())) {
+        (item != OPTIONS_VIDEO_ITEM || !Esp32Backlight_isReady()) &&
+        (item != OPTIONS_ORIENTATION_ITEM || !Esp32Orientation_isReady())) {
         if (armedItem != -1) {
             if (!paintOptionsState(OPTIONS_BACK_ITEM, 0)) {
                 optionsBackActive = 0;
@@ -291,6 +384,24 @@ static void optionsBackTap(int16_t screenX,
         }
         armedItem = item;
         printf("[OPTIONBACK] ARM item=%d awaitingReleasedSecondTap=yes\n", item);
+        return;
+    }
+
+    if (item == OPTIONS_ORIENTATION_ITEM) {
+        if (!paintOrientationState()) {
+            optionsBackActive = 0;
+            PlatformInput_setTapCallback(NULL);
+            DoomRPG_esp32MainMenuRecover(optionsDoomRpg,
+                                         "orientation-open-repaint-failed");
+            return;
+        }
+        orientationOpen = 1U;
+        armedItem = -1;
+#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
+        registerOptionsHitboxOverlay();
+#endif
+        printf("[OPTIONSORIENTATION] OPEN from=Options mode=%s choices=NORMAL/INVERSE directTap=yes\\n",
+               Esp32Orientation_get() ? "INVERSE" : "NORMAL");
         return;
     }
 
@@ -330,6 +441,7 @@ int DoomRPG_esp32OptionsBackActivate(struct DoomRPG_s* doomRpgBase,
     optionsBackActive = 0;
     armedItem = -1;
     luminositeOpen = 0U;
+    orientationOpen = 0U;
     optionsTapCount = 0;
     optionsExpectedFrameFNV = 0U;
 
