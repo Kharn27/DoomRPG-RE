@@ -185,7 +185,11 @@ typedef struct Render_s
 	/* Original desktop map parser owns these BSP material IDs. */
 	byte floorTex;
 	byte ceilingTex;
+#endif
+#ifndef DOOMRPG_ESP32
 	byte unk3;
+#endif
+#ifndef DOOMRPG_ESP32
 	/* Desktop Render_draw2DSprite / Render_renderSprite blend state. */
 	boolean damageBlend;
 #endif
