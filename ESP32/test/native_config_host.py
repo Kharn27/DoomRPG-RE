@@ -232,6 +232,7 @@ int main() {
 
     assert(EspNativeConfig_saveBrightness(50));
     assert(config(mainCfg) == 50 && SD.bytes.size() == 1);
+    assert(Esp32Backlight_setPercent(50)); /* emulate caller commit */
     /* Rotation is persisted first; changing pixels/touch is an explicit
      * separate hardware step owned by the caller. */
     assert(EspNativeConfig_saveOrientation(ESP32_ORIENTATION_INVERSE));
@@ -306,6 +307,7 @@ int main() {
     assert(config(mainCfg) == 75 && configOrientation(mainCfg) == 1);
     SD.bytes.clear();
     orientation = ESP32_ORIENTATION_NORMAL;
+    pwm = 100;
 
     EspNativeConfig_loadAtBoot(0);
     assert(pwm == 100 && SD.bytes.empty());
