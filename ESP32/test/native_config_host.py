@@ -34,11 +34,11 @@ assert start.index("EspNativeConfig_loadAtBoot(sdReady ? 1 : 0);") < start.index
 assert 'constexpr char kConfigPath[] = "/DoomRPG-ESP32.cfg";' in owner
 assert 'constexpr char kTempPath[] = "/DoomRPG-ESP32.cfg.tmp";' in owner
 assert 'constexpr char kBackupPath[] = "/DoomRPG-ESP32.cfg.bak";' in owner
-assert "reason=first-run-missing percent=100 write=no" in owner
+assert "reason=first-run-missing percent=100 orientation=NORMAL write=no" in owner
 assert "readExact(kConfigPath, &loaded)" in owner
 assert "readExact(kBackupPath, &loaded)" in owner
-assert "verify(kTempPath, percent)" in owner
-assert "verify(kConfigPath, percent)" in owner
+assert "verify(kTempPath, percent, orientation)" in owner
+assert "verify(kConfigPath, percent, orientation)" in owner
 assert "SD.rename(kConfigPath, kBackupPath)" in owner
 assert "SD.rename(kTempPath, kConfigPath)" in owner
 assert "SD.rename(kBackupPath, kConfigPath)" in owner
@@ -111,10 +111,19 @@ storage_host = r"""
 #include "esp_native_config.h"
 #include "esp_native_config_codec.h"
 #include "esp_native_backlight.h"
+#include "esp_native_orientation.h"
 
 SerialStub Serial;
 SDClass SD;
 static uint8_t pwm = 100U;
+static uint8_t orientation = ESP32_ORIENTATION_NORMAL;
+extern "C" int Esp32Orientation_isReady(void) { return 1; }
+extern "C" uint8_t Esp32Orientation_get(void) { return orientation; }
+extern "C" int Esp32Orientation_set(uint8_t value) {
+    if (!Esp32Orientation_valid(value)) return 0;
+    orientation = value;
+    return 1;
+}
 extern "C" int Esp32Backlight_isReady(void) { return 1; }
 extern "C" uint8_t Esp32Backlight_percent(void) { return pwm; }
 extern "C" int Esp32Backlight_setPercent(uint8_t percent) {
@@ -171,6 +180,24 @@ static uint8_t config(const char* path) {
         it->second.data(), (uint32_t)it->second.size(), &percent));
     return percent;
 }
+static uint8_t configOrientation(const char* path) {
+    const auto& d = SD.bytes.at(path);
+    uint8_t percent = 0, mode = 0xff;
+    assert(EspNativeConfigCodec_decode(d.data(), (uint32_t)d.size(), &percent, &mode));
+    return mode;
+}
+static void legacyV1(const char* path, uint8_t brightness) {
+    uint8_t record[ESP_NATIVE_CONFIG_BYTES];
+    assert(EspNativeConfigCodec_encodeBrightness(brightness, record));
+    record[4] = 1;
+    uint32_t fnv = 2166136261U;
+    for (unsigned i = 0; i < 8; ++i) {
+        fnv ^= record[i];
+        fnv *= 16777619U;
+    }
+    for (unsigned i = 0; i < 4; ++i) record[8 + i] = (uint8_t)(fnv >> (8 * i));
+    SD.bytes[path].assign(record, record + sizeof(record));
+}
 int main() {
     constexpr const char* mainCfg = "/DoomRPG-ESP32.cfg";
     constexpr const char* tmpCfg = "/DoomRPG-ESP32.cfg.tmp";
@@ -205,6 +232,35 @@ int main() {
 
     assert(EspNativeConfig_saveBrightness(50));
     assert(config(mainCfg) == 50 && SD.bytes.size() == 1);
+    assert(Esp32Backlight_setPercent(50)); /* emulate UI hardware commit */
+    /* Rotation is persisted first; changing pixels/touch is an explicit
+     * separate hardware step owned by the caller. */
+    assert(EspNativeConfig_saveOrientation(ESP32_ORIENTATION_INVERSE));
+    assert(orientation == ESP32_ORIENTATION_NORMAL);
+    assert(config(mainCfg) == 50 && configOrientation(mainCfg) == 1);
+    assert(Esp32Orientation_set(ESP32_ORIENTATION_INVERSE));
+    pwm = 100; orientation = ESP32_ORIENTATION_NORMAL; /* power cycle */
+    EspNativeConfig_loadAtBoot(1);
+    assert(pwm == 50 && orientation == ESP32_ORIENTATION_INVERSE);
+
+    SD.failWrites = true;
+    assert(!EspNativeConfig_saveOrientation(ESP32_ORIENTATION_NORMAL));
+    SD.failWrites = false;
+    assert(configOrientation(mainCfg) == ESP32_ORIENTATION_INVERSE);
+    SD.failPromote = true;
+    assert(!EspNativeConfig_saveOrientation(ESP32_ORIENTATION_NORMAL));
+    SD.failPromote = false;
+    assert(configOrientation(mainCfg) == ESP32_ORIENTATION_INVERSE);
+
+    /* Brightness transaction must preserve the current orientation. */
+    assert(EspNativeConfig_saveBrightness(75));
+    assert(config(mainCfg) == 75 && configOrientation(mainCfg) == 1);
+    assert(Esp32Backlight_setPercent(75));
+    assert(Esp32Orientation_set(ESP32_ORIENTATION_NORMAL));
+    assert(EspNativeConfig_saveOrientation(ESP32_ORIENTATION_NORMAL));
+    assert(configOrientation(mainCfg) == 0);
+    assert(EspNativeConfig_saveBrightness(50));
+    assert(Esp32Backlight_setPercent(50));
 
     /* Invalid primary plus valid backup: recover, and never destroy the
      * last good copy when the next promotion fails. */
@@ -236,7 +292,23 @@ int main() {
     EspNativeConfig_loadAtBoot(1);
     assert(pwm == 100 && !SD.exists(mainCfg));
 
+    /* Real v1 migration: preserve 75% brightness, default to NORMAL, write
+     * v2 only when the next preference actually changes. */
     SD.bytes.clear();
+    legacyV1(mainCfg, 75);
+    assert(SD.bytes[mainCfg][4] == 1);
+    orientation = ESP32_ORIENTATION_INVERSE;
+    pwm = 100;
+    EspNativeConfig_loadAtBoot(1);
+    assert(pwm == 75 && orientation == ESP32_ORIENTATION_NORMAL);
+    assert(SD.bytes[mainCfg][4] == 1); /* boot is read-only */
+    assert(EspNativeConfig_saveOrientation(ESP32_ORIENTATION_INVERSE));
+    assert(SD.bytes[mainCfg][4] == 2);
+    assert(config(mainCfg) == 75 && configOrientation(mainCfg) == 1);
+    SD.bytes.clear();
+    orientation = ESP32_ORIENTATION_NORMAL;
+    pwm = 100;
+
     EspNativeConfig_loadAtBoot(0);
     assert(pwm == 100 && SD.bytes.empty());
     assert(!EspNativeConfig_saveBrightness(75));
@@ -257,4 +329,4 @@ with tempfile.TemporaryDirectory(prefix="native-cyd-config-sd-") as d:
                     str(folder / "storage_host.cpp"), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
 
-print("PASS native CYD config: desktop reader disconnected, first-run defaults, SD commit before PWM")
+print("PASS native CYD config: v1 migration, v2 orientation, default, SD transactional rollback, desktop reader retired")

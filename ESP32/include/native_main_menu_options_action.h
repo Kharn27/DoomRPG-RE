@@ -17,8 +17,8 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpg,
                                          uint32_t* finalFramebufferFNV);
 
 /* Repaint only the shared right-hand rail; selectedItem is 0 (Back) or
- * 1 (Luminosité child entry), armed is the first-tap visual confirmation state.
- * Input/Sound remain disabled, and the left logo remains untouched. */
+ * 1 (Luminosité) or 2 (Orientation), armed is the first-tap state.
+ * Sound remains disabled; the left logo remains untouched. */
 int DoomRPG_esp32PaintMainMenuOptionsDashboardSelection(
     struct DoomRPG_s* doomRpg,
     int selectedItem,
@@ -30,6 +30,11 @@ int DoomRPG_esp32PaintMainMenuOptionsDashboardSelection(
 int DoomRPG_esp32PaintMainMenuBrightnessDashboard(
     struct DoomRPG_s* doomRpg,
     uint32_t* framebufferFNV);
+
+/* Orientation child shares the protected right rail, with 3 direct-tap
+ * choices (Back, Normal, Inverse); source framebuffer stays unchanged. */
+int DoomRPG_esp32PaintMainMenuOrientationDashboard(
+    struct DoomRPG_s* doomRpg, uint32_t* framebufferFNV);
 
 /* Compatibility entry used for initial Options composition. */
 int DoomRPG_esp32PaintMainMenuOptionsDashboard(
