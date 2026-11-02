@@ -10,13 +10,14 @@
 #include "esp_legacy_asset_source.h"
 #include "platform_video_c_bridge.h"
 #include "esp_render_startup_bridge.h"
+#include "esp_native_trig.h"
 #include "platform_video_config.h"
 
 /* Include ESP-IDF bool macros only after DoomRPG's legacy boolean enum. */
 #include <esp_heap_caps.h>
 #if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 /* Desktop/bringup retain the original legacy BSP flags; production does not. */
-_Static_assert(sizeof(Render_t) == 1228U,
+_Static_assert(sizeof(Render_t) == 204U,
                "Render_t must omit retired raster state, accounting, desktop world, BSP header and allocation counts");
 #endif
 
@@ -153,7 +154,8 @@ static int preflightRenderResources(void) {
     for (i = 0; i < count; ++i) {
         const char* name = required[i];
         uint32_t bytes = 0U;
-        if (!EspLegacyAssetSource_stat(name, &bytes)) {
+        if (!EspLegacyAssetSource_stat(name, &bytes) ||
+            (i == 0U && bytes < ESP_NATIVE_TRIG_BYTES)) {
             printf("[RENDERSTART] MISSING %s\n", name);
             allPresent = 0;
             continue;
@@ -178,7 +180,6 @@ static int preflightRenderResources(void) {
  */
 static int EspNativeRenderStartup_initialize(Render_t* render) {
     byte* fData;
-    int i;
     int width;
     int height;
     size_t framebufferBytes;
@@ -198,13 +199,15 @@ static int EspNativeRenderStartup_initialize(Render_t* render) {
         return 0;
     }
 
-    SDL_memmove(render->sinTable, fData, sizeof(render->sinTable));
-    SDL_free(fData);
-    for (i = 0; i < 256; ++i) {
-        render->sinTable[i] = SDL_SwapLE32(render->sinTable[i]);
+    /* Preserve the exact native sine values loaded from PAK. */
+    if (!EspNativeTrig_installLe(fData, ESP_NATIVE_TRIG_BYTES)) {
+        SDL_free(fData);
+        printf("[RENDER] ERROR native sine table install failed\n");
+        return 0;
     }
+    SDL_free(fData);
     printf("[RENDER] sintable loaded: %u bytes\n",
-           (unsigned int)sizeof(render->sinTable));
+           (unsigned int)ESP_NATIVE_TRIG_BYTES);
 
     render->clipRect.x = DOOMRPG_CANVAS_X;
     render->clipRect.y = DOOMRPG_CANVAS_Y;

@@ -6,6 +6,7 @@
 
 #include "DoomRPG.h"
 #include "Render.h"
+#include "esp_native_trig.h"
 #include <esp_timer.h>
 
 #include "doomrpg_log.h"
@@ -1357,8 +1358,12 @@ static int renderFrame(Render_t* render,
     fillBackground(render, outState->ceilingRgb565, outState->floorRgb565,
                    clearWholeFramebuffer);
 
-    sin_ = render->sinTable[playerView->viewAngle & 255];
-    cos_ = render->sinTable[(playerView->viewAngle + 64) & 255];
+    {
+        const int32_t* const trig = EspNativeTrig_view();
+        if (trig == NULL) goto done;
+        sin_ = trig[playerView->viewAngle & 255];
+        cos_ = trig[(playerView->viewAngle + 64) & 255];
+    }
     vx = playerView->viewX - ((16 * cos_) >> 16);
     vy = playerView->viewY + ((16 * sin_) >> 16);
 

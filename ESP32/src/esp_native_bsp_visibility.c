@@ -5,6 +5,7 @@
 
 #include "DoomRPG.h"
 #include "Render.h"
+#include "esp_native_trig.h"
 
 #include "esp_map_automap_state.h"
 #include "esp_map_runtime.h"
@@ -136,8 +137,12 @@ static int setupView(Render_t* r, const EspPlayerViewState* v) {
         return 0;
     }
 
-    sin_ = r->sinTable[v->viewAngle & 255];
-    cos_ = r->sinTable[(v->viewAngle + 64) & 255];
+    {
+        const int32_t* const trig = EspNativeTrig_view();
+        if (trig == NULL) return 0;
+        sin_ = trig[v->viewAngle & 255];
+        cos_ = trig[(v->viewAngle + 64) & 255];
+    }
     vx = v->viewX - ((16 * cos_) >> 16);
     vy = v->viewY + ((16 * sin_) >> 16);
 

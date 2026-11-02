@@ -32,7 +32,7 @@ normalized = (body.replace("static int " + name + "(", "int Render_startup(")
 h = 2166136261
 for byte in normalized.encode("utf-8"):
     h = ((h ^ byte) * 16777619) & 0xffffffff
-assert h == 0x0ca067c4, f"Render_startup implementation drift: {h:08x}"
+assert h == 0x794a2f4a, f"Render_startup implementation drift: {h:08x}"
 
 # Reject any ESP32 C/C++ call/definition with the retired name, ignoring
 # comments and diagnostic strings (which intentionally retain old labels).
@@ -55,7 +55,7 @@ typedef struct SDL_Rect { int x,y,w,h; } SDL_Rect;
 typedef struct DoomRPG_s { void* doomCanvas; } DoomRPG_t;
 typedef struct Render_s {
     DoomRPG_t* doomRpg;
-    uint32_t sinTable[256];
+    /* Sine table lives in native process owner. */
     SDL_Rect clipRect;
     int pitch;
     byte* framebuffer;
@@ -66,14 +66,14 @@ static struct { int rendererW,rendererH; } sdlVideo={160,120};
 static byte framebuffer[160*120*2];
 static int fbReady, failOpen, failPalettes;
 static size_t fbBytes;
-static int fileReads,fileFrees,paletteLoads;
+static int fileReads,fileFrees,paletteLoads,trigInstalls,failTrig;
+static int32_t trigValues[256];
 #define DOOMRPG_CANVAS_X 0
 #define DOOMRPG_CANVAS_Y 0
 #define DOOMRPG_CANVAS_WIDTH 160
 #define DOOMRPG_CANVAS_HEIGHT 120
-#define SDL_memmove memmove
 #define SDL_free tracedFree
-#define SDL_SwapLE32(x) (x)
+#define ESP_NATIVE_TRIG_BYTES 1024U
 #define printf(...) ((void)0)
 static void tracedFree(void* p) {
     if(p) ++fileFrees;
@@ -94,6 +94,17 @@ static byte* DoomRPG_fileOpenRead(DoomRPG_t* root, const char* name) {
     }
     return result;
 }
+static int EspNativeTrig_installLe(const uint8_t* bytes, size_t length) {
+    assert(bytes!=NULL && length==1024U);
+    ++trigInstalls;
+    if (failTrig) return 0;
+    for (int i=0;i<256;++i) {
+        uint32_t u=(uint32_t)bytes[4*i] | ((uint32_t)bytes[4*i+1]<<8)
+               | ((uint32_t)bytes[4*i+2]<<16) | ((uint32_t)bytes[4*i+3]<<24);
+        memcpy(&trigValues[i],&u,sizeof(u));
+    }
+    return 1;
+}
 static void* Esp32PlatformVideo_framebuffer(void) {
     return fbReady ? framebuffer : NULL;
 }
@@ -107,10 +118,10 @@ static void EspNativeRenderStartup_loadPalettes(Render_t* render) {
 """
 main = r"""
 static void resetProbes(void) {
-    failOpen=failPalettes=0;
+    failOpen=failPalettes=failTrig=0;
     fbReady=1;
     fbBytes=sizeof(framebuffer);
-    fileReads=fileFrees=paletteLoads=0;
+    fileReads=fileFrees=paletteLoads=trigInstalls=0;
     memset(framebuffer,0,sizeof(framebuffer));
 }
 int main(void) {
@@ -126,9 +137,9 @@ int main(void) {
         assert(render.clipRect.x==0 && render.clipRect.y==0);
         assert(render.clipRect.w==160 && render.clipRect.h==120);
         assert(framebuffer[0]==255 && framebuffer[sizeof(framebuffer)-1]==255);
-        assert(render.sinTable[0]==0 && render.sinTable[255]==255);
+        assert(trigValues[0]==0 && trigValues[255]==255);
         assert(render.mediaPalettesLength==3280 && render.mediaPalettes);
-        assert(fileReads==1 && fileFrees==1 && paletteLoads==1);
+        assert(fileReads==1 && fileFrees==1 && paletteLoads==1 && trigInstalls==1);
     }
     resetProbes();
     assert(EspNativeRenderStartup_initialize(NULL)==0);
@@ -143,6 +154,9 @@ int main(void) {
     assert(EspNativeRenderStartup_initialize(&render)==0);
     assert(fileReads==1 && fileFrees==0 && paletteLoads==0);
 
+    resetProbes();failTrig=1;
+    assert(EspNativeRenderStartup_initialize(&render)==0);
+    assert(fileReads==1 && fileFrees==1 && paletteLoads==0 && trigInstalls==1);
     resetProbes();fbReady=0;
     assert(EspNativeRenderStartup_initialize(&render)==0);
     assert(fileReads==1 && fileFrees==1 && paletteLoads==0);
@@ -153,9 +167,9 @@ int main(void) {
 
     resetProbes();failPalettes=1;
     assert(EspNativeRenderStartup_initialize(&render)==0);
-    assert(fileReads==1 && fileFrees==1 && paletteLoads==1);
+    assert(fileReads==1 && fileFrees==1 && paletteLoads==1 && trigInstalls==1);
 
-    puts("PASS Render startup 4096 shared-FB/palette cases + 5 fail-closed branches");
+    puts("PASS Render startup 4096 shared-FB/palette/trig cases + 6 fail-closed branches");
     return 0;
 }
 """
@@ -167,4 +181,4 @@ with tempfile.TemporaryDirectory(prefix="private-render-startup-") as d:
                     "-Wall", "-Wextra", "-Werror", str(src), "-o", exe],
                    check=True)
     subprocess.run([exe], check=True)
-print("PASS Render_startup retired; shared framebuffer only, native init FNV=0ca067c4")
+print("PASS Render_startup retired; shared framebuffer only, native init FNV=794a2f4a")
