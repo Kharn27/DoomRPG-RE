@@ -208,14 +208,14 @@ static int validatePresentationContract(DoomRPG_t* doomRpg,
             DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT ||
         DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT >=
             DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT ||
-        /* The main-only 54x22 extension changes HEIGHT only; x104..157
+        /* The main-only 54x24 extension changes HEIGHT only; x104..157
          * and child Options' original 54x20 contracts are preserved. */
         DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_LEFT <=
             DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT ||
         DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_RIGHT >=
             DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT ||
         DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_WIDTH != 54 ||
-        DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_HEIGHT != 22 ||
+        DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_HEIGHT != 24 ||
         DOOMRPG_ESP32_MAIN_MENU_CARD_TOP(0) <=
             DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP ||
         DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(3) >=
@@ -803,7 +803,7 @@ int DoomRPG_esp32RepaintOpaqueMainMenu(struct DoomRPG_s* doomRpgBase,
            (unsigned int)composeMs,
            (unsigned int)heapAfter,
            (unsigned int)largestAfter);
-    printf("[MAINOPAQUE] TARGET layout=split logo=102x120@0,0 stretched=yes unframed=yes rail=x102..159 cards=54x22 logical=108x44 physical palette=industrial-procedural idle=metal focus=orange-red cursorPatchBytes=0\n");
+    printf("[MAINOPAQUE] TARGET layout=split logo=102x120@0,0 stretched=yes unframed=yes rail=x102..159 cards=54x24 logical=108x48 physical palette=industrial-procedural idle=metal focus=orange-red cursorPatchBytes=0\n");
 
     printf("[MENUSKIN] COMPOSE us=%u state=IDLE wholeMenu=yes framebuffer=single\n",
            (unsigned int)composeUs);
