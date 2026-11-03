@@ -89,7 +89,7 @@ int main(void) {
                 const int firstX = l + (item == 0 ? 13 :
                                            item == 1 ? 15 :
                                            item == 2 ? 7 : 15);
-                const int firstY = t + (item == 2 ? 6 : 3);
+                const int firstY = t + (item == 2 ? 6 : 3) + (state == 2 ? 1 : 0);
                 assert(fb[firstY * W + firstX] ==
                        (state == 0 ? 0xbdf7U : 0xffffU));
             }
