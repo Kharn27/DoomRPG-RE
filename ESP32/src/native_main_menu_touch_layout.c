@@ -449,21 +449,30 @@ int DoomRPG_esp32PaintMenuDashboardCards(
                 DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP,
                 DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT,
                 DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM,
-                MAIN_DOOM_METAL);
+                industrialMain ? 0x1042U : MAIN_DOOM_METAL);
     /* Only the *button rail* is framed. The larger PAK logo is free on black. */
     drawRect565(render,
                 DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT,
                 DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP,
                 DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT - 1,
                 DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM,
-                ESP_HUB_COLOR_STEEL_DARK);
+                industrialMain ? 0x4228U : ESP_HUB_COLOR_STEEL_DARK);
     fillRect565(render, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT + 1,
                 5, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT + 2,
-                115, MAIN_DOOM_METAL_HI);
+                115, industrialMain ? 0x3105U : MAIN_DOOM_METAL_HI);
     fillRect565(render, 105, 7, 125, 8, MAIN_DOOM_RED);
     fillRect565(render, 127, 7, 155, 8, ESP_HUB_COLOR_STEEL_DARK);
     fillRect565(render, 105, 112, 155, 113, ESP_HUB_COLOR_STEEL_DARK);
     fillRect565(render, 105, 112, 118, 112, MAIN_DOOM_RED);
+
+    if (industrialMain) {
+        /* A warm 1px UAC conduit down the rail links the pressed-metal
+         * controls. Outside every card/hitbox and logo; main-only. */
+        fillRect565(render, 158, 17, 158, 104, 0x7802U);
+        fillRect565(render, 158, 34, 158, 36, 0xfba5U);
+        fillRect565(render, 158, 59, 158, 61, 0xfba5U);
+        fillRect565(render, 158, 84, 158, 86, 0xfba5U);
+    }
 
     for (item = 0; item < DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT; ++item) {
         if (industrialMain) {
