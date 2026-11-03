@@ -36,11 +36,15 @@ for forbidden in ("malloc(", "calloc(", "realloc(", "free(", "esp_timer", "SDL_"
     assert forbidden not in skin, forbidden
 assert "ESP_MAIN_MENU_SKIN_CONFIRM" in skin
 assert "if (second != NULL)" in skin
-# V4: four precisely matched channels, no scattered or state-specific sparks.
-assert "0xd6b3U" in skin and "0xffffU" in skin
-assert "0xf102U" not in skin
+# One bounded 4x6 custom font, a deep-red face and a dark bronze
+# underside only on idle; no previous fluorescent red/orange flood.
+assert "glyphs[16][6]" in skin
+assert "length * 5 - 1" in skin
+assert "row < 6" in skin and "bit < 4" in skin
+assert "0xd0c2U" in skin and "0xffffU" in skin
+assert "0x92a0U" in skin and "0x5100U" in skin
+assert "0xf102U" not in skin and "0xd6b3U" not in skin
 assert "diagonalShadow" not in skin
-assert "l, t, r, b, p->shadow);" in skin
 assert "horizontal(fb, stride, l + 7, r - 7, t + 2," in skin
 assert "horizontal(fb, stride, l + 7, r - 7, b," in skin
 assert "vertical(fb, stride, l + 2, t + 6, b - 6," in skin
