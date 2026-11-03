@@ -14,14 +14,12 @@ typedef struct {
     uint16_t base, steel, bevel, shadow, groove, copper, glow, red, ink, typeFace;
 } SkinPalette;
 
-/* V3 visual priority at true 160x120:
- * IDLE = cold graphite, dim copper, legible *muted* warm-grey letters.
- * ARMED = powered copper/orange edge and pure white RGB565 lettering.
- * CONFIRM = pressed variation, no extra present in two-tap dispatch.
- * These are RGB565 constants, no runtime conversion or new storage. */
+/* V4: Doom-red lettering while idle, pure RGB565 white while armed.
+ * Four identical straight copper channels, instead of scattered sparks.
+ * No new frame, state, animation or allocation. */
 static const SkinPalette palettes[3] = {
-    {0x1082U,0x2124U,0x6b4dU,0x0800U,0x2965U,0x8200U,0xa2a1U,0x4800U,0x3000U,0xbdf7U},
-    {0x2021U,0x49c3U,0xfba9U,0x1800U,0xb981U,0xfd00U,0xffc0U,0xf800U,0xc180U,0xffffU},
+    {0x1082U,0x2124U,0x6b4dU,0x0800U,0x2965U,0x7a02U,0xa2a1U,0x8800U,0x4800U,0xf102U},
+    {0x2021U,0x49c3U,0xfba9U,0x1800U,0xb981U,0xfe00U,0xffc0U,0xf800U,0xc180U,0xffffU},
     {0x1800U,0x3962U,0xb2e4U,0x0800U,0x9040U,0xfca0U,0xff80U,0xc800U,0x9800U,0xffffU}
 };
 
@@ -144,40 +142,25 @@ int EspMainMenuSkin_paint(uint16_t* fb, int stride,
     dot(fb, stride, l + 2, b - 2, l, t, r, b, p->shadow);
     dot(fb, stride, r - 2, b - 2, l, t, r, b, p->copper);
 
-    /* Split inset top lip: the hot strokes stop before the text. */
-    horizontal(fb, stride, l + 6, r - 7, t + 2, l, t, r, b, p->shadow);
-    horizontal(fb, stride, l + 7, l + 10, t + 3, l, t, r, b, p->copper);
-    horizontal(fb, stride, r - 14, r - 7, t + 3, l, t, r, b, p->copper);
-    horizontal(fb, stride, r - 12, r - 8, t + 4, l, t, r, b, p->glow);
-    horizontal(fb, stride, l + 7, r - 8, b - 3, l, t, r, b, p->groove);
-    horizontal(fb, stride, l + 9, r - 10, b - 2, l, t, r, b, p->copper);
-    vertical(fb, stride, l + 3, t + 6, b - 6, l, t, r, b, p->red);
-    vertical(fb, stride, l + 4, t + 7, b - 7, l, t, r, b, p->copper);
+    /* V4: one repeatable industrial circuit on EVERY card.
+     * Straight, symmetric channels: same coordinates in Idle/Armed/Confirm.
+     * The state changes only RGB565 intensity, never stroke placement.
+     * Bottom strip sits on b (below the lower glyph's last pixel), top on
+     * t+2 (above the first glyph). No orange strokes behind text. */
+    horizontal(fb, stride, l + 7, r - 7, t + 2,
+               l, t, r, b, p->copper);
+    horizontal(fb, stride, l + 7, r - 7, b,
+               l, t, r, b, p->copper);
+    vertical(fb, stride, l + 2, t + 6, b - 6,
+             l, t, r, b, p->red);
+    vertical(fb, stride, r - 2, t + 6, b - 6,
+             l, t, r, b, p->red);
 
-    /* Two simplified slotted rivets, leaving OPTIONS legible. */
+    /* One recessed rivet at each diagonal corner, away from labels. */
     dot(fb, stride, l + 5, t + 5, l, t, r, b, p->shadow);
     dot(fb, stride, l + 5, t + 4, l, t, r, b, p->bevel);
     dot(fb, stride, r - 5, b - 4, l, t, r, b, p->shadow);
     dot(fb, stride, r - 5, b - 5, l, t, r, b, p->bevel);
-    horizontal(fb, stride, r - 12, r - 8, t + 5, l, t, r, b, p->glow);
-
-    if (state == ESP_MAIN_MENU_SKIN_ARMED) {
-        /* The entire pressed-metal plate visibly powers on. Keep hot strokes
-         * in the 2px frame/margins; NEVER run behind 5x7 text strokes.
-         * No timer, no fade, no extra present/latency on the second tap. */
-        horizontal(fb, stride, l + 7, r - 7, t + 2,
-                   l, t, r, b, p->copper);
-        horizontal(fb, stride, l + 13, r - 13, b - 2,
-                   l, t, r, b, p->glow);
-        horizontal(fb, stride, l + 6, r - 7, b - 1,
-                   l, t, r, b, p->copper);
-        vertical(fb, stride, l + 2, t + 6, b - 6,
-                 l, t, r, b, p->glow);
-        vertical(fb, stride, r - 2, t + 6, b - 6,
-                 l, t, r, b, p->copper);
-        dot(fb, stride, l + 6, t + 2, l, t, r, b, p->glow);
-        dot(fb, stride, r - 6, t + 2, l, t, r, b, p->glow);
-    }
 
     switch (item) {
         case 0: first = "START"; second = "GAME"; break;
