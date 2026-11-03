@@ -138,7 +138,7 @@ int EspMainMenuSkin_paint(uint16_t* fb, int stride,
         default: first = "HELP"; second = "ABOUT"; break;
     }
     word(fb, stride, l, t, r, b, first,
-         t + (second != NULL ? 2 : 6) +
+         t + (second != NULL ? 3 : 6) +
          (state == ESP_MAIN_MENU_SKIN_CONFIRM ? 1 : 0), p->text);
     if (second != NULL)
         word(fb, stride, l, t, r, b, second,
