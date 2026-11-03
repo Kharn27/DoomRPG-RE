@@ -134,7 +134,7 @@ int EspMainMenuSkin_paint(uint16_t* fb, int stride,
     vertical(fb, stride, l, t + 3, b - 3, l, t, r, b, p->bevel);
     vertical(fb, stride, l + 1, t + 2, b - 2, l, t, r, b, p->steel);
     horizontal(fb, stride, l + 3, r - 3, b, l, t, r, b, p->shadow);
-    horizontal(fb, stride, l + 3, r - 3, b - 1, l, t, r, b, p->copper);
+    horizontal(fb, stride, l + 3, r - 3, b - 1, l, t, r, b, p->groove);
     vertical(fb, stride, r, t + 3, b - 3, l, t, r, b, p->shadow);
     vertical(fb, stride, r - 1, t + 2, b - 2, l, t, r, b, p->groove);
     dot(fb, stride, l + 2, t + 2, l, t, r, b, p->bevel);
