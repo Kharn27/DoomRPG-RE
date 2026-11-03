@@ -72,6 +72,14 @@ int main(void) {
             assert(EspMainMenuSkin_paint(fb, W, W, H, item,
                                         (EspMainMenuSkinState)state));
             assertOutsideCardUntouched(fb, item);
+            /* Physical look witness: a raised steel top and copper bottom
+             * edge in each state, not the earlier flat blue terminal rail. */
+            assert(fb[t * W + l + 10] ==
+                   (state == 0 ? 0x8c71U :
+                    state == 1 ? 0xb5b5U : 0x49c9U));
+            assert(fb[(b - 1) * W + l + 8] ==
+                   (state == 0 ? 0xb244U :
+                    state == 1 ? 0xfb24U : 0xeae4U));
             h = cardHash(fb, item);
             assert(h != 0);
             fingerprints[item][state] = h;
