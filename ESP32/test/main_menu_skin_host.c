@@ -36,7 +36,7 @@ static void assertOutsideCardUntouched(const uint16_t* fb, int card) {
     int l, t, r, b, x, y;
     int changed = 0;
     DoomRPG_esp32MainMenuCardRect(card, &l, &t, &r, &b);
-    assert(l == 104 && r == 157 && t == 13 + 25 * card &&
+    assert(l == 103 && r == 158 && t == 13 + 25 * card &&
            b == 32 + 25 * card);
     for (x = 0; x < GUARD; ++x) {
         assert(arena[x] == SENTINEL);
@@ -63,6 +63,15 @@ int main(void) {
     assert(DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH == 102);
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_HEIGHT == 20);
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_PITCH == 25);
+    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_WIDTH == 56);
+    /* Old child-screen cards retain the original 54px geometry. */
+    assert(DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT == 104);
+    assert(DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT == 157);
+    {
+        int ol, ot, oright, ob;
+        DoomRPG_esp32MainMenuCardRect(1, &ol, &ot, &oright, &ob);
+        assert(ol == 104 && oright == 157 && ot == 38 && ob == 57);
+    }
     for (item = 0; item < 4; ++item) {
         int l, t, r, b;
         DoomRPG_esp32MainMenuCardRect(item, &l, &t, &r, &b);
@@ -96,23 +105,23 @@ int main(void) {
             /* The new 4x6 words are centered inside exactly the same cards:
              * first glyph sample at a known set bit, never a font-bound guess. */
             {
-                const int firstX = l + (item == 0 ? 16 :
-                                           item == 1 ? 17 :
-                                           item == 2 ? 11 : 17);
+                const int firstX = l + (item == 0 ? 17 :
+                                           item == 1 ? 18 :
+                                           item == 2 ? 12 : 18);
                 const int firstY = t + (item == 2 ? 6 : 3) +
                                    (state == ESP_MAIN_MENU_SKIN_CONFIRM ? 1 : 0);
                 assert(fb[firstY * W + firstX] ==
                        (state == ESP_MAIN_MENU_SKIN_IDLE
-                            ? 0xd0c2U : 0xffffU));
+                            ? 0xe902U : 0xffffU));
             }
-            /* The red face is clean, with a restrained rusty/copper
-             * 1px underside and dark maroon diagonal. Crucially, the
-             * white selected lettering gets neither new bronze color. */
+            /* Deep-red face with sparse pale red-cream undersides only
+             * at exposed bottoms, not a halo. Armed white keeps its own
+             * dark engraving and has no cream pixels inside the text. */
             {
-                int face = 0, bronze = 0, darkDrop = 0;
+                int face = 0, cream = 0, darkDrop = 0;
                 int minX = W, maxX = 0;
                 const uint16_t faceColor =
-                    state == ESP_MAIN_MENU_SKIN_IDLE ? 0xd0c2U : 0xffffU;
+                    state == ESP_MAIN_MENU_SKIN_IDLE ? 0xe902U : 0xffffU;
                 for (int yy = t + 3; yy <= b - 2; ++yy)
                     for (int xx = l + 6; xx <= r - 6; ++xx) {
                         const uint16_t pixel = fb[yy * W + xx];
@@ -121,16 +130,16 @@ int main(void) {
                             if (xx < minX) minX = xx;
                             if (xx > maxX) maxX = xx;
                         }
-                        if (pixel == 0x92a0U) ++bronze;
+                        if (pixel == 0xfdd7U) ++cream;
                         if (pixel == 0x5100U) ++darkDrop;
                     }
                 assert(face > 20);
                 assert(maxX >= minX && maxX - minX < 34);
                 if (state == ESP_MAIN_MENU_SKIN_IDLE) {
-                    assert(bronze > 0);
+                    assert(cream > 0);
                     assert(darkDrop > 0);
                 } else {
-                    assert(bronze == 0 && darkDrop == 0);
+                    assert(cream == 0 && darkDrop == 0);
                 }
             }
             h = cardHash(fb, item);
