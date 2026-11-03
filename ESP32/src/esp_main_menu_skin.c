@@ -11,15 +11,15 @@ enum {
 };
 
 typedef struct {
-    uint16_t base, high, low, frame, copper, red, text;
+    uint16_t base, steel, bevel, shadow, groove, copper, glow, red, ink, typeFace;
 } SkinPalette;
 
-/* RGB565: graphite, cool upper bevel, black lower bevel, copper pilot strip.
- * Armed has a glowing red lip; CONFIRM is a pressed, darker permutation. */
+/* Warm forged graphite, steel shoulders and orange/copper light. Armed
+ * energizes the outer lip, not the whole card, and CONFIRM recesses it. */
 static const SkinPalette palettes[3] = {
-    {0x10a2U, 0x6b6dU, 0x0841U, 0x31a6U, 0x9b64U, 0x6002U, 0xe73cU},
-    {0x2083U, 0xad14U, 0x3001U, 0xf9c3U, 0xfd48U, 0xf1c2U, 0xffdfU},
-    {0x1082U, 0x51c9U, 0x0800U, 0xb101U, 0xe3a4U, 0xa082U, 0xff3aU}
+    {0x18c3U,0x3186U,0x8c71U,0x0800U,0x4a29U,0xb244U,0xf4c6U,0x7802U,0x68c0U,0xff39U},
+    {0x20c3U,0x3966U,0xb5b5U,0x1800U,0x6206U,0xfb24U,0xfe27U,0xe144U,0xc1e0U,0xffbdU},
+    {0x1082U,0x2965U,0x49c9U,0x0800U,0x3146U,0xeae4U,0xf4a5U,0xa0a1U,0x8820U,0xfd75U}
 };
 
 /* Five-wide 7-high capitals: 16 glyphs actually used on four cards.
@@ -65,8 +65,10 @@ static void vertical(uint16_t* fb, int stride, int x, int y0, int y1,
         dot(fb, stride, x, y, l, t, r, b, c);
 }
 
+/* Engraved/stamped text: a dark right-hand cut and warm copper lower
+ * relief beneath bright ivory strokes. Never paint outside the card. */
 static void word(uint16_t* fb, int stride, int l, int t, int r, int b,
-                 const char* value, int baselineY, uint16_t color) {
+                 const char* value, int baselineY, const SkinPalette* p) {
     int length = 0, i, row, bit;
     int x0;
     while (value[length] != '\0') ++length;
@@ -78,9 +80,13 @@ static void word(uint16_t* fb, int stride, int l, int t, int r, int b,
         if (letter < 0) continue;
         for (row = 0; row < 7; ++row)
             for (bit = 0; bit < 5; ++bit)
-                if ((glyphs[letter][row] & (uint8_t)(16U >> bit)) != 0U)
-                    dot(fb, stride, x0 + i * 6 + bit, baselineY + row,
-                        l, t, r, b, color);
+                if ((glyphs[letter][row] & (uint8_t)(16U >> bit)) != 0U) {
+                    const int x = x0 + i * 6 + bit;
+                    const int y = baselineY + row;
+                    dot(fb, stride, x + 1, y + 1, l, t, r, b, p->shadow);
+                    dot(fb, stride, x, y + 1, l, t, r, b, p->ink);
+                    dot(fb, stride, x, y, l, t, r, b, p->typeFace);
+                }
     }
 }
 
@@ -104,32 +110,53 @@ int EspMainMenuSkin_paint(uint16_t* fb, int stride,
         r - l + 1 != 54 || b - t + 1 != 20) return 0;
 
     p = &palettes[(int)state];
+
+    /* Forged outer mounting flange: vertical light falloff and dark,
+     * diagonally bitten corners instead of a blue rectangular UI pane. */
     for (y = t; y <= b; ++y)
-        for (x = l; x <= r; ++x)
-            dot(fb, stride, x, y, l, t, r, b, p->base);
+        for (x = l; x <= r; ++x) {
+            const int dx = x - l;
+            const int dy = y - t;
+            uint16_t color = p->base;
+            if (dy < 5) color = p->steel;
+            else if (dy > 16) color = p->shadow;
+            if ((dx == 0 || dx == 53) && (dy < 2 || dy > 17))
+                color = p->shadow;
+            if ((dx < 2 || dx > 51) && (dy == 0 || dy == 19))
+                color = p->shadow;
+            dot(fb, stride, x, y, l, t, r, b, color);
+        }
 
-    /* Angular double rim, not a rounded glass phone button. */
-    horizontal(fb, stride, l + 2, r - 2, t, l, t, r, b, p->high);
-    vertical(fb, stride, l, t + 2, b - 2, l, t, r, b, p->high);
-    horizontal(fb, stride, l + 2, r - 2, b, l, t, r, b, p->low);
-    vertical(fb, stride, r, t + 2, b - 2, l, t, r, b, p->low);
+    /* Raised upper/left steel bevel, recessed black lower/right edge. */
+    horizontal(fb, stride, l + 3, r - 3, t, l, t, r, b, p->bevel);
+    horizontal(fb, stride, l + 2, r - 2, t + 1, l, t, r, b, p->steel);
+    vertical(fb, stride, l, t + 3, b - 3, l, t, r, b, p->bevel);
+    vertical(fb, stride, l + 1, t + 2, b - 2, l, t, r, b, p->steel);
+    horizontal(fb, stride, l + 3, r - 3, b, l, t, r, b, p->shadow);
+    horizontal(fb, stride, l + 3, r - 3, b - 1, l, t, r, b, p->copper);
+    vertical(fb, stride, r, t + 3, b - 3, l, t, r, b, p->shadow);
+    vertical(fb, stride, r - 1, t + 2, b - 2, l, t, r, b, p->groove);
+    dot(fb, stride, l + 2, t + 2, l, t, r, b, p->bevel);
+    dot(fb, stride, r - 2, t + 2, l, t, r, b, p->groove);
+    dot(fb, stride, l + 2, b - 2, l, t, r, b, p->shadow);
+    dot(fb, stride, r - 2, b - 2, l, t, r, b, p->copper);
 
-    horizontal(fb, stride, l + 3, r - 3, t + 2, l, t, r, b, p->frame);
-    vertical(fb, stride, l + 2, t + 3, b - 3, l, t, r, b, p->frame);
-    horizontal(fb, stride, l + 3, r - 3, b - 2, l, t, r, b, p->low);
-    vertical(fb, stride, r - 2, t + 3, b - 3, l, t, r, b, p->low);
+    /* Split inset top lip: the hot strokes stop before the text. */
+    horizontal(fb, stride, l + 6, r - 7, t + 2, l, t, r, b, p->shadow);
+    horizontal(fb, stride, l + 7, l + 10, t + 3, l, t, r, b, p->copper);
+    horizontal(fb, stride, r - 14, r - 7, t + 3, l, t, r, b, p->copper);
+    horizontal(fb, stride, r - 12, r - 8, t + 4, l, t, r, b, p->glow);
+    horizontal(fb, stride, l + 7, r - 8, b - 3, l, t, r, b, p->groove);
+    horizontal(fb, stride, l + 9, r - 10, b - 2, l, t, r, b, p->copper);
+    vertical(fb, stride, l + 3, t + 6, b - 6, l, t, r, b, p->red);
+    vertical(fb, stride, l + 4, t + 7, b - 7, l, t, r, b, p->copper);
 
-    /* Brushed steel break lines and a short dim copper pilot lamp. */
-    horizontal(fb, stride, l + 10, r - 10, t + 1, l, t, r, b, p->low);
-    horizontal(fb, stride, l + 18, r - 10, b - 1, l, t, r, b, p->low);
-    horizontal(fb, stride, r - 12, r - 7, t + 3, l, t, r, b, p->copper);
-    vertical(fb, stride, l + 3, t + 7, b - 7, l, t, r, b, p->red);
-
-    /* Two small screw heads outside the centered text-safe region. */
-    dot(fb, stride, l + 4, t + 4, l, t, r, b, p->low);
-    dot(fb, stride, l + 4, t + 3, l, t, r, b, p->high);
-    dot(fb, stride, r - 4, b - 4, l, t, r, b, p->low);
-    dot(fb, stride, r - 4, b - 5, l, t, r, b, p->copper);
+    /* Two simplified slotted rivets, leaving OPTIONS legible. */
+    dot(fb, stride, l + 5, t + 5, l, t, r, b, p->shadow);
+    dot(fb, stride, l + 5, t + 4, l, t, r, b, p->bevel);
+    dot(fb, stride, r - 5, b - 4, l, t, r, b, p->shadow);
+    dot(fb, stride, r - 5, b - 5, l, t, r, b, p->bevel);
+    horizontal(fb, stride, r - 12, r - 8, t + 5, l, t, r, b, p->glow);
 
     switch (item) {
         case 0: first = "START"; second = "GAME"; break;
@@ -139,9 +166,9 @@ int EspMainMenuSkin_paint(uint16_t* fb, int stride,
     }
     word(fb, stride, l, t, r, b, first,
          t + (second != NULL ? 3 : 6) +
-         (state == ESP_MAIN_MENU_SKIN_CONFIRM ? 1 : 0), p->text);
+         (state == ESP_MAIN_MENU_SKIN_CONFIRM ? 1 : 0), p);
     if (second != NULL)
         word(fb, stride, l, t, r, b, second,
-             t + 11 + (state == ESP_MAIN_MENU_SKIN_CONFIRM ? 1 : 0), p->text);
+             t + 11 + (state == ESP_MAIN_MENU_SKIN_CONFIRM ? 1 : 0), p);
     return 1;
 }
