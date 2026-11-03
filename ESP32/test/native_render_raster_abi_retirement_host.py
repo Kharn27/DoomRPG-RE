@@ -295,7 +295,7 @@ assert "int nodeRasterCount;" in HEADER
 assert "int spriteRasterCount;" in HEADER
 assert "byte spanMode;" in HEADER and "int numLines;" in HEADER
 assert "boolean skipCull;" in HEADER
-assert "sizeof(Render_t) == 1228U" in startup
+assert "sizeof(Render_t) == 204U" in startup
 
 # PR239: map-wide BSP I/O buffer and read cursor only exist in desktop
 # Render_beginLoadMap/Data. The ESP32 reads native immutable BSP inventory
@@ -420,7 +420,7 @@ for member in ("mapName", "mapNameID", "loadMapID", "introColor",
                 + member + r"\b", clean), (
                 "retired map-header Render field referenced by native", path, member)
 assert "render->mapCameraSpawnIndex = 0;" not in root
-assert "sizeof(Render_t) == 1228U" in (
+assert "sizeof(Render_t) == 204U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 
 # Post-#245-B on the same PR: desktop BSP allocation/inventory counts
@@ -441,7 +441,7 @@ assert re.search(
 assert re.search(
     r"render->mapStringsIDs = NULL;\s+render->mapStringCount = 0;\s+#endif",
     startup)
-assert "sizeof(Render_t) == 1228U" in startup
+assert "sizeof(Render_t) == 204U" in startup
 
 # The sprite renderer is the other owner of transactional frame scratch.
 # Its clipping/projection lines are function-local too. No CYD Render_t
@@ -450,7 +450,7 @@ sprite = (NATIVE / "src/esp_native_sprite_renderer.c").read_text()
 assert "Line_t tmpLine;" not in sprite
 assert "->tmpLine" not in sprite
 assert "_Static_assert(sizeof(Scratch) <= 740U" in sprite
-assert "sizeof(Render_t) == 1228U" in (
+assert "sizeof(Render_t) == 204U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 assert re.search(
     r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"

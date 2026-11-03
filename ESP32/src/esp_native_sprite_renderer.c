@@ -6,6 +6,7 @@
 
 #include "DoomRPG.h"
 #include "Render.h"
+#include "esp_native_trig.h"
 #include "esp_render_geometry_primitives.h"
 #include "esp_native_dynamic_clip.h"
 #include <esp_timer.h>
@@ -398,8 +399,12 @@ static int setupDrawView(Render_t* render,
         return 0;
     }
 
-    sin_ = render->sinTable[view->viewAngle & 255];
-    cos_ = render->sinTable[(view->viewAngle + 64) & 255];
+    {
+        const int32_t* const trig = EspNativeTrig_view();
+        if (trig == NULL) return 0;
+        sin_ = trig[view->viewAngle & 255];
+        cos_ = trig[(view->viewAngle + 64) & 255];
+    }
     viewX = view->viewX - ((16 * cos_) >> 16);
     viewY = view->viewY + ((16 * sin_) >> 16);
 

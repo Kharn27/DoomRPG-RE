@@ -199,7 +199,10 @@ typedef struct Render_s
 	int viewSin;
 	int viewCos;
 	int viewTransY;
+/* Desktop-only. ESP32 sine data is a permanent independent native owner. */
+#ifndef DOOMRPG_ESP32
 	int sinTable[256];
+#endif
 	/* Native BSP frustum culling still consumes skipCull. All other flags
      * in this cluster exclusively controlled the retired desktop raster. */
 #ifndef DOOMRPG_ESP32
