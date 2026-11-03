@@ -61,10 +61,10 @@ assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT") == 102
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT") == 159
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT") == 104
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT") == 157
-# Main-only 22px tall buttons; Options retains its 54x20 rectangles.
+# Main-only 24px tall buttons; Options retains its 54x20 rectangles.
 assert macro(layout, "DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_LEFT") == 104
 assert macro(layout, "DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_RIGHT") == 157
-assert macro(layout, "DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_HEIGHT") == 22
+assert macro(layout, "DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_HEIGHT") == 24
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_FIRST_TOP") == 13
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_HEIGHT") == 20
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_PITCH") == 25
@@ -265,7 +265,7 @@ int main(void) {
         int l, t, r, b;
         DoomRPG_esp32IndustrialMainCardRect(i, &l, &t, &r, &b);
         assert(l == 104 && r == 157 && t == 13 + 25 * i);
-        assert(b == 34 + 25 * i); /* +2px height; 3px inter-card gap */
+        assert(b == 36 + 25 * i); /* +4px height; 1px inter-card gap */
         assert(l > DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT);
         assert(r < DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT);
         if (i < 3) assert(b < DOOMRPG_ESP32_MAIN_MENU_CARD_TOP(i+1));
