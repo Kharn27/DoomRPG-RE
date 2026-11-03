@@ -460,10 +460,15 @@ int DoomRPG_esp32PaintMenuDashboardCards(
     fillRect565(render, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT + 1,
                 5, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT + 2,
                 115, industrialMain ? 0x3105U : MAIN_DOOM_METAL_HI);
-    fillRect565(render, 105, 7, 125, 8, MAIN_DOOM_RED);
-    fillRect565(render, 127, 7, 155, 8, ESP_HUB_COLOR_STEEL_DARK);
-    fillRect565(render, 105, 112, 155, 113, ESP_HUB_COLOR_STEEL_DARK);
-    fillRect565(render, 105, 112, 118, 112, MAIN_DOOM_RED);
+    if (!industrialMain) {
+        /* The child Options painter retains its original rail decorations.
+         * MENU_MAIN is deliberately clean: no red/grey bars above or below
+         * the four procedural plates. */
+        fillRect565(render, 105, 7, 125, 8, MAIN_DOOM_RED);
+        fillRect565(render, 127, 7, 155, 8, ESP_HUB_COLOR_STEEL_DARK);
+        fillRect565(render, 105, 112, 155, 113, ESP_HUB_COLOR_STEEL_DARK);
+        fillRect565(render, 105, 112, 118, 112, MAIN_DOOM_RED);
+    }
 
     if (industrialMain) {
         /* A warm 1px UAC conduit down the rail links the pressed-metal
