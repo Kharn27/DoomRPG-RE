@@ -473,10 +473,10 @@ int DoomRPG_esp32PaintMenuDashboardCards(
     if (industrialMain) {
         /* A warm 1px UAC conduit down the rail links the pressed-metal
          * controls. Outside every card/hitbox and logo; main-only. */
-        fillRect565(render, 158, 17, 158, 104, 0x7802U);
-        fillRect565(render, 158, 34, 158, 36, 0xfba5U);
-        fillRect565(render, 158, 59, 158, 61, 0xfba5U);
-        fillRect565(render, 158, 84, 158, 86, 0xfba5U);
+        fillRect565(render, 158, 17, 158, 104, 0xb320U);
+        fillRect565(render, 158, 34, 158, 36, 0xfda0U);
+        fillRect565(render, 158, 59, 158, 61, 0xfda0U);
+        fillRect565(render, 158, 84, 158, 86, 0xfda0U);
     }
 
     for (item = 0; item < DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT; ++item) {
