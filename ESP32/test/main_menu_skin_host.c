@@ -101,6 +101,20 @@ int main(void) {
                 assert(fb[firstY * W + firstX] ==
                        (state == 0 ? 0xf102U : 0xffffU));
             }
+            /* Only IDLE text gets the extra orange diagonal emboss:
+             * scan safely INSIDE the plate, away from the copper perimeter.
+             * Armed/Confirm already have their own dark lettering shadow. */
+            {
+                int orangeInnerPixels = 0;
+                for (int yy = t + 5; yy <= b - 3; ++yy)
+                    for (int xx = l + 7; xx <= r - 7; ++xx)
+                        if (fb[yy * W + xx] == 0xd380U)
+                            ++orangeInnerPixels;
+                if (state == ESP_MAIN_MENU_SKIN_IDLE)
+                    assert(orangeInnerPixels > 0);
+                else
+                    assert(orangeInnerPixels == 0);
+            }
             h = cardHash(fb, item);
             assert(h != 0);
             fingerprints[item][state] = h;
