@@ -14,12 +14,12 @@ typedef struct {
     uint16_t base, steel, bevel, shadow, groove, copper, glow, ink, typeFace;
 } SkinPalette;
 
-/* 4x6 Doom stencil: saturated red face and a pale red-cream undercut
- * ONLY below exposed Idle strokes; no fluorescent halo around every pixel.
- * Armed/Confirm retain their existing white face and dark shadow.
- * The four uniform copper/orange plate strokes remain unchanged. */
+/* 4x6 Doom title-inspired gold: bright yellow face with a small
+ * ivory highlight under the exposed Idle strokes and a dark ochre recess.
+ * Armed/Confirm retain their existing pure white face and dark shadow.
+ * All four uniform copper/orange plate strokes remain unchanged. */
 static const SkinPalette palettes[3] = {
-    {0x1082U,0x2124U,0x6b4dU,0x0800U,0x2965U,0xd380U,0xa2a1U,0x2104U,0xe902U},
+    {0x1082U,0x2124U,0x6b4dU,0x0800U,0x2965U,0xd380U,0xa2a1U,0x2104U,0xff29U},
     {0x2021U,0x49c3U,0xfba9U,0x1800U,0xb981U,0xfe00U,0xffc0U,0xc180U,0xffffU},
     {0x1800U,0x3962U,0xb2e4U,0x0800U,0x9040U,0xfca0U,0xff80U,0x9800U,0xffffU}
 };
@@ -68,18 +68,17 @@ static void vertical(uint16_t* fb, int stride, int x, int y0, int y1,
         dot(fb, stride, x, y, l, t, r, b, c);
 }
 
-/* Draw shadows first, faces last to avoid contaminating strokes.
- * Idle: deep maroon diagonal recess, cream-red reflected light ONLY on
- * exposed bottom edges of the 4x6 red stencil. This avoids the muddy
- * orange outline from V4.1; Armed/Confirm keep the exact dark engraving.
- * Five-pixel advance separates adjacent letters even with a shadow. */
+/* Shadows first, faces last; no contamination or bright full outline.
+ * Idle: dark ochre diagonal recess + ivory reflection ONLY on exposed
+ * lower edges of the yellow 4x6 stencil. Selected white stays untouched.
+ * The 5px advance separates adjacent letters even with a shadow. */
 static void word(uint16_t* fb, int stride, int l, int t, int r, int b,
                  const char* value, int baselineY, const SkinPalette* p) {
     int length = 0, pass, i, row, bit;
     int x0;
     const int idle = p == &palettes[ESP_MAIN_MENU_SKIN_IDLE];
-    const uint16_t drop = idle ? 0x5100U : p->shadow;
-    const uint16_t underside = idle ? 0xfdd7U : p->ink;
+    const uint16_t drop = idle ? 0x7140U : p->shadow;
+    const uint16_t underside = idle ? 0xfff5U : p->ink;
     while (value[length] != '\0') ++length;
     x0 = l + ((r - l + 1) - (length * 5 - 1)) / 2;
     for (pass = 0; pass < 3; ++pass) {
@@ -100,11 +99,10 @@ static void word(uint16_t* fb, int stride, int l, int t, int r, int b,
                                 dot(fb, stride, x + 1, y + 1,
                                     l, t, r, b, drop);
                             else {
-                                /* A narrow cream highlight ONLY at the
-                                 * bottom of a red stroke. Skip internal
-                                 * neighbors to keep the 4x6 counterforms
-                                 * clean; active white still uses its exact
-                                 * original down-shadow. */
+                                /* A narrow ivory highlight ONLY below
+                                 * an exposed yellow stroke. Skip internal
+                                 * neighbors so counterforms stay readable.
+                                 * Active white keeps its own down-shadow. */
                                 const uint8_t mask = (uint8_t)(8U >> bit);
                                 if (!idle || row == 5 ||
                                     (glyphs[letter][row + 1] & mask) == 0U)
@@ -135,7 +133,7 @@ int EspMainMenuSkin_paint(uint16_t* fb, int stride,
     if (l < DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT ||
         r >= width || t < 0 || b >= height ||
         r - l + 1 != DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_WIDTH ||
-        b - t + 1 != DOOMRPG_ESP32_MAIN_MENU_CARD_HEIGHT) return 0;
+        b - t + 1 != DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_HEIGHT) return 0;
 
     p = &palettes[(int)state];
 
@@ -147,8 +145,8 @@ int EspMainMenuSkin_paint(uint16_t* fb, int stride,
             const int dy = y - t;
             uint16_t color = p->base;
             if (dy < 5) color = p->steel;
-            else if (dy > 16) color = p->shadow;
-            if ((dx == 0 || dx == r - l) && (dy < 2 || dy > 17))
+            else if (dy > b - t - 3) color = p->shadow;
+            if ((dx == 0 || dx == r - l) && (dy < 2 || dy > b - t - 2))
                 color = p->shadow;
             if ((dx < 2 || dx > r - l - 2) && (dy == 0 || dy == 19))
                 color = p->shadow;
@@ -196,10 +194,10 @@ int EspMainMenuSkin_paint(uint16_t* fb, int stride,
         default: first = "HELP"; second = "ABOUT"; break;
     }
     word(fb, stride, l, t, r, b, first,
-         t + (second != NULL ? 3 : 6) +
+         t + (second != NULL ? 4 : 7) +
          (state == ESP_MAIN_MENU_SKIN_CONFIRM ? 1 : 0), p);
     if (second != NULL)
         word(fb, stride, l, t, r, b, second,
-             t + 11 + (state == ESP_MAIN_MENU_SKIN_CONFIRM ? 1 : 0), p);
+             t + 12 + (state == ESP_MAIN_MENU_SKIN_CONFIRM ? 1 : 0), p);
     return 1;
 }
