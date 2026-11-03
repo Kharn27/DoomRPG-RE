@@ -14,35 +14,37 @@ typedef struct {
     uint16_t base, steel, bevel, shadow, groove, copper, glow, ink, typeFace;
 } SkinPalette;
 
-/* Clean stencil: idle glyphs are weathered warm steel with a dark engraved
- * offset; armed/confirm glyphs remain exactly their previous bright white.
+/* Smaller 4x6 Doom stencil: oxblood-red face with a *burnt-bronze*
+ * undercut only in Idle. No neon/orange outline around whole glyphs.
+ * Armed and Confirm retain pure white RGB565 with dark engraving.
  * The four uniform copper/orange plate strokes remain unchanged. */
 static const SkinPalette palettes[3] = {
-    {0x1082U,0x2124U,0x6b4dU,0x0800U,0x2965U,0xd380U,0xa2a1U,0x2104U,0xd6b3U},
+    {0x1082U,0x2124U,0x6b4dU,0x0800U,0x2965U,0xd380U,0xa2a1U,0x2104U,0xd0c2U},
     {0x2021U,0x49c3U,0xfba9U,0x1800U,0xb981U,0xfe00U,0xffc0U,0xc180U,0xffffU},
     {0x1800U,0x3962U,0xb2e4U,0x0800U,0x9040U,0xfca0U,0xff80U,0x9800U,0xffffU}
 };
 
-/* Five-wide 7-high capitals: 16 glyphs actually used on four cards.
- * 112 immutable bytes instead of an asset, font heap or second framebuffer. */
+/* Custom readable 4x6 stencil. Each pixel is 2x2 on the physical CYD.
+ * Only the 16 uppercase glyphs used by MENU_MAIN: 96 bytes of ROM,
+ * no generated assets, font cache, heap or second framebuffer. */
 static const char letters[] = "ABDEGHILMNOPRSTU";
-static const uint8_t glyphs[16][7] = {
-    {14,17,17,31,17,17,17}, /* A */
-    {30,17,17,30,17,17,30}, /* B */
-    {30,17,17,17,17,17,30}, /* D */
-    {31,16,16,30,16,16,31}, /* E */
-    {15,16,16,23,17,17,15}, /* G */
-    {17,17,17,31,17,17,17}, /* H */
-    {14, 4, 4, 4, 4, 4,14}, /* I */
-    {16,16,16,16,16,16,31}, /* L */
-    {17,27,21,21,17,17,17}, /* M */
-    {17,25,21,19,17,17,17}, /* N */
-    {14,17,17,17,17,17,14}, /* O */
-    {30,17,17,30,16,16,16}, /* P */
-    {30,17,17,30,20,18,17}, /* R */
-    {15,16,16,14, 1, 1,30}, /* S */
-    {31, 4, 4, 4, 4, 4, 4}, /* T */
-    {17,17,17,17,17,17,14}  /* U */
+static const uint8_t glyphs[16][6] = {
+    { 6, 9,15, 9, 9, 9}, /* A */
+    {14, 9,14, 9, 9,14}, /* B */
+    {14, 9, 9, 9, 9,14}, /* D */
+    {15, 8,14, 8, 8,15}, /* E */
+    { 7, 8,11, 9, 9, 7}, /* G */
+    { 9, 9,15, 9, 9, 9}, /* H */
+    {15, 6, 6, 6, 6,15}, /* I */
+    { 8, 8, 8, 8, 8,15}, /* L */
+    { 9,15,15, 9, 9, 9}, /* M */
+    { 9,13,11, 9, 9, 9}, /* N */
+    { 6, 9, 9, 9, 9, 6}, /* O */
+    {14, 9,14, 8, 8, 8}, /* P */
+    {14, 9,14,10, 9, 9}, /* R */
+    { 7, 8, 6, 1, 1,14}, /* S */
+    {15, 6, 6, 6, 6, 6}, /* T */
+    { 9, 9, 9, 9, 9, 6}  /* U */
 };
 
 static void dot(uint16_t* fb, int stride, int x, int y,
@@ -66,34 +68,42 @@ static void vertical(uint16_t* fb, int stride, int x, int y0, int y1,
         dot(fb, stride, x, y, l, t, r, b, c);
 }
 
-/* Clean 5x7 stencil with a restrained dark, 1px lower-right engraving.
- * No hot copper anywhere inside the glyphs: copper belongs to the frame. */
+/* Draw all shadows first, THEN faces: foreground pixels are never
+ * contaminated by later orange shadows. A 1px bronze underline remains
+ * ONLY on actual glyph silhouettes (not a surrounding orange halo).
+ * The 5px advance separates neighboring characters even with a shadow. */
 static void word(uint16_t* fb, int stride, int l, int t, int r, int b,
                  const char* value, int baselineY, const SkinPalette* p) {
-    int length = 0, i, row, bit;
+    int length = 0, pass, i, row, bit;
     int x0;
+    const int idle = p == &palettes[ESP_MAIN_MENU_SKIN_IDLE];
+    const uint16_t drop = idle ? 0x5100U : p->shadow;
+    const uint16_t underside = idle ? 0x92a0U : p->ink;
     while (value[length] != '\0') ++length;
-    x0 = l + ((r - l + 1) - (length * 6 - 1)) / 2;
-    for (i = 0; i < length; ++i) {
-        int letter = -1, j;
-        for (j = 0; j < 16; ++j)
-            if (letters[j] == value[i]) { letter = j; break; }
-        if (letter < 0) continue;
-        for (row = 0; row < 7; ++row)
-            for (bit = 0; bit < 5; ++bit)
-                if ((glyphs[letter][row] & (uint8_t)(16U >> bit)) != 0U) {
-                    const int x = x0 + i * 6 + bit;
-                    const int y = baselineY + row;
-                    /* CONFIRM lowers text by 1px; prevent its shadow from
-                     * punching holes through the continuous bottom copper. */
-                    if (y + 1 < b) {
-                        dot(fb, stride, x + 1, y + 1,
-                            l, t, r, b, p->shadow);
-                        dot(fb, stride, x, y + 1,
-                            l, t, r, b, p->ink);
+    x0 = l + ((r - l + 1) - (length * 5 - 1)) / 2;
+    for (pass = 0; pass < 3; ++pass) {
+        for (i = 0; i < length; ++i) {
+            int letter = -1, j;
+            for (j = 0; j < 16; ++j)
+                if (letters[j] == value[i]) { letter = j; break; }
+            if (letter < 0) continue;
+            for (row = 0; row < 6; ++row)
+                for (bit = 0; bit < 4; ++bit)
+                    if ((glyphs[letter][row] & (uint8_t)(8U >> bit)) != 0U) {
+                        const int x = x0 + i * 5 + bit;
+                        const int y = baselineY + row;
+                        if (pass == 2) {
+                            dot(fb, stride, x, y, l, t, r, b, p->typeFace);
+                        } else if (y + 1 < b) {
+                            if (pass == 0)
+                                dot(fb, stride, x + 1, y + 1,
+                                    l, t, r, b, drop);
+                            else
+                                dot(fb, stride, x, y + 1,
+                                    l, t, r, b, underside);
+                        }
                     }
-                    dot(fb, stride, x, y, l, t, r, b, p->typeFace);
-                }
+        }
     }
 }
 
