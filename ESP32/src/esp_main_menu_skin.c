@@ -11,16 +11,16 @@ enum {
 };
 
 typedef struct {
-    uint16_t base, steel, bevel, shadow, groove, copper, glow, red, ink, typeFace;
+    uint16_t base, steel, bevel, shadow, groove, copper, glow, ink, typeFace;
 } SkinPalette;
 
-/* V4: Doom-red lettering while idle, pure RGB565 white while armed.
- * Four identical straight copper channels, instead of scattered sparks.
+/* Only idle glyphs are Doom-red; armed/confirm glyphs are white.
+ * Every continuous button stroke shares the same orange/copper per state.
  * No new frame, state, animation or allocation. */
 static const SkinPalette palettes[3] = {
-    {0x1082U,0x2124U,0x6b4dU,0x0800U,0x2965U,0x7a02U,0xa2a1U,0x8800U,0x4800U,0xf102U},
-    {0x2021U,0x49c3U,0xfba9U,0x1800U,0xb981U,0xfe00U,0xffc0U,0xf800U,0xc180U,0xffffU},
-    {0x1800U,0x3962U,0xb2e4U,0x0800U,0x9040U,0xfca0U,0xff80U,0xc800U,0x9800U,0xffffU}
+    {0x1082U,0x2124U,0x6b4dU,0x0800U,0x2965U,0xd380U,0xa2a1U,0x4800U,0xf102U},
+    {0x2021U,0x49c3U,0xfba9U,0x1800U,0xb981U,0xfe00U,0xffc0U,0xc180U,0xffffU},
+    {0x1800U,0x3962U,0xb2e4U,0x0800U,0x9040U,0xfca0U,0xff80U,0x9800U,0xffffU}
 };
 
 /* Five-wide 7-high capitals: 16 glyphs actually used on four cards.
@@ -158,9 +158,9 @@ int EspMainMenuSkin_paint(uint16_t* fb, int stride,
     horizontal(fb, stride, l + 7, r - 7, b,
                l, t, r, b, p->copper);
     vertical(fb, stride, l + 2, t + 6, b - 6,
-             l, t, r, b, p->red);
+             l, t, r, b, p->copper);
     vertical(fb, stride, r - 2, t + 6, b - 6,
-             l, t, r, b, p->red);
+             l, t, r, b, p->copper);
 
     /* One recessed rivet at each diagonal corner, away from labels. */
     dot(fb, stride, l + 5, t + 5, l, t, r, b, p->shadow);
