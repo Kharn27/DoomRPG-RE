@@ -17,7 +17,7 @@ static uint16_t arena[GUARD + W * H + GUARD];
 static uint32_t cardHash(const uint16_t* frame, int item) {
     uint32_t hash = 2166136261U;
     int l, t, r, b, x, y;
-    DoomRPG_esp32MainMenuCardRect(item, &l, &t, &r, &b);
+    DoomRPG_esp32IndustrialMainCardRect(item, &l, &t, &r, &b);
     for (y = t; y <= b; ++y) for (x = l; x <= r; ++x) {
         const uint16_t pixel = frame[y * W + x];
         hash = (hash ^ (uint8_t)pixel) * 16777619U;
@@ -35,7 +35,7 @@ static void resetFrame(void) {
 static void assertOutsideCardUntouched(const uint16_t* fb, int card) {
     int l, t, r, b, x, y;
     int changed = 0;
-    DoomRPG_esp32MainMenuCardRect(card, &l, &t, &r, &b);
+    DoomRPG_esp32IndustrialMainCardRect(card, &l, &t, &r, &b);
     assert(l == 103 && r == 158 && t == 13 + 25 * card &&
            b == 32 + 25 * card);
     for (x = 0; x < GUARD; ++x) {
@@ -74,7 +74,7 @@ int main(void) {
     }
     for (item = 0; item < 4; ++item) {
         int l, t, r, b;
-        DoomRPG_esp32MainMenuCardRect(item, &l, &t, &r, &b);
+        DoomRPG_esp32IndustrialMainCardRect(item, &l, &t, &r, &b);
         for (state = 0; state < 3; ++state) {
             uint32_t h;
             resetFrame();
