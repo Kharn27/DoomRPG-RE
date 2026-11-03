@@ -36,8 +36,8 @@ static void assertOutsideCardUntouched(const uint16_t* fb, int card) {
     int l, t, r, b, x, y;
     int changed = 0;
     DoomRPG_esp32IndustrialMainCardRect(card, &l, &t, &r, &b);
-    assert(l == 103 && r == 158 && t == 13 + 25 * card &&
-           b == 32 + 25 * card);
+    assert(l == 104 && r == 157 && t == 13 + 25 * card &&
+           b == 34 + 25 * card);
     for (x = 0; x < GUARD; ++x) {
         assert(arena[x] == SENTINEL);
         assert(arena[GUARD + W * H + x] == SENTINEL);
@@ -63,7 +63,12 @@ int main(void) {
     assert(DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH == 102);
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_HEIGHT == 20);
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_PITCH == 25);
-    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_WIDTH == 56);
+    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_WIDTH == 54);
+    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_HEIGHT == 22);
+    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(0) == 34);
+    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(1) == 59);
+    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(2) == 84);
+    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(3) == 109);
     /* Old child-screen cards retain the original 54px geometry. */
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT == 104);
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT == 157);
@@ -88,8 +93,8 @@ int main(void) {
             assert(fb[(b - 1) * W + l + 8] ==
                    (state == 0 ? 0x2965U :
                     state == 1 ? 0xb981U : 0x9040U));
-            /* Orange covers all four strokes at an identical RGB565 value.
-             * Doom red 0xf102 belongs exclusively to the idle lettering. */
+            /* Orange is the same across all four sides and four buttons;
+             * yellow-gold is reserved for the Idle lettering. */
             {
                 const uint16_t copper = state == 0 ? 0xd380U :
                                         state == 1 ? 0xfe00U : 0xfca0U;
@@ -105,23 +110,23 @@ int main(void) {
             /* The new 4x6 words are centered inside exactly the same cards:
              * first glyph sample at a known set bit, never a font-bound guess. */
             {
-                const int firstX = l + (item == 0 ? 17 :
-                                           item == 1 ? 18 :
-                                           item == 2 ? 12 : 18);
-                const int firstY = t + (item == 2 ? 6 : 3) +
+                const int firstX = l + (item == 0 ? 16 :
+                                           item == 1 ? 17 :
+                                           item == 2 ? 11 : 17);
+                const int firstY = t + (item == 2 ? 7 : 4) +
                                    (state == ESP_MAIN_MENU_SKIN_CONFIRM ? 1 : 0);
                 assert(fb[firstY * W + firstX] ==
                        (state == ESP_MAIN_MENU_SKIN_IDLE
-                            ? 0xe902U : 0xffffU));
+                            ? 0xff29U : 0xffffU));
             }
-            /* Deep-red face with sparse pale red-cream undersides only
-             * at exposed bottoms, not a halo. Armed white keeps its own
-             * dark engraving and has no cream pixels inside the text. */
+            /* Gold-yellow face with sparse ivory highlights at exposed
+             * bottoms, not a halo. Armed white keeps the original dark
+             * engraving without ivory inside the text. */
             {
-                int face = 0, cream = 0, darkDrop = 0;
+                int face = 0, ivory = 0, darkDrop = 0;
                 int minX = W, maxX = 0;
                 const uint16_t faceColor =
-                    state == ESP_MAIN_MENU_SKIN_IDLE ? 0xe902U : 0xffffU;
+                    state == ESP_MAIN_MENU_SKIN_IDLE ? 0xff29U : 0xffffU;
                 for (int yy = t + 3; yy <= b - 2; ++yy)
                     for (int xx = l + 6; xx <= r - 6; ++xx) {
                         const uint16_t pixel = fb[yy * W + xx];
@@ -130,16 +135,16 @@ int main(void) {
                             if (xx < minX) minX = xx;
                             if (xx > maxX) maxX = xx;
                         }
-                        if (pixel == 0xfdd7U) ++cream;
-                        if (pixel == 0x5100U) ++darkDrop;
+                        if (pixel == 0xfff5U) ++ivory;
+                        if (pixel == 0x7140U) ++darkDrop;
                     }
                 assert(face > 20);
                 assert(maxX >= minX && maxX - minX < 34);
                 if (state == ESP_MAIN_MENU_SKIN_IDLE) {
-                    assert(cream > 0);
+                    assert(ivory > 0);
                     assert(darkDrop > 0);
                 } else {
-                    assert(cream == 0 && darkDrop == 0);
+                    assert(ivory == 0 && darkDrop == 0);
                 }
             }
             h = cardHash(fb, item);
