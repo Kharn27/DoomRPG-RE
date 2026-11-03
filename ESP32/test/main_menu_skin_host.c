@@ -37,7 +37,7 @@ static void assertOutsideCardUntouched(const uint16_t* fb, int card) {
     int changed = 0;
     DoomRPG_esp32IndustrialMainCardRect(card, &l, &t, &r, &b);
     assert(l == 104 && r == 157 && t == 13 + 25 * card &&
-           b == 34 + 25 * card);
+           b == 36 + 25 * card);
     for (x = 0; x < GUARD; ++x) {
         assert(arena[x] == SENTINEL);
         assert(arena[GUARD + W * H + x] == SENTINEL);
@@ -64,11 +64,15 @@ int main(void) {
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_HEIGHT == 20);
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_PITCH == 25);
     assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_WIDTH == 54);
-    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_HEIGHT == 22);
-    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(0) == 34);
-    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(1) == 59);
-    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(2) == 84);
-    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(3) == 109);
+    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_HEIGHT == 24);
+    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(0) == 36);
+    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(1) == 61);
+    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(2) == 86);
+    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(3) == 111);
+    /* The cards now have exactly one logical row between them. */
+    for (int i = 0; i < 3; ++i)
+        assert(DOOMRPG_ESP32_MAIN_MENU_CARD_TOP(i + 1) -
+               DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(i) == 2);
     /* Old child-screen cards retain the original 54px geometry. */
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT == 104);
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT == 157);
@@ -113,15 +117,15 @@ int main(void) {
                 const int firstX = l + (item == 0 ? 16 :
                                            item == 1 ? 17 :
                                            item == 2 ? 11 : 17);
-                const int firstY = t + (item == 2 ? 7 : 4) +
+                const int firstY = t + (item == 2 ? 9 : 5) +
                                    (state == ESP_MAIN_MENU_SKIN_CONFIRM ? 1 : 0);
                 assert(fb[firstY * W + firstX] ==
                        (state == ESP_MAIN_MENU_SKIN_IDLE
                             ? 0xff29U : 0xffffU));
             }
-            /* Gold-yellow face with sparse ivory highlights at exposed
-             * bottoms, not a halo. Armed white keeps the original dark
-             * engraving without ivory inside the text. */
+            /* Gold face with a distinct one-pixel DARK oxblood shadow.
+             * No cream/light stroke can thicken the unselected lettering.
+             * Selected white keeps its original dark engraving. */
             {
                 int face = 0, ivory = 0, darkDrop = 0;
                 int minX = W, maxX = 0;
@@ -136,12 +140,12 @@ int main(void) {
                             if (xx > maxX) maxX = xx;
                         }
                         if (pixel == 0xfff5U) ++ivory;
-                        if (pixel == 0x7140U) ++darkDrop;
+                        if (pixel == 0x5800U) ++darkDrop;
                     }
                 assert(face > 20);
                 assert(maxX >= minX && maxX - minX < 34);
                 if (state == ESP_MAIN_MENU_SKIN_IDLE) {
-                    assert(ivory > 0);
+                    assert(ivory == 0);
                     assert(darkDrop > 0);
                 } else {
                     assert(ivory == 0 && darkDrop == 0);
