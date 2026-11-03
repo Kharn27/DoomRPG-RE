@@ -36,4 +36,19 @@ for forbidden in ("malloc(", "calloc(", "realloc(", "free(", "esp_timer", "SDL_"
     assert forbidden not in skin, forbidden
 assert "ESP_MAIN_MENU_SKIN_CONFIRM" in skin
 assert "if (second != NULL)" in skin
+# V4: four precisely matched channels, no scattered or state-specific sparks.
+assert "0xf102U" in skin and "0xffffU" in skin
+assert "horizontal(fb, stride, l + 7, r - 7, t + 2," in skin
+assert "horizontal(fb, stride, l + 7, r - 7, b," in skin
+assert "vertical(fb, stride, l + 2, t + 6, b - 6," in skin
+assert "vertical(fb, stride, r - 2, t + 6, b - 6," in skin
+assert "if (state == ESP_MAIN_MENU_SKIN_ARMED)" not in skin
+# Only Options keeps its historical top/bottom decoration; MENU_MAIN removes it.
+rail = menu[menu.index("int DoomRPG_esp32PaintMenuDashboardCards("):
+            menu.index("/* The child reuses the same protected right rail;")]
+assert "if (!industrialMain) {" in rail
+assert rail.index("if (!industrialMain) {") < rail.index(
+    "fillRect565(render, 105, 7, 125, 8, MAIN_DOOM_RED);")
+assert rail.index("if (!industrialMain) {") < rail.index(
+    "fillRect565(render, 105, 112, 118, 112, MAIN_DOOM_RED);")
 print("[MENUSKIN-INTEGRATION] PASS main-only, actions 0..3, untouched touch/Options, no heap or IO")
