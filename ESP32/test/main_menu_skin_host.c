@@ -99,21 +99,30 @@ int main(void) {
                                            item == 2 ? 7 : 15);
                 const int firstY = t + (item == 2 ? 6 : 3) + (state == 2 ? 1 : 0);
                 assert(fb[firstY * W + firstX] ==
-                       (state == 0 ? 0xf102U : 0xffffU));
+                       (state == 0 ? 0xd6b3U : 0xffffU));
+                /* A visible 1px engraved dark offset on every label;
+                 * selected glyphs must retain their original dark shadow. */
+                const int shadowX = l + (item == 0 ? 17 :
+                                         item == 1 ? 16 :
+                                         item == 2 ? 23 : 20);
+                assert(fb[(firstY + 1) * W + shadowX] ==
+                       (state == 1 ? 0x1800U : 0x0800U));
             }
-            /* Only IDLE text gets the extra orange diagonal emboss:
-             * scan safely INSIDE the plate, away from the copper perimeter.
-             * Armed/Confirm already have their own dark lettering shadow. */
+            /* The copper must stay on the four plate strokes, never
+             * become a noisy orange drop-shadow in the 5x7 text region. */
             {
                 int orangeInnerPixels = 0;
+                int engravedInkPixels = 0;
                 for (int yy = t + 5; yy <= b - 3; ++yy)
-                    for (int xx = l + 7; xx <= r - 7; ++xx)
+                    for (int xx = l + 7; xx <= r - 7; ++xx) {
                         if (fb[yy * W + xx] == 0xd380U)
                             ++orangeInnerPixels;
+                        if (fb[yy * W + xx] == 0x2104U)
+                            ++engravedInkPixels;
+                    }
+                assert(orangeInnerPixels == 0);
                 if (state == ESP_MAIN_MENU_SKIN_IDLE)
-                    assert(orangeInnerPixels > 0);
-                else
-                    assert(orangeInnerPixels == 0);
+                    assert(engravedInkPixels > 0);
             }
             h = cardHash(fb, item);
             assert(h != 0);
