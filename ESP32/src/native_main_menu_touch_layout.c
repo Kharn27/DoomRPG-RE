@@ -130,8 +130,8 @@ static uint32_t dashboardLayoutHash(void) {
     hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT);
     hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP);
     hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM);
-    hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT);
-    hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT);
+    hash = fnvMixU32(hash, DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_LEFT);
+    hash = fnvMixU32(hash, DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_RIGHT);
     hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_CARD_FIRST_TOP);
     hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_CARD_HEIGHT);
     hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_CARD_PITCH);
@@ -208,6 +208,13 @@ static int validatePresentationContract(DoomRPG_t* doomRpg,
             DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT ||
         DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT >=
             DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT ||
+        /* The 56px main-only extension leaves one pixel of rail frame on
+         * both sides; legacy Options hitboxes stay 104..157. */
+        DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_LEFT <=
+            DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT ||
+        DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_RIGHT >=
+            DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT ||
+        DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_WIDTH != 56 ||
         DOOMRPG_ESP32_MAIN_MENU_CARD_TOP(0) <=
             DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP ||
         DOOMRPG_ESP32_MAIN_MENU_CARD_BOTTOM(3) >=
@@ -795,7 +802,7 @@ int DoomRPG_esp32RepaintOpaqueMainMenu(struct DoomRPG_s* doomRpgBase,
            (unsigned int)composeMs,
            (unsigned int)heapAfter,
            (unsigned int)largestAfter);
-    printf("[MAINOPAQUE] TARGET layout=split logo=102x120@0,0 stretched=yes unframed=yes rail=x102..159 cards=54x20 logical=108x40 physical palette=industrial-procedural idle=metal focus=orange-red cursorPatchBytes=0\n");
+    printf("[MAINOPAQUE] TARGET layout=split logo=102x120@0,0 stretched=yes unframed=yes rail=x102..159 cards=56x20 logical=112x40 physical palette=industrial-procedural idle=metal focus=orange-red cursorPatchBytes=0\n");
 
     printf("[MENUSKIN] COMPOSE us=%u state=IDLE wholeMenu=yes framebuffer=single\n",
            (unsigned int)composeUs);
