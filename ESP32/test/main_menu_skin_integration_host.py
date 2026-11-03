@@ -35,7 +35,7 @@ for unchanged in ("#define DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT 104",
 # Main-only HEIGHT extension must be shared by paint + touch, not Options.
 assert "#define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_LEFT 104" in layout
 assert "#define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_RIGHT 157" in layout
-assert "#define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_HEIGHT 22" in layout
+assert "#define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_HEIGHT 24" in layout
 assert "DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(item)" in layout
 assert "DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_HEIGHT" in skin
 assert "DoomRPG_esp32IndustrialMainCardRect(item, &l, &t, &r, &b)" in skin
@@ -46,14 +46,15 @@ for forbidden in ("malloc(", "calloc(", "realloc(", "free(", "esp_timer", "SDL_"
     assert forbidden not in skin, forbidden
 assert "ESP_MAIN_MENU_SKIN_CONFIRM" in skin
 assert "if (second != NULL)" in skin
-# One bounded 4x6 custom font, a gold-yellow face and *sparse*
-# ivory underside on Idle only; white Armed/Confirm unchanged.
+# One bounded 4x6 custom font; yellow Idle with a single distinct
+# DARK oxblood shadow, never a pale lower underline. White active unchanged.
 assert "glyphs[16][6]" in skin
 assert "length * 5 - 1" in skin
 assert "row < 6" in skin and "bit < 4" in skin
 assert "0xff29U" in skin and "0xffffU" in skin
-assert "0xfff5U" in skin and "0x7140U" in skin
-assert "glyphs[letter][row + 1] & mask" in skin
+assert "0x5800U" in skin and "0xfff5U" not in skin
+assert "0x7140U" not in skin
+assert "else if (!idle)" in skin
 assert "0xe902U" not in skin and "0xfdd7U" not in skin
 assert "0xf102U" not in skin and "0xd6b3U" not in skin
 assert "diagonalShadow" not in skin
