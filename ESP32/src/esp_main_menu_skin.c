@@ -84,8 +84,14 @@ static void word(uint16_t* fb, int stride, int l, int t, int r, int b,
                 if ((glyphs[letter][row] & (uint8_t)(16U >> bit)) != 0U) {
                     const int x = x0 + i * 6 + bit;
                     const int y = baselineY + row;
-                    dot(fb, stride, x + 1, y + 1, l, t, r, b, p->shadow);
-                    dot(fb, stride, x, y + 1, l, t, r, b, p->ink);
+                    /* CONFIRM lowers text by 1px; prevent its shadow from
+                     * punching holes through the continuous bottom copper. */
+                    if (y + 1 < b) {
+                        dot(fb, stride, x + 1, y + 1,
+                            l, t, r, b, p->shadow);
+                        dot(fb, stride, x, y + 1,
+                            l, t, r, b, p->ink);
+                    }
                     dot(fb, stride, x, y, l, t, r, b, p->typeFace);
                 }
     }
