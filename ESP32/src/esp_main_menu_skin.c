@@ -72,6 +72,10 @@ static void word(uint16_t* fb, int stride, int l, int t, int r, int b,
                  const char* value, int baselineY, const SkinPalette* p) {
     int length = 0, i, row, bit;
     int x0;
+    /* One orange diagonal emboss pixel ONLY for Doom-red idle glyphs.
+     * Armed/Confirm retain their exact previous dark shadow and white face. */
+    const uint16_t diagonalShadow =
+        p->typeFace == 0xf102U ? p->copper : p->shadow;
     while (value[length] != '\0') ++length;
     x0 = l + ((r - l + 1) - (length * 6 - 1)) / 2;
     for (i = 0; i < length; ++i) {
@@ -88,7 +92,7 @@ static void word(uint16_t* fb, int stride, int l, int t, int r, int b,
                      * punching holes through the continuous bottom copper. */
                     if (y + 1 < b) {
                         dot(fb, stride, x + 1, y + 1,
-                            l, t, r, b, p->shadow);
+                            l, t, r, b, diagonalShadow);
                         dot(fb, stride, x, y + 1,
                             l, t, r, b, p->ink);
                     }
