@@ -14,11 +14,11 @@ typedef struct {
     uint16_t base, steel, bevel, shadow, groove, copper, glow, ink, typeFace;
 } SkinPalette;
 
-/* Only idle glyphs are Doom-red; armed/confirm glyphs are white.
- * Every continuous button stroke shares the same orange/copper per state.
- * No new frame, state, animation or allocation. */
+/* Clean stencil: idle glyphs are weathered warm steel with a dark engraved
+ * offset; armed/confirm glyphs remain exactly their previous bright white.
+ * The four uniform copper/orange plate strokes remain unchanged. */
 static const SkinPalette palettes[3] = {
-    {0x1082U,0x2124U,0x6b4dU,0x0800U,0x2965U,0xd380U,0xa2a1U,0x4800U,0xf102U},
+    {0x1082U,0x2124U,0x6b4dU,0x0800U,0x2965U,0xd380U,0xa2a1U,0x2104U,0xd6b3U},
     {0x2021U,0x49c3U,0xfba9U,0x1800U,0xb981U,0xfe00U,0xffc0U,0xc180U,0xffffU},
     {0x1800U,0x3962U,0xb2e4U,0x0800U,0x9040U,0xfca0U,0xff80U,0x9800U,0xffffU}
 };
@@ -66,16 +66,12 @@ static void vertical(uint16_t* fb, int stride, int x, int y0, int y1,
         dot(fb, stride, x, y, l, t, r, b, c);
 }
 
-/* Engraved/stamped text: a dark right-hand cut and warm copper lower
- * relief beneath bright ivory strokes. Never paint outside the card. */
+/* Clean 5x7 stencil with a restrained dark, 1px lower-right engraving.
+ * No hot copper anywhere inside the glyphs: copper belongs to the frame. */
 static void word(uint16_t* fb, int stride, int l, int t, int r, int b,
                  const char* value, int baselineY, const SkinPalette* p) {
     int length = 0, i, row, bit;
     int x0;
-    /* One orange diagonal emboss pixel ONLY for Doom-red idle glyphs.
-     * Armed/Confirm retain their exact previous dark shadow and white face. */
-    const uint16_t diagonalShadow =
-        p->typeFace == 0xf102U ? p->copper : p->shadow;
     while (value[length] != '\0') ++length;
     x0 = l + ((r - l + 1) - (length * 6 - 1)) / 2;
     for (i = 0; i < length; ++i) {
@@ -92,7 +88,7 @@ static void word(uint16_t* fb, int stride, int l, int t, int r, int b,
                      * punching holes through the continuous bottom copper. */
                     if (y + 1 < b) {
                         dot(fb, stride, x + 1, y + 1,
-                            l, t, r, b, diagonalShadow);
+                            l, t, r, b, p->shadow);
                         dot(fb, stride, x, y + 1,
                             l, t, r, b, p->ink);
                     }
