@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <esp_timer.h>
 
 #include "DoomRPG.h"
 #include "DoomCanvas.h"
@@ -11,6 +12,7 @@
 #include "Render.h"
 
 #include "esp_native_gameplay_hub_theme.h"
+#include "esp_main_menu_skin.h"
 #include "native_main_menu_160x120_layout.h"
 #include "native_main_menu_model.h"
 #include "native_main_menu_touch.h"
@@ -423,6 +425,8 @@ int DoomRPG_esp32PaintMenuDashboardCards(
     Render_t* render;
     int item;
     uint32_t hash;
+    const int industrialMain = labels == dashboardLabels;
+    int64_t startUs = 0;
 
     if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) || labels == NULL ||
         selectedIndex < 0 ||
@@ -435,6 +439,7 @@ int DoomRPG_esp32PaintMenuDashboardCards(
     }
 
     render = doomRpg->render;
+    if (industrialMain) startUs = esp_timer_get_time();
 
     /* Bound every selection repaint to the right rail only. The original
      * PAK logo and its left stage must remain byte-exact, even after rapid
@@ -461,13 +466,26 @@ int DoomRPG_esp32PaintMenuDashboardCards(
     fillRect565(render, 105, 112, 118, 112, MAIN_DOOM_RED);
 
     for (item = 0; item < DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT; ++item) {
-        drawDashboardCard(doomRpg,
-                          item,
-                          labels[item],
-                          item == selectedIndex && armed &&
-                              (enabledMask & (uint8_t)(1U << item)) != 0U,
-                          armed && item == selectedIndex,
-                          (enabledMask & (uint8_t)(1U << item)) != 0U);
+        if (industrialMain) {
+            /* Exclusively MENU_MAIN. Options keeps its existing card painter,
+             * font, brightness/orientation screens and exact hitboxes. */
+            const EspMainMenuSkinState state =
+                armed && item == selectedIndex
+                    ? ESP_MAIN_MENU_SKIN_ARMED : ESP_MAIN_MENU_SKIN_IDLE;
+            if (!EspMainMenuSkin_paint((uint16_t*)render->framebuffer,
+                                       render->pitch / (int)sizeof(uint16_t),
+                                       DOOMRPG_LOGICAL_WIDTH,
+                                       DOOMRPG_LOGICAL_HEIGHT, item, state))
+                return 0;
+        } else {
+            drawDashboardCard(doomRpg,
+                              item,
+                              labels[item],
+                              item == selectedIndex && armed &&
+                                  (enabledMask & (uint8_t)(1U << item)) != 0U,
+                              armed && item == selectedIndex,
+                              (enabledMask & (uint8_t)(1U << item)) != 0U);
+        }
     }
 
     DoomRPG_setFontColor(doomRpg, 0xffffffffU);
@@ -475,6 +493,13 @@ int DoomRPG_esp32PaintMenuDashboardCards(
     hash = DoomRPG_esp32MainMenuFramebufferHash(render);
     if (hash == 0U) return 0;
     if (framebufferFNV != NULL) *framebufferFNV = hash;
+    if (industrialMain) {
+        const uint32_t repaintUs = (uint32_t)(esp_timer_get_time() - startUs);
+        printf("[MENUSKIN] REPAINT selected=%d state=%s us=%u heap8=%u largest8=%u allocations=persistent-0\n",
+               selectedIndex, armed ? "ARMED" : "IDLE",
+               (unsigned int)repaintUs, (unsigned int)heap8Free(),
+               (unsigned int)largest8Block());
+    }
     return 1;
 }
 
@@ -694,6 +719,8 @@ int DoomRPG_esp32RepaintOpaqueMainMenu(struct DoomRPG_s* doomRpgBase,
     uint32_t largestAfter;
     uint32_t composeStart;
     uint32_t composeMs;
+    int64_t composeStartUs;
+    uint32_t composeUs;
 
     if (doomRpg == NULL ||
         !adaptMainMenuForEsp32(doomRpg->menuSystem) ||
@@ -710,12 +737,14 @@ int DoomRPG_esp32RepaintOpaqueMainMenu(struct DoomRPG_s* doomRpgBase,
     heapBefore = heap8Free();
     largestBefore = largest8Block();
     composeStart = (uint32_t)DoomRPG_GetTimeMS();
+    composeStartUs = esp_timer_get_time();
 
     if (!drawTouchReadyMainMenuOpaque(doomRpg, &logoHash, &finalHash)) {
         printf("[MAINOPAQUE] FAILED finger-first dashboard composition\n");
         return 0;
     }
 
+    composeUs = (uint32_t)(esp_timer_get_time() - composeStartUs);
     composeMs = (uint32_t)DoomRPG_GetTimeMS() - composeStart;
 
     if (render->shapeData != NULL || render->mediaTexels != NULL ||
@@ -752,8 +781,10 @@ int DoomRPG_esp32RepaintOpaqueMainMenu(struct DoomRPG_s* doomRpgBase,
            (unsigned int)composeMs,
            (unsigned int)heapAfter,
            (unsigned int)largestAfter);
-    printf("[MAINOPAQUE] TARGET layout=split logo=102x120@0,0 stretched=yes unframed=yes rail=x102..159 cards=54x20 logical=108x40 physical palette=doom-red idle=neutral focus=single-border cursorPatchBytes=0\n");
+    printf("[MAINOPAQUE] TARGET layout=split logo=102x120@0,0 stretched=yes unframed=yes rail=x102..159 cards=54x20 logical=108x40 physical palette=industrial-procedural idle=metal focus=orange-red cursorPatchBytes=0\n");
 
+    printf("[MENUSKIN] COMPOSE us=%u state=IDLE wholeMenu=yes framebuffer=single\n",
+           (unsigned int)composeUs);
     SDL_RenderPresent(NULL);
 
     if (finalFramebufferFNV != NULL) *finalFramebufferFNV = finalHash;
