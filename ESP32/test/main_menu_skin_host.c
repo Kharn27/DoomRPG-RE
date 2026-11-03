@@ -93,36 +93,45 @@ int main(void) {
                     assert(fb[y * W + r - 2] == copper);
                 }
             }
+            /* The new 4x6 words are centered inside exactly the same cards:
+             * first glyph sample at a known set bit, never a font-bound guess. */
             {
-                const int firstX = l + (item == 0 ? 13 :
-                                           item == 1 ? 15 :
-                                           item == 2 ? 7 : 15);
-                const int firstY = t + (item == 2 ? 6 : 3) + (state == 2 ? 1 : 0);
+                const int firstX = l + (item == 0 ? 16 :
+                                           item == 1 ? 17 :
+                                           item == 2 ? 11 : 17);
+                const int firstY = t + (item == 2 ? 6 : 3) +
+                                   (state == ESP_MAIN_MENU_SKIN_CONFIRM ? 1 : 0);
                 assert(fb[firstY * W + firstX] ==
-                       (state == 0 ? 0xd6b3U : 0xffffU));
-                /* A visible 1px engraved dark offset on every label;
-                 * selected glyphs must retain their original dark shadow. */
-                const int shadowX = l + (item == 0 ? 17 :
-                                         item == 1 ? 16 :
-                                         item == 2 ? 23 : 20);
-                assert(fb[(firstY + 1) * W + shadowX] ==
-                       (state == 1 ? 0x1800U : 0x0800U));
+                       (state == ESP_MAIN_MENU_SKIN_IDLE
+                            ? 0xd0c2U : 0xffffU));
             }
-            /* The copper must stay on the four plate strokes, never
-             * become a noisy orange drop-shadow in the 5x7 text region. */
+            /* The red face is clean, with a restrained rusty/copper
+             * 1px underside and dark maroon diagonal. Crucially, the
+             * white selected lettering gets neither new bronze color. */
             {
-                int orangeInnerPixels = 0;
-                int engravedInkPixels = 0;
-                for (int yy = t + 5; yy <= b - 3; ++yy)
-                    for (int xx = l + 7; xx <= r - 7; ++xx) {
-                        if (fb[yy * W + xx] == 0xd380U)
-                            ++orangeInnerPixels;
-                        if (fb[yy * W + xx] == 0x2104U)
-                            ++engravedInkPixels;
+                int face = 0, bronze = 0, darkDrop = 0;
+                int minX = W, maxX = 0;
+                const uint16_t faceColor =
+                    state == ESP_MAIN_MENU_SKIN_IDLE ? 0xd0c2U : 0xffffU;
+                for (int yy = t + 3; yy <= b - 2; ++yy)
+                    for (int xx = l + 6; xx <= r - 6; ++xx) {
+                        const uint16_t pixel = fb[yy * W + xx];
+                        if (pixel == faceColor) {
+                            ++face;
+                            if (xx < minX) minX = xx;
+                            if (xx > maxX) maxX = xx;
+                        }
+                        if (pixel == 0x92a0U) ++bronze;
+                        if (pixel == 0x5100U) ++darkDrop;
                     }
-                assert(orangeInnerPixels == 0);
-                if (state == ESP_MAIN_MENU_SKIN_IDLE)
-                    assert(engravedInkPixels > 0);
+                assert(face > 20);
+                assert(maxX >= minX && maxX - minX < 34);
+                if (state == ESP_MAIN_MENU_SKIN_IDLE) {
+                    assert(bronze > 0);
+                    assert(darkDrop > 0);
+                } else {
+                    assert(bronze == 0 && darkDrop == 0);
+                }
             }
             h = cardHash(fb, item);
             assert(h != 0);
