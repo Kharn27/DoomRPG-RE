@@ -14,12 +14,15 @@ typedef struct {
     uint16_t base, steel, bevel, shadow, groove, copper, glow, red, ink, typeFace;
 } SkinPalette;
 
-/* Warm forged graphite, steel shoulders and orange/copper light. Armed
- * energizes the outer lip, not the whole card, and CONFIRM recesses it. */
+/* V3 visual priority at true 160x120:
+ * IDLE = cold graphite, dim copper, legible *muted* warm-grey letters.
+ * ARMED = powered copper/orange edge and pure white RGB565 lettering.
+ * CONFIRM = pressed variation, no extra present in two-tap dispatch.
+ * These are RGB565 constants, no runtime conversion or new storage. */
 static const SkinPalette palettes[3] = {
-    {0x18c3U,0x3186U,0x8c71U,0x0800U,0x4a29U,0xb244U,0xf4c6U,0x7802U,0x68c0U,0xff39U},
-    {0x20c3U,0x3966U,0xb5b5U,0x1800U,0x6206U,0xfb24U,0xfe27U,0xe144U,0xc1e0U,0xffbdU},
-    {0x1082U,0x2965U,0x49c9U,0x0800U,0x3146U,0xeae4U,0xf4a5U,0xa0a1U,0x8820U,0xfd75U}
+    {0x1082U,0x2124U,0x6b4dU,0x0800U,0x2965U,0x8200U,0xa2a1U,0x4800U,0x3000U,0xbdf7U},
+    {0x2021U,0x49c3U,0xfba9U,0x1800U,0xb981U,0xfd00U,0xffc0U,0xf800U,0xc180U,0xffffU},
+    {0x1800U,0x3962U,0xb2e4U,0x0800U,0x9040U,0xfca0U,0xff80U,0xc800U,0x9800U,0xffffU}
 };
 
 /* Five-wide 7-high capitals: 16 glyphs actually used on four cards.
@@ -157,6 +160,24 @@ int EspMainMenuSkin_paint(uint16_t* fb, int stride,
     dot(fb, stride, r - 5, b - 4, l, t, r, b, p->shadow);
     dot(fb, stride, r - 5, b - 5, l, t, r, b, p->bevel);
     horizontal(fb, stride, r - 12, r - 8, t + 5, l, t, r, b, p->glow);
+
+    if (state == ESP_MAIN_MENU_SKIN_ARMED) {
+        /* The entire pressed-metal plate visibly powers on. Keep hot strokes
+         * in the 2px frame/margins; NEVER run behind 5x7 text strokes.
+         * No timer, no fade, no extra present/latency on the second tap. */
+        horizontal(fb, stride, l + 7, r - 7, t + 2,
+                   l, t, r, b, p->copper);
+        horizontal(fb, stride, l + 13, r - 13, b - 2,
+                   l, t, r, b, p->glow);
+        horizontal(fb, stride, l + 6, r - 7, b - 1,
+                   l, t, r, b, p->copper);
+        vertical(fb, stride, l + 2, t + 6, b - 6,
+                 l, t, r, b, p->glow);
+        vertical(fb, stride, r - 2, t + 6, b - 6,
+                 l, t, r, b, p->copper);
+        dot(fb, stride, l + 6, t + 2, l, t, r, b, p->glow);
+        dot(fb, stride, r - 6, t + 2, l, t, r, b, p->glow);
+    }
 
     switch (item) {
         case 0: first = "START"; second = "GAME"; break;
