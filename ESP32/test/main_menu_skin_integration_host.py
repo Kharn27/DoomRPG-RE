@@ -32,17 +32,26 @@ for unchanged in ("#define DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT 104",
                   "#define DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT 157",
                   "#define DOOMRPG_ESP32_MAIN_MENU_CARD_HEIGHT 20"):
     assert unchanged in layout
+# Main-only extension must be shared by paint + touch, not Options.
+assert "#define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_LEFT 103" in layout
+assert "#define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_RIGHT 158" in layout
+assert "DoomRPG_esp32IndustrialMainCardRect(item, &l, &t, &r, &b)" in skin
+assert "DoomRPG_esp32IndustrialMainCardRect(item, left, top, right, bottom)" in touch
+assert "DoomRPG_esp32MainMenuCardRect(item, left, top, right, bottom)" not in touch
+assert "DoomRPG_esp32MainMenuCardRect(item, left, top, right, bottom)" in menu
 for forbidden in ("malloc(", "calloc(", "realloc(", "free(", "esp_timer", "SDL_", "PlatformVideo_present", "setRotation(", "EspAssetPack"):
     assert forbidden not in skin, forbidden
 assert "ESP_MAIN_MENU_SKIN_CONFIRM" in skin
 assert "if (second != NULL)" in skin
-# One bounded 4x6 custom font, a deep-red face and a dark bronze
-# underside only on idle; no previous fluorescent red/orange flood.
+# One bounded 4x6 custom font, a deep-red face and a *sparse*
+# red-cream underside on Idle only; white Armed/Confirm unchanged.
 assert "glyphs[16][6]" in skin
 assert "length * 5 - 1" in skin
 assert "row < 6" in skin and "bit < 4" in skin
-assert "0xd0c2U" in skin and "0xffffU" in skin
-assert "0x92a0U" in skin and "0x5100U" in skin
+assert "0xe902U" in skin and "0xffffU" in skin
+assert "0xfdd7U" in skin and "0x5100U" in skin
+assert "glyphs[letter][row + 1] & mask" in skin
+assert "0xd0c2U" not in skin and "0x92a0U" not in skin
 assert "0xf102U" not in skin and "0xd6b3U" not in skin
 assert "diagonalShadow" not in skin
 assert "horizontal(fb, stride, l + 7, r - 7, t + 2," in skin
