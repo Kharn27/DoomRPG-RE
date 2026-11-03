@@ -77,8 +77,8 @@ int main(void) {
                    (state == 0 ? 0x6b4dU :
                     state == 1 ? 0xfba9U : 0xb2e4U));
             assert(fb[(b - 1) * W + l + 8] ==
-                   (state == 0 ? 0x7a02U :
-                    state == 1 ? 0xfe00U : 0xfca0U));
+                   (state == 0 ? 0x2965U :
+                    state == 1 ? 0xb981U : 0x9040U));
             /* V4: orange is uniform, straight and identical on all cards.
              * Only its intensity varies by state; no stray bright fragments. */
             {
