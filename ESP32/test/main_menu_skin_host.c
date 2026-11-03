@@ -75,11 +75,24 @@ int main(void) {
             /* Physical look witness: a raised steel top and copper bottom
              * edge in each state, not the earlier flat blue terminal rail. */
             assert(fb[t * W + l + 10] ==
-                   (state == 0 ? 0x8c71U :
-                    state == 1 ? 0xb5b5U : 0x49c9U));
+                   (state == 0 ? 0x6b4dU :
+                    state == 1 ? 0xfba9U : 0xb2e4U));
             assert(fb[(b - 1) * W + l + 8] ==
-                   (state == 0 ? 0xb244U :
-                    state == 1 ? 0xfb24U : 0xeae4U));
+                   (state == 0 ? 0x8200U :
+                    state == 1 ? 0xfd00U : 0xfca0U));
+            /* The V3 arm must be unmissable in actual pixel semantics:
+             * idle has dark top recess, armed has hot saturated orange.
+             * Every label gets white 0xffff only when armed/confirmed. */
+            assert(fb[(t + 2) * W + l + 14] ==
+                   (state == 1 ? 0xfd00U : 0x0800U));
+            {
+                const int firstX = l + (item == 0 ? 13 :
+                                           item == 1 ? 15 :
+                                           item == 2 ? 7 : 15);
+                const int firstY = t + (item == 2 ? 6 : 3);
+                assert(fb[firstY * W + firstX] ==
+                       (state == 0 ? 0xbdf7U : 0xffffU));
+            }
             h = cardHash(fb, item);
             assert(h != 0);
             fingerprints[item][state] = h;
