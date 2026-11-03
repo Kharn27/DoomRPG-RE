@@ -79,20 +79,18 @@ int main(void) {
             assert(fb[(b - 1) * W + l + 8] ==
                    (state == 0 ? 0x2965U :
                     state == 1 ? 0xb981U : 0x9040U));
-            /* V4: orange is uniform, straight and identical on all cards.
-             * Only its intensity varies by state; no stray bright fragments. */
+            /* Orange covers all four strokes at an identical RGB565 value.
+             * Doom red 0xf102 belongs exclusively to the idle lettering. */
             {
-                const uint16_t copper = state == 0 ? 0x7a02U :
+                const uint16_t copper = state == 0 ? 0xd380U :
                                         state == 1 ? 0xfe00U : 0xfca0U;
-                const uint16_t red = state == 0 ? 0x8800U :
-                                     state == 1 ? 0xf800U : 0xc800U;
                 for (int x = l + 7; x <= r - 7; ++x) {
                     assert(fb[(t + 2) * W + x] == copper);
                     assert(fb[b * W + x] == copper);
                 }
                 for (int y = t + 7; y <= b - 7; ++y) {
-                    assert(fb[y * W + l + 2] == red);
-                    assert(fb[y * W + r - 2] == red);
+                    assert(fb[y * W + l + 2] == copper);
+                    assert(fb[y * W + r - 2] == copper);
                 }
             }
             {
