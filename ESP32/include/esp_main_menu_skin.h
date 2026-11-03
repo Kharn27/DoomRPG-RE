@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-/* Only MENU_MAIN's four fixed 54x22 logical plates. No runtime-owned state,
+/* Only MENU_MAIN's four fixed 54x24 logical plates. No runtime-owned state,
  * no texture/cache, no SDL dependency, no allocation or physical rotation.
  * CONFIRM is available for host proof/future usage but intentionally not
  * presented during the immediate two-tap dispatch (no extra frame latency). */
