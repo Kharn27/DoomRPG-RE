@@ -61,12 +61,16 @@ assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT") == 102
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT") == 159
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT") == 104
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT") == 157
+# Only four industrial main buttons are 56px; Options retains 54px.
+assert macro(layout, "DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_LEFT") == 103
+assert macro(layout, "DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_RIGHT") == 158
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_FIRST_TOP") == 13
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_HEIGHT") == 20
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_PITCH") == 25
 assert "DoomRPG_esp32MainMenuCardRect" in layout
 assert menu.count("DoomRPG_esp32MainMenuCardRect(") == 1
-assert touch.count("DoomRPG_esp32MainMenuCardRect(") == 1
+assert touch.count("DoomRPG_esp32MainMenuCardRect(") == 0
+assert touch.count("DoomRPG_esp32IndustrialMainCardRect(") == 1
 assert "return findHitItem(screenX / DOOMRPG_INTEGER_SCALE" in touch
 assert "DoomRPG_esp32MainMenuCardRect(item, &left, &top, &right, &bottom)" in options
 assert "DoomRPG_esp32MainMenuCardRect(OPTIONS_BACK_ITEM" in options
@@ -258,6 +262,10 @@ int main(void) {
            DOOMRPG_LOGICAL_HEIGHT);
     for (int i = 0; i < 4; ++i) {
         int l, t, r, b;
+        DoomRPG_esp32IndustrialMainCardRect(i, &l, &t, &r, &b);
+        assert(l == 103 && r == 158);
+        assert(l > DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT);
+        assert(r < DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT);
         DoomRPG_esp32MainMenuCardRect(i, &l, &t, &r, &b);
         assert(l == 104 && r == 157);
         assert(t == 13 + 25 * i && b == 32 + 25 * i);
