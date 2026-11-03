@@ -72,26 +72,36 @@ int main(void) {
             assert(EspMainMenuSkin_paint(fb, W, W, H, item,
                                         (EspMainMenuSkinState)state));
             assertOutsideCardUntouched(fb, item);
-            /* Physical look witness: a raised steel top and copper bottom
-             * edge in each state, not the earlier flat blue terminal rail. */
+            /* Exact V4 RGB565 witnesses: steel bevel and continuous copper lip. */
             assert(fb[t * W + l + 10] ==
                    (state == 0 ? 0x6b4dU :
                     state == 1 ? 0xfba9U : 0xb2e4U));
             assert(fb[(b - 1) * W + l + 8] ==
-                   (state == 0 ? 0x8200U :
-                    state == 1 ? 0xfd00U : 0xfca0U));
-            /* The V3 arm must be unmissable in actual pixel semantics:
-             * idle has dark top recess, armed has hot saturated orange.
-             * Every label gets white 0xffff only when armed/confirmed. */
-            assert(fb[(t + 2) * W + l + 14] ==
-                   (state == 1 ? 0xfd00U : 0x0800U));
+                   (state == 0 ? 0x7a02U :
+                    state == 1 ? 0xfe00U : 0xfca0U));
+            /* V4: orange is uniform, straight and identical on all cards.
+             * Only its intensity varies by state; no stray bright fragments. */
+            {
+                const uint16_t copper = state == 0 ? 0x7a02U :
+                                        state == 1 ? 0xfe00U : 0xfca0U;
+                const uint16_t red = state == 0 ? 0x8800U :
+                                     state == 1 ? 0xf800U : 0xc800U;
+                for (int x = l + 7; x <= r - 7; ++x) {
+                    assert(fb[(t + 2) * W + x] == copper);
+                    assert(fb[b * W + x] == copper);
+                }
+                for (int y = t + 7; y <= b - 7; ++y) {
+                    assert(fb[y * W + l + 2] == red);
+                    assert(fb[y * W + r - 2] == red);
+                }
+            }
             {
                 const int firstX = l + (item == 0 ? 13 :
                                            item == 1 ? 15 :
                                            item == 2 ? 7 : 15);
                 const int firstY = t + (item == 2 ? 6 : 3) + (state == 2 ? 1 : 0);
                 assert(fb[firstY * W + firstX] ==
-                       (state == 0 ? 0xbdf7U : 0xffffU));
+                       (state == 0 ? 0xf102U : 0xffffU));
             }
             h = cardHash(fb, item);
             assert(h != 0);
