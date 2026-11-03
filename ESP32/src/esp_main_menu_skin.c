@@ -14,10 +14,10 @@ typedef struct {
     uint16_t base, steel, bevel, shadow, groove, copper, glow, ink, typeFace;
 } SkinPalette;
 
-/* 4x6 Doom title-inspired gold: bright yellow face with a small
- * ivory highlight under the exposed Idle strokes and a dark ochre recess.
- * Armed/Confirm retain their existing pure white face and dark shadow.
- * All four uniform copper/orange plate strokes remain unchanged. */
+/* Doom gold 4x6 Idle glyphs get a truly DARK, one-pixel oxblood
+ * drop-shadow, NEVER an ivory/yellow underline that merges into the face.
+ * Armed/Confirm keep their established white glyphs and dark engraving.
+ * All uniform orange/copper plate strokes remain unchanged. */
 static const SkinPalette palettes[3] = {
     {0x1082U,0x2124U,0x6b4dU,0x0800U,0x2965U,0xd380U,0xa2a1U,0x2104U,0xff29U},
     {0x2021U,0x49c3U,0xfba9U,0x1800U,0xb981U,0xfe00U,0xffc0U,0xc180U,0xffffU},
@@ -68,17 +68,16 @@ static void vertical(uint16_t* fb, int stride, int x, int y0, int y1,
         dot(fb, stride, x, y, l, t, r, b, c);
 }
 
-/* Shadows first, faces last; no contamination or bright full outline.
- * Idle: dark ochre diagonal recess + ivory reflection ONLY on exposed
- * lower edges of the yellow 4x6 stencil. Selected white stays untouched.
- * The 5px advance separates adjacent letters even with a shadow. */
+/* Shadows first, faces last. Idle gets a single dark-red diagonal
+ * shadow; the bright lower stroke has been removed to keep each letter
+ * crisp against the graphite panel. Armed/Confirm retain BOTH original
+ * dark-shadow passes. The 5px advance prevents glyph collisions. */
 static void word(uint16_t* fb, int stride, int l, int t, int r, int b,
                  const char* value, int baselineY, const SkinPalette* p) {
     int length = 0, pass, i, row, bit;
     int x0;
     const int idle = p == &palettes[ESP_MAIN_MENU_SKIN_IDLE];
-    const uint16_t drop = idle ? 0x7140U : p->shadow;
-    const uint16_t underside = idle ? 0xfff5U : p->ink;
+    const uint16_t drop = idle ? 0x5800U : p->shadow;
     while (value[length] != '\0') ++length;
     x0 = l + ((r - l + 1) - (length * 5 - 1)) / 2;
     for (pass = 0; pass < 3; ++pass) {
@@ -98,17 +97,10 @@ static void word(uint16_t* fb, int stride, int l, int t, int r, int b,
                             if (pass == 0)
                                 dot(fb, stride, x + 1, y + 1,
                                     l, t, r, b, drop);
-                            else {
-                                /* A narrow ivory highlight ONLY below
-                                 * an exposed yellow stroke. Skip internal
-                                 * neighbors so counterforms stay readable.
-                                 * Active white keeps its own down-shadow. */
-                                const uint8_t mask = (uint8_t)(8U >> bit);
-                                if (!idle || row == 5 ||
-                                    (glyphs[letter][row + 1] & mask) == 0U)
-                                    dot(fb, stride, x, y + 1,
-                                        l, t, r, b, underside);
-                            }
+                            else if (!idle)
+                                /* White selected text stays pixel-identical. */
+                                dot(fb, stride, x, y + 1,
+                                    l, t, r, b, p->ink);
                         }
                     }
         }
@@ -148,7 +140,7 @@ int EspMainMenuSkin_paint(uint16_t* fb, int stride,
             else if (dy > b - t - 3) color = p->shadow;
             if ((dx == 0 || dx == r - l) && (dy < 2 || dy > b - t - 2))
                 color = p->shadow;
-            if ((dx < 2 || dx > r - l - 2) && (dy == 0 || dy == 19))
+            if ((dx < 2 || dx > r - l - 2) && (dy == 0 || dy == b - t))
                 color = p->shadow;
             dot(fb, stride, x, y, l, t, r, b, color);
         }
@@ -194,10 +186,10 @@ int EspMainMenuSkin_paint(uint16_t* fb, int stride,
         default: first = "HELP"; second = "ABOUT"; break;
     }
     word(fb, stride, l, t, r, b, first,
-         t + (second != NULL ? 4 : 7) +
+         t + (second != NULL ? 5 : 9) +
          (state == ESP_MAIN_MENU_SKIN_CONFIRM ? 1 : 0), p);
     if (second != NULL)
         word(fb, stride, l, t, r, b, second,
-             t + 12 + (state == ESP_MAIN_MENU_SKIN_CONFIRM ? 1 : 0), p);
+             t + 13 + (state == ESP_MAIN_MENU_SKIN_CONFIRM ? 1 : 0), p);
     return 1;
 }
