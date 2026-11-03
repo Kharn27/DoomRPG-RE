@@ -2,7 +2,6 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include <esp_timer.h>
 
 #include "DoomRPG.h"
 #include "DoomCanvas.h"
@@ -24,6 +23,7 @@
 
 /* Keep ESP-IDF's stdbool macros after DoomRPG's legacy boolean enum. */
 #include <esp_heap_caps.h>
+#include <esp_timer.h>
 
 #if DOOMRPG_LOGICAL_WIDTH != 160 || DOOMRPG_LOGICAL_HEIGHT != 120
 #error "The ESP32 touch-ready main menu is defined only for 160x120"
