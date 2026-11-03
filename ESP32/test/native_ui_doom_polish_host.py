@@ -130,6 +130,15 @@ assert "static const uint8_t glyphs[10][7]" in smallLabel
 assert "putPixel(render, x + ch * 5 + col, y + row, color)" in smallLabel
 assert "Esp32Backlight_isReady()" in options_painter
 assert "DoomRPG_esp32PaintBrightnessPresetCards(" in options_painter
+assert '"ORIENTATION"' in options_painter
+assert "DoomRPG_esp32PaintOrientationPresetCards(" in options_painter
+assert "EspNativeConfig_saveOrientation(after)" in options
+assert "Esp32Orientation_set(after)" in options
+assert options.index("EspNativeConfig_saveOrientation(after)") < options.index("Esp32Orientation_set(after)")
+assert "orientationOpen = 1U;" in options
+assert "PlatformInput_requireFreshTapAfterRelease();" in options
+assert "framebuffer=single" in options
+
 presets = function(menu, "int DoomRPG_esp32PaintBrightnessPresetCards(")
 assert '"BACK", "25%", "50%", "75%", "100%"' in presets
 assert "DoomRPG_esp32BrightnessCardRect(item," in presets
@@ -152,7 +161,7 @@ assert "OPTIONSBRIGHTNESS] OPEN" in options
 assert "OPTIONSBRIGHTNESS] BACK" in options
 assert "DoomRPG_esp32MainMenuReturnToMain(" in options
 assert "optionsExpectedFrameFNV" in options
-assert "Input/Sound stay fail-closed" in options
+assert "Sound stays fail-closed" in options
 assert "logoDst.x" in paintOptions and "SDL_RenderCopy(" in paintOptions
 
 assert 'static char noSaveLabel[] = "NO SAVE";' in load

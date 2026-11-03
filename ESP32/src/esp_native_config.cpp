@@ -5,6 +5,7 @@
 #include "esp_native_config.h"
 #include "esp_native_config_codec.h"
 #include "esp_native_backlight.h"
+#include "esp_native_orientation.h"
 
 namespace {
 constexpr char kConfigPath[] = "/DoomRPG-ESP32.cfg";
@@ -12,8 +13,14 @@ constexpr char kTempPath[] = "/DoomRPG-ESP32.cfg.tmp";
 constexpr char kBackupPath[] = "/DoomRPG-ESP32.cfg.bak";
 bool configSdReady = false;
 
-bool readExact(const char* path, uint8_t* outPercent) {
-    if (!SD.exists(path)) return false;
+struct ConfigSettings {
+    uint8_t brightness;
+    uint8_t orientation;
+    uint8_t version;
+};
+
+bool readExact(const char* path, ConfigSettings* out) {
+    if (out == nullptr || !SD.exists(path)) return false;
     File file = SD.open(path, FILE_READ);
     if (!file) return false;
     uint8_t bytes[ESP_NATIVE_CONFIG_BYTES];
@@ -21,14 +28,19 @@ bool readExact(const char* path, uint8_t* outPercent) {
     const bool readOk = exactLength &&
         file.read(bytes, sizeof(bytes)) == sizeof(bytes);
     file.close();
-    return readOk &&
-           EspNativeConfigCodec_decodeBrightness(
-               bytes, sizeof(bytes), outPercent) != 0;
+    ConfigSettings parsed{};
+    if (!readOk ||
+        !EspNativeConfigCodec_decode(bytes, sizeof(bytes),
+                                     &parsed.brightness, &parsed.orientation))
+        return false;
+    parsed.version = bytes[4];
+    *out = parsed;
+    return true;
 }
 
-bool writeExact(const char* path, uint8_t percent) {
+bool writeExact(const char* path, uint8_t percent, uint8_t orientation) {
     uint8_t bytes[ESP_NATIVE_CONFIG_BYTES];
-    if (!EspNativeConfigCodec_encodeBrightness(percent, bytes)) return false;
+    if (!EspNativeConfigCodec_encode(percent, orientation, bytes)) return false;
     File file = SD.open(path, FILE_WRITE);
     if (!file) return false;
     const bool wrote = file.write(bytes, sizeof(bytes)) == sizeof(bytes);
@@ -38,62 +50,40 @@ bool writeExact(const char* path, uint8_t percent) {
     return wrote && sizeOk;
 }
 
-bool verify(const char* path, uint8_t expected) {
-    uint8_t actual = 0U;
-    return readExact(path, &actual) && actual == expected;
-}
-}
-
-extern "C" void EspNativeConfig_loadAtBoot(int sdMounted) {
-    uint8_t loaded = 100U;
-    configSdReady = sdMounted != 0;
-
-    if (!configSdReady) {
-        Serial.println("[NATIVECONFIG] LOAD source=default reason=sd-unavailable percent=100 write=no");
-        return;
-    }
-    if (readExact(kConfigPath, &loaded)) {
-        if (Esp32Backlight_setPercent(loaded)) {
-            Serial.printf("[NATIVECONFIG] LOAD source=primary result=valid version=1 bytes=12 brightness=%u write=no\n",
-                          (unsigned int)loaded);
-        } else {
-            Serial.println("[NATIVECONFIG] LOAD source=primary result=pwm-unavailable default=100 write=no");
-        }
-        return;
-    }
-
-    const bool primaryExists = SD.exists(kConfigPath);
-    if (readExact(kBackupPath, &loaded)) {
-        if (Esp32Backlight_setPercent(loaded)) {
-            Serial.printf("[NATIVECONFIG] LOAD source=backup result=recovered brightness=%u primary=%s write=no\n",
-                          (unsigned int)loaded, primaryExists ? "invalid" : "missing");
-        } else {
-            Serial.println("[NATIVECONFIG] LOAD source=backup result=pwm-unavailable default=100 write=no");
-        }
-        return;
-    }
-    if (!primaryExists && !SD.exists(kBackupPath)) {
-        Serial.println("[NATIVECONFIG] LOAD source=default reason=first-run-missing percent=100 write=no");
-    } else {
-        Serial.println("[NATIVECONFIG] LOAD source=default reason=invalid-or-incomplete percent=100 write=no");
-    }
+bool verify(const char* path, uint8_t percent, uint8_t orientation) {
+    ConfigSettings actual{};
+    return readExact(path, &actual) &&
+           actual.version == ESP_NATIVE_CONFIG_VERSION &&
+           actual.brightness == percent && actual.orientation == orientation;
 }
 
-extern "C" int EspNativeConfig_saveBrightness(uint8_t percent) {
+void applyLoaded(const char* source, const ConfigSettings& loaded,
+                 const char* primaryState) {
+    const int rotationOk = Esp32Orientation_set(loaded.orientation);
+    const int pwmOk = Esp32Backlight_setPercent(loaded.brightness);
+    Serial.printf("[NATIVECONFIG] LOAD source=%s result=%s version=%u bytes=12 brightness=%u orientation=%s primary=%s write=no\n",
+                  source, rotationOk && pwmOk ? "valid" : "hardware-rejected",
+                  (unsigned)loaded.version, (unsigned)loaded.brightness,
+                  loaded.orientation ? "INVERSE" : "NORMAL", primaryState);
+}
+
+/* All SD mutations are here. Never discard an intact backup when primary
+ * is corrupt, and never touch the active physical orientation on failure. */
+int saveSettings(uint8_t percent, uint8_t orientation) {
     bool oldMoved = false;
-
     if (!configSdReady || !Esp32Backlight_isReady() ||
-        (percent != 25U && percent != 50U &&
-         percent != 75U && percent != 100U)) {
-        Serial.printf("[NATIVECONFIG] SAVE rejected percent=%u sd=%d pwm=%d\n",
-                      (unsigned int)percent, configSdReady ? 1 : 0,
-                      Esp32Backlight_isReady());
+        !Esp32Orientation_isReady() ||
+        (percent != 25U && percent != 50U && percent != 75U && percent != 100U) ||
+        !Esp32Orientation_valid(orientation)) {
+        Serial.printf("[NATIVECONFIG] SAVE rejected brightness=%u orientation=%u sd=%d pwm=%d orientationReady=%d\n",
+                      (unsigned)percent, (unsigned)orientation, configSdReady,
+                      Esp32Backlight_isReady(), Esp32Orientation_isReady());
         return 0;
     }
 
-    if (verify(kConfigPath, percent)) {
-        Serial.printf("[NATIVECONFIG] SAVE unchanged percent=%u bytes=12 write=no\n",
-                      (unsigned int)percent);
+    if (verify(kConfigPath, percent, orientation)) {
+        Serial.printf("[NATIVECONFIG] SAVE unchanged brightness=%u orientation=%u version=2 write=no\n",
+                      (unsigned)percent, (unsigned)orientation);
         return 1;
     }
 
@@ -101,18 +91,16 @@ extern "C" int EspNativeConfig_saveBrightness(uint8_t percent) {
         Serial.println("[NATIVECONFIG] SAVE failed stage=stale-temp-remove");
         return 0;
     }
-    if (!writeExact(kTempPath, percent) || !verify(kTempPath, percent)) {
+    if (!writeExact(kTempPath, percent, orientation) ||
+        !verify(kTempPath, percent, orientation)) {
         (void)SD.remove(kTempPath);
         Serial.println("[NATIVECONFIG] SAVE failed stage=temp-write-verify");
         return 0;
     }
 
     if (SD.exists(kConfigPath)) {
-        uint8_t stored = 0U;
-        uint8_t recovered = 0U;
-        /* If an earlier interrupted save left an intact backup and an
-         * invalid primary, do not destroy the last recoverable settings.
-         * A failed promotion must leave the valid backup available at boot. */
+        ConfigSettings stored{};
+        ConfigSettings recovered{};
         if (!readExact(kConfigPath, &stored) &&
             readExact(kBackupPath, &recovered)) {
             if (!SD.remove(kConfigPath)) {
@@ -136,7 +124,7 @@ extern "C" int EspNativeConfig_saveBrightness(uint8_t percent) {
     }
 
     if (!SD.rename(kTempPath, kConfigPath) ||
-        !verify(kConfigPath, percent)) {
+        !verify(kConfigPath, percent, orientation)) {
         (void)SD.remove(kTempPath);
         (void)SD.remove(kConfigPath);
         if (oldMoved) (void)SD.rename(kBackupPath, kConfigPath);
@@ -145,7 +133,40 @@ extern "C" int EspNativeConfig_saveBrightness(uint8_t percent) {
     }
 
     if (SD.exists(kBackupPath)) (void)SD.remove(kBackupPath);
-    Serial.printf("[NATIVECONFIG] SAVE result=committed version=1 percent=%u bytes=12 path=%s backup=retired\n",
-                  (unsigned int)percent, kConfigPath);
+    Serial.printf("[NATIVECONFIG] SAVE result=committed version=2 brightness=%u orientation=%s bytes=12 path=%s backup=retired\n",
+                  (unsigned)percent, orientation ? "INVERSE" : "NORMAL", kConfigPath);
     return 1;
+}
+} // namespace
+
+extern "C" void EspNativeConfig_loadAtBoot(int sdMounted) {
+    ConfigSettings loaded{};
+    configSdReady = sdMounted != 0;
+    if (!configSdReady) {
+        Serial.println("[NATIVECONFIG] LOAD source=default reason=sd-unavailable percent=100 orientation=NORMAL write=no");
+        return;
+    }
+    if (readExact(kConfigPath, &loaded)) {
+        applyLoaded("primary", loaded, "valid");
+        return;
+    }
+
+    const bool primaryExists = SD.exists(kConfigPath);
+    if (readExact(kBackupPath, &loaded)) {
+        applyLoaded("backup", loaded, primaryExists ? "invalid" : "missing");
+        return;
+    }
+    if (!primaryExists && !SD.exists(kBackupPath)) {
+        Serial.println("[NATIVECONFIG] LOAD source=default reason=first-run-missing percent=100 orientation=NORMAL write=no");
+    } else {
+        Serial.println("[NATIVECONFIG] LOAD source=default reason=invalid-or-incomplete percent=100 orientation=NORMAL write=no");
+    }
+}
+
+extern "C" int EspNativeConfig_saveBrightness(uint8_t percent) {
+    return saveSettings(percent, Esp32Orientation_get());
+}
+
+extern "C" int EspNativeConfig_saveOrientation(uint8_t orientation) {
+    return saveSettings(Esp32Backlight_percent(), orientation);
 }
