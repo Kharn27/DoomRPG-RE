@@ -173,10 +173,6 @@ static int paintDeathMenu(void) {
     static const char* const labels[4] = {
         "LOAD GAME", "GO TO JUNCTION", "RETRY SECTOR", "MAIN MENU"
     };
-    static const char* const hints[4] = {
-        "CHOOSE A SAVE SLOT", "RETURN TO THE HUB",
-        "RESTART THIS SECTOR", "EXIT WITHOUT SAVING"
-    };
     int row;
 
     if (fb == NULL ||
@@ -211,17 +207,13 @@ static int paintDeathMenu(void) {
                 DEATH_SCREEN_HEIGHT, DEATH_MENU_LEFT, top,
                 DEATH_MENU_RIGHT, bottom, ESP_MAIN_MENU_SKIN_IDLE))
             return 0;
+        /* The 19px plate has room for ONE 5x7 face, not stacked 5x7 +
+         * 3x5 captions: their pixels otherwise collide with the copper
+         * seams at top+3 and bottom-3. Keep the glyph wholly in the
+         * dark inset (top+6..12), without changing finger hitboxes. */
         EspNativeGameplayHubTouchUi_drawCrispText(
-            fb, labels[row], 80, top + 3,
-            enabled ? 0xf6afU : ESP_HUB_COLOR_STEEL_DARK);
-        EspNativeGameplayHubTouchUi_drawMiniText(
-            fb, row == 0 && !enabled ? "NO SAVE AVAILABLE" :
-                row == 1 && !enabled ? "INTRO HAS NO JUNCTION" :
-                row == 2 && !enabled ? "NO ENTRY SNAPSHOT" :
-                row == 1 && deathState.junctionConfirm
-                    ? "TAP AGAIN TO CONFIRM" : hints[row],
-            80, top + 12,
-            enabled ? ESP_HUB_COLOR_STEEL : ESP_HUB_COLOR_RED);
+            fb, labels[row], 80, top + 6,
+            enabled ? 0xf6afU : 0x9cd3U);
     }
     return Esp32PlatformVideo_present();
 }
