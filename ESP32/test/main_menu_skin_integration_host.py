@@ -26,6 +26,15 @@ assert "#define TRANSITION_PROGRESS_HEIGHT 18" in loading
 assert loading.count("EspMainMenuSkin_paintPlate(framebuffer(),") == 2
 assert 'drawMiniTextCentered("LOADING", 80, 34, 2, 0xf6afU);' in loading
 assert 'drawMiniTextCentered("ENTERING", 80, 49, 1, COLOR_STEEL);' in loading
+# At 100%, the fill formula covers exactly all 108 pixels of the inset track.
+track_width = 128 - 20
+for pct in (0, 5, 25, 50, 95, 100):
+    pixels = track_width * pct // 100
+    assert 0 <= pixels <= track_width
+    if pct == 100:
+        assert pixels == track_width
+        assert (16 + 10) + pixels - 1 == 133
+assert "if (b - t + 1 >= 24) {" in skin
 assert "const int trackLeft = TRANSITION_PROGRESS_LEFT + 10;" in loading
 assert "const int trackTop = TRANSITION_PROGRESS_TOP + 6;" in loading
 assert "const int trackWidth = TRANSITION_PROGRESS_WIDTH - 20;" in loading

@@ -225,6 +225,14 @@ int main(void) {
         assert(fb[89 * W + 19] == 0xd344U);
         assert(fb[89 * W + 140] == 0xd344U);
         assert(fb[89 * W + 26] == 0x0800U);
+        /* On this thin gauge the apparent two end-cap "balls" are gone.
+         * Both formerly bolted sides must be unmarked base gunmetal. */
+        assert(fb[87 * W + 21] == 0x0800U);
+        assert(fb[88 * W + 21] == 0x0800U);
+        assert(fb[94 * W + 21] == 0x0800U);
+        assert(fb[87 * W + 138] == 0x0800U);
+        assert(fb[88 * W + 138] == 0x0800U);
+        assert(fb[94 * W + 138] == 0x0800U);
         for (x = 0; x < GUARD; ++x) {
             assert(arena[x] == SENTINEL);
             assert(arena[GUARD + W * H + x] == SENTINEL);

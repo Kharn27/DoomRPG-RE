@@ -392,8 +392,9 @@ static int paintProgressBar(uint8_t percent) {
     if (percent > 100U) percent = 100U;
     fillWidth = (trackWidth * (int)percent) / 100;
 
-    /* Inset track with a dark engraved border, entirely between the chassis
-     * screws. Zero percent is a clean black cavity, not leftover progress. */
+    /* Inset track with a dark engraved border, clear of the chassis edges.
+     * The narrow plate has no bolt heads to suggest unfilled end caps.
+     * Zero percent is a clean black cavity, not leftover progress. */
     rect(trackLeft - 1, trackTop - 1,
          trackLeft + trackWidth, trackTop + trackHeight,
          0x3123U);

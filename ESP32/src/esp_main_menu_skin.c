@@ -148,13 +148,17 @@ int EspMainMenuSkin_paintPlate(uint16_t* fb, int stride,
     vertical(fb, stride, r - 3, t + 7, b - 7,
              l, t, r, b, p->copper);
 
-    /* Four steel screw heads; no particles near the text. */
-    dot(fb, stride, l + 5, t + 5, l, t, r, b, p->shadow);
-    dot(fb, stride, l + 5, t + 6, l, t, r, b, p->bevel);
-    dot(fb, stride, r - 5, t + 5, l, t, r, b, p->shadow);
-    dot(fb, stride, r - 5, t + 6, l, t, r, b, p->bevel);
-    dot(fb, stride, l + 5, b - 5, l, t, r, b, p->shadow);
-    dot(fb, stride, r - 5, b - 5, l, t, r, b, p->shadow);
+    /* Bolt heads belong to the 24px+ menu/loading cards, not the 18px
+     * progress chassis: on a thin gauge they look like two unfilled end caps.
+     * Keep every MENU_MAIN pixel exactly as before. */
+    if (b - t + 1 >= 24) {
+        dot(fb, stride, l + 5, t + 5, l, t, r, b, p->shadow);
+        dot(fb, stride, l + 5, t + 6, l, t, r, b, p->bevel);
+        dot(fb, stride, r - 5, t + 5, l, t, r, b, p->shadow);
+        dot(fb, stride, r - 5, t + 6, l, t, r, b, p->bevel);
+        dot(fb, stride, l + 5, b - 5, l, t, r, b, p->shadow);
+        dot(fb, stride, r - 5, b - 5, l, t, r, b, p->shadow);
+    }
 
     return 1;
 }
