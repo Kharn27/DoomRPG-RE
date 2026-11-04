@@ -45,6 +45,14 @@ jobs:
             -o /tmp/doomrpg-level-exit-commit
           /tmp/doomrpg-level-exit-commit
 
+      - name: Test CHANGEMAP destination spawn before resident teardown (host C)
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+            -IESP32/include ESP32/src/esp_player_spawn_state.c \
+            ESP32/src/esp_map_catalog.c ESP32/test/map_spawn_preflight_host.c \
+            -Wl,--gc-sections -o /tmp/doomrpg-map-spawn-preflight
+          /tmp/doomrpg-map-spawn-preflight
+
       - name: Test Junction completed-level event predicate (host C)
         run: |
           cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/level_gate_native_host.c -o /tmp/doomrpg-native-level-gate-test
