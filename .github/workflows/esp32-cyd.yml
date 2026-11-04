@@ -53,6 +53,9 @@ jobs:
             -Wl,--gc-sections -o /tmp/doomrpg-map-spawn-preflight
           /tmp/doomrpg-map-spawn-preflight
 
+      - name: Test CHANGEMAP WAIT_STATS exclusive full-screen presentation (real C gate)
+        run: python ESP32/test/changemap_stats_present_owner_host.py
+
       - name: Test Junction completed-level event predicate (host C)
         run: |
           cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/level_gate_native_host.c -o /tmp/doomrpg-native-level-gate-test
@@ -359,6 +362,19 @@ jobs:
       - name: Build production-path CYD trace firmware
         working-directory: ESP32
         run: pio run -e esp32-cyd-trace
+
+      - name: Reject sprite phase Serial traces from normal and bringup firmware
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          labels = (b'[SPRITEORDER] sample=', b'[SPRITEPHASE] sample=', b'[SPRITEFLASH] sample=')
+          for env in ('esp32-cyd', 'esp32-cyd-bringup'):
+              data = (Path('ESP32/.pio/build') / env / 'firmware.elf').read_bytes()
+              assert all(label not in data for label in labels), f'{env} still includes sprite profiling Serial'
+          data = Path('ESP32/.pio/build/esp32-cyd-trace/firmware.elf').read_bytes()
+          assert all(label in data for label in labels), 'TRACE lost the bounded sprite witnesses'
+          print('PASS first-16 sprite timing/Serial TRACE-only; normal/bringup keep native rendering')
+          PY
 
       - name: Measure industrial menu firmware cost against exact pre-skin main
         run: |
