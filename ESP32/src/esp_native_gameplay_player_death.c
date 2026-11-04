@@ -9,6 +9,7 @@
 #include "doomrpg_log.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud.h"
+#include "esp_main_menu_skin.h"
 #include "esp_native_gameplay_hub_theme.h"
 #include "esp_native_gameplay_hub_touch_ui.h"
 #include "esp_native_gameplay_player_death.h"
@@ -156,49 +157,52 @@ static int menuRowForY(int y) {
 
 static int paintDeathMenu(void) {
     uint16_t* fb = (uint16_t*)Esp32PlatformVideo_framebuffer();
-    size_t expected =
+    const size_t expected =
         (size_t)DEATH_VIEWPORT_WIDTH * DEATH_SCREEN_HEIGHT * sizeof(uint16_t);
     static const char* const labels[4] = {
-        "LOAD SAVED GAME", "GO TO JUNCTION", "RETRY SECTOR", "MAIN MENU"
+        "LOAD GAME", "JUNCTION", "RETRY SECTOR", "MAIN MENU"
+    };
+    static const char* const hints[4] = {
+        "CHOOSE A SAVE SLOT", "RETURN TO THE HUB",
+        "RESTART THIS SECTOR", "EXIT WITHOUT SAVING"
     };
     int row;
 
     if (fb == NULL ||
         Esp32PlatformVideo_framebufferSizeBytes() != expected) return 0;
 
-    fillRect(fb, 0, 0, DEATH_VIEWPORT_WIDTH - 1,
-             DEATH_SCREEN_HEIGHT - 1, ESP_HUB_COLOR_BLACK);
+    /* One opaque 160x120 owner: the dying framebuffer must not leak through.
+     * Chassis geometry/colors match MENU_MAIN and the PR #251 LOADING card. */
+    fillRect(fb, 0, 0, 159, 119, ESP_HUB_COLOR_BLACK);
     fillRect(fb, 3, 3, 156, 116, ESP_HUB_COLOR_BG);
     drawRect(fb, 3, 3, 156, 116, ESP_HUB_COLOR_STEEL_DARK);
-    fillRect(fb, 8, 7, 151, 28, ESP_HUB_COLOR_PANEL_ALT);
-    fillRect(fb, 8, 7, 10, 28, ESP_HUB_COLOR_RED);
+    fillRect(fb, 9, 7, 150, 28, ESP_HUB_COLOR_PANEL_ALT);
+    drawRect(fb, 9, 7, 150, 28, ESP_HUB_COLOR_STEEL_DARK);
+    fillRect(fb, 12, 10, 13, 25, ESP_HUB_COLOR_RED);
+    fillRect(fb, 146, 10, 147, 25, ESP_HUB_COLOR_RED);
     EspNativeGameplayHubTouchUi_drawCrispText(
-        fb, "YOU DIED", 80, 10, ESP_HUB_COLOR_RED);
+        fb, "YOU DIED", 80, 9, ESP_HUB_COLOR_RED);
     EspNativeGameplayHubTouchUi_drawMiniText(
-        fb, "MISSION FAILED", 80, 21, ESP_HUB_COLOR_STEEL);
+        fb, "MISSION FAILED", 80, 21, 0xf6afU);
 
     for (row = 0; row < 4; ++row) {
-        int top = DEATH_MENU_ROW0_TOP +
-                  row * (DEATH_MENU_ROW_HEIGHT + DEATH_MENU_ROW_GAP);
-        int bottom = top + DEATH_MENU_ROW_HEIGHT - 1;
-        const int enabled = row == 0 && deathState.loadAvailable != 0U;
-        const char* hint = row == 0
-            ? (enabled ? "TAP TO LOAD" : "NO SAVE") : "NOT AVAILABLE";
-        const uint16_t accent = enabled ? ESP_HUB_COLOR_AMBER
-                                       : ESP_HUB_COLOR_STEEL_DARK;
+        const int top = DEATH_MENU_ROW0_TOP +
+            row * (DEATH_MENU_ROW_HEIGHT + DEATH_MENU_ROW_GAP);
+        const int bottom = top + DEATH_MENU_ROW_HEIGHT - 1;
+        const int enabled = row != 0 || deathState.loadAvailable != 0U;
 
-        fillRect(fb, DEATH_MENU_LEFT, top, DEATH_MENU_RIGHT, bottom,
-                 enabled ? ESP_HUB_COLOR_PANEL_ALT : ESP_HUB_COLOR_PANEL);
-        drawRect(fb, DEATH_MENU_LEFT, top, DEATH_MENU_RIGHT, bottom, accent);
-        fillRect(fb, DEATH_MENU_LEFT + 3, top + 3,
-                 DEATH_MENU_LEFT + 4, bottom - 3, accent);
+        if (!EspMainMenuSkin_paintPlate(
+                fb, DEATH_VIEWPORT_WIDTH, DEATH_VIEWPORT_WIDTH,
+                DEATH_SCREEN_HEIGHT, DEATH_MENU_LEFT, top,
+                DEATH_MENU_RIGHT, bottom, ESP_MAIN_MENU_SKIN_IDLE))
+            return 0;
         EspNativeGameplayHubTouchUi_drawCrispText(
-            fb, labels[row], 83, top + 3,
-            enabled ? ESP_HUB_COLOR_IVORY : ESP_HUB_COLOR_STEEL);
+            fb, labels[row], 80, top + 3,
+            enabled ? 0xf6afU : ESP_HUB_COLOR_STEEL_DARK);
         EspNativeGameplayHubTouchUi_drawMiniText(
-            fb, hint, 83, top + 12,
-            enabled ? ESP_HUB_COLOR_AMBER :
-            row == 0 ? ESP_HUB_COLOR_RED : ESP_HUB_COLOR_STEEL_DARK);
+            fb, row == 0 && !enabled ? "NO SAVE AVAILABLE" : hints[row],
+            80, top + 12,
+            enabled ? ESP_HUB_COLOR_STEEL : ESP_HUB_COLOR_RED);
     }
     return Esp32PlatformVideo_present();
 }
