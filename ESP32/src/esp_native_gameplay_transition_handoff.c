@@ -295,6 +295,7 @@ static void performHandoff(uint8_t acknowledgeStats) {
     const EspPlayerViewState* sourceView;
     EspMapLevelExitCommitStatus levelCommitStatus;
     EspMapLevelExitCommitStatus levelPreflightStatus;
+    EspPlayerSpawnStatus spawnPreflightStatus;
 
     if (handoff.busy || handoff.failed ||
         (acknowledgeStats != 0U && !handoff.armed)) {
@@ -415,6 +416,23 @@ static void performHandoff(uint8_t acknowledgeStats) {
                (unsigned int)targetMapId,
                (unsigned int)handoff.committed.phase);
     }
+
+    /* Pure target spawn validation before touching the resident source.
+     * After stats acknowledgement the transition is READY. The same layout
+     * projection is revalidated against target residency after the commit. */
+    spawnPreflightStatus = EspPlayerSpawn_preflightCommitted(
+        &handoff.committed, &handoff.targetInventory,
+        HANDOFF_LOAD_TYPE, HANDOFF_GAME_IS_LOADED, &handoff.spawn);
+    if (spawnPreflightStatus != ESP_PLAYER_SPAWN_OK) {
+        failHandoff("TARGET_SPAWN_PREFLIGHT",
+                    (unsigned int)spawnPreflightStatus);
+        return;
+    }
+    printf("[NATIVECHANGEMAP] SPAWN-PREFLIGHT targetMap=%u tile=%u angle=%u source=%u beforeTeardown=yes\\n",
+           (unsigned int)targetMapId,
+           (unsigned int)handoff.spawn.tileIndex,
+           (unsigned int)handoff.spawn.angle,
+           (unsigned int)handoff.spawn.spawnSource);
 
     /*
      * Cross the visual ownership boundary before the destructive backing
