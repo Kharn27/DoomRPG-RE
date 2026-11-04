@@ -202,18 +202,25 @@ static int paintDeathMenu(void) {
              deathState.preDeathCaptured != 0U) ||
             (row == 2 && entryCaptured != 0U) || row == 3;
 
+        /* First JUNCTION tap in late sectors must remain visible after
+         * removing the crowded second-line hint. Confirm uses the shared
+         * pressed industrial palette and replaces the single action face. */
+        const int confirming = row == 1 && deathState.junctionConfirm != 0U;
         if (!EspMainMenuSkin_paintPlate(
                 fb, DEATH_VIEWPORT_WIDTH, DEATH_VIEWPORT_WIDTH,
                 DEATH_SCREEN_HEIGHT, DEATH_MENU_LEFT, top,
-                DEATH_MENU_RIGHT, bottom, ESP_MAIN_MENU_SKIN_IDLE))
+                DEATH_MENU_RIGHT, bottom,
+                confirming ? ESP_MAIN_MENU_SKIN_CONFIRM :
+                             ESP_MAIN_MENU_SKIN_IDLE))
             return 0;
         /* The 19px plate has room for ONE 5x7 face, not stacked 5x7 +
          * 3x5 captions: their pixels otherwise collide with the copper
          * seams at top+3 and bottom-3. Keep the glyph wholly in the
          * dark inset (top+6..12), without changing finger hitboxes. */
         EspNativeGameplayHubTouchUi_drawCrispText(
-            fb, labels[row], 80, top + 6,
-            enabled ? 0xf6afU : 0x9cd3U);
+            fb, confirming ? "CONFIRM JUNCTION" : labels[row],
+            80, top + 6,
+            enabled ? (confirming ? 0xffffU : 0xf6afU) : 0x9cd3U);
     }
     return Esp32PlatformVideo_present();
 }
