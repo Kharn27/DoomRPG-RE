@@ -376,6 +376,15 @@ int EspNativeGameplayPlayerDeath_service(struct DoomRPG_s* doomRpgBase) {
             return 1;
         }
 
+        if (action == DEATH_MENU_MAIN) {
+            if (EspNativeResidentGameplay_requestExitToMenuFromDeath()) {
+                printf("[DEATHMENU] DISPATCH action=MAIN route=native-outer-loop checkpoint=unchanged\n");
+                return 1;
+            }
+            printf("[DEATHMENU] REFUSED action=MAIN reason=unsafe-teardown-boundary menu=retained\n");
+            return 1;
+        }
+
         printf("[DEATHMENU] DEFER action=%s reason=route-backend-unowned mutation=no sessionReplace=no menu=retained\n",
                action == DEATH_MENU_JUNCTION ? "JUNCTION" :
                action == DEATH_MENU_RETRY ? "RETRY" : "MAIN");
