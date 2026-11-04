@@ -211,6 +211,32 @@ int main(void) {
             assert(arena[x] == SENTINEL);
     }
 
+    /* The companion 128x18 progress chassis uses identical bevel/copper
+     * geometry, even at its minimum supported height. It must not touch the
+     * raised card, the starfield, or the framebuffer guard cells. */
+    {
+        int x, y;
+        resetFrame();
+        assert(EspMainMenuSkin_paintPlate(fb, W, W, H,
+                                           16, 82, 143, 99,
+                                           ESP_MAIN_MENU_SKIN_IDLE));
+        assert(fb[83 * W + 26] == 0x838dU);
+        assert(fb[85 * W + 26] == 0xd344U);
+        assert(fb[89 * W + 19] == 0xd344U);
+        assert(fb[89 * W + 140] == 0xd344U);
+        assert(fb[89 * W + 26] == 0x0800U);
+        for (x = 0; x < GUARD; ++x) {
+            assert(arena[x] == SENTINEL);
+            assert(arena[GUARD + W * H + x] == SENTINEL);
+        }
+        for (y = 0; y < H; ++y) for (x = 0; x < W; ++x) {
+            if (x >= 16 && x <= 143 && y >= 82 && y <= 99)
+                assert(fb[y * W + x] != SENTINEL);
+            else
+                assert(fb[y * W + x] == SENTINEL);
+        }
+    }
+
     resetFrame();
     assert(!EspMainMenuSkin_paint(NULL, W, W, H, 0, ESP_MAIN_MENU_SKIN_IDLE));
     assert(!EspMainMenuSkin_paint(fb, W - 1, W, H, 0, ESP_MAIN_MENU_SKIN_IDLE));

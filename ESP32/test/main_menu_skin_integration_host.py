@@ -15,6 +15,28 @@ assert "EspMainMenuSkin_paintPlate(framebuffer()," in loading
 assert loading.count("paintLoadingCard(target)") == 2
 assert "fillRect(16, 32, 143, 75, COLOR_PANEL);" not in loading
 assert "0xf6afU" in loading
+# Both loading entry and checkpoint progress repaints draw the same plates.
+# Geometry stays inside 160x120, with a visible gap between the two modules.
+assert "#define TRANSITION_LOADING_CARD_TOP 26" in loading
+assert "#define TRANSITION_LOADING_CARD_BOTTOM 69" in loading
+assert "#define TRANSITION_PROGRESS_LEFT 16" in loading
+assert "#define TRANSITION_PROGRESS_TOP 82" in loading
+assert "#define TRANSITION_PROGRESS_WIDTH 128" in loading
+assert "#define TRANSITION_PROGRESS_HEIGHT 18" in loading
+assert loading.count("EspMainMenuSkin_paintPlate(framebuffer(),") == 2
+assert 'drawMiniTextCentered("LOADING", 80, 34, 2, 0xf6afU);' in loading
+assert 'drawMiniTextCentered("ENTERING", 80, 49, 1, COLOR_STEEL);' in loading
+assert "const int trackLeft = TRANSITION_PROGRESS_LEFT + 10;" in loading
+assert "const int trackTop = TRANSITION_PROGRESS_TOP + 6;" in loading
+assert "const int trackWidth = TRANSITION_PROGRESS_WIDTH - 20;" in loading
+assert "const int trackHeight = TRANSITION_PROGRESS_HEIGHT - 12;" in loading
+assert "fillWidth = (trackWidth * (int)percent) / 100;" in loading
+assert "trackLeft + fillWidth - 1, trackTop + row, tone" in loading
+assert "paintProgressBar(0U)" in loading
+assert "paintProgressBar(percent)" in loading
+assert "if (!paintProgressBar(0U)) goto done;" in loading
+assert "if (!paintProgressBar(percent)) {" in loading
+assert "COLOR_AMBER);" not in loading[loading.index("static int paintProgressBar("):loading.index("static void presentOverall(")]
 assert "EspMainMenuSkin_paintPlate(fb, stride, width, height," in skin
 assert "const int industrialMain = labels == dashboardLabels;" in menu
 assert "if (industrialMain) {" in menu
