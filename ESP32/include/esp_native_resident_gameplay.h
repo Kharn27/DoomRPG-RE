@@ -32,6 +32,8 @@ int EspNativeResidentGameplay_isAutomapActive(void);
  * it after the entire composed gameplay call has unwound, before new touch
  * polling, so no world owner is freed beneath a session consumer. */
 int EspNativeResidentGameplay_requestExitToMenu(void);
+/* Death-menu MAIN shares the safe outer-loop teardown, without a HUB. */
+int EspNativeResidentGameplay_requestExitToMenuFromDeath(void);
 void EspNativeResidentGameplay_serviceMenuExit(struct DoomRPG_s* doomRpg);
 
 /* Repaint the currently-owned Automap after a semantic world/player mutation.
