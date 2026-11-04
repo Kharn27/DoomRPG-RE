@@ -10,6 +10,8 @@
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud.h"
 #include "esp_main_menu_skin.h"
+#include "esp_map_catalog.h"
+#include "esp_native_startup.h"
 #include "esp_native_gameplay_hub_theme.h"
 #include "esp_native_gameplay_hub_touch_ui.h"
 #include "esp_native_gameplay_player_death.h"
@@ -53,9 +55,18 @@ typedef struct EspNativeGameplayPlayerDeathState_s {
     uint8_t loadAvailable;
     uint8_t pendingAction;
     uint8_t menuTaps;
+    uint8_t routeQueued;
+    uint8_t junctionConfirm;
+    uint8_t preDeathCaptured;
+    EspNativeGameplayPlayerState preDeathPlayer;
 } EspNativeGameplayPlayerDeathState;
 
 static EspNativeGameplayPlayerDeathState deathState;
+/* Sector-entry recovery point is RAM-only (52 B), never an implicit save.
+ * Captured after the first playable WORLD frame, once per native session. */
+static EspNativeGameplayPlayerState entryPlayer;
+static uint8_t entryMapId;
+static uint8_t entryCaptured;
 
 static int32_t legacyFallViewZ(uint32_t elapsed) {
     int64_t scaled;
@@ -160,7 +171,7 @@ static int paintDeathMenu(void) {
     const size_t expected =
         (size_t)DEATH_VIEWPORT_WIDTH * DEATH_SCREEN_HEIGHT * sizeof(uint16_t);
     static const char* const labels[4] = {
-        "LOAD GAME", "JUNCTION", "RETRY SECTOR", "MAIN MENU"
+        "LOAD GAME", "GO TO JUNCTION", "RETRY SECTOR", "MAIN MENU"
     };
     static const char* const hints[4] = {
         "CHOOSE A SAVE SLOT", "RETURN TO THE HUB",
@@ -189,7 +200,11 @@ static int paintDeathMenu(void) {
         const int top = DEATH_MENU_ROW0_TOP +
             row * (DEATH_MENU_ROW_HEIGHT + DEATH_MENU_ROW_GAP);
         const int bottom = top + DEATH_MENU_ROW_HEIGHT - 1;
-        const int enabled = row != 0 || deathState.loadAvailable != 0U;
+        const int enabled =
+            (row == 0 && deathState.loadAvailable != 0U) ||
+            (row == 1 && entryMapId != ESP_MAP_ID_INTRO &&
+             deathState.preDeathCaptured != 0U) ||
+            (row == 2 && entryCaptured != 0U) || row == 3;
 
         if (!EspMainMenuSkin_paintPlate(
                 fb, DEATH_VIEWPORT_WIDTH, DEATH_VIEWPORT_WIDTH,
@@ -200,7 +215,11 @@ static int paintDeathMenu(void) {
             fb, labels[row], 80, top + 3,
             enabled ? 0xf6afU : ESP_HUB_COLOR_STEEL_DARK);
         EspNativeGameplayHubTouchUi_drawMiniText(
-            fb, row == 0 && !enabled ? "NO SAVE AVAILABLE" : hints[row],
+            fb, row == 0 && !enabled ? "NO SAVE AVAILABLE" :
+                row == 1 && !enabled ? "INTRO HAS NO JUNCTION" :
+                row == 2 && !enabled ? "NO ENTRY SNAPSHOT" :
+                row == 1 && deathState.junctionConfirm
+                    ? "TAP AGAIN TO CONFIRM" : hints[row],
             80, top + 12,
             enabled ? ESP_HUB_COLOR_STEEL : ESP_HUB_COLOR_RED);
     }
@@ -209,6 +228,29 @@ static int paintDeathMenu(void) {
 
 void EspNativeGameplayPlayerDeath_reset(void) {
     memset(&deathState, 0, sizeof(deathState));
+    memset(&entryPlayer, 0, sizeof(entryPlayer));
+    entryMapId = 0U;
+    entryCaptured = 0U;
+}
+
+/* One capture per activated native session. After manual LOAD this is the
+ * resumed session pose/resources, not a fabricated historical sector autosave.
+ * RETRY still rebuilds the complete BSP from its immutable PAK source. */
+int EspNativeGameplayPlayerDeath_captureEntry(void) {
+    const EspPlayerViewState* view = EspPlayerView_view();
+    if (entryCaptured) return 1;
+    if (deathState.active || view == NULL || view->active != 1U ||
+        !EspMapCatalog_isValidId(view->targetMapId) ||
+        view->viewX != view->destX || view->viewY != view->destY ||
+        !EspNativeGameplayPlayerState_snapshot(&entryPlayer) ||
+        (entryPlayer.param1 & 0xffU) == 0U) return 0;
+    entryMapId = view->targetMapId;
+    entryCaptured = 1U;
+    printf("[DEATHROUTE] ENTRY map=%u playerFNV=%08x bytes=%u source=first-native-session-frame\n",
+           (unsigned int)entryMapId,
+           (unsigned int)EspNativeGameplayPlayerState_fingerprint(),
+           (unsigned int)sizeof(entryPlayer));
+    return 1;
 }
 
 int EspNativeGameplayPlayerDeath_isActive(void) {
@@ -224,7 +266,7 @@ int EspNativeGameplayPlayerDeath_handleTap(int logicalX, int logicalY) {
     int action;
     if (!EspNativeGameplayPlayerDeath_isMenuReady() ||
         deathState.menuPainted == 0U ||
-        deathState.pendingAction != 0U) {
+        deathState.pendingAction != 0U || deathState.routeQueued != 0U) {
         return 0;
     }
     if (EspNativeGameplaySave_mainSelectorActive()) {
@@ -240,6 +282,12 @@ int EspNativeGameplayPlayerDeath_handleTap(int logicalX, int logicalY) {
     if (logicalX < DEATH_MENU_LEFT || logicalX > DEATH_MENU_RIGHT) return 0;
     action = menuRowForY(logicalY);
     if (action == 0) return 0;
+    if ((action == DEATH_MENU_LOAD && !deathState.loadAvailable) ||
+        (action == DEATH_MENU_JUNCTION &&
+         (entryMapId == ESP_MAP_ID_INTRO ||
+          !deathState.preDeathCaptured)) ||
+        (action == DEATH_MENU_RETRY && !entryCaptured)) return 0;
+    if (action != DEATH_MENU_JUNCTION) deathState.junctionConfirm = 0U;
     deathState.pendingAction = (uint8_t)action;
     if (deathState.menuTaps != UINT8_MAX) ++deathState.menuTaps;
     printf("[DEATHMENU] TAP n=%u logical=%d,%d action=%u route=%s queued=yes\n",
@@ -315,6 +363,8 @@ static int armDeath(struct DoomRPG_s* doomRpgBase,
     deathState.lastFade = 255U;
     deathState.deathRand = useReservedRand
         ? reservedRand : DoomRPG_randNextByte(&doomRpg->random);
+    deathState.preDeathPlayer = playerBefore;
+    deathState.preDeathCaptured = 1U;
     deathState.phase = ESP_NATIVE_GAMEPLAY_PLAYER_DEATH_FALL;
     deathState.active = 1U;
 
@@ -376,6 +426,45 @@ int EspNativeGameplayPlayerDeath_service(struct DoomRPG_s* doomRpgBase) {
             return 1;
         }
 
+        if (action == DEATH_MENU_RETRY) {
+            if (entryCaptured && entryMapId != 0U &&
+                EspNativeStartup_queueDeathRoute(entryMapId, &entryPlayer)) {
+                deathState.routeQueued = 1U;
+                printf("[DEATHMENU] DISPATCH action=RETRY target=%u route=PAK-fresh-map player=entry-snapshot saveWrite=no\n",
+                       (unsigned int)entryMapId);
+            } else {
+                printf("[DEATHMENU] REFUSED action=RETRY reason=no-safe-native-entry menu=retained\n");
+            }
+            return 1;
+        }
+        if (action == DEATH_MENU_JUNCTION) {
+            EspNativeGameplayPlayerState recovered;
+            const uint8_t sourceMap = entryMapId;
+            if (sourceMap == ESP_MAP_ID_INTRO ||
+                !deathState.preDeathCaptured) return 1;
+            /* Legacy after the destroyed Junction asks for confirmation
+             * before returning to normal Junction. Keep the native contract
+             * visible without importing desktop MenuSystem states. */
+            if (sourceMap >= 10U && !deathState.junctionConfirm) {
+                deathState.junctionConfirm = 1U;
+                if (!paintDeathMenu()) return 0;
+                printf("[DEATHMENU] CONFIRM action=JUNCTION source=%u tap-again=yes\n",
+                       (unsigned int)sourceMap);
+                return 1;
+            }
+            recovered = deathState.preDeathPlayer;
+            recovered.param1 = (recovered.param1 & ~0xffU) |
+                ((recovered.param1 >> 8) & 0xffU); /* full HP */
+            if (EspNativeStartup_queueDeathRoute(
+                    ESP_MAP_ID_JUNCTION, &recovered)) {
+                deathState.routeQueued = 1U;
+                printf("[DEATHMENU] DISPATCH action=JUNCTION target=%u route=PAK-fresh-map player=predeath-recovered saveWrite=no\n",
+                       (unsigned int)ESP_MAP_ID_JUNCTION);
+            } else {
+                printf("[DEATHMENU] REFUSED action=JUNCTION reason=unsafe-native-entry menu=retained\n");
+            }
+            return 1;
+        }
         if (action == DEATH_MENU_MAIN) {
             if (EspNativeResidentGameplay_requestExitToMenuFromDeath()) {
                 printf("[DEATHMENU] DISPATCH action=MAIN route=native-outer-loop checkpoint=unchanged\n");
@@ -385,10 +474,6 @@ int EspNativeGameplayPlayerDeath_service(struct DoomRPG_s* doomRpgBase) {
             return 1;
         }
 
-        printf("[DEATHMENU] DEFER action=%s reason=route-backend-unowned mutation=no sessionReplace=no menu=retained\n",
-               action == DEATH_MENU_JUNCTION ? "JUNCTION" :
-               action == DEATH_MENU_RETRY ? "RETRY" : "MAIN");
-        return 1;
     }
 
     now = DoomRPG_GetUpTimeMS();
@@ -406,7 +491,7 @@ int EspNativeGameplayPlayerDeath_service(struct DoomRPG_s* doomRpgBase) {
         if (!paintDeathMenu()) return 0;
         deathState.menuPainted = 1U;
         ++deathState.framesPresented;
-        printf("[PLAYERDEATH] READY seq=%u tile=%u elapsedMs=%u phase=death-menu-ready viewZ=%d fade=0 frames=%u input=death-menu load=%s routes=LOAD-live/JUNCTION+RETRY+MAIN-fail-closed menuOwner=native\n",
+        printf("[PLAYERDEATH] READY seq=%u tile=%u elapsedMs=%u phase=death-menu-ready viewZ=%d fade=0 frames=%u input=death-menu load=%s routes=LOAD+JUNCTION+RETRY+MAIN-native menuOwner=native\n",
                (unsigned int)deathState.sequence,
                (unsigned int)deathState.tileIndex,
                (unsigned int)elapsed,
