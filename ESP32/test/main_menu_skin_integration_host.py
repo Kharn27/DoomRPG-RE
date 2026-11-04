@@ -58,7 +58,8 @@ assert "if (second != NULL)" in skin
 assert "glyphs[16][6]" in skin
 assert "length * 5 - 1" in skin
 assert "row < 6" in skin and "bit < 4" in skin
-assert "0xfec0U" in skin and "0xffffU" in skin
+assert "0xd5a0U" in skin and "0xffffU" in skin
+assert "0x0801U" in skin and "0xfec0U" not in skin
 assert "0xff29U" not in skin and "0x2800U" not in skin
 assert "0xfff5U" not in skin
 assert "for (pass = p == &palettes[ESP_MAIN_MENU_SKIN_IDLE] ? 2 : 0;" in skin
