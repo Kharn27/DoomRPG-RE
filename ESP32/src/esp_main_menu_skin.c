@@ -14,11 +14,11 @@ typedef struct {
     uint16_t base, steel, bevel, shadow, groove, copper, ink, typeFace;
 } SkinPalette;
 
-/* A single saturated gold stencil in Idle. No offset copy of the
- * letters: previous shadow experiments looked doubled on the real CYD.
- * Armed/Confirm retain the original white face and dark engraving. */
+/* Idle is strictly one glyph layer. Its restrained gold brightness and
+ * charcoal well reduce LCD/camera halation that can look like a ghost.
+ * Armed/Confirm keep the existing white face and dark engraving. */
 static const SkinPalette palettes[3] = {
-    {0x1082U,0x2124U,0x6b4dU,0x0800U,0x2965U,0xd380U,0x2104U,0xfec0U},
+    {0x0801U,0x2124U,0x6b4dU,0x0800U,0x2965U,0xd380U,0x2104U,0xd5a0U},
     {0x2021U,0x49c3U,0xfba9U,0x1800U,0xb981U,0xfe00U,0xc180U,0xffffU},
     {0x1800U,0x3962U,0xb2e4U,0x0800U,0x9040U,0xfca0U,0x9800U,0xffffU}
 };
