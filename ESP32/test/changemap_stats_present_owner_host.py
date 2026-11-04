@@ -26,6 +26,14 @@ assert world.index("if (EspNativeGameplayTransition_isWaitingStats()) return;") 
 assert "EspNativeTransitionPresentation_showStats(transition)" in handoff
 assert "__real_Esp32PlatformVideo_present()" in presentation
 assert "void EspNativeTransitionPresentation_reset(void)" in presentation
+stats_ui = presentation.split("int EspNativeTransitionPresentation_showStats(", 1)[1].split(
+    "int EspNativeTransitionPresentation_beginLoading(", 1)[0]
+assert "EspNativeGameplayPlayerState_markCompleted(" not in stats_ui, (
+    "premature source level completion during stats paint"
+)
+assert "EspMapLevelExitStats_commitCompletion(" in handoff, (
+    "missing authoritative post-commit progress publication"
+)
 
 # INFO must not pay the formerly 16-frame phase-measurement and Serial cost.
 assert "#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE" in trace
