@@ -457,17 +457,17 @@ int DoomRPG_esp32PaintMenuDashboardCards(
                 DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP,
                 DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT,
                 DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM,
-                industrialMain ? 0x1042U : MAIN_DOOM_METAL);
+                industrialMain ? 0x0800U : MAIN_DOOM_METAL);
     /* Only the *button rail* is framed. The larger PAK logo is free on black. */
     drawRect565(render,
                 DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT,
                 DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP,
                 DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT - 1,
                 DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM,
-                industrialMain ? 0x4228U : ESP_HUB_COLOR_STEEL_DARK);
+                industrialMain ? 0x4a48U : ESP_HUB_COLOR_STEEL_DARK);
     fillRect565(render, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT + 1,
                 5, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT + 2,
-                115, industrialMain ? 0x3105U : MAIN_DOOM_METAL_HI);
+                115, industrialMain ? 0x3123U : MAIN_DOOM_METAL_HI);
     if (!industrialMain) {
         /* The child Options painter retains its original rail decorations.
          * MENU_MAIN is deliberately clean: no red/grey bars above or below
@@ -794,7 +794,7 @@ int DoomRPG_esp32RepaintOpaqueMainMenu(struct DoomRPG_s* doomRpgBase,
            (unsigned int)composeMs,
            (unsigned int)heapAfter,
            (unsigned int)largestAfter);
-    printf("[MAINOPAQUE] TARGET layout=split logo=102x120@0,0 stretched=yes unframed=yes rail=x102..159 cards=54x24 logical=108x48 physical verticalMargins=4,4 gap=3 palette=industrial-procedural idle=single-pass-deepgold focus=white cursorPatchBytes=0\n");
+    printf("[MAINOPAQUE] TARGET layout=split logo=102x120@0,0 stretched=yes unframed=yes rail=x102..159 cards=54x24 logical=108x48 physical verticalMargins=4,4 gap=3 palette=industrial-procedural idle=one-word-amber-gunmetal focus=white cursorPatchBytes=0\n");
 
     printf("[MENUSKIN] COMPOSE us=%u state=IDLE wholeMenu=yes framebuffer=single\n",
            (unsigned int)composeUs);
