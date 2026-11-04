@@ -14,36 +14,30 @@ typedef struct {
     uint16_t base, steel, bevel, shadow, groove, copper, ink, typeFace;
 } SkinPalette;
 
-/* Idle is strictly one glyph layer. Its restrained gold brightness and
- * charcoal well reduce LCD/camera halation that can look like a ghost.
- * Armed/Confirm keep the existing white face and dark engraving. */
+/* Compact original Doom-like pixel-metal lettering. The reference is
+ * ONE BIG WORD per control (not two tiny lines). The 5x9 masks use 108 bytes
+ * of flash, no font atlas, texture, cache, mutable state or heap. */
 static const SkinPalette palettes[3] = {
-    {0x0801U,0x2124U,0x6b4dU,0x0800U,0x2965U,0xd380U,0x2104U,0xd5a0U},
-    {0x2021U,0x49c3U,0xfba9U,0x1800U,0xb981U,0xfe00U,0xc180U,0xffffU},
-    {0x1800U,0x3962U,0xb2e4U,0x0800U,0x9040U,0xfca0U,0x9800U,0xffffU}
+    /*      base    steel   top     dark    groove  copper  ink     face  */
+    {0x0800U,0x4a48U,0x838dU,0x0820U,0x3123U,0xd344U,0x2103U,0xe4e9U},
+    {0x1000U,0x632bU,0xa4d1U,0x0800U,0x39a5U,0xf447U,0x3001U,0xffffU},
+    {0x0800U,0x4248U,0x83ceU,0x0800U,0x2903U,0xdba5U,0x2800U,0xffffU}
 };
 
-/* Custom readable 4x6 stencil. Each pixel is 2x2 on the physical CYD.
- * Only the 16 uppercase glyphs used by MENU_MAIN: 96 bytes of ROM,
- * no generated assets, font cache, heap or second framebuffer. */
-static const char letters[] = "ABDEGHILMNOPRSTU";
-static const uint8_t glyphs[16][6] = {
-    { 6, 9,15, 9, 9, 9}, /* A */
-    {14, 9,14, 9, 9,14}, /* B */
-    {14, 9, 9, 9, 9,14}, /* D */
-    {15, 8,14, 8, 8,15}, /* E */
-    { 7, 8,11, 9, 9, 7}, /* G */
-    { 9, 9,15, 9, 9, 9}, /* H */
-    {15, 6, 6, 6, 6,15}, /* I */
-    { 8, 8, 8, 8, 8,15}, /* L */
-    { 9,15,15, 9, 9, 9}, /* M */
-    { 9,13,11, 9, 9, 9}, /* N */
-    { 6, 9, 9, 9, 9, 6}, /* O */
-    {14, 9,14, 8, 8, 8}, /* P */
-    {14, 9,14,10, 9, 9}, /* R */
-    { 7, 8, 6, 1, 1,14}, /* S */
-    {15, 6, 6, 6, 6, 6}, /* T */
-    { 9, 9, 9, 9, 9, 6}  /* U */
+static const char letters[] = "ADEHILNOPRST";
+static const uint8_t glyphs[12][9] = {
+    {0x0e,0x11,0x11,0x1f,0x11,0x11,0x11,0x11,0x11}, /* A */
+    {0x1e,0x11,0x11,0x11,0x11,0x11,0x11,0x11,0x1e}, /* D */
+    {0x1f,0x10,0x10,0x1e,0x10,0x10,0x10,0x10,0x1f}, /* E */
+    {0x11,0x11,0x11,0x1f,0x11,0x11,0x11,0x11,0x11}, /* H */
+    {0x1f,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x1f}, /* I */
+    {0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x1f}, /* L */
+    {0x11,0x19,0x19,0x15,0x15,0x13,0x13,0x11,0x11}, /* N */
+    {0x0e,0x11,0x11,0x11,0x11,0x11,0x11,0x11,0x0e}, /* O */
+    {0x1e,0x11,0x11,0x11,0x1e,0x10,0x10,0x10,0x10}, /* P */
+    {0x1e,0x11,0x11,0x11,0x1e,0x14,0x12,0x11,0x11}, /* R */
+    {0x0f,0x10,0x10,0x0e,0x01,0x01,0x01,0x11,0x1e}, /* S */
+    {0x1f,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04}  /* T */
 };
 
 static void dot(uint16_t* fb, int stride, int x, int y,
@@ -67,32 +61,36 @@ static void vertical(uint16_t* fb, int stride, int x, int y0, int y1,
         dot(fb, stride, x, y, l, t, r, b, c);
 }
 
-/* Idle: crisp gold 4x6, drawn ONCE. No shadow/halo to double letters.
- * Selected/confirm: keep the original two dark offsets under white text. */
+/* Exactly one word per 54x24 plate. All row-dependent amber tones
+ * replace pixels IN the glyph mask, never an offset duplicate/halo.
+ * Selected white keeps its engraved dark shadow, but the face stays clean. */
 static void word(uint16_t* fb, int stride, int l, int t, int r, int b,
-                 const char* value, int baselineY, const SkinPalette* p) {
-    int length = 0, pass, i, row, bit;
-    int x0;
+                 const char* value, const SkinPalette* p, int armed) {
+    int length = 0, i, row, bit, pass;
+    int x0, y0;
     while (value[length] != '\0') ++length;
-    x0 = l + ((r - l + 1) - (length * 5 - 1)) / 2;
-    for (pass = p == &palettes[ESP_MAIN_MENU_SKIN_IDLE] ? 2 : 0;
-         pass < 3; ++pass) {
+    x0 = l + ((r - l + 1) - (length * 6 - 1)) / 2;
+    y0 = t + 8;
+    for (pass = armed ? 0 : 1; pass < 2; ++pass) {
         for (i = 0; i < length; ++i) {
             int letter = -1, j;
-            for (j = 0; j < 16; ++j)
+            for (j = 0; j < 12; ++j)
                 if (letters[j] == value[i]) { letter = j; break; }
             if (letter < 0) continue;
-            for (row = 0; row < 6; ++row)
-                for (bit = 0; bit < 4; ++bit)
-                    if ((glyphs[letter][row] & (uint8_t)(8U >> bit)) != 0U) {
-                        const int x = x0 + i * 5 + bit;
-                        const int y = baselineY + row;
-                        if (pass == 2)
-                            dot(fb, stride, x, y, l, t, r, b, p->typeFace);
-                        else if (y + 1 < b)
-                            dot(fb, stride, x + (pass == 0), y + 1,
-                                l, t, r, b,
-                                pass == 0 ? p->shadow : p->ink);
+            for (row = 0; row < 9; ++row)
+                for (bit = 0; bit < 5; ++bit)
+                    if ((glyphs[letter][row] & (uint8_t)(16U >> bit)) != 0U) {
+                        const int x = x0 + i * 6 + bit;
+                        const int y = y0 + row +
+                            (p == &palettes[ESP_MAIN_MENU_SKIN_CONFIRM]);
+                        if (pass == 0)
+                            dot(fb, stride, x + 1, y + 1,
+                                l, t, r, b, p->ink);
+                        else
+                            dot(fb, stride, x, y, l, t, r, b,
+                                armed ? p->typeFace :
+                                (row < 3 ? 0xf6afU :
+                                 row < 6 ? p->typeFace : 0xaa85U));
                     }
         }
     }
@@ -104,7 +102,6 @@ int EspMainMenuSkin_paint(uint16_t* fb, int stride,
     int l, t, r, b, x, y;
     const SkinPalette* p;
     const char* first;
-    const char* second;
 
     if (fb == NULL || width != SKIN_W || height != SKIN_H ||
         stride < width || item < 0 ||
@@ -120,67 +117,59 @@ int EspMainMenuSkin_paint(uint16_t* fb, int stride,
 
     p = &palettes[(int)state];
 
-    /* Forged outer mounting flange: vertical light falloff and dark,
-     * diagonally bitten corners instead of a blue rectangular UI pane. */
+    /* Gunmetal UAC plate: large bevelled chassis, deep inset black panel.
+     * Geometry stays within the existing 54x24 touch rectangle. */
     for (y = t; y <= b; ++y)
         for (x = l; x <= r; ++x) {
             const int dx = x - l;
             const int dy = y - t;
+            const int corner = dx + dy < 3 ||
+                (r - x) + dy < 3 ||
+                dx + (b - y) < 3 ||
+                (r - x) + (b - y) < 3;
             uint16_t color = p->base;
-            if (dy < 5) color = p->steel;
-            else if (dy > b - t - 3) color = p->shadow;
-            if ((dx == 0 || dx == r - l) && (dy < 2 || dy > b - t - 2))
+            if (dx <= 2 || x >= r - 2 ||
+                dy <= 3 || y >= b - 3)
+                color = p->steel;
+            if (dy <= 1 && dx > 3 && x < r - 3)
+                color = p->bevel;
+            if (dy >= b - t - 2 || dx == r)
                 color = p->shadow;
-            if ((dx < 2 || dx > r - l - 2) && (dy == 0 || dy == b - t))
-                color = p->shadow;
+            if (dx == 3 || x == r - 3 ||
+                dy == 4 || y == b - 4)
+                color = p->groove;
+            if (corner) color = p->shadow;
             dot(fb, stride, x, y, l, t, r, b, color);
         }
 
-    /* Raised upper/left steel bevel, recessed black lower/right edge. */
-    horizontal(fb, stride, l + 3, r - 3, t, l, t, r, b, p->bevel);
-    horizontal(fb, stride, l + 2, r - 2, t + 1, l, t, r, b, p->steel);
-    vertical(fb, stride, l, t + 3, b - 3, l, t, r, b, p->bevel);
-    vertical(fb, stride, l + 1, t + 2, b - 2, l, t, r, b, p->steel);
-    horizontal(fb, stride, l + 3, r - 3, b, l, t, r, b, p->shadow);
-    horizontal(fb, stride, l + 3, r - 3, b - 1, l, t, r, b, p->groove);
-    vertical(fb, stride, r, t + 3, b - 3, l, t, r, b, p->shadow);
-    vertical(fb, stride, r - 1, t + 2, b - 2, l, t, r, b, p->groove);
-    dot(fb, stride, l + 2, t + 2, l, t, r, b, p->bevel);
-    dot(fb, stride, r - 2, t + 2, l, t, r, b, p->groove);
-    dot(fb, stride, l + 2, b - 2, l, t, r, b, p->shadow);
-    dot(fb, stride, r - 2, b - 2, l, t, r, b, p->copper);
-
-    /* V4: one repeatable industrial circuit on EVERY card.
-     * Straight, symmetric channels: same coordinates in Idle/Armed/Confirm.
-     * The state changes only RGB565 intensity, never stroke placement.
-     * Bottom strip sits on b (below the lower glyph's last pixel), top on
-     * t+2 (above the first glyph). No orange strokes behind text. */
-    horizontal(fb, stride, l + 7, r - 7, t + 2,
+    /* Warm engine-light seams, muted in idle, brighter while armed.
+     * Unified positions on all four plates; no scattered orange bars. */
+    horizontal(fb, stride, l + 9, r - 9, t + 3,
                l, t, r, b, p->copper);
-    horizontal(fb, stride, l + 7, r - 7, b,
+    horizontal(fb, stride, l + 9, r - 9, b - 3,
                l, t, r, b, p->copper);
-    vertical(fb, stride, l + 2, t + 6, b - 6,
+    vertical(fb, stride, l + 3, t + 7, b - 7,
              l, t, r, b, p->copper);
-    vertical(fb, stride, r - 2, t + 6, b - 6,
+    vertical(fb, stride, r - 3, t + 7, b - 7,
              l, t, r, b, p->copper);
 
-    /* One recessed rivet at each diagonal corner, away from labels. */
+    /* Four steel screw heads; no particles near the text. */
     dot(fb, stride, l + 5, t + 5, l, t, r, b, p->shadow);
-    dot(fb, stride, l + 5, t + 4, l, t, r, b, p->bevel);
-    dot(fb, stride, r - 5, b - 4, l, t, r, b, p->shadow);
-    dot(fb, stride, r - 5, b - 5, l, t, r, b, p->bevel);
+    dot(fb, stride, l + 5, t + 6, l, t, r, b, p->bevel);
+    dot(fb, stride, r - 5, t + 5, l, t, r, b, p->shadow);
+    dot(fb, stride, r - 5, t + 6, l, t, r, b, p->bevel);
+    dot(fb, stride, l + 5, b - 5, l, t, r, b, p->shadow);
+    dot(fb, stride, r - 5, b - 5, l, t, r, b, p->shadow);
 
+    /* The model/action labels are untouched; the industrial UI follows
+     * the reference's one-word visual hierarchy. */
     switch (item) {
-        case 0: first = "START"; second = "GAME"; break;
-        case 1: first = "LOAD"; second = "GAME"; break;
-        case 2: first = "OPTIONS"; second = NULL; break;
-        default: first = "HELP"; second = "ABOUT"; break;
+        case 0: first = "START"; break;
+        case 1: first = "LOAD"; break;
+        case 2: first = "OPTIONS"; break;
+        default: first = "HELP"; break;
     }
-    word(fb, stride, l, t, r, b, first,
-         t + (second != NULL ? 5 : 9) +
-         (state == ESP_MAIN_MENU_SKIN_CONFIRM ? 1 : 0), p);
-    if (second != NULL)
-        word(fb, stride, l, t, r, b, second,
-             t + 13 + (state == ESP_MAIN_MENU_SKIN_CONFIRM ? 1 : 0), p);
+    word(fb, stride, l, t, r, b, first, p,
+         state != ESP_MAIN_MENU_SKIN_IDLE);
     return 1;
 }
