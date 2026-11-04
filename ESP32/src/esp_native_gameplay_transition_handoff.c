@@ -428,7 +428,7 @@ static void performHandoff(uint8_t acknowledgeStats) {
                     (unsigned int)spawnPreflightStatus);
         return;
     }
-    printf("[NATIVECHANGEMAP] SPAWN-PREFLIGHT targetMap=%u tile=%u angle=%u source=%u beforeTeardown=yes\\n",
+    printf("[NATIVECHANGEMAP] SPAWN-PREFLIGHT targetMap=%u tile=%u angle=%u source=%u beforeTeardown=yes\n",
            (unsigned int)targetMapId,
            (unsigned int)handoff.spawn.tileIndex,
            (unsigned int)handoff.spawn.angle,
