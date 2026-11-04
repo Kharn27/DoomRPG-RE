@@ -35,6 +35,9 @@ for pct in (0, 5, 25, 50, 95, 100):
         assert pixels == track_width
         assert (16 + 10) + pixels - 1 == 133
 assert "if (b - t + 1 >= 24) {" in skin
+assert "const uint16_t sideSeam = b - t + 1 < 24 ? 0xa1c3U : p->copper;" in skin
+assert "l, t, r, b, sideSeam);" in skin
+assert skin.count("l, t, r, b, sideSeam);") == 2
 assert "const int trackLeft = TRANSITION_PROGRESS_LEFT + 10;" in loading
 assert "const int trackTop = TRANSITION_PROGRESS_TOP + 6;" in loading
 assert "const int trackWidth = TRANSITION_PROGRESS_WIDTH - 20;" in loading
