@@ -21,6 +21,7 @@
 #include "esp_native_gameplay_player_death.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_startup.h"
+#include "platform_touch_events.h"
 #include "esp_native_gameplay_session.h"
 #include "esp_native_intro_state.h"
 #include "esp_native_transition_presentation.h"
