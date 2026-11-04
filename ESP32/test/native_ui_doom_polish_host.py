@@ -61,12 +61,19 @@ assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT") == 102
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT") == 159
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT") == 104
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT") == 157
+# Main-only 24px tall buttons; Options retains its 54x20 rectangles.
+assert macro(layout, "DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_LEFT") == 104
+assert macro(layout, "DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_RIGHT") == 157
+assert macro(layout, "DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_HEIGHT") == 24
+assert macro(layout, "DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_FIRST_TOP") == 8
+assert macro(layout, "DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_PITCH") == 27
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_FIRST_TOP") == 13
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_HEIGHT") == 20
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_PITCH") == 25
 assert "DoomRPG_esp32MainMenuCardRect" in layout
 assert menu.count("DoomRPG_esp32MainMenuCardRect(") == 1
-assert touch.count("DoomRPG_esp32MainMenuCardRect(") == 1
+assert touch.count("DoomRPG_esp32MainMenuCardRect(") == 0
+assert touch.count("DoomRPG_esp32IndustrialMainCardRect(") == 1
 assert "return findHitItem(screenX / DOOMRPG_INTEGER_SCALE" in touch
 assert "DoomRPG_esp32MainMenuCardRect(item, &left, &top, &right, &bottom)" in options
 assert "DoomRPG_esp32MainMenuCardRect(OPTIONS_BACK_ITEM" in options
@@ -258,6 +265,19 @@ int main(void) {
            DOOMRPG_LOGICAL_HEIGHT);
     for (int i = 0; i < 4; ++i) {
         int l, t, r, b;
+        DoomRPG_esp32IndustrialMainCardRect(i, &l, &t, &r, &b);
+        assert(l == 104 && r == 157 && t == 8 + 27 * i);
+        assert(b == 31 + 27 * i);
+        assert(l > DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT);
+        assert(r < DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT);
+        if (i < 3) {
+            assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_TOP(i+1) - b - 1 == 3);
+        }
+        if (i == 0) {
+            assert(t - DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP == 4);
+        } else if (i == 3) {
+            assert(DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM - b == 4);
+        }
         DoomRPG_esp32MainMenuCardRect(i, &l, &t, &r, &b);
         assert(l == 104 && r == 157);
         assert(t == 13 + 25 * i && b == 32 + 25 * i);

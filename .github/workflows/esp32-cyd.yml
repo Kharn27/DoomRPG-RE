@@ -241,6 +241,14 @@ jobs:
       - name: Test Doom-red menu geometry and incremental terminal caret (host C)
         run: python ESP32/test/native_ui_doom_polish_host.py
 
+      - name: Test stateless procedural MENU_MAIN skin and native action routing
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -IESP32/include \
+            ESP32/test/main_menu_skin_host.c ESP32/src/esp_main_menu_skin.c \
+            -o /tmp/doomrpg-menu-skin-test
+          /tmp/doomrpg-menu-skin-test
+          python ESP32/test/main_menu_skin_integration_host.py
+
       - name: Test native canvas audio handoff without desktop Sound ABI (host C)
         run: python ESP32/test/native_audio_handoff_host.py
 
@@ -335,6 +343,21 @@ jobs:
       - name: Build production-path CYD trace firmware
         working-directory: ESP32
         run: pio run -e esp32-cyd-trace
+
+      - name: Measure industrial menu firmware cost against exact pre-skin main
+        run: |
+          git fetch --no-tags origin 01f859fe32a401691678aa0ee7e751e5e14f5fee
+          git worktree add --detach "$RUNNER_TEMP/doomrpg-menu-baseline" 01f859fe32a401691678aa0ee7e751e5e14f5fee
+          (
+            cd "$RUNNER_TEMP/doomrpg-menu-baseline/ESP32"
+            pio run -e esp32-cyd > "$RUNNER_TEMP/doomrpg-menu-baseline-build.log" 2>&1 ||
+              { tail -n 100 "$RUNNER_TEMP/doomrpg-menu-baseline-build.log"; exit 1; }
+          )
+          python ESP32/tools/compare_menu_skin_build.py \
+            "$RUNNER_TEMP/doomrpg-menu-baseline/ESP32/.pio/build/esp32-cyd/firmware.elf" \
+            "ESP32/.pio/build/esp32-cyd/firmware.elf" \
+            "$RUNNER_TEMP/doomrpg-menu-baseline/ESP32/.pio/build/esp32-cyd/firmware.bin" \
+            "ESP32/.pio/build/esp32-cyd/firmware.bin"
 
       - name: Reject retired migration exports in all profiles
         working-directory: ESP32

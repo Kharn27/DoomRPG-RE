@@ -30,8 +30,9 @@
 /* Landscape split layout, all coordinates logical RGB565 160x120.
  * Deliberately stretch the 108x74 source logo to a 102x120 tall left
  * banner, anchored at 0,0; the user prefers full height over aspect ratio.
- * Four 54x20 logical touch cards (108x40 physical) stay in the right rail.
- * One source of truth for painting, touch gate and debug hitboxes. */
+ * Four main-menu touch plates use 54x24 logical (108x48 physical)
+ * inside the same rail, without changing the Options 54x20 cards.
+ * Single layout source for painting, touch gate and debug hitboxes. */
 #define DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH 102
 #define DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_HEIGHT 120
 #define DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_X 0
@@ -44,6 +45,22 @@
 
 #define DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT 104
 #define DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT 157
+/* Main-only 54x24: equal 4px top/bottom rail margins and 3px gaps.
+ * Child Options retains its original 54x20 placement and touch gates. */
+#define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_LEFT 104
+#define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_RIGHT 157
+#define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_WIDTH \
+    (DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_RIGHT - \
+     DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_LEFT + 1)
+#define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_HEIGHT 24
+#define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_FIRST_TOP 8
+#define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_PITCH 27
+#define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_TOP(index) \
+    (DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_FIRST_TOP + \
+     (index) * DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_PITCH)
+#define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(index) \
+    (DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_TOP(index) + \
+     DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_HEIGHT - 1)
 #define DOOMRPG_ESP32_MAIN_MENU_CARD_FIRST_TOP 13
 #define DOOMRPG_ESP32_MAIN_MENU_CARD_HEIGHT 20
 #define DOOMRPG_ESP32_MAIN_MENU_CARD_PITCH 25
@@ -78,7 +95,17 @@ static inline void DoomRPG_esp32BrightnessCardRect(
     if (bottom != 0) *bottom = DOOMRPG_ESP32_BRIGHTNESS_CARD_BOTTOM(item);
 }
 
-/* Keep the exact 2-tap logical selection/confirmation contract. */
+/* Main painter and touch share 54x24, no logo/rail overlap; child
+ * Options, brightness and orientation remain on the 54x20 layout. */
+static inline void DoomRPG_esp32IndustrialMainCardRect(
+    int item, int* left, int* top, int* right, int* bottom) {
+    if (left != 0) *left = DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_LEFT;
+    if (right != 0) *right = DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_RIGHT;
+    if (top != 0) *top = DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_TOP(item);
+    if (bottom != 0) *bottom = DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(item);
+}
+
+/* Child Options retains the original card width and two-tap contract. */
 static inline void DoomRPG_esp32MainMenuCardRect(
     int item, int* left, int* top, int* right, int* bottom) {
     if (left != 0) *left = DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT;
