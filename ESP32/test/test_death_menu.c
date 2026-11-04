@@ -290,6 +290,8 @@ int main(int argc, char** argv) {
     assert(EspNativeGameplayPlayerDeath_handleTap(80, 60));
     assert(EspNativeGameplayPlayerDeath_service(&doom));
     assert(deathRoutes == routeBeforeConfirm);
+    assert(colorCount(60, 66, 0xffffU) > 40); /* visible pressed confirmation */
+    assert(colorCount(67, 72, 0xffffU) == 0); /* no second-line overlap */
     assert(EspNativeGameplayPlayerDeath_handleTap(80, 60));
     assert(EspNativeGameplayPlayerDeath_service(&doom));
     assert(deathRoutes == routeBeforeConfirm + 1 &&
