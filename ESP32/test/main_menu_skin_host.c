@@ -119,7 +119,7 @@ int main(void) {
                 assert(fb[(b - 3) * W + l + 10] == copper);
                 assert(fb[(t + 10) * W + l + 3] == copper);
                 assert(fb[(t + 10) * W + r - 3] == copper);
-                assert(fb[(t + 13) * W + l + 7] ==
+                assert(fb[(t + 18) * W + l + 7] ==
                        (state == ESP_MAIN_MENU_SKIN_ARMED ? 0x1000U : 0x0800U));
                 assert(fb[textY * W + l + leadingX[item]] == topColor);
                 for (int yy = t + 5; yy <= b - 4; ++yy)
