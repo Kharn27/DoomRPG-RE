@@ -184,7 +184,14 @@ int main(int argc, char** argv) {
     assert(pixel(12, 10) == ESP_HUB_COLOR_RED);
     assert(pixel(25, 36) == 0xd344U);
     assert(colorCount(10, 16, ESP_HUB_COLOR_RED) > 40);
-    assert(colorCount(36, 42, 0xf6afU) > 40);
+    /* The physical photo exposed overlapping text/seams in 19px plates.
+     * Each action now has exactly one 5x7 face centered at top+6..12.
+     * No ivory/gray caption may intrude into the copper bottom seam. */
+    assert(colorCount(39, 45, 0xf6afU) > 40);
+    assert(colorCount(33, 38, 0xf6afU) == 0);
+    assert(colorCount(46, 51, 0xf6afU) == 0);
+    assert(colorCount(60, 66, 0x9cd3U) > 40); /* INTRO Junction muted but legible */
+    assert(colorCount(67, 72, 0x9cd3U) == 0);
     if (argc > 1) preview(argv[1]);
     /* Header, margin, all gaps, footer and out-of-screen taps stay inert. */
     const int gaps[] = {-1, 0, 28, 32, 52, 53, 73, 74, 94, 95, 115, 119, 120};
@@ -244,7 +251,8 @@ int main(int argc, char** argv) {
      * solely from confirmed death-menu taps, then block duplicate inputs. */
     start(&doom, 0, ESP_MAP_ID_INTRO);
     assert(pixel(25, 36) == 0xd344U); /* industrial top copper seam */
-    assert(colorCount(45, 49, ESP_HUB_COLOR_RED) > 4);
+    assert(colorCount(39, 45, 0x9cd3U) > 40); /* LOAD disabled, still legible */
+    assert(colorCount(46, 51, 0x9cd3U) == 0);
     if (argc > 2) preview(argv[2]);
     assert(!EspNativeGameplayPlayerDeath_handleTap(80, 40));
     assert(!EspNativeGameplayPlayerDeath_handleTap(80, 60));
@@ -267,6 +275,7 @@ int main(int argc, char** argv) {
 
     /* Non-intro Junction recovers pre-death resources and max HP. */
     start(&doom, 0, 2U);
+    assert(colorCount(60, 66, 0xf6afU) > 40); /* JUNCTION enabled */
     assert(EspNativeGameplayPlayerDeath_handleTap(80, 60));
     assert(EspNativeGameplayPlayerDeath_service(&doom));
     assert(lastRouteMap == ESP_MAP_ID_JUNCTION);
