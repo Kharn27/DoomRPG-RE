@@ -1,3 +1,11 @@
+## Présentation industrielle du chargement — PR #251, PASS visuel ciblé
+
+`EspNativeTransitionPresentation_beginLoading` et `presentOverall` repeignent le fond `c.bmp`, le cadre du titre et la jauge sur le framebuffer logique 160×120 RGB565 sans allocation/cache supplémentaire. Le peintre commun aux boutons du menu dessine `LOADING` x=16..143/y=26..69 (titre jaune, texte `ENTERING` et nom de secteur) et le châssis de jauge x=16..143/y=82..99. La piste est x=20..139/y=88..93 : **120 pixels remplissables**, bordure encastrée d'un pixel. À 100 %, le remplissage couvre toute la piste, sans les deux anciennes cavités noires de 6 pixels observées sur la photo du vrai CYD. Le firmware ne modifie ni l'algorithme de progression, ni le gameplay, ni le tactile, ni les quatre boutons industriels.
+
+[PR #251](https://github.com/Kharn27/DoomRPG-RE/pull/251), code testé initial `08980f1d900e5fddfa4408ca2fd9c13ecb910a91`, rebase fonctionnel équivalent pour ce painter `36eb77cb05a87f03768bcd64db0742ff3f974be8`. CI du code initial [push](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41935248998) et [PR](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41935257588) SUCCESS. Le retour final de l'utilisateur approuve le visuel et le merge (« Ok pour moi on peut merger je pense »). **Limite : validation visuelle, non preuve Serial**, et le firmware combiné avec le nouveau `main` a sa propre CI ; test matériel post-rebase non fourni. Pour régression, flasher `esp32-cyd` normal, vérifier la jauge de 0 à 100 % sans blocs noirs latéraux lors de START et LOAD, puis la continuité de la session.
+
+---
+
 ## PR #249 — CHANGEMAP natif, statistiques exclusives, progression V11 (4 novembre 2026)
 
 **PASS matériel ciblé / préparation du merge utilisateur.** Sur la [PR #249](https://github.com/Kharn27/DoomRPG-RE/pull/249) (`agent/esp32-level-exit-completion-commit`), le code testé est **`140ea3f1e319d005f251524f90e310f23579aa06`**, rebasé sur `main=c7921728439762ab0506344d90358063e24eb4e6`. Les CI code [push](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41928613987) et [PR](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41928624314) sont **SUCCESS** pour les tests hôtes et les firmwares normal, bringup et trace.
