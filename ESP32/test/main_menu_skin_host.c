@@ -59,6 +59,8 @@ static void assertOutsideCardUntouched(const uint16_t* fb, int card) {
 int main(void) {
     uint16_t* fb = arena + GUARD;
     uint32_t fingerprints[4][3];
+    /* Independent 4x6 single-layer face-pixel totals per menu action. */
+    static const int facePixels[4] = {125, 107, 90, 115};
     int item, state;
     assert(DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH == 102);
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_HEIGHT == 20);
@@ -128,7 +130,7 @@ int main(void) {
                                    (state == ESP_MAIN_MENU_SKIN_CONFIRM ? 1 : 0);
                 assert(fb[firstY * W + firstX] ==
                        (state == ESP_MAIN_MENU_SKIN_IDLE
-                            ? 0xfec0U : 0xffffU));
+                            ? 0xd5a0U : 0xffffU));
             }
             /* Idle is one saturated gold stencil, without duplicate
              * shadow pixels. White selected glyphs retain their old style. */
@@ -136,7 +138,7 @@ int main(void) {
                 int face = 0, ivory = 0, oldGhost = 0;
                 int minX = W, maxX = 0;
                 const uint16_t faceColor =
-                    state == ESP_MAIN_MENU_SKIN_IDLE ? 0xfec0U : 0xffffU;
+                    state == ESP_MAIN_MENU_SKIN_IDLE ? 0xd5a0U : 0xffffU;
                 for (int yy = t + 3; yy <= b - 2; ++yy)
                     for (int xx = l + 6; xx <= r - 6; ++xx) {
                         const uint16_t pixel = fb[yy * W + xx];
@@ -148,12 +150,14 @@ int main(void) {
                         if (pixel == 0xfff5U) ++ivory;
                         if (pixel == 0x2800U) ++oldGhost;
                     }
-                assert(face > 20);
+                /* No second letter, no highlight, no in-glyph ghosts:
+                 * count exact visible pixels of the original stencil. */
+                assert(face == facePixels[item]);
                 assert(maxX >= minX && maxX - minX < 34);
                 assert(ivory == 0);
                 assert(oldGhost == 0);
                 if (state == ESP_MAIN_MENU_SKIN_IDLE)
-                    assert(face > 30);
+                    assert(fb[(t + 12) * W + l + 6] == 0x0801U);
             }
             h = cardHash(fb, item);
             assert(h != 0);
