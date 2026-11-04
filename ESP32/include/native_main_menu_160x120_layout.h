@@ -45,16 +45,21 @@
 
 #define DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT 104
 #define DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT 157
-/* Only MENU_MAIN plates grow vertically: +4px total, 1px gap remains.
- * Child Options retains 54x20 card rectangles and original touch gates. */
+/* Main-only 54x24: equal 4px top/bottom rail margins and 3px gaps.
+ * Child Options retains its original 54x20 placement and touch gates. */
 #define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_LEFT 104
 #define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_RIGHT 157
 #define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_WIDTH \
     (DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_RIGHT - \
      DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_LEFT + 1)
 #define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_HEIGHT 24
+#define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_FIRST_TOP 8
+#define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_PITCH 27
+#define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_TOP(index) \
+    (DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_FIRST_TOP + \
+     (index) * DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_PITCH)
 #define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(index) \
-    (DOOMRPG_ESP32_MAIN_MENU_CARD_TOP(index) + \
+    (DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_TOP(index) + \
      DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_HEIGHT - 1)
 #define DOOMRPG_ESP32_MAIN_MENU_CARD_FIRST_TOP 13
 #define DOOMRPG_ESP32_MAIN_MENU_CARD_HEIGHT 20
@@ -96,7 +101,7 @@ static inline void DoomRPG_esp32IndustrialMainCardRect(
     int item, int* left, int* top, int* right, int* bottom) {
     if (left != 0) *left = DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_LEFT;
     if (right != 0) *right = DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_RIGHT;
-    if (top != 0) *top = DOOMRPG_ESP32_MAIN_MENU_CARD_TOP(item);
+    if (top != 0) *top = DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_TOP(item);
     if (bottom != 0) *bottom = DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(item);
 }
 
