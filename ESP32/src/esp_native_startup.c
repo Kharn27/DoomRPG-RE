@@ -484,6 +484,7 @@ void EspNativeStartup_serviceDeathRoute(struct DoomRPG_s* doomRpgBase) {
         !EspMapResidentLifecycle_isReady() || EspAssetPack_isOpen() ||
         name == NULL || !deathSessionConfig()) {
         deathRoute.queued = 0U;
+        EspNativeGameplayPlayerDeath_cancelQueuedRoute();
         printf("[DEATHROUTE] REFUSED stage=source-preflight target=%u mutation=no\n",
                (unsigned int)target);
         return;
@@ -492,6 +493,7 @@ void EspNativeStartup_serviceDeathRoute(struct DoomRPG_s* doomRpgBase) {
     memset(&deathRoute.inventory, 0, sizeof(deathRoute.inventory));
     if (!EspAssetPack_sourceProbeBegin(name)) {
         deathRoute.queued = 0U;
+        EspNativeGameplayPlayerDeath_cancelQueuedRoute();
         printf("[DEATHROUTE] REFUSED stage=source-probe target=%u mutation=no\n",
                (unsigned int)target);
         return;
@@ -508,6 +510,7 @@ void EspNativeStartup_serviceDeathRoute(struct DoomRPG_s* doomRpgBase) {
             deathRoute.inventory.plan.persistentBytes == 0U ||
             EspAssetPack_isOpen() || EspAssetPack_isSourceProbeActive()) {
             deathRoute.queued = 0U;
+            EspNativeGameplayPlayerDeath_cancelQueuedRoute();
             printf("[DEATHROUTE] REFUSED stage=target-inventory target=%u mutation=no\n",
                    (unsigned int)target);
             return;
@@ -519,12 +522,14 @@ void EspNativeStartup_serviceDeathRoute(struct DoomRPG_s* doomRpgBase) {
         0U, &deathRoute.spawnPreflight);
     if (spawnStatus != ESP_PLAYER_SPAWN_OK) {
         deathRoute.queued = 0U;
+        EspNativeGameplayPlayerDeath_cancelQueuedRoute();
         printf("[DEATHROUTE] REFUSED stage=target-spawn target=%u status=%u mutation=no\n",
                (unsigned int)target, (unsigned int)spawnStatus);
         return;
     }
     if (!EspNativeTransitionPresentation_beginLoading(target)) {
         deathRoute.queued = 0U;
+        EspNativeGameplayPlayerDeath_cancelQueuedRoute();
         printf("[DEATHROUTE] REFUSED stage=loading target=%u mutation=no\n",
                (unsigned int)target);
         return;
