@@ -794,7 +794,7 @@ int DoomRPG_esp32RepaintOpaqueMainMenu(struct DoomRPG_s* doomRpgBase,
            (unsigned int)composeMs,
            (unsigned int)heapAfter,
            (unsigned int)largestAfter);
-    printf("[MAINOPAQUE] TARGET layout=split logo=102x120@0,0 stretched=yes unframed=yes rail=x102..159 cards=54x24 logical=108x48 physical verticalMargins=4,4 gap=3 palette=industrial-procedural idle=metal focus=orange-red cursorPatchBytes=0\n");
+    printf("[MAINOPAQUE] TARGET layout=split logo=102x120@0,0 stretched=yes unframed=yes rail=x102..159 cards=54x24 logical=108x48 physical verticalMargins=4,4 gap=3 palette=industrial-procedural idle=single-pass-deepgold focus=white cursorPatchBytes=0\n");
 
     printf("[MENUSKIN] COMPOSE us=%u state=IDLE wholeMenu=yes framebuffer=single\n",
            (unsigned int)composeUs);
