@@ -294,7 +294,7 @@ jobs:
 
       - name: Test death menu and explicit slot confirmation (host C)
         run: |
-          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/include -Isrc ESP32/test/test_death_menu.c ESP32/src/esp_native_gameplay_player_death.c ESP32/src/esp_native_gameplay_hub_touch_ui.c -Wl,--gc-sections -o /tmp/doomrpg-death-menu-test
+          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/include -Isrc ESP32/test/test_death_menu.c ESP32/src/esp_native_gameplay_player_death.c ESP32/src/esp_native_gameplay_hub_touch_ui.c ESP32/src/esp_main_menu_skin.c ESP32/src/esp_map_catalog.c -Wl,--gc-sections -o /tmp/doomrpg-death-menu-test
           /tmp/doomrpg-death-menu-test
 
       - name: Test credit-gated script with dialog and WAIT (host C)
