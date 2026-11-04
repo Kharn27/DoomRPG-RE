@@ -59,8 +59,6 @@ static void assertOutsideCardUntouched(const uint16_t* fb, int card) {
 int main(void) {
     uint16_t* fb = arena + GUARD;
     uint32_t fingerprints[4][3];
-    /* Independent 4x6 single-layer face-pixel totals per menu action. */
-    static const int facePixels[4] = {125, 107, 90, 115};
     int item, state;
     assert(DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH == 102);
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_HEIGHT == 20);
@@ -99,65 +97,56 @@ int main(void) {
             assert(EspMainMenuSkin_paint(fb, W, W, H, item,
                                         (EspMainMenuSkinState)state));
             assertOutsideCardUntouched(fb, item);
-            /* Exact V4 RGB565 witnesses: steel bevel and continuous copper lip. */
-            assert(fb[t * W + l + 10] ==
-                   (state == 0 ? 0x6b4dU :
-                    state == 1 ? 0xfba9U : 0xb2e4U));
-            assert(fb[(b - 1) * W + l + 8] ==
-                   (state == 0 ? 0x2965U :
-                    state == 1 ? 0xb981U : 0x9040U));
-            /* Orange is the same across all four sides and four buttons;
-             * yellow-gold is reserved for the Idle lettering. */
+            /* One compact reference-inspired word, not two tiny lines.
+             * Pixel counts are the independent masks from the 5x9 font,
+             * so unwanted shadows/duplicate faces fail the host gate. */
             {
-                const uint16_t copper = state == 0 ? 0xd380U :
-                                        state == 1 ? 0xfe00U : 0xfca0U;
-                for (int x = l + 7; x <= r - 7; ++x) {
-                    assert(fb[(t + 2) * W + x] == copper);
-                    assert(fb[b * W + x] == copper);
-                }
-                for (int y = t + 7; y <= b - 7; ++y) {
-                    assert(fb[y * W + l + 2] == copper);
-                    assert(fb[y * W + r - 2] == copper);
-                }
-            }
-            /* The new 4x6 words are centered inside exactly the same cards:
-             * first glyph sample at a known set bit, never a font-bound guess. */
-            {
-                const int firstX = l + (item == 0 ? 16 :
-                                           item == 1 ? 17 :
-                                           item == 2 ? 11 : 17);
-                const int firstY = t + (item == 2 ? 9 : 5) +
-                                   (state == ESP_MAIN_MENU_SKIN_CONFIRM ? 1 : 0);
-                assert(fb[firstY * W + firstX] ==
-                       (state == ESP_MAIN_MENU_SKIN_IDLE
-                            ? 0xd5a0U : 0xffffU));
-            }
-            /* Idle is one saturated gold stencil, without duplicate
-             * shadow pixels. White selected glyphs retain their old style. */
-            {
-                int face = 0, ivory = 0, oldGhost = 0;
-                int minX = W, maxX = 0;
-                const uint16_t faceColor =
-                    state == ESP_MAIN_MENU_SKIN_IDLE ? 0xd5a0U : 0xffffU;
-                for (int yy = t + 3; yy <= b - 2; ++yy)
+                static const int facePixels[4] = {88, 77, 130, 72};
+                static const int leadingX[4] = {13, 15, 7, 15};
+                const uint16_t copper =
+                    state == ESP_MAIN_MENU_SKIN_IDLE ? 0xd344U :
+                    state == ESP_MAIN_MENU_SKIN_ARMED ? 0xf447U : 0xdba5U;
+                int faces = 0;
+                int minX = W, maxX = 0, minY = H, maxY = 0;
+                const int textY = t + 8 +
+                    (state == ESP_MAIN_MENU_SKIN_CONFIRM ? 1 : 0);
+                const uint16_t topColor =
+                    state == ESP_MAIN_MENU_SKIN_IDLE ? 0xf6afU : 0xffffU;
+                assert(fb[t * W + l + 10] ==
+                       (state == ESP_MAIN_MENU_SKIN_IDLE ? 0x838dU :
+                        state == ESP_MAIN_MENU_SKIN_ARMED ? 0xa4d1U : 0x83ceU));
+                assert(fb[(t + 3) * W + l + 10] == copper);
+                assert(fb[(b - 3) * W + l + 10] == copper);
+                assert(fb[(t + 10) * W + l + 3] == copper);
+                assert(fb[(t + 10) * W + r - 3] == copper);
+                assert(fb[(t + 13) * W + l + 7] ==
+                       (state == ESP_MAIN_MENU_SKIN_ARMED ? 0x1000U : 0x0800U));
+                assert(fb[textY * W + l + leadingX[item]] == topColor);
+                for (int yy = t + 5; yy <= b - 4; ++yy)
                     for (int xx = l + 6; xx <= r - 6; ++xx) {
                         const uint16_t pixel = fb[yy * W + xx];
-                        if (pixel == faceColor) {
-                            ++face;
+                        const int isFace = state == ESP_MAIN_MENU_SKIN_IDLE
+                            ? pixel == 0xf6afU || pixel == 0xe4e9U ||
+                              pixel == 0xaa85U
+                            : pixel == 0xffffU;
+                        if (isFace) {
+                            ++faces;
                             if (xx < minX) minX = xx;
                             if (xx > maxX) maxX = xx;
+                            if (yy < minY) minY = yy;
+                            if (yy > maxY) maxY = yy;
                         }
-                        if (pixel == 0xfff5U) ++ivory;
-                        if (pixel == 0x2800U) ++oldGhost;
                     }
-                /* No second letter, no highlight, no in-glyph ghosts:
-                 * count exact visible pixels of the original stencil. */
-                assert(face == facePixels[item]);
-                assert(maxX >= minX && maxX - minX < 34);
-                assert(ivory == 0);
-                assert(oldGhost == 0);
-                if (state == ESP_MAIN_MENU_SKIN_IDLE)
-                    assert(fb[(t + 12) * W + l + 6] == 0x0801U);
+                assert(faces == facePixels[item]);
+                assert(maxX - minX < 43);
+                assert(maxY - minY == 8);
+                /* One-pass Idle must have no face-colored pixels outside
+                 * the exact glyph masks and no white leakage. */
+                if (state == ESP_MAIN_MENU_SKIN_IDLE) {
+                    for (int yy = t + 5; yy <= b - 4; ++yy)
+                        for (int xx = l + 6; xx <= r - 6; ++xx)
+                            assert(fb[yy * W + xx] != 0xffffU);
+                }
             }
             h = cardHash(fb, item);
             assert(h != 0);
