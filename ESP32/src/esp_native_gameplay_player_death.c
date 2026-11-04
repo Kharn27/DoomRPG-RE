@@ -253,6 +253,17 @@ int EspNativeGameplayPlayerDeath_captureEntry(void) {
     return 1;
 }
 
+void EspNativeGameplayPlayerDeath_cancelQueuedRoute(void) {
+    if (!deathState.routeQueued ||
+        deathState.phase != ESP_NATIVE_GAMEPLAY_PLAYER_DEATH_MENU_READY)
+        return;
+    deathState.routeQueued = 0U;
+    deathState.junctionConfirm = 0U;
+    deathState.menuPainted = paintDeathMenu() ? 1U : 0U;
+    printf("[DEATHROUTE] RETURN menu=death painted=%u sourceWorld=unchanged\\n",
+           (unsigned int)deathState.menuPainted);
+}
+
 int EspNativeGameplayPlayerDeath_isActive(void) {
     return deathState.active != 0U;
 }
