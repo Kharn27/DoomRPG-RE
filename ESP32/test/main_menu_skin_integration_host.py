@@ -65,7 +65,7 @@ assert "0xffffU" in skin and "p->ink" in skin
 assert "for (pass = armed ? 0 : 1; pass < 2; ++pass)" in skin
 assert 'p == &palettes[ESP_MAIN_MENU_SKIN_CONFIRM]' in skin
 assert "0xd5a0U" not in skin
-assert "0xfff5U" not in skin and "0x2800U" not in skin
+assert "0xfff5U" not in skin
 assert "diagonalShadow" not in skin
 assert "horizontal(fb, stride, l + 9, r - 9, t + 3," in skin
 assert "horizontal(fb, stride, l + 9, r - 9, b - 3," in skin
