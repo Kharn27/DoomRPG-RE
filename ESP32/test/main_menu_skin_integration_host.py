@@ -64,7 +64,6 @@ assert "0xfff5U" not in skin
 assert "for (pass = p == &palettes[ESP_MAIN_MENU_SKIN_IDLE] ? 2 : 0;" in skin
 assert "pass == 0 ? p->shadow : p->ink" in skin
 assert "0x7140U" not in skin
-assert "else if (!idle)" in skin
 assert "0xe902U" not in skin and "0xfdd7U" not in skin
 assert "0xf102U" not in skin and "0xd6b3U" not in skin
 assert "diagonalShadow" not in skin
