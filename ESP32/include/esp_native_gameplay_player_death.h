@@ -17,6 +17,8 @@ typedef enum EspNativeGameplayPlayerDeathPhase_e {
 } EspNativeGameplayPlayerDeathPhase;
 
 void EspNativeGameplayPlayerDeath_reset(void);
+/* Capture the compact RAM-only sector-entry player when WORLD becomes active. */
+int EspNativeGameplayPlayerDeath_captureEntry(void);
 int EspNativeGameplayPlayerDeath_isActive(void);
 int EspNativeGameplayPlayerDeath_isMenuReady(void);
 
