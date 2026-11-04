@@ -123,9 +123,9 @@ int main(void) {
                        (state == ESP_MAIN_MENU_SKIN_IDLE
                             ? 0xff29U : 0xffffU));
             }
-            /* Gold face with a distinct one-pixel DARK oxblood shadow.
-             * No cream/light stroke can thicken the unselected lettering.
-             * Selected white keeps its original dark engraving. */
+            /* Only tiny corners of the yellow Idle glyphs cast a near-black
+             * lower-right shadow, rather than a second full ghost letter.
+             * White selected glyphs retain both their old shadow passes. */
             {
                 int face = 0, ivory = 0, darkDrop = 0;
                 int minX = W, maxX = 0;
@@ -140,13 +140,16 @@ int main(void) {
                             if (xx > maxX) maxX = xx;
                         }
                         if (pixel == 0xfff5U) ++ivory;
-                        if (pixel == 0x5800U) ++darkDrop;
+                        if (pixel == 0x2800U) ++darkDrop;
                     }
                 assert(face > 20);
                 assert(maxX >= minX && maxX - minX < 34);
                 if (state == ESP_MAIN_MENU_SKIN_IDLE) {
                     assert(ivory == 0);
                     assert(darkDrop > 0);
+                    /* A true edge shadow occupies only a small fraction
+                     * of the glyph pixels, never a duplicate silhouette. */
+                    assert(darkDrop * 3 < face);
                 } else {
                     assert(ivory == 0 && darkDrop == 0);
                 }
