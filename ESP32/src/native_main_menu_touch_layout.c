@@ -132,9 +132,9 @@ static uint32_t dashboardLayoutHash(void) {
     hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM);
     hash = fnvMixU32(hash, DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_LEFT);
     hash = fnvMixU32(hash, DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_RIGHT);
-    hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_CARD_FIRST_TOP);
+    hash = fnvMixU32(hash, DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_FIRST_TOP);
     hash = fnvMixU32(hash, DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_HEIGHT);
-    hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_CARD_PITCH);
+    hash = fnvMixU32(hash, DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_PITCH);
     return hash;
 }
 
@@ -216,16 +216,16 @@ static int validatePresentationContract(DoomRPG_t* doomRpg,
             DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT ||
         DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_WIDTH != 54 ||
         DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_HEIGHT != 24 ||
-        DOOMRPG_ESP32_MAIN_MENU_CARD_TOP(0) <=
+        DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_TOP(0) <=
             DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP ||
         DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(3) >=
             DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM ||
         DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(0) >=
-            DOOMRPG_ESP32_MAIN_MENU_CARD_TOP(1) ||
+            DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_TOP(1) ||
         DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(1) >=
-            DOOMRPG_ESP32_MAIN_MENU_CARD_TOP(2) ||
+            DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_TOP(2) ||
         DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(2) >=
-            DOOMRPG_ESP32_MAIN_MENU_CARD_TOP(3)) {
+            DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_TOP(3)) {
         return 0;
     }
 
@@ -476,15 +476,6 @@ int DoomRPG_esp32PaintMenuDashboardCards(
         fillRect565(render, 127, 7, 155, 8, ESP_HUB_COLOR_STEEL_DARK);
         fillRect565(render, 105, 112, 155, 113, ESP_HUB_COLOR_STEEL_DARK);
         fillRect565(render, 105, 112, 118, 112, MAIN_DOOM_RED);
-    }
-
-    if (industrialMain) {
-        /* A warm 1px UAC conduit down the rail links the pressed-metal
-         * controls. Outside every card/hitbox and logo; main-only. */
-        fillRect565(render, 158, 17, 158, 104, 0xb320U);
-        fillRect565(render, 158, 34, 158, 36, 0xfda0U);
-        fillRect565(render, 158, 59, 158, 61, 0xfda0U);
-        fillRect565(render, 158, 84, 158, 86, 0xfda0U);
     }
 
     for (item = 0; item < DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT; ++item) {
@@ -803,7 +794,7 @@ int DoomRPG_esp32RepaintOpaqueMainMenu(struct DoomRPG_s* doomRpgBase,
            (unsigned int)composeMs,
            (unsigned int)heapAfter,
            (unsigned int)largestAfter);
-    printf("[MAINOPAQUE] TARGET layout=split logo=102x120@0,0 stretched=yes unframed=yes rail=x102..159 cards=54x24 logical=108x48 physical palette=industrial-procedural idle=metal focus=orange-red cursorPatchBytes=0\n");
+    printf("[MAINOPAQUE] TARGET layout=split logo=102x120@0,0 stretched=yes unframed=yes rail=x102..159 cards=54x24 logical=108x48 physical verticalMargins=4,4 gap=3 palette=industrial-procedural idle=metal focus=orange-red cursorPatchBytes=0\n");
 
     printf("[MENUSKIN] COMPOSE us=%u state=IDLE wholeMenu=yes framebuffer=single\n",
            (unsigned int)composeUs);
