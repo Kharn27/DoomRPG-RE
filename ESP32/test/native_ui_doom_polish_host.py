@@ -65,6 +65,8 @@ assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT") == 157
 assert macro(layout, "DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_LEFT") == 104
 assert macro(layout, "DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_RIGHT") == 157
 assert macro(layout, "DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_HEIGHT") == 24
+assert macro(layout, "DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_FIRST_TOP") == 8
+assert macro(layout, "DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_PITCH") == 27
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_FIRST_TOP") == 13
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_HEIGHT") == 20
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_PITCH") == 25
@@ -264,11 +266,18 @@ int main(void) {
     for (int i = 0; i < 4; ++i) {
         int l, t, r, b;
         DoomRPG_esp32IndustrialMainCardRect(i, &l, &t, &r, &b);
-        assert(l == 104 && r == 157 && t == 13 + 25 * i);
-        assert(b == 36 + 25 * i); /* +4px height; 1px inter-card gap */
+        assert(l == 104 && r == 157 && t == 8 + 27 * i);
+        assert(b == 31 + 27 * i);
         assert(l > DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT);
         assert(r < DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT);
-        if (i < 3) assert(b < DOOMRPG_ESP32_MAIN_MENU_CARD_TOP(i+1));
+        if (i < 3) {
+            assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_TOP(i+1) - b - 1 == 3);
+        }
+        if (i == 0) {
+            assert(t - DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP == 4);
+        } else if (i == 3) {
+            assert(DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM - b == 4);
+        }
         DoomRPG_esp32MainMenuCardRect(i, &l, &t, &r, &b);
         assert(l == 104 && r == 157);
         assert(t == 13 + 25 * i && b == 32 + 25 * i);
