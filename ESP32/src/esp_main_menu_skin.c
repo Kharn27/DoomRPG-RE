@@ -137,20 +137,16 @@ int EspMainMenuSkin_paintPlate(uint16_t* fb, int stride,
             dot(fb, stride, x, y, l, t, r, b, color);
         }
 
-    /* Copper rails remain unchanged on MENU_MAIN and the tall loading card.
-     * On the 18px loading gauge, the two short vertical end squares looked
-     * like empty progress caps. Tint ONLY those seams dark red-bronze. */
-    {
-        const uint16_t sideSeam = b - t + 1 < 24 ? 0xa1c3U : p->copper;
-        horizontal(fb, stride, l + 9, r - 9, t + 3,
-                   l, t, r, b, p->copper);
-        horizontal(fb, stride, l + 9, r - 9, b - 3,
-                   l, t, r, b, p->copper);
-        vertical(fb, stride, l + 3, t + 7, b - 7,
-                 l, t, r, b, sideSeam);
-        vertical(fb, stride, r - 3, t + 7, b - 7,
-                 l, t, r, b, sideSeam);
-    }
+    /* Warm engine-light seams, muted in idle, brighter while armed.
+     * The loading gauge's entire inner width covers its old side squares. */
+    horizontal(fb, stride, l + 9, r - 9, t + 3,
+               l, t, r, b, p->copper);
+    horizontal(fb, stride, l + 9, r - 9, b - 3,
+               l, t, r, b, p->copper);
+    vertical(fb, stride, l + 3, t + 7, b - 7,
+             l, t, r, b, p->copper);
+    vertical(fb, stride, r - 3, t + 7, b - 7,
+             l, t, r, b, p->copper);
 
     /* Bolt heads belong to the 24px+ menu/loading cards, not the 18px
      * progress chassis: on a thin gauge they look like two unfilled end caps.

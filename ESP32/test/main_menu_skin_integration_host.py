@@ -26,21 +26,25 @@ assert "#define TRANSITION_PROGRESS_HEIGHT 18" in loading
 assert loading.count("EspMainMenuSkin_paintPlate(framebuffer(),") == 2
 assert 'drawMiniTextCentered("LOADING", 80, 34, 2, 0xf6afU);' in loading
 assert 'drawMiniTextCentered("ENTERING", 80, 49, 1, COLOR_STEEL);' in loading
-# At 100%, the fill formula covers exactly all 108 pixels of the inset track.
-track_width = 128 - 20
+# At 100%, the fill covers the full 120px inset: no 6px black rectangular
+# pockets at either end, as seen on the physical CYD photo.
+track_width = 128 - 8
 for pct in (0, 5, 25, 50, 95, 100):
     pixels = track_width * pct // 100
     assert 0 <= pixels <= track_width
     if pct == 100:
         assert pixels == track_width
-        assert (16 + 10) + pixels - 1 == 133
+        assert (16 + 4) + pixels - 1 == 139
+        assert (16 + 4) - 1 == 19  # only a 1px groove after 3px steel rim
+        assert 16 + 128 - 4 == 140
 assert "if (b - t + 1 >= 24) {" in skin
-assert "const uint16_t sideSeam = b - t + 1 < 24 ? 0xa1c3U : p->copper;" in skin
-assert "l, t, r, b, sideSeam);" in skin
-assert skin.count("l, t, r, b, sideSeam);") == 2
-assert "const int trackLeft = TRANSITION_PROGRESS_LEFT + 10;" in loading
+assert "sideSeam" not in skin  # the red-bronze patch is now redundant
+assert "const int trackLeft = TRANSITION_PROGRESS_LEFT + 4;" in loading
 assert "const int trackTop = TRANSITION_PROGRESS_TOP + 6;" in loading
-assert "const int trackWidth = TRANSITION_PROGRESS_WIDTH - 20;" in loading
+assert "const int trackWidth = TRANSITION_PROGRESS_WIDTH - 8;" in loading
+assert "rect(trackLeft - 1, trackTop - 1," in loading
+assert "trackLeft + trackWidth, trackTop + trackHeight," in loading
+assert "trackLeft + fillWidth - 1, trackTop + row, tone" in loading
 assert "const int trackHeight = TRANSITION_PROGRESS_HEIGHT - 12;" in loading
 assert "fillWidth = (trackWidth * (int)percent) / 100;" in loading
 assert "trackLeft + fillWidth - 1, trackTop + row, tone" in loading

@@ -222,14 +222,12 @@ int main(void) {
                                            ESP_MAIN_MENU_SKIN_IDLE));
         assert(fb[83 * W + 26] == 0x838dU);
         assert(fb[85 * W + 26] == 0xd344U);
-        /* Two 4px vertical end squares are dark red-bronze, not bright
-         * copper; horizontal rails and the inner track stay unchanged. */
-        assert(fb[89 * W + 19] == 0xa1c3U);
-        assert(fb[92 * W + 19] == 0xa1c3U);
-        assert(fb[89 * W + 140] == 0xa1c3U);
-        assert(fb[92 * W + 140] == 0xa1c3U);
-        assert(fb[88 * W + 19] != 0xa1c3U);
-        assert(fb[93 * W + 140] != 0xa1c3U);
+        /* Common plate keeps its original copper seams; the transition
+         * painter later overlays the full-width inset gauge over them. */
+        assert(fb[89 * W + 19] == 0xd344U);
+        assert(fb[92 * W + 19] == 0xd344U);
+        assert(fb[89 * W + 140] == 0xd344U);
+        assert(fb[92 * W + 140] == 0xd344U);
         assert(fb[89 * W + 26] == 0x0800U);
         /* On this thin gauge the apparent two end-cap "balls" are gone.
          * Both formerly bolted sides must be unmarked base gunmetal. */

@@ -370,9 +370,11 @@ static int paintLoadingCard(const char* target) {
  * track and warm metal fill. The entire bounded plate is repainted for each
  * progress step; no accumulated pixels and no extra buffering. */
 static int paintProgressBar(uint8_t percent) {
-    const int trackLeft = TRANSITION_PROGRESS_LEFT + 10;
+    /* Inner track begins right after the 3px steel rim/1px groove. A 10px
+     * inset left two dark rectangular end caps visible beside a full gauge. */
+    const int trackLeft = TRANSITION_PROGRESS_LEFT + 4;
     const int trackTop = TRANSITION_PROGRESS_TOP + 6;
-    const int trackWidth = TRANSITION_PROGRESS_WIDTH - 20;
+    const int trackWidth = TRANSITION_PROGRESS_WIDTH - 8;
     const int trackHeight = TRANSITION_PROGRESS_HEIGHT - 12;
     int fillWidth;
     int row;
@@ -392,9 +394,8 @@ static int paintProgressBar(uint8_t percent) {
     if (percent > 100U) percent = 100U;
     fillWidth = (trackWidth * (int)percent) / 100;
 
-    /* Inset track with a dark engraved border, clear of the chassis edges.
-     * The narrow plate has no bolt heads to suggest unfilled end caps.
-     * Zero percent is a clean black cavity, not leftover progress. */
+    /* One-pixel engraved border; at 100% the 120px fill reaches both ends
+     * of the track. No black side pockets survive outside the track. */
     rect(trackLeft - 1, trackTop - 1,
          trackLeft + trackWidth, trackTop + trackHeight,
          0x3123U);
