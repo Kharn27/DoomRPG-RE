@@ -55,6 +55,35 @@ EspMapLevelExitStatsStatus EspMapLevelExitStats_collect(
     uint8_t showStats,
     EspMapLevelExitStats* outStats);
 
+/*
+ * Transaction boundary for native Player.completedLevels. Preflight checks
+ * that a previously collected exit projection belongs to this source BSP
+ * gameplay ID and has exactly the legacy SHOWSTATS/hub completion semantics.
+ * Unsupported bits beyond the V11 compact history mask fail closed.
+ *
+ * The consumer must preflight while the source session is still resident,
+ * and apply only AFTER the target map and gameplay session are configured.
+ * Neither function allocates, opens the PAK or touches Game_t.
+ * Time/moves, all-secrets and all-monsters aggregation remain separate.
+ */
+typedef enum EspMapLevelExitCommitStatus_e {
+    ESP_MAP_LEVEL_EXIT_COMMIT_INVALID = 0,
+    ESP_MAP_LEVEL_EXIT_COMMIT_SKIPPED = 1,
+    ESP_MAP_LEVEL_EXIT_COMMIT_READY = 2,
+    ESP_MAP_LEVEL_EXIT_COMMIT_APPLIED = 3,
+    ESP_MAP_LEVEL_EXIT_COMMIT_PLAYER_REJECTED = 4
+} EspMapLevelExitCommitStatus;
+
+EspMapLevelExitCommitStatus EspMapLevelExitStats_preflightCommit(
+    const EspMapLevelExitStats* stats,
+    uint8_t sourceGameplayLoadMapId,
+    uint8_t showStats);
+
+EspMapLevelExitCommitStatus EspMapLevelExitStats_commitCompletion(
+    const EspMapLevelExitStats* stats,
+    uint8_t sourceGameplayLoadMapId,
+    uint8_t showStats);
+
 #ifdef __cplusplus
 }
 #endif
