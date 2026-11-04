@@ -202,6 +202,8 @@ int __wrap_EspNativeGameplayActionEngine_present(void) {
 }
 void EspNativeGameplayActionEngine_markFreshFrame(void) { ++freshFrames; }
 int EspNativeTransitionPresentation_isLoadingActive(void) { return 0; }
+/* This scenario runs without a CHANGEMAP owner. Real present-gate guard. */
+int EspNativeGameplayTransition_isWaitingStats(void) { return 0; }
 int EspNativeGameplayLevelUp_filterGameplayPresent(void) { return 0; }
 /* The real frame compositor is compiled into this harness. A monster world
  * redraw must never leak a 3D present while automap owns the display. */

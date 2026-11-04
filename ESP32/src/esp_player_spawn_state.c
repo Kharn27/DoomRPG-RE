@@ -137,6 +137,38 @@ EspPlayerSpawnStatus EspPlayerSpawn_prepareInitial(
                      targetInventory, loadType, outState);
 }
 
+EspPlayerSpawnStatus EspPlayerSpawn_preflightCommitted(
+    const EspMapCommittedTransitionState* transition,
+    const EspBspInventory* targetInventory,
+    uint8_t loadType,
+    uint8_t gameIsLoaded,
+    EspPlayerSpawnState* outState) {
+    if (outState != NULL) memset(outState, 0, sizeof(*outState));
+    if (transition == NULL || targetInventory == NULL || outState == NULL) {
+        return ESP_PLAYER_SPAWN_INVALID;
+    }
+    if (transition->phase != ESP_MAP_COMMITTED_TRANSITION_PHASE_READY ||
+        transition->pendingConsumed != 1U || transition->committed != 0U ||
+        !EspMapCatalog_isValidId(transition->targetMapId)) {
+        return ESP_PLAYER_SPAWN_NOT_COMMITTED;
+    }
+    if (loadType != ESP_PLAYER_SPAWN_LOAD_FRESH_MAP || gameIsLoaded != 0U) {
+        return ESP_PLAYER_SPAWN_UNSUPPORTED_CONTEXT;
+    }
+    if (!inventoryMatchesTransition(transition, targetInventory)) {
+        return ESP_PLAYER_SPAWN_TARGET_MISMATCH;
+    }
+
+    /* No resident-target check here: the SOURCE still owns the native map.
+     * This is the exact same layout projection used by prepareCommitted(),
+     * which will independently recheck residency after the destructive
+     * transaction. Invalid header spawns are rejected before that boundary. */
+    return fillSpawn(transition->targetMapId,
+                     transition->targetGameplayLoadMapId,
+                     transition->spawnParam, targetInventory, loadType,
+                     outState);
+}
+
 EspPlayerSpawnStatus EspPlayerSpawn_prepareCommitted(
     const EspMapCommittedTransitionState* transition,
     const EspBspInventory* targetInventory,

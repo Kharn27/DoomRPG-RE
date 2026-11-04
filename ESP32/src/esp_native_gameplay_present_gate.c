@@ -2,6 +2,7 @@
 
 #include "esp_native_gameplay_present_gate.h"
 #include "esp_native_gameplay_level_up.h"
+#include "esp_native_gameplay_transition.h"
 #include "esp_native_transition_presentation.h"
 
 static uint8_t gateArmed;
@@ -46,6 +47,17 @@ int __wrap_Esp32PlatformVideo_present(void) {
      * for its own progress frames, so the loading UI remains publishable.
      */
     if (EspNativeTransitionPresentation_isLoadingActive()) {
+        return 1;
+    }
+
+    /* A completed CHANGEMAP door may install the full-screen stats frame
+     * while the source gameplay session is still active. That session may
+     * continue ticking feedback/ambient owners, but NONE of its wrapped
+     * presents may publish source-world pixels over WAIT_STATS. Stats itself
+     * uses the direct physical present; the tap handoff replaces this owner
+     * with the existing loading presentation before the target is committed.
+     * This guard has no effect on direct/no-stats map exits. */
+    if (EspNativeGameplayTransition_isWaitingStats()) {
         return 1;
     }
 

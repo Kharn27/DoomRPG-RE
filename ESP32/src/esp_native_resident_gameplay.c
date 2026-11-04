@@ -2070,6 +2070,13 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
 
     if (gameplayState.failed || gameplayState.exitRequested) return;
 
+    /* A real CHANGEMAP has finished its source-door animation and handed the
+     * full 160x120 screen and the tap callback to the level-statistics owner.
+     * Stop source-world input, feedback expiry, ambient redraw and any other
+     * gameplay service until that one tap begins the target handoff. Neither
+     * source map state nor resident allocations are reset during this pause. */
+    if (EspNativeGameplayTransition_isWaitingStats()) return;
+
     if (!gameplayState.active) {
         const int checkpointResume =
             gameplayState.checkpointResumeArmed != 0U;

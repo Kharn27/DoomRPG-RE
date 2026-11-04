@@ -55,7 +55,7 @@ static GameplayFrameScratch frameScratch;
 /* PR236 B probe uses the real ESP32 flash driver. Host-only fixtures link
  * the frame compositor without any physical partition and must not depend
  * on its metrics; this guard also avoids adding fixture mock state. */
-#if defined(ARDUINO_ARCH_ESP32)
+#if defined(ARDUINO_ARCH_ESP32) && DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
 static uint8_t spriteFlashProfileFrames = 0U;
 #endif
 
@@ -173,7 +173,7 @@ static int renderComposed(
     uint32_t renderBeforeSpritesFNV;
     uint32_t renderAfterSpritesFNV;
     uint32_t hudAfterWorldFNV;
-#if defined(ARDUINO_ARCH_ESP32)
+#if defined(ARDUINO_ARCH_ESP32) && DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     uint32_t flashReadBefore = 0U;
     uint32_t flashReadDuringSprites = 0U;
 #endif
@@ -253,7 +253,7 @@ static int renderComposed(
     }
 
     EspAssetPack_residentGetStats(&spriteStorageBefore);
-#if defined(ARDUINO_ARCH_ESP32)
+#if defined(ARDUINO_ARCH_ESP32) && DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     flashReadBefore = EspAssetPack_mapFlashRuntimeReadMicros();
 #endif
     phaseStart = esp_timer_get_time();
@@ -263,12 +263,12 @@ static int renderComposed(
         : EspNativeSpriteRenderer_render(render, sprites);
     renderAfterSpritesFNV = fnv1a(render, (uint32_t)sizeof(*render));
     stats->spriteMicros = elapsedMicros(phaseStart);
-#if defined(ARDUINO_ARCH_ESP32)
+#if defined(ARDUINO_ARCH_ESP32) && DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     flashReadDuringSprites =
         EspAssetPack_mapFlashRuntimeReadMicros() - flashReadBefore;
 #endif
     EspAssetPack_residentGetStats(&spriteStorageAfter);
-#if defined(ARDUINO_ARCH_ESP32)
+#if defined(ARDUINO_ARCH_ESP32) && DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     if (spriteFlashProfileFrames < 16U && EspAssetPack_isMapFlashActive()) {
         ++spriteFlashProfileFrames;
         printf("[SPRITEFLASH] sample=%u preview=%u spriteUs=%u flashReadUs=%u otherUs=%u reads=%u bytes=%u backing=raw-partition\n",

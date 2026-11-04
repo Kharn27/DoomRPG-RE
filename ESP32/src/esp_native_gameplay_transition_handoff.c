@@ -10,6 +10,7 @@
 #include "esp_hud_refresh_state.h"
 #include "esp_map_catalog.h"
 #include "esp_map_committed_transition.h"
+#include "esp_map_level_exit_stats.h"
 #include "esp_map_resident_lifecycle.h"
 #include "esp_native_gameplay_combat_math.h"
 #include "esp_native_gameplay_dispatch.h"
@@ -46,10 +47,13 @@ typedef struct EspNativeGameplayTransitionHandoffScratch_s {
     EspMapResidentSnapshot targetSnapshot;
     EspMapCommittedTransitionState committed;
     EspMapSaveRouteState saveRoute;
+    EspMapLevelExitStats levelStats;
     EspPlayerSpawnState spawn;
     EspNativeGameplaySessionConfig sessionConfig;
     uint32_t playerKeys;
     uint16_t disabledWeapons;
+    uint8_t sourceGameplayLoadId;
+    uint8_t showStats;
     uint8_t armed;
     uint8_t busy;
     uint8_t failed;
@@ -288,6 +292,10 @@ static void performHandoff(uint8_t acknowledgeStats) {
     EspMapCommittedTransitionStatus committedStatus;
     uint8_t sourceMapId;
     uint8_t targetMapId;
+    const EspPlayerViewState* sourceView;
+    EspMapLevelExitCommitStatus levelCommitStatus;
+    EspMapLevelExitCommitStatus levelPreflightStatus;
+    EspPlayerSpawnStatus spawnPreflightStatus;
 
     if (handoff.busy || handoff.failed ||
         (acknowledgeStats != 0U && !handoff.armed)) {
@@ -349,8 +357,18 @@ static void performHandoff(uint8_t acknowledgeStats) {
 
     handoff.committed = transition->committed;
     handoff.saveRoute = transition->saveRoute;
+    handoff.levelStats = transition->levelStats;
     sourceMapId = handoff.committed.sourceMapId;
     targetMapId = handoff.committed.targetMapId;
+    handoff.showStats = (uint8_t)(handoff.committed.menuKind !=
+                                   ESP_STATS_MENU_KIND_NONE);
+    sourceView = EspPlayerView_view();
+    if (sourceView == NULL || sourceView->active != 1U ||
+        sourceView->targetMapId != sourceMapId) {
+        failHandoff("SOURCE_PLAYER_VIEW", sourceMapId);
+        return;
+    }
+    handoff.sourceGameplayLoadId = sourceView->gameplayLoadMapId;
 
     if (!inventoryForMap(sourceMapId, &handoff.sourceInventory)) {
         failHandoff("SOURCE_INVENTORY", sourceMapId);
@@ -362,6 +380,17 @@ static void performHandoff(uint8_t acknowledgeStats) {
     }
     if (!captureSessionConfig()) {
         failHandoff("PLAYER_SESSION", 0U);
+        return;
+    }
+
+    /* Source-derived completion is validated before any destructive handoff.
+     * The durable Player completed-level bits are published only once the
+     * target session has been configured successfully. */
+    levelPreflightStatus = EspMapLevelExitStats_preflightCommit(
+        &handoff.levelStats, handoff.sourceGameplayLoadId, handoff.showStats);
+    if (levelPreflightStatus != ESP_MAP_LEVEL_EXIT_COMMIT_READY &&
+        levelPreflightStatus != ESP_MAP_LEVEL_EXIT_COMMIT_SKIPPED) {
+        failHandoff("LEVEL_EXIT_PREFLIGHT", (unsigned int)levelPreflightStatus);
         return;
     }
 
@@ -387,6 +416,23 @@ static void performHandoff(uint8_t acknowledgeStats) {
                (unsigned int)targetMapId,
                (unsigned int)handoff.committed.phase);
     }
+
+    /* Pure target spawn validation before touching the resident source.
+     * After stats acknowledgement the transition is READY. The same layout
+     * projection is revalidated against target residency after the commit. */
+    spawnPreflightStatus = EspPlayerSpawn_preflightCommitted(
+        &handoff.committed, &handoff.targetInventory,
+        HANDOFF_LOAD_TYPE, HANDOFF_GAME_IS_LOADED, &handoff.spawn);
+    if (spawnPreflightStatus != ESP_PLAYER_SPAWN_OK) {
+        failHandoff("TARGET_SPAWN_PREFLIGHT",
+                    (unsigned int)spawnPreflightStatus);
+        return;
+    }
+    printf("[NATIVECHANGEMAP] SPAWN-PREFLIGHT targetMap=%u tile=%u angle=%u source=%u beforeTeardown=yes\n",
+           (unsigned int)targetMapId,
+           (unsigned int)handoff.spawn.tileIndex,
+           (unsigned int)handoff.spawn.angle,
+           (unsigned int)handoff.spawn.spawnSource);
 
     /*
      * Cross the visual ownership boundary before the destructive backing
@@ -457,6 +503,23 @@ static void performHandoff(uint8_t acknowledgeStats) {
         failHandoff("TARGET_SESSION", 0U);
         return;
     }
+
+    levelCommitStatus = EspMapLevelExitStats_commitCompletion(
+        &handoff.levelStats, handoff.sourceGameplayLoadId, handoff.showStats);
+    if ((levelPreflightStatus == ESP_MAP_LEVEL_EXIT_COMMIT_READY &&
+         levelCommitStatus != ESP_MAP_LEVEL_EXIT_COMMIT_APPLIED) ||
+        (levelPreflightStatus == ESP_MAP_LEVEL_EXIT_COMMIT_SKIPPED &&
+         levelCommitStatus != ESP_MAP_LEVEL_EXIT_COMMIT_SKIPPED)) {
+        failHandoff("LEVEL_EXIT_COMMIT", (unsigned int)levelCommitStatus);
+        return;
+    }
+    printf("[NATIVECHANGEMAP] LEVEL-EXIT sourceMap=%u gameplayLoadMapId=%u showStats=%u completionBit=%08x commit=%s checkpoint=V11-native\n",
+           (unsigned int)sourceMapId,
+           (unsigned int)handoff.sourceGameplayLoadId,
+           (unsigned int)handoff.showStats,
+           (unsigned int)handoff.levelStats.completionLevelBit,
+           levelCommitStatus == ESP_MAP_LEVEL_EXIT_COMMIT_APPLIED
+               ? "applied" : "skipped");
 
     handoff.armed = 0U;
     handoff.busy = 0U;

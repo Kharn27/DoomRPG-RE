@@ -170,10 +170,11 @@ typedef struct TransientWorldBatch_s {
 static TransientWorldBatch transientWorldBatch;
 static uint8_t scratchOwnerLogged;
 
-/* PR236 bounded sprite phase witness: no extra reads or allocations, no
- * per-object logging. Each measurement is inside the existing renderer.
- * The cap includes 5 load/warm renders plus the first gameplay previews. */
+/* Bounded per-phase and per-object timing belongs to TRACE only.
+ * Production INFO must not spend its first gameplay frames on timing/Serial. */
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
 static uint8_t spritePhaseSampleCount;
+#endif
 
 /* Additional bounded breakdown of the map-wide admission scan. Timers
  * touch only already-executed operations, keep semantic access intact,
@@ -1530,6 +1531,7 @@ static int renderImpl(struct Render_s* renderBase,
     uint32_t dropOrderCount = 0U;
     uint32_t i;
     uint32_t dropIndex = 0U;
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     SpriteOrderProbe orderProbe;
     int64_t orderScanDone = 0LL;
     int64_t profileT0 = 0LL;
@@ -1539,6 +1541,7 @@ static int renderImpl(struct Render_s* renderBase,
     int64_t profileT4 = 0LL;
     int64_t profileT5 = 0LL;
     int64_t profileT6 = 0LL;
+#endif
     int opened = 0;
     int ok = 0;
 
@@ -1552,7 +1555,9 @@ static int renderImpl(struct Render_s* renderBase,
         return 0;
     }
 
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     profileT0 = esp_timer_get_time();
+#endif
     workspace = (SpriteWorkspace*)malloc(sizeof(*workspace));
     if (workspace == NULL) return 0;
     saved = (Scratch*)malloc(sizeof(*saved));
@@ -1563,7 +1568,9 @@ static int renderImpl(struct Render_s* renderBase,
     memset(workspace, 0, sizeof(*workspace));
     memset(saved, 0, sizeof(*saved));
     memset(&stats, 0, sizeof(stats));
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     memset(&orderProbe, 0, sizeof(orderProbe));
+#endif
     saveScratch(render, saved);
     if (scratchOwnerLogged == 0U) {
         scratchOwnerLogged = 1U;
@@ -1572,7 +1579,9 @@ static int renderImpl(struct Render_s* renderBase,
                (unsigned int)sizeof(*workspace));
     }
 
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     profileT1 = esp_timer_get_time();
+#endif
     ambientSampleMs = (uint32_t)(esp_timer_get_time()/1000LL);
     if (!(preview
               ? EspNativeBspVisibility_buildForView(
@@ -1582,7 +1591,9 @@ static int renderImpl(struct Render_s* renderBase,
         goto done;
     }
 
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     profileT2 = esp_timer_get_time();
+#endif
 
     stats.depthNodes = workspace->visibility.nodes;
     stats.depthLeaves = workspace->visibility.leaves;
@@ -1595,10 +1606,17 @@ static int renderImpl(struct Render_s* renderBase,
 
     if (!buildOrder(render, runtime, &workspace->visibility,
                     workspace->order, &stats, &orderCount, preview,
-                    spritePhaseSampleCount < 16U ? &orderProbe : NULL)) {
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
+                    spritePhaseSampleCount < 16U ? &orderProbe : NULL
+#else
+                    NULL
+#endif
+                    )) {
         goto done;
     }
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     orderScanDone = esp_timer_get_time();
+#endif
     if (!buildPersistentDropOrder(render, workspace->dropOrder,
                                   &dropOrderCount)) {
         goto done;
@@ -1619,11 +1637,15 @@ static int renderImpl(struct Render_s* renderBase,
                    (unsigned int)spritesMutated);
         }
     }
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     profileT3 = esp_timer_get_time();
+#endif
     if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) goto done;
     opened = 1;
     if (!initSources(&sources, &stats)) goto done;
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     profileT4 = esp_timer_get_time();
+#endif
 
     i = 0U;
     dropIndex = 0U;
@@ -1657,7 +1679,9 @@ static int renderImpl(struct Render_s* renderBase,
         goto done;
     }
 
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     profileT5 = esp_timer_get_time();
+#endif
 
     /* A complete frame need not contain a visible additive sprite or glow.
      * Those nonzero witnesses happened to hold on Entrance and Junction,
@@ -1674,7 +1698,9 @@ static int renderImpl(struct Render_s* renderBase,
              stats.bspCandidates &&
          stats.glowDraws + stats.glowNearCulled + stats.glowClipCulled ==
              stats.glowCompanions;
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     profileT6 = esp_timer_get_time();
+#endif
 
 done:
     if (opened || EspAssetPack_isOpen()) EspAssetPack_close();
@@ -1690,6 +1716,7 @@ done:
         ambientRapidCandidates=(uint8_t)(stats.ambientRapidCandidates!=0U);
     } else EspNativeSpriteRenderer_suspendAmbient();
     *outStats = stats;
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     if (ok && spritePhaseSampleCount < 16U && profileT0 != 0LL &&
         profileT1 >= profileT0 && profileT2 >= profileT1 &&
         profileT3 >= profileT2 && profileT4 >= profileT3 &&
@@ -1730,6 +1757,7 @@ done:
                (unsigned int)stats.draws,
                (unsigned int)stats.pixelsDrawn);
     }
+#endif
     return ok;
 }
 

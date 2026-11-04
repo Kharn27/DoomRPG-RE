@@ -37,6 +37,25 @@ jobs:
           python -m py_compile ESP32/tools/playtest_watch.py
           python ESP32/tools/playtest_watch.py --self-test
 
+      - name: Test CHANGEMAP level-completion preflight and durable V11 publication (host C)
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+            -IESP32/include ESP32/src/esp_map_level_exit_stats.c \
+            ESP32/test/level_exit_completion_host.c -Wl,--gc-sections \
+            -o /tmp/doomrpg-level-exit-commit
+          /tmp/doomrpg-level-exit-commit
+
+      - name: Test CHANGEMAP destination spawn before resident teardown (host C)
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+            -IESP32/include ESP32/src/esp_player_spawn_state.c \
+            ESP32/src/esp_map_catalog.c ESP32/test/map_spawn_preflight_host.c \
+            -Wl,--gc-sections -o /tmp/doomrpg-map-spawn-preflight
+          /tmp/doomrpg-map-spawn-preflight
+
+      - name: Test CHANGEMAP WAIT_STATS exclusive full-screen presentation (real C gate)
+        run: python ESP32/test/changemap_stats_present_owner_host.py
+
       - name: Test Junction completed-level event predicate (host C)
         run: |
           cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/level_gate_native_host.c -o /tmp/doomrpg-native-level-gate-test
@@ -343,6 +362,20 @@ jobs:
       - name: Build production-path CYD trace firmware
         working-directory: ESP32
         run: pio run -e esp32-cyd-trace
+
+      - name: Verify sprite timing witnesses absent from production, retained in diagnostic profiles
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          labels = (b'[SPRITEORDER] sample=', b'[SPRITEPHASE] sample=', b'[SPRITEFLASH] sample=')
+          normal = Path('ESP32/.pio/build/esp32-cyd/firmware.elf').read_bytes()
+          assert all(label not in normal for label in labels), 'production still includes sprite profiling Serial'
+          # Both bringup and trace deliberately use DOOMRPG_LOG_LEVEL=4.
+          for env in ('esp32-cyd-bringup', 'esp32-cyd-trace'):
+              data = (Path('ESP32/.pio/build') / env / 'firmware.elf').read_bytes()
+              assert all(label in data for label in labels), f'{env} lost diagnostic sprite witnesses'
+          print('PASS normal sprite timings/Serial absent; diagnostics retained in bringup and trace')
+          PY
 
       - name: Measure industrial menu firmware cost against exact pre-skin main
         run: |
