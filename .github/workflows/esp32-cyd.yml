@@ -37,6 +37,14 @@ jobs:
           python -m py_compile ESP32/tools/playtest_watch.py
           python ESP32/tools/playtest_watch.py --self-test
 
+      - name: Test CHANGEMAP level-completion preflight and durable V11 publication (host C)
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+            -IESP32/include ESP32/src/esp_map_level_exit_stats.c \
+            ESP32/test/level_exit_completion_host.c -Wl,--gc-sections \
+            -o /tmp/doomrpg-level-exit-commit
+          /tmp/doomrpg-level-exit-commit
+
       - name: Test Junction completed-level event predicate (host C)
         run: |
           cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/level_gate_native_host.c -o /tmp/doomrpg-native-level-gate-test
