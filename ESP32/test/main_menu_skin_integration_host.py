@@ -36,6 +36,13 @@ for unchanged in ("#define DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT 104",
 assert "#define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_LEFT 104" in layout
 assert "#define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_RIGHT 157" in layout
 assert "#define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_HEIGHT 24" in layout
+assert "#define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_FIRST_TOP 8" in layout
+assert "#define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_PITCH 27" in layout
+assert "DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_TOP(item)" in layout
+assert "DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_TOP(0)" in menu
+assert "DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_TOP(1)" in menu
+assert "DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_PITCH" in menu
+assert "fillRect565(render, 158, 17" not in menu
 assert "DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(item)" in layout
 assert "DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_HEIGHT" in skin
 assert "DoomRPG_esp32IndustrialMainCardRect(item, &l, &t, &r, &b)" in skin
@@ -46,16 +53,16 @@ for forbidden in ("malloc(", "calloc(", "realloc(", "free(", "esp_timer", "SDL_"
     assert forbidden not in skin, forbidden
 assert "ESP_MAIN_MENU_SKIN_CONFIRM" in skin
 assert "if (second != NULL)" in skin
-# One bounded 4x6 custom font; yellow Idle with a sparse dark edge
-# underhang, not a second full offset glyph. White active unchanged.
+# Single saturated-gold Idle glyph pass (no second shadow letter);
+# selected white maintains its original two engraved shadow passes.
 assert "glyphs[16][6]" in skin
 assert "length * 5 - 1" in skin
 assert "row < 6" in skin and "bit < 4" in skin
-assert "0xff29U" in skin and "0xffffU" in skin
-assert "0x2800U" in skin and "0x5800U" not in skin
+assert "0xfec0U" in skin and "0xffffU" in skin
+assert "0xff29U" not in skin and "0x2800U" not in skin
 assert "0xfff5U" not in skin
-assert "rightEdge && downEdge" in skin
-assert "if (!idle || (rightEdge && downEdge))" in skin
+assert "for (pass = p == &palettes[ESP_MAIN_MENU_SKIN_IDLE] ? 2 : 0;" in skin
+assert "pass == 0 ? p->shadow : p->ink" in skin
 assert "0x7140U" not in skin
 assert "else if (!idle)" in skin
 assert "0xe902U" not in skin and "0xfdd7U" not in skin
