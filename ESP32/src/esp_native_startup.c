@@ -438,6 +438,9 @@ static int deathSessionConfig(void) {
     const EspNativeGameplayWeaponSpec* w = NULL;
     uint8_t ammoType;
 
+    /* Fresh-map setup explicitly rejects disabled weapons. Never tear down
+     * the dying sector when this source-player contract cannot be re-spawned. */
+    if (p->disabledWeapons != 0U) return 0;
     if (p->weapon >= ESP_NATIVE_GAMEPLAY_PLAYER_WEAPON_LIMIT ||
         p->weapons == 0U ||
         (p->weapons & (uint16_t)(1U << p->weapon)) == 0U)
