@@ -14,10 +14,11 @@ typedef struct {
     uint16_t base, steel, bevel, shadow, groove, copper, glow, ink, typeFace;
 } SkinPalette;
 
-/* Doom gold 4x6 Idle glyphs get a truly DARK, one-pixel oxblood
- * drop-shadow, NEVER an ivory/yellow underline that merges into the face.
- * Armed/Confirm keep their established white glyphs and dark engraving.
- * All uniform orange/copper plate strokes remain unchanged. */
+/* Doom-gold 4x6 Idle glyphs: only a *sparse*, near-black lower-right
+ * cast on terminal edges. Do not shift a full duplicate of the glyph:
+ * that produces the ghost/double lettering seen on the physical CYD.
+ * Armed/Confirm keep their original pure-white face and dark engraving.
+ * Plate/rail/geometry/touch are unchanged. */
 static const SkinPalette palettes[3] = {
     {0x1082U,0x2124U,0x6b4dU,0x0800U,0x2965U,0xd380U,0xa2a1U,0x2104U,0xff29U},
     {0x2021U,0x49c3U,0xfba9U,0x1800U,0xb981U,0xfe00U,0xffc0U,0xc180U,0xffffU},
@@ -68,16 +69,16 @@ static void vertical(uint16_t* fb, int stride, int x, int y0, int y1,
         dot(fb, stride, x, y, l, t, r, b, c);
 }
 
-/* Shadows first, faces last. Idle gets a single dark-red diagonal
- * shadow; the bright lower stroke has been removed to keep each letter
- * crisp against the graphite panel. Armed/Confirm retain BOTH original
- * dark-shadow passes. The 5px advance prevents glyph collisions. */
+/* Shadows first, faces last. Idle: near-black underhang, only from
+ * bottom-row pixels and exposed rightmost stroke termini. Never offset
+ * the entire 4x6 glyph, since that reads as a second letter at x2.
+ * Armed/Confirm retain BOTH original shadow passes byte-for-byte. */
 static void word(uint16_t* fb, int stride, int l, int t, int r, int b,
                  const char* value, int baselineY, const SkinPalette* p) {
     int length = 0, pass, i, row, bit;
     int x0;
     const int idle = p == &palettes[ESP_MAIN_MENU_SKIN_IDLE];
-    const uint16_t drop = idle ? 0x5800U : p->shadow;
+    const uint16_t drop = idle ? 0x2800U : p->shadow;
     while (value[length] != '\0') ++length;
     x0 = l + ((r - l + 1) - (length * 5 - 1)) / 2;
     for (pass = 0; pass < 3; ++pass) {
@@ -94,10 +95,23 @@ static void word(uint16_t* fb, int stride, int l, int t, int r, int b,
                         if (pass == 2) {
                             dot(fb, stride, x, y, l, t, r, b, p->typeFace);
                         } else if (y + 1 < b) {
-                            if (pass == 0)
-                                dot(fb, stride, x + 1, y + 1,
-                                    l, t, r, b, drop);
-                            else if (!idle)
+                            if (pass == 0) {
+                                /* Only tiny bottom/right terminals cast:
+                                 * not a full shifted 4x6 duplicate.
+                                 * Row 5 gives a 1px underhang; an exposed
+                                 * right edge gives a restrained side notch.
+                                 * White states keep their old full shadow. */
+                                const uint8_t mask = (uint8_t)(8U >> bit);
+                                const int rightEdge =
+                                    bit == 3 ||
+                                    (glyphs[letter][row] & (mask >> 1)) == 0U;
+                                const int downEdge =
+                                    row == 5 ||
+                                    (glyphs[letter][row + 1] & mask) == 0U;
+                                if (!idle || (rightEdge && downEdge))
+                                    dot(fb, stride, x + 1, y + 1,
+                                        l, t, r, b, drop);
+                            } else if (!idle)
                                 /* White selected text stays pixel-identical. */
                                 dot(fb, stride, x, y + 1,
                                     l, t, r, b, p->ink);
