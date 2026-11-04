@@ -36,8 +36,8 @@ static void assertOutsideCardUntouched(const uint16_t* fb, int card) {
     int l, t, r, b, x, y;
     int changed = 0;
     DoomRPG_esp32IndustrialMainCardRect(card, &l, &t, &r, &b);
-    assert(l == 104 && r == 157 && t == 13 + 25 * card &&
-           b == 36 + 25 * card);
+    assert(l == 104 && r == 157 && t == 8 + 27 * card &&
+           b == 31 + 27 * card);
     for (x = 0; x < GUARD; ++x) {
         assert(arena[x] == SENTINEL);
         assert(arena[GUARD + W * H + x] == SENTINEL);
@@ -65,14 +65,21 @@ int main(void) {
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_PITCH == 25);
     assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_WIDTH == 54);
     assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_HEIGHT == 24);
-    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(0) == 36);
-    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(1) == 61);
-    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(2) == 86);
-    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(3) == 111);
-    /* The cards now have exactly one logical row between them. */
+    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_FIRST_TOP == 8);
+    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_PITCH == 27);
+    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(0) == 31);
+    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(1) == 58);
+    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(2) == 85);
+    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(3) == 112);
+    /* Optical centering: exactly 4px at each end of the rail,
+     * with three identically spaced 3px gaps between all four cards. */
+    assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_TOP(0) -
+           DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP == 4);
+    assert(DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM -
+           DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(3) == 4);
     for (int i = 0; i < 3; ++i)
-        assert(DOOMRPG_ESP32_MAIN_MENU_CARD_TOP(i + 1) -
-               DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(i) == 2);
+        assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_TOP(i + 1) -
+               DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(i) - 1 == 3);
     /* Old child-screen cards retain the original 54px geometry. */
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT == 104);
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT == 157);
@@ -121,16 +128,15 @@ int main(void) {
                                    (state == ESP_MAIN_MENU_SKIN_CONFIRM ? 1 : 0);
                 assert(fb[firstY * W + firstX] ==
                        (state == ESP_MAIN_MENU_SKIN_IDLE
-                            ? 0xff29U : 0xffffU));
+                            ? 0xfec0U : 0xffffU));
             }
-            /* Only tiny corners of the yellow Idle glyphs cast a near-black
-             * lower-right shadow, rather than a second full ghost letter.
-             * White selected glyphs retain both their old shadow passes. */
+            /* Idle is one saturated gold stencil, without duplicate
+             * shadow pixels. White selected glyphs retain their old style. */
             {
-                int face = 0, ivory = 0, darkDrop = 0;
+                int face = 0, ivory = 0, oldGhost = 0;
                 int minX = W, maxX = 0;
                 const uint16_t faceColor =
-                    state == ESP_MAIN_MENU_SKIN_IDLE ? 0xff29U : 0xffffU;
+                    state == ESP_MAIN_MENU_SKIN_IDLE ? 0xfec0U : 0xffffU;
                 for (int yy = t + 3; yy <= b - 2; ++yy)
                     for (int xx = l + 6; xx <= r - 6; ++xx) {
                         const uint16_t pixel = fb[yy * W + xx];
@@ -140,19 +146,14 @@ int main(void) {
                             if (xx > maxX) maxX = xx;
                         }
                         if (pixel == 0xfff5U) ++ivory;
-                        if (pixel == 0x2800U) ++darkDrop;
+                        if (pixel == 0x2800U) ++oldGhost;
                     }
                 assert(face > 20);
                 assert(maxX >= minX && maxX - minX < 34);
-                if (state == ESP_MAIN_MENU_SKIN_IDLE) {
-                    assert(ivory == 0);
-                    assert(darkDrop > 0);
-                    /* A true edge shadow occupies only a small fraction
-                     * of the glyph pixels, never a duplicate silhouette. */
-                    assert(darkDrop * 3 < face);
-                } else {
-                    assert(ivory == 0 && darkDrop == 0);
-                }
+                assert(ivory == 0);
+                assert(oldGhost == 0);
+                if (state == ESP_MAIN_MENU_SKIN_IDLE)
+                    assert(face > 30);
             }
             h = cardHash(fb, item);
             assert(h != 0);
