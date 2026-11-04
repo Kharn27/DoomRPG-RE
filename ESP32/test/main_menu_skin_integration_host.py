@@ -5,10 +5,17 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[2]
 menu = (root / "ESP32/src/native_main_menu_touch_layout.c").read_text()
 skin = (root / "ESP32/src/esp_main_menu_skin.c").read_text()
+loading = (root / "ESP32/src/esp_native_transition_presentation.c").read_text()
 touch = (root / "ESP32/src/native_main_menu_touch.c").read_text()
 actions = (root / "ESP32/src/native_main_menu_actions.c").read_text()
 layout = (root / "ESP32/include/native_main_menu_160x120_layout.h").read_text()
 
+assert '#include "esp_main_menu_skin.h"' in loading
+assert "EspMainMenuSkin_paintPlate(framebuffer()," in loading
+assert loading.count("paintLoadingCard(target)") == 2
+assert "fillRect(16, 32, 143, 75, COLOR_PANEL);" not in loading
+assert "0xf6afU" in loading
+assert "EspMainMenuSkin_paintPlate(fb, stride, width, height," in skin
 assert "const int industrialMain = labels == dashboardLabels;" in menu
 assert "if (industrialMain) {" in menu
 assert "EspMainMenuSkin_paint(" in menu

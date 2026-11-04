@@ -164,6 +164,53 @@ int main(void) {
         assert((t + b) / 2 >= t && (t + b) / 2 <= b);
     }
 
+    /* The loading screen uses the exact same idle chassis at 128x44.
+     * A larger plate cannot touch the starfield, progress bar or guards. */
+    {
+        uint32_t firstHash = 2166136261U;
+        uint32_t nextHash = 2166136261U;
+        int x, y, pass;
+        for (pass = 0; pass < 2; ++pass) {
+            resetFrame();
+            assert(EspMainMenuSkin_paintPlate(fb, W, W, H,
+                                               16, 32, 143, 75,
+                                               ESP_MAIN_MENU_SKIN_IDLE));
+            assert(fb[33 * W + 26] == 0x838dU);
+            assert(fb[35 * W + 26] == 0xd344U);
+            assert(fb[42 * W + 19] == 0xd344U);
+            assert(fb[42 * W + 140] == 0xd344U);
+            assert(fb[42 * W + 23] == 0x0800U);
+            for (x = 0; x < GUARD; ++x) {
+                assert(arena[x] == SENTINEL);
+                assert(arena[GUARD + W * H + x] == SENTINEL);
+            }
+            for (y = 0; y < H; ++y) for (x = 0; x < W; ++x) {
+                const uint16_t color = fb[y * W + x];
+                uint32_t* hash = pass == 0 ? &firstHash : &nextHash;
+                if (x < 16 || x > 143 || y < 32 || y > 75)
+                    assert(color == SENTINEL);
+                else {
+                    *hash = (*hash ^ (uint8_t)color) * 16777619U;
+                    *hash = (*hash ^ (uint8_t)(color >> 8)) * 16777619U;
+                }
+            }
+        }
+        assert(firstHash == nextHash);
+        resetFrame();
+        assert(!EspMainMenuSkin_paintPlate(NULL, W, W, H,
+                                            16, 32, 143, 75, ESP_MAIN_MENU_SKIN_IDLE));
+        assert(!EspMainMenuSkin_paintPlate(fb, W, W, H,
+                                            -1, 32, 143, 75, ESP_MAIN_MENU_SKIN_IDLE));
+        assert(!EspMainMenuSkin_paintPlate(fb, W, W, H,
+                                            16, 32, 160, 75, ESP_MAIN_MENU_SKIN_IDLE));
+        assert(!EspMainMenuSkin_paintPlate(fb, W, W, H,
+                                            16, 32, 143, 42, ESP_MAIN_MENU_SKIN_IDLE));
+        assert(!EspMainMenuSkin_paintPlate(fb, W, W, H,
+                                            16, 32, 143, 75, (EspMainMenuSkinState)4));
+        for (x = 0; x < (int)(sizeof(arena) / sizeof(arena[0])); ++x)
+            assert(arena[x] == SENTINEL);
+    }
+
     resetFrame();
     assert(!EspMainMenuSkin_paint(NULL, W, W, H, 0, ESP_MAIN_MENU_SKIN_IDLE));
     assert(!EspMainMenuSkin_paint(fb, W - 1, W, H, 0, ESP_MAIN_MENU_SKIN_IDLE));

@@ -96,25 +96,20 @@ static void word(uint16_t* fb, int stride, int l, int t, int r, int b,
     }
 }
 
-int EspMainMenuSkin_paint(uint16_t* fb, int stride,
-                          int width, int height, int item,
-                          EspMainMenuSkinState state) {
-    int l, t, r, b, x, y;
+/* Shared plate painter: exact menu chassis geometry and colors, extended to
+ * bounded larger rectangles. No screen-wide clear or retained state. */
+int EspMainMenuSkin_paintPlate(uint16_t* fb, int stride,
+                               int width, int height,
+                               int l, int t, int r, int b,
+                               EspMainMenuSkinState state) {
+    int x, y;
     const SkinPalette* p;
-    const char* first;
-
     if (fb == NULL || width != SKIN_W || height != SKIN_H ||
-        stride < width || item < 0 ||
-        item >= DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT ||
+        stride < width || l < 0 || t < 0 ||
+        r >= width || b >= height || r < l || b < t ||
+        r - l + 1 < 16 || b - t + 1 < 16 ||
         (int)state < (int)ESP_MAIN_MENU_SKIN_IDLE ||
         (int)state > (int)ESP_MAIN_MENU_SKIN_CONFIRM) return 0;
-
-    DoomRPG_esp32IndustrialMainCardRect(item, &l, &t, &r, &b);
-    if (l < DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT ||
-        r >= width || t < 0 || b >= height ||
-        r - l + 1 != DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_WIDTH ||
-        b - t + 1 != DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_HEIGHT) return 0;
-
     p = &palettes[(int)state];
 
     /* Gunmetal UAC plate: large bevelled chassis, deep inset black panel.
@@ -160,6 +155,33 @@ int EspMainMenuSkin_paint(uint16_t* fb, int stride,
     dot(fb, stride, r - 5, t + 6, l, t, r, b, p->bevel);
     dot(fb, stride, l + 5, b - 5, l, t, r, b, p->shadow);
     dot(fb, stride, r - 5, b - 5, l, t, r, b, p->shadow);
+
+    return 1;
+}
+
+int EspMainMenuSkin_paint(uint16_t* fb, int stride,
+                          int width, int height, int item,
+                          EspMainMenuSkinState state) {
+    int l, t, r, b;
+    const SkinPalette* p;
+    const char* first;
+
+    if (fb == NULL || width != SKIN_W || height != SKIN_H ||
+        stride < width || item < 0 ||
+        item >= DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT ||
+        (int)state < (int)ESP_MAIN_MENU_SKIN_IDLE ||
+        (int)state > (int)ESP_MAIN_MENU_SKIN_CONFIRM) return 0;
+
+    DoomRPG_esp32IndustrialMainCardRect(item, &l, &t, &r, &b);
+    if (l < DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT ||
+        r >= width || t < 0 || b >= height ||
+        r - l + 1 != DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_WIDTH ||
+        b - t + 1 != DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_HEIGHT) return 0;
+
+    p = &palettes[(int)state];
+
+    if (!EspMainMenuSkin_paintPlate(fb, stride, width, height,
+                                     l, t, r, b, state)) return 0;
 
     /* The model/action labels are untouched; the industrial UI follows
      * the reference's one-word visual hierarchy. */

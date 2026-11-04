@@ -7,6 +7,7 @@
 
 #include "esp_asset_pack.h"
 #include "esp_map_catalog.h"
+#include "esp_main_menu_skin.h"
 #include "esp_native_gameplay_hub_theme.h"
 #include "esp_native_gameplay_hub_touch_ui.h"
 #include "esp_native_gameplay_player_state.h"
@@ -340,6 +341,23 @@ static uint8_t overallPercent(uint8_t phase,
     }
 }
 
+/* MENU_MAIN's exact procedural industrial chassis, enlarged to 128x44.
+ * The compact loading text stays centered and needs no font asset.
+ * Redrawing the whole plate prevents stale gameplay pixels during progress. */
+static int paintLoadingCard(const char* target) {
+    if (target == NULL ||
+        !EspMainMenuSkin_paintPlate(framebuffer(),
+                                   DOOMRPG_LOGICAL_WIDTH,
+                                   DOOMRPG_LOGICAL_WIDTH,
+                                   DOOMRPG_LOGICAL_HEIGHT,
+                                   16, 32, 143, 75,
+                                   ESP_MAIN_MENU_SKIN_IDLE)) return 0;
+    drawMiniTextCentered("LOADING", 80, 40, 2, 0xf6afU);
+    drawMiniTextCentered("ENTERING", 80, 55, 1, COLOR_STEEL);
+    drawMiniTextCentered(target, 80, 63, 1, COLOR_IVORY);
+    return 1;
+}
+
 static void paintProgressBar(uint8_t percent) {
     const int innerLeft = TRANSITION_PROGRESS_LEFT + 2;
     const int innerTop = TRANSITION_PROGRESS_TOP + 2;
@@ -403,14 +421,10 @@ static void presentOverall(uint8_t percent,
         }
 
         formatMapLabel(presentation.targetMapId, target, sizeof(target));
-        fillRect(16, 32, 143, 75, COLOR_PANEL);
-        rect(16, 32, 143, 75, COLOR_STEEL);
-        fillRect(19, 35, 21, 72, COLOR_AMBER);
-        fillRect(25, 35, 135, 36, COLOR_AMBER_DIM);
-        fillRect(25, 71, 135, 72, COLOR_AMBER_DIM);
-        drawMiniTextCentered("LOADING", 80, 40, 2, COLOR_AMBER);
-        drawMiniTextCentered("ENTERING", 80, 55, 1, COLOR_STEEL);
-        drawMiniTextCentered(target, 80, 63, 1, COLOR_IVORY);
+        if (!paintLoadingCard(target)) {
+            if (openedHere && EspAssetPack_isOpen()) EspAssetPack_close();
+            return;
+        }
         rect(TRANSITION_PROGRESS_LEFT, TRANSITION_PROGRESS_TOP,
              TRANSITION_PROGRESS_LEFT + TRANSITION_PROGRESS_WIDTH - 1,
              TRANSITION_PROGRESS_TOP + TRANSITION_PROGRESS_HEIGHT - 1,
@@ -572,17 +586,8 @@ int EspNativeTransitionPresentation_beginLoading(uint8_t targetMapId) {
 
     formatMapLabel(targetMapId, target, sizeof(target));
 
-    /* The loading card deliberately uses the compact HUB mini-font. The game
-     * 9x12 face looked oversized at 160x120 and made this small information
-     * panel feel cramped. Keep the starfield as a single fixed first frame. */
-    fillRect(16, 32, 143, 75, COLOR_PANEL);
-    rect(16, 32, 143, 75, COLOR_STEEL);
-    fillRect(19, 35, 21, 72, COLOR_AMBER);
-    fillRect(25, 35, 135, 36, COLOR_AMBER_DIM);
-    fillRect(25, 71, 135, 72, COLOR_AMBER_DIM);
-    drawMiniTextCentered("LOADING", 80, 40, 2, COLOR_AMBER);
-    drawMiniTextCentered("ENTERING", 80, 55, 1, COLOR_STEEL);
-    drawMiniTextCentered(target, 80, 63, 1, COLOR_IVORY);
+    /* First frame and all progress redraws share the same bounded panel. */
+    if (!paintLoadingCard(target)) goto done;
 
     rect(TRANSITION_PROGRESS_LEFT, TRANSITION_PROGRESS_TOP,
          TRANSITION_PROGRESS_LEFT + TRANSITION_PROGRESS_WIDTH - 1,
