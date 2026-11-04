@@ -94,6 +94,20 @@ EspPlayerSpawnStatus EspPlayerSpawn_prepareInitial(
  * milestone and fails closed. The target inventory must match both the durable
  * committed-transition identity and the currently resident compact runtime.
  */
+/*
+ * Pure destination-spawn preflight performed while the SOURCE map is still
+ * resident, after the exact target BSP inventory is captured and the
+ * transition has reached READY. Validates header/override tile, target
+ * identity and fresh-map context without requiring target runtime residency.
+ * The output is only a preview; actual placement still requires COMMITTED.
+ */
+EspPlayerSpawnStatus EspPlayerSpawn_preflightCommitted(
+    const EspMapCommittedTransitionState* transition,
+    const EspBspInventory* targetInventory,
+    uint8_t loadType,
+    uint8_t gameIsLoaded,
+    EspPlayerSpawnState* outState);
+
 EspPlayerSpawnStatus EspPlayerSpawn_prepareCommitted(
     const EspMapCommittedTransitionState* transition,
     const EspBspInventory* targetInventory,
