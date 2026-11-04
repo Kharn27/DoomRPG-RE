@@ -2153,6 +2153,10 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
             gameplayState.firstWorldPresentArmed = 0U;
             gameplayState.checkpointResumeArmed = 0U;
             gameplayState.active = 1U;
+            if (!EspNativeGameplayPlayerDeath_captureEntry()) {
+                disableGameplay("death-sector-entry-snapshot");
+                return;
+            }
             EspPlayerFreshMap_beginTimer(
                 (uint32_t)(esp_timer_get_time() / 1000LL));
             PlatformInput_setTapCallback(onGameplayTap);
