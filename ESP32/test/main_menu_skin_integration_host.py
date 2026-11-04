@@ -23,10 +23,10 @@ assert "DoomRPG_esp32MainMenuTouchArmSelected(hit)" in touch
 assert "executeConfirmedAction(hit);" in touch
 for action in ("START", "LOAD", "OPTIONS", "HELP"):
     assert "case DOOMRPG_ESP32_MAIN_MENU_ACTION_" + action in actions
-for label in ('first = "START"; second = "GAME"',
-              'first = "LOAD"; second = "GAME"',
-              'first = "OPTIONS"; second = NULL',
-              'first = "HELP"; second = "ABOUT"'):
+for label in ('case 0: first = "START"; break;',
+              'case 1: first = "LOAD"; break;',
+              'case 2: first = "OPTIONS"; break;',
+              'default: first = "HELP"; break;'):
     assert label in skin
 for unchanged in ("#define DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT 104",
                   "#define DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT 157",
@@ -52,27 +52,27 @@ assert "DoomRPG_esp32MainMenuCardRect(item, left, top, right, bottom)" in menu
 for forbidden in ("malloc(", "calloc(", "realloc(", "free(", "esp_timer", "SDL_", "PlatformVideo_present", "setRotation(", "EspAssetPack"):
     assert forbidden not in skin, forbidden
 assert "ESP_MAIN_MENU_SKIN_CONFIRM" in skin
-assert "if (second != NULL)" in skin
-# Single saturated-gold Idle glyph pass (no second shadow letter);
-# selected white maintains its original two engraved shadow passes.
-assert "glyphs[16][6]" in skin
-assert "length * 5 - 1" in skin
-assert "row < 6" in skin and "bit < 4" in skin
-assert "0xd5a0U" in skin and "0xffffU" in skin
-assert "0x0801U" in skin and "0xfec0U" not in skin
-assert "0xff29U" not in skin and "0x2800U" not in skin
-assert "0xfff5U" not in skin
-assert "for (pass = p == &palettes[ESP_MAIN_MENU_SKIN_IDLE] ? 2 : 0;" in skin
-assert "pass == 0 ? p->shadow : p->ink" in skin
-assert "0x7140U" not in skin
-assert "0xe902U" not in skin and "0xfdd7U" not in skin
-assert "0xf102U" not in skin and "0xd6b3U" not in skin
+assert 'second = "GAME"' not in skin
+assert 'second = "ABOUT"' not in skin
+assert 'word(fb, stride, l, t, r, b, first, p,' in skin
+# The final UI follows the physical reference: one bold word in each
+# forged card, not two small yellow terminal-style lines.
+assert "glyphs[12][9]" in skin
+assert "length * 6 - 1" in skin
+assert "row < 9" in skin and "bit < 5" in skin
+assert "0xf6afU" in skin and "0xe4e9U" in skin and "0xaa85U" in skin
+assert "0xffffU" in skin and "p->ink" in skin
+assert "for (pass = armed ? 0 : 1; pass < 2; ++pass)" in skin
+assert 'p == &palettes[ESP_MAIN_MENU_SKIN_CONFIRM]' in skin
+assert "0xd5a0U" not in skin
+assert "0xfff5U" not in skin and "0x2800U" not in skin
 assert "diagonalShadow" not in skin
-assert "horizontal(fb, stride, l + 7, r - 7, t + 2," in skin
-assert "horizontal(fb, stride, l + 7, r - 7, b," in skin
-assert "vertical(fb, stride, l + 2, t + 6, b - 6," in skin
-assert "vertical(fb, stride, r - 2, t + 6, b - 6," in skin
-assert "if (state == ESP_MAIN_MENU_SKIN_ARMED)" not in skin
+assert "horizontal(fb, stride, l + 9, r - 9, t + 3," in skin
+assert "horizontal(fb, stride, l + 9, r - 9, b - 3," in skin
+assert "vertical(fb, stride, l + 3, t + 7, b - 7," in skin
+assert "vertical(fb, stride, r - 3, t + 7, b - 7," in skin
+assert "industrialMain ? 0x0800U : MAIN_DOOM_METAL" in menu
+assert "industrialMain ? 0x4a48U : ESP_HUB_COLOR_STEEL_DARK" in menu
 # Only Options keeps its historical top/bottom decoration; MENU_MAIN removes it.
 rail = menu[menu.index("int DoomRPG_esp32PaintMenuDashboardCards("):
             menu.index("/* The child reuses the same protected right rail;")]
