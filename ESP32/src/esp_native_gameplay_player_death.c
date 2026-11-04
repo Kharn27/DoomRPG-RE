@@ -260,7 +260,7 @@ void EspNativeGameplayPlayerDeath_cancelQueuedRoute(void) {
     deathState.routeQueued = 0U;
     deathState.junctionConfirm = 0U;
     deathState.menuPainted = paintDeathMenu() ? 1U : 0U;
-    printf("[DEATHROUTE] RETURN menu=death painted=%u sourceWorld=unchanged\\n",
+    printf("[DEATHROUTE] RETURN menu=death painted=%u sourceWorld=unchanged\n",
            (unsigned int)deathState.menuPainted);
 }
 
