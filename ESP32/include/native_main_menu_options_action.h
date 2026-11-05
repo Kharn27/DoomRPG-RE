@@ -36,6 +36,11 @@ int DoomRPG_esp32PaintMainMenuBrightnessDashboard(
 int DoomRPG_esp32PaintMainMenuOrientationDashboard(
     struct DoomRPG_s* doomRpg, uint32_t* framebufferFNV);
 
+/* Theme child: Back/Classic/Inferno; same fixed 54x20 rail. */
+int DoomRPG_esp32PaintMainMenuThemeDashboard(
+    struct DoomRPG_s* doomRpg,
+    uint32_t* framebufferFNV);
+
 /* Compatibility entry used for initial Options composition. */
 int DoomRPG_esp32PaintMainMenuOptionsDashboard(
     struct DoomRPG_s* doomRpg,
