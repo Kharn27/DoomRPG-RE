@@ -55,7 +55,8 @@ assert 'EspNativeConfig_saveTheme(after)' in route
 assert 'EspNativeConfig_saveOrientation(after)' in route
 assert 'EspNativeConfig_saveBrightness(after)' in route
 assert 'DoomRPG_esp32MainMenuModelEnter' not in route
-assert 'DoomRPG_esp32MainMenuReturnToMain(' in route
+assert 'returnToMainMenu(optionsDoomRpg)' in route
+assert 'DoomRPG_esp32MainMenuReturnToMain(' in touch
 assert 'videoOpen != 0U || luminositeOpen != 0U' in touch
 
 code = r"""
