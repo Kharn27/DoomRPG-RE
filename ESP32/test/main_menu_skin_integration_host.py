@@ -5,10 +5,55 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[2]
 menu = (root / "ESP32/src/native_main_menu_touch_layout.c").read_text()
 skin = (root / "ESP32/src/esp_main_menu_skin.c").read_text()
+loading = (root / "ESP32/src/esp_native_transition_presentation.c").read_text()
 touch = (root / "ESP32/src/native_main_menu_touch.c").read_text()
 actions = (root / "ESP32/src/native_main_menu_actions.c").read_text()
 layout = (root / "ESP32/include/native_main_menu_160x120_layout.h").read_text()
 
+assert '#include "esp_main_menu_skin.h"' in loading
+assert "EspMainMenuSkin_paintPlate(framebuffer()," in loading
+assert loading.count("paintLoadingCard(target)") == 2
+assert "fillRect(16, 32, 143, 75, COLOR_PANEL);" not in loading
+assert "0xf6afU" in loading
+# Both loading entry and checkpoint progress repaints draw the same plates.
+# Geometry stays inside 160x120, with a visible gap between the two modules.
+assert "#define TRANSITION_LOADING_CARD_TOP 26" in loading
+assert "#define TRANSITION_LOADING_CARD_BOTTOM 69" in loading
+assert "#define TRANSITION_PROGRESS_LEFT 16" in loading
+assert "#define TRANSITION_PROGRESS_TOP 82" in loading
+assert "#define TRANSITION_PROGRESS_WIDTH 128" in loading
+assert "#define TRANSITION_PROGRESS_HEIGHT 18" in loading
+assert loading.count("EspMainMenuSkin_paintPlate(framebuffer(),") == 2
+assert 'drawMiniTextCentered("LOADING", 80, 34, 2, 0xf6afU);' in loading
+assert 'drawMiniTextCentered("ENTERING", 80, 49, 1, COLOR_STEEL);' in loading
+# At 100%, the fill covers the full 120px inset: no 6px black rectangular
+# pockets at either end, as seen on the physical CYD photo.
+track_width = 128 - 8
+for pct in (0, 5, 25, 50, 95, 100):
+    pixels = track_width * pct // 100
+    assert 0 <= pixels <= track_width
+    if pct == 100:
+        assert pixels == track_width
+        assert (16 + 4) + pixels - 1 == 139
+        assert (16 + 4) - 1 == 19  # only a 1px groove after 3px steel rim
+        assert 16 + 128 - 4 == 140
+assert "if (b - t + 1 >= 24) {" in skin
+assert "sideSeam" not in skin  # the red-bronze patch is now redundant
+assert "const int trackLeft = TRANSITION_PROGRESS_LEFT + 4;" in loading
+assert "const int trackTop = TRANSITION_PROGRESS_TOP + 6;" in loading
+assert "const int trackWidth = TRANSITION_PROGRESS_WIDTH - 8;" in loading
+assert "rect(trackLeft - 1, trackTop - 1," in loading
+assert "trackLeft + trackWidth, trackTop + trackHeight," in loading
+assert "trackLeft + fillWidth - 1, trackTop + row, tone" in loading
+assert "const int trackHeight = TRANSITION_PROGRESS_HEIGHT - 12;" in loading
+assert "fillWidth = (trackWidth * (int)percent) / 100;" in loading
+assert "trackLeft + fillWidth - 1, trackTop + row, tone" in loading
+assert "paintProgressBar(0U)" in loading
+assert "paintProgressBar(percent)" in loading
+assert "if (!paintProgressBar(0U)) goto done;" in loading
+assert "if (!paintProgressBar(percent)) {" in loading
+assert "COLOR_AMBER);" not in loading[loading.index("static int paintProgressBar("):loading.index("static void presentOverall(")]
+assert "EspMainMenuSkin_paintPlate(fb, stride, width, height," in skin
 assert "const int industrialMain = labels == dashboardLabels;" in menu
 assert "if (industrialMain) {" in menu
 assert "EspMainMenuSkin_paint(" in menu

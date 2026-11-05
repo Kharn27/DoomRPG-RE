@@ -17,6 +17,15 @@ typedef enum {
     ESP_MAIN_MENU_SKIN_CONFIRM = 2
 } EspMainMenuSkinState;
 
+/* Shared procedural gunmetal chassis. No text, heap or IO. Strict 160x120
+ * framebuffer and bounded rectangle; invalid inputs leave pixels untouched.
+ * The same IDLE geometry/palette is used by the loading presentation. */
+int EspMainMenuSkin_paintPlate(uint16_t* framebuffer,
+                               int stridePixels, int logicalWidth,
+                               int logicalHeight, int left, int top,
+                               int right, int bottom,
+                               EspMainMenuSkinState state);
+
 /* Returns 0 without writes on invalid arguments. On success, changes pixels
  * ONLY inside the selected card rectangle; caller owns the same framebuffer. */
 int EspMainMenuSkin_paint(uint16_t* framebuffer,

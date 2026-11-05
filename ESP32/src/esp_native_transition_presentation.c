@@ -7,6 +7,7 @@
 
 #include "esp_asset_pack.h"
 #include "esp_map_catalog.h"
+#include "esp_main_menu_skin.h"
 #include "esp_native_gameplay_hub_theme.h"
 #include "esp_native_gameplay_hub_touch_ui.h"
 #include "esp_native_gameplay_player_state.h"
@@ -22,10 +23,15 @@
 #endif
 
 #define TRANSITION_STAR_NAME "c.bmp"
-#define TRANSITION_PROGRESS_LEFT 19
-#define TRANSITION_PROGRESS_TOP 86
-#define TRANSITION_PROGRESS_WIDTH 122
-#define TRANSITION_PROGRESS_HEIGHT 8
+/* Paired industrial plates, vertically balanced around the starfield center. */
+#define TRANSITION_LOADING_CARD_LEFT 16
+#define TRANSITION_LOADING_CARD_TOP 26
+#define TRANSITION_LOADING_CARD_RIGHT 143
+#define TRANSITION_LOADING_CARD_BOTTOM 69
+#define TRANSITION_PROGRESS_LEFT 16
+#define TRANSITION_PROGRESS_TOP 82
+#define TRANSITION_PROGRESS_WIDTH 128
+#define TRANSITION_PROGRESS_HEIGHT 18
 #define TRANSITION_PROGRESS_STEP 5U
 
 #define COLOR_BLACK      ESP_HUB_COLOR_BLACK
@@ -340,26 +346,73 @@ static uint8_t overallPercent(uint8_t phase,
     }
 }
 
-static void paintProgressBar(uint8_t percent) {
-    const int innerLeft = TRANSITION_PROGRESS_LEFT + 2;
-    const int innerTop = TRANSITION_PROGRESS_TOP + 2;
-    const int innerWidth = TRANSITION_PROGRESS_WIDTH - 4;
-    const int innerHeight = TRANSITION_PROGRESS_HEIGHT - 4;
+/* MENU_MAIN's exact procedural industrial chassis, enlarged to 128x44.
+ * The compact loading text stays centered and needs no font asset.
+ * Redrawing the whole plate prevents stale gameplay pixels during progress. */
+static int paintLoadingCard(const char* target) {
+    if (target == NULL ||
+        !EspMainMenuSkin_paintPlate(framebuffer(),
+                                   DOOMRPG_LOGICAL_WIDTH,
+                                   DOOMRPG_LOGICAL_WIDTH,
+                                   DOOMRPG_LOGICAL_HEIGHT,
+                                   TRANSITION_LOADING_CARD_LEFT,
+                                   TRANSITION_LOADING_CARD_TOP,
+                                   TRANSITION_LOADING_CARD_RIGHT,
+                                   TRANSITION_LOADING_CARD_BOTTOM,
+                                   ESP_MAIN_MENU_SKIN_IDLE)) return 0;
+    drawMiniTextCentered("LOADING", 80, 34, 2, 0xf6afU);
+    drawMiniTextCentered("ENTERING", 80, 49, 1, COLOR_STEEL);
+    drawMiniTextCentered(target, 80, 57, 1, COLOR_IVORY);
+    return 1;
+}
+
+/* Same MENU_MAIN chassis, now a thin progress module: engraved black
+ * track and warm metal fill. The entire bounded plate is repainted for each
+ * progress step; no accumulated pixels and no extra buffering. */
+static int paintProgressBar(uint8_t percent) {
+    /* Inner track begins right after the 3px steel rim/1px groove. A 10px
+     * inset left two dark rectangular end caps visible beside a full gauge. */
+    const int trackLeft = TRANSITION_PROGRESS_LEFT + 4;
+    const int trackTop = TRANSITION_PROGRESS_TOP + 6;
+    const int trackWidth = TRANSITION_PROGRESS_WIDTH - 8;
+    const int trackHeight = TRANSITION_PROGRESS_HEIGHT - 12;
     int fillWidth;
+    int row;
+
+    if (!EspMainMenuSkin_paintPlate(framebuffer(),
+                                   DOOMRPG_LOGICAL_WIDTH,
+                                   DOOMRPG_LOGICAL_WIDTH,
+                                   DOOMRPG_LOGICAL_HEIGHT,
+                                   TRANSITION_PROGRESS_LEFT,
+                                   TRANSITION_PROGRESS_TOP,
+                                   TRANSITION_PROGRESS_LEFT +
+                                       TRANSITION_PROGRESS_WIDTH - 1,
+                                   TRANSITION_PROGRESS_TOP +
+                                       TRANSITION_PROGRESS_HEIGHT - 1,
+                                   ESP_MAIN_MENU_SKIN_IDLE)) return 0;
 
     if (percent > 100U) percent = 100U;
-    fillWidth = (innerWidth * (int)percent) / 100;
+    fillWidth = (trackWidth * (int)percent) / 100;
 
-    fillRect(innerLeft, innerTop,
-             innerLeft + innerWidth - 1,
-             innerTop + innerHeight - 1,
-             COLOR_BLACK);
-    if (fillWidth > 0) {
-        fillRect(innerLeft, innerTop,
-                 innerLeft + fillWidth - 1,
-                 innerTop + innerHeight - 1,
-                 COLOR_AMBER);
+    /* One-pixel engraved border; at 100% the 120px fill reaches both ends
+     * of the track. No black side pockets survive outside the track. */
+    rect(trackLeft - 1, trackTop - 1,
+         trackLeft + trackWidth, trackTop + trackHeight,
+         0x3123U);
+    fillRect(trackLeft, trackTop,
+             trackLeft + trackWidth - 1,
+             trackTop + trackHeight - 1, COLOR_BLACK);
+
+    /* The gradient is drawn INSIDE the fill, not shifted as a doubled halo.
+     * Colors echo the main-menu copper seam and cream pixel-metal lettering. */
+    for (row = 0; row < trackHeight && fillWidth > 0; ++row) {
+        const uint16_t tone = row == 0 ? 0xf6afU :
+                              row <= 2 ? 0xf447U :
+                              row <= 4 ? 0xd344U : 0x9243U;
+        fillRect(trackLeft, trackTop + row,
+                 trackLeft + fillWidth - 1, trackTop + row, tone);
     }
+    return 1;
 }
 
 static void presentOverall(uint8_t percent,
@@ -403,19 +456,14 @@ static void presentOverall(uint8_t percent,
         }
 
         formatMapLabel(presentation.targetMapId, target, sizeof(target));
-        fillRect(16, 32, 143, 75, COLOR_PANEL);
-        rect(16, 32, 143, 75, COLOR_STEEL);
-        fillRect(19, 35, 21, 72, COLOR_AMBER);
-        fillRect(25, 35, 135, 36, COLOR_AMBER_DIM);
-        fillRect(25, 71, 135, 72, COLOR_AMBER_DIM);
-        drawMiniTextCentered("LOADING", 80, 40, 2, COLOR_AMBER);
-        drawMiniTextCentered("ENTERING", 80, 55, 1, COLOR_STEEL);
-        drawMiniTextCentered(target, 80, 63, 1, COLOR_IVORY);
-        rect(TRANSITION_PROGRESS_LEFT, TRANSITION_PROGRESS_TOP,
-             TRANSITION_PROGRESS_LEFT + TRANSITION_PROGRESS_WIDTH - 1,
-             TRANSITION_PROGRESS_TOP + TRANSITION_PROGRESS_HEIGHT - 1,
-             COLOR_STEEL);
-        paintProgressBar(percent);
+        if (!paintLoadingCard(target)) {
+            if (openedHere && EspAssetPack_isOpen()) EspAssetPack_close();
+            return;
+        }
+        if (!paintProgressBar(percent)) {
+            if (openedHere && EspAssetPack_isOpen()) EspAssetPack_close();
+            return;
+        }
 
         if (!__real_Esp32PlatformVideo_present()) {
             if (openedHere && EspAssetPack_isOpen()) EspAssetPack_close();
@@ -572,23 +620,10 @@ int EspNativeTransitionPresentation_beginLoading(uint8_t targetMapId) {
 
     formatMapLabel(targetMapId, target, sizeof(target));
 
-    /* The loading card deliberately uses the compact HUB mini-font. The game
-     * 9x12 face looked oversized at 160x120 and made this small information
-     * panel feel cramped. Keep the starfield as a single fixed first frame. */
-    fillRect(16, 32, 143, 75, COLOR_PANEL);
-    rect(16, 32, 143, 75, COLOR_STEEL);
-    fillRect(19, 35, 21, 72, COLOR_AMBER);
-    fillRect(25, 35, 135, 36, COLOR_AMBER_DIM);
-    fillRect(25, 71, 135, 72, COLOR_AMBER_DIM);
-    drawMiniTextCentered("LOADING", 80, 40, 2, COLOR_AMBER);
-    drawMiniTextCentered("ENTERING", 80, 55, 1, COLOR_STEEL);
-    drawMiniTextCentered(target, 80, 63, 1, COLOR_IVORY);
+    /* First frame and all progress redraws share the same bounded panel. */
+    if (!paintLoadingCard(target)) goto done;
 
-    rect(TRANSITION_PROGRESS_LEFT, TRANSITION_PROGRESS_TOP,
-         TRANSITION_PROGRESS_LEFT + TRANSITION_PROGRESS_WIDTH - 1,
-         TRANSITION_PROGRESS_TOP + TRANSITION_PROGRESS_HEIGHT - 1,
-         COLOR_STEEL);
-    paintProgressBar(0U);
+    if (!paintProgressBar(0U)) goto done;
 
     presentation.targetMapId = targetMapId;
     presentation.lastPercent = 0U;
