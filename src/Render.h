@@ -219,8 +219,11 @@ typedef struct Render_s
 	int lineRasterCount;
 	int nodeCount;
 	int nodeRasterCount;
+/* Unused desktop sprite-raster diagnostics; native uses its own stats. */
+#ifndef DOOMRPG_ESP32
 	int spriteCount;
 	int spriteRasterCount;
+#endif
 	int viewX;
 	int viewY;
 	int viewZ;

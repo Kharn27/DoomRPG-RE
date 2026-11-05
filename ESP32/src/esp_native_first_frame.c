@@ -112,8 +112,6 @@ typedef struct RenderScratch_s {
     int lineRasterCount;
     int nodeCount;
     int nodeRasterCount;
-    int spriteCount;
-    int spriteRasterCount;
     int screenLeft;
     int screenTop;
     int screenRight;
@@ -439,8 +437,6 @@ static void saveRenderScratch(Render_t* render, RenderScratch* scratch) {
     scratch->lineRasterCount = render->lineRasterCount;
     scratch->nodeCount = render->nodeCount;
     scratch->nodeRasterCount = render->nodeRasterCount;
-    scratch->spriteCount = render->spriteCount;
-    scratch->spriteRasterCount = render->spriteRasterCount;
     scratch->screenLeft = render->screenLeft;
     scratch->screenTop = render->screenTop;
     scratch->screenRight = render->screenRight;
@@ -471,8 +467,6 @@ static void restoreRenderScratch(Render_t* render, const RenderScratch* scratch)
     render->lineRasterCount = scratch->lineRasterCount;
     render->nodeCount = scratch->nodeCount;
     render->nodeRasterCount = scratch->nodeRasterCount;
-    render->spriteCount = scratch->spriteCount;
-    render->spriteRasterCount = scratch->spriteRasterCount;
     render->screenLeft = scratch->screenLeft;
     render->screenTop = scratch->screenTop;
     render->screenRight = scratch->screenRight;
@@ -1387,8 +1381,6 @@ static int renderFrame(Render_t* render,
     render->lineRasterCount = 0;
     render->nodeCount = 0;
     render->nodeRasterCount = 0;
-    render->spriteCount = 0;
-    render->spriteRasterCount = 0;
     render->spanMode = 0;
 
     EspNativeRenderGeometry_resetColumns(render->columnScale, render->screenWidth);

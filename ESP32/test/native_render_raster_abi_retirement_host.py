@@ -197,7 +197,8 @@ for path in (NATIVE / "src").rglob("*"):
 
 # PR238: the three timings sampled inside desktop Render_render() are not
 # native Render_t state. The native frame clock/profilers own their own values.
-# All six live per-frame raster counters / native geometry fields stay native.
+# Four live line/node raster counters stay native. The two desktop sprite
+# counters were never incremented in native render paths and are retired.
 # PR246C retires desktop-only animFrameTime.
 for field in ("currentFrameTime", "horizonFrameTime", "frameTime"):
     assert len(re.findall(r"\bint " + field + r";", HEADER)) == 1, field
@@ -259,8 +260,24 @@ for type_, field in (
 assert "render->animFrameTime = 0;" not in root
 assert "render->skipCull = 0;" in root
 assert "int lineRasterCount;" in HEADER and "int nodeRasterCount;" in HEADER
-assert "int spriteRasterCount;" in HEADER
+assert re.search(r"#ifndef DOOMRPG_ESP32\s+int spriteCount;\s+int spriteRasterCount;\s+#endif", HEADER)
 
+
+# The original desktop raster increments these fields, but no ESP32 path
+# does. All native renderer snapshots must omit them; the compact sprite leaf
+# cache has a separately owned spriteCount which MUST remain intact.
+for field in ("spriteCount", "spriteRasterCount"):
+    assert re.search(r"\brender->" + field + r"\b", DESKTOP), field
+    for name in ("esp_native_first_frame.c", "esp_native_bsp_visibility.c",
+                 "esp_native_sprite_renderer.c"):
+        code = (NATIVE / "src" / name).read_text()
+        code = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"',
+                      " ", code, flags=re.S)
+        assert not re.search(
+            r"\b(?:render|r|s|scratch)\s*->\s*" + field + r"\b",
+            code), (name, field)
+assert "spriteLeafCache.spriteCount != runtime->mapSpriteCount" in (
+    NATIVE / "src/esp_native_bsp_visibility.c").read_text()
 
 # PR246C: desktop BSP material IDs / sprite blend / animation clock are no
 # longer Render_t native fields. Source ABI remains intact for desktop.
@@ -291,10 +308,10 @@ for ty, field in (
                 source_path, field)
 assert "int lineRasterCount;" in HEADER
 assert "int nodeRasterCount;" in HEADER
-assert "int spriteRasterCount;" in HEADER
+assert re.search(r"#ifndef DOOMRPG_ESP32\s+int spriteCount;\s+int spriteRasterCount;\s+#endif", HEADER)
 assert "byte spanMode;" in HEADER and "int numLines;" in HEADER
 assert "boolean skipCull;" in HEADER
-assert "sizeof(Render_t) == 200U" in startup
+assert "sizeof(Render_t) == 192U" in startup
 
 # PR239: map-wide BSP I/O buffer and read cursor only exist in desktop
 # Render_beginLoadMap/Data. The ESP32 reads native immutable BSP inventory
@@ -419,7 +436,7 @@ for member in ("mapName", "mapNameID", "loadMapID", "introColor",
                 + member + r"\b", clean), (
                 "retired map-header Render field referenced by native", path, member)
 assert "render->mapCameraSpawnIndex = 0;" not in root
-assert "sizeof(Render_t) == 200U" in (
+assert "sizeof(Render_t) == 192U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 
 # Post-#245-B on the same PR: desktop BSP allocation/inventory counts
@@ -440,7 +457,7 @@ assert re.search(
 assert re.search(
     r"render->mapStringsIDs = NULL;\s+render->mapStringCount = 0;\s+#endif",
     startup)
-assert "sizeof(Render_t) == 200U" in startup
+assert "sizeof(Render_t) == 192U" in startup
 
 # The sprite renderer is the other owner of transactional frame scratch.
 # Its clipping/projection lines are function-local too. No CYD Render_t
@@ -449,7 +466,7 @@ sprite = (NATIVE / "src/esp_native_sprite_renderer.c").read_text()
 assert "Line_t tmpLine;" not in sprite
 assert "->tmpLine" not in sprite
 assert "_Static_assert(sizeof(Scratch) <= 740U" in sprite
-assert "sizeof(Render_t) == 200U" in (
+assert "sizeof(Render_t) == 192U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 assert re.search(
     r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
@@ -591,4 +608,4 @@ assert "spriteLeaf(runtime, &sprite, outLeaf)" in leaf_visibility
 assert "spriteLeafCache.leaf[spriteIndex] = (uint16_t)leaf;" in leaf_visibility
 assert "!cachedSpriteLeaf(runtime, mapSpriteIndex, &leaf)" in leaf_visibility
 
-print("PASS 23 retired Render ABIs; CYD Render_t omits seven raster flags + ten memory ledgers + three frame timestamps + five opaque desktop fields + three view/list counters + seven map-header fields; BSP leaf cache retained")
+print("PASS 23 retired Render ABIs; native Render_t 192B, desktop sprite raster counters excluded; BSP leaf cache retained")
