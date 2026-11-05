@@ -49,8 +49,6 @@ typedef struct Scratch_s {
     int lineRasterCount;
     int nodeCount;
     int nodeRasterCount;
-    int spriteCount;
-    int spriteRasterCount;
     int screenLeft;
     int screenTop;
     int screenRight;
@@ -85,8 +83,6 @@ static void saveScratch(Render_t* r, Scratch* s) {
     s->lineRasterCount = r->lineRasterCount;
     s->nodeCount = r->nodeCount;
     s->nodeRasterCount = r->nodeRasterCount;
-    s->spriteCount = r->spriteCount;
-    s->spriteRasterCount = r->spriteRasterCount;
     s->screenLeft = r->screenLeft;
     s->screenTop = r->screenTop;
     s->screenRight = r->screenRight;
@@ -112,8 +108,6 @@ static void restoreScratch(Render_t* r, const Scratch* s) {
     r->lineRasterCount = s->lineRasterCount;
     r->nodeCount = s->nodeCount;
     r->nodeRasterCount = s->nodeRasterCount;
-    r->spriteCount = s->spriteCount;
-    r->spriteRasterCount = s->spriteRasterCount;
     r->screenLeft = s->screenLeft;
     r->screenTop = s->screenTop;
     r->screenRight = s->screenRight;
@@ -165,8 +159,6 @@ static int setupView(Render_t* r, const EspPlayerViewState* v) {
     r->lineRasterCount = 0;
     r->nodeCount = 0;
     r->nodeRasterCount = 0;
-    r->spriteCount = 0;
-    r->spriteRasterCount = 0;
     r->spanMode = 0;
 
     for (x = 0; x < SCREEN_W; ++x) r->columnScale[x] = MAXINT;
