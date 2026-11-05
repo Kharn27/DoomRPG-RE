@@ -14,14 +14,14 @@ name = "EspNativeEngineLayout_setupRender"
 anchor = "static void " + name + "(Render_t* render, SDL_Rect* windowRect)\n{"
 assert owner.count(anchor) == 1
 assert owner.count(name + "(") == 2
-assert "render->halfScreenWidth" not in body
-assert "render->fracHalfScreenHeight" not in body
-assert "render->fracHalfScreenWidth = ((render->screenWidth / 2) << FRACBITS) - 0x8000;" in body
 assert "void Render_setup(" not in bridge
 assert re.search(r"#ifndef DOOMRPG_ESP32\s+void Render_setup\(", header)
 first = owner.index(anchor)
 last = owner.index("\n/* Bounded CYD layout and font initialization", first)
 body = owner[first:last]
+assert "render->halfScreenWidth" not in body
+assert "render->fracHalfScreenHeight" not in body
+assert "render->fracHalfScreenWidth = ((render->screenWidth / 2) << FRACBITS) - 0x8000;" in body
 normalized = body.replace("static void " + name + "(", "void Render_setup(").rstrip()
 h = 2166136261
 for b in normalized.encode("utf-8"):
