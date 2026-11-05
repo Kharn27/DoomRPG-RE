@@ -5,6 +5,7 @@
 
 #include "esp_native_config_codec.h"
 #include "esp_native_orientation.h"
+#include "esp_main_menu_skin.h"
 
 static void expectRejected(const uint8_t* data, uint32_t size) {
     uint8_t brightness = 137U, orientation = 137U;
@@ -37,7 +38,8 @@ int main(void) {
 
     assert(ESP_NATIVE_CONFIG_BYTES == 12U);
     assert(ESP_NATIVE_CONFIG_VERSION_V1 == 1U);
-    assert(ESP_NATIVE_CONFIG_VERSION == 2U);
+    assert(ESP_NATIVE_CONFIG_VERSION_V2 == 2U);
+    assert(ESP_NATIVE_CONFIG_VERSION == 3U);
     assert(!EspNativeConfigCodec_encode(0U, 0U, packet));
     assert(!EspNativeConfigCodec_encode(101U, 0U, packet));
     assert(!EspNativeConfigCodec_encode(100U, 2U, packet));
@@ -53,7 +55,7 @@ int main(void) {
             assert(EspNativeConfigCodec_encode(levels[p], mode, packet));
             assert(packet[0] == 'D' && packet[1] == 'R' &&
                    packet[2] == 'C' && packet[3] == 'F');
-            assert(packet[4] == 2U && packet[5] == levels[p]);
+            assert(packet[4] == 3U && packet[5] == levels[p]);
             assert(packet[6] == mode && packet[7] == 0U);
             assert(EspNativeConfigCodec_decode(packet, 12U, &percent, &orientation));
             assert(percent == levels[p] && orientation == mode);
@@ -73,10 +75,35 @@ int main(void) {
             resignLegacy(corrupted); /* Even checksummed invalid values fail. */
             expectRejected(corrupted, 12U);
             memcpy(corrupted, packet, 12U);
-            corrupted[7] = 1U;
+            corrupted[7] = 2U;
             resignLegacy(corrupted);
             expectRejected(corrupted, 12U);
         }
+        /* V3 theme byte is checksummed; tampered or out-of-range fails.
+         * Exact 12-byte record, no append/size migration. */
+        assert(EspNativeConfigCodec_encodeWithTheme(
+            levels[p], ESP32_ORIENTATION_NORMAL, 1U, packet));
+        {
+            uint8_t t = 9U;
+            assert(EspNativeConfigCodec_decodeWithTheme(
+                packet, 12U, &percent, &orientation, &t));
+            assert(t == ESP_MAIN_MENU_THEME_INFERNO);
+            assert(percent == levels[p] && orientation == 0U);
+            assert(!EspNativeConfigCodec_encodeWithTheme(
+                levels[p], 0U, 2U, packet));
+        }
+        assert(EspNativeConfigCodec_encodeBrightness(levels[p], packet));
+        packet[4] = ESP_NATIVE_CONFIG_VERSION_V2;
+        resignLegacy(packet);
+        {
+            uint8_t t = 9U;
+            assert(EspNativeConfigCodec_decodeWithTheme(
+                packet, 12U, &percent, &orientation, &t));
+            assert(t == ESP_MAIN_MENU_THEME_CLASSIC);
+        }
+        packet[7] = 1U;
+        resignLegacy(packet);
+        expectRejected(packet, 12U); /* V2 reserved byte still strict. */
         /* Valid historical v1 record: reserved bytes both zero, retain PWM. */
         assert(EspNativeConfigCodec_encodeBrightness(levels[p], packet));
         packet[4] = ESP_NATIVE_CONFIG_VERSION_V1;
@@ -102,6 +129,6 @@ int main(void) {
     x = 320; assert(!Esp32Orientation_transformTouch(1U, &x, &y));
     x = 0; y = -1; assert(!Esp32Orientation_transformTouch(1U, &x, &y));
 
-    puts("PASS native CYD config v1->v2 12B migration/corrupt/rollback-safe codec; touch corners+centre 180-degree");
+    puts("PASS native CYD config v1/v2->v3 theme 12B migration/corrupt/rollback-safe codec; touch corners+centre 180-degree");
     return 0;
 }
