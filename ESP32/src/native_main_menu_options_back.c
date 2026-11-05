@@ -286,7 +286,7 @@ static void optionsBackTap(int16_t screenX,
            (orientationOpen ? orientationItemAt(screenX, screenY) :
            (themeOpen ? themeItemAt(screenX, screenY) :
            (videoOpen ? videoItemAt(screenX, screenY) :
-                        optionsItemAt(screenX, screenY)))));
+                        optionsItemAt(screenX, screenY))));
     printf("[OPTIONBACK] TAP n=%u raw=%u,%u pressure=%u physical=%d,%d logical=%d,%d layer=%s item=%d armedItem=%d\n",
            (unsigned int)optionsTapCount, rawX, rawY, pressure,
            screenX, screenY, screenX / DOOMRPG_INTEGER_SCALE,
