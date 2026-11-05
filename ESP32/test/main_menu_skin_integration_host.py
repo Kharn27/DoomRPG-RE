@@ -64,7 +64,9 @@ assert "EspMainMenuSkin_paintPlate(fb, stride, width, height," in skin
 assert "const int industrialMain = labels == dashboardLabels;" in menu
 assert "if (industrialMain) {" in menu
 assert "EspMainMenuSkin_paint(" in menu
-assert "} else {\n            drawDashboardCard(" in menu
+assert "} else {\n            if (!drawDashboardCard(" in menu
+assert "EspMainMenuSkin_paintText(" in menu
+assert "const int itemCount = industrialMain ? DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT : 5;" in menu
 assert "DoomRPG_esp32MainMenuPaintDashboardSelection(" in menu
 assert "DoomRPG_esp32PaintBrightnessPresetCards(" in menu
 assert "DoomRPG_esp32PaintOrientationPresetCards(" in menu
