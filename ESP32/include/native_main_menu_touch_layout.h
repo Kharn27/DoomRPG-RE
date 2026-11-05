@@ -27,13 +27,13 @@ int DoomRPG_esp32MainMenuPaintDashboardSelection(
     int armed,
     uint32_t* framebufferFNV);
 
-/* Shared 2x2 Doom-tech dashboard painter. labels must expose four entries;
+/* Native dashboard painter: four MENU_MAIN labels or five Options entries;
  * enabledMask keeps deferred cards visible but deliberately subdued. This is
  * the common presentation primitive used by MENU_MAIN and its Options child.
  */
 int DoomRPG_esp32PaintMenuDashboardCards(
     struct DoomRPG_s* doomRpg,
-    const char* const labels[4],
+    const char* const labels[],
     int selectedIndex,
     int armed,
     uint8_t enabledMask,
@@ -50,6 +50,12 @@ int DoomRPG_esp32PaintBrightnessPresetCards(
 int DoomRPG_esp32PaintOrientationPresetCards(
     struct DoomRPG_s* doomRpg,
     uint8_t activeOrientation,
+    uint32_t* framebufferFNV);
+
+/* Theme choices Back/Classic/Inferno, same 54x20 touch layout. */
+int DoomRPG_esp32PaintThemePresetCards(
+    struct DoomRPG_s* doomRpg,
+    uint8_t activeTheme,
     uint32_t* framebufferFNV);
 
 #ifdef __cplusplus
