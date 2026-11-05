@@ -2,6 +2,8 @@
 
 Sur [PR #253](https://github.com/Kharn27/DoomRPG-RE/pull/253), commit visuel `5e695b8ed0946bea0876919196d697cfb5b208a7`, le vrai CYD présente le bandeau non interactif de type signalétique de danger « YOU DIED / MISSION FAILED » assorti aux quatre plaques industrielles du menu. L'utilisateur accepte explicitement cette variante (« je prends, on va pouvoir merger »). [CI push](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42102571837) et [CI PR](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42102585194) SUCCESS, tests hôte et firmwares trois profils. Aucune nouvelle capture Serial dans ce retour : **PASS visuel ciblé**, pas PASS de gameplay.
 
+**Log matériel complémentaire** `device-monitor-261106-000342.log` : firmware au SHA `5e695b8`, START→Entrance, EXIT, LOAD V11 slot06→Entrance, transitions Entrance→Junction puis Junction→level01, enfin EXIT. Quatre sessions `ENGINESESSION READY`, quatre `DEATHROUTE ENTRY` enregistrant un snapshot joueur de session, `RESIDENTRESET empty=1`, réserve `HEADROOM_OK` et retour au menu sans reset/panic. **Aucun décès ni action du menu de mort dans cette trace** : l'essai confirme des chemins de navigation et de transition, pas RETRY/JUNCTION ni le dispatcher de mort.
+
 Les quatre actions sont implémentées mais **RETRY/JUNCTION non prouvés matériellement**, et le snapshot joueur ne garantit pas encore l'état historique strict avant l'entrée du secteur. Le test graphique n'autorise donc ni déclaration de merge-ready de l'intégralité de #253, ni écriture implicite de sauvegarde ni merge automatique. #253 reste en Draft, empilée sur #251. Détails et limites dans [PORTING_STATUS.md](PORTING_STATUS.md).
 
 ---
