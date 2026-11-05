@@ -181,11 +181,15 @@ int main(int argc, char** argv) {
     DoomRPG_t doom = {0}; doom.render = (void*)1;
     start(&doom, 1, ESP_MAP_ID_INTRO);
     assert(pixel(3, 3) == ESP_HUB_COLOR_STEEL_DARK);
-    /* Header now reuses the industrial plate instead of the flat old
-     * banner/red rails.  Both text faces stay between the copper seams. */
-    assert(pixel(12, 10) != ESP_HUB_COLOR_RED);
-    assert(pixel(25, 8) == 0xd344U);
-    assert(pixel(25, 26) == 0xd344U);
+    /* The passive warning stencil must NOT resemble a fifth button:
+     * no gunmetal raised bezel or copper border across y=8/26; the title
+     * is printed on the screen bulkhead. Caution chevrons mirror exactly. */
+    assert(pixel(80, 5) == ESP_HUB_COLOR_BG);
+    assert(pixel(25, 8) == ESP_HUB_COLOR_BG);
+    assert(pixel(25, 26) == ESP_HUB_COLOR_BG);
+    assert(pixel(14, 11) == 0xd344U);
+    assert(pixel(145, 11) == 0xd344U);
+    assert(pixel(80, 27) == ESP_HUB_COLOR_RED);
     assert(colorCount(5, 10, ESP_HUB_COLOR_RED) == 0);
     assert(colorCount(11, 17, ESP_HUB_COLOR_RED) > 40);
     assert(colorCount(18, 24, 0xf6afU) > 30);

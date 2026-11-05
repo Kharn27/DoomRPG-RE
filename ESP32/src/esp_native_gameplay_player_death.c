@@ -183,15 +183,27 @@ static int paintDeathMenu(void) {
     fillRect(fb, 0, 0, 159, 119, ESP_HUB_COLOR_BLACK);
     fillRect(fb, 3, 3, 156, 116, ESP_HUB_COLOR_BG);
     drawRect(fb, 3, 3, 156, 116, ESP_HUB_COLOR_STEEL_DARK);
-    /* Death banner shares the exact industrial gunmetal plate painter with
-     * MENU_MAIN, LOADING and the action rows.  The 25px plate keeps its
-     * copper seams at y=8/26 outside the 7px + 5px text faces, with no old
-     * flat rectangle or vertical red rails.  The title alone is danger-red. */
-    if (!EspMainMenuSkin_paintPlate(
-            fb, DEATH_VIEWPORT_WIDTH, DEATH_VIEWPORT_WIDTH,
-            DEATH_SCREEN_HEIGHT, DEATH_MENU_LEFT, 5,
-            DEATH_MENU_RIGHT, 29, ESP_MAIN_MENU_SKIN_IDLE))
-        return 0;
+    /* Non-interactive hazard stencil: same gunmetal/copper vocabulary as
+     * the industrial action plates, but NO raised rectangle, bevel, border
+     * or filled card. The lettering is printed directly on the console
+     * bulkhead, with symmetric diagonal caution hatches and open-ended
+     * steel rules. That visual distinction matters on a touch display. */
+    fillRect(fb, 15, 7, 45, 7, ESP_HUB_COLOR_STEEL);
+    fillRect(fb, 114, 7, 144, 7, ESP_HUB_COLOR_STEEL);
+    {
+        int stripe;
+        for (stripe = 0; stripe < 3; ++stripe) {
+            const uint16_t tone = stripe == 1 ? 0x632bU : 0xd344U;
+            int y;
+            for (y = 10; y <= 23; ++y) {
+                const int x = 14 + stripe * 8 + (y - 10) / 4;
+                fillRect(fb, x, y, x + 1, y, tone);
+                fillRect(fb, 158 - x, y, 159 - x, y, tone);
+            }
+        }
+    }
+    fillRect(fb, 47, 27, 112, 27, ESP_HUB_COLOR_AMBER_DIM);
+    fillRect(fb, 73, 27, 86, 27, ESP_HUB_COLOR_RED);
     EspNativeGameplayHubTouchUi_drawCrispText(
         fb, "YOU DIED", 80, 11, ESP_HUB_COLOR_RED);
     EspNativeGameplayHubTouchUi_drawMiniText(
