@@ -14,7 +14,8 @@ assert '#include "esp_main_menu_skin.h"' in loading
 assert "EspMainMenuSkin_paintPlate(framebuffer()," in loading
 assert loading.count("paintLoadingCard(target)") == 2
 assert "fillRect(16, 32, 143, 75, COLOR_PANEL);" not in loading
-assert "0xf6afU" in loading
+assert "EspMainMenuSkin_letterTone(row, 5)" in loading
+assert "EspMainMenuSkin_letterTone(row, 9)" in skin
 # Both loading entry and checkpoint progress repaints draw the same plates.
 # Geometry stays inside 160x120, with a visible gap between the two modules.
 assert "#define TRANSITION_LOADING_CARD_TOP 26" in loading
@@ -24,7 +25,13 @@ assert "#define TRANSITION_PROGRESS_TOP 82" in loading
 assert "#define TRANSITION_PROGRESS_WIDTH 128" in loading
 assert "#define TRANSITION_PROGRESS_HEIGHT 18" in loading
 assert loading.count("EspMainMenuSkin_paintPlate(framebuffer(),") == 2
-assert 'drawMiniTextCentered("LOADING", 80, 34, 2, 0xf6afU);' in loading
+# LOADING remains the same centered 3x5 mini glyphs, enlarged x2.
+assert 'drawLoadingTitle();' in loading
+assert 'drawMiniTextCentered("LOADING"' not in loading
+assert 'drawMiniTextAt(title, 80 - miniTextWidth(title, 2) / 2,' in loading
+assert '34, 2, 0U, 1);' in loading
+assert 'const uint16_t tone = idleGradient' in loading
+assert 'top + row * scale' in loading and 'top + row * scale + scale - 1' in loading
 assert 'drawMiniTextCentered("ENTERING", 80, 49, 1, COLOR_STEEL);' in loading
 # At 100%, the fill covers the full 120px inset: no 6px black rectangular
 # pockets at either end, as seen on the physical CYD photo.
@@ -102,12 +109,14 @@ assert 'second = "ABOUT"' not in skin
 assert 'word(fb, stride, l, t, r, b, first, p,' in skin
 # The final UI follows the physical reference: one bold word in each
 # forged card, not two small yellow terminal-style lines.
-assert "glyphs[12][9]" in skin
+assert "glyphs[][9]" in skin
 assert "length * 6 - 1" in skin
 assert "row < 9" in skin and "bit < 5" in skin
 assert "0xf6afU" in skin and "0xe4e9U" in skin and "0xaa85U" in skin
 assert "0xffffU" in skin and "p->ink" in skin
 assert "for (pass = armed ? 0 : 1; pass < 2; ++pass)" in skin
+assert "EspMainMenuSkin_letterTone(row, 9)" in skin
+assert "EspMainMenuSkin_paintText(" in skin
 assert 'p == &palettes[ESP_MAIN_MENU_SKIN_CONFIRM]' in skin
 assert "0xd5a0U" not in skin
 assert "0xfff5U" not in skin
