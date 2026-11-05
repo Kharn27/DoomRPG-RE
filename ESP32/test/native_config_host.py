@@ -37,14 +37,15 @@ assert 'constexpr char kBackupPath[] = "/DoomRPG-ESP32.cfg.bak";' in owner
 assert "reason=first-run-missing percent=100 orientation=NORMAL write=no" in owner
 assert "readExact(kConfigPath, &loaded)" in owner
 assert "readExact(kBackupPath, &loaded)" in owner
-assert "verify(kTempPath, percent, orientation)" in owner
-assert "verify(kConfigPath, percent, orientation)" in owner
+assert "verify(kTempPath, percent, orientation, theme)" in owner
+assert "verify(kConfigPath, percent, orientation, theme)" in owner
 assert "SD.rename(kConfigPath, kBackupPath)" in owner
 assert "SD.rename(kTempPath, kConfigPath)" in owner
 assert "SD.rename(kBackupPath, kConfigPath)" in owner
 assert "if (!EspNativeConfig_saveBrightness(after))" in menu
 assert menu.index("EspNativeConfig_saveBrightness(after)") < menu.index("Esp32Backlight_setPercent(after)")
 assert "SDL_RenderPresent(NULL)" in menu
+assert "EspNativeConfig_saveTheme(after)" in menu
 
 with tempfile.TemporaryDirectory(prefix="native-cyd-config-") as d:
     exe = Path(d) / "codec"
@@ -112,6 +113,7 @@ storage_host = r"""
 #include "esp_native_config_codec.h"
 #include "esp_native_backlight.h"
 #include "esp_native_orientation.h"
+#include "esp_main_menu_skin.h"
 
 SerialStub Serial;
 SDClass SD;
@@ -180,6 +182,13 @@ static uint8_t config(const char* path) {
         it->second.data(), (uint32_t)it->second.size(), &percent));
     return percent;
 }
+static uint8_t configTheme(const char* path) {
+    const auto& data = SD.bytes.at(path);
+    uint8_t brightness = 0U, orientation = 0U, theme = 255U;
+    assert(EspNativeConfigCodec_decodeWithTheme(
+        data.data(), (uint32_t)data.size(), &brightness, &orientation, &theme));
+    return theme;
+}
 static uint8_t configOrientation(const char* path) {
     const auto& d = SD.bytes.at(path);
     uint8_t percent = 0, mode = 0xff;
@@ -207,6 +216,7 @@ int main() {
     assert(SD.bytes.empty());
     EspNativeConfig_loadAtBoot(1);
     assert(pwm == 100 && SD.bytes.empty());
+    assert(EspMainMenuSkin_getTheme() == 0U);
 
     assert(EspNativeConfig_saveBrightness(75));
     assert(pwm == 100); /* persistence never changes hardware itself */
@@ -252,9 +262,24 @@ int main() {
     SD.failPromote = false;
     assert(configOrientation(mainCfg) == ESP32_ORIENTATION_INVERSE);
 
-    /* Brightness transaction must preserve the current orientation. */
+    /* Theme is persisted first, then applied in RAM only on success. */
+    assert(EspNativeConfig_saveTheme(ESP_MAIN_MENU_THEME_INFERNO));
+    assert(EspMainMenuSkin_getTheme() == 0U);
+    assert(configTheme(mainCfg) == 1U);
+    assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_INFERNO));
+    pwm = 100; orientation = ESP32_ORIENTATION_NORMAL;
+    assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
+    EspNativeConfig_loadAtBoot(1);
+    assert(EspMainMenuSkin_getTheme() == ESP_MAIN_MENU_THEME_INFERNO);
+    assert(pwm == 50 && orientation == ESP32_ORIENTATION_INVERSE);
+    SD.failWrites = true;
+    assert(!EspNativeConfig_saveTheme(ESP_MAIN_MENU_THEME_CLASSIC));
+    SD.failWrites = false;
+    assert(configTheme(mainCfg) == ESP_MAIN_MENU_THEME_INFERNO);
+    /* Brightness transaction must preserve both orientation and theme. */
     assert(EspNativeConfig_saveBrightness(75));
-    assert(config(mainCfg) == 75 && configOrientation(mainCfg) == 1);
+    assert(config(mainCfg) == 75 && configOrientation(mainCfg) == 1 &&
+           configTheme(mainCfg) == ESP_MAIN_MENU_THEME_INFERNO);
     assert(Esp32Backlight_setPercent(75));
     assert(Esp32Orientation_set(ESP32_ORIENTATION_NORMAL));
     assert(EspNativeConfig_saveOrientation(ESP32_ORIENTATION_NORMAL));
@@ -292,8 +317,8 @@ int main() {
     EspNativeConfig_loadAtBoot(1);
     assert(pwm == 100 && !SD.exists(mainCfg));
 
-    /* Real v1 migration: preserve 75% brightness, default to NORMAL, write
-     * v2 only when the next preference actually changes. */
+    /* Real v1 migration: preserve brightness, default NORMAL/CLASSIC,
+     * write V3 only on the next preference change. */
     SD.bytes.clear();
     legacyV1(mainCfg, 75);
     assert(SD.bytes[mainCfg][4] == 1);
@@ -303,8 +328,9 @@ int main() {
     assert(pwm == 75 && orientation == ESP32_ORIENTATION_NORMAL);
     assert(SD.bytes[mainCfg][4] == 1); /* boot is read-only */
     assert(EspNativeConfig_saveOrientation(ESP32_ORIENTATION_INVERSE));
-    assert(SD.bytes[mainCfg][4] == 2);
+    assert(SD.bytes[mainCfg][4] == 3);
     assert(config(mainCfg) == 75 && configOrientation(mainCfg) == 1);
+    assert(configTheme(mainCfg) == ESP_MAIN_MENU_THEME_CLASSIC);
     SD.bytes.clear();
     orientation = ESP32_ORIENTATION_NORMAL;
     pwm = 100;
@@ -326,7 +352,8 @@ with tempfile.TemporaryDirectory(prefix="native-cyd-config-sd-") as d:
                     "-Werror", "-I", str(folder), "-I", str(INC),
                     str(SRC / "esp_native_config_codec.c"),
                     str(SRC / "esp_native_config.cpp"),
+                    str(SRC / "esp_main_menu_skin.c"),
                     str(folder / "storage_host.cpp"), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
 
-print("PASS native CYD config: v1 migration, v2 orientation, default, SD transactional rollback, desktop reader retired")
+print("PASS native CYD config: v1/v2 migration, v3 theme, default, SD transactional rollback, desktop reader retired")
