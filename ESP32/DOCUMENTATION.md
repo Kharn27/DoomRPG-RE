@@ -1,3 +1,11 @@
+## PR #253 — menu de mort : validation graphique uniquement (5 novembre 2026)
+
+Sur [PR #253](https://github.com/Kharn27/DoomRPG-RE/pull/253), commit visuel `5e695b8ed0946bea0876919196d697cfb5b208a7`, le vrai CYD présente le bandeau non interactif de type signalétique de danger « YOU DIED / MISSION FAILED » assorti aux quatre plaques industrielles du menu. L'utilisateur accepte explicitement cette variante (« je prends, on va pouvoir merger »). [CI push](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42102571837) et [CI PR](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42102585194) SUCCESS, tests hôte et firmwares trois profils. Aucune nouvelle capture Serial dans ce retour : **PASS visuel ciblé**, pas PASS de gameplay.
+
+Les quatre actions sont implémentées mais **RETRY/JUNCTION non prouvés matériellement**, et le snapshot joueur ne garantit pas encore l'état historique strict avant l'entrée du secteur. Le test graphique n'autorise donc ni déclaration de merge-ready de l'intégralité de #253, ni écriture implicite de sauvegarde ni merge automatique. #253 reste en Draft, empilée sur #251. Détails et limites dans [PORTING_STATUS.md](PORTING_STATUS.md).
+
+---
+
 ## PR #249 — CHANGEMAP natif, statistiques exclusives, progression V11 (4 novembre 2026)
 
 **PASS matériel ciblé / préparation du merge utilisateur.** Sur la [PR #249](https://github.com/Kharn27/DoomRPG-RE/pull/249) (`agent/esp32-level-exit-completion-commit`), le code testé est **`140ea3f1e319d005f251524f90e310f23579aa06`**, rebasé sur `main=c7921728439762ab0506344d90358063e24eb4e6`. Les CI code [push](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41928613987) et [PR](https://github.com/Kharn27/DoomRPG-RE/actions/runs/41928624314) sont **SUCCESS** pour les tests hôtes et les firmwares normal, bringup et trace.
