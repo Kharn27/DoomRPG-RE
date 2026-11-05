@@ -3,7 +3,8 @@
 
 Compiles extracted C with bounded palette.bin bytes and tracked heap allocations.
 This verifies private API retirement, palette RGB565 conversion, replacement
-frees, and paletteMemory accounting; physical CYD still validates PAK/TFT.
+frees and the intentional absence of desktop heap accounting; physical CYD
+still validates PAK/TFT.
 """
 from pathlib import Path
 import re
@@ -33,9 +34,18 @@ new_sig = "static void EspNativeRenderStartup_loadPalettes(Render_t* render)"
 palette = extract(native, new_sig)
 desktop_palette = extract(desktop, old_sig)
 normalized = palette.replace(new_sig, old_sig, 1)
-assert normalized == desktop_palette, "Real palette loader differs from desktop"
+desktop_without_ledger = desktop_palette
+for line in (
+    "\trender->paletteMemory = DoomRPG_freeMemory();\n",
+    "\trender->paletteMemory = DoomRPG_freeMemory() - render->paletteMemory;\n",
+    '\t//printf("paletteMemory %d\\n", render->paletteMemory);\n',
+):
+    assert desktop_without_ledger.count(line) == 1, line
+    desktop_without_ledger = desktop_without_ledger.replace(line, "", 1)
+assert normalized == desktop_without_ledger, "Palette logic drift beyond removed heap ledger"
+assert "render->paletteMemory" not in palette
 h = 2166136261
-for b in normalized.encode("utf-8"):
+for b in desktop_palette.encode("utf-8"):
     h = ((h ^ b) * 16777619) & 0xffffffff
 assert h == 0x3573ad2c, f"Palette body FNV drift {h:08x}"
 assert native.count("EspNativeRenderStartup_loadPalettes(") == 2
@@ -62,7 +72,6 @@ typedef unsigned char byte;
 typedef struct DoomRPG_s { int marker; } DoomRPG_t;
 typedef struct Render_s {
     DoomRPG_t *doomRpg;
-    int paletteMemory;
     short* mediaPalettes;
     int mediaPalettesLength;
 } Render_t;
@@ -141,7 +150,8 @@ int main(void) {
         assert(reads==i+1 && headerReads==i+1 && colorReads==(i+1)*5);
         assert(allocs==(i+1)*2 && frees==(i+1)*2-1);
         assert(ownedBytes==5*sizeof(short));
-        assert(render.paletteMemory==DoomRPG_freeMemory()-priorFree);
+        assert(priorFree==(i==0 ? 100000 : 100000-(int)(5*sizeof(short))));
+        assert(DoomRPG_freeMemory()==100000-(int)(5*sizeof(short)));
         assert(errors==0);
     }
     SDL_free(render.mediaPalettes);
@@ -160,4 +170,4 @@ with tempfile.TemporaryDirectory(prefix="native-palettes-") as temp:
                     "-Wall", "-Wextra", "-Werror", "-Wno-unused-parameter",
                     str(file), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print("PASS Render_loadPalettes=retired nativePaletteLoader=private FNV=3573ad2c")
+print("PASS Render_loadPalettes=retired nativePaletteLoader=private desktopFNV=3573ad2c ledger=desktop-only")
