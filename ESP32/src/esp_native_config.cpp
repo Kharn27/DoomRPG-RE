@@ -6,6 +6,7 @@
 #include "esp_native_config_codec.h"
 #include "esp_native_backlight.h"
 #include "esp_native_orientation.h"
+#include "esp_main_menu_skin.h"
 
 namespace {
 constexpr char kConfigPath[] = "/DoomRPG-ESP32.cfg";
@@ -16,6 +17,7 @@ bool configSdReady = false;
 struct ConfigSettings {
     uint8_t brightness;
     uint8_t orientation;
+    uint8_t theme;
     uint8_t version;
 };
 
@@ -30,17 +32,19 @@ bool readExact(const char* path, ConfigSettings* out) {
     file.close();
     ConfigSettings parsed{};
     if (!readOk ||
-        !EspNativeConfigCodec_decode(bytes, sizeof(bytes),
-                                     &parsed.brightness, &parsed.orientation))
+        !EspNativeConfigCodec_decodeWithTheme(bytes, sizeof(bytes),
+                                     &parsed.brightness, &parsed.orientation,
+                                     &parsed.theme))
         return false;
     parsed.version = bytes[4];
     *out = parsed;
     return true;
 }
 
-bool writeExact(const char* path, uint8_t percent, uint8_t orientation) {
+bool writeExact(const char* path, uint8_t percent, uint8_t orientation,
+                uint8_t theme) {
     uint8_t bytes[ESP_NATIVE_CONFIG_BYTES];
-    if (!EspNativeConfigCodec_encode(percent, orientation, bytes)) return false;
+    if (!EspNativeConfigCodec_encodeWithTheme(percent, orientation, theme, bytes)) return false;
     File file = SD.open(path, FILE_WRITE);
     if (!file) return false;
     const bool wrote = file.write(bytes, sizeof(bytes)) == sizeof(bytes);
@@ -50,40 +54,45 @@ bool writeExact(const char* path, uint8_t percent, uint8_t orientation) {
     return wrote && sizeOk;
 }
 
-bool verify(const char* path, uint8_t percent, uint8_t orientation) {
+bool verify(const char* path, uint8_t percent, uint8_t orientation,
+            uint8_t theme) {
     ConfigSettings actual{};
     return readExact(path, &actual) &&
            actual.version == ESP_NATIVE_CONFIG_VERSION &&
-           actual.brightness == percent && actual.orientation == orientation;
+           actual.brightness == percent && actual.orientation == orientation &&
+           actual.theme == theme;
 }
 
 void applyLoaded(const char* source, const ConfigSettings& loaded,
                  const char* primaryState) {
     const int rotationOk = Esp32Orientation_set(loaded.orientation);
     const int pwmOk = Esp32Backlight_setPercent(loaded.brightness);
-    Serial.printf("[NATIVECONFIG] LOAD source=%s result=%s version=%u bytes=12 brightness=%u orientation=%s primary=%s write=no\n",
-                  source, rotationOk && pwmOk ? "valid" : "hardware-rejected",
+    const int themeOk = EspMainMenuSkin_setTheme(loaded.theme);
+    Serial.printf("[NATIVECONFIG] LOAD source=%s result=%s version=%u bytes=12 brightness=%u orientation=%s theme=%u primary=%s write=no\n",
+                  source, rotationOk && pwmOk && themeOk ? "valid" : "hardware-rejected",
                   (unsigned)loaded.version, (unsigned)loaded.brightness,
-                  loaded.orientation ? "INVERSE" : "NORMAL", primaryState);
+                  loaded.orientation ? "INVERSE" : "NORMAL",
+                  (unsigned)loaded.theme, primaryState);
 }
 
 /* All SD mutations are here. Never discard an intact backup when primary
  * is corrupt, and never touch the active physical orientation on failure. */
-int saveSettings(uint8_t percent, uint8_t orientation) {
+int saveSettings(uint8_t percent, uint8_t orientation, uint8_t theme) {
     bool oldMoved = false;
     if (!configSdReady || !Esp32Backlight_isReady() ||
         !Esp32Orientation_isReady() ||
         (percent != 25U && percent != 50U && percent != 75U && percent != 100U) ||
-        !Esp32Orientation_valid(orientation)) {
+        !Esp32Orientation_valid(orientation) ||
+        theme > ESP_MAIN_MENU_THEME_INFERNO) {
         Serial.printf("[NATIVECONFIG] SAVE rejected brightness=%u orientation=%u sd=%d pwm=%d orientationReady=%d\n",
                       (unsigned)percent, (unsigned)orientation, configSdReady,
                       Esp32Backlight_isReady(), Esp32Orientation_isReady());
         return 0;
     }
 
-    if (verify(kConfigPath, percent, orientation)) {
-        Serial.printf("[NATIVECONFIG] SAVE unchanged brightness=%u orientation=%u version=2 write=no\n",
-                      (unsigned)percent, (unsigned)orientation);
+    if (verify(kConfigPath, percent, orientation, theme)) {
+        Serial.printf("[NATIVECONFIG] SAVE unchanged brightness=%u orientation=%u version=3 theme=%u write=no\n",
+                      (unsigned)percent, (unsigned)orientation, (unsigned)theme);
         return 1;
     }
 
@@ -91,8 +100,8 @@ int saveSettings(uint8_t percent, uint8_t orientation) {
         Serial.println("[NATIVECONFIG] SAVE failed stage=stale-temp-remove");
         return 0;
     }
-    if (!writeExact(kTempPath, percent, orientation) ||
-        !verify(kTempPath, percent, orientation)) {
+    if (!writeExact(kTempPath, percent, orientation, theme) ||
+        !verify(kTempPath, percent, orientation, theme)) {
         (void)SD.remove(kTempPath);
         Serial.println("[NATIVECONFIG] SAVE failed stage=temp-write-verify");
         return 0;
@@ -124,7 +133,7 @@ int saveSettings(uint8_t percent, uint8_t orientation) {
     }
 
     if (!SD.rename(kTempPath, kConfigPath) ||
-        !verify(kConfigPath, percent, orientation)) {
+        !verify(kConfigPath, percent, orientation, theme)) {
         (void)SD.remove(kTempPath);
         (void)SD.remove(kConfigPath);
         if (oldMoved) (void)SD.rename(kBackupPath, kConfigPath);
@@ -133,8 +142,9 @@ int saveSettings(uint8_t percent, uint8_t orientation) {
     }
 
     if (SD.exists(kBackupPath)) (void)SD.remove(kBackupPath);
-    Serial.printf("[NATIVECONFIG] SAVE result=committed version=2 brightness=%u orientation=%s bytes=12 path=%s backup=retired\n",
-                  (unsigned)percent, orientation ? "INVERSE" : "NORMAL", kConfigPath);
+    Serial.printf("[NATIVECONFIG] SAVE result=committed version=3 brightness=%u orientation=%s theme=%u bytes=12 path=%s backup=retired\n",
+                  (unsigned)percent, orientation ? "INVERSE" : "NORMAL",
+                  (unsigned)theme, kConfigPath);
     return 1;
 }
 } // namespace
@@ -142,6 +152,8 @@ int saveSettings(uint8_t percent, uint8_t orientation) {
 extern "C" void EspNativeConfig_loadAtBoot(int sdMounted) {
     ConfigSettings loaded{};
     configSdReady = sdMounted != 0;
+    /* Defaults are applied before any source is opened, even without SD. */
+    (void)EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC);
     if (!configSdReady) {
         Serial.println("[NATIVECONFIG] LOAD source=default reason=sd-unavailable percent=100 orientation=NORMAL write=no");
         return;
@@ -164,9 +176,15 @@ extern "C" void EspNativeConfig_loadAtBoot(int sdMounted) {
 }
 
 extern "C" int EspNativeConfig_saveBrightness(uint8_t percent) {
-    return saveSettings(percent, Esp32Orientation_get());
+    return saveSettings(percent, Esp32Orientation_get(),
+                        EspMainMenuSkin_getTheme());
 }
 
 extern "C" int EspNativeConfig_saveOrientation(uint8_t orientation) {
-    return saveSettings(Esp32Backlight_percent(), orientation);
+    return saveSettings(Esp32Backlight_percent(), orientation,
+                        EspMainMenuSkin_getTheme());
+}
+
+extern "C" int EspNativeConfig_saveTheme(uint8_t theme) {
+    return saveSettings(Esp32Backlight_percent(), Esp32Orientation_get(), theme);
 }
