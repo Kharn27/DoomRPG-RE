@@ -216,7 +216,8 @@ static void drawMiniTextAt(const char* text,
                            int x,
                            int top,
                            int scale,
-                           uint16_t color) {
+                           uint16_t color,
+                           int idleGradient) {
     if (text == NULL || scale <= 0) return;
     while (*text != '\0') {
         uint8_t rows[5];
@@ -226,11 +227,15 @@ static void drawMiniTextAt(const char* text,
                 int column;
                 for (column = 0; column < 3; ++column) {
                     if ((rows[row] & (uint8_t)(1U << (2 - column))) != 0U) {
+                        /* Only the original glyph mask is recolored.
+                         * One tone per source row; the 2x blocks never shift. */
+                        const uint16_t tone = idleGradient
+                            ? EspMainMenuSkin_letterTone(row, 5) : color;
                         fillRect(x + column * scale,
                                  top + row * scale,
                                  x + column * scale + scale - 1,
                                  top + row * scale + scale - 1,
-                                 color);
+                                 tone);
                     }
                 }
             }
@@ -246,7 +251,14 @@ static void drawMiniTextCentered(const char* text,
                                  int scale,
                                  uint16_t color) {
     drawMiniTextAt(text, centerX - miniTextWidth(text, scale) / 2,
-                   top, scale, color);
+                   top, scale, color, 0);
+}
+
+/* Same LOADING glyphs, horizontal center=80, top=34 and scale=2. */
+static void drawLoadingTitle(void) {
+    const char* title = "LOADING";
+    drawMiniTextAt(title, 80 - miniTextWidth(title, 2) / 2,
+                   34, 2, 0U, 1);
 }
 
 static void drawMetricCard(int left,
@@ -360,7 +372,7 @@ static int paintLoadingCard(const char* target) {
                                    TRANSITION_LOADING_CARD_RIGHT,
                                    TRANSITION_LOADING_CARD_BOTTOM,
                                    ESP_MAIN_MENU_SKIN_IDLE)) return 0;
-    drawMiniTextCentered("LOADING", 80, 34, 2, 0xf6afU);
+    drawLoadingTitle();
     drawMiniTextCentered("ENTERING", 80, 49, 1, COLOR_STEEL);
     drawMiniTextCentered(target, 80, 57, 1, COLOR_IVORY);
     return 1;
