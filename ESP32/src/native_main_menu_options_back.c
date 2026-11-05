@@ -13,6 +13,7 @@
 #include "esp_native_backlight.h"
 #include "esp_native_config.h"
 #include "esp_native_orientation.h"
+#include "esp_main_menu_skin.h"
 #include "native_main_menu_options_action.h"
 #include "native_main_menu_options_back.h"
 #include "native_main_menu_touch.h"
@@ -31,16 +32,18 @@
 #include "platform_video_c_bridge.h"
 #endif
 
-#define OPTIONS_ITEM_COUNT 4
+#define OPTIONS_ITEM_COUNT 5
 #define OPTIONS_BACK_ITEM 0
 #define OPTIONS_VIDEO_ITEM 1
 #define OPTIONS_ORIENTATION_ITEM 2
+#define OPTIONS_THEME_ITEM 3
 
 static DoomRPG_t* optionsDoomRpg = NULL;
 static int optionsBackActive = 0;
 static int armedItem = -1; /* Parent: -1=none, 0=Back, 1=Luminosite, 2=Orientation */
 static uint8_t luminositeOpen = 0U; /* Child uses direct single taps. */
 static uint8_t orientationOpen = 0U;
+static uint8_t themeOpen = 0U;
 static uint32_t optionsTapCount = 0;
 static uint32_t optionsExpectedFrameFNV = 0U;
 
@@ -50,7 +53,7 @@ static int optionsItemAt(int16_t screenX, int16_t screenY) {
     int item;
     for (item = 0; item < OPTIONS_ITEM_COUNT; ++item) {
         int left, top, right, bottom;
-        DoomRPG_esp32MainMenuCardRect(item, &left, &top, &right, &bottom);
+        DoomRPG_esp32BrightnessCardRect(item, &left, &top, &right, &bottom);
         if (logicalX >= left && logicalX <= right &&
             logicalY >= top && logicalY <= bottom) return item;
     }
@@ -83,20 +86,27 @@ static int orientationItemAt(int16_t screenX, int16_t screenY) {
     return -1;
 }
 
+static int themeItemAt(int16_t screenX, int16_t screenY) {
+    const int x = screenX / DOOMRPG_INTEGER_SCALE;
+    const int y = screenY / DOOMRPG_INTEGER_SCALE;
+    int item;
+    for (item = 0; item < 3; ++item) {
+        int l, t, r, b;
+        DoomRPG_esp32BrightnessCardRect(item, &l, &t, &r, &b);
+        if (x >= l && x <= r && y >= t && y <= b) return item;
+    }
+    return -1;
+}
+
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
 static void registerOptionsHitboxOverlay(void) {
     int item;
     Esp32PlatformVideo_debugOverlayClear();
     const int count = luminositeOpen ? DOOMRPG_ESP32_BRIGHTNESS_CARD_COUNT :
-                      (orientationOpen ? DOOMRPG_ESP32_ORIENTATION_CARD_COUNT :
-                                         OPTIONS_ITEM_COUNT);
+                      (orientationOpen || themeOpen ? 3 : OPTIONS_ITEM_COUNT);
     for (item = 0; item < count; ++item) {
         int left, top, right, bottom;
-        if (luminositeOpen || orientationOpen) {
-            DoomRPG_esp32BrightnessCardRect(item, &left, &top, &right, &bottom);
-        } else {
-            DoomRPG_esp32MainMenuCardRect(item, &left, &top, &right, &bottom);
-        }
+        DoomRPG_esp32BrightnessCardRect(item, &left, &top, &right, &bottom);
         Esp32PlatformVideo_debugOverlaySetZone(item,
                                                (int16_t)left,
                                                (int16_t)top,
@@ -105,7 +115,8 @@ static void registerOptionsHitboxOverlay(void) {
     }
     Esp32PlatformVideo_debugOverlayRefresh();
     printf("[HITBOX] OPTIONS split-rail overlay zones=%d layer=%s framebuffer=untouched\n",
-           count, luminositeOpen ? "luminosite" : (orientationOpen ? "orientation" : "options"));
+           count, luminositeOpen ? "luminosite" : (orientationOpen ? "orientation" :
+                  (themeOpen ? "theme" : "options")));
 }
 
 #endif
@@ -158,6 +169,20 @@ static int paintOrientationState(void) {
     return 1;
 }
 
+static int paintThemeState(void) {
+    uint32_t nextHash = 0U;
+    if (!DoomRPG_esp32PaintMainMenuThemeDashboard(
+            optionsDoomRpg, &nextHash)) {
+        printf("[OPTIONSTHEME] FAILED paint child\n");
+        return 0;
+    }
+    optionsExpectedFrameFNV = nextHash;
+    SDL_RenderPresent(NULL);
+    printf("[OPTIONSTHEME] VISUAL theme=%u framebufferFNV=%08x\n",
+           (unsigned int)EspMainMenuSkin_getTheme(), (unsigned int)nextHash);
+    return 1;
+}
+
 static int returnToMainMenu(DoomRPG_t* doomRpg) {
     EspNativeMenuState_t* menuSystem = doomRpg->menuSystem;
     Render_t* render = doomRpg->render;
@@ -176,6 +201,7 @@ static int returnToMainMenu(DoomRPG_t* doomRpg) {
         menuSystem->menu != MENU_MAIN_OPTIONS ||
         menuSystem->selectedIndex != OPTIONS_BACK_ITEM ||
         luminositeOpen != 0U || orientationOpen != 0U ||
+        themeOpen != 0U ||
         optionsExpectedFrameFNV == 0U ||
         DoomRPG_esp32MainMenuFramebufferHash(render) != optionsExpectedFrameFNV) {
         printf("[OPTIONBACK] FAILED precondition safe=%d menu=%d selected=%d framebuffer=%08x expected=%08x\n",
@@ -222,12 +248,14 @@ static void optionsBackTap(int16_t screenX,
     optionsTapCount++;
     item = luminositeOpen ? luminositeItemAt(screenX, screenY) :
            (orientationOpen ? orientationItemAt(screenX, screenY) :
-                              optionsItemAt(screenX, screenY));
+           (themeOpen ? themeItemAt(screenX, screenY) :
+                        optionsItemAt(screenX, screenY)));
     printf("[OPTIONBACK] TAP n=%u raw=%u,%u pressure=%u physical=%d,%d logical=%d,%d layer=%s item=%d armedItem=%d\n",
            (unsigned int)optionsTapCount, rawX, rawY, pressure,
            screenX, screenY, screenX / DOOMRPG_INTEGER_SCALE,
            screenY / DOOMRPG_INTEGER_SCALE,
-           luminositeOpen ? "luminosite" : (orientationOpen ? "orientation" : "options"), item, armedItem);
+           luminositeOpen ? "luminosite" : (orientationOpen ? "orientation" :
+               (themeOpen ? "theme" : "options")), item, armedItem);
 
     if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(optionsDoomRpg) ||
         optionsDoomRpg->menuSystem->menu != MENU_MAIN_OPTIONS ||
@@ -355,10 +383,61 @@ static void optionsBackTap(int16_t screenX,
         return;
     }
 
+    if (themeOpen) {
+        if (item == 0) {
+            if (!paintOptionsState(OPTIONS_BACK_ITEM, 0)) {
+                optionsBackActive = 0;
+                PlatformInput_setTapCallback(NULL);
+                DoomRPG_esp32MainMenuRecover(optionsDoomRpg,
+                                             "theme-back-repaint-failed");
+                return;
+            }
+            themeOpen = 0U;
+            armedItem = -1;
+#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
+            registerOptionsHitboxOverlay();
+#endif
+            printf("[OPTIONSTHEME] BACK theme=%u state=unchanged\n",
+                   (unsigned)EspMainMenuSkin_getTheme());
+            return;
+        }
+        if (item == 1 || item == 2) {
+            const uint8_t before = EspMainMenuSkin_getTheme();
+            const uint8_t after = (uint8_t)(item - 1);
+            if (after != before) {
+                /* SD transaction must complete before changing the palette.
+                 * No gameplay/SD mutation when a write fails. */
+                if (!EspNativeConfig_saveTheme(after)) {
+                    printf("[OPTIONSTHEME] ROLLBACK reason=sd-write theme=%u retained=%u\n",
+                           (unsigned)after, (unsigned)before);
+                    return;
+                }
+                if (!EspMainMenuSkin_setTheme(after) || !paintThemeState()) {
+                    (void)EspMainMenuSkin_setTheme(before);
+                    const int persisted = EspNativeConfig_saveTheme(before);
+                    printf("[OPTIONSTHEME] ROLLBACK reason=repaint persistRestored=%d\n",
+                           persisted);
+                    optionsBackActive = 0;
+                    PlatformInput_setTapCallback(NULL);
+                    DoomRPG_esp32MainMenuRecover(optionsDoomRpg,
+                                                 "theme-set-repaint-failed");
+                    return;
+                }
+            }
+            printf("[OPTIONSTHEME] SELECT %u->%u changed=%s persistence=sd-v3 frame=single turn=no\n",
+                   (unsigned)before, (unsigned)after,
+                   before == after ? "no" : "yes");
+            return;
+        }
+        printf("[OPTIONSTHEME] MISS outside-choices no-action\n");
+        return;
+    }
+
     /* Sound stays fail-closed; unavailable PWM disables Luminosite. */
     if (item != OPTIONS_BACK_ITEM &&
         (item != OPTIONS_VIDEO_ITEM || !Esp32Backlight_isReady()) &&
-        (item != OPTIONS_ORIENTATION_ITEM || !Esp32Orientation_isReady())) {
+        (item != OPTIONS_ORIENTATION_ITEM || !Esp32Orientation_isReady()) &&
+        item != OPTIONS_THEME_ITEM) {
         if (armedItem != -1) {
             if (!paintOptionsState(OPTIONS_BACK_ITEM, 0)) {
                 optionsBackActive = 0;
@@ -384,6 +463,24 @@ static void optionsBackTap(int16_t screenX,
         }
         armedItem = item;
         printf("[OPTIONBACK] ARM item=%d awaitingReleasedSecondTap=yes\n", item);
+        return;
+    }
+
+    if (item == OPTIONS_THEME_ITEM) {
+        if (!paintThemeState()) {
+            optionsBackActive = 0;
+            PlatformInput_setTapCallback(NULL);
+            DoomRPG_esp32MainMenuRecover(optionsDoomRpg,
+                                         "theme-open-repaint-failed");
+            return;
+        }
+        themeOpen = 1U;
+        armedItem = -1;
+#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
+        registerOptionsHitboxOverlay();
+#endif
+        printf("[OPTIONSTHEME] OPEN from=Options theme=%u choices=CLASSIC/INFERNO directTap=yes\n",
+               (unsigned)EspMainMenuSkin_getTheme());
         return;
     }
 
@@ -442,6 +539,7 @@ int DoomRPG_esp32OptionsBackActivate(struct DoomRPG_s* doomRpgBase,
     armedItem = -1;
     luminositeOpen = 0U;
     orientationOpen = 0U;
+    themeOpen = 0U;
     optionsTapCount = 0;
     optionsExpectedFrameFNV = 0U;
 
@@ -472,7 +570,7 @@ int DoomRPG_esp32OptionsBackActivate(struct DoomRPG_s* doomRpgBase,
 
     {
         int left, top, right, bottom;
-        DoomRPG_esp32MainMenuCardRect(OPTIONS_BACK_ITEM,
+        DoomRPG_esp32BrightnessCardRect(OPTIONS_BACK_ITEM,
                                      &left, &top, &right, &bottom);
         printf("[OPTIONBACK] READY Back card logical=x%d..%d y%d..%d physical=x%d..%d y%d..%d firstTap=red-arm secondReleasedTap=confirm Luminosite=child-presets-25-50-75-100 Input/Sound=deferred fastOpaqueReturn=yes\n",
                left, right, top, bottom,
