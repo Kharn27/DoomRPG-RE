@@ -24,8 +24,36 @@ static const SkinPalette palettes[3] = {
     {0x0800U,0x4248U,0x83ceU,0x0800U,0x2903U,0xdba5U,0x2800U,0xffffU}
 };
 
-static const char letters[] = "ADEHILNOPRST";
-static const uint8_t glyphs[12][9] = {
+/* The only mutable UI-theme state: one byte, never allocated on the heap.
+ * Boot's native config loader applies it before the first MENU_MAIN paint. */
+static uint8_t selectedLetterTheme = ESP_MAIN_MENU_THEME_CLASSIC;
+
+uint8_t EspMainMenuSkin_getTheme(void) { return selectedLetterTheme; }
+
+int EspMainMenuSkin_setTheme(uint8_t theme) {
+    if (theme > ESP_MAIN_MENU_THEME_INFERNO) return 0;
+    selectedLetterTheme = theme;
+    return 1;
+}
+
+uint16_t EspMainMenuSkin_letterTone(int row, int rows) {
+    if (rows != 5 && rows != 7 && rows != 9) return 0U;
+    if (row < 0 || row >= rows) return 0U;
+    if (selectedLetterTheme == ESP_MAIN_MENU_THEME_INFERNO) {
+        /* Hot yellow -> copper/bronze -> deep Doom red. */
+        if (row < (rows + 2) / 3) return 0xffe0U;
+        if (row < (2 * rows + 2) / 3) return 0xd344U;
+        return 0xc002U;
+    }
+    /* Exactly the former untouched MENU_MAIN idle tones. */
+    if (row < (rows + 2) / 3) return 0xf6afU;
+    if (row < (2 * rows + 2) / 3)
+        return palettes[ESP_MAIN_MENU_SKIN_IDLE].typeFace;
+    return 0xaa85U;
+}
+
+static const char letters[] = "ADEHILNOPRSTBCFGJKMQUVWXYZ0123456789% ";
+static const uint8_t glyphs[][9] = {
     {0x0e,0x11,0x11,0x1f,0x11,0x11,0x11,0x11,0x11}, /* A */
     {0x1e,0x11,0x11,0x11,0x11,0x11,0x11,0x11,0x1e}, /* D */
     {0x1f,0x10,0x10,0x1e,0x10,0x10,0x10,0x10,0x1f}, /* E */
@@ -37,7 +65,33 @@ static const uint8_t glyphs[12][9] = {
     {0x1e,0x11,0x11,0x11,0x1e,0x10,0x10,0x10,0x10}, /* P */
     {0x1e,0x11,0x11,0x11,0x1e,0x14,0x12,0x11,0x11}, /* R */
     {0x0f,0x10,0x10,0x0e,0x01,0x01,0x01,0x11,0x1e}, /* S */
-    {0x1f,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04}  /* T */
+    {0x1f,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04}, /* T */
+    {30,17,17,17,30,17,17,17,30}, /* B */
+    {14,17,16,16,16,16,16,17,14}, /* C */
+    {31,16,16,16,30,16,16,16,16}, /* F */
+    {14,17,16,16,23,17,17,17,15}, /* G */
+    {7,2,2,2,2,2,18,18,12}, /* J */
+    {17,18,20,24,24,20,20,18,17}, /* K */
+    {17,27,21,21,21,17,17,17,17}, /* M */
+    {14,17,17,17,17,21,18,13,1}, /* Q */
+    {17,17,17,17,17,17,17,17,14}, /* U */
+    {17,17,17,17,17,17,10,10,4}, /* V */
+    {17,17,17,17,21,21,21,27,17}, /* W */
+    {17,17,10,10,4,10,10,17,17}, /* X */
+    {17,17,10,10,4,4,4,4,4}, /* Y */
+    {31,1,1,2,4,8,16,16,31}, /* Z */
+    {14,17,19,21,21,25,17,17,14}, /* 0 */
+    {4,12,4,4,4,4,4,4,14}, /* 1 */
+    {14,17,1,1,2,4,8,16,31}, /* 2 */
+    {30,1,1,1,14,1,1,1,30}, /* 3 */
+    {2,6,10,18,31,2,2,2,2}, /* 4 */
+    {31,16,16,16,30,1,1,17,14}, /* 5 */
+    {14,17,16,16,30,17,17,17,14}, /* 6 */
+    {31,1,1,2,2,4,4,8,8}, /* 7 */
+    {14,17,17,17,14,17,17,17,14}, /* 8 */
+    {14,17,17,17,15,1,1,17,14}, /* 9 */
+    {25,25,2,2,4,8,8,19,19}, /* % */
+    {0,0,0,0,0,0,0,0,0} /* space */
 };
 
 static void dot(uint16_t* fb, int stride, int x, int y,
@@ -74,7 +128,7 @@ static void word(uint16_t* fb, int stride, int l, int t, int r, int b,
     for (pass = armed ? 0 : 1; pass < 2; ++pass) {
         for (i = 0; i < length; ++i) {
             int letter = -1, j;
-            for (j = 0; j < 12; ++j)
+            for (j = 0; j < (int)(sizeof(glyphs) / sizeof(glyphs[0])); ++j)
                 if (letters[j] == value[i]) { letter = j; break; }
             if (letter < 0) continue;
             for (row = 0; row < 9; ++row)
@@ -89,11 +143,54 @@ static void word(uint16_t* fb, int stride, int l, int t, int r, int b,
                         else
                             dot(fb, stride, x, y, l, t, r, b,
                                 armed ? p->typeFace :
-                                (row < 3 ? 0xf6afU :
-                                 row < 6 ? p->typeFace : 0xaa85U));
+                                EspMainMenuSkin_letterTone(row, 9));
                     }
         }
     }
+}
+
+/* Child-menu labels use the same industrial font family as MENU_MAIN.
+ * 5x7 crops for short words; 3x7 samples for labels >7 characters.  Glyph
+ * pixels are written ONCE at fixed positions, never drawn as a shifted halo.
+ * The text touches neither the plate seams nor the left-hand PAK logo. */
+int EspMainMenuSkin_paintText(uint16_t* fb, int stride, int width, int height,
+                              int l, int t, int r, int b,
+                              const char* label, int selected, int enabled) {
+    int length = 0, compact, advance, glyphWidth, x0, y0, i, row, col;
+    if (fb == NULL || label == NULL || width != SKIN_W || height != SKIN_H ||
+        stride < width || l < 0 || r >= width || t < 0 || b >= height ||
+        r - l + 1 < 16 || b - t + 1 < 16 ||
+        (selected != 0 && selected != 1) ||
+        (enabled != 0 && enabled != 1)) return 0;
+    while (label[length] != '\0') {
+        int found = 0;
+        for (i = 0; i < (int)(sizeof(glyphs) / sizeof(glyphs[0])); ++i)
+            if (letters[i] == label[length]) { found = 1; break; }
+        if (!found || ++length > 12) return 0;
+    }
+    if (length == 0) return 0;
+    compact = (length * 6 - 1) > (r - l - 10);
+    advance = compact ? 4 : 6;
+    glyphWidth = compact ? 3 : 5;
+    if (length * advance - 1 > r - l - 8) return 0;
+    x0 = (l + r + 1 - (length * advance - 1)) / 2;
+    y0 = t + ((b - t + 1) - 7) / 2;
+    for (i = 0; i < length; ++i) {
+        int glyph = 0;
+        while (letters[glyph] != label[i]) ++glyph;
+        for (row = 0; row < 7; ++row) {
+            const uint8_t mask = glyphs[glyph][row + (row >= 3) + (row >= 5)];
+            const uint16_t color = !enabled ? 0x9cd3U :
+                selected ? 0xffffU : EspMainMenuSkin_letterTone(row, 7);
+            for (col = 0; col < glyphWidth; ++col) {
+                const int inputCol = compact ? col * 2 : col;
+                if (mask & (uint8_t)(16U >> inputCol))
+                    dot(fb, stride, x0 + i * advance + col, y0 + row,
+                        l, t, r, b, color);
+            }
+        }
+    }
+    return 1;
 }
 
 /* Shared plate painter: exact menu chassis geometry and colors, extended to
