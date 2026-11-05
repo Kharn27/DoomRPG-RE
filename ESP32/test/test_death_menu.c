@@ -181,9 +181,16 @@ int main(int argc, char** argv) {
     DoomRPG_t doom = {0}; doom.render = (void*)1;
     start(&doom, 1, ESP_MAP_ID_INTRO);
     assert(pixel(3, 3) == ESP_HUB_COLOR_STEEL_DARK);
-    assert(pixel(12, 10) == ESP_HUB_COLOR_RED);
+    /* Header now reuses the industrial plate instead of the flat old
+     * banner/red rails.  Both text faces stay between the copper seams. */
+    assert(pixel(12, 10) != ESP_HUB_COLOR_RED);
+    assert(pixel(25, 8) == 0xd344U);
+    assert(pixel(25, 26) == 0xd344U);
+    assert(colorCount(5, 10, ESP_HUB_COLOR_RED) == 0);
+    assert(colorCount(11, 17, ESP_HUB_COLOR_RED) > 40);
+    assert(colorCount(18, 24, 0xf6afU) > 30);
+    assert(colorCount(25, 29, 0xf6afU) == 0);
     assert(pixel(25, 36) == 0xd344U);
-    assert(colorCount(10, 16, ESP_HUB_COLOR_RED) > 40);
     /* The physical photo exposed overlapping text/seams in 19px plates.
      * Each action now has exactly one 5x7 face centered at top+6..12.
      * No ivory/gray caption may intrude into the copper bottom seam. */

@@ -183,14 +183,19 @@ static int paintDeathMenu(void) {
     fillRect(fb, 0, 0, 159, 119, ESP_HUB_COLOR_BLACK);
     fillRect(fb, 3, 3, 156, 116, ESP_HUB_COLOR_BG);
     drawRect(fb, 3, 3, 156, 116, ESP_HUB_COLOR_STEEL_DARK);
-    fillRect(fb, 9, 7, 150, 28, ESP_HUB_COLOR_PANEL_ALT);
-    drawRect(fb, 9, 7, 150, 28, ESP_HUB_COLOR_STEEL_DARK);
-    fillRect(fb, 12, 10, 13, 25, ESP_HUB_COLOR_RED);
-    fillRect(fb, 146, 10, 147, 25, ESP_HUB_COLOR_RED);
+    /* Death banner shares the exact industrial gunmetal plate painter with
+     * MENU_MAIN, LOADING and the action rows.  The 25px plate keeps its
+     * copper seams at y=8/26 outside the 7px + 5px text faces, with no old
+     * flat rectangle or vertical red rails.  The title alone is danger-red. */
+    if (!EspMainMenuSkin_paintPlate(
+            fb, DEATH_VIEWPORT_WIDTH, DEATH_VIEWPORT_WIDTH,
+            DEATH_SCREEN_HEIGHT, DEATH_MENU_LEFT, 5,
+            DEATH_MENU_RIGHT, 29, ESP_MAIN_MENU_SKIN_IDLE))
+        return 0;
     EspNativeGameplayHubTouchUi_drawCrispText(
-        fb, "YOU DIED", 80, 9, ESP_HUB_COLOR_RED);
+        fb, "YOU DIED", 80, 11, ESP_HUB_COLOR_RED);
     EspNativeGameplayHubTouchUi_drawMiniText(
-        fb, "MISSION FAILED", 80, 21, 0xf6afU);
+        fb, "MISSION FAILED", 80, 20, 0xf6afU);
 
     for (row = 0; row < 4; ++row) {
         const int top = DEATH_MENU_ROW0_TOP +
