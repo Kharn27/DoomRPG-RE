@@ -11,6 +11,7 @@
 
 #include "esp_legacy_asset_source.h"
 #include "native_main_menu_model.h"
+#include "native_main_menu_160x120_layout.h"
 #include "platform_video_config.h"
 
 #define ESP32_SND_FLG_LOOP       1U
