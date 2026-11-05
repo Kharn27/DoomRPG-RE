@@ -311,7 +311,27 @@ assert "int nodeRasterCount;" in HEADER
 assert re.search(r"#ifndef DOOMRPG_ESP32\s+int spriteCount;\s+int spriteRasterCount;\s+#endif", HEADER)
 assert "byte spanMode;" in HEADER and "int numLines;" in HEADER
 assert "boolean skipCull;" in HEADER
-assert "sizeof(Render_t) == 192U" in startup
+assert "sizeof(Render_t) == 184U" in startup
+
+# Post-PR252: two desktop setup-only half-screen intermediates have no
+# native readers. Preserve halfScreenHeight / fracHalfScreenWidth used by
+# permanent rendering; verify removal in all compiled native owners.
+for field in ("halfScreenWidth", "fracHalfScreenHeight"):
+    decl = r"\bint\s+" + field + r";"
+    assert re.search(r"#ifndef DOOMRPG_ESP32\s+" + decl + r"\s+#endif", HEADER), field
+    assert re.search(r"\brender->" + field + r"\b", DESKTOP), field
+    for tree in (NATIVE / "src", NATIVE / "include"):
+        for path in sorted(tree.rglob("*")):
+            if path.suffix not in (".c", ".cpp", ".h"):
+                continue
+            code = path.read_text(encoding="latin-1")
+            code = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"',
+                          " ", code, flags=re.S)
+            assert not re.search(r"(?:->|\.)\s*" + field + r"\b", code), (path, field)
+assert "int halfScreenHeight;" in HEADER
+assert "int fracHalfScreenWidth;" in HEADER
+assert "((render->screenWidth / 2) << FRACBITS) - 0x8000" in (
+    NATIVE / "src/engine_stubs.c").read_text()
 
 # PR239: map-wide BSP I/O buffer and read cursor only exist in desktop
 # Render_beginLoadMap/Data. The ESP32 reads native immutable BSP inventory
@@ -436,7 +456,7 @@ for member in ("mapName", "mapNameID", "loadMapID", "introColor",
                 + member + r"\b", clean), (
                 "retired map-header Render field referenced by native", path, member)
 assert "render->mapCameraSpawnIndex = 0;" not in root
-assert "sizeof(Render_t) == 192U" in (
+assert "sizeof(Render_t) == 184U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 
 # Post-#245-B on the same PR: desktop BSP allocation/inventory counts
@@ -457,7 +477,7 @@ assert re.search(
 assert re.search(
     r"render->mapStringsIDs = NULL;\s+render->mapStringCount = 0;\s+#endif",
     startup)
-assert "sizeof(Render_t) == 192U" in startup
+assert "sizeof(Render_t) == 184U" in startup
 
 # The sprite renderer is the other owner of transactional frame scratch.
 # Its clipping/projection lines are function-local too. No CYD Render_t
@@ -466,7 +486,7 @@ sprite = (NATIVE / "src/esp_native_sprite_renderer.c").read_text()
 assert "Line_t tmpLine;" not in sprite
 assert "->tmpLine" not in sprite
 assert "_Static_assert(sizeof(Scratch) <= 740U" in sprite
-assert "sizeof(Render_t) == 192U" in (
+assert "sizeof(Render_t) == 184U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 assert re.search(
     r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
@@ -608,4 +628,4 @@ assert "spriteLeaf(runtime, &sprite, outLeaf)" in leaf_visibility
 assert "spriteLeafCache.leaf[spriteIndex] = (uint16_t)leaf;" in leaf_visibility
 assert "!cachedSpriteLeaf(runtime, mapSpriteIndex, &leaf)" in leaf_visibility
 
-print("PASS 23 retired Render ABIs; native Render_t 192B, desktop sprite raster counters excluded; BSP leaf cache retained")
+print("PASS 23 retired Render ABIs; native Render_t 184B, desktop sprite and half-screen scratch excluded; BSP leaf cache retained")
