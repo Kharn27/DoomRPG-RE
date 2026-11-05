@@ -88,6 +88,37 @@ int main(void) {
         DoomRPG_esp32MainMenuCardRect(1, &ol, &ot, &oright, &ob);
         assert(ol == 104 && oright == 157 && ot == 38 && ob == 57);
     }
+    /* Exact menu and LOADING face bands, no halo or second text pass. */
+    {
+        static const uint16_t menu[9] = {
+            0xf6afU, 0xf6afU, 0xf6afU,
+            0xe4e9U, 0xe4e9U, 0xe4e9U,
+            0xaa85U, 0xaa85U, 0xaa85U
+        };
+        static const uint16_t loading[5] = {
+            0xf6afU, 0xf6afU, 0xe4e9U, 0xe4e9U, 0xaa85U
+        };
+        int row;
+        for (row = 0; row < 9; ++row)
+            assert(EspMainMenuSkin_letterTone(row, 9) == menu[row]);
+        for (row = 0; row < 5; ++row)
+            assert(EspMainMenuSkin_letterTone(row, 5) == loading[row]);
+        assert(EspMainMenuSkin_letterTone(-1, 5) == 0U);
+        assert(EspMainMenuSkin_letterTone(5, 5) == 0U);
+        assert(EspMainMenuSkin_letterTone(9, 9) == 0U);
+        assert(EspMainMenuSkin_letterTone(0, 0) == 0U);
+        assert(EspMainMenuSkin_letterTone(0, 7) == 0U);
+    }
+    assert(EspMainMenuSkin_getTheme() == ESP_MAIN_MENU_THEME_CLASSIC);
+    assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_INFERNO));
+    {
+        static const uint16_t hot[5] = {0xffe0U,0xffe0U,0xd344U,0xd344U,0xc002U};
+        for (int row = 0; row < 5; ++row)
+            assert(EspMainMenuSkin_letterTone(row, 5) == hot[row]);
+    }
+    assert(!EspMainMenuSkin_setTheme(2U));
+    assert(EspMainMenuSkin_getTheme() == ESP_MAIN_MENU_THEME_INFERNO);
+    assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
     for (item = 0; item < 4; ++item) {
         int l, t, r, b;
         DoomRPG_esp32IndustrialMainCardRect(item, &l, &t, &r, &b);
