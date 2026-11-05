@@ -283,6 +283,58 @@ int main(void) {
         }
     }
 
+    /* Exact child geometry: two themes paint the same glyph positions,
+     * only the face colors differ. All 54x20 cards stay rail-clipped. */
+    {
+        uint32_t originalHash = 2166136261U, infernoHash = 2166136261U;
+        const char* labels[] = {"BACK","LUMINOSITE","ORIENTATION",
+                                "THEME","SOUND","CLASSIC","INFERNO","100%"};
+        for (size_t i = 0; i < sizeof(labels) / sizeof(labels[0]); ++i) {
+            resetFrame();
+            assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
+            assert(EspMainMenuSkin_paintPlate(fb, W, W, H, 104, 6, 157, 25,
+                                              ESP_MAIN_MENU_SKIN_IDLE));
+            assert(EspMainMenuSkin_paintText(fb, W, W, H, 104, 6, 157, 25,
+                                             labels[i], 0, 1));
+            for (int y = 0; y < H; ++y)
+                for (int x = 0; x < W; ++x)
+                    if ((x < 104 || x > 157 || y < 6 || y > 25))
+                        assert(fb[y * W + x] == SENTINEL);
+            assert(arena[0] == SENTINEL &&
+                   arena[GUARD + W * H + GUARD - 1] == SENTINEL);
+        }
+        resetFrame();
+        assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
+        assert(EspMainMenuSkin_paintPlate(fb, W, W, H, 104, 6, 157, 25,
+                                          ESP_MAIN_MENU_SKIN_IDLE));
+        assert(EspMainMenuSkin_paintText(fb, W, W, H, 104, 6, 157, 25,
+                                         "INFERNO", 0, 1));
+        for (int y = 6; y <= 25; ++y)
+            for (int x = 104; x <= 157; ++x) {
+                const uint16_t c = fb[y * W + x];
+                originalHash = (originalHash ^ (uint8_t)c) * 16777619U;
+                originalHash = (originalHash ^ (uint8_t)(c >> 8)) * 16777619U;
+            }
+        resetFrame();
+        assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_INFERNO));
+        assert(EspMainMenuSkin_paintPlate(fb, W, W, H, 104, 6, 157, 25,
+                                          ESP_MAIN_MENU_SKIN_IDLE));
+        assert(EspMainMenuSkin_paintText(fb, W, W, H, 104, 6, 157, 25,
+                                         "INFERNO", 0, 1));
+        for (int y = 6; y <= 25; ++y)
+            for (int x = 104; x <= 157; ++x) {
+                const uint16_t c = fb[y * W + x];
+                infernoHash = (infernoHash ^ (uint8_t)c) * 16777619U;
+                infernoHash = (infernoHash ^ (uint8_t)(c >> 8)) * 16777619U;
+            }
+        assert(originalHash != infernoHash);
+        assert(!EspMainMenuSkin_paintText(fb, W, W, H, 104, 6, 157, 25,
+                                          "UNKNOWN?", 0, 1));
+        assert(EspMainMenuSkin_paintText(fb, W, W, H, 104, 6, 157, 25,
+                                         "BACK", 1, 1));
+        assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
+    }
+
     resetFrame();
     assert(!EspMainMenuSkin_paint(NULL, W, W, H, 0, ESP_MAIN_MENU_SKIN_IDLE));
     assert(!EspMainMenuSkin_paint(fb, W - 1, W, H, 0, ESP_MAIN_MENU_SKIN_IDLE));
