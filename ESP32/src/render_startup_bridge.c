@@ -17,7 +17,7 @@
 #include <esp_heap_caps.h>
 #if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 /* Desktop/bringup retain the original legacy BSP flags; production does not. */
-_Static_assert(sizeof(Render_t) == 204U,
+_Static_assert(sizeof(Render_t) == 200U,
                "Render_t must omit retired raster state, accounting, desktop world, BSP header and allocation counts");
 #endif
 
@@ -75,8 +75,8 @@ void EspNativeRenderRuntime_releaseCompatibility(Render_t* render)
  * The original source bodies are preserved exactly, except for one-time
  * source-ownership diagnostics; all legacy world/raster logic stays excluded.
  */
-/* Native startup-owned palette loader. The original desktop body, including
- * paletteMemory accounting and fatal OOM contract, remains unchanged. */
+/* Native palette loader retains desktop RGB565 conversion, allocation and
+ * fatal OOM behavior; the unused desktop heap ledger is no longer resident. */
 static void EspNativeRenderStartup_loadPalettes(Render_t* render)
 {
 	byte* fData;
@@ -84,7 +84,6 @@ static void EspNativeRenderStartup_loadPalettes(Render_t* render)
 	short color;
 	int red, green, blue;
 
-	render->paletteMemory = DoomRPG_freeMemory();
 
 	fData = DoomRPG_fileOpenRead(render->doomRpg, "/palettes.bin");
 
@@ -115,8 +114,6 @@ static void EspNativeRenderStartup_loadPalettes(Render_t* render)
 
 	SDL_free(fData);
 
-	render->paletteMemory = DoomRPG_freeMemory() - render->paletteMemory;
-	//printf("paletteMemory %d\n", render->paletteMemory);
 }
 
 unsigned int Render_make565RGB(Render_t* render, int blue, int green, int red)
