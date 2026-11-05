@@ -205,8 +205,9 @@ static int buildFixedOptionsModel(DoomRPG_t* doomRpg) {
     setFixedItem(&menuSystem->items[menuSystem->numItems++], "Back", 0);
     setFixedItem(&menuSystem->items[menuSystem->numItems++], "Video", 0);
     setFixedItem(&menuSystem->items[menuSystem->numItems++], "Orientation", 0);
+    setFixedItem(&menuSystem->items[menuSystem->numItems++], "Theme", 0);
     setFixedItem(&menuSystem->items[menuSystem->numItems++], "Sound", 0);
-    return menuSystem->numItems == 4;
+    return menuSystem->numItems == 5;
 }
 
 static int buildBoundedHelpModel(DoomRPG_t* doomRpg) {
