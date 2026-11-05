@@ -131,10 +131,10 @@ assert "industrialMain ? 0x0800U : MAIN_DOOM_METAL" in menu
 assert "industrialMain ? 0x4a48U : ESP_HUB_COLOR_STEEL_DARK" in menu
 # Only Options keeps its historical top/bottom decoration; MENU_MAIN removes it.
 rail = menu[menu.index("int DoomRPG_esp32PaintMenuDashboardCards("):
-            menu.index("/* The child reuses the same protected right rail;")]
+            menu.index("/* Every child uses the established x104..157 54x20 rail hitboxes.")]
 assert "if (!industrialMain) {" in rail
 assert rail.index("if (!industrialMain) {") < rail.index(
     "fillRect565(render, 105, 7, 125, 8, MAIN_DOOM_RED);")
 assert rail.index("if (!industrialMain) {") < rail.index(
     "fillRect565(render, 105, 112, 118, 112, MAIN_DOOM_RED);")
-print("[MENUSKIN-INTEGRATION] PASS main-only, actions 0..3, untouched touch/Options, no heap or IO")
+print("[MENUSKIN-INTEGRATION] PASS industrial main + five Options cards, themes, unchanged touch and zero heap")
