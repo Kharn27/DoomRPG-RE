@@ -27,7 +27,7 @@ int DoomRPG_esp32MainMenuPaintDashboardSelection(
     int armed,
     uint32_t* framebufferFNV);
 
-/* Native dashboard painter: four MENU_MAIN labels or five Options entries;
+/* Native dashboard painter: four MENU_MAIN labels or three Options entries;
  * enabledMask keeps deferred cards visible but deliberately subdued. This is
  * the common presentation primitive used by MENU_MAIN and its Options child.
  */
@@ -37,6 +37,13 @@ int DoomRPG_esp32PaintMenuDashboardCards(
     int selectedIndex,
     int armed,
     uint8_t enabledMask,
+    uint32_t* framebufferFNV);
+
+/* VIDEO intermediary: four cards Back/Luminosite/Orientation/Theme.
+ * Identical geometry in its renderer and the touch frontend. */
+int DoomRPG_esp32PaintVideoMenuCards(
+    struct DoomRPG_s* doomRpg,
+    int selectedIndex, int armed, uint8_t enabledMask,
     uint32_t* framebufferFNV);
 
 /* Parent Options -> Luminosité child: right rail only; 5 cards with

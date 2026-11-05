@@ -303,7 +303,7 @@ static int drawDashboardCard(DoomRPG_t* doomRpg,
     Render_t* render = doomRpg->render;
     int left, top, right, bottom;
     const int focused = selected && armed && enabled;
-    DoomRPG_esp32BrightnessCardRect(item, &left, &top, &right, &bottom);
+    DoomRPG_esp32OptionsCardRect(item, &left, &top, &right, &bottom);
     if (!EspMainMenuSkin_paintPlate(
             (uint16_t*)render->framebuffer,
             render->pitch / (int)sizeof(uint16_t),
@@ -330,7 +330,8 @@ int DoomRPG_esp32PaintMenuDashboardCards(
     int item;
     uint32_t hash;
     const int industrialMain = labels == dashboardLabels;
-    const int itemCount = industrialMain ? DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT : 5;
+    const int itemCount = industrialMain ? DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT :
+        DOOMRPG_ESP32_OPTIONS_CARD_COUNT;
     int64_t startUs = 0;
 
     if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) || labels == NULL ||
@@ -414,8 +415,8 @@ int DoomRPG_esp32PaintMenuDashboardCards(
     return 1;
 }
 
-/* Every child uses the established x104..157 54x20 rail hitboxes.
- * The same plate/text painter handles brightness, orientation and palette. */
+/* Every nested child stays within the established x104..157 rail.
+ * VIDEO has 4 spaced 54x20 cards, brightness has 5, presets have 3. */
 static int paintChildRail(DoomRPG_t* doomRpg) {
     Render_t* render = doomRpg->render;
     fillRect565(render, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT,
@@ -431,10 +432,13 @@ static int paintChildRail(DoomRPG_t* doomRpg) {
 }
 
 static int paintChildCard(DoomRPG_t* doomRpg, int item, const char* label,
-                          int selected) {
+                          int selected, int enabled, int videoLayer) {
     int l, t, r, b;
     Render_t* render = doomRpg->render;
-    DoomRPG_esp32BrightnessCardRect(item, &l, &t, &r, &b);
+    if (videoLayer)
+        DoomRPG_esp32VideoCardRect(item, &l, &t, &r, &b);
+    else
+        DoomRPG_esp32BrightnessCardRect(item, &l, &t, &r, &b);
     if (!EspMainMenuSkin_paintPlate((uint16_t*)render->framebuffer,
                                     render->pitch / (int)sizeof(uint16_t),
                                     DOOMRPG_LOGICAL_WIDTH,
@@ -447,7 +451,7 @@ static int paintChildCard(DoomRPG_t* doomRpg, int item, const char* label,
         (uint16_t*)render->framebuffer,
         render->pitch / (int)sizeof(uint16_t),
         DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
-        l, t, r, b, label, selected, 1);
+        l, t, r, b, label, selected, enabled);
 }
 
 static int finishChildCards(DoomRPG_t* doomRpg, uint32_t* outFNV) {
@@ -455,6 +459,35 @@ static int finishChildCards(DoomRPG_t* doomRpg, uint32_t* outFNV) {
     if (!hash) return 0;
     if (outFNV != NULL) *outFNV = hash;
     return 1;
+}
+
+int DoomRPG_esp32PaintVideoMenuCards(
+    struct DoomRPG_s* doomRpgBase,
+    int selectedIndex, int armed, uint8_t enabledMask,
+    uint32_t* framebufferFNV) {
+    static const char* const names[DOOMRPG_ESP32_VIDEO_CARD_COUNT] = {
+        "BACK", "LUMINOSITE", "ORIENTATION", "THEME"
+    };
+    DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
+    int item;
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
+        selectedIndex < 0 || selectedIndex >= DOOMRPG_ESP32_VIDEO_CARD_COUNT ||
+        (enabledMask & (uint8_t)((1U << 0) | (1U << 3))) !=
+            (uint8_t)((1U << 0) | (1U << 3)) ||
+        DOOMRPG_ESP32_VIDEO_CARD_TOP(0) <=
+            DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP ||
+        DOOMRPG_ESP32_VIDEO_CARD_TOP(3) + 19 >=
+            DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM)
+        return 0;
+    if (!paintChildRail(doomRpg)) return 0;
+    for (item = 0; item < DOOMRPG_ESP32_VIDEO_CARD_COUNT; ++item) {
+        const int enabled = (enabledMask & (uint8_t)(1U << item)) != 0U;
+        if (!paintChildCard(doomRpg, item, names[item],
+                            enabled && armed && item == selectedIndex,
+                            enabled, 1))
+            return 0;
+    }
+    return finishChildCards(doomRpg, framebufferFNV);
 }
 
 int DoomRPG_esp32PaintBrightnessPresetCards(
@@ -474,7 +507,8 @@ int DoomRPG_esp32PaintBrightnessPresetCards(
     if (!paintChildRail(doomRpg)) return 0;
     for (item = 0; item < DOOMRPG_ESP32_BRIGHTNESS_CARD_COUNT; ++item)
         if (!paintChildCard(doomRpg, item, names[item],
-                            item != 0 && (uint8_t)(item * 25U) == activePercent))
+                            item != 0 && (uint8_t)(item * 25U) == activePercent,
+                            1, 0))
             return 0;
     return finishChildCards(doomRpg, framebufferFNV);
 }
@@ -491,7 +525,8 @@ int DoomRPG_esp32PaintOrientationPresetCards(
     if (!paintChildRail(doomRpg)) return 0;
     for (item = 0; item < DOOMRPG_ESP32_ORIENTATION_CARD_COUNT; ++item)
         if (!paintChildCard(doomRpg, item, names[item],
-                            item != 0 && (uint8_t)(item - 1) == activeOrientation))
+                            item != 0 && (uint8_t)(item - 1) == activeOrientation,
+                            1, 0))
             return 0;
     return finishChildCards(doomRpg, framebufferFNV);
 }
@@ -507,7 +542,8 @@ int DoomRPG_esp32PaintThemePresetCards(
     if (!paintChildRail(doomRpg)) return 0;
     for (item = 0; item < 3; ++item)
         if (!paintChildCard(doomRpg, item, names[item],
-                            item != 0 && (uint8_t)(item - 1) == activeTheme))
+                            item != 0 && (uint8_t)(item - 1) == activeTheme,
+                            1, 0))
             return 0;
     return finishChildCards(doomRpg, framebufferFNV);
 }

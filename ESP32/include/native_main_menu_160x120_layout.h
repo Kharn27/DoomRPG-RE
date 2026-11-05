@@ -72,6 +72,37 @@
      DOOMRPG_ESP32_MAIN_MENU_CARD_HEIGHT - 1)
 #define DOOMRPG_ESP32_MAIN_MENU_DASH_FOOTER_Y 119
 
+/* Native Options root is spacious (3 cards), VIDEO is a separate middle
+ * layer (4 cards). Exactly the same rectangles are used by paint and touch.
+ * The logo remains x=0..101 and all cards x=104..157. */
+#define DOOMRPG_ESP32_OPTIONS_CARD_COUNT 3
+#define DOOMRPG_ESP32_VIDEO_CARD_COUNT 4
+#define DOOMRPG_ESP32_OPTIONS_CARD_FIRST_TOP 19
+#define DOOMRPG_ESP32_OPTIONS_CARD_PITCH 32
+#define DOOMRPG_ESP32_VIDEO_CARD_FIRST_TOP 12
+#define DOOMRPG_ESP32_VIDEO_CARD_PITCH 26
+#define DOOMRPG_ESP32_OPTIONS_CARD_TOP(index) \
+    (DOOMRPG_ESP32_OPTIONS_CARD_FIRST_TOP + \
+     (index) * DOOMRPG_ESP32_OPTIONS_CARD_PITCH)
+#define DOOMRPG_ESP32_VIDEO_CARD_TOP(index) \
+    (DOOMRPG_ESP32_VIDEO_CARD_FIRST_TOP + \
+     (index) * DOOMRPG_ESP32_VIDEO_CARD_PITCH)
+
+static inline void DoomRPG_esp32OptionsCardRect(
+    int item, int* left, int* top, int* right, int* bottom) {
+    if (left != 0) *left = DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT;
+    if (right != 0) *right = DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT;
+    if (top != 0) *top = DOOMRPG_ESP32_OPTIONS_CARD_TOP(item);
+    if (bottom != 0) *bottom = DOOMRPG_ESP32_OPTIONS_CARD_TOP(item) + 19;
+}
+static inline void DoomRPG_esp32VideoCardRect(
+    int item, int* left, int* top, int* right, int* bottom) {
+    if (left != 0) *left = DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT;
+    if (right != 0) *right = DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT;
+    if (top != 0) *top = DOOMRPG_ESP32_VIDEO_CARD_TOP(item);
+    if (bottom != 0) *bottom = DOOMRPG_ESP32_VIDEO_CARD_TOP(item) + 19;
+}
+
 /* Brightness child lives inside Options, without creating another desktop
  * MenuSystem model. Five 54x20 cards fit the same right rail with 2px gaps.
  * Card 0: Back; 1..4: 25/50/75/100 percent. Shared paint/touch geometry. */
