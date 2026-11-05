@@ -107,7 +107,10 @@ int main(void) {
         assert(EspMainMenuSkin_letterTone(5, 5) == 0U);
         assert(EspMainMenuSkin_letterTone(9, 9) == 0U);
         assert(EspMainMenuSkin_letterTone(0, 0) == 0U);
-        assert(EspMainMenuSkin_letterTone(0, 7) == 0U);
+        assert(EspMainMenuSkin_letterTone(0, 6) == 0U);
+        assert(EspMainMenuSkin_letterTone(0, 7) == 0xf6afU);
+        assert(EspMainMenuSkin_letterTone(3, 7) == 0xe4e9U);
+        assert(EspMainMenuSkin_letterTone(6, 7) == 0xaa85U);
     }
     assert(EspMainMenuSkin_getTheme() == ESP_MAIN_MENU_THEME_CLASSIC);
     assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_INFERNO));
