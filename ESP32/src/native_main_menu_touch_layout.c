@@ -287,17 +287,6 @@ static void drawRect565(Render_t* render,
     }
 }
 
-static void chamferCard(Render_t* render,
-                        int left,
-                        int top,
-                        int right,
-                        int bottom) {
-    putPixel(render, left, top, ESP_HUB_COLOR_BLACK);
-    putPixel(render, right, top, ESP_HUB_COLOR_BLACK);
-    putPixel(render, left, bottom, ESP_HUB_COLOR_BLACK);
-    putPixel(render, right, bottom, ESP_HUB_COLOR_BLACK);
-}
-
 /* Menu-specific RGB565 red. HUB amber remains unchanged elsewhere. */
 #define MAIN_DOOM_RED       0xc002U
 #define MAIN_DOOM_RED_HOT   0xf0e2U
