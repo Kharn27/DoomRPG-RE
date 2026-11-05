@@ -66,7 +66,9 @@ assert "if (industrialMain) {" in menu
 assert "EspMainMenuSkin_paint(" in menu
 assert "} else {\n            if (!drawDashboardCard(" in menu
 assert "EspMainMenuSkin_paintText(" in menu
-assert "const int itemCount = industrialMain ? DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT : 5;" in menu
+assert "const int itemCount = industrialMain ? DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT :" in menu
+assert "DOOMRPG_ESP32_OPTIONS_CARD_COUNT;" in menu
+assert "DoomRPG_esp32PaintVideoMenuCards(" in menu
 assert "DoomRPG_esp32MainMenuPaintDashboardSelection(" in menu
 assert "DoomRPG_esp32PaintBrightnessPresetCards(" in menu
 assert "DoomRPG_esp32PaintOrientationPresetCards(" in menu
@@ -131,10 +133,10 @@ assert "industrialMain ? 0x0800U : MAIN_DOOM_METAL" in menu
 assert "industrialMain ? 0x4a48U : ESP_HUB_COLOR_STEEL_DARK" in menu
 # Only Options keeps its historical top/bottom decoration; MENU_MAIN removes it.
 rail = menu[menu.index("int DoomRPG_esp32PaintMenuDashboardCards("):
-            menu.index("/* Every child uses the established x104..157 54x20 rail hitboxes.")]
+            menu.index("/* Every nested child stays within the established x104..157 rail.")]
 assert "if (!industrialMain) {" in rail
 assert rail.index("if (!industrialMain) {") < rail.index(
     "fillRect565(render, 105, 7, 125, 8, MAIN_DOOM_RED);")
 assert rail.index("if (!industrialMain) {") < rail.index(
     "fillRect565(render, 105, 112, 118, 112, MAIN_DOOM_RED);")
-print("[MENUSKIN-INTEGRATION] PASS industrial main + five Options cards, themes, unchanged touch and zero heap")
+print("[MENUSKIN-INTEGRATION] PASS main + 3 Options + 4 VIDEO cards, theme, unchanged gameplay touch and zero heap")

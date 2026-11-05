@@ -80,6 +80,40 @@ int main(void) {
     for (int i = 0; i < 3; ++i)
         assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_TOP(i + 1) -
                DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(i) - 1 == 3);
+    /* Spacious OPTIONS (three cards) and VIDEO (four) use distinct,
+     * paired paint/touch rectangles. No collisions or logo overlap. */
+    assert(DOOMRPG_ESP32_OPTIONS_CARD_COUNT == 3);
+    assert(DOOMRPG_ESP32_VIDEO_CARD_COUNT == 4);
+    for (int layer = 0; layer < 2; ++layer) {
+        const int count = layer ? DOOMRPG_ESP32_VIDEO_CARD_COUNT :
+                                  DOOMRPG_ESP32_OPTIONS_CARD_COUNT;
+        int previousBottom = -1;
+        for (int k = 0; k < count; ++k) {
+            int l, t, r, b;
+            if (layer)
+                DoomRPG_esp32VideoCardRect(k, &l, &t, &r, &b);
+            else
+                DoomRPG_esp32OptionsCardRect(k, &l, &t, &r, &b);
+            assert(l == 104 && r == 157 && b - t + 1 == 20);
+            assert(t > DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP);
+            assert(b < DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM);
+            assert(previousBottom < t);
+            if (k != 0) assert(t - previousBottom >= 5);
+            previousBottom = b;
+        }
+        int firstL, firstT, firstR, firstB;
+        int lastL, lastT, lastR, lastB;
+        if (layer) {
+            DoomRPG_esp32VideoCardRect(0, &firstL, &firstT, &firstR, &firstB);
+            DoomRPG_esp32VideoCardRect(count-1, &lastL, &lastT, &lastR, &lastB);
+            assert(firstT == 12 && lastT == 90 && lastB == 109);
+        } else {
+            DoomRPG_esp32OptionsCardRect(0, &firstL, &firstT, &firstR, &firstB);
+            DoomRPG_esp32OptionsCardRect(count-1, &lastL, &lastT, &lastR, &lastB);
+            assert(firstT == 19 && lastT == 83 && lastB == 102);
+        }
+        assert(firstL == lastL && firstR == lastR);
+    }
     /* Old child-screen cards retain the original 54px geometry. */
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT == 104);
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT == 157);
