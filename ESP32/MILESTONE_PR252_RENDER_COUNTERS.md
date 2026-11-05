@@ -11,3 +11,5 @@
 **RAM8 observée (ne pas prétendre gain heap causal de 12 B) :** menu initial 153252 ; Entrance 112156 avant dialogue ; Junction 121736 ; Sector1 115008 au cache ; retour MENU_MAIN 158096. Largest8 jeu 86004, menu 110580 ; `HEADROOM_OK`, `ALIVE` stable.
 
 **Limites :** aucun SAVE nouveau, audio audible, INVERSE, tous BSP, crash recovery, parité pixel TFT ou A/B de cadence. `BOUNDARY-INLINE` et `COMBAT-INPUT-BLOCK queued=no` sont observés, non attribuables ici. Pas de commentaire séparé sur le ressenti visuel. **PASS matériel ciblé, code gelé, clôture documentaire seulement**. Rebase + merge demandés explicitement par l'utilisateur, sous réserve des CI du HEAD rebasé et des règles GitHub.
+
+CI rebase code : [push #42128868800](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42128868800) et [PR #42128875700](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42128875700), **SUCCESS**. Toute CI de clôture documentaire reste un témoin distinct du test CYD physique.
