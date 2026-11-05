@@ -17,6 +17,21 @@ typedef enum {
     ESP_MAIN_MENU_SKIN_CONFIRM = 2
 } EspMainMenuSkinState;
 
+/* User-selectable lettering palette, ROM-only colors, no framebuffer cache.
+ * Theme 0 preserves the MENU_MAIN visual; theme 1 is yellow/bronze/red. */
+#define ESP_MAIN_MENU_THEME_CLASSIC 0U
+#define ESP_MAIN_MENU_THEME_INFERNO 1U
+uint8_t EspMainMenuSkin_getTheme(void);
+int EspMainMenuSkin_setTheme(uint8_t theme);
+uint16_t EspMainMenuSkin_letterTone(int row, int rows);
+
+/* Paint a single unshifted industrial glyph face inside a strict rectangle.
+ * Large labels use 5px glyphs; long labels squeeze columns to fit. No IO. */
+int EspMainMenuSkin_paintText(uint16_t* framebuffer, int stride,
+                              int width, int height,
+                              int left, int top, int right, int bottom,
+                              const char* label, int selected, int enabled);
+
 /* Shared procedural gunmetal chassis. No text, heap or IO. Strict 160x120
  * framebuffer and bounded rectangle; invalid inputs leave pixels untouched.
  * The same IDLE geometry/palette is used by the loading presentation. */
