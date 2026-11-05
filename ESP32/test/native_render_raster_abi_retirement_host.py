@@ -179,7 +179,7 @@ ledger = (
 for name in ledger:
     assert len(re.findall(r"\bint " + name + r";", HEADER)) == 1, name
 assert re.search(
-    r"#ifndef DOOMRPG_ESP32\s+int mapMemory;.*?int texelMemory;\s+#endif"
+    r"#ifndef DOOMRPG_ESP32\s+int mapMemory;.*?int texelMemory;"
     r"\s+int paletteMemory;\s+int mappingMemory;\s+#endif",
     HEADER, re.S,
 ), "desktop ledgers, including paletteMemory, must be conditional"
