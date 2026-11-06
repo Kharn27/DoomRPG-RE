@@ -271,6 +271,15 @@ jobs:
       - name: Test native HUB topbar tabs and no AUTOMAP leak
         run: python ESP32/test/native_hub_topbar_host.py
 
+      - name: Test real HUB topbar classifier and world input isolation (host C)
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+            -IESP32/include ESP32/test/hub_topbar_live_host.c \
+            ESP32/src/esp_native_gameplay_hub_touch_ui.c \
+            ESP32/src/esp_native_gameplay_input.c -Wl,--gc-sections \
+            -o /tmp/doomrpg-hub-topbar-live-test
+          /tmp/doomrpg-hub-topbar-live-test
+
       - name: Test nested VIDEO menu paint/touch parity and Back routing
         run: python ESP32/test/native_video_menu_nesting_host.py
 
