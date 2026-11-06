@@ -19,11 +19,14 @@ assert re.search(r"#ifndef DOOMRPG_ESP32\s+void Render_setup\(", header)
 first = owner.index(anchor)
 last = owner.index("\n/* Bounded CYD layout and font initialization", first)
 body = owner[first:last]
+assert "render->halfScreenWidth" not in body
+assert "render->fracHalfScreenHeight" not in body
+assert "render->fracHalfScreenWidth = ((render->screenWidth / 2) << FRACBITS) - 0x8000;" in body
 normalized = body.replace("static void " + name + "(", "void Render_setup(").rstrip()
 h = 2166136261
 for b in normalized.encode("utf-8"):
     h = ((h ^ b) * 16777619) & 0xffffffff
-assert h == 0xec9d1151, f"Render_setup source drift {h:08x}"
+assert h == 0xdfb8ef59, f"Render_setup source drift {h:08x}"
 for p in sorted((ROOT / "ESP32/src").rglob("*")):
     if p.suffix not in (".c", ".cpp"):
         continue
@@ -42,8 +45,8 @@ typedef bool boolean;
 typedef struct SDL_Rect { int x,y,w,h; } SDL_Rect;
 typedef struct Render_s {
     int screenWidth,screenHeight,screenX,screenY;
-    int halfScreenWidth,halfScreenHeight;
-    int fracHalfScreenWidth,fracHalfScreenHeight;
+    int halfScreenHeight;
+    int fracHalfScreenWidth;
     short *ceilingColor,*floorColor;
     int *columnScale;
 } Render_t;
@@ -71,9 +74,8 @@ int main(void) {
         assert(mallocs==3 && frees==0 && errors==0);
         assert(r.screenWidth==160 && r.screenHeight==80);
         assert(r.screenX==5 && r.screenY==20);
-        assert(r.halfScreenWidth==80 && r.halfScreenHeight==40);
+        assert(r.halfScreenHeight==40);
         assert(r.fracHalfScreenWidth==(80<<16)-0x8000);
-        assert(r.fracHalfScreenHeight==(40<<16)-0x8000);
         assert(r.ceilingColor && r.floorColor && r.columnScale);
         mallocs=frees=0;
         EspNativeEngineLayout_setupRender(&r,&window);
@@ -103,4 +105,4 @@ with tempfile.TemporaryDirectory(prefix="render-setup-retirement-") as d:
     subprocess.run([shutil.which("cc") or "cc", "-std=c11", "-O2", "-Wall",
                     "-Wextra", "-Werror", str(source), "-o", exe], check=True)
     subprocess.run([exe], check=True)
-print("PASS Render_setup=retired owner=layout FNV=ec9d1151")
+print("PASS Render_setup=retired owner=layout FNV=dfb8ef59 native-dormant-slots=absent")

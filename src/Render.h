@@ -82,9 +82,15 @@ typedef struct Render_s
 	int screenWidth;
 	int screenHeight;
 	int halfScreenHeight;
+/* Desktop setup diagnostic; native projection uses fracHalfScreenWidth. */
+#ifndef DOOMRPG_ESP32
 	int halfScreenWidth;
+#endif
 	int fracHalfScreenWidth;
+/* Desktop-only half-height fixed-point diagnostic. */
+#ifndef DOOMRPG_ESP32
 	int fracHalfScreenHeight;
+#endif
 #ifndef DOOMRPG_ESP32
 	int viewZOld;
 #endif
