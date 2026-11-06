@@ -24,6 +24,7 @@
 #include "esp_native_resident_gameplay.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_player_resources.h"
+#include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_transition_handoff.h"
 #include "esp_player_view_state.h"
 #include "platform_video_c_bridge.h"
