@@ -287,8 +287,8 @@ static void drawRect565(Render_t* render,
     }
 }
 
-/* Menu-specific RGB565 red. HUB amber remains unchanged elsewhere. */
-/* Accent ornaments inherit the current ROM-only Skin palette. */
+/* Neutral industrial rail; only two small Options ornaments inherit
+ * the theme accent. The untouched HUB amber palette belongs elsewhere. */
 #define MAIN_DOOM_METAL     0x1082U
 #define MAIN_DOOM_METAL_HI  0x2104U
 

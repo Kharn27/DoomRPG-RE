@@ -423,6 +423,81 @@ int main(void) {
             assert(fb[(y0+3)*W+x0+4+col] == EspMainMenuSkin_letterTone(3,9));
         assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
     }
+    /* Strict theme-accent isolation across main, nested menus and both
+     * LOADING plates. For each plate geometry and state, only the four exact
+     * seam segments may differ from CLASSIC. No extra assets/heap in runtime. */
+    {
+        static uint16_t classicPlate[W * H];
+        static const int regions[6][4] = {
+            {104, 8, 157, 31},   /* MENU_MAIN 54x24 */
+            {104, 8, 157, 39},   /* OPTIONS 54x32 */
+            {104, 6, 157, 31},   /* VIDEO/PHOSPHORE 54x26 */
+            {104, 6, 157, 26},   /* BRIGHTNESS 54x21 */
+            {16, 26, 143, 69},   /* LOADING title 128x44 */
+            {16, 82, 143, 99}    /* LOADING progress rim 128x18 */
+        };
+        static const uint16_t seamColors[3][3] = {
+            {0xd344U, 0xf447U, 0xdba5U},
+            {0xd1a2U, 0xfb25U, 0xb9a4U},
+            {0x5e2aU, 0xa7f1U, 0x3dc9U}
+        };
+        assert(EspMainMenuSkin_accentTone((EspMainMenuSkinState)-1) == 0U);
+        assert(EspMainMenuSkin_accentTone((EspMainMenuSkinState)3) == 0U);
+        for (int box = 0; box < 6; ++box) {
+            const int l = regions[box][0], t = regions[box][1];
+            const int r = regions[box][2], b = regions[box][3];
+            for (int stateIndex = 0; stateIndex < 3; ++stateIndex) {
+                const EspMainMenuSkinState st =
+                    (EspMainMenuSkinState)stateIndex;
+                resetFrame();
+                assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
+                assert(EspMainMenuSkin_accentTone(st) ==
+                       seamColors[0][stateIndex]);
+                assert(EspMainMenuSkin_paintPlate(fb, W, W, H,
+                                                  l, t, r, b, st));
+                memcpy(classicPlate, fb, sizeof(classicPlate));
+                for (int theme = 1; theme <= 2; ++theme) {
+                    int seamPixels = 0;
+                    resetFrame();
+                    assert(EspMainMenuSkin_setTheme((uint8_t)theme));
+                    assert(EspMainMenuSkin_accentTone(st) ==
+                           seamColors[theme][stateIndex]);
+                    assert(EspMainMenuSkin_paintPlate(fb, W, W, H,
+                                                      l, t, r, b, st));
+                    for (int y = 0; y < H; ++y) {
+                        for (int x = 0; x < W; ++x) {
+                            const int isHorizontal =
+                                x >= l + 9 && x <= r - 9 &&
+                                (y == t + 3 || y == b - 3);
+                            const int isVertical =
+                                (x == l + 3 || x == r - 3) &&
+                                y >= t + 7 && y <= b - 7;
+                            const int seam = isHorizontal || isVertical;
+                            if (seam) {
+                                ++seamPixels;
+                                assert(fb[y * W + x] ==
+                                       seamColors[theme][stateIndex]);
+                                assert(classicPlate[y * W + x] ==
+                                       seamColors[0][stateIndex]);
+                            } else {
+                                /* Preserve exact steel/base/bevel/shadow/groove,
+                                 * framebuffer sentinels and left logo. */
+                                assert(fb[y * W + x] ==
+                                       classicPlate[y * W + x]);
+                            }
+                        }
+                    }
+                    assert(seamPixels > 0);
+                    for (int guard = 0; guard < GUARD; ++guard) {
+                        assert(arena[guard] == SENTINEL);
+                        assert(arena[GUARD + W * H + guard] == SENTINEL);
+                    }
+                }
+            }
+        }
+        assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
+    }
+
     resetFrame();
     assert(!EspMainMenuSkin_paint(NULL, W, W, H, 0, ESP_MAIN_MENU_SKIN_IDLE));
     assert(!EspMainMenuSkin_paint(fb, W - 1, W, H, 0, ESP_MAIN_MENU_SKIN_IDLE));

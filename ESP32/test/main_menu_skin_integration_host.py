@@ -135,8 +135,18 @@ assert "industrialMain ? 0x4a48U : ESP_HUB_COLOR_STEEL_DARK" in menu
 rail = menu[menu.index("int DoomRPG_esp32PaintMenuDashboardCards("):
             menu.index("static int paintChildRail(")]
 assert "if (!industrialMain) {" in rail
+assert "const uint16_t trimAccent" in rail
+assert "EspMainMenuSkin_getTheme() == ESP_MAIN_MENU_THEME_CLASSIC" in rail
+assert "EspMainMenuSkin_accentTone(ESP_MAIN_MENU_SKIN_IDLE)" in rail
 assert rail.index("if (!industrialMain) {") < rail.index(
-    "fillRect565(render, 105, 7, 125, 8, MAIN_DOOM_RED);")
+    "fillRect565(render, 105, 7, 125, 8,")
 assert rail.index("if (!industrialMain) {") < rail.index(
-    "fillRect565(render, 105, 112, 118, 112, MAIN_DOOM_RED);")
+    "fillRect565(render, 105, 112, 118, 112,")
+assert rail.count("trimAccent);") == 2
+assert "MAIN_DOOM_RED" not in rail
+# Same palette function owns both main/submenu seam pixels and loading rims.
+assert "seam = EspMainMenuSkin_accentTone(state);" in skin
+assert "l, t, r, b, seam);" in skin
+assert skin.count("l, t, r, b, seam);") == 4
+assert "p->copper);" not in skin
 print("[MENUSKIN-INTEGRATION] PASS main + 3 Options + 4 VIDEO cards, theme, unchanged gameplay touch and zero heap")
