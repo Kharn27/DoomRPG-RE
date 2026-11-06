@@ -12,7 +12,7 @@ typedef struct PainLease_s {
     uint8_t side;
     uint8_t phase;
     uint8_t expired;
-    uint8_t reserved;
+    uint8_t dogBlood;
 } PainLease;
 
 /* The second tiny record is the complete pre-stage rollback, including an
@@ -41,6 +41,25 @@ int EspNativePlayerPainVisual_stage(uint32_t probe,
     lease.side = (uint8_t)side;
     lease.phase = PAIN_STAGED;
     lease.expired = 0U;
+    lease.dogBlood = 0U;
+    return 1;
+}
+
+int EspNativePlayerPainVisual_stageDog(uint32_t probe,
+                                      EspNativePlayerPainSide side,
+                                      uint32_t nowMs) {
+    if (!EspNativePlayerPainVisual_stage(probe, side, nowMs)) return 0;
+    lease.dogBlood = 1U;
+    return 1;
+}
+
+int EspNativePlayerPainVisual_dogInfo(uint32_t nowMs,
+                                     uint32_t* outSeed,
+                                     uint32_t* outAgeMs) {
+    if (outSeed == NULL || outAgeMs == NULL || lease.dogBlood == 0U ||
+        !EspNativePlayerPainVisual_isActive(nowMs)) return 0;
+    *outSeed = 0x7bd1a5e3U ^ lease.probe * 0x9e3779b9U;
+    *outAgeMs = nowMs - lease.begunMs;
     return 1;
 }
 

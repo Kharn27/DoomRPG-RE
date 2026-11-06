@@ -20,6 +20,7 @@
 #include "esp_native_gameplay_monster_movement_probe.h"
 #include "esp_native_gameplay_monster_retaliation.h"
 #include "esp_native_gameplay_player_pain_visual.h"
+#include "esp_native_gameplay_dog_blood.h"
 #include "esp_native_resident_gameplay.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_player_resources.h"
@@ -852,9 +853,24 @@ static void serviceExpiry(struct DoomRPG_s* doomRpg) {
  * layer to decorate only the shared framebuffer before the already-proven
  * feedback + physical-present chain. */
 int EspNativeGameplayActionEngine_present(void) {
+    uint32_t seed = 0U;
+    uint32_t age = 0U;
     decorateActiveHit();
     decorateActiveGib();
     decorateNewGibs();
+    /* This layer belongs ONLY to true familiar absorption. A plain dog
+     * enemy hit cannot select it. Fail closed if the shared framebuffer is
+     * missing or a modal/transition compositor owns the physical present.
+     * The lease must have been staged by a transaction that can roll back. */
+    if (EspNativePlayerPainVisual_dogInfo(
+            DoomRPG_GetUpTimeMS(), &seed, &age) &&
+        Esp32PlatformVideo_framebufferSizeBytes() ==
+            DOOMRPG_LOGICAL_WIDTH * DOOMRPG_LOGICAL_HEIGHT *
+                sizeof(uint16_t)) {
+        (void)EspNativeDogBlood_paint(
+            (uint16_t*)Esp32PlatformVideo_framebuffer(),
+            DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT, seed, age);
+    }
     return EspNativeGameplayActionEngine_presentBase();
 }
 

@@ -39,6 +39,17 @@ uint8_t EspNativePlayerPainVisual_face(uint8_t health, uint8_t maxHealth,
                                       uint8_t gotFace, uint32_t nowMs);
 uint16_t EspNativePlayerPainVisual_weaponColor(uint16_t rgb565);
 
+/* Distinct, source-backed Combat_spawnDogBloodParticles family. The familiar
+ * particle layer is permitted ONLY for a successfully resolved familiar
+ * absorption; an enemy dog attack never selects it. These functions extend
+ * the existing reversible visual lease, not the game or ammunition owner. */
+int EspNativePlayerPainVisual_stageDog(uint32_t probe,
+                                      EspNativePlayerPainSide side,
+                                      uint32_t nowMs);
+int EspNativePlayerPainVisual_dogInfo(uint32_t nowMs,
+                                     uint32_t* outSeed,
+                                     uint32_t* outAgeMs);
+
 /* The original Hud_drawEffects n.bmp strip is three 18x18 frames.
  * 0x30 centers the frame at its supplied screen position. */
 int EspNativePlayerPainVisual_arrow(uint32_t nowMs,
