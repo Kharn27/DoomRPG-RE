@@ -123,6 +123,14 @@ jobs:
             -o /tmp/doomrpg-player-pain-visual-test
           /tmp/doomrpg-player-pain-visual-test
 
+      - name: Test native 500ms original player pain camera shake (host C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+            ESP32/src/esp_native_gameplay_player_pain_visual.c \
+            ESP32/test/player_pain_shake_host.c \
+            -o /tmp/doomrpg-player-pain-shake
+          /tmp/doomrpg-player-pain-shake
+
       - name: Test original 100ms monster damage palette tint (host C)
         run: |
           cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
