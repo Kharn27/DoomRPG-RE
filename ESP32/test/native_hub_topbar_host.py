@@ -31,7 +31,7 @@ assert "HUB_UI_STATUS_LEFT" not in ui
 assert "HUB_UI_SYSTEM_LEFT" not in ui
 assert "#define HUB_UI_ROW0_TOP 23" in ui and "#define HUB_UI_ROW3_BOTTOM 115" in ui
 assert "inventoryRowForY(logicalY)" in ui
-assert "inventoryRowBounds((int)row, &top, &bottom)" in ui
+assert "inventoryRowBounds(row, &top, &bottom)" in ui
 assert "*outPage = headerTabPages[k];" in ui
 assert "if (logicalY >= 35 && logicalY < 120) return -1;" in sys
 
