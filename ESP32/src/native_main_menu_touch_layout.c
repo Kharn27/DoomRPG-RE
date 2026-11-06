@@ -288,9 +288,7 @@ static void drawRect565(Render_t* render,
 }
 
 /* Menu-specific RGB565 red. HUB amber remains unchanged elsewhere. */
-#define MAIN_DOOM_RED       0xc002U
-#define MAIN_DOOM_RED_HOT   0xf0e2U
-#define MAIN_DOOM_RED_DARK  0x4801U
+/* Accent ornaments inherit the current ROM-only Skin palette. */
 #define MAIN_DOOM_METAL     0x1082U
 #define MAIN_DOOM_METAL_HI  0x2104U
 
@@ -370,10 +368,12 @@ int DoomRPG_esp32PaintMenuDashboardCards(
         /* The child Options painter retains its original rail decorations.
          * MENU_MAIN is deliberately clean: no red/grey bars above or below
          * the four procedural plates. */
-        fillRect565(render, 105, 7, 125, 8, MAIN_DOOM_RED);
+        fillRect565(render, 105, 7, 125, 8,
+                    EspMainMenuSkin_accentTone(ESP_MAIN_MENU_SKIN_IDLE));
         fillRect565(render, 127, 7, 155, 8, ESP_HUB_COLOR_STEEL_DARK);
         fillRect565(render, 105, 112, 155, 113, ESP_HUB_COLOR_STEEL_DARK);
-        fillRect565(render, 105, 112, 118, 112, MAIN_DOOM_RED);
+        fillRect565(render, 105, 112, 118, 112,
+                    EspMainMenuSkin_accentTone(ESP_MAIN_MENU_SKIN_IDLE));
     }
 
     for (item = 0; item < itemCount; ++item) {

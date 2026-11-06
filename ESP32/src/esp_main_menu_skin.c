@@ -61,6 +61,20 @@ uint16_t EspMainMenuSkin_letterTone(int row, int rows) {
     return 0xaa85U;
 }
 
+uint16_t EspMainMenuSkin_accentTone(EspMainMenuSkinState state) {
+    /* Three ROM-only seam variants per theme: idle, armed, confirmed.
+     * Metal, bevel, shadow, ink and hitbox geometry never change. */
+    static const uint16_t ember[3] = {0xd1a2U, 0xfb25U, 0xb9a4U};
+    static const uint16_t phosphor[3] = {0x5e2aU, 0xa7f1U, 0x3dc9U};
+    if ((int)state < (int)ESP_MAIN_MENU_SKIN_IDLE ||
+        (int)state > (int)ESP_MAIN_MENU_SKIN_CONFIRM) return 0U;
+    if (selectedLetterTheme == ESP_MAIN_MENU_THEME_INFERNO)
+        return ember[(int)state];
+    if (selectedLetterTheme == ESP_MAIN_MENU_THEME_PHOSPHORE)
+        return phosphor[(int)state];
+    return palettes[(int)state].copper; /* CLASSIC unchanged, byte-exact */
+}
+
 static const char letters[] = "ADEHILNOPRSTBCFGJKMQUVWXYZ0123456789% ";
 static const uint8_t glyphs[][9] = {
     {0x0e,0x11,0x11,0x1f,0x11,0x11,0x11,0x11,0x11}, /* A */
@@ -209,6 +223,7 @@ int EspMainMenuSkin_paintPlate(uint16_t* fb, int stride,
                                int l, int t, int r, int b,
                                EspMainMenuSkinState state) {
     int x, y;
+    uint16_t seam;
     const SkinPalette* p;
     if (fb == NULL || width != SKIN_W || height != SKIN_H ||
         stride < width || l < 0 || t < 0 ||
@@ -217,6 +232,7 @@ int EspMainMenuSkin_paintPlate(uint16_t* fb, int stride,
         (int)state < (int)ESP_MAIN_MENU_SKIN_IDLE ||
         (int)state > (int)ESP_MAIN_MENU_SKIN_CONFIRM) return 0;
     p = &palettes[(int)state];
+    seam = EspMainMenuSkin_accentTone(state);
 
     /* Gunmetal UAC plate: large bevelled chassis, deep inset black panel.
      * Geometry stays within the existing 54x24 touch rectangle. */
@@ -243,16 +259,17 @@ int EspMainMenuSkin_paintPlate(uint16_t* fb, int stride,
             dot(fb, stride, x, y, l, t, r, b, color);
         }
 
-    /* Warm engine-light seams, muted in idle, brighter while armed.
-     * The loading gauge's entire inner width covers its old side squares. */
+    /* Theme-matched internal engine-light seams. These are the ONLY
+     * theme-dependent chassis pixels, including the LOADING title/bar.
+     * Width, cap geometry and full-width gauge inset remain unchanged. */
     horizontal(fb, stride, l + 9, r - 9, t + 3,
-               l, t, r, b, p->copper);
+               l, t, r, b, seam);
     horizontal(fb, stride, l + 9, r - 9, b - 3,
-               l, t, r, b, p->copper);
+               l, t, r, b, seam);
     vertical(fb, stride, l + 3, t + 7, b - 7,
-             l, t, r, b, p->copper);
+             l, t, r, b, seam);
     vertical(fb, stride, r - 3, t + 7, b - 7,
-             l, t, r, b, p->copper);
+             l, t, r, b, seam);
 
     /* Bolt heads belong to the 24px+ menu/loading cards, not the 18px
      * progress chassis: on a thin gauge they look like two unfilled end caps.

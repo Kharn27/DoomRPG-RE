@@ -26,6 +26,12 @@ uint8_t EspMainMenuSkin_getTheme(void);
 int EspMainMenuSkin_setTheme(uint8_t theme);
 uint16_t EspMainMenuSkin_letterTone(int row, int rows);
 
+/* Theme-matched line/seam color for the industrial plates and Options
+ * ornaments. CLASSIC is pixel-identical to the historical copper palette;
+ * INFERNO has warm ember seams and PHOSPHORE mint/green seams. Returns 0
+ * on an invalid plate state, without mutating theme or framebuffer. */
+uint16_t EspMainMenuSkin_accentTone(EspMainMenuSkinState state);
+
 /* Paint all 9 original glyph rows (including A/E/H crossbars). Long
  * words sample three columns, never omit rows. No shift, shadow or IO. */
 int EspMainMenuSkin_paintText(uint16_t* framebuffer, int stride,
