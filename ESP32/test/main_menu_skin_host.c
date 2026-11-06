@@ -95,11 +95,11 @@ int main(void) {
             else
                 DoomRPG_esp32OptionsCardRect(k, &l, &t, &r, &b);
             assert(l == 104 && r == 157 &&
-                   b - t + 1 == (layer ? 24 : 28));
+                   b - t + 1 == (layer ? 26 : 32));
             assert(t > DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP);
             assert(b < DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM);
             assert(previousBottom < t);
-            if (k != 0) assert(t - previousBottom == (layer ? 4 : 7));
+            if (k != 0) assert(t - previousBottom == (layer ? 3 : 5));
             previousBottom = b;
         }
         int firstL, firstT, firstR, firstB;
@@ -107,11 +107,11 @@ int main(void) {
         if (layer) {
             DoomRPG_esp32VideoCardRect(0, &firstL, &firstT, &firstR, &firstB);
             DoomRPG_esp32VideoCardRect(count-1, &lastL, &lastT, &lastR, &lastB);
-            assert(firstT == 8 && lastT == 89 && lastB == 112);
+            assert(firstT == 6 && lastT == 90 && lastB == 115);
         } else {
             DoomRPG_esp32OptionsCardRect(0, &firstL, &firstT, &firstR, &firstB);
             DoomRPG_esp32OptionsCardRect(count-1, &lastL, &lastT, &lastR, &lastB);
-            assert(firstT == 12 && lastT == 80 && lastB == 107);
+            assert(firstT == 8 && lastT == 80 && lastB == 111);
         }
         assert(firstL == lastL && firstR == lastR);
     }
@@ -169,8 +169,18 @@ int main(void) {
         for (int row = 0; row < 5; ++row)
             assert(EspMainMenuSkin_letterTone(row, 5) == hot[row]);
     }
-    assert(!EspMainMenuSkin_setTheme(2U));
-    assert(EspMainMenuSkin_getTheme() == ESP_MAIN_MENU_THEME_INFERNO);
+    assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_PHOSPHORE));
+    {
+        static const uint16_t phosphor[9] = {
+            0xdff6U,0xdff6U,0xdff6U,
+            0x87e0U,0x87e0U,0x87e0U,
+            0x246aU,0x246aU,0x246aU
+        };
+        for (int row = 0; row < 9; ++row)
+            assert(EspMainMenuSkin_letterTone(row, 9) == phosphor[row]);
+    }
+    assert(!EspMainMenuSkin_setTheme(3U));
+    assert(EspMainMenuSkin_getTheme() == ESP_MAIN_MENU_THEME_PHOSPHORE);
     assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
     for (item = 0; item < 4; ++item) {
         int l, t, r, b;
@@ -333,12 +343,12 @@ int main(void) {
         }
     }
 
-    /* Exact child geometry: two themes paint the same glyph positions,
-     * only the face colors differ. All 54x20 cards stay rail-clipped. */
+    /* All three themes use exactly the same single-pass child glyph masks,
+     * including the horizontal crossbars, within the same 54px rail. */
     {
         uint32_t originalHash = 2166136261U, infernoHash = 2166136261U;
         const char* labels[] = {"BACK","LUMINOSITE","ORIENTATION",
-                                "THEME","SOUND","CLASSIC","INFERNO","100%"};
+                                "THEME","SOUND","CLASSIC","INFERNO","PHOSPHORE","100%"};
         for (size_t i = 0; i < sizeof(labels) / sizeof(labels[0]); ++i) {
             resetFrame();
             assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
@@ -385,6 +395,34 @@ int main(void) {
         assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
     }
 
+    /* The old seven-row downsampling removed source row 3. Prove every
+     * crossbar of A, E and H is present in the 9-row child glyph render. */
+    for (int letter = 0; letter < 3; ++letter) {
+        const char* label = letter == 0 ? "A" : (letter == 1 ? "E" : "H");
+        const int x0 = (104 + 157 + 1 - 5) / 2;
+        const int y0 = 8 + (32 - 9) / 2;
+        const int barLen = letter == 1 ? 4 : 5;
+        resetFrame();
+        assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
+        assert(EspMainMenuSkin_paintPlate(fb, W, W, H, 104, 8, 157, 39,
+                                          ESP_MAIN_MENU_SKIN_IDLE));
+        assert(EspMainMenuSkin_paintText(fb, W, W, H, 104, 8, 157, 39,
+                                         label, 0, 1));
+        for (int col = 0; col < barLen; ++col)
+            assert(fb[(y0+3)*W+x0+col] == EspMainMenuSkin_letterTone(3,9));
+    }
+    /* Long names retain three crossbar pixels even with compressed columns. */
+    {
+        const int x0 = (104 + 157 + 1 - (9 * 4 - 1)) / 2;
+        const int y0 = 6 + (26 - 9) / 2;
+        resetFrame();
+        assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_PHOSPHORE));
+        assert(EspMainMenuSkin_paintText(fb, W, W, H, 104, 6, 157, 31,
+                                         "PHOSPHORE", 0, 1));
+        for (int col = 0; col < 3; ++col)
+            assert(fb[(y0+3)*W+x0+4+col] == EspMainMenuSkin_letterTone(3,9));
+        assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
+    }
     resetFrame();
     assert(!EspMainMenuSkin_paint(NULL, W, W, H, 0, ESP_MAIN_MENU_SKIN_IDLE));
     assert(!EspMainMenuSkin_paint(fb, W - 1, W, H, 0, ESP_MAIN_MENU_SKIN_IDLE));

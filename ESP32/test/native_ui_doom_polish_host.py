@@ -149,7 +149,7 @@ assert "Esp32Orientation_set(after)" in options
 assert options.index("EspNativeConfig_saveOrientation(after)") < options.index("Esp32Orientation_set(after)")
 assert "orientationOpen = 1U;" in options
 assert "PlatformInput_requireFreshTapAfterRelease();" in options
-assert "framebuffer=single" in options
+assert "confirmation=two-tap autoBack=VIDEO" in options
 
 presets = function(menu, "int DoomRPG_esp32PaintBrightnessPresetCards(")
 assert '"BACK","25%","50%","75%","100%"' in presets

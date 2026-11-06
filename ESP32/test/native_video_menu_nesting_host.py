@@ -32,6 +32,8 @@ assert 'DoomRPG_esp32OptionsCardRect(item, &l, &t, &r, &b);' in touch
 assert 'DoomRPG_esp32VideoCardRect(item, &l, &t, &r, &b);' in paint
 assert 'DoomRPG_esp32PaintVideoMenuCards(' in paint
 assert '"BACK", "LUMINOSITE", "ORIENTATION", "THEME"' in paint
+assert '"BACK", "CLASSIC", "INFERNO", "PHOSPHORE"' in paint
+assert '#define DOOMRPG_ESP32_THEME_CARD_COUNT 4' in layout
 assert 'mask |= (1U << OPTIONS_VIDEO_ITEM);' in action
 assert 'DoomRPG_esp32PaintMainMenuVideoDashboardSelection(' in action
 
@@ -60,6 +62,15 @@ assert 'DoomRPG_esp32MainMenuModelEnter' not in route
 assert 'returnToMainMenu(optionsDoomRpg)' in route
 assert 'DoomRPG_esp32MainMenuReturnToMain(' in touch
 assert 'videoOpen != 0U || luminositeOpen != 0U' in touch
+assert 'paintArmedPreference(1, item)' in route
+assert 'paintArmedPreference(2, item)' in route
+assert 'paintArmedPreference(3, item)' in route
+assert 'confirmation=two-tap autoBack=VIDEO' in route
+assert 'PlatformInput_requireFreshTapAfterRelease();' in route
+assert 'luminositeOpen = 0U;' in route
+assert 'orientationOpen = 0U;' in route
+assert 'themeOpen = 0U;' in route
+assert 'DoomRPG_esp32VideoCardRect(item, &l, &t, &r, &b)' in touch
 
 code = r"""
 #include <assert.h>
@@ -98,10 +109,10 @@ static void inspect(rect_fn rect, int count, int firstTop,
 int main(void) {
     assert(DOOMRPG_ESP32_OPTIONS_CARD_COUNT == 3);
     assert(DOOMRPG_ESP32_VIDEO_CARD_COUNT == 4);
-    inspect(DoomRPG_esp32OptionsCardRect, 3, 12, 34, 28);
-    inspect(DoomRPG_esp32VideoCardRect, 4, 8, 27, 24);
+    inspect(DoomRPG_esp32OptionsCardRect, 3, 8, 36, 32);
+    inspect(DoomRPG_esp32VideoCardRect, 4, 6, 28, 26);
     inspect(DoomRPG_esp32BrightnessCardRect, 5, 6, 22, 21);
-    puts("PASS VIDEO Options 3x28, VIDEO 4x24, brightness 5x21 hitboxes=160x120 parity");
+    puts("PASS VIDEO Options/Orientation 3x32, VIDEO/Theme 4x26, brightness 5x21 hitboxes");
     return 0;
 }
 """
