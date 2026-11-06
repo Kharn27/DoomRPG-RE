@@ -94,7 +94,7 @@ static int orientationItemAt(int16_t screenX, int16_t screenY) {
     int item;
     for (item = 0; item < DOOMRPG_ESP32_ORIENTATION_CARD_COUNT; ++item) {
         int left, top, right, bottom;
-        DoomRPG_esp32BrightnessCardRect(item, &left, &top, &right, &bottom);
+        DoomRPG_esp32OptionsCardRect(item, &left, &top, &right, &bottom);
         if (logicalX >= left && logicalX <= right &&
             logicalY >= top && logicalY <= bottom) return item;
     }
@@ -107,7 +107,7 @@ static int themeItemAt(int16_t screenX, int16_t screenY) {
     int item;
     for (item = 0; item < 3; ++item) {
         int l, t, r, b;
-        DoomRPG_esp32BrightnessCardRect(item, &l, &t, &r, &b);
+        DoomRPG_esp32OptionsCardRect(item, &l, &t, &r, &b);
         if (x >= l && x <= r && y >= t && y <= b) return item;
     }
     return -1;
@@ -122,8 +122,10 @@ static void registerOptionsHitboxOverlay(void) {
                       (videoOpen ? DOOMRPG_ESP32_VIDEO_CARD_COUNT : OPTIONS_ITEM_COUNT));
     for (item = 0; item < count; ++item) {
         int left, top, right, bottom;
-        if (luminositeOpen || orientationOpen || themeOpen)
+        if (luminositeOpen)
             DoomRPG_esp32BrightnessCardRect(item, &left, &top, &right, &bottom);
+        else if (orientationOpen || themeOpen)
+            DoomRPG_esp32OptionsCardRect(item, &left, &top, &right, &bottom);
         else if (videoOpen)
             DoomRPG_esp32VideoCardRect(item, &left, &top, &right, &bottom);
         else

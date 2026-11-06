@@ -27,6 +27,8 @@ assert '"Back", "Video", "Sound"' in action
 assert 'DoomRPG_esp32OptionsCardRect(item, &left, &top, &right, &bottom);' in touch
 assert 'DoomRPG_esp32OptionsCardRect(item, &left, &top, &right, &bottom);' in paint
 assert 'DoomRPG_esp32VideoCardRect(item, &l, &t, &r, &b);' in touch
+assert 'DoomRPG_esp32OptionsCardRect(item, &left, &top, &right, &bottom);' in touch
+assert 'DoomRPG_esp32OptionsCardRect(item, &l, &t, &r, &b);' in touch
 assert 'DoomRPG_esp32VideoCardRect(item, &l, &t, &r, &b);' in paint
 assert 'DoomRPG_esp32PaintVideoMenuCards(' in paint
 assert '"BACK", "LUMINOSITE", "ORIENTATION", "THEME"' in paint
@@ -64,14 +66,15 @@ code = r"""
 #include <stdio.h>
 #include "native_main_menu_160x120_layout.h"
 typedef void (*rect_fn)(int, int*, int*, int*, int*);
-static void inspect(rect_fn rect, int count, int firstTop, int pitch) {
+static void inspect(rect_fn rect, int count, int firstTop,
+                    int pitch, int height) {
     int previousBottom = -1;
     for (int i=0; i<count; ++i) {
         int l,t,r,b;
         rect(i,&l,&t,&r,&b);
         assert(l == 104 && r == 157 && t == firstTop+i*pitch);
-        assert(b == t+19 && t > 4 && b < 116);
-        assert(i == 0 || t - previousBottom >= 5);
+        assert(b == t+height-1 && t > 4 && b < 116);
+        assert(i == 0 || t - previousBottom >= 2);
         previousBottom = b;
     }
     /* Exhaustively compare each actual card rectangle to the generated
@@ -95,9 +98,10 @@ static void inspect(rect_fn rect, int count, int firstTop, int pitch) {
 int main(void) {
     assert(DOOMRPG_ESP32_OPTIONS_CARD_COUNT == 3);
     assert(DOOMRPG_ESP32_VIDEO_CARD_COUNT == 4);
-    inspect(DoomRPG_esp32OptionsCardRect, 3, 19, 32);
-    inspect(DoomRPG_esp32VideoCardRect, 4, 12, 26);
-    puts("PASS VIDEO nested Options hitboxes=3/4 160x120 parity, no overlap");
+    inspect(DoomRPG_esp32OptionsCardRect, 3, 12, 34, 28);
+    inspect(DoomRPG_esp32VideoCardRect, 4, 8, 27, 24);
+    inspect(DoomRPG_esp32BrightnessCardRect, 5, 6, 22, 21);
+    puts("PASS VIDEO Options 3x28, VIDEO 4x24, brightness 5x21 hitboxes=160x120 parity");
     return 0;
 }
 """

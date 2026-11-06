@@ -415,8 +415,8 @@ int DoomRPG_esp32PaintMenuDashboardCards(
     return 1;
 }
 
-/* Every nested child stays within the established x104..157 rail.
- * VIDEO has 4 spaced 54x20 cards, brightness has 5, presets have 3. */
+/* Every nested child stays within x104..157.
+ * VIDEO has 4x24, 3-choice presets have 3x28, brightness 5x21. */
 static int paintChildRail(DoomRPG_t* doomRpg) {
     Render_t* render = doomRpg->render;
     fillRect565(render, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT,
@@ -431,12 +431,15 @@ static int paintChildRail(DoomRPG_t* doomRpg) {
     return 1;
 }
 
+/* layer: 0=brightness, 1=VIDEO, 2=orientation/theme. */
 static int paintChildCard(DoomRPG_t* doomRpg, int item, const char* label,
-                          int selected, int enabled, int videoLayer) {
+                          int selected, int enabled, int layer) {
     int l, t, r, b;
     Render_t* render = doomRpg->render;
-    if (videoLayer)
+    if (layer == 1)
         DoomRPG_esp32VideoCardRect(item, &l, &t, &r, &b);
+    else if (layer == 2)
+        DoomRPG_esp32OptionsCardRect(item, &l, &t, &r, &b);
     else
         DoomRPG_esp32BrightnessCardRect(item, &l, &t, &r, &b);
     if (!EspMainMenuSkin_paintPlate((uint16_t*)render->framebuffer,
@@ -476,7 +479,8 @@ int DoomRPG_esp32PaintVideoMenuCards(
             (uint8_t)((1U << 0) | (1U << 3)) ||
         DOOMRPG_ESP32_VIDEO_CARD_TOP(0) <=
             DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP ||
-        DOOMRPG_ESP32_VIDEO_CARD_TOP(3) + 19 >=
+        DOOMRPG_ESP32_VIDEO_CARD_TOP(3) +
+            DOOMRPG_ESP32_VIDEO_CARD_HEIGHT - 1 >=
             DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM)
         return 0;
     if (!paintChildRail(doomRpg)) return 0;
@@ -526,7 +530,7 @@ int DoomRPG_esp32PaintOrientationPresetCards(
     for (item = 0; item < DOOMRPG_ESP32_ORIENTATION_CARD_COUNT; ++item)
         if (!paintChildCard(doomRpg, item, names[item],
                             item != 0 && (uint8_t)(item - 1) == activeOrientation,
-                            1, 0))
+                            1, 2))
             return 0;
     return finishChildCards(doomRpg, framebufferFNV);
 }
@@ -543,7 +547,7 @@ int DoomRPG_esp32PaintThemePresetCards(
     for (item = 0; item < 3; ++item)
         if (!paintChildCard(doomRpg, item, names[item],
                             item != 0 && (uint8_t)(item - 1) == activeTheme,
-                            1, 0))
+                            1, 2))
             return 0;
     return finishChildCards(doomRpg, framebufferFNV);
 }

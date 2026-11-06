@@ -40,8 +40,10 @@ uint16_t EspMainMenuSkin_letterTone(int row, int rows) {
     if (rows != 5 && rows != 7 && rows != 9) return 0U;
     if (row < 0 || row >= rows) return 0U;
     if (selectedLetterTheme == ESP_MAIN_MENU_THEME_INFERNO) {
-        /* Hot yellow -> copper/bronze -> deep Doom red. */
-        if (row < (rows + 2) / 3) return 0xffe0U;
+        /* Pale warm straw-yellow -> copper/bronze -> deep Doom red.
+         * The previous 0xffe0 was pure saturated yellow. This is softer
+         * without changing font masks, shadows or other theme colors. */
+        if (row < (rows + 2) / 3) return 0xff75U;
         if (row < (2 * rows + 2) / 3) return 0xd344U;
         return 0xc002U;
     }

@@ -94,11 +94,12 @@ int main(void) {
                 DoomRPG_esp32VideoCardRect(k, &l, &t, &r, &b);
             else
                 DoomRPG_esp32OptionsCardRect(k, &l, &t, &r, &b);
-            assert(l == 104 && r == 157 && b - t + 1 == 20);
+            assert(l == 104 && r == 157 &&
+                   b - t + 1 == (layer ? 24 : 28));
             assert(t > DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP);
             assert(b < DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM);
             assert(previousBottom < t);
-            if (k != 0) assert(t - previousBottom >= 5);
+            if (k != 0) assert(t - previousBottom == (layer ? 4 : 7));
             previousBottom = b;
         }
         int firstL, firstT, firstR, firstB;
@@ -106,15 +107,30 @@ int main(void) {
         if (layer) {
             DoomRPG_esp32VideoCardRect(0, &firstL, &firstT, &firstR, &firstB);
             DoomRPG_esp32VideoCardRect(count-1, &lastL, &lastT, &lastR, &lastB);
-            assert(firstT == 12 && lastT == 90 && lastB == 109);
+            assert(firstT == 8 && lastT == 89 && lastB == 112);
         } else {
             DoomRPG_esp32OptionsCardRect(0, &firstL, &firstT, &firstR, &firstB);
             DoomRPG_esp32OptionsCardRect(count-1, &lastL, &lastT, &lastR, &lastB);
-            assert(firstT == 19 && lastT == 83 && lastB == 102);
+            assert(firstT == 12 && lastT == 80 && lastB == 107);
         }
         assert(firstL == lastL && firstR == lastR);
     }
-    /* Old child-screen cards retain the original 54px geometry. */
+    /* Narrow five-preset brightness rail: height raised to 21 without
+     * changing the 22px pitch. Three-option choices have 28px height. */
+    assert(DOOMRPG_ESP32_BRIGHTNESS_CARD_HEIGHT == 21);
+    assert(DOOMRPG_ESP32_BRIGHTNESS_CARD_PITCH == 22);
+    {
+        int last = -1;
+        for (int k = 0; k < DOOMRPG_ESP32_BRIGHTNESS_CARD_COUNT; ++k) {
+            int l,t,r,b;
+            DoomRPG_esp32BrightnessCardRect(k,&l,&t,&r,&b);
+            assert(l == 104 && r == 157 && b-t+1 == 21);
+            assert(t == 6 + 22*k && b == 26+22*k);
+            assert(last < t && t > 4 && b < 116);
+            last=b;
+        }
+    }
+    /* Historical main-compatibility card layout remains unchanged. */
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT == 104);
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT == 157);
     {
