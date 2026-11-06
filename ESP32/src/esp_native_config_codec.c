@@ -27,7 +27,7 @@ int EspNativeConfigCodec_encodeWithTheme(uint8_t percent, uint8_t orientation,
     uint32_t checksum;
     if (output == NULL || !validPercent(percent) ||
         !Esp32Orientation_valid(orientation) ||
-        theme > ESP_MAIN_MENU_THEME_INFERNO) return 0;
+        theme > ESP_MAIN_MENU_THEME_PHOSPHORE) return 0;
     memset(output, 0, ESP_NATIVE_CONFIG_BYTES);
     output[0] = 'D';
     output[1] = 'R';
@@ -68,7 +68,7 @@ int EspNativeConfigCodec_decodeWithTheme(const uint8_t* bytes, uint32_t length,
         orientation = bytes[6];
         theme = bytes[7];
         if (!Esp32Orientation_valid(orientation) ||
-            theme > ESP_MAIN_MENU_THEME_INFERNO) return 0;
+            theme > ESP_MAIN_MENU_THEME_PHOSPHORE) return 0;
     } else return 0;
 
     recorded = (uint32_t)bytes[8] |

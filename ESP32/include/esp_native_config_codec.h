@@ -9,7 +9,7 @@ extern "C" {
 
 /* DRCF record is still exactly 12 bytes: magic[0..3], version[4],
  * brightness[5], orientation[6], theme[7], FNV-1a[8..11].
- * V1: orientation/theme=0. V2: theme=0. V3: theme=0/1.
+ * V1: orientation/theme=0. V2: theme=0. V3: theme=0/1/2.
  * Historical files decode without writes; next SAVE migrates to V3. */
 #define ESP_NATIVE_CONFIG_BYTES 12U
 #define ESP_NATIVE_CONFIG_VERSION_V1 1U

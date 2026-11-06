@@ -31,7 +31,7 @@ static uint8_t selectedLetterTheme = ESP_MAIN_MENU_THEME_CLASSIC;
 uint8_t EspMainMenuSkin_getTheme(void) { return selectedLetterTheme; }
 
 int EspMainMenuSkin_setTheme(uint8_t theme) {
-    if (theme > ESP_MAIN_MENU_THEME_INFERNO) return 0;
+    if (theme > ESP_MAIN_MENU_THEME_PHOSPHORE) return 0;
     selectedLetterTheme = theme;
     return 1;
 }
@@ -46,6 +46,13 @@ uint16_t EspMainMenuSkin_letterTone(int row, int rows) {
         if (row < (rows + 2) / 3) return 0xff75U;
         if (row < (2 * rows + 2) / 3) return 0xd344U;
         return 0xc002U;
+    }
+    if (selectedLetterTheme == ESP_MAIN_MENU_THEME_PHOSPHORE) {
+        /* Pale mint -> acidic phosphor -> deep petrol green (RGB565).
+         * Face pixels only, no offset halo, allocations or assets. */
+        if (row < (rows + 2) / 3) return 0xdff6U;
+        if (row < (2 * rows + 2) / 3) return 0x87e0U;
+        return 0x246aU;
     }
     /* Exactly the former untouched MENU_MAIN idle tones. */
     if (row < (rows + 2) / 3) return 0xf6afU;
@@ -151,10 +158,10 @@ static void word(uint16_t* fb, int stride, int l, int t, int r, int b,
     }
 }
 
-/* Child-menu labels use the same industrial font family as MENU_MAIN.
- * 5x7 crops for short words; 3x7 samples for labels >7 characters.  Glyph
- * pixels are written ONCE at fixed positions, never drawn as a shifted halo.
- * The text touches neither the plate seams nor the left-hand PAK logo. */
+/* The old seven-row reduction skipped source glyph row 3, deleting
+ * the A/E/H crossbars. Always render all original nine rows in submenus.
+ * The 3-column compression for long labels keeps every horizontal stroke,
+ * with no duplicate pass, halo or clipping outside the 54px plate. */
 int EspMainMenuSkin_paintText(uint16_t* fb, int stride, int width, int height,
                               int l, int t, int r, int b,
                               const char* label, int selected, int enabled) {
@@ -176,14 +183,14 @@ int EspMainMenuSkin_paintText(uint16_t* fb, int stride, int width, int height,
     glyphWidth = compact ? 3 : 5;
     if (length * advance - 1 > r - l - 8) return 0;
     x0 = (l + r + 1 - (length * advance - 1)) / 2;
-    y0 = t + ((b - t + 1) - 7) / 2;
+    y0 = t + ((b - t + 1) - 9) / 2;
     for (i = 0; i < length; ++i) {
         int glyph = 0;
         while (letters[glyph] != label[i]) ++glyph;
-        for (row = 0; row < 7; ++row) {
-            const uint8_t mask = glyphs[glyph][row + (row >= 3) + (row >= 5)];
+        for (row = 0; row < 9; ++row) {
+            const uint8_t mask = glyphs[glyph][row];
             const uint16_t color = !enabled ? 0x9cd3U :
-                selected ? 0xffffU : EspMainMenuSkin_letterTone(row, 7);
+                selected ? 0xffffU : EspMainMenuSkin_letterTone(row, 9);
             for (col = 0; col < glyphWidth; ++col) {
                 const int inputCol = compact ? col * 2 : col;
                 if (mask & (uint8_t)(16U >> inputCol))

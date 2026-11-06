@@ -83,7 +83,7 @@ int saveSettings(uint8_t percent, uint8_t orientation, uint8_t theme) {
         !Esp32Orientation_isReady() ||
         (percent != 25U && percent != 50U && percent != 75U && percent != 100U) ||
         !Esp32Orientation_valid(orientation) ||
-        theme > ESP_MAIN_MENU_THEME_INFERNO) {
+        theme > ESP_MAIN_MENU_THEME_PHOSPHORE) {
         Serial.printf("[NATIVECONFIG] SAVE rejected brightness=%u orientation=%u sd=%d pwm=%d orientationReady=%d\n",
                       (unsigned)percent, (unsigned)orientation, configSdReady,
                       Esp32Backlight_isReady(), Esp32Orientation_isReady());
