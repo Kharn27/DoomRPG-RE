@@ -73,6 +73,26 @@ int main(void) {
     assert(EspNativePlayerPainVisual_face(20U, 30U, 0U, 2100U) == 6U);
     assert(EspNativePlayerPainVisual_isActive(2599U));
     assert(!EspNativePlayerPainVisual_isActive(2600U));
-    puts("PASS player pain: 65536 palette colors, 5 sides, 9 faces, commit/rollback, overlap and exact 500ms expiry");
+    /* Hud.c original anchors: (140,60), (80,80), (20,60), with
+     * centered image flags 0x30 and source rows 36,0,18 respectively. */
+    for (i = 0U; i < sizeof(sides) / sizeof(sides[0]); ++i) {
+        int16_t x = -1, y = -1;
+        uint16_t srcY = 999U;
+        EspNativePlayerPainVisual_reset();
+        assert(EspNativePlayerPainVisual_stage(200U+i, sides[i], 3000U));
+        if (i <= 1U) {
+            assert(!EspNativePlayerPainVisual_arrow(3000U, &x, &y, &srcY));
+        } else {
+            assert(EspNativePlayerPainVisual_arrow(3000U, &x, &y, &srcY));
+            if (i == 2U) assert(x == 131 && y == 51 && srcY == 36U);
+            if (i == 3U) assert(x == 71 && y == 71 && srcY == 0U);
+            if (i == 4U) assert(x == 11 && y == 51 && srcY == 18U);
+            assert(x >= 0 && x + 18 <= 160);
+            assert(y >= 20 && y + 18 <= 100);
+        }
+        assert(EspNativePlayerPainVisual_commit(200U+i));
+        assert(!EspNativePlayerPainVisual_arrow(3500U, &x, &y, &srcY));
+    }
+    puts("PASS player pain: 65536 palette colors, 5 sides, 9 faces, n.bmp source rectangles, commit/rollback, overlap and exact 500ms expiry");
     return 0;
 }

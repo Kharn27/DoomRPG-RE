@@ -109,3 +109,28 @@ uint16_t EspNativePlayerPainVisual_weaponColor(uint16_t rgb565) {
     b = b + 8U > 31U ? 31U : b + 8U;
     return (uint16_t)((r << 11U) | (g << 5U) | b);
 }
+
+int EspNativePlayerPainVisual_arrow(uint32_t nowMs,
+                                    int16_t* outX, int16_t* outY,
+                                    uint16_t* outSourceY) {
+    int16_t x, y;
+    uint16_t sourceY;
+    if (outX == NULL || outY == NULL || outSourceY == NULL ||
+        !EspNativePlayerPainVisual_isActive(nowMs)) return 0;
+    switch ((EspNativePlayerPainSide)lease.side) {
+    case ESP_NATIVE_PLAYER_PAIN_RIGHT:
+        x = 160 - 20 - 9; y = 120 / 2 - 9; sourceY = 36U;
+        break;
+    case ESP_NATIVE_PLAYER_PAIN_LEFT:
+        x = 20 - 9; y = 120 / 2 - 9; sourceY = 18U;
+        break;
+    case ESP_NATIVE_PLAYER_PAIN_BACK:
+        x = 160 / 2 - 9; y = (120 - 20) - 20 - 9; sourceY = 0U;
+        break;
+    default: return 0;
+    }
+    *outX = x;
+    *outY = y;
+    *outSourceY = sourceY;
+    return 1;
+}

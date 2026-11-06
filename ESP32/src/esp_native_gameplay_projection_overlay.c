@@ -205,6 +205,9 @@ static int repaintPlayerHud(uint8_t angle,
     uint32_t painTag;
     uint32_t nowMs;
     uint8_t faceState;
+    int16_t arrowX = 0;
+    int16_t arrowY = 0;
+    uint16_t arrowSourceY = 0U;
     uint16_t* framebuffer;
     size_t framebufferBytes;
     EspNativeIndexedBmp* bmp = NULL;
@@ -230,8 +233,11 @@ static int repaintPlayerHud(uint8_t angle,
     if (playerFNV == 0U) return 1;
     nowMs = DoomRPG_GetUpTimeMS();
     painTag = EspNativePlayerPainVisual_tag(nowMs);
+    /* The world renderer overwrites viewport pixels on every redraw. Keep
+     * the n.bmp arrow alive through all native poses in this 500ms window. */
     if (lastPaintedPlayerFNV == playerFNV &&
         lastPaintedPainTag == painTag &&
+        !EspNativePlayerPainVisual_isActive(nowMs) &&
         lastPaintedMapId == hud->model.targetMapId) {
         return 1;
     }
@@ -367,6 +373,20 @@ static int repaintPlayerHud(uint8_t angle,
                        HUD_ORIENTATION_X + cx,
                        HUD_NUMBER_Y + 2, 1U, 1U, &localStats)) {
         goto done;
+    }
+
+    /* n.bmp (three 18px frames) is the original image resource loaded
+     * through the existing PAK-backed bounded indexed BMP blitter. A missing
+     * asset does not abort an otherwise valid committed gameplay turn: the
+     * already-proven native damage border remains its safe fallback. */
+    if (EspNativePlayerPainVisual_arrow(
+            nowMs, &arrowX, &arrowY, &arrowSourceY) &&
+        openBmp("n.bmp", bmp, &localStats) &&
+        bmp->width == 18U && bmp->height >= 54U) {
+        if (!blit(bmp, framebuffer, 0U, arrowSourceY, 18U, 18U,
+                  arrowX, arrowY, HUD_TRANSPARENT, &localStats)) {
+            goto done;
+        }
     }
 
     lastPaintedPlayerFNV = playerFNV;
