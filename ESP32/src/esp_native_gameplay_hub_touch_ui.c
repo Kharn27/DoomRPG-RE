@@ -453,13 +453,13 @@ static void drawStatusMetricCard(uint16_t* framebuffer,
                                  uint8_t current,
                                  uint8_t maximum,
                                  uint16_t gaugeColor) {
-    const int gaugeTop = 37;
-    const int gaugeBottom = 50;
+    const int gaugeTop = 25;
+    const int gaugeBottom = 49;
     const int gaugeHeight = gaugeBottom - gaugeTop + 1;
     int filled = 0;
 
-    fillRect(framebuffer, left, 35, right, 52, HUB_UI_PANEL);
-    drawRect(framebuffer, left, 35, right, 52, HUB_UI_DIM);
+    fillRect(framebuffer, left, 23, right, 51, HUB_UI_PANEL);
+    drawRect(framebuffer, left, 23, right, 51, HUB_UI_DIM);
     fillRect(framebuffer, left + 2, gaugeTop,
              left + 3, gaugeBottom, HUB_UI_DIM);
     if (maximum != 0U) {
@@ -471,8 +471,8 @@ static void drawStatusMetricCard(uint16_t* framebuffer,
         fillRect(framebuffer, left + 2, gaugeBottom - filled + 1,
                  left + 3, gaugeBottom, gaugeColor);
     }
-    drawMiniTextAt(framebuffer, label, left + 7, 37, 1, HUB_UI_STEEL);
-    drawCrispText(framebuffer, value, (left + right) / 2, 44, HUB_UI_TEXT);
+    drawMiniTextAt(framebuffer, label, left + 7, 27, 1, HUB_UI_STEEL);
+    drawCrispText(framebuffer, value, (left + right) / 2, 39, HUB_UI_TEXT);
 }
 
 static void drawStatusProgress(uint16_t* framebuffer,
@@ -583,35 +583,35 @@ static int paintStatusDashboard(
     drawStatusMetricCard(framebuffer, 81, 157, "ARMOR", value,
                          armor, maxArmor, HUB_UI_ARMOR);
 
-    fillRect(framebuffer, 2, 57, 157, 74, HUB_UI_PANEL_ALT);
-    drawRect(framebuffer, 2, 57, 157, 74, HUB_UI_DIM);
-    drawMiniTextAt(framebuffer, "LEVEL", 7, 61, 1, HUB_UI_STEEL);
+    fillRect(framebuffer, 2, 55, 157, 77, HUB_UI_PANEL_ALT);
+    drawRect(framebuffer, 2, 55, 157, 77, HUB_UI_DIM);
+    drawMiniTextAt(framebuffer, "LEVEL", 7, 60, 1, HUB_UI_STEEL);
     snprintf(value, sizeof(value), "%u", (unsigned int)player->level);
-    drawMiniTextRight(framebuffer, value, 48, 61, HUB_UI_TEXT);
-    drawMiniTextAt(framebuffer, "XP", 55, 61, 1, HUB_UI_STEEL);
+    drawMiniTextRight(framebuffer, value, 48, 60, HUB_UI_TEXT);
+    drawMiniTextAt(framebuffer, "XP", 55, 60, 1, HUB_UI_STEEL);
     snprintf(value, sizeof(value), "%lu/%lu",
              (unsigned long)player->currentXP,
              (unsigned long)player->nextLevelXP);
-    drawMiniTextRight(framebuffer, value, 153, 61, HUB_UI_TEXT);
-    drawStatusProgress(framebuffer, 55, 153, 71,
+    drawMiniTextRight(framebuffer, value, 153, 60, HUB_UI_TEXT);
+    drawStatusProgress(framebuffer, 55, 153, 74,
                        player->currentXP, player->nextLevelXP);
 
-    fillRect(framebuffer, 2, 78, 157, 101, HUB_UI_BLACK);
-    drawRect(framebuffer, 2, 78, 157, 101, HUB_UI_DIM);
-    fillRect(framebuffer, 79, 80, 80, 99, HUB_UI_DIM);
-    fillRect(framebuffer, 4, 89, 155, 89, HUB_UI_DIM);
-    drawStatusAttribute(framebuffer, "DEF", defense, 7, 72, 81);
-    drawStatusAttribute(framebuffer, "STR", strength, 86, 151, 81);
-    drawStatusAttribute(framebuffer, "AGI", agility, 7, 72, 93);
-    drawStatusAttribute(framebuffer, "ACC", accuracy, 86, 151, 93);
+    fillRect(framebuffer, 2, 81, 157, 104, HUB_UI_BLACK);
+    drawRect(framebuffer, 2, 81, 157, 104, HUB_UI_DIM);
+    fillRect(framebuffer, 79, 83, 80, 102, HUB_UI_DIM);
+    fillRect(framebuffer, 4, 93, 155, 93, HUB_UI_DIM);
+    drawStatusAttribute(framebuffer, "DEF", defense, 7, 72, 84);
+    drawStatusAttribute(framebuffer, "STR", strength, 86, 151, 84);
+    drawStatusAttribute(framebuffer, "AGI", agility, 7, 72, 96);
+    drawStatusAttribute(framebuffer, "ACC", accuracy, 86, 151, 96);
 
-    fillRect(framebuffer, 2, 105, 157, 117, HUB_UI_PANEL);
-    drawRect(framebuffer, 2, 105, 157, 117, HUB_UI_DIM);
+    fillRect(framebuffer, 2, 107, 157, 118, HUB_UI_PANEL);
+    drawRect(framebuffer, 2, 107, 157, 118, HUB_UI_DIM);
     drawMiniTextAt(framebuffer, "CRED", 7, 109, 1, HUB_UI_STEEL);
     snprintf(value, sizeof(value), "%lu", (unsigned long)player->credits);
     drawMiniTextRight(framebuffer, value, 74, 109, HUB_UI_TEXT);
     drawStatusKeys(framebuffer, player->keys);
-    printf("[HUBSTAT] FRAME layout=compact-read-only font=3x5 vitals=two-card-gauges hpGauge=green-or-red armorGauge=blue xp=progress attributes=2x2 keys=owned-color-cards keyMask=%08lx touchTargets=tab-only mutation=no turn=no\n",
+    printf("[HUBSTAT] FRAME layout=topbar-reclaimed-read-only font=3x5 vitals=two-card-gauges hpGauge=green-or-red armorGauge=blue xp=progress attributes=2x2 keys=owned-color-cards keyMask=%08lx touchTargets=tab-only mutation=no turn=no\n",
            (unsigned long)player->keys);
     return 1;
 }

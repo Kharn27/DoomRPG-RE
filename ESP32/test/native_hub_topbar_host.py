@@ -33,7 +33,9 @@ assert "#define HUB_UI_ROW0_TOP 23" in ui and "#define HUB_UI_ROW3_BOTTOM 115" i
 assert "inventoryRowForY(logicalY)" in ui
 assert "inventoryRowBounds(row, &top, &bottom)" in ui
 assert "*outPage = headerTabPages[k];" in ui
-assert "if (logicalY >= 35 && logicalY < 120) return -1;" in sys
+assert "if (logicalY >= 21 && logicalY < 120) return -1;" in sys
+assert "fillRect(framebuffer, left, 23, right, 51" in ui
+assert "drawStatusProgress(framebuffer, 55, 153, 74" in ui
 
 code=r"""
 #include <assert.h>

@@ -99,9 +99,9 @@ constexpr uint8_t kStatusExit = ESP_NATIVE_SYS_EXIT;
 constexpr uint8_t kStatusCount = ESP_NATIVE_SYS_COUNT;
 constexpr uint8_t kNoConfirmation = 0xffU;
 constexpr int kPanelLeft = 8;
-constexpr int kPanelTop = 36;
+constexpr int kPanelTop = 23;
 constexpr int kPanelRight = 151;
-constexpr int kPanelBottom = 117;
+constexpr int kPanelBottom = 118;
 constexpr int kButtonLeft = ESP_NATIVE_SYS_BUTTON_LEFT;
 constexpr int kButtonRight = ESP_NATIVE_SYS_BUTTON_RIGHT;
 
@@ -3377,7 +3377,7 @@ bool paintSaveOverlay(void) {
     if (slotMode != 0U) {
         const uint8_t first = slotFocus <= 5U ? 1U : 6U;
         char label[40];
-        fillRect(fb, 2, 35, 157, 118, ESP_HUB_COLOR_BG);
+        fillRect(fb, 2, 21, 157, 118, ESP_HUB_COLOR_BG);
         snprintf(label, sizeof(label), "%s - PAGE %u/2", slotMode == 1U ? "SAVE" : "LOAD",
                  first == 1U ? 1U : 2U);
         drawCenteredWord(fb, 60, 35, label, ESP_HUB_COLOR_IVORY);
@@ -3401,7 +3401,7 @@ bool paintSaveOverlay(void) {
     }
 
 
-    fillRect(fb, 2, 35, 157, 118, ESP_HUB_COLOR_BG);
+    fillRect(fb, 2, 21, 157, 118, ESP_HUB_COLOR_BG);
     fillRect(fb, kPanelLeft, kPanelTop, kPanelRight, kPanelBottom,
              ESP_HUB_COLOR_PANEL);
     drawRect(fb, kPanelLeft, kPanelTop, kPanelRight, kPanelBottom,
