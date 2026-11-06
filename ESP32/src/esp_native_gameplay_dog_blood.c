@@ -64,6 +64,40 @@ void EspNativeDogBlood_project(const EspNativeDogBloodParticle* particle,
     *outRadius = particle->size >> 1U;
 }
 
+static uint32_t drawLine(uint16_t* fb, int x0, int x1, int y) {
+    uint32_t n = 0U;
+    int x;
+    if (y < VIEW_TOP || y > VIEW_BOTTOM) return 0U;
+    if (x0 < 0) x0 = 0;
+    if (x1 >= FRAME_WIDTH) x1 = FRAME_WIDTH - 1;
+    for (x = x0; x <= x1; ++x) {
+        fb[y * FRAME_WIDTH + x] = ESP_NATIVE_DOG_BLOOD_COLOR565;
+        ++n;
+    }
+    return n;
+}
+
+/* Reproduce SDL_RenderDrawFillCircle from src/SDL_Video.c (four horizontal
+ * spans per midpoint iteration). A Euclidean radius-2 disc has only 13
+ * pixels, whereas the desktop algorithm draws 21; never approximate it. */
+static uint32_t paintOriginalCircle(uint16_t* fb, int x, int y, int r) {
+    int dx = r, dy = 0, accum = dx - 1;
+    uint32_t pixels = 0U;
+    while (dy <= dx) {
+        pixels += drawLine(fb, x - dx, x + dx, y + dy);
+        pixels += drawLine(fb, x - dy, x + dy, y + dx);
+        pixels += drawLine(fb, x - dx, x + dx, y - dy);
+        pixels += drawLine(fb, x - dy, x + dy, y - dx);
+        ++dy;
+        accum -= (dy << 1) - 1;
+        if (accum < 0) {
+            --dx;
+            accum += dx << 1;
+        }
+    }
+    return pixels;
+}
+
 uint32_t EspNativeDogBlood_paint(uint16_t* framebuffer, uint32_t width,
                                  uint32_t height, uint32_t seed,
                                  uint32_t ageMs) {
@@ -76,24 +110,11 @@ uint32_t EspNativeDogBlood_paint(uint16_t* framebuffer, uint32_t width,
         EspNativeDogBloodParticle particle;
         int16_t x, y;
         uint8_t radius;
-        int dy, dx;
         if (!EspNativeDogBlood_sample(seed, i, &particle)) return 0U;
         EspNativeDogBlood_project(&particle, ageMs, &x, &y, &radius);
-        /* DoomRPG_fillCircle(radius = particleSize>>1) is the legacy
-         * geometry. Clipping to the original gameplay viewport ensures the
-         * palette/HUD overlays retain their own owners. */
-        for (dy = -(int)radius; dy <= (int)radius; ++dy) {
-            const int py = y + dy;
-            if (py < VIEW_TOP || py > VIEW_BOTTOM) continue;
-            for (dx = -(int)radius; dx <= (int)radius; ++dx) {
-                const int px = x + dx;
-                if (px < 0 || px >= FRAME_WIDTH ||
-                    dx * dx + dy * dy > radius * radius) continue;
-                framebuffer[py * FRAME_WIDTH + px] =
-                    ESP_NATIVE_DOG_BLOOD_COLOR565;
-                ++pixels;
-            }
-        }
+        /* Fill geometry is the exact source SDL midpoint algorithm.
+         * The original screenspace bounds are the 20..99 gameplay viewport. */
+        pixels += paintOriginalCircle(framebuffer, x, y, radius);
     }
     return pixels;
 }
