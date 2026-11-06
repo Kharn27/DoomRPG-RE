@@ -151,7 +151,7 @@ assert "orientationOpen = 1U;" in options
 assert "PlatformInput_requireFreshTapAfterRelease();" in options
 assert "confirmation=two-tap autoBack=VIDEO" in options
 
-presets = function(menu, "int DoomRPG_esp32PaintBrightnessPresetCards(")
+presets = function(menu, "int DoomRPG_esp32PaintBrightnessPresetCardsSelection(")
 assert '"BACK","25%","50%","75%","100%"' in presets
 assert "paintChildCard(doomRpg, item, names[item]" in presets
 assert "DASH_RAIL_LEFT" in function(menu, "static int paintChildRail(")
