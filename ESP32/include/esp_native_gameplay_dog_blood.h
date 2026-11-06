@@ -11,6 +11,9 @@ extern "C" {
  * 20..99 viewport and never touch either HUD band. */
 #define ESP_NATIVE_DOG_BLOOD_COUNT 15U
 #define ESP_NATIVE_DOG_BLOOD_COLOR565 0x8800U
+/* ParticleSystem_render() brightens red by eight 5-bit steps while
+ * player.berserkerTics is nonzero, with 5-bit saturation. */
+#define ESP_NATIVE_DOG_BLOOD_BERSERK_COLOR565 0xc800U
 #define ESP_NATIVE_DOG_BLOOD_WINDOW_MS 500U
 
 typedef struct EspNativeDogBloodParticle_s {
@@ -31,7 +34,7 @@ void EspNativeDogBlood_project(const EspNativeDogBloodParticle* particle,
                                 int16_t* outY, uint8_t* outRadius);
 uint32_t EspNativeDogBlood_paint(uint16_t* framebuffer, uint32_t width,
                                  uint32_t height, uint32_t seed,
-                                 uint32_t ageMs);
+                                 uint32_t ageMs, uint8_t berserker);
 #ifdef __cplusplus
 }
 #endif

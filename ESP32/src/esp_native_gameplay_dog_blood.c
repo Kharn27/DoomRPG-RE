@@ -22,15 +22,17 @@ int EspNativeDogBlood_sample(uint32_t seed, uint8_t index,
                              EspNativeDogBloodParticle* out) {
     uint8_t i;
     if (out == NULL || index >= ESP_NATIVE_DOG_BLOOD_COUNT) return 0;
-    /* Each ParticleNode is reconstructed in the legacy order of its five
-     * independent draws. The original consumes the gameplay RNG; the native
-     * render MUST NOT, so the identical bounded ranges use local visual RNG. */
+    /* ParticleSystem_calculateParticles() calls randNextInt()%6 once for
+     * randNext even with z=0, before the 5 draws per live particle. It uses
+     * (randNextInt() & 0xffff) % range for starts, speeds and sizes. Preserve
+     * that cadence and low-16 distribution using ONLY the visual RNG. */
+    (void)nextVisual(&seed);
     for (i = 0U; i <= index; ++i) {
-        const uint32_t sx = nextVisual(&seed);
-        const uint32_t sy = nextVisual(&seed);
-        const uint32_t vx = nextVisual(&seed);
-        const uint32_t vy = nextVisual(&seed);
-        const uint32_t sz = nextVisual(&seed);
+        const uint32_t sx = nextVisual(&seed) & 0xffffU;
+        const uint32_t sy = nextVisual(&seed) & 0xffffU;
+        const uint32_t vx = nextVisual(&seed) & 0xffffU;
+        const uint32_t vy = nextVisual(&seed) & 0xffffU;
+        const uint32_t sz = nextVisual(&seed) & 0xffffU;
         if (i == index) {
             out->startX = (int16_t)(10 + (sx % 21U));
             out->startY = (int16_t)(15 + (sy % 21U));
@@ -64,14 +66,15 @@ void EspNativeDogBlood_project(const EspNativeDogBloodParticle* particle,
     *outRadius = particle->size >> 1U;
 }
 
-static uint32_t drawLine(uint16_t* fb, int x0, int x1, int y) {
+static uint32_t drawLine(uint16_t* fb, int x0, int x1, int y,
+                         uint16_t color) {
     uint32_t n = 0U;
     int x;
     if (y < VIEW_TOP || y > VIEW_BOTTOM) return 0U;
     if (x0 < 0) x0 = 0;
     if (x1 >= FRAME_WIDTH) x1 = FRAME_WIDTH - 1;
     for (x = x0; x <= x1; ++x) {
-        fb[y * FRAME_WIDTH + x] = ESP_NATIVE_DOG_BLOOD_COLOR565;
+        fb[y * FRAME_WIDTH + x] = color;
         ++n;
     }
     return n;
@@ -80,14 +83,15 @@ static uint32_t drawLine(uint16_t* fb, int x0, int x1, int y) {
 /* Reproduce SDL_RenderDrawFillCircle from src/SDL_Video.c (four horizontal
  * spans per midpoint iteration). A Euclidean radius-2 disc has only 13
  * pixels, whereas the desktop algorithm draws 21; never approximate it. */
-static uint32_t paintOriginalCircle(uint16_t* fb, int x, int y, int r) {
+static uint32_t paintOriginalCircle(uint16_t* fb, int x, int y, int r,
+                                    uint16_t color) {
     int dx = r, dy = 0, accum = dx - 1;
     uint32_t pixels = 0U;
     while (dy <= dx) {
-        pixels += drawLine(fb, x - dx, x + dx, y + dy);
-        pixels += drawLine(fb, x - dy, x + dy, y + dx);
-        pixels += drawLine(fb, x - dx, x + dx, y - dy);
-        pixels += drawLine(fb, x - dy, x + dy, y - dx);
+        pixels += drawLine(fb, x - dx, x + dx, y + dy, color);
+        pixels += drawLine(fb, x - dy, x + dy, y + dx, color);
+        pixels += drawLine(fb, x - dx, x + dx, y - dy, color);
+        pixels += drawLine(fb, x - dy, x + dy, y - dx, color);
         ++dy;
         accum -= (dy << 1) - 1;
         if (accum < 0) {
@@ -100,8 +104,11 @@ static uint32_t paintOriginalCircle(uint16_t* fb, int x, int y, int r) {
 
 uint32_t EspNativeDogBlood_paint(uint16_t* framebuffer, uint32_t width,
                                  uint32_t height, uint32_t seed,
-                                 uint32_t ageMs) {
+                                 uint32_t ageMs, uint8_t berserker) {
     uint32_t pixels = 0U;
+    const uint16_t color = berserker != 0U
+        ? ESP_NATIVE_DOG_BLOOD_BERSERK_COLOR565
+        : ESP_NATIVE_DOG_BLOOD_COLOR565;
     uint8_t i;
     if (framebuffer == NULL || width != FRAME_WIDTH ||
         height != FRAME_HEIGHT ||
@@ -114,7 +121,7 @@ uint32_t EspNativeDogBlood_paint(uint16_t* framebuffer, uint32_t width,
         EspNativeDogBlood_project(&particle, ageMs, &x, &y, &radius);
         /* Fill geometry is the exact source SDL midpoint algorithm.
          * The original screenspace bounds are the 20..99 gameplay viewport. */
-        pixels += paintOriginalCircle(framebuffer, x, y, radius);
+        pixels += paintOriginalCircle(framebuffer, x, y, radius, color);
     }
     return pixels;
 }

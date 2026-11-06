@@ -59,7 +59,7 @@ int main(void) {
         uint32_t n;
         fb[0]=0x1234U;fb[W*H+1U]=0x4321U;
         for(idx=1U;idx<=W*H;++idx)fb[idx]=0x2222U;
-        n=EspNativeDogBlood_paint(&fb[1],W,H,seed,t);
+        n=EspNativeDogBlood_paint(&fb[1],W,H,seed,t,0U);
         assert(n>0U||t>250U);
         assert(fb[0]==0x1234U&&fb[W*H+1U]==0x4321U);
         for(idx=0U;idx<20U*W;++idx)assert(fb[idx+1U]==0x2222U);
@@ -67,13 +67,17 @@ int main(void) {
         checksum ^= fnvFrame()+t;
         if(t==0U){firstFNV=fnvFrame();assert(firstFNV!=0U);}
     }
-    assert(EspNativeDogBlood_paint(&fb[1],W,H,seed,500U)==0U);
-    assert(EspNativeDogBlood_paint(&fb[1],W-1U,H,seed,50U)==0U);
-    assert(EspNativeDogBlood_paint(NULL,W,H,seed,50U)==0U);
+    assert(EspNativeDogBlood_paint(&fb[1],W,H,seed,500U,0U)==0U);
+    assert(EspNativeDogBlood_paint(&fb[1],W-1U,H,seed,50U,0U)==0U);
+    assert(EspNativeDogBlood_paint(NULL,W,H,seed,50U,0U)==0U);
     assert(!EspNativePlayerPainVisual_dogInfo(900U,&seed,&age));
     assert(EspNativePlayerPainVisual_expiryDue(900U));
     assert(EspNativePlayerPainVisual_ackExpiry(900U));
     assert(!EspNativePlayerPainVisual_dogInfo(901U,&seed,&age));
+        for(idx=1U;idx<=W*H;++idx)fb[idx]=0x2222U;
+        (void)EspNativeDogBlood_paint(
+            &fb[1],W,H,0xa8cf35f4U,0U,1U);
+        assert(fnvFrame()==0x6f619a65U); /* berserker red +8 */
     assert(checksum!=0U);
     /* Independent fixed 160x120 RGB565 witnesses generated from the source
      * Combat_spawnDogBloodParticles ranges + SDL_RenderDrawFillCircle spans.
@@ -81,15 +85,15 @@ int main(void) {
      * and timing, not merely a nonzero pixel count or a self-oracle. */
     {
         const struct { uint16_t ms; uint32_t fnv; } golden[] = {
-            {0U, 0xebe02565U}, {37U, 0x439751e5U},
-            {99U, 0xac444d45U}, {185U, 0x1c2318e5U},
-            {370U, 0xdee56ff5U}, {499U, 0x06ebddc5U}
+            {0U, 0x11caece5U}, {37U, 0x9ebc03b5U},
+            {99U, 0x48bad805U}, {185U, 0x43722ad5U},
+            {370U, 0xdda3bee5U}, {499U, 0x06ebddc5U}
         };
         unsigned k;
         for (k=0U;k<sizeof golden/sizeof golden[0];++k) {
             for(idx=1U;idx<=W*H;++idx)fb[idx]=0x2222U;
             (void)EspNativeDogBlood_paint(
-                &fb[1],W,H,0xa8cf35f4U,golden[k].ms);
+                &fb[1],W,H,0xa8cf35f4U,golden[k].ms,0U);
             assert(fnvFrame()==golden[k].fnv);
         }
     }

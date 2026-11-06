@@ -871,9 +871,14 @@ int EspNativeGameplayActionEngine_present(void) {
         Esp32PlatformVideo_framebufferSizeBytes() ==
             DOOMRPG_LOGICAL_WIDTH * DOOMRPG_LOGICAL_HEIGHT *
                 sizeof(uint16_t)) {
+        const EspNativeGameplayPlayerState* player =
+            EspNativeGameplayPlayerState_view();
+        const uint8_t berserker = player != NULL && player->active == 1U &&
+                                  player->berserkerTics != 0U;
         (void)EspNativeDogBlood_paint(
             (uint16_t*)Esp32PlatformVideo_framebuffer(),
-            DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT, seed, age);
+            DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT, seed, age,
+            berserker);
     }
     return EspNativeGameplayActionEngine_presentBase();
 }
