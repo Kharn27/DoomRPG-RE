@@ -83,6 +83,30 @@ int main(void) {
     assert(!EspNativePlayerPainVisual_shiftViewport(&fb[1],W,H,0,-3));
     assert(!EspNativePlayerPainVisual_shiftViewport(NULL,W,H,0,0));
     assert(!EspNativePlayerPainVisual_shakeOffsets(100U,NULL,&y0,&step));
-    puts("PASS player pain shake: 16x19200 exact pixels, HDR/canary guards, 500ms/75ms visual ticks, staged/rollback/expiry");
+    /* Hud.c source four drawRect coordinates: the lower-right corner
+     * (159,99) is NOT painted by its 159-wide lower rectangle. */
+    assert(EspNativePlayerPainVisual_stage(79U,ESP_NATIVE_PLAYER_PAIN_FRONT,2000U));
+    assert(EspNativePlayerPainVisual_commit(79U));
+    for(i=2000U;i<=2499U;i+=499U) {
+        makeFrame();
+        assert(EspNativePlayerPainVisual_paintBorder(&fb[1],W,H,i));
+        assert(fb[0]==0x1357U&&fb[W*H+1U]==0x2468U);
+        for(j=0U;j<W*H;++j) {
+            const unsigned x=j%W,y=j/W;
+            const int side=(y>=20U && y<=98U &&
+                            (x<=1U||x>=158U));
+            const int topBottom=(x<=158U &&
+                                (y==20U||y==21U||y==98U||y==99U));
+            const uint16_t expect=side||topBottom?0xb800U:original[j];
+            assert(fb[1U+j]==expect);
+        }
+        assert(fb[1U+99U*W+159U]==original[99U*W+159U]);
+    }
+    makeFrame();
+    assert(!EspNativePlayerPainVisual_paintBorder(&fb[1],W,H,2500U));
+    assert(!EspNativePlayerPainVisual_paintBorder(&fb[1],W,H-1U,2000U));
+    assert(!EspNativePlayerPainVisual_paintBorder(NULL,W,H,2000U));
+    assert(memcmp(&fb[1],original,sizeof original)==0);
+    puts("PASS player pain shake + continuous original damage border: 16x19200 exact shifts, 500ms/75ms ticks, exact Hud.c four rectangles, HUD/canary guards, rollback");
     return 0;
 }
