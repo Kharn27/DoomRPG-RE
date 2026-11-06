@@ -183,6 +183,7 @@ static int renderComposed(
     int strictSpriteWitness;
     uint8_t painShakeStep = 0U;
     uint8_t painShakePainted = 0U;
+    uint32_t painVisualSampleMs = 0U;
     int ok = 0;
 
     if (outStats != NULL) memset(outStats, 0, sizeof(*outStats));
@@ -416,8 +417,9 @@ static int renderComposed(
      * render geometry and combat RNG remain unchanged. */
     {
         int8_t dx, dy;
+        painVisualSampleMs = DoomRPG_GetUpTimeMS();
         if (EspNativePlayerPainVisual_shakeOffsets(
-                DoomRPG_GetUpTimeMS(), &dx, &dy, &painShakeStep)) {
+                painVisualSampleMs, &dx, &dy, &painShakeStep)) {
             if (!EspNativePlayerPainVisual_shiftViewport(
                     (uint16_t*)Esp32PlatformVideo_framebuffer(),
                     DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT, dx, dy)) {
@@ -447,11 +449,11 @@ static int renderComposed(
     /* Hud_drawEffects source: a continuous 2px RGB #BB0000 contour
      * until painTime+500ms, independent of the old three-pulse transient.
      * Paint after the screen-anchored n.bmp arrow and only inside 3D view. */
-    if (EspNativePlayerPainVisual_isActive(DoomRPG_GetUpTimeMS()) &&
+    if (EspNativePlayerPainVisual_isActive(painVisualSampleMs) &&
         !EspNativePlayerPainVisual_paintBorder(
             (uint16_t*)Esp32PlatformVideo_framebuffer(),
             DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
-            DoomRPG_GetUpTimeMS())) {
+            painVisualSampleMs)) {
         printf("[PLAYERPAINFX] FAILED source-border contract\n");
         goto done;
     }
