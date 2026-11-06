@@ -274,7 +274,7 @@ static int syncOwner(void) {
         retaliationView.observedAttackProbes = turn->attackProbes;
         retaliationView.lastAttackerSpriteIndex = RETALIATION_NO_SPRITE;
         retaliationView.active = 1U;
-        printf("[MONSTERRETAL] READY arena=%08x ownerBytes=%u source=hardware-proven-turn-probe commit=playerstate+native-death render=transactional playerPainFeedback=damage-text+red-500ms passMessage=legacy-superseded-on-hit miss=commit-rng lethal=playerdeath-live resolvedProbe=published dogFamiliar=fail-closed movement=ordered-sequencer attackVisual=deferred attackMessage=deferred painFace=deferred shake=deferred sound=deferred\n",
+        printf("[MONSTERRETAL] READY arena=%08x ownerBytes=%u source=hardware-proven-turn-probe commit=playerstate+native-death render=transactional playerPainFeedback=damage-text+red-500ms passMessage=legacy-superseded-on-hit miss=commit-rng lethal=playerdeath-live resolvedProbe=published dogFamiliar=fail-closed movement=ordered-sequencer attackVisual=deferred attackMessage=deferred painFace=native-500ms shake=native-world-weapon-500ms sound=deferred\n",
                (unsigned int)retaliationView.sourceArenaFNV1a,
                (unsigned int)sizeof(retaliationView));
     }
@@ -740,7 +740,7 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
     }
     playerFNVAfter = EspNativeGameplayPlayerState_fingerprint();
     randomFNVAfter = randomFNV(&doomRpg->random);
-    printf("[MONSTERRETAL] COMMIT probe=%u reason=%s sprite=%u subtype=%u mType=%u weapon=%u alt=%u loops=%u hitLoops=%u firstRandHit=%u firstCalcHit=%d firstCritLimit=%d firstRandDamage=%u totalDamage=%d armorDamage=%d crit=%u aiRand=%s%u rngCalls=%u combatRngCalls=%u missProjectileRng=%u playerHP=%u->%u armor=%u->%u playerFNV=%08x->%08x rng=%08x->%08x frame=%08x presented=%u message=\"%s\" damageTotal=%d redFlash=b800/%ums passMessage=%s rollback=closed attackVisual=complete-before-resolution attackMessage=deferred painFace=native-500ms weaponBlend=native-500ms shake=deferred sound=deferred statusWarnings=deferred playerDeath=nonlethal turn=closed\n",
+    printf("[MONSTERRETAL] COMMIT probe=%u reason=%s sprite=%u subtype=%u mType=%u weapon=%u alt=%u loops=%u hitLoops=%u firstRandHit=%u firstCalcHit=%d firstCritLimit=%d firstRandDamage=%u totalDamage=%d armorDamage=%d crit=%u aiRand=%s%u rngCalls=%u combatRngCalls=%u missProjectileRng=%u playerHP=%u->%u armor=%u->%u playerFNV=%08x->%08x rng=%08x->%08x frame=%08x presented=%u message=\"%s\" damageTotal=%d redFlash=b800/%ums passMessage=%s rollback=closed attackVisual=complete-before-resolution attackMessage=deferred painFace=native-500ms weaponBlend=native-500ms shake=native-world-weapon-500ms sound=deferred statusWarnings=deferred playerDeath=nonlethal turn=closed\n",
            (unsigned int)turn->attackProbes,
            reasonName(turn->lastReason),
            (unsigned int)monster->spriteIndex,
