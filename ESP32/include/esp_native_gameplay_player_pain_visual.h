@@ -45,6 +45,12 @@ int EspNativePlayerPainVisual_shiftViewport(uint16_t* framebuffer,
                                              uint32_t width, uint32_t height,
                                              int8_t dx, int8_t dy);
 
+/* Exact four Hud_drawEffects() DoomRPG_fillRect calls: RGB #BB0000,
+ * viewport x=0..159, y=20..99, source retains x=159,y=99 corner. */
+int EspNativePlayerPainVisual_paintBorder(uint16_t* framebuffer,
+                                         uint32_t width, uint32_t height,
+                                         uint32_t nowMs);
+
 /* Exact Hud_drawBottomBar face indices and Render_getSpanMode palette
  * saturating channel additions, converted to the native RGB565 order. */
 uint8_t EspNativePlayerPainVisual_face(uint8_t health, uint8_t maxHealth,
