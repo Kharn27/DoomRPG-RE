@@ -194,6 +194,32 @@ int EspNativePlayerPainVisual_shiftViewport(uint16_t* framebuffer,
     return 1;
 }
 
+int EspNativePlayerPainVisual_paintBorder(uint16_t* framebuffer,
+                                         uint32_t width, uint32_t height,
+                                         uint32_t nowMs) {
+    int x, y;
+    const uint16_t red = 0xb800U; /* RGB888 #BB0000 -> RGB565 */
+    if (framebuffer == NULL || width != 160U || height != 120U ||
+        !EspNativePlayerPainVisual_isActive(nowMs)) return 0;
+    /* Preserve the source rectangle edges literally:
+     * left/right 2x79 at x=0,158 and y=20..98;
+     * top/bottom 159x2 at y=20,98 and x=0..158.
+     * Pixel (159,99) is intentionally untouched in the original. */
+    for (y=20;y<99;++y) {
+        framebuffer[y*160+0] = red;
+        framebuffer[y*160+1] = red;
+        framebuffer[y*160+158] = red;
+        framebuffer[y*160+159] = red;
+    }
+    for (x=0;x<159;++x) {
+        framebuffer[20*160+x] = red;
+        framebuffer[21*160+x] = red;
+        framebuffer[98*160+x] = red;
+        framebuffer[99*160+x] = red;
+    }
+    return 1;
+}
+
 uint8_t EspNativePlayerPainVisual_face(uint8_t health, uint8_t maxHealth,
                                       uint8_t gotFace, uint32_t nowMs) {
     /* Hud_drawBottomBar: gotFace always wins if health > 0. The 500ms pain
