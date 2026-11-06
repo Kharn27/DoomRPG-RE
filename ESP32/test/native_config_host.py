@@ -276,10 +276,22 @@ int main() {
     assert(!EspNativeConfig_saveTheme(ESP_MAIN_MENU_THEME_CLASSIC));
     SD.failWrites = false;
     assert(configTheme(mainCfg) == ESP_MAIN_MENU_THEME_INFERNO);
+    /* PHOSPHORE shares the same V3 record, preserves rotation and
+     * brightness, survives restart and fails closed on SD error. */
+    assert(EspNativeConfig_saveTheme(ESP_MAIN_MENU_THEME_PHOSPHORE));
+    assert(configTheme(mainCfg) == ESP_MAIN_MENU_THEME_PHOSPHORE);
+    assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_PHOSPHORE));
+    assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
+    EspNativeConfig_loadAtBoot(1);
+    assert(EspMainMenuSkin_getTheme() == ESP_MAIN_MENU_THEME_PHOSPHORE);
+    SD.failWrites = true;
+    assert(!EspNativeConfig_saveTheme(ESP_MAIN_MENU_THEME_CLASSIC));
+    SD.failWrites = false;
+    assert(configTheme(mainCfg) == ESP_MAIN_MENU_THEME_PHOSPHORE);
     /* Brightness transaction must preserve both orientation and theme. */
     assert(EspNativeConfig_saveBrightness(75));
     assert(config(mainCfg) == 75 && configOrientation(mainCfg) == 1 &&
-           configTheme(mainCfg) == ESP_MAIN_MENU_THEME_INFERNO);
+           configTheme(mainCfg) == ESP_MAIN_MENU_THEME_PHOSPHORE);
     assert(Esp32Backlight_setPercent(75));
     assert(Esp32Orientation_set(ESP32_ORIENTATION_NORMAL));
     assert(EspNativeConfig_saveOrientation(ESP32_ORIENTATION_NORMAL));

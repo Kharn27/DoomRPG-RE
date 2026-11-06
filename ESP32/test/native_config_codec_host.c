@@ -75,7 +75,7 @@ int main(void) {
             resignLegacy(corrupted); /* Even checksummed invalid values fail. */
             expectRejected(corrupted, 12U);
             memcpy(corrupted, packet, 12U);
-            corrupted[7] = 2U;
+            corrupted[7] = 3U;
             resignLegacy(corrupted);
             expectRejected(corrupted, 12U);
         }
@@ -90,7 +90,19 @@ int main(void) {
             assert(t == ESP_MAIN_MENU_THEME_INFERNO);
             assert(percent == levels[p] && orientation == 0U);
             assert(!EspNativeConfigCodec_encodeWithTheme(
-                levels[p], 0U, 2U, packet));
+                levels[p], 0U, 3U, packet));
+            assert(EspNativeConfigCodec_encodeWithTheme(
+                levels[p], ESP32_ORIENTATION_INVERSE,
+                ESP_MAIN_MENU_THEME_PHOSPHORE, packet));
+            t = 255U;
+            assert(EspNativeConfigCodec_decodeWithTheme(
+                packet, 12U, &percent, &orientation, &t));
+            assert(t == ESP_MAIN_MENU_THEME_PHOSPHORE);
+            assert(orientation == ESP32_ORIENTATION_INVERSE);
+            assert(percent == levels[p]);
+            packet[7] = 3U;
+            resignLegacy(packet); /* Checksummed unsupported value is invalid. */
+            expectRejected(packet, 12U);
         }
         assert(EspNativeConfigCodec_encodeBrightness(levels[p], packet));
         packet[4] = ESP_NATIVE_CONFIG_VERSION_V2;
