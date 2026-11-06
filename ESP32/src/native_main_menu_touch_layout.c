@@ -415,8 +415,8 @@ int DoomRPG_esp32PaintMenuDashboardCards(
     return 1;
 }
 
-/* Every nested child stays within x104..157.
- * VIDEO has 4x24, 3-choice presets have 3x28, brightness 5x21. */
+/* Every nested child stays inside x104..157.
+ * OPTIONS+ORIENTATION: 3x32; VIDEO+THEME: 4x26; BRIGHTNESS: 5x21. */
 static int paintChildRail(DoomRPG_t* doomRpg) {
     Render_t* render = doomRpg->render;
     fillRect565(render, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT,
@@ -431,7 +431,7 @@ static int paintChildRail(DoomRPG_t* doomRpg) {
     return 1;
 }
 
-/* layer: 0=brightness, 1=VIDEO, 2=orientation/theme. */
+/* layer: 0=brightness 5x21, 1=VIDEO/theme 4x26, 2=orientation 3x32. */
 static int paintChildCard(DoomRPG_t* doomRpg, int item, const char* label,
                           int selected, int enabled, int layer) {
     int l, t, r, b;
@@ -538,16 +538,22 @@ int DoomRPG_esp32PaintOrientationPresetCards(
 int DoomRPG_esp32PaintThemePresetCards(
     struct DoomRPG_s* doomRpgBase, uint8_t activeTheme,
     uint32_t* framebufferFNV) {
-    static const char* const names[3] = {"BACK","CLASSIC","INFERNO"};
+    static const char* const names[DOOMRPG_ESP32_THEME_CARD_COUNT] =
+        {"BACK", "CLASSIC", "INFERNO", "PHOSPHORE"};
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     int item;
     if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
-        activeTheme > ESP_MAIN_MENU_THEME_INFERNO) return 0;
+        activeTheme > ESP_MAIN_MENU_THEME_PHOSPHORE ||
+        DOOMRPG_ESP32_VIDEO_CARD_TOP(0) <=
+            DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP ||
+        DOOMRPG_ESP32_VIDEO_CARD_TOP(DOOMRPG_ESP32_THEME_CARD_COUNT-1) +
+            DOOMRPG_ESP32_VIDEO_CARD_HEIGHT - 1 >=
+            DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM) return 0;
     if (!paintChildRail(doomRpg)) return 0;
-    for (item = 0; item < 3; ++item)
+    for (item = 0; item < DOOMRPG_ESP32_THEME_CARD_COUNT; ++item)
         if (!paintChildCard(doomRpg, item, names[item],
                             item != 0 && (uint8_t)(item - 1) == activeTheme,
-                            1, 2))
+                            1, 1))
             return 0;
     return finishChildCards(doomRpg, framebufferFNV);
 }
