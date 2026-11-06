@@ -329,6 +329,19 @@ const EspNativeGameplayMonsterCombatView* EspNativeGameplayMonsterCombat_view(vo
     return &combatOwner.view;
 }
 
+int EspNativeGameplayMonsterCombat_damageBlend(
+    uint16_t spriteIndex, uint32_t nowMs) {
+    uint32_t brightenUntil;
+    if (spriteIndex == MONSTER_NO_SPRITE ||
+        combatOwner.view.active == 0U ||
+        combatOwner.view.painSpriteIndex != spriteIndex ||
+        combatOwner.painUntilMs == 0U) return 0;
+    /* Pain pose stays active for 250ms; legacy palette brighten is 100ms.
+     * No clock mutation, sprite access, PAK read or gameplay RNG required. */
+    brightenUntil = combatOwner.painUntilMs - (MONSTER_PAIN_MS - 100U);
+    return (int32_t)(nowMs - brightenUntil) < 0;
+}
+
 static void applyPain(EspNativeGameplayMonsterRecord* record,
                       int32_t damage,
                       int32_t armorDamage,

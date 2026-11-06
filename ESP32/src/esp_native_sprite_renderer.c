@@ -20,6 +20,8 @@
 #include "esp_native_sprite_visual_legacy.h"
 #include "esp_native_graphics_catalog.h"
 #include "esp_native_gameplay_monster_drop.h"
+#include "esp_native_gameplay_monster_combat.h"
+#include "esp_native_gameplay_player_pain_visual.h"
 #include "esp_native_sprite_renderer.h"
 #include "esp_native_ambient_sprite.h"
 #include "esp_native_first_frame.h"
@@ -1238,6 +1240,8 @@ static int drawAt(Render_t* render,
     uint8_t entityType, entitySubtype;
     uint16_t entityLink, entityOrdinal;
     uint32_t rasterPixelsBefore;
+    uint16_t originalPalette[16];
+    uint8_t tinted = 0U;
     int minimum;
     int maximum;
     int spriteX;
@@ -1382,9 +1386,33 @@ static int drawAt(Render_t* render,
     EspNativeRenderGeometry_projectVertex(
         render->screenWidth, render->fracHalfScreenWidth,
         &line.vert2.x, &line.vert2.y, &line.vert2.z);
-    if (!spans(render, &line, frame, renderMode, glow, stats)) {
-        TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=span-failed animation=%u glow=%u\n", (unsigned int)parent->index, (unsigned int)animation, (unsigned int)(glow != 0));
-        return 0;
+    /* Source Render_renderSpriteObject() sets damageBlend while this monster's
+     * 100ms damageBlendTime lives. Render_getSpanMode() then saturates its
+     * 16-entry palette once and clears that flag before drawing the span.
+     * This affects only real enemy base sprites, not glow/billboards or the
+     * cached immutable resource. Restore all 32 palette bytes even if a
+     * span fails, so CROSS reuse, subsequent enemies and retries are exact. */
+    if (entityType == ENEMY_TYPE && glow == 0 &&
+        renderMode == RENDER_MODE_NORMAL &&
+        EspNativeGameplayMonsterCombat_damageBlend(
+            parent->index, DoomRPG_GetUpTimeMS())) {
+        unsigned int k;
+        memcpy(originalPalette, frame->palette, sizeof(originalPalette));
+        for (k = 0U; k < 16U; ++k) {
+            frame->palette[k] =
+                EspNativePlayerPainVisual_weaponColor(frame->palette[k]);
+        }
+        tinted = 1U;
+    }
+    {
+        const int drawn = spans(render, &line, frame, renderMode, glow, stats);
+        if (tinted != 0U) {
+            memcpy(frame->palette, originalPalette, sizeof(originalPalette));
+        }
+        if (!drawn) {
+            TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=span-failed animation=%u glow=%u\n", (unsigned int)parent->index, (unsigned int)animation, (unsigned int)(glow != 0));
+            return 0;
+        }
     }
     TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=rasterized pos=%d,%d logical=%u animation=%u actual=%u glow=%u pixels=%u\n",
                  (unsigned int)parent->index, spriteX, spriteY,
