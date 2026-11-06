@@ -16,6 +16,7 @@
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_hud_direction.h"
 #include "esp_native_gameplay_player_state.h"
+#include "esp_native_gameplay_player_pain_visual.h"
 #include "esp_native_gameplay_present_gate.h"
 #include "esp_native_resident_gameplay.h"
 #include "esp_native_gameplay_weapon.h"
@@ -180,6 +181,8 @@ static int renderComposed(
     int64_t totalStart;
     int64_t phaseStart;
     int strictSpriteWitness;
+    uint8_t painShakeStep = 0U;
+    uint8_t painShakePainted = 0U;
     int ok = 0;
 
     if (outStats != NULL) memset(outStats, 0, sizeof(*outStats));
@@ -407,6 +410,23 @@ static int renderComposed(
 
     /* Historical field name retained for the 104-byte stats ABI. It now means
      * the completed world-sprite + first-person-weapon viewport. */
+    /* DoomCanvas_drawRGB shifts the projected world and Combat_drawWeapon,
+     * but Hud_drawEffects stays anchored to the screen. Shift the finished
+     * 160x80 viewport BEFORE HudDirection paints HUD/arrow; all immutable
+     * render geometry and combat RNG remain unchanged. */
+    {
+        int8_t dx, dy;
+        if (EspNativePlayerPainVisual_shakeOffsets(
+                DoomRPG_GetUpTimeMS(), &dx, &dy, &painShakeStep)) {
+            if (!EspNativePlayerPainVisual_shiftViewport(
+                    (uint16_t*)Esp32PlatformVideo_framebuffer(),
+                    DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT, dx, dy)) {
+                printf("[PLAYERPAINSHAKE] FAILED framebuffer contract\n");
+                goto done;
+            }
+            painShakePainted = 1U;
+        }
+    }
     stats->viewportAfterSpritesFNV = viewportFNV();
 
     stats->temporaryHudBytes = 0U;
@@ -478,6 +498,9 @@ static int renderComposed(
             if (!Esp32PlatformVideo_present()) {
                 printf("[TURNFRAME] DIAG fail=PRESENT\n");
                 goto done;
+            }
+            if (painShakePainted != 0U) {
+                (void)EspNativePlayerPainVisual_shakeComposed(painShakeStep);
             }
         }
         stats->presentMicros = elapsedMicros(phaseStart);
