@@ -365,15 +365,21 @@ int DoomRPG_esp32PaintMenuDashboardCards(
                 5, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT + 2,
                 115, industrialMain ? 0x3123U : MAIN_DOOM_METAL_HI);
     if (!industrialMain) {
+        /* Preserve the exact CLASSIC root ornaments, historically Doom red.
+         * INFERNO and PHOSPHORE follow their active plate seam color. */
+        const uint16_t trimAccent =
+            EspMainMenuSkin_getTheme() == ESP_MAIN_MENU_THEME_CLASSIC
+                ? 0xc002U
+                : EspMainMenuSkin_accentTone(ESP_MAIN_MENU_SKIN_IDLE);
         /* The child Options painter retains its original rail decorations.
          * MENU_MAIN is deliberately clean: no red/grey bars above or below
          * the four procedural plates. */
         fillRect565(render, 105, 7, 125, 8,
-                    EspMainMenuSkin_accentTone(ESP_MAIN_MENU_SKIN_IDLE));
+                    trimAccent);
         fillRect565(render, 127, 7, 155, 8, ESP_HUB_COLOR_STEEL_DARK);
         fillRect565(render, 105, 112, 155, 113, ESP_HUB_COLOR_STEEL_DARK);
         fillRect565(render, 105, 112, 118, 112,
-                    EspMainMenuSkin_accentTone(ESP_MAIN_MENU_SKIN_IDLE));
+                    trimAccent);
     }
 
     for (item = 0; item < itemCount; ++item) {
