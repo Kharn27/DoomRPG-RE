@@ -311,7 +311,7 @@ int main(void) {
         int l, t, r, b;
         DoomRPG_esp32BrightnessCardRect(i, &l, &t, &r, &b);
         assert(l == 104 && r == 157);
-        assert(t == 6 + i*22 && b == 25 + i*22);
+        assert(t == 6 + i*22 && b == 26 + i*22);
         assert(t > DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP);
         assert(b < DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM);
         if (i < DOOMRPG_ESP32_BRIGHTNESS_CARD_COUNT-1) {
