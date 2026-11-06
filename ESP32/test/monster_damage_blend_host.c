@@ -6,23 +6,25 @@
 #include <stdio.h>
 #include <string.h>
 #include "esp_native_gameplay_player_pain_visual.h"
+#include "esp_native_gameplay_monster_pain_tint.h"
 
-static int legacyBlendIsActive(uint32_t now, uint32_t painPoseUntil) {
-    /* Legacy Combat_spawnBloodParticles: damageBlendTime = now + 100;
-     * native monster pain pose: now + 250. */
-    return (int32_t)(now - (painPoseUntil - (250U-100U))) < 0;
-}
+
 int main(void) {
     uint16_t palette[16], saved[16];
     uint32_t t, i, hash = 2166136261U;
     for(i=0U;i<16U;i++)palette[i]=(uint16_t)(i*4097U);
     memcpy(saved,palette,sizeof palette);
-    assert(legacyBlendIsActive(1000U,1250U));
-    assert(legacyBlendIsActive(1099U,1250U));
-    assert(!legacyBlendIsActive(1100U,1250U));
-    assert(!legacyBlendIsActive(1249U,1250U));
+    assert(EspNativeMonsterPainTint_active(1000U,1250U,157U,157U));
+    assert(EspNativeMonsterPainTint_active(1099U,1250U,157U,157U));
+    assert(!EspNativeMonsterPainTint_active(1100U,1250U,157U,157U));
+    assert(!EspNativeMonsterPainTint_active(1249U,1250U,157U,157U));
+    assert(!EspNativeMonsterPainTint_active(1000U,1250U,157U,42U));
+    assert(!EspNativeMonsterPainTint_active(1000U,1250U,0xffffU,157U));
+    assert(!EspNativeMonsterPainTint_active(1000U,0U,157U,157U));
+    assert(EspNativeMonsterPainTint_active(0xfffffff0U,0x000000a0U,157U,157U));
+
     for(t=1000U;t<1250U;t+=5U) {
-        if(legacyBlendIsActive(t,1250U)) {
+        if(EspNativeMonsterPainTint_active(t,1250U,157U,157U)) {
             for(i=0U;i<16U;i++) {
                 const uint16_t c=EspNativePlayerPainVisual_weaponColor(palette[i]);
                 assert((c&31U)>=(palette[i]&31U));
