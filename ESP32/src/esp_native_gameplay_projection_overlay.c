@@ -14,7 +14,8 @@
 #include "esp_native_gameplay_player_resources.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_player_pain_visual.h"
-#include "DoomRPG.h"
+/* The desktop header depends on SDL types; only the process clock is needed. */
+extern unsigned int DoomRPG_GetUpTimeMS(void);
 #include "esp_native_indexed_bmp.h"
 #include "platform_video_c_bridge.h"
 #include "platform_video_config.h"
