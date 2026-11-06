@@ -83,6 +83,7 @@ shim = r'''
 #define ORIENT_WEST  0x00400000UL
 #define RENDER_MODE_NORMAL 0U
 #define RENDER_MODE_ADD 7U
+#define ENEMY_TYPE 1U
 #if defined(DOOMRPG_ESP32_TRACE_SPRITE)
 #define TRACE_SPRITE(index, ...) do { if (0) printf(__VA_ARGS__); } while (0)
 #else
@@ -94,7 +95,7 @@ typedef struct { Vertex_t vert1, vert2; } Line_t;
 typedef struct { uint16_t x,y; uint32_t info; } EspMapSprite;
 typedef struct { int dummy; } Sources;
 typedef struct {uint16_t index, logical;uint32_t info;int32_t sortZ;} Order;
-typedef struct {uint16_t logical,actual; int xMin,xMax;uint8_t texels[4];} Frame;
+typedef struct {uint16_t logical,actual; int xMin,xMax;uint16_t palette[16];uint8_t texels[4];} Frame;
 typedef struct {
     int viewCos_,viewSin_,viewSin,viewCos,viewTransX,viewTransY;
     int viewX,viewY,screenWidth,fracHalfScreenWidth;
@@ -125,6 +126,16 @@ static uint32_t EspNativeAmbientSprite_frame(
     return animationDrift && ++clockFrame > 1U ? 1U : 0U;
 }
 static uint32_t ambientSampleMs=0;
+/* The real native CROSS painter now decorates pain palettes only on actual
+ * monster hit leases. This frame-reuse test covers ordinary CROSS billboards
+ * without a damage lease. Do not mock away the production branch: compile it
+ * against the same Frame.palette[16] contract, forced inactive here. */
+static int EspNativeGameplayMonsterCombat_damageBlend(uint16_t sprite,
+                                                       uint32_t now) {
+    (void)sprite;(void)now;return 0;
+}
+static unsigned int DoomRPG_GetUpTimeMS(void) {return 0U;}
+static uint16_t EspNativePlayerPainVisual_weaponColor(uint16_t c) {return c;}
 static int loadFrame(const Sources* src, uint16_t logical,uint32_t animation,
                      int glow,Frame* frame,uint32_t seen[8],
                      EspNativeSpriteStats* stats) {
