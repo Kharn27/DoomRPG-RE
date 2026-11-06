@@ -415,12 +415,11 @@ static int paintProgressBar(uint8_t percent) {
              trackLeft + trackWidth - 1,
              trackTop + trackHeight - 1, COLOR_BLACK);
 
-    /* The gradient is drawn INSIDE the fill, not shifted as a doubled halo.
-     * Colors echo the main-menu copper seam and cream pixel-metal lettering. */
+    /* Color only the six real track rows, matching the saved menu theme.
+     * CLASSIC preserves every existing gauge pixel; no offset fill or extra
+     * side-cap cavity even at 100 percent. */
     for (row = 0; row < trackHeight && fillWidth > 0; ++row) {
-        const uint16_t tone = row == 0 ? 0xf6afU :
-                              row <= 2 ? 0xf447U :
-                              row <= 4 ? 0xd344U : 0x9243U;
+        const uint16_t tone = EspMainMenuSkin_progressTone(row, trackHeight);
         fillRect(trackLeft, trackTop + row,
                  trackLeft + fillWidth - 1, trackTop + row, tone);
     }

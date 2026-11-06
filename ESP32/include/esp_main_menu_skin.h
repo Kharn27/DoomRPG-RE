@@ -32,6 +32,11 @@ uint16_t EspMainMenuSkin_letterTone(int row, int rows);
  * on an invalid plate state, without mutating theme or framebuffer. */
 uint16_t EspMainMenuSkin_accentTone(EspMainMenuSkinState state);
 
+/* Six-row loading progress ink, independently colored by the selected theme.
+ * CLASSIC stays byte-identical to the original amber gauge. Bounds checked,
+ * ROM-only (no cache or extra framebuffer). */
+uint16_t EspMainMenuSkin_progressTone(int row, int rows);
+
 /* Paint all 9 original glyph rows (including A/E/H crossbars). Long
  * words sample three columns, never omit rows. No shift, shadow or IO. */
 int EspMainMenuSkin_paintText(uint16_t* framebuffer, int stride,

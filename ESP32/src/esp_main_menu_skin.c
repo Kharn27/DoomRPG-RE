@@ -75,6 +75,19 @@ uint16_t EspMainMenuSkin_accentTone(EspMainMenuSkinState state) {
     return palettes[(int)state].copper; /* CLASSIC unchanged, byte-exact */
 }
 
+uint16_t EspMainMenuSkin_progressTone(int row, int rows) {
+    /* The existing LOADING fill is exactly six logical rows. Keep each
+     * CLASSIC pixel unchanged; alternate themes recolor only filled pixels. */
+    static const uint16_t gradients[3][6] = {
+        {0xf6afU, 0xf447U, 0xf447U, 0xd344U, 0xd344U, 0x9243U},
+        {0xff75U, 0xfbeaU, 0xf447U, 0xd344U, 0xc982U, 0xc002U},
+        {0xdff6U, 0xbff3U, 0xa7f1U, 0x87e0U, 0x5e2aU, 0x246aU}
+    };
+    if (rows != 6 || row < 0 || row >= rows ||
+        selectedLetterTheme > ESP_MAIN_MENU_THEME_PHOSPHORE) return 0U;
+    return gradients[selectedLetterTheme][row];
+}
+
 static const char letters[] = "ADEHILNOPRSTBCFGJKMQUVWXYZ0123456789% ";
 static const uint8_t glyphs[][9] = {
     {0x0e,0x11,0x11,0x1f,0x11,0x11,0x11,0x11,0x11}, /* A */
