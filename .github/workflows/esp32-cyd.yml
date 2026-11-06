@@ -338,6 +338,7 @@ jobs:
             ESP32/src/esp_map_events.c ESP32/src/esp_map_event_filter.c \
             ESP32/src/esp_map_opcode_executor.c ESP32/src/esp_map_catalog.c \
             ESP32/src/esp_native_gameplay_gib_fx.c ESP32/src/esp_native_gameplay_frame.c \
+            ESP32/src/esp_native_gameplay_player_pain_visual.c \
             ESP32/src/esp_native_dynamic_line_render.c ESP32/src/esp_native_gameplay_present_gate.c \
             -Wl,--gc-sections -Wl,--wrap=EspNativeGameplayFrame_renderTurn \
             -Wl,--wrap=EspNativeGameplayFrame_renderAmbient \
