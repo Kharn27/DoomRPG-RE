@@ -133,7 +133,7 @@ assert "industrialMain ? 0x0800U : MAIN_DOOM_METAL" in menu
 assert "industrialMain ? 0x4a48U : ESP_HUB_COLOR_STEEL_DARK" in menu
 # Only Options keeps its historical top/bottom decoration; MENU_MAIN removes it.
 rail = menu[menu.index("int DoomRPG_esp32PaintMenuDashboardCards("):
-            menu.index("/* All sublayers stay within x104..157.")]
+            menu.index("static int paintChildRail(")]
 assert "if (!industrialMain) {" in rail
 assert rail.index("if (!industrialMain) {") < rail.index(
     "fillRect565(render, 105, 7, 125, 8, MAIN_DOOM_RED);")
