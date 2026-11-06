@@ -28,7 +28,12 @@ assert 'DoomRPG_esp32OptionsCardRect(item, &left, &top, &right, &bottom);' in to
 assert 'DoomRPG_esp32OptionsCardRect(item, &left, &top, &right, &bottom);' in paint
 assert 'DoomRPG_esp32VideoCardRect(item, &l, &t, &r, &b);' in touch
 assert 'DoomRPG_esp32OptionsCardRect(item, &left, &top, &right, &bottom);' in touch
-assert 'DoomRPG_esp32OptionsCardRect(item, &l, &t, &r, &b);' in touch
+orientHit = touch[touch.index("static int orientationItemAt("):
+                  touch.index("static int themeItemAt(")]
+themeHit = touch[touch.index("static int themeItemAt("):
+                 touch.index("#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY", touch.index("static int themeItemAt("))]
+assert 'DoomRPG_esp32OptionsCardRect(item, &left, &top, &right, &bottom);' in orientHit
+assert 'DoomRPG_esp32VideoCardRect(item, &l, &t, &r, &b);' in themeHit
 assert 'DoomRPG_esp32VideoCardRect(item, &l, &t, &r, &b);' in paint
 assert 'DoomRPG_esp32PaintVideoMenuCards(' in paint
 assert '"BACK", "LUMINOSITE", "ORIENTATION", "THEME"' in paint
