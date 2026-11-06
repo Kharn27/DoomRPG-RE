@@ -444,6 +444,17 @@ static int renderComposed(
                (unsigned int)angle);
         goto done;
     }
+    /* Hud_drawEffects source: a continuous 2px RGB #BB0000 contour
+     * until painTime+500ms, independent of the old three-pulse transient.
+     * Paint after the screen-anchored n.bmp arrow and only inside 3D view. */
+    if (EspNativePlayerPainVisual_isActive(DoomRPG_GetUpTimeMS()) &&
+        !EspNativePlayerPainVisual_paintBorder(
+            (uint16_t*)Esp32PlatformVideo_framebuffer(),
+            DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
+            DoomRPG_GetUpTimeMS())) {
+        printf("[PLAYERPAINFX] FAILED source-border contract\n");
+        goto done;
+    }
     stats->hudMicros = elapsedMicros(phaseStart);
     stats->hudPackReads = hud->packReads;
     stats->hudPixels = hud->pixelsWritten;
