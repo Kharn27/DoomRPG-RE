@@ -161,6 +161,14 @@ int main(void) {
         assert(EspMainMenuSkin_letterTone(0, 7) == 0xf6afU);
         assert(EspMainMenuSkin_letterTone(3, 7) == 0xe4e9U);
         assert(EspMainMenuSkin_letterTone(6, 7) == 0xaa85U);
+        static const uint16_t classicFill[6] = {
+            0xf6afU,0xf447U,0xf447U,0xd344U,0xd344U,0x9243U
+        };
+        for (int y=0;y<6;++y)
+            assert(EspMainMenuSkin_progressTone(y,6) == classicFill[y]);
+        assert(EspMainMenuSkin_progressTone(-1,6) == 0U);
+        assert(EspMainMenuSkin_progressTone(0,5) == 0U);
+        assert(EspMainMenuSkin_progressTone(6,6) == 0U);
     }
     assert(EspMainMenuSkin_getTheme() == ESP_MAIN_MENU_THEME_CLASSIC);
     assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_INFERNO));
@@ -168,6 +176,11 @@ int main(void) {
         static const uint16_t hot[5] = {0xff75U,0xff75U,0xd344U,0xd344U,0xc002U};
         for (int row = 0; row < 5; ++row)
             assert(EspMainMenuSkin_letterTone(row, 5) == hot[row]);
+        static const uint16_t emberFill[6] = {
+            0xff75U,0xfbeaU,0xf447U,0xd344U,0xc982U,0xc002U
+        };
+        for (int y=0;y<6;++y)
+            assert(EspMainMenuSkin_progressTone(y,6) == emberFill[y]);
     }
     assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_PHOSPHORE));
     {
@@ -178,6 +191,11 @@ int main(void) {
         };
         for (int row = 0; row < 9; ++row)
             assert(EspMainMenuSkin_letterTone(row, 9) == phosphor[row]);
+        static const uint16_t greenFill[6] = {
+            0xdff6U,0xbff3U,0xa7f1U,0x87e0U,0x5e2aU,0x246aU
+        };
+        for (int y=0;y<6;++y)
+            assert(EspMainMenuSkin_progressTone(y,6) == greenFill[y]);
     }
     assert(!EspMainMenuSkin_setTheme(3U));
     assert(EspMainMenuSkin_getTheme() == ESP_MAIN_MENU_THEME_PHOSPHORE);

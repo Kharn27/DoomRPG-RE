@@ -15,6 +15,9 @@ assert "EspMainMenuSkin_paintPlate(framebuffer()," in loading
 assert loading.count("paintLoadingCard(target)") == 2
 assert "fillRect(16, 32, 143, 75, COLOR_PANEL);" not in loading
 assert "EspMainMenuSkin_letterTone(row, 5)" in loading
+assert "EspMainMenuSkin_progressTone(row, trackHeight)" in loading
+assert "const uint16_t tone = row == 0 ? 0xf6afU" not in loading
+assert "return gradients[selectedLetterTheme][row];" in skin
 assert "EspMainMenuSkin_letterTone(row, 9)" in skin
 # Both loading entry and checkpoint progress repaints draw the same plates.
 # Geometry stays inside 160x120, with a visible gap between the two modules.
