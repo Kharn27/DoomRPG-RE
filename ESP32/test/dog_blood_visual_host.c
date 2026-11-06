@@ -75,6 +75,24 @@ int main(void) {
     assert(EspNativePlayerPainVisual_ackExpiry(900U));
     assert(!EspNativePlayerPainVisual_dogInfo(901U,&seed,&age));
     assert(checksum!=0U);
-    printf("PASS familiar blood: exact legacy bounds/15 particles, 14 time samples, gated commit/rollback, 500ms expiry, HUD+canary bounds, deterministic frame hashes checksum=%08x\n",(unsigned)checksum);
+    /* Independent fixed 160x120 RGB565 witnesses generated from the source
+     * Combat_spawnDogBloodParticles ranges + SDL_RenderDrawFillCircle spans.
+     * These catch regressions in trajectories, palette, circle raster, clip
+     * and timing, not merely a nonzero pixel count or a self-oracle. */
+    {
+        const struct { uint16_t ms; uint32_t fnv; } golden[] = {
+            {0U, 0xebe02565U}, {37U, 0x439751e5U},
+            {99U, 0xac444d45U}, {185U, 0x1c2318e5U},
+            {370U, 0xdee56ff5U}, {499U, 0x06ebddc5U}
+        };
+        unsigned k;
+        for (k=0U;k<sizeof golden/sizeof golden[0];++k) {
+            for(idx=1U;idx<=W*H;++idx)fb[idx]=0x2222U;
+            (void)EspNativeDogBlood_paint(
+                &fb[1],W,H,0xa8cf35f4U,golden[k].ms);
+            assert(fnvFrame()==golden[k].fnv);
+        }
+    }
+    printf("PASS familiar blood: legacy 15 particles, 14 time samples, 6 golden RGB565 frame FNVs, commit/rollback, expiry, bounds checksum=%08x\n",(unsigned)checksum);
     return 0;
 }
