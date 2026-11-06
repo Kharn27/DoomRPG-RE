@@ -862,7 +862,11 @@ int EspNativeGameplayActionEngine_present(void) {
      * enemy hit cannot select it. Fail closed if the shared framebuffer is
      * missing or a modal/transition compositor owns the physical present.
      * The lease must have been staged by a transaction that can roll back. */
-    if (EspNativePlayerPainVisual_dogInfo(
+    if (EspNativeResidentGameplay_ownsWorldPresent() &&
+        !EspNativeResidentGameplay_isAutomapActive() &&
+        !EspNativeGameplayControls_isActive() &&
+        !EspAssetPack_isOpen() &&
+        EspNativePlayerPainVisual_dogInfo(
             DoomRPG_GetUpTimeMS(), &seed, &age) &&
         Esp32PlatformVideo_framebufferSizeBytes() ==
             DOOMRPG_LOGICAL_WIDTH * DOOMRPG_LOGICAL_HEIGHT *
