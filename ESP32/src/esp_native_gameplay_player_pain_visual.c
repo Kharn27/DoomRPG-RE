@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stddef.h>
 #include <string.h>
 
 #include "esp_native_gameplay_player_pain_visual.h"
@@ -13,6 +14,8 @@ typedef struct PainLease_s {
     uint8_t phase;
     uint8_t expired;
     uint8_t dogBlood;
+    uint8_t lastShakeStep;
+    uint8_t padding[3];
 } PainLease;
 
 /* The second tiny record is the complete pre-stage rollback, including an
@@ -42,6 +45,8 @@ int EspNativePlayerPainVisual_stage(uint32_t probe,
     lease.phase = PAIN_STAGED;
     lease.expired = 0U;
     lease.dogBlood = 0U;
+    lease.lastShakeStep = UINT8_MAX;
+    memset(lease.padding, 0, sizeof(lease.padding));
     return 1;
 }
 
@@ -95,6 +100,97 @@ int EspNativePlayerPainVisual_expiryDue(uint32_t nowMs) {
 int EspNativePlayerPainVisual_ackExpiry(uint32_t nowMs) {
     if (!EspNativePlayerPainVisual_expiryDue(nowMs)) return 0;
     lease.expired = 1U;
+    return 1;
+}
+
+/* The source DoomCanvas_drawRGB uses randNextByte()%(shakeVal*2)
+ * minus shakeVal: shakeVal=2 means [-2,-1,0,+1]. We sample a local
+ * visual generator: never perturb gameplay Random_t, and make each
+ * 75ms sample stable across concurrent presentation owners. */
+static uint32_t shakeVisualNext(uint32_t* visual) {
+    uint32_t x = *visual;
+    if (x == 0U) x = 0x6d2b79f5U;
+    x ^= x << 13U;
+    x ^= x >> 17U;
+    x ^= x << 5U;
+    *visual = x;
+    return x;
+}
+
+int EspNativePlayerPainVisual_shakeOffsets(uint32_t nowMs,
+                                          int8_t* outX, int8_t* outY,
+                                          uint8_t* outStep) {
+    uint32_t visual;
+    uint8_t step;
+    if (outX == NULL || outY == NULL || outStep == NULL ||
+        !EspNativePlayerPainVisual_isActive(nowMs)) return 0;
+    step = (uint8_t)((nowMs - lease.begunMs) /
+                      ESP_NATIVE_PLAYER_PAIN_SHAKE_STEP_MS);
+    visual = 0x8e52a79bU ^ (lease.probe * 0x9e3779b9U) ^
+             (lease.generation * 0x85ebca6bU) ^
+             ((uint32_t)step * 0xc2b2ae35U);
+    *outX = (int8_t)((int)(shakeVisualNext(&visual) & 3U) - 2);
+    *outY = (int8_t)((int)(shakeVisualNext(&visual) & 3U) - 2);
+    *outStep = step;
+    return 1;
+}
+
+int EspNativePlayerPainVisual_shakeRefreshDue(uint32_t nowMs) {
+    int8_t x, y;
+    uint8_t step;
+    if (lease.phase != PAIN_COMMITTED ||
+        !EspNativePlayerPainVisual_shakeOffsets(nowMs, &x, &y, &step))
+        return 0;
+    return lease.lastShakeStep == UINT8_MAX ||
+           step > lease.lastShakeStep;
+}
+
+int EspNativePlayerPainVisual_shakeComposed(uint8_t step) {
+    if (lease.phase == PAIN_IDLE || lease.expired != 0U ||
+        step > (ESP_NATIVE_PLAYER_PAIN_MS - 1U) /
+               ESP_NATIVE_PLAYER_PAIN_SHAKE_STEP_MS) return 0;
+    lease.lastShakeStep = step;
+    return 1;
+}
+
+/* Only rows [20,100) may move. Vertical copy order prevents overwriting
+ * source rows; horizontal memmove accounts for two-pixel overlap.
+ * Uncovered pixels are black instead of wrapping the opposite edge. */
+int EspNativePlayerPainVisual_shiftViewport(uint16_t* framebuffer,
+                                             uint32_t width, uint32_t height,
+                                             int8_t dx, int8_t dy) {
+    const int top = 20, bottom = 100, w = 160;
+    int y;
+    if (framebuffer == NULL || width != 160U || height != 120U ||
+        dx < -2 || dx > 1 || dy < -2 || dy > 1) return 0;
+    if (dy > 0) {
+        for (y = bottom - 1; y >= top; --y) {
+            uint16_t* row = framebuffer + (size_t)y * w;
+            if (y - dy >= top)
+                memmove(row, framebuffer + (size_t)(y - dy)*w,
+                        (size_t)w * sizeof(uint16_t));
+            else memset(row, 0, (size_t)w * sizeof(uint16_t));
+        }
+    } else if (dy < 0) {
+        for (y = top; y < bottom; ++y) {
+            uint16_t* row = framebuffer + (size_t)y * w;
+            if (y - dy < bottom)
+                memmove(row, framebuffer + (size_t)(y - dy)*w,
+                        (size_t)w * sizeof(uint16_t));
+            else memset(row, 0, (size_t)w * sizeof(uint16_t));
+        }
+    }
+    for (y = top; y < bottom; ++y) {
+        uint16_t* row = framebuffer + (size_t)y * w;
+        if (dx > 0) {
+            memmove(row + dx, row, (size_t)(w - dx)*sizeof(uint16_t));
+            memset(row, 0, (size_t)dx * sizeof(uint16_t));
+        } else if (dx < 0) {
+            const int d = -dx;
+            memmove(row, row + d, (size_t)(w - d)*sizeof(uint16_t));
+            memset(row + w - d, 0, (size_t)d*sizeof(uint16_t));
+        }
+    }
     return 1;
 }
 
