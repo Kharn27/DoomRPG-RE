@@ -165,7 +165,7 @@ int main(void) {
     assert(EspMainMenuSkin_getTheme() == ESP_MAIN_MENU_THEME_CLASSIC);
     assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_INFERNO));
     {
-        static const uint16_t hot[5] = {0xffe0U,0xffe0U,0xd344U,0xd344U,0xc002U};
+        static const uint16_t hot[5] = {0xff75U,0xff75U,0xd344U,0xd344U,0xc002U};
         for (int row = 0; row < 5; ++row)
             assert(EspMainMenuSkin_letterTone(row, 5) == hot[row]);
     }
