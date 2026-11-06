@@ -20,6 +20,7 @@
 #include "esp_native_gameplay_monster_movement_probe.h"
 #include "esp_native_gameplay_monster_retaliation.h"
 #include "esp_native_gameplay_player_pain_visual.h"
+#include "esp_native_resident_gameplay.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_player_resources.h"
 #include "esp_native_gameplay_transition_handoff.h"
@@ -778,7 +779,8 @@ static void servicePlayerPainExpiry(struct DoomRPG_s* doomRpgBase) {
 
     if (!EspNativePlayerPainVisual_expiryDue(nowMs)) return;
     if (EspNativeGameplayControls_isActive() || EspAssetPack_isOpen() ||
-        EspNativeGameplayEventChain_isWaiting()) return;
+        EspNativeGameplayEventChain_isWaiting() ||
+        EspNativeResidentGameplay_isAutomapActive()) return;
     playerView = EspPlayerView_view();
     if (runtime == NULL || runtime->render == NULL || playerView == NULL ||
         playerView->active != 1U ||
