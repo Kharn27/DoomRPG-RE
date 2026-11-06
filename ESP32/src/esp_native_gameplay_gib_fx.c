@@ -773,6 +773,31 @@ static void serviceHitExpiry(struct DoomRPG_s* doomRpg) {
            (unsigned int)frame.finalPresented);
 }
 
+static void servicePlayerPainShake(struct DoomRPG_s* doomRpgBase) {
+    DoomRPG_t* runtime = (DoomRPG_t*)doomRpgBase;
+    const EspPlayerViewState* view;
+    EspNativeGameplayFrameStats frame;
+    const uint32_t nowMs = DoomRPG_GetUpTimeMS();
+    if (!EspNativePlayerPainVisual_shakeRefreshDue(nowMs) ||
+        !EspNativeResidentGameplay_ownsWorldPresent() ||
+        EspNativeGameplayControls_isActive() || EspAssetPack_isOpen() ||
+        EspNativeGameplayEventChain_isWaiting() ||
+        EspNativeResidentGameplay_isAutomapActive()) return;
+    view = EspPlayerView_view();
+    if (runtime == NULL || runtime->render == NULL ||
+        view == NULL || view->active != 1U ||
+        view->viewX != view->destX || view->viewY != view->destY ||
+        view->viewAngle != view->destAngle) return;
+    /* A maximum of one full world redraw per 75ms bucket. Reusing the
+     * existing world composition avoids a shake framebuffer/copy and
+     * ensures a skipped frame never blocks input or burns gameplay RNG. */
+    memset(&frame, 0, sizeof(frame));
+    if (!EspNativeGameplayFrame_renderTurn(
+            runtime->render, (uint8_t)view->viewAngle, &frame)) {
+        printf("[PLAYERPAINSHAKE] RETRY cause=redraw-failed\n");
+    }
+}
+
 static void servicePlayerPainExpiry(struct DoomRPG_s* doomRpgBase) {
     DoomRPG_t* runtime = (DoomRPG_t*)doomRpgBase;
     const EspPlayerViewState* playerView;
@@ -902,6 +927,7 @@ void __wrap_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg) {
     EspNativeGameplayMonsterRetaliation_service(doomRpg);
     EspNativeGameplayMonsterMovementProbe_service(doomRpg);
     serviceHitExpiry(doomRpg);
+    servicePlayerPainShake(doomRpg);
     servicePlayerPainExpiry(doomRpg);
     serviceExpiry(doomRpg);
     /* A showStats=0 CHANGEMAP is staged by resident gameplay and consumed only
