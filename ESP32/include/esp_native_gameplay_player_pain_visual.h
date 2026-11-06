@@ -33,6 +33,18 @@ uint32_t EspNativePlayerPainVisual_tag(uint32_t nowMs);
 int EspNativePlayerPainVisual_expiryDue(uint32_t nowMs);
 int EspNativePlayerPainVisual_ackExpiry(uint32_t nowMs);
 
+/* DoomCanvas_startShake(500,2,150) uses [-2,+1] offsets on both axes.
+ * A 75ms bounded presentation cadence keeps the game RNG untouched. */
+#define ESP_NATIVE_PLAYER_PAIN_SHAKE_STEP_MS 75U
+int EspNativePlayerPainVisual_shakeOffsets(uint32_t nowMs,
+                                          int8_t* outX, int8_t* outY,
+                                          uint8_t* outStep);
+int EspNativePlayerPainVisual_shakeRefreshDue(uint32_t nowMs);
+int EspNativePlayerPainVisual_shakeComposed(uint8_t step);
+int EspNativePlayerPainVisual_shiftViewport(uint16_t* framebuffer,
+                                             uint32_t width, uint32_t height,
+                                             int8_t dx, int8_t dy);
+
 /* Exact Hud_drawBottomBar face indices and Render_getSpanMode palette
  * saturating channel additions, converted to the native RGB565 order. */
 uint8_t EspNativePlayerPainVisual_face(uint8_t health, uint8_t maxHealth,
