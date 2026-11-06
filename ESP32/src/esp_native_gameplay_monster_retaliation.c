@@ -18,6 +18,7 @@
 #include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_player_death.h"
+#include "esp_native_gameplay_player_pain_visual.h"
 #include "esp_player_view_state.h"
 #include "platform_video_c_bridge.h"
 
@@ -672,6 +673,20 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
      * nonlethal 2px red border until ordered member/FX work returns. The
      * action compositor then presents it together with the directional band.
      * Lethal retirement and early rollback branches never enter this opt-in. */
+    /* The legacy pain palette and face belong to the same reversible world
+     * transaction as the hit. They must NOT survive render/RNG rollback. */
+    if (!EspNativePlayerPainVisual_stage(
+            turn->attackProbes, (EspNativePlayerPainSide)damageSide,
+            DoomRPG_GetUpTimeMS())) {
+        feedbackRollback = EspNativeGameplayActionEngine_cancelQueuedFeedback(
+            ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DAMAGE);
+        (void)EspNativeGameplayPlayerState_restore(&playerBefore);
+        doomRpg->random = randomBefore;
+        printf("[PLAYERPAINFX] DEFER probe=%u cause=stage-busy feedbackRollback=%s playerRollback=yes rngRollback=yes\n",
+               (unsigned int)turn->attackProbes,
+               feedbackRollback ? "yes" : "NO");
+        return;
+    }
     EspNativeGameplayActionEngine_stageNonlethalMonsterFlash();
     memset(&frame, 0, sizeof(frame));
     if (!EspNativeGameplayFrame_renderTurn(doomRpg->render,
@@ -680,6 +695,7 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
         memcmp(&doomRpg->random, &randomAfterRoll, sizeof(randomAfterRoll)) != 0) {
         int renderChangedRng =
             memcmp(&doomRpg->random, &randomAfterRoll, sizeof(randomAfterRoll)) != 0;
+        (void)EspNativePlayerPainVisual_cancel(turn->attackProbes);
         feedbackRollback = EspNativeGameplayActionEngine_cancelQueuedFeedback(
             ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DAMAGE);
         (void)EspNativeGameplayPlayerState_restore(&playerBefore);
@@ -703,6 +719,9 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
         return;
     }
 
+    /* renderTurn already presented the staged native face+weapon palette;
+     * publication is an owner-state change only and consumes no RNG. */
+    (void)EspNativePlayerPainVisual_commit(turn->attackProbes);
     ++retaliationView.committedAttacks;
     retaliationView.lastResolvedProbe = turn->attackProbes;
     /* AUTOMAP has its own 900ms visual lease, only AFTER an actual committed
@@ -721,7 +740,7 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
     }
     playerFNVAfter = EspNativeGameplayPlayerState_fingerprint();
     randomFNVAfter = randomFNV(&doomRpg->random);
-    printf("[MONSTERRETAL] COMMIT probe=%u reason=%s sprite=%u subtype=%u mType=%u weapon=%u alt=%u loops=%u hitLoops=%u firstRandHit=%u firstCalcHit=%d firstCritLimit=%d firstRandDamage=%u totalDamage=%d armorDamage=%d crit=%u aiRand=%s%u rngCalls=%u combatRngCalls=%u missProjectileRng=%u playerHP=%u->%u armor=%u->%u playerFNV=%08x->%08x rng=%08x->%08x frame=%08x presented=%u message=\"%s\" damageTotal=%d redFlash=b800/%ums passMessage=%s rollback=closed attackVisual=complete-before-resolution attackMessage=deferred painFace=deferred shake=deferred sound=deferred statusWarnings=deferred playerDeath=nonlethal turn=closed\n",
+    printf("[MONSTERRETAL] COMMIT probe=%u reason=%s sprite=%u subtype=%u mType=%u weapon=%u alt=%u loops=%u hitLoops=%u firstRandHit=%u firstCalcHit=%d firstCritLimit=%d firstRandDamage=%u totalDamage=%d armorDamage=%d crit=%u aiRand=%s%u rngCalls=%u combatRngCalls=%u missProjectileRng=%u playerHP=%u->%u armor=%u->%u playerFNV=%08x->%08x rng=%08x->%08x frame=%08x presented=%u message=\"%s\" damageTotal=%d redFlash=b800/%ums passMessage=%s rollback=closed attackVisual=complete-before-resolution attackMessage=deferred painFace=native-500ms weaponBlend=native-500ms shake=deferred sound=deferred statusWarnings=deferred playerDeath=nonlethal turn=closed\n",
            (unsigned int)turn->attackProbes,
            reasonName(turn->lastReason),
            (unsigned int)monster->spriteIndex,

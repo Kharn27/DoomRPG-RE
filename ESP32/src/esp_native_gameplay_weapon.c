@@ -9,6 +9,7 @@
 #include "doomrpg_log.h"
 #include "esp_asset_pack.h"
 #include "esp_native_gameplay_weapon.h"
+#include "esp_native_gameplay_player_pain_visual.h"
 
 #define MAP_HEADER 16U
 #define PALETTE_HEADER 4U
@@ -331,6 +332,8 @@ static int rasterizeFrame(Render_t* render,
     int pitchPixels;
     int sampleScale;
     uint32_t cursor = 0U;
+    uint16_t tintedPalette[16];
+    const uint16_t* palette = frame != NULL ? frame->palette : NULL;
     int x;
 
     if (render == NULL || frame == NULL || stats == NULL ||
@@ -345,6 +348,18 @@ static int rasterizeFrame(Render_t* render,
     sampleScale = 65536 / (32768 / render->screenWidth);
     framebuffer = (uint16_t*)render->framebuffer;
     pitchPixels = render->pitch >> 1;
+
+    /* Render_getSpanMode() brightens the held weapon for the actual 500ms
+     * Player_painEvent lease. Transform the SIXTEEN decoded palette entries
+     * once, never inside the per-pixel raster loop or through shapeData. */
+    if (EspNativePlayerPainVisual_isActive(DoomRPG_GetUpTimeMS())) {
+        unsigned int c;
+        for (c = 0U; c < 16U; ++c) {
+            tintedPalette[c] = EspNativePlayerPainVisual_weaponColor(
+                frame->palette[c]);
+        }
+        palette = tintedPalette;
+    }
 
     for (x = 0; x < frame->width; ++x) {
         const uint8_t* column = frame->mask +
@@ -367,7 +382,7 @@ static int rasterizeFrame(Render_t* render,
                 packedIndex = cursor >> 1;
                 if (packedIndex >= frame->packedBytes) return 0;
                 packed = frame->texels[packedIndex];
-                color = frame->palette[(cursor & 1U) != 0U
+                color = palette[(cursor & 1U) != 0U
                                            ? (packed >> 4)
                                            : (packed & 0x0fU)];
                 ++cursor;

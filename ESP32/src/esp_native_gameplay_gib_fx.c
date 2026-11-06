@@ -19,6 +19,7 @@
 #include "esp_native_gameplay_monster_attack_visual.h"
 #include "esp_native_gameplay_monster_movement_probe.h"
 #include "esp_native_gameplay_monster_retaliation.h"
+#include "esp_native_gameplay_player_pain_visual.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_player_resources.h"
 #include "esp_native_gameplay_transition_handoff.h"
@@ -769,6 +770,34 @@ static void serviceHitExpiry(struct DoomRPG_s* doomRpg) {
            (unsigned int)frame.finalPresented);
 }
 
+static void servicePlayerPainExpiry(struct DoomRPG_s* doomRpgBase) {
+    DoomRPG_t* runtime = (DoomRPG_t*)doomRpgBase;
+    const EspPlayerViewState* playerView;
+    EspNativeGameplayFrameStats frame;
+    const uint32_t nowMs = DoomRPG_GetUpTimeMS();
+
+    if (!EspNativePlayerPainVisual_expiryDue(nowMs)) return;
+    if (EspNativeGameplayControls_isActive() || EspAssetPack_isOpen() ||
+        EspNativeGameplayEventChain_isWaiting()) return;
+    playerView = EspPlayerView_view();
+    if (runtime == NULL || runtime->render == NULL || playerView == NULL ||
+        playerView->active != 1U ||
+        playerView->viewX != playerView->destX ||
+        playerView->viewY != playerView->destY ||
+        playerView->viewAngle != playerView->destAngle) return;
+    /* Exactly one ordinary world redraw removes the original l.bmp pain face
+     * and the weapon palette tint. No second framebuffer or input cooldown. */
+    memset(&frame, 0, sizeof(frame));
+    if (!EspNativeGameplayFrame_renderTurn(
+            runtime->render, (uint8_t)playerView->viewAngle, &frame)) {
+        printf("[PLAYERPAINFX] EXPIRE-REDRAW-FAILED recovery=next-service\n");
+        return;
+    }
+    (void)EspNativePlayerPainVisual_ackExpiry(nowMs);
+    printf("[PLAYERPAINFX] EXPIRE face=health-tier weapon=normal frame=%08x gameplayRng=untouched\n",
+           (unsigned int)frame.frameAfterFNV);
+}
+
 static void serviceExpiry(struct DoomRPG_s* doomRpg) {
     DoomRPG_t* runtime = (DoomRPG_t*)doomRpg;
     const EspPlayerViewState* playerView;
@@ -845,6 +874,7 @@ void __wrap_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg) {
     EspNativeGameplayMonsterRetaliation_service(doomRpg);
     EspNativeGameplayMonsterMovementProbe_service(doomRpg);
     serviceHitExpiry(doomRpg);
+    servicePlayerPainExpiry(doomRpg);
     serviceExpiry(doomRpg);
     /* A showStats=0 CHANGEMAP is staged by resident gameplay and consumed only
      * after that source-map service has returned from its SELECT transaction. */
@@ -856,6 +886,7 @@ void __wrap_EspNativeGameplaySession_reset(void) {
     EspNativeGameplayPlayerResources_sessionReset();
     EspNativeGameplayMonsterAttackVisual_reset();
     EspNativeGameplayMonsterRetaliation_reset();
+    EspNativePlayerPainVisual_reset();
     EspNativeGameplayMonsterMovementProbe_reset();
     resetFx();
 }

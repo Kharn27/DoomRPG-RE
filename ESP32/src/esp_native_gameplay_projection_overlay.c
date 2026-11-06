@@ -13,6 +13,8 @@
 #include "esp_native_gameplay_monster_attack_visual.h"
 #include "esp_native_gameplay_player_resources.h"
 #include "esp_native_gameplay_player_state.h"
+#include "esp_native_gameplay_player_pain_visual.h"
+#include "DoomRPG.h"
 #include "esp_native_indexed_bmp.h"
 #include "platform_video_c_bridge.h"
 #include "platform_video_config.h"
@@ -38,7 +40,10 @@
 #define HUD_OPAQUE 0U
 
 static uint32_t lastPaintedPlayerFNV;
+static uint32_t lastPaintedPainTag;
 static uint8_t lastPaintedMapId;
+/* One shared bounded BMP decode workspace: no malloc/free at every hit. */
+static EspNativeIndexedBmp hudPaintBmp;
 
 int __real_EspNativeGameplayActionEngine_getVisualState(
     uint32_t spriteIndex,
@@ -193,7 +198,12 @@ static char directionChar(uint8_t angle) {
 static int repaintPlayerHud(uint8_t angle,
                             EspNativeGameplayHudDirectionStats* outStats) {
     const EspNativeGameplayHudState* hud = EspNativeGameplayHud_view();
+    const EspNativeGameplayPlayerState* player;
+    EspNativeGameplayHudState liveHud;
     uint32_t playerFNV;
+    uint32_t painTag;
+    uint32_t nowMs;
+    uint8_t faceState;
     uint16_t* framebuffer;
     size_t framebufferBytes;
     EspNativeIndexedBmp* bmp = NULL;
@@ -217,7 +227,10 @@ static int repaintPlayerHud(uint8_t angle,
 
     playerFNV = EspNativeGameplayPlayerState_fingerprint();
     if (playerFNV == 0U) return 1;
+    nowMs = DoomRPG_GetUpTimeMS();
+    painTag = EspNativePlayerPainVisual_tag(nowMs);
     if (lastPaintedPlayerFNV == playerFNV &&
+        lastPaintedPainTag == painTag &&
         lastPaintedMapId == hud->model.targetMapId) {
         return 1;
     }
@@ -232,8 +245,15 @@ static int repaintPlayerHud(uint8_t angle,
         return 0;
     }
 
-    bmp = (EspNativeIndexedBmp*)malloc(sizeof(*bmp));
-    if (bmp == NULL) return 0;
+    player = EspNativeGameplayPlayerState_view();
+    if (player == NULL ||
+        !EspNativeGameplayHud_snapshotLive(hud, player, angle, &liveHud)) {
+        return 0;
+    }
+    faceState = EspNativePlayerPainVisual_face(
+        liveHud.model.health, liveHud.model.maxHealth,
+        liveHud.model.gotFace, nowMs);
+    bmp = &hudPaintBmp;
     memset(&localStats, 0, sizeof(localStats));
 
     if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) goto done;
@@ -267,10 +287,10 @@ static int repaintPlayerHud(uint8_t angle,
               HUD_TRANSPARENT, &localStats)) {
         goto done;
     }
-    if (hud->model.weaponsPresent != 0U) {
-        uint16_t row = hud->model.weapon == 0U
+    if (liveHud.model.weaponsPresent != 0U) {
+        uint16_t row = liveHud.model.weapon == 0U
                            ? 2U
-                           : (uint16_t)(hud->model.ammoType + 3U);
+                           : (uint16_t)(liveHud.model.ammoType + 3U);
         if (row >= 9U ||
             !blit(bmp, framebuffer, 0U,
                   (uint16_t)(iconHeight * row), iconWidth, iconHeight,
@@ -287,10 +307,10 @@ static int repaintPlayerHud(uint8_t angle,
     }
     faceWidth = bmp->width;
     faceHeight = (uint16_t)(bmp->height / 9U);
-    if (hud->faceState >= 9U) goto done;
+    if (faceState >= 9U) goto done;
     verticalLine(framebuffer, faceX - 1, rgb565(0x323232U), &localStats);
     if (!blit(bmp, framebuffer, 0U,
-              (uint16_t)(hud->faceState * faceHeight),
+              (uint16_t)(faceState * faceHeight),
               faceWidth, faceHeight,
               faceX, HUD_MID_Y - (int)(faceHeight >> 1),
               HUD_OPAQUE, &localStats)) {
@@ -314,16 +334,16 @@ static int repaintPlayerHud(uint8_t angle,
     }
 
     snprintf(healthNum, sizeof(healthNum), "%u",
-             (unsigned int)hud->model.health);
+             (unsigned int)liveHud.model.health);
     snprintf(armorNum, sizeof(armorNum), "%u",
-             (unsigned int)hud->model.armor);
-    if (hud->model.weapon == 0U) {
+             (unsigned int)liveHud.model.armor);
+    if (liveHud.model.weapon == 0U) {
         strncpy(ammoNum, "--", sizeof(ammoNum));
         ammoNum[sizeof(ammoNum) - 1U] = '\0';
     }
     else {
         snprintf(ammoNum, sizeof(ammoNum), "%u",
-                 (unsigned int)hud->model.ammo);
+                 (unsigned int)liveHud.model.ammo);
     }
     dir[0] = directionChar(angle);
     dir[1] = '\0';
@@ -336,7 +356,7 @@ static int repaintPlayerHud(uint8_t angle,
                        HUD_NUMBER_Y, 1U, 3U, &localStats)) {
         goto done;
     }
-    if (hud->model.weaponsPresent != 0U &&
+    if (liveHud.model.weaponsPresent != 0U &&
         !drawSmallText(bmp, framebuffer, ammoNum,
                        HUD_AMMO_X + cx + iconWidth + 14,
                        HUD_NUMBER_Y, 1U, 2U, &localStats)) {
@@ -349,7 +369,8 @@ static int repaintPlayerHud(uint8_t angle,
     }
 
     lastPaintedPlayerFNV = playerFNV;
-    lastPaintedMapId = hud->model.targetMapId;
+    lastPaintedPainTag = painTag;
+    lastPaintedMapId = liveHud.model.targetMapId;
     localStats.resourcesValidated = 5U;
     ok = 1;
 
@@ -364,7 +385,6 @@ done:
             outStats->resourcesValidated = localStats.resourcesValidated;
         }
     }
-    free(bmp);
     return ok;
 }
 
