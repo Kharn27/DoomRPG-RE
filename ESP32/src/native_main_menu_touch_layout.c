@@ -494,8 +494,8 @@ int DoomRPG_esp32PaintVideoMenuCards(
     return finishChildCards(doomRpg, framebufferFNV);
 }
 
-int DoomRPG_esp32PaintBrightnessPresetCards(
-    struct DoomRPG_s* doomRpgBase, uint8_t activePercent,
+int DoomRPG_esp32PaintBrightnessPresetCardsSelection(
+    struct DoomRPG_s* doomRpgBase, uint8_t activePercent, int armedChoice,
     uint32_t* framebufferFNV) {
     static const char* const names[DOOMRPG_ESP32_BRIGHTNESS_CARD_COUNT] =
         {"BACK","25%","50%","75%","100%"};
@@ -504,6 +504,8 @@ int DoomRPG_esp32PaintBrightnessPresetCards(
     if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
         (activePercent != 25U && activePercent != 50U &&
          activePercent != 75U && activePercent != 100U) ||
+        armedChoice < -1 ||
+        armedChoice >= DOOMRPG_ESP32_BRIGHTNESS_CARD_COUNT ||
         DOOMRPG_ESP32_BRIGHTNESS_CARD_TOP(0) <=
             DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP ||
         DOOMRPG_ESP32_BRIGHTNESS_CARD_BOTTOM(4) >=
@@ -511,32 +513,51 @@ int DoomRPG_esp32PaintBrightnessPresetCards(
     if (!paintChildRail(doomRpg)) return 0;
     for (item = 0; item < DOOMRPG_ESP32_BRIGHTNESS_CARD_COUNT; ++item)
         if (!paintChildCard(doomRpg, item, names[item],
-                            item != 0 && (uint8_t)(item * 25U) == activePercent,
+                            (armedChoice >= 0)
+                                ? (item == armedChoice)
+                                : (item != 0 && (uint8_t)(item * 25U) == activePercent),
                             1, 0))
             return 0;
     return finishChildCards(doomRpg, framebufferFNV);
 }
 
-int DoomRPG_esp32PaintOrientationPresetCards(
-    struct DoomRPG_s* doomRpgBase, uint8_t activeOrientation,
+int DoomRPG_esp32PaintBrightnessPresetCards(
+    struct DoomRPG_s* doomRpg, uint8_t activePercent,
+    uint32_t* framebufferFNV) {
+    return DoomRPG_esp32PaintBrightnessPresetCardsSelection(
+        doomRpg, activePercent, -1, framebufferFNV);
+}
+
+int DoomRPG_esp32PaintOrientationPresetCardsSelection(
+    struct DoomRPG_s* doomRpgBase, uint8_t activeOrientation, int armedChoice,
     uint32_t* framebufferFNV) {
     static const char* const names[DOOMRPG_ESP32_ORIENTATION_CARD_COUNT] =
         {"BACK","NORMAL","INVERSE"};
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     int item;
     if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
-        activeOrientation > 1U) return 0;
+        activeOrientation > 1U ||
+        armedChoice < -1 || armedChoice >= DOOMRPG_ESP32_ORIENTATION_CARD_COUNT)
+        return 0;
     if (!paintChildRail(doomRpg)) return 0;
     for (item = 0; item < DOOMRPG_ESP32_ORIENTATION_CARD_COUNT; ++item)
         if (!paintChildCard(doomRpg, item, names[item],
-                            item != 0 && (uint8_t)(item - 1) == activeOrientation,
+                            armedChoice >= 0 ? item == armedChoice :
+                            (item != 0 && (uint8_t)(item - 1) == activeOrientation),
                             1, 2))
             return 0;
     return finishChildCards(doomRpg, framebufferFNV);
 }
 
-int DoomRPG_esp32PaintThemePresetCards(
-    struct DoomRPG_s* doomRpgBase, uint8_t activeTheme,
+int DoomRPG_esp32PaintOrientationPresetCards(
+    struct DoomRPG_s* doomRpg, uint8_t activeOrientation,
+    uint32_t* framebufferFNV) {
+    return DoomRPG_esp32PaintOrientationPresetCardsSelection(
+        doomRpg, activeOrientation, -1, framebufferFNV);
+}
+
+int DoomRPG_esp32PaintThemePresetCardsSelection(
+    struct DoomRPG_s* doomRpgBase, uint8_t activeTheme, int armedChoice,
     uint32_t* framebufferFNV) {
     static const char* const names[DOOMRPG_ESP32_THEME_CARD_COUNT] =
         {"BACK", "CLASSIC", "INFERNO", "PHOSPHORE"};
@@ -544,6 +565,7 @@ int DoomRPG_esp32PaintThemePresetCards(
     int item;
     if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
         activeTheme > ESP_MAIN_MENU_THEME_PHOSPHORE ||
+        armedChoice < -1 || armedChoice >= DOOMRPG_ESP32_THEME_CARD_COUNT ||
         DOOMRPG_ESP32_VIDEO_CARD_TOP(0) <=
             DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP ||
         DOOMRPG_ESP32_VIDEO_CARD_TOP(DOOMRPG_ESP32_THEME_CARD_COUNT-1) +
@@ -552,10 +574,18 @@ int DoomRPG_esp32PaintThemePresetCards(
     if (!paintChildRail(doomRpg)) return 0;
     for (item = 0; item < DOOMRPG_ESP32_THEME_CARD_COUNT; ++item)
         if (!paintChildCard(doomRpg, item, names[item],
-                            item != 0 && (uint8_t)(item - 1) == activeTheme,
+                            armedChoice >= 0 ? item == armedChoice :
+                            (item != 0 && (uint8_t)(item - 1) == activeTheme),
                             1, 1))
             return 0;
     return finishChildCards(doomRpg, framebufferFNV);
+}
+
+int DoomRPG_esp32PaintThemePresetCards(
+    struct DoomRPG_s* doomRpg, uint8_t activeTheme,
+    uint32_t* framebufferFNV) {
+    return DoomRPG_esp32PaintThemePresetCardsSelection(
+        doomRpg, activeTheme, -1, framebufferFNV);
 }
 
 int DoomRPG_esp32MainMenuPaintDashboardSelection(

@@ -46,8 +46,20 @@ int DoomRPG_esp32PaintVideoMenuCards(
     int selectedIndex, int armed, uint8_t enabledMask,
     uint32_t* framebufferFNV);
 
-/* Parent Options -> Luminosité child: right rail only; 5 cards with
- * persistent one-tap selection highlighting. Never touches logo or world. */
+/* A preference choice is first ARMED, then CONFIRMED by a second
+ * released tap; the caller returns to VIDEO on success. -1 is no arm.
+ * Existing no-arm entry points remain for initial screen paints. */
+int DoomRPG_esp32PaintBrightnessPresetCardsSelection(
+    struct DoomRPG_s* doomRpg, uint8_t activePercent, int armedChoice,
+    uint32_t* framebufferFNV);
+int DoomRPG_esp32PaintOrientationPresetCardsSelection(
+    struct DoomRPG_s* doomRpg, uint8_t activeOrientation, int armedChoice,
+    uint32_t* framebufferFNV);
+int DoomRPG_esp32PaintThemePresetCardsSelection(
+    struct DoomRPG_s* doomRpg, uint8_t activeTheme, int armedChoice,
+    uint32_t* framebufferFNV);
+
+/* Legacy no-arm entry points retained for the initial child paint. */
 int DoomRPG_esp32PaintBrightnessPresetCards(
     struct DoomRPG_s* doomRpg,
     uint8_t activePercent,
@@ -59,7 +71,7 @@ int DoomRPG_esp32PaintOrientationPresetCards(
     uint8_t activeOrientation,
     uint32_t* framebufferFNV);
 
-/* Theme choices Back/Classic/Inferno, same 54x20 touch layout. */
+/* Theme choices Back/Classic/Inferno/Phosphore, four 54x26 cards. */
 int DoomRPG_esp32PaintThemePresetCards(
     struct DoomRPG_s* doomRpg,
     uint8_t activeTheme,
