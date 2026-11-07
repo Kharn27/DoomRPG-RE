@@ -84,6 +84,10 @@ int EspNativePlayerPainVisual_dogInfo(uint32_t nowMs,
 #define ESP_NATIVE_PLAYER_IMPACT_SOURCE_MS 450U
 uint16_t EspNativePlayerPainVisual_impactSprite(uint8_t weaponId,
                                                uint8_t monsterSubtype);
+/* From Combat_updateProjectile()'s renderMode=7 for weapon 6/8/15/17,
+ * Game_gsprite_allocAnim mapping to logical bitshapes 181/182/184/186/187.
+ * Weapon 13's dog scratch (189) stays normal opaque mode 0. */
+uint8_t EspNativePlayerPainVisual_impactRenderMode(uint16_t logical);
 int EspNativePlayerPainVisual_stageImpact(uint32_t probe,
                                           uint8_t weaponId,
                                           uint8_t monsterSubtype);
@@ -105,7 +109,7 @@ int EspNativePlayerPainVisual_paintImpactBitshape(
     const uint16_t* palette,
     int16_t sourceXMin, int16_t sourceYMin,
     uint8_t sourceWidth, uint8_t sourceHeight,
-    uint8_t columnPitch);
+    uint8_t columnPitch, uint8_t renderMode);
 
 /* The original Hud_drawEffects n.bmp strip is three 18x18 frames.
  * 0x30 centers the frame at its supplied screen position. */
