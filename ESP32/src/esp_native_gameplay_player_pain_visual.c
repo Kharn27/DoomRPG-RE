@@ -4,7 +4,8 @@
 
 #include "esp_native_gameplay_player_pain_visual.h"
 
-enum { PAIN_IDLE = 0, PAIN_STAGED = 1, PAIN_COMMITTED = 2 };
+enum { PAIN_IDLE = 0, PAIN_STAGED = 1, PAIN_COMMITTED = 2,
+       PAIN_VISIBLE = 3 };
 
 typedef struct PainLease_s {
     uint32_t probe;
@@ -64,7 +65,8 @@ int EspNativePlayerPainVisual_dogInfo(uint32_t nowMs,
     if (outSeed == NULL || outAgeMs == NULL || lease.dogBlood == 0U ||
         !EspNativePlayerPainVisual_isActive(nowMs)) return 0;
     *outSeed = 0x7bd1a5e3U ^ lease.probe * 0x9e3779b9U;
-    *outAgeMs = nowMs - lease.begunMs;
+    *outAgeMs = lease.phase == PAIN_VISIBLE
+        ? nowMs - lease.begunMs : 0U;
     return 1;
 }
 
@@ -82,9 +84,25 @@ int EspNativePlayerPainVisual_commit(uint32_t probe) {
     return 1;
 }
 
+/* Successful gameplay COMMIT is not a visibility witness. With the
+ * old clock, the ordered monster movement tail could cost >500ms before
+ * its final physical present, so real pain faces, weapon tint and shake
+ * would expire without ever being seen (while old damage flash still ran).
+ * PAIN_STAGED and PAIN_COMMITTED are intentionally timeless; PAIN_VISIBLE
+ * begins at the first actual LCD publish, and only then may expire. */
+int EspNativePlayerPainVisual_firstPresented(uint32_t nowMs) {
+    if (lease.phase != PAIN_COMMITTED || lease.expired != 0U) return 0;
+    lease.phase = PAIN_VISIBLE;
+    lease.begunMs = nowMs;
+    lease.lastShakeStep = 0U; /* initial displayed viewport = step zero */
+    return 1;
+}
+
 int EspNativePlayerPainVisual_isActive(uint32_t nowMs) {
     return lease.phase != PAIN_IDLE && lease.expired == 0U &&
-           (uint32_t)(nowMs - lease.begunMs) < ESP_NATIVE_PLAYER_PAIN_MS;
+           (lease.phase != PAIN_VISIBLE ||
+            (uint32_t)(nowMs - lease.begunMs) <
+                ESP_NATIVE_PLAYER_PAIN_MS);
 }
 
 uint32_t EspNativePlayerPainVisual_tag(uint32_t nowMs) {
@@ -93,7 +111,7 @@ uint32_t EspNativePlayerPainVisual_tag(uint32_t nowMs) {
 }
 
 int EspNativePlayerPainVisual_expiryDue(uint32_t nowMs) {
-    return lease.phase == PAIN_COMMITTED && lease.expired == 0U &&
+    return lease.phase == PAIN_VISIBLE && lease.expired == 0U &&
            (uint32_t)(nowMs - lease.begunMs) >= ESP_NATIVE_PLAYER_PAIN_MS;
 }
 
@@ -124,8 +142,10 @@ int EspNativePlayerPainVisual_shakeOffsets(uint32_t nowMs,
     uint8_t step;
     if (outX == NULL || outY == NULL || outStep == NULL ||
         !EspNativePlayerPainVisual_isActive(nowMs)) return 0;
-    step = (uint8_t)((nowMs - lease.begunMs) /
-                      ESP_NATIVE_PLAYER_PAIN_SHAKE_STEP_MS);
+    step = lease.phase == PAIN_VISIBLE
+        ? (uint8_t)((nowMs - lease.begunMs) /
+                    ESP_NATIVE_PLAYER_PAIN_SHAKE_STEP_MS)
+        : 0U;
     visual = 0x8e52a79bU ^ (lease.probe * 0x9e3779b9U) ^
              (lease.generation * 0x85ebca6bU) ^
              ((uint32_t)step * 0xc2b2ae35U);
@@ -138,7 +158,7 @@ int EspNativePlayerPainVisual_shakeOffsets(uint32_t nowMs,
 int EspNativePlayerPainVisual_shakeRefreshDue(uint32_t nowMs) {
     int8_t x, y;
     uint8_t step;
-    if (lease.phase != PAIN_COMMITTED ||
+    if (lease.phase != PAIN_VISIBLE ||
         !EspNativePlayerPainVisual_shakeOffsets(nowMs, &x, &y, &step))
         return 0;
     return lease.lastShakeStep == UINT8_MAX ||
