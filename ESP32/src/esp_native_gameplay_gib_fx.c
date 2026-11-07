@@ -710,6 +710,14 @@ static void drawBurst(uint16_t* framebuffer,
 
     if (framebuffer == NULL || monster == NULL || view == NULL) return;
     distance=sourceMonsterTileDistance(monster->spriteIndex);
+    if (distance == 0U) {
+        /* Combat_explodeOnMonster() explicitly suppresses its blood
+         * particles when worldDist exceeds 65536 (tileDist==-1).
+         * A distant native corpse must not fabricate a gore burst. */
+        printf("[GIBFX] SKIP sprite=%u source=Combat_worldDistToTileDist distance=out-of-range-4 gore=no gameplayRng=untouched\n",
+               (unsigned int)monster->spriteIndex);
+        return;
+    }
     nowMs=DoomRPG_GetUpTimeMS();
     seed = view->sourceArenaFNV1a ^ view->stateFNV1a ^
            ((uint32_t)monster->spriteIndex * 0x9e3779b9U) ^ 0xa511e9b3U;
