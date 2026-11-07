@@ -31,6 +31,24 @@ EspNativeDogFamiliarStatus EspNativeDogFamiliar_prepare(
     EspNativeGameplayPlayerState* outNext,
     uint8_t* outDogHpAfter);
 
+/* Source Player_pain(): on terminal dog damage, the still-unowned world
+ * half has to relink the captured dog or allocate a corpse gSprite of logical
+ * kind 20/21/22 at the player's tile. This plan performs no such mutation.
+ * It computes the exact player/weapon half for a future atomic commit.
+ * The current retaliation MUST stay fail-closed for terminal dog damage. */
+typedef struct EspNativeDogFamiliarDeathPlan_s {
+    EspNativeGameplayPlayerState playerAfter;
+    uint8_t corpseGSpriteKind;
+    uint8_t nextWeapon;
+    uint8_t previousWeapon;
+    uint8_t reserved;
+} EspNativeDogFamiliarDeathPlan;
+
+int EspNativeDogFamiliar_planDeath(
+    const EspNativeGameplayPlayerState* before,
+    uint32_t incomingCombinedDamage,
+    EspNativeDogFamiliarDeathPlan* outPlan);
+
 #ifdef __cplusplus
 }
 #endif
