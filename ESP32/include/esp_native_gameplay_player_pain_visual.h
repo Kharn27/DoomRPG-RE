@@ -28,6 +28,11 @@ int EspNativePlayerPainVisual_stage(uint32_t probe,
                                    uint32_t nowMs);
 int EspNativePlayerPainVisual_cancel(uint32_t probe);
 int EspNativePlayerPainVisual_commit(uint32_t probe);
+/* Only the first successful REAL LCD present following a COMMIT starts
+ * the 500ms visual clock. Staging / monster tail may take >500ms: never
+ * expire an effect which has not actually reached the CYD display.
+ * Returns 1 only on the first successful real publish of the lease. */
+int EspNativePlayerPainVisual_firstPresented(uint32_t nowMs);
 int EspNativePlayerPainVisual_isActive(uint32_t nowMs);
 uint32_t EspNativePlayerPainVisual_tag(uint32_t nowMs);
 int EspNativePlayerPainVisual_expiryDue(uint32_t nowMs);
