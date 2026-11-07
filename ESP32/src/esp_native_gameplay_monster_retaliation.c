@@ -20,6 +20,7 @@
 #include "esp_native_gameplay_player_death.h"
 #include "esp_native_gameplay_player_pain_visual.h"
 #include "esp_native_gameplay_dog_familiar.h"
+#include "esp_native_gameplay_monster_drop.h"
 #include "esp_player_view_state.h"
 #include "platform_video_c_bridge.h"
 
@@ -28,7 +29,7 @@
 #define RETALIATION_HIT_MISS 0U
 #define RETALIATION_HIT_NORMAL 1U
 #define RETALIATION_HIT_CRIT 2U
-#define RETALIATION_DAMAGE_TEXT_BYTES 40U
+#define RETALIATION_DAMAGE_TEXT_BYTES 64U
 #define RETALIATION_DAMAGE_FLASH_MS 500U
 
 typedef struct MonsterWeaponSpec_s {
@@ -297,6 +298,9 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
     const EspPlayerViewState* playerView;
     EspNativeGameplayPlayerState playerBefore;
     EspNativeGameplayPlayerState dogAfterState;
+    EspNativeDogFamiliarDeathPlan dogDeathPlan;
+    EspNativeGameplayMonsterDropSpawnPlan dogCorpsePlan;
+    EspNativeGameplayMonsterDropSnapshot dogCorpseBefore;
     MonsterRetaliationRoll roll;
     EspNativeGameplayFrameStats frame;
     EspNativeGameplayFrameStats rollbackFrame;
@@ -319,6 +323,8 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
     int feedbackRollback;
     uint8_t dogCandidate = 0U;
     uint8_t dogAbsorbed = 0U;
+    uint8_t dogDied = 0U;
+    uint8_t dogCorpseCommitted = 0U;
     uint8_t dogHpAfter = 0U;
 
     if (!syncOwner()) return;
@@ -444,34 +450,41 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
         const EspNativeDogFamiliarStatus result =
             EspNativeDogFamiliar_prepare(
                 &playerBefore,total,&dogAfterState,&dogHpAfter);
-        if (result != ESP_NATIVE_DOG_FAMILIAR_ABSORBED) {
-            /* When dog dies, source also mutates a captured Entity/Sprite
-             * or spawns dog corpse and selects a new weapon. None of these
-             * world side effects have a transaction owner in this family. */
-            EspNativeDogFamiliarDeathPlan deathPlan;
-            const int deathPlanned = EspNativeDogFamiliar_planDeath(
-                &playerBefore,total,&deathPlan);
+        if (result == ESP_NATIVE_DOG_FAMILIAR_ABSORBED) {
+            dogAbsorbed = 1U;
+        }
+        else if (result == ESP_NATIVE_DOG_FAMILIAR_DEATH_DEFERRED &&
+                 EspNativeDogFamiliar_planDeath(
+                     &playerBefore,total,&dogDeathPlan) &&
+                 playerView->destX >= 32 && playerView->destX <= 2016 &&
+                 playerView->destY >= 32 && playerView->destY <= 2016 &&
+                 EspNativeGameplayMonsterDrop_prepareDogCorpse(
+                     dogDeathPlan.corpseGSpriteKind,
+                     (uint16_t)playerView->destX,
+                     (uint16_t)playerView->destY,&dogCorpsePlan) &&
+                 EspNativeGameplayMonsterDrop_snapshot(&dogCorpseBefore)) {
+            /* The engine has no captured-Entity_t owner: faithfully use
+             * Player_pain's other branch, custom gSprite 20/21/22 frame2
+             * at the settled player tile. Its existing V11 dynamic sprite
+             * pool owns this corpse through checkpoint and render rollback. */
+            dogDied = 1U;
+            printf("[DOGDEATH] PREPARE probe=%u corpse=%u slot=%u kind=legacy-gsprite-fallback frame=2 nextWeapon=%u playerHP=preserved world=not-yet-committed snapshot=V11\n",
+                   (unsigned int)turn->attackProbes,
+                   (unsigned int)dogDeathPlan.corpseGSpriteKind,
+                   (unsigned int)dogCorpsePlan.slot,
+                   (unsigned int)dogDeathPlan.nextWeapon);
+        }
+        else {
             doomRpg->random = randomBefore;
             ++retaliationView.dogFamiliarDeferred;
-            if (deathPlanned != 0) {
-                printf("[DOGDEATH] PLAN probe=%u corpseGSprite=%u nextWeapon=%u weapons=%04x->%04x dogHP=%u->0 mutation=NONE entityRelinkOrSpawn=unowned sound5090=deferred gameplayRng=rolled-back\n",
-                       (unsigned int)turn->attackProbes,
-                       (unsigned int)deathPlan.corpseGSpriteKind,
-                       (unsigned int)deathPlan.nextWeapon,
-                       (unsigned int)playerBefore.weapons,
-                       (unsigned int)deathPlan.playerAfter.weapons,
-                       (unsigned int)playerBefore.ammo[5]);
-            }
-            printf("[MONSTERRETAL] DOG-DEFER probe=%u sprite=%u reason=%s status=%u dogHP=%u damage=%u cause=dog-death-world-effects-unowned rngRollback=yes playerMutation=no blood=no\n",
+            printf("[MONSTERRETAL] DOG-DEFER probe=%u sprite=%u reason=%s dogHP=%u damage=%u cause=dog-death-preflight-failed rngRollback=yes playerMutation=no worldMutation=no blood=no\n",
                    (unsigned int)turn->attackProbes,
                    (unsigned int)monster->spriteIndex,
                    reasonName(turn->lastReason),
-                   (unsigned int)result,
                    (unsigned int)playerBefore.ammo[5],
                    (unsigned int)total);
             return;
         }
-        dogAbsorbed = 1U;
         healthAfter = p1Health(playerBefore.param1);
         armorAfter = p1Armor(playerBefore.param1);
     } else {
@@ -667,9 +680,12 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
         return;
     }
 
-    if (!(dogAbsorbed != 0U
-              ? EspNativeGameplayPlayerState_restore(&dogAfterState)
-              : commitPlayerPain(&playerBefore,healthAfter,armorAfter))) {
+    if (!(dogDied != 0U
+              ? EspNativeGameplayPlayerState_restore(
+                    &dogDeathPlan.playerAfter)
+              : (dogAbsorbed != 0U
+                     ? EspNativeGameplayPlayerState_restore(&dogAfterState)
+                     : commitPlayerPain(&playerBefore,healthAfter,armorAfter)))) {
         doomRpg->random = randomBefore;
         (void)EspNativeGameplayPlayerState_restore(&playerBefore);
         printf("[MONSTERRETAL] ROLLBACK probe=%u reason=%s sprite=%u cause=playerstate-commit rngRollback=yes playerRollback=yes mutation=no\n",
@@ -679,13 +695,19 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
         return;
     }
 
-    damageTextLen = dogAbsorbed != 0U
-        ? snprintf(damageText,sizeof(damageText),"%sDog took %d damage!",
+    damageTextLen = dogDied != 0U
+        ? snprintf(damageText,sizeof damageText,
+                   "%sDog took %d damage! Dog died!",
                    roll.gotCrit != 0U ? "Crit! " : "",
                    (int)(roll.totalDamage+roll.totalArmorDamage))
-        : snprintf(damageText,sizeof(damageText),"%s%d damage!",
-                   roll.gotCrit != 0U ? "Crit! " : "",
-                   (int)(roll.totalDamage+roll.totalArmorDamage));
+        : (dogAbsorbed != 0U
+               ? snprintf(damageText,sizeof damageText,
+                          "%sDog took %d damage!",
+                          roll.gotCrit != 0U ? "Crit! " : "",
+                          (int)(roll.totalDamage+roll.totalArmorDamage))
+               : snprintf(damageText,sizeof damageText,"%s%d damage!",
+                          roll.gotCrit != 0U ? "Crit! " : "",
+                          (int)(roll.totalDamage+roll.totalArmorDamage)));
     if (damageTextLen <= 0 || (size_t)damageTextLen >= sizeof(damageText) ||
         !EspNativeGameplayActionEngine_queueTextFeedback(
             ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DAMAGE,
@@ -711,7 +733,7 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
      * Lethal retirement and early rollback branches never enter this opt-in. */
     /* The legacy pain palette and face belong to the same reversible world
      * transaction as the hit. They must NOT survive render/RNG rollback. */
-    if (!(dogAbsorbed != 0U
+    if (!((dogAbsorbed != 0U || dogDied != 0U)
           ? EspNativePlayerPainVisual_stageDog(
                 turn->attackProbes,(EspNativePlayerPainSide)damageSide,
                 DoomRPG_GetUpTimeMS())
@@ -727,6 +749,23 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
                feedbackRollback ? "yes" : "NO");
         return;
     }
+    /* The player, feedback, visual lease and corpse must be a single
+     * rollback unit. Commit the V11 dynamic corpse only after every
+     * cheap preflight above; any renderer or RNG failure restores its
+     * exact 144-byte pool snapshot BEFORE drawing the rollback frame. */
+    if (dogDied != 0U &&
+        !EspNativeGameplayMonsterDrop_commit(&dogCorpsePlan)) {
+        (void)EspNativePlayerPainVisual_cancel(turn->attackProbes);
+        feedbackRollback = EspNativeGameplayActionEngine_cancelQueuedFeedback(
+            ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DAMAGE);
+        (void)EspNativeGameplayPlayerState_restore(&playerBefore);
+        doomRpg->random = randomBefore;
+        printf("[DOGDEATH] ROLLBACK probe=%u cause=corpse-commit failed=fail-closed rngRollback=yes playerRollback=yes feedbackRollback=%s corpseRollback=not-written\n",
+               (unsigned int)turn->attackProbes,
+               feedbackRollback?"yes":"NO");
+        return;
+    }
+    if (dogDied != 0U) dogCorpseCommitted = 1U;
     EspNativeGameplayActionEngine_stageNonlethalMonsterFlash();
     memset(&frame, 0, sizeof(frame));
     if (!EspNativeGameplayFrame_renderTurn(doomRpg->render,
@@ -735,11 +774,28 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
         memcmp(&doomRpg->random, &randomAfterRoll, sizeof(randomAfterRoll)) != 0) {
         int renderChangedRng =
             memcmp(&doomRpg->random, &randomAfterRoll, sizeof(randomAfterRoll)) != 0;
+        int corpseRollbackExact = 1;
         (void)EspNativePlayerPainVisual_cancel(turn->attackProbes);
         feedbackRollback = EspNativeGameplayActionEngine_cancelQueuedFeedback(
             ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DAMAGE);
+        if (dogCorpseCommitted != 0U) {
+            corpseRollbackExact =
+                EspNativeGameplayMonsterDrop_restore(&dogCorpseBefore) &&
+                EspNativeGameplayMonsterDrop_fingerprint() ==
+                    dogCorpseBefore.stateFNV1a;
+        }
         (void)EspNativeGameplayPlayerState_restore(&playerBefore);
         doomRpg->random = randomBefore;
+        if (dogDied != 0U) {
+            printf("[DOGDEATH] ROLLBACK probe=%u corpseExact=%s playerExact=%s rngExact=%s feedbackRollback=%s\n",
+                   (unsigned int)turn->attackProbes,
+                   corpseRollbackExact?"yes":"NO",
+                   memcmp(EspNativeGameplayPlayerState_view(),
+                          &playerBefore,sizeof playerBefore)==0?"yes":"NO",
+                   memcmp(&doomRpg->random,&randomBefore,sizeof randomBefore)==0
+                       ?"yes":"NO",
+                   feedbackRollback?"yes":"already-consumed");
+        }
         memset(&rollbackFrame, 0, sizeof(rollbackFrame));
         rollbackRendered = EspNativeGameplayFrame_renderTurn(
             doomRpg->render, (uint8_t)playerView->viewAngle, &rollbackFrame);
@@ -780,7 +836,28 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
     }
     playerFNVAfter = EspNativeGameplayPlayerState_fingerprint();
     randomFNVAfter = randomFNV(&doomRpg->random);
-    if (dogAbsorbed != 0U) {
+    if (dogDied != 0U) {
+        printf("[DOGDEATH] COMMIT probe=%u sprite=%u dogHP=%u->0 playerHP=%u->%u armor=%u->%u weapon=%u->%u weapons=%04x->%04x corpseGSprite=%u frame=2 slot=%u world=%u,%u V11=persistent damage=%u sound5090=deferred capturedEntity=no nativeFallback=yes rng=%08x->%08x rollback=closed\n",
+               (unsigned int)turn->attackProbes,
+               (unsigned int)monster->spriteIndex,
+               (unsigned int)playerBefore.ammo[5],
+               (unsigned int)p1Health(playerBefore.param1),
+               (unsigned int)healthAfter,
+               (unsigned int)p1Armor(playerBefore.param1),
+               (unsigned int)armorAfter,
+               (unsigned int)playerBefore.weapon,
+               (unsigned int)dogDeathPlan.nextWeapon,
+               (unsigned int)playerBefore.weapons,
+               (unsigned int)dogDeathPlan.playerAfter.weapons,
+               (unsigned int)dogDeathPlan.corpseGSpriteKind,
+               (unsigned int)dogCorpsePlan.slot,
+               (unsigned int)dogCorpsePlan.record.worldX,
+               (unsigned int)dogCorpsePlan.record.worldY,
+               (unsigned int)(roll.totalDamage+roll.totalArmorDamage),
+               (unsigned int)randomFNVBefore,
+               (unsigned int)randomFNVAfter);
+    }
+    else if (dogAbsorbed != 0U) {
         printf("[MONSTERRETAL] DOG-ABSORB-COMMIT probe=%u sprite=%u dogHP=%u->%u damage=%u playerHP=%u->%u armor=%u->%u dogBlood=15-particles source=Combat_spawnDogBloodParticles rng=%08x->%08x rollback=closed\n",
                (unsigned int)turn->attackProbes,
                (unsigned int)monster->spriteIndex,
