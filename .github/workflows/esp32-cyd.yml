@@ -139,6 +139,14 @@ jobs:
             -o /tmp/doomrpg-monster-damage-blend
           /tmp/doomrpg-monster-damage-blend
 
+      - name: Test original gibs_24.bmp 4x6 animation and safe viewport clipping (host C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+            ESP32/src/esp_native_gameplay_gib_sheet.c \
+            ESP32/test/gib_sheet_host.c \
+            -o /tmp/doomrpg-gib-sheet-test
+          /tmp/doomrpg-gib-sheet-test
+
       - name: Test dog-familiar source-backed blood (host C)
         run: |
           cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
@@ -339,6 +347,7 @@ jobs:
             ESP32/src/esp_map_opcode_executor.c ESP32/src/esp_map_catalog.c \
             ESP32/src/esp_native_gameplay_gib_fx.c ESP32/src/esp_native_gameplay_frame.c \
             ESP32/src/esp_native_gameplay_player_pain_visual.c \
+            ESP32/src/esp_native_gameplay_gib_sheet.c \
             ESP32/src/esp_native_dynamic_line_render.c ESP32/src/esp_native_gameplay_present_gate.c \
             -Wl,--gc-sections -Wl,--wrap=EspNativeGameplayFrame_renderTurn \
             -Wl,--wrap=EspNativeGameplayFrame_renderAmbient \
