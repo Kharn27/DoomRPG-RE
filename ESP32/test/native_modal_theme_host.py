@@ -39,9 +39,10 @@ assert "int __real_Esp32PlatformVideo_present(void);" in loading
 
 stats = loading.split("int EspNativeTransitionPresentation_showStats(", 1)[1].split(
     "int EspNativeTransitionPresentation_beginLoading(", 1)[0]
-assert "EspMainMenuSkin_paintPlate(" in stats
+assert "EspMainMenuSkin_paintModalTitleStencil(" in stats
+assert "EspMainMenuSkin_paintPlate(" not in stats
 assert "MISSION COMPLETE" in stats
-assert stats.count("EspMainMenuSkin_uiAccent()") >= 4
+assert stats.count("EspMainMenuSkin_uiAccent()") >= 3
 assert "EspMainMenuSkin_getTheme()" in stats
 assert "COLOR_GREEN : EspMainMenuSkin_uiAccent()" in stats
 assert "__real_Esp32PlatformVideo_present()" in stats
@@ -50,9 +51,13 @@ assert "LEVELSTATS] PRESENT" in stats
 
 level = levelup.split("static int paint(void) {", 1)[1].split(
     "void EspNativeGameplayLevelUp_reset(", 1)[0]
-assert "EspMainMenuSkin_paintPlate(" in level
+assert "EspMainMenuSkin_paintModalTitleStencil(" in level
+assert "EspMainMenuSkin_paintPlate(" not in level
 assert "EspMainMenuSkin_uiAccent()" in level
-assert "EspMainMenuSkin_uiAccentDim()" in level
+assert "EspMainMenuSkin_uiAccentDim()" in skin
+assert "MISSION COMPLETE" in stats
+assert '"LEVEL UP", 80, 11' in level
+assert '"MISSION COMPLETE",\n        80, 11' in stats
 assert "COLOR_GREEN" in level
 assert "TAP TO CONTINUE" in level
 assert "__real_Esp32PlatformVideo_present()" in level
