@@ -3,6 +3,13 @@
 #include <string.h>
 #include "esp_native_gameplay_gib_sheet.h"
 
+uint16_t EspNativeGibSheet_berserk565(uint16_t original) {
+    uint16_t r = (original >> 11U) & 31U;
+    r = r + 8U > 31U ? 31U : r + 8U;
+    return (uint16_t)((r << 11U) |
+                      (((original & 0xf7dfU) >> 1U) & 0x7ffU));
+}
+
 int EspNativeGibSheet_plan(uint32_t presentMs,
                            uint8_t row,
                            int16_t centerX,
