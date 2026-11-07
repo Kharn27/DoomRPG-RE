@@ -28,6 +28,10 @@ typedef struct EspNativeGibSheetRect_s {
 /* Exact source frame/row selection and viewport clipping, independent of
  * asset availability. VelX sign mirrors the 0..3 frame direction.
  * Returns 0 for malformed metadata, invalid row or completely offscreen. */
+/* DoomRPG_createImageBerserkColor(): red+8 saturate; green/blue half.
+ * The magenta transparency index must remain keyed by the caller. */
+uint16_t EspNativeGibSheet_berserk565(uint16_t original);
+
 int EspNativeGibSheet_plan(uint32_t presentMs,
                            uint8_t row,
                            int16_t centerX,
