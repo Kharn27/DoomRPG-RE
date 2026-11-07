@@ -98,7 +98,7 @@ int EspNativePlayerPainVisual_firstPresented(uint32_t nowMs) {
     lease.phase = PAIN_VISIBLE;
     lease.begunMs = nowMs;
     lease.lastShakeStep = 0U; /* initial displayed viewport = step zero */
-    printf("[PLAYERPAINFX] FIRST-PRESENT probe=%u hiddenMs=%u visibleWindowMs=%u side=%u dogBlood=%u clock=physical-lcd rng=visual-only\\n",
+    printf("[PLAYERPAINFX] FIRST-PRESENT probe=%u hiddenMs=%u visibleWindowMs=%u side=%u dogBlood=%u clock=physical-lcd rng=visual-only\n",
            (unsigned int)lease.probe,
            (unsigned int)hiddenMs,
            (unsigned int)ESP_NATIVE_PLAYER_PAIN_MS,
