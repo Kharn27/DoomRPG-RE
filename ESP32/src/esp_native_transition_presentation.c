@@ -552,20 +552,17 @@ int EspNativeTransitionPresentation_showStats(
     fillRect(3, 3, 156, 116, COLOR_BG);
     rect(3, 3, 156, 116, COLOR_STEEL_DARK);
 
-    /* Reuse the same industrial title chassis as MENU_MAIN and LOADING.
-     * The selected config theme affects accents only; WAIT_STATS stays the
-     * exclusive full-screen owner until the user's explicit ACK. */
-    if (!EspMainMenuSkin_paintPlate(
+    /* Same death-menu-inspired unframed stencil as LEVEL UP. The long
+     * MISSION COMPLETE glyphs have reserved space between the side hatches.
+     * WAIT_STATS remains the exclusive full-screen owner until ACK. */
+    if (!EspMainMenuSkin_paintModalTitleStencil(
             framebuffer(), DOOMRPG_LOGICAL_WIDTH,
-            DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
-            8, 7, 151, 29, ESP_MAIN_MENU_SKIN_IDLE)) return 0;
-    fillRect(10, 13, 11, 24, EspMainMenuSkin_uiAccent());
-    fillRect(148, 13, 149, 24, EspMainMenuSkin_uiAccent());
+            DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT)) return 0;
     formatMapLabel(transition->committed.sourceMapId, source, sizeof(source));
 
     EspNativeGameplayHubTouchUi_drawCrispText(framebuffer(), "MISSION COMPLETE",
-        81, 10, EspMainMenuSkin_uiAccent());
-    drawMiniTextCentered(source, 81, 21, 1, COLOR_IVORY);
+        80, 11, EspMainMenuSkin_uiAccent());
+    drawMiniTextCentered(source, 80, 20, 1, COLOR_IVORY);
 
     secretAccent =
         transition->levelStats.secretsTotal != 0U &&
