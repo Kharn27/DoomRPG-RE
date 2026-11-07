@@ -84,6 +84,16 @@ uint16_t EspNativePlayerPainVisual_impactSprite(
     }
 }
 
+/* Combat_updateProjectile() selects additive renderMode=7 for source
+ * weapons 6, 8, 15 and 17. The corresponding animation bitshape IDs
+ * are unique: 182, 181, 184/187 and 186. Other original projectile
+ * impacts, including dogs' claw bitshapes 188..190, are opaque (mode0).
+ * This is NOT inferred from the texture palette or screen appearance. */
+uint8_t EspNativePlayerPainVisual_impactRenderMode(uint16_t logical) {
+    return logical==181U || logical==182U || logical==184U ||
+           logical==186U || logical==187U ? 7U : 0U;
+}
+
 int EspNativePlayerPainVisual_stageImpact(
     uint32_t probe, uint8_t weaponId, uint8_t monsterSubtype) {
     if (lease.phase != PAIN_STAGED || probe == 0U ||
@@ -126,7 +136,7 @@ int EspNativePlayerPainVisual_paintImpactBitshape(
     const uint16_t* palette,
     int16_t sourceXMin, int16_t sourceYMin,
     uint8_t sourceWidth, uint8_t sourceHeight,
-    uint8_t columnPitch) {
+    uint8_t columnPitch, uint8_t renderMode) {
     uint32_t expectedOpaque=0U,px=0U;
     uint32_t column,row;
     if (framebuffer == NULL || columnMasks == NULL ||
@@ -139,7 +149,8 @@ int EspNativePlayerPainVisual_paintImpactBitshape(
         maskBytes > 512U || packedBytes > 2048U ||
         sourceXMin < 0 || sourceYMin < 0 ||
         sourceXMin + sourceWidth > 64 ||
-        sourceYMin + sourceHeight > 64) return -1;
+        sourceYMin + sourceHeight > 64 ||
+        (renderMode != 0U && renderMode != 7U)) return -1;
     /* Strictly preflight the whole source before touching a single
      * framebuffer byte. This also keeps failed/malformed optional artwork
      * from corrupting the already-proven player damage presentation. */
@@ -167,7 +178,24 @@ int EspNativePlayerPainVisual_paintImpactBitshape(
             x=80 + (int)sourceXMin + (int)column - 32;
             y=60 + (int)sourceYMin + (int)row - 32;
             if(x>=0&&x<160&&y>=20&&y<100) {
-                framebuffer[(uint32_t)y*160U+(uint32_t)x]=color;
+                uint16_t* destination =
+                    &framebuffer[(uint32_t)y*160U+(uint32_t)x];
+                if(renderMode==7U) {
+                    /* Render_getSpanMode(7) + Render_SpanMode7():
+                     * both inputs have their least-significant channel
+                     * bits cleared before summation; carry is propagated
+                     * with the source's exact 0x10820 mask. Reuse the
+                     * proven native 3D sprite span math, not conventional
+                     * alpha blending or independently clipped RGB sums. */
+                    uint32_t sum=((uint32_t)color&0xf7deU)+
+                                 ((uint32_t)(*destination)&0xf7deU);
+                    const uint32_t carry=sum&0x10820U;
+                    *destination=(uint16_t)((sum&0xf7deU)|
+                                          (carry>>1U)|(carry>>2U)|
+                                          (carry>>3U));
+                } else {
+                    *destination=color;
+                }
                 ++px;
             }
             ++expectedOpaque;
