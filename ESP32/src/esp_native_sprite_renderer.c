@@ -1033,7 +1033,8 @@ static int buildPersistentDropOrder(
         int32_t sortZ;
 
         if (drop->active == 0U || drop->taken != 0U) continue;
-        if (drop->tileIndex == playerTile) {
+        if (drop->tileIndex == playerTile &&
+            drop->type != ESP_NATIVE_GAMEPLAY_DOG_CORPSE_TYPE) {
             printf("[MONSTERDROP] RENDER-CULL slot=%u tile=%u reason=player-tile pickup=pending-after-commit\n",
                    (unsigned int)slot,
                    (unsigned int)drop->tileIndex);
@@ -1100,8 +1101,10 @@ static int drawPersistentDrop(Render_t* render,
 
     if (resourceLogical >= 256U ||
         EspNativeGraphicsCatalog_findSprite(resourceLogical) == NULL ||
-        !loadFrame(sources, resourceLogical, 0U, 0,
-                   frame, seenLogical, stats)) {
+        !loadFrame(sources, resourceLogical,
+                   drop->type == ESP_NATIVE_GAMEPLAY_DOG_CORPSE_TYPE
+                       ? 2U : 0U,
+                   0, frame, seenLogical, stats)) {
         return 0;
     }
 
