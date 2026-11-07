@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "esp_native_gameplay_hub_theme.h"
+#include "esp_main_menu_skin.h"
 #include "esp_native_gameplay_hub_touch_ui.h"
 #include "esp_native_gameplay_level_up.h"
 #include "platform_touch_events.h"
@@ -126,17 +127,20 @@ static int paint(void) {
     fillRect(3, 3, 156, 116, COLOR_BG);
     rect(3, 3, 156, 116, COLOR_STEEL_DARK);
 
-    fillRect(8, 7, 151, 29, COLOR_PANEL_ALT);
-    fillRect(8, 7, 10, 29, COLOR_AMBER);
-    fillRect(14, 27, 145, 28, COLOR_AMBER_DIM);
+    /* The death-menu title is a stencil on the bulkhead, NOT a button:
+     * no raised plate / border / inner seam behind either title line.
+     * Keep the six gain cards, touch dismiss and semantic gains untouched. */
+    if (!EspMainMenuSkin_paintModalTitleStencil(
+            framebuffer(), DOOMRPG_LOGICAL_WIDTH,
+            DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT)) return 0;
 
     EspNativeGameplayHubTouchUi_drawCrispText(
-        framebuffer(), "LEVEL UP", 80, 9, COLOR_AMBER);
+        framebuffer(), "LEVEL UP", 80, 11, EspMainMenuSkin_uiAccent());
     snprintf(levelText, sizeof(levelText), "LEVEL %u -> %u",
              (unsigned int)levelUp.levelBefore,
              (unsigned int)levelUp.levelAfter);
     EspNativeGameplayHubTouchUi_drawCrispText(
-        framebuffer(), levelText, 80, 19, COLOR_IVORY);
+        framebuffer(), levelText, 80, 20, COLOR_IVORY);
 
     drawGainCard(10, 34, "MAX HP",
                  levelUp.maxHealthCurrent, levelUp.maxHealthGain);
@@ -209,7 +213,7 @@ int EspNativeGameplayLevelUp_begin(
     }
     levelUp.frameFNV1a = frameFNV();
 
-    printf("[LEVELUP] PRESENT seq=%u level=%u->%u levelUps=%u gains=hp+%u/armor+%u/def+%u/str+%u/agi+%u/acc+%u health=restored frame=%08x input=fresh-release+fullscreen-tap stats=current+gain-mini owner=dedicated-fullscreen timer=none\n",
+    printf("[LEVELUP] PRESENT seq=%u level=%u->%u levelUps=%u gains=hp+%u/armor+%u/def+%u/str+%u/agi+%u/acc+%u health=restored frame=%08x input=fresh-release+fullscreen-tap stats=current+gain-mini owner=dedicated-fullscreen timer=none theme=%u\n",
            (unsigned int)levelUp.sequence,
            (unsigned int)levelUp.levelBefore,
            (unsigned int)levelUp.levelAfter,
@@ -220,7 +224,8 @@ int EspNativeGameplayLevelUp_begin(
            (unsigned int)levelUp.strengthGain,
            (unsigned int)levelUp.agilityGain,
            (unsigned int)levelUp.accuracyGain,
-           (unsigned int)levelUp.frameFNV1a);
+           (unsigned int)levelUp.frameFNV1a,
+           (unsigned int)EspMainMenuSkin_getTheme());
     return 1;
 }
 

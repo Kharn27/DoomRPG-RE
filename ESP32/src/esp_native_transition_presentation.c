@@ -552,22 +552,26 @@ int EspNativeTransitionPresentation_showStats(
     fillRect(3, 3, 156, 116, COLOR_BG);
     rect(3, 3, 156, 116, COLOR_STEEL_DARK);
 
-    fillRect(8, 7, 151, 28, COLOR_PANEL_ALT);
-    fillRect(8, 7, 10, 28, COLOR_AMBER);
+    /* Same death-menu-inspired unframed stencil as LEVEL UP. The long
+     * MISSION COMPLETE glyphs have reserved space between the side hatches.
+     * WAIT_STATS remains the exclusive full-screen owner until ACK. */
+    if (!EspMainMenuSkin_paintModalTitleStencil(
+            framebuffer(), DOOMRPG_LOGICAL_WIDTH,
+            DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT)) return 0;
     formatMapLabel(transition->committed.sourceMapId, source, sizeof(source));
 
     EspNativeGameplayHubTouchUi_drawCrispText(framebuffer(), "MISSION COMPLETE",
-        81, 10, COLOR_AMBER);
-    drawMiniTextCentered(source, 81, 21, 1, COLOR_IVORY);
+        80, 11, EspMainMenuSkin_uiAccent());
+    drawMiniTextCentered(source, 80, 20, 1, COLOR_IVORY);
 
     secretAccent =
         transition->levelStats.secretsTotal != 0U &&
         transition->levelStats.secretsFound >= transition->levelStats.secretsTotal
-            ? COLOR_GREEN : COLOR_AMBER;
+            ? COLOR_GREEN : EspMainMenuSkin_uiAccent();
     monsterAccent =
         transition->levelStats.monstersTotal != 0U &&
         transition->levelStats.monstersDead >= transition->levelStats.monstersTotal
-            ? COLOR_GREEN : COLOR_AMBER;
+            ? COLOR_GREEN : EspMainMenuSkin_uiAccent();
 
     drawMetricCard(10, 76, "SECRETS",
                    transition->levelStats.secretsFound,
@@ -592,7 +596,7 @@ int EspNativeTransitionPresentation_showStats(
      * configured successfully. Painting this modal before acknowledgement
      * must not persist gameplay progress if a later handoff fails closed. */
     fnv = frameFNV();
-    printf("[LEVELSTATS] PRESENT sourceMap=%u targetMap=%u source=%s secrets=%u/%u monsters=%u/%u elapsedMs=%lu moves=%lu xp=%lu counters=%s style=hub-sector-report font=crisp5x7+mini3x5 reads=0 fullScreen=yes frame=%08x input=one-tap\n",
+    printf("[LEVELSTATS] PRESENT sourceMap=%u targetMap=%u source=%s secrets=%u/%u monsters=%u/%u elapsedMs=%lu moves=%lu xp=%lu counters=%s style=hub-sector-report+industrial-theme font=crisp5x7+mini3x5 reads=0 fullScreen=yes frame=%08x input=one-tap theme=%u\n",
            (unsigned int)transition->committed.sourceMapId,
            (unsigned int)transition->committed.targetMapId,
            source,
@@ -604,7 +608,8 @@ int EspNativeTransitionPresentation_showStats(
            (unsigned long)(hasProgress ? progress.moves : 0U),
            (unsigned long)gained,
            !hasProgress ? "unavailable" : (progress.complete ? "full-level" : "since-load"),
-           (unsigned int)fnv);
+           (unsigned int)fnv,
+           (unsigned int)EspMainMenuSkin_getTheme());
     return 1;
 }
 

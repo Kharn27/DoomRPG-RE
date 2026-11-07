@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "esp_asset_pack.h"
+#include "esp_main_menu_skin.h"
 #include "esp_native_gameplay_hub.h"
 #include "esp_native_gameplay_hub_content.h"
 #include "esp_native_gameplay_hub_nonweapon.h"
@@ -48,7 +49,7 @@
 #define HUB_FACE_FRAME 0U
 #define HUB_MENU_BG ESP_HUB_COLOR_BG
 #define HUB_MENU_BORDER ESP_HUB_COLOR_STEEL
-#define HUB_MENU_INNER ESP_HUB_COLOR_AMBER
+#define HUB_MENU_INNER EspMainMenuSkin_uiAccent()
 
 #if DOOMRPG_LOGICAL_WIDTH != 160 || DOOMRPG_LOGICAL_HEIGHT != 120
 #error "Native gameplay hub is defined for the 160x120 logical framebuffer"
@@ -482,7 +483,7 @@ static int notebookButton(const EspNativeIndexedBmp* font,
     notebookFill(framebuffer, left, 101, right, 118,
                  enabled ? ESP_HUB_COLOR_PANEL_ALT : ESP_HUB_COLOR_PANEL);
     notebookRect(framebuffer, left, 101, right, 118,
-                 enabled ? ESP_HUB_COLOR_AMBER : ESP_HUB_COLOR_STEEL_DARK);
+                 enabled ? EspMainMenuSkin_uiAccent() : ESP_HUB_COLOR_STEEL_DARK);
     return drawText(font, framebuffer, label, textX, 104, stats);
 }
 
@@ -507,7 +508,7 @@ static int paintNotebookContent(const EspNativeIndexedBmp* font,
     notebookFill(framebuffer, 5, 44, 154, 45, ESP_HUB_COLOR_STEEL_DARK);
     notebookFill(framebuffer, 5, 44,
                  5 + (int)((149U * (uint32_t)(notebookPage + 1U)) / pages),
-                 45, ESP_HUB_COLOR_AMBER);
+                 45, EspMainMenuSkin_uiAccent());
     for (y = 49; y <= 96; ++y) {
         if (((y - 49) / 12) & 1) {
             for (x = 5; x <= 154; ++x) putPixel(framebuffer, x, y, ESP_HUB_COLOR_PANEL);

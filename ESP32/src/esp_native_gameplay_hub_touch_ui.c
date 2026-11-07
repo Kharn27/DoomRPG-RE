@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "esp_asset_pack.h"
+#include "esp_main_menu_skin.h"
 #include "esp_native_gameplay_hub.h"
 #include "esp_native_gameplay_hub_content.h"
 #include "esp_native_gameplay_hub_nonweapon.h"
@@ -25,7 +26,8 @@
 #define HUB_UI_DIM ESP_HUB_COLOR_STEEL_DARK
 #define HUB_UI_STEEL ESP_HUB_COLOR_STEEL
 #define HUB_UI_TEXT ESP_HUB_COLOR_IVORY
-#define HUB_UI_FOCUS ESP_HUB_COLOR_AMBER
+/* Palette follows the persisted MENU_MAIN theme; semantic HP/ARMOR do not. */
+#define HUB_UI_FOCUS EspMainMenuSkin_uiAccent()
 #define HUB_UI_GOOD ESP_HUB_COLOR_GREEN
 #define HUB_UI_DANGER ESP_HUB_COLOR_RED
 #define HUB_UI_ARMOR ESP_HUB_COLOR_BLUE
