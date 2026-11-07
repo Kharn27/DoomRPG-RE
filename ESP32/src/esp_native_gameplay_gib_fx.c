@@ -22,6 +22,7 @@
 #include "esp_native_gameplay_monster_movement_probe.h"
 #include "esp_native_gameplay_monster_retaliation.h"
 #include "esp_native_gameplay_player_pain_visual.h"
+#include "esp_native_sprite_renderer.h"
 #include "esp_native_gameplay_dog_blood.h"
 #include "esp_native_resident_gameplay.h"
 #include "esp_native_gameplay_monster_state.h"
@@ -84,6 +85,10 @@ typedef struct GibFxOwner_s {
 } GibFxOwner;
 
 static GibFxOwner gibFxOwner;
+/* One diagnostic witness per source sprite frame; no decoded atlas remains. */
+static uint32_t impactLoggedProbe;
+static uint8_t impactLoggedFrame;
+static uint32_t impactUnavailableProbe;
 
 /* Real original indexed gibs_24.bmp atlas is stored only as <= 550B of
  * validated immutable metadata. Actual pixels are streamed in bounded
@@ -1122,9 +1127,48 @@ static void serviceExpiry(struct DoomRPG_s* doomRpg) {
 int EspNativeGameplayActionEngine_present(void) {
     uint32_t seed = 0U;
     uint32_t age = 0U;
+    uint32_t impactProbe = 0U;
+    uint16_t impactLogical = 0U;
+    uint8_t impactFrame = 0U;
     decorateActiveHit();
     decorateActiveGib();
     decorateNewGibs();
+    /* Original Combat_updateProjectile() -> Game_gsprite_allocAnim()
+     * paints source logical 180..190 impact at the player's camera.
+     * Unlike the existing native HUD pain face, this is the missing
+     * CENTER-VIEW hit animation, not an invented procedural claw.
+     * A single bounded PAK bitshape decode feeds the existing 160x120
+     * framebuffer; every 150ms pose naturally follows the existing 75ms
+     * shake redraw requests, with no new global FPS loop. Failed source
+     * preflight fails only the optional visual, never the combat commit. */
+    if (EspNativeResidentGameplay_ownsWorldPresent() &&
+        !EspNativeResidentGameplay_isAutomapActive() &&
+        !EspNativeGameplayControls_isActive() &&
+        !EspAssetPack_isOpen() &&
+        Esp32PlatformVideo_framebufferSizeBytes() ==
+            DOOMRPG_LOGICAL_WIDTH * DOOMRPG_LOGICAL_HEIGHT *
+                sizeof(uint16_t) &&
+        EspNativePlayerPainVisual_impactInfo(
+            DoomRPG_GetUpTimeMS(),&impactProbe,
+            &impactLogical,&impactFrame) &&
+        impactProbe != impactUnavailableProbe) {
+        const int pixels=EspNativeSpriteRenderer_paintPlayerImpact(
+            (uint16_t*)Esp32PlatformVideo_framebuffer(),
+            DOOMRPG_LOGICAL_WIDTH,DOOMRPG_LOGICAL_HEIGHT,
+            impactLogical,impactFrame);
+        if (impactLoggedProbe != impactProbe ||
+            impactLoggedFrame != impactFrame) {
+            impactLoggedProbe=impactProbe;
+            impactLoggedFrame=impactFrame;
+            printf("[PLAYERIMPACT] %s probe=%u sprite=%u frame=%u/2 pixels=%d source=original-PAK-Game_gsprite_allocAnim cadence=150ms lifetime=shared-pain-500ms gameplayRng=untouched\\n",
+                   pixels>=0?"PAINT":"SKIP",
+                   (unsigned int)impactProbe,
+                   (unsigned int)impactLogical,
+                   (unsigned int)impactFrame,
+                   pixels);
+        }
+        if (pixels < 0) impactUnavailableProbe=impactProbe;
+    }
     /* This layer belongs ONLY to true familiar absorption. A plain dog
      * enemy hit cannot select it. Fail closed if the shared framebuffer is
      * missing or a modal/transition compositor owns the physical present.
@@ -1185,4 +1229,7 @@ void __wrap_EspNativeGameplaySession_reset(void) {
     EspNativePlayerPainVisual_reset();
     EspNativeGameplayMonsterMovementProbe_reset();
     resetFx();
+    impactLoggedProbe=0U;
+    impactLoggedFrame=0xffU;
+    impactUnavailableProbe=0U;
 }
