@@ -63,12 +63,16 @@ int main(void) {
             99U,12U,0U));
         assert(EspNativePlayerPainVisual_stageImpact(
             100U+wi,(uint8_t)wi,wi==12U?8U:0U));
+        /* Nothing at all on pre-COMMIT monster-visual frames. The
+         * first shared red flash samples frame zero after COMMIT. */
+        assert(!EspNativePlayerPainVisual_impactInfo(
+            1300U,&probe,&logical,&frame));
+        assert(EspNativePlayerPainVisual_commit(100U+wi));
         assert(EspNativePlayerPainVisual_impactInfo(
             1300U,&probe,&logical,&frame));
         assert(probe==100U+wi);
         assert(frame==0U);
         assert(logical==(wi==12U?190U:sprite[wi]));
-        assert(EspNativePlayerPainVisual_commit(100U+wi));
         /* Long monster attack tail does NOT consume one frame before
          * the successful LCD witness; all 3 frames get a full 150ms. */
         assert(EspNativePlayerPainVisual_impactInfo(
@@ -95,8 +99,8 @@ int main(void) {
     assert(EspNativePlayerPainVisual_stage(
         201U,ESP_NATIVE_PLAYER_PAIN_BACK,2300U));
     assert(EspNativePlayerPainVisual_stageImpact(201U,15U,10U));
-    assert(EspNativePlayerPainVisual_impactInfo(
-        2300U,&probe,&logical,&frame)&&logical==187U);
+    assert(!EspNativePlayerPainVisual_impactInfo(
+        2300U,&probe,&logical,&frame));
     assert(EspNativePlayerPainVisual_cancel(201U));
     assert(EspNativePlayerPainVisual_impactInfo(
         2300U,&probe,&logical,&frame));
