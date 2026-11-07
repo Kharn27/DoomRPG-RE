@@ -31,6 +31,8 @@ int main(void) {
     assert(!EspNativePlayerPainVisual_shakeRefreshDue(1000U));
     assert(EspNativePlayerPainVisual_shakeComposed(0U));
     assert(EspNativePlayerPainVisual_commit(77U));
+    assert(!EspNativePlayerPainVisual_shakeRefreshDue(1250U));
+    assert(EspNativePlayerPainVisual_firstPresented(1000U));
     assert(!EspNativePlayerPainVisual_shakeRefreshDue(1074U));
     assert(EspNativePlayerPainVisual_shakeRefreshDue(1075U));
     assert(EspNativePlayerPainVisual_shakeOffsets(1075U,&x0,&y0,&step));
@@ -87,6 +89,7 @@ int main(void) {
      * (159,99) is NOT painted by its 159-wide lower rectangle. */
     assert(EspNativePlayerPainVisual_stage(79U,ESP_NATIVE_PLAYER_PAIN_FRONT,2000U));
     assert(EspNativePlayerPainVisual_commit(79U));
+    assert(EspNativePlayerPainVisual_firstPresented(2000U));
     for(i=2000U;i<=2499U;i+=499U) {
         makeFrame();
         assert(EspNativePlayerPainVisual_paintBorder(&fb[1],W,H,i));
