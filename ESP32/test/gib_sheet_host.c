@@ -16,6 +16,67 @@ int main(void) {
             assert(EspNativeGibSheet_berserk565((uint16_t)c)==expected);
         }
     }
+    /* Independent fixed-point arithmetic oracle recovered from source
+     * ParticleSystem_startup/calculateScales/calculateParticles/render:
+     * scaleX=320 scaleY=232, 25ms deterministic display ticks.
+     * For each distance the low-16 PRNG cadence is 1+4*index draws. */
+    {
+        static const struct {
+            uint8_t distance;
+            uint32_t age;
+            int16_t x,y,vx;
+            uint8_t row;
+        } cases[] = {
+            {1U,0U,78,62,-427,0U}, {1U,25U,73,59,-427,0U},
+            {1U,75U,63,53,-427,0U}, {1U,175U,42,44,-427,0U},
+            {1U,349U,5,40,-427,0U},
+            {2U,0U,83,60,51,0U}, {2U,25U,84,60,51,0U},
+            {2U,75U,85,58,51,0U}, {2U,175U,88,57,51,0U},
+            {2U,349U,92,60,51,0U},
+            {3U,0U,78,61,-64,0U}, {3U,25U,77,60,-64,0U},
+            {3U,75U,76,59,-64,0U}, {3U,175U,73,56,-64,0U},
+            {3U,349U,67,55,-64,0U},
+            {4U,0U,78,58,-12,0U}, {4U,25U,78,57,-12,0U},
+            {4U,75U,78,57,-12,0U}, {4U,175U,77,56,-12,0U},
+            {4U,349U,76,58,-12,0U}
+        };
+        uint32_t i;
+        EspNativeGibKineticPoint q,again;
+        for(i=0U;i<sizeof(cases)/sizeof(cases[0]);++i) {
+            assert(EspNativeGibSheet_sampleParticle(
+                0x51e6a19bU,0U,cases[i].distance,cases[i].age,&q));
+            assert(q.centerX==cases[i].x&&q.centerY==cases[i].y&&
+                   q.velocityX==cases[i].vx&&q.variant==cases[i].row);
+            assert(EspNativeGibSheet_sampleParticle(
+                0x51e6a19bU,0U,cases[i].distance,cases[i].age,&again));
+            assert(memcmp(&q,&again,sizeof q)==0);
+        }
+        assert(EspNativeGibSheet_tileDistance(0U)==1U);
+        assert(EspNativeGibSheet_tileDistance(4096U)==1U);
+        assert(EspNativeGibSheet_tileDistance(4097U)==2U);
+        assert(EspNativeGibSheet_tileDistance(16384U)==2U);
+        assert(EspNativeGibSheet_tileDistance(16385U)==3U);
+        assert(EspNativeGibSheet_tileDistance(36864U)==3U);
+        assert(EspNativeGibSheet_tileDistance(36865U)==4U);
+        assert(EspNativeGibSheet_tileDistance(65536U)==4U);
+        assert(EspNativeGibSheet_tileDistance(65537U)==0U);
+        assert(!EspNativeGibSheet_sampleParticle(
+            0x51e6a19bU,5U,1U,0U,&q));
+        assert(!EspNativeGibSheet_sampleParticle(
+            0x51e6a19bU,0U,0U,0U,&q));
+        assert(!EspNativeGibSheet_sampleParticle(
+            0x51e6a19bU,0U,5U,0U,&q));
+        assert(!EspNativeGibSheet_sampleParticle(
+            0x51e6a19bU,0U,1U,350U,&q));
+        assert(!EspNativeGibSheet_sampleParticle(
+            0x51e6a19bU,0U,1U,0U,NULL));
+        for(i=0U;i<ESP_NATIVE_GIB_KINETIC_COUNT;++i){
+            assert(EspNativeGibSheet_sampleParticle(
+                0x51e6a19bU,(uint8_t)i,1U,175U,&q));
+            assert(q.variant==(uint8_t)i);
+            assert(q.velocityX>=-480&&q.velocityX<=480);
+        }
+    }
     uint8_t row, frame;
     uint32_t checks=0U;
     for(row=0U;row<6U;++row)for(frame=0U;frame<4U;++frame) {
