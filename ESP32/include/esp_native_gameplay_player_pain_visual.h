@@ -73,6 +73,40 @@ int EspNativePlayerPainVisual_dogInfo(uint32_t nowMs,
                                      uint32_t* outSeed,
                                      uint32_t* outAgeMs);
 
+/* Original Combat_updateProjectile() spawns Game_gsprite_allocAnim()
+ * for a successful projectile impact. Game.c maps its indices to ORIGINAL
+ * bitshape logical sprites 180..190 (including melee scratch 188..190);
+ * Game_gsprite_update() advances frames 0/1/2 every 150ms for 450ms.
+ * This optional presentation-only impact shares the pain lease and its
+ * rollback + first PHYSICAL LCD present clock, never affects combat/RNG.
+ * 0 means original combat did not create an animated missile impact. */
+#define ESP_NATIVE_PLAYER_IMPACT_FRAME_MS 150U
+#define ESP_NATIVE_PLAYER_IMPACT_SOURCE_MS 450U
+uint16_t EspNativePlayerPainVisual_impactSprite(uint8_t weaponId,
+                                               uint8_t monsterSubtype);
+int EspNativePlayerPainVisual_stageImpact(uint32_t probe,
+                                          uint8_t weaponId,
+                                          uint8_t monsterSubtype);
+int EspNativePlayerPainVisual_impactInfo(uint32_t nowMs,
+                                         uint32_t* outProbe,
+                                         uint16_t* outLogical,
+                                         uint8_t* outFrame);
+
+/* A side-effect-free painter for the permanent PAK bitshape data decoded
+ * from mappings.bin / bitshapes.bin / stexels.bin / palettes.bin. Bitmask
+ * columns, low-nibble-first texel order and centered xMin/yMin match the
+ * original Render_renderSprite representation. The impact is clipped to
+ * the logical 160x80 world viewport, never to the 20px HUD bands. */
+int EspNativePlayerPainVisual_paintImpactBitshape(
+    uint16_t* framebuffer,
+    uint32_t width, uint32_t height,
+    const uint8_t* columnMasks, uint32_t maskBytes,
+    const uint8_t* packedTexels, uint32_t packedBytes,
+    const uint16_t* palette,
+    int16_t sourceXMin, int16_t sourceYMin,
+    uint8_t sourceWidth, uint8_t sourceHeight,
+    uint8_t columnPitch);
+
 /* The original Hud_drawEffects n.bmp strip is three 18x18 frames.
  * 0x30 centers the frame at its supplied screen position. */
 int EspNativePlayerPainVisual_arrow(uint32_t nowMs,
