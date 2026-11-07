@@ -82,7 +82,7 @@ static void resetFB(void) {
     for(i=0U;i<W*H+2U;++i)frame[i]=0x5555U;
     frame[0]=0x1234U;frame[W*H+1U]=0x4321U;
 }
-static void compare(const EspNativeGibSheetRect* p) {
+static void compare(const EspNativeGibSheetRect* p,int berserk) {
     unsigned j;
     for(j=0U;j<W*H;++j){
         const int x=(int)(j%W),y=(int)(j/W);
@@ -93,7 +93,10 @@ static void compare(const EspNativeGibSheetRect* p) {
             const unsigned sx=(unsigned)(x-p->destinationX)+p->sourceX;
             const unsigned sy=(unsigned)(y-p->destinationY)+p->sourceY;
             const unsigned idx=pixelIndex(sx,sy);
-            if(idx!=0U)expect=color(idx);
+            if(idx!=0U) {
+                const uint16_t original=color(idx);
+                expect=berserk?EspNativeGibSheet_berserk565(original):original;
+            }
         }
         assert(frame[1U+j]==expect);
     }
@@ -125,7 +128,7 @@ int main(void){
             ESP_NATIVE_INDEXED_BMP_OK);
         assert(stats.rowsRead==24U&&stats.packReads>=2U&&
                stats.pixelsWritten>0U);
-        compare(&p);
+        compare(&p,0);
         ++cases;
     }
     /* A clipping path where the 24px source is cropped at the viewport
@@ -138,13 +141,37 @@ int main(void){
         &bmp,&frame[1],W,H,p.sourceX,p.sourceY,p.width,p.height,
         p.destinationX,p.destinationY,1U,&stats)==
         ESP_NATIVE_INDEXED_BMP_OK);
-    compare(&p);
+    compare(&p,0);
+    /* Source DoomRPG_createImageBerserkColor() palette transformation
+     * must keep the original SDL magenta color-key index transparent.
+     * Native row reader keys by RGB565, so preserve that palette entry. */
+    {
+        EspNativeIndexedBmp berserk=bmp;
+        unsigned k;
+        for(k=0U;k<berserk.paletteCount;++k) {
+            const uint16_t original=bmp.paletteRgb565[k];
+            berserk.paletteRgb565[k]=original==0xf81fU
+                ?original:EspNativeGibSheet_berserk565(original);
+        }
+        assert(berserk.paletteRgb565[0]==0xf81fU);
+        for(row=0U;row<6U;++row)for(col=0U;col<4U;++col) {
+            resetFB();
+            assert(EspNativeGibSheet_plan(col*175U,row,80,52,1,
+                                         berserk.width,berserk.height,&p));
+            memset(&stats,0,sizeof stats);
+            assert(EspNativeIndexedBmp_blit(
+                &berserk,&frame[1],W,H,p.sourceX,p.sourceY,p.width,p.height,
+                p.destinationX,p.destinationY,1U,&stats)==
+                ESP_NATIVE_INDEXED_BMP_OK);
+            compare(&p,1);
+        }
+    }
     assert(EspNativeIndexedBmp_open("not-gibs.bmp",&bmp,NULL)==
            ESP_NATIVE_INDEXED_BMP_NOT_FOUND);
     isOpen=0;
     assert(EspNativeIndexedBmp_open("gibs_24.bmp",&bmp,NULL)==
            ESP_NATIVE_INDEXED_BMP_PACK_NOT_OPEN);
-    printf("PASS original gibs indexed 96x144 4bpp: %u cases, 4x6/175ms atlas, transparent magenta, all pixels/HUD/canaries, range reads=%u bytes=%u\\n",
+    printf("PASS original gibs indexed 96x144 4bpp: %u normal +24 berserk cases, 4x6/175ms atlas, transparent magenta, all pixels/HUD/canaries, range reads=%u bytes=%u\\n",
            cases,reads,readBytes);
     return 0;
 }
