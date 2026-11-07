@@ -280,7 +280,7 @@ static int drawText(const EspNativeIndexedBmp* font,
                     int x,
                     int y,
                     EspNativeIndexedBmpStats* stats);
-static const char* pageTitle(uint8_t page);
+/* The three page names now live inside the upper 20px HUD as real tabs. */
 
 static int paintHubHeader(const EspNativeIndexedBmp* font,
                           const EspNativeIndexedBmp* faces,
@@ -311,7 +311,11 @@ static int paintHubHeader(const EspNativeIndexedBmp* font,
             faces->width, faceHeight,
             (int16_t)destinationX, (int16_t)destinationY,
             1U, stats) != ESP_NATIVE_INDEXED_BMP_OK) return 0;
-    if (!drawText(font, framebuffer, pageTitle(hub.page), 36, 4, stats)) {
+    if (hub.page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS) {
+        EspNativeGameplayHubTouchUi_drawCrispText(
+            framebuffer, "WEAPONS", 96, 6, ESP_HUB_COLOR_IVORY);
+    } else if (!EspNativeGameplayHubTouchUi_paintHeaderTabs(
+                   framebuffer, hub.page)) {
         return 0;
     }
     menuOverlay.paintedZoneFNV = menuZoneFNV(framebuffer);
@@ -329,15 +333,6 @@ static const char* pageName(uint8_t page) {
     }
 }
 
-static const char* pageTitle(uint8_t page) {
-    switch (page) {
-    case ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY: return "INVENTORY";
-    case ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS: return "WEAPONS";
-    case ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS: return "STATUS";
-    case ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM: return "SYSTEM";
-    default: return "HUB";
-    }
-}
 
 static void putPixel(uint16_t* framebuffer, int x, int y, uint16_t color) {
     if (framebuffer == NULL || x < 0 || x >= DOOMRPG_LOGICAL_WIDTH ||

@@ -23,7 +23,11 @@ assert 'doomCanvas, "Loading...", DOOMRPG_CANVAS_CENTER_X' in (SRC / "native_mai
 assert "(char*)line" not in menu and "(char*)label" not in layout
 assert "(char*)names[item]" not in layout
 assert menu.count("EspNativeCanvas_drawText(") == 5
-assert layout.count("EspNativeCanvas_drawText(") == 3  # Orientation uses the same native Canvas text entry
+# All child cards now use the same clipped industrial glyph painter.
+# Native Canvas ABI itself remains byte-for-byte unchanged and call-free here.
+assert layout.count("EspNativeCanvas_drawText(") == 0
+assert "EspMainMenuSkin_paintText(" in layout
+assert "EspMainMenuSkin_paintPlate(" in layout
 
 # Same body as the validated legacy-compatibility glyph routine, byte-for-byte.
 a = bridge.index("void EspNativeCanvas_drawText(")

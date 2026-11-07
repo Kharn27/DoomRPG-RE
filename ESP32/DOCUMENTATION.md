@@ -1,3 +1,25 @@
+## PR #253 — interface industrielle : essai CYD normal et limites (7 novembre 2026)
+
+La composition `agent/esp32-death-menu-industrial-actions` est validée **fonctionnellement sur les parcours observés** au SHA `712348dbced422cbf2497e45876f7db8ee6e89f1` ; CI push/PR SUCCESS. La capture réelle `device-monitor-261107-010724.log` montre : choix THÈME V3 par deux taps (`1→2→0` avec SAVE SD et retour VIDEO), décès Malwrath → menu de mort → **RETRY** de la carte Entrance depuis le PAK, HUB avec onglets INV/STAT/SYS dans la barre supérieure, notebook/items/STATUS, LOAD V11 via SYSTEM, reprise gameplay, et statistiques Entrance→Junction. Pas de PANIC/WDT, 0 PSRAM, `shapeData/mediaTexels=0x0`, marges RAM `HEADROOM_OK`. L'utilisateur confirme « ça marche niquel on va pouvoir merger ».
+
+**Limite importante :** deux fermetures du HUB échouent au contrôle de restitution HUD `exactBottom=NO`, suivies du chemin fail-closed `HUB-RECOVER status=NOT_READY` puis reprise du monde. Ce n'est pas un crash, mais **pas de preuve d'intégrité pixel-exact du HUD pour ces fermetures**. La capture ne teste pas LOAD/JUNCTION/MAIN *depuis le menu de mort*, ni reboot après changement PHOSPHORE, ni LOADING sous PHOSPHORE. Les tests host ne remplacent pas cette preuve. Maintenir ce diagnostic visible à l'occasion de la fusion ; gel du code testé et commits post-test documentaires uniquement.
+
+[Rapport matériel détaillé PR #253](MILESTONE_PR253_DEATH_MENU_THEMES_HUB_CYD_PASS.md) · [PR #253](https://github.com/Kharn27/DoomRPG-RE/pull/253) · [CI push](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42315451726) · [CI PR](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42315456256).
+
+---
+
+### Historique : premier PASS graphique de #253
+
+## PR #253 — menu de mort : validation graphique uniquement (5 novembre 2026)
+
+Sur [PR #253](https://github.com/Kharn27/DoomRPG-RE/pull/253), commit visuel `5e695b8ed0946bea0876919196d697cfb5b208a7`, le vrai CYD présente le bandeau non interactif de type signalétique de danger « YOU DIED / MISSION FAILED » assorti aux quatre plaques industrielles du menu. L'utilisateur accepte explicitement cette variante (« je prends, on va pouvoir merger »). [CI push](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42102571837) et [CI PR](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42102585194) SUCCESS, tests hôte et firmwares trois profils. Aucune nouvelle capture Serial dans ce retour : **PASS visuel ciblé**, pas PASS de gameplay.
+
+**Log matériel complémentaire** `device-monitor-261106-000342.log` : firmware au SHA `5e695b8`, START→Entrance, EXIT, LOAD V11 slot06→Entrance, transitions Entrance→Junction puis Junction→level01, enfin EXIT. Quatre sessions `ENGINESESSION READY`, quatre `DEATHROUTE ENTRY` enregistrant un snapshot joueur de session, `RESIDENTRESET empty=1`, réserve `HEADROOM_OK` et retour au menu sans reset/panic. **Aucun décès ni action du menu de mort dans cette trace** : l'essai confirme des chemins de navigation et de transition, pas RETRY/JUNCTION ni le dispatcher de mort.
+
+Les quatre actions sont implémentées mais **RETRY/JUNCTION non prouvés matériellement**, et le snapshot joueur ne garantit pas encore l'état historique strict avant l'entrée du secteur. Le test graphique n'autorise donc ni déclaration de merge-ready de l'intégralité de #253, ni écriture implicite de sauvegarde ni merge automatique. #253 reste en Draft, empilée sur #251. Détails et limites dans [PORTING_STATUS.md](PORTING_STATUS.md).
+
+---
+
 ## Présentation industrielle du chargement — PR #251, PASS visuel ciblé
 
 `EspNativeTransitionPresentation_beginLoading` et `presentOverall` repeignent le fond `c.bmp`, le cadre du titre et la jauge sur le framebuffer logique 160×120 RGB565 sans allocation/cache supplémentaire. Le peintre commun aux boutons du menu dessine `LOADING` x=16..143/y=26..69 (titre jaune, texte `ENTERING` et nom de secteur) et le châssis de jauge x=16..143/y=82..99. La piste est x=20..139/y=88..93 : **120 pixels remplissables**, bordure encastrée d'un pixel. À 100 %, le remplissage couvre toute la piste, sans les deux anciennes cavités noires de 6 pixels observées sur la photo du vrai CYD. Le firmware ne modifie ni l'algorithme de progression, ni le gameplay, ni le tactile, ni les quatre boutons industriels.

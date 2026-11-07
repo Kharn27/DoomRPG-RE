@@ -9,6 +9,9 @@
 #include "doomrpg_log.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud.h"
+#include "esp_main_menu_skin.h"
+#include "esp_map_catalog.h"
+#include "esp_native_startup.h"
 #include "esp_native_gameplay_hub_theme.h"
 #include "esp_native_gameplay_hub_touch_ui.h"
 #include "esp_native_gameplay_player_death.h"
@@ -52,9 +55,18 @@ typedef struct EspNativeGameplayPlayerDeathState_s {
     uint8_t loadAvailable;
     uint8_t pendingAction;
     uint8_t menuTaps;
+    uint8_t routeQueued;
+    uint8_t junctionConfirm;
+    uint8_t preDeathCaptured;
+    EspNativeGameplayPlayerState preDeathPlayer;
 } EspNativeGameplayPlayerDeathState;
 
 static EspNativeGameplayPlayerDeathState deathState;
+/* Sector-entry recovery point is RAM-only (52 B), never an implicit save.
+ * Captured after the first playable WORLD frame, once per native session. */
+static EspNativeGameplayPlayerState entryPlayer;
+static uint8_t entryMapId;
+static uint8_t entryCaptured;
 
 static int32_t legacyFallViewZ(uint32_t elapsed) {
     int64_t scaled;
@@ -156,55 +168,116 @@ static int menuRowForY(int y) {
 
 static int paintDeathMenu(void) {
     uint16_t* fb = (uint16_t*)Esp32PlatformVideo_framebuffer();
-    size_t expected =
+    const size_t expected =
         (size_t)DEATH_VIEWPORT_WIDTH * DEATH_SCREEN_HEIGHT * sizeof(uint16_t);
     static const char* const labels[4] = {
-        "LOAD SAVED GAME", "GO TO JUNCTION", "RETRY SECTOR", "MAIN MENU"
+        "LOAD GAME", "GO TO JUNCTION", "RETRY SECTOR", "MAIN MENU"
     };
     int row;
 
     if (fb == NULL ||
         Esp32PlatformVideo_framebufferSizeBytes() != expected) return 0;
 
-    fillRect(fb, 0, 0, DEATH_VIEWPORT_WIDTH - 1,
-             DEATH_SCREEN_HEIGHT - 1, ESP_HUB_COLOR_BLACK);
+    /* One opaque 160x120 owner: the dying framebuffer must not leak through.
+     * Chassis geometry/colors match MENU_MAIN and the PR #251 LOADING card. */
+    fillRect(fb, 0, 0, 159, 119, ESP_HUB_COLOR_BLACK);
     fillRect(fb, 3, 3, 156, 116, ESP_HUB_COLOR_BG);
     drawRect(fb, 3, 3, 156, 116, ESP_HUB_COLOR_STEEL_DARK);
-    fillRect(fb, 8, 7, 151, 28, ESP_HUB_COLOR_PANEL_ALT);
-    fillRect(fb, 8, 7, 10, 28, ESP_HUB_COLOR_RED);
+    /* Non-interactive hazard stencil: same gunmetal/copper vocabulary as
+     * the industrial action plates, but NO raised rectangle, bevel, border
+     * or filled card. The lettering is printed directly on the console
+     * bulkhead, with symmetric diagonal caution hatches and open-ended
+     * steel rules. That visual distinction matters on a touch display. */
+    fillRect(fb, 15, 7, 45, 7, ESP_HUB_COLOR_STEEL);
+    fillRect(fb, 114, 7, 144, 7, ESP_HUB_COLOR_STEEL);
+    {
+        int stripe;
+        for (stripe = 0; stripe < 3; ++stripe) {
+            const uint16_t tone = stripe == 1 ? 0x632bU : 0xd344U;
+            int y;
+            for (y = 10; y <= 23; ++y) {
+                const int x = 14 + stripe * 8 + (y - 10) / 4;
+                fillRect(fb, x, y, x + 1, y, tone);
+                fillRect(fb, 158 - x, y, 159 - x, y, tone);
+            }
+        }
+    }
+    fillRect(fb, 47, 27, 112, 27, ESP_HUB_COLOR_AMBER_DIM);
+    fillRect(fb, 73, 27, 86, 27, ESP_HUB_COLOR_RED);
     EspNativeGameplayHubTouchUi_drawCrispText(
-        fb, "YOU DIED", 80, 10, ESP_HUB_COLOR_RED);
+        fb, "YOU DIED", 80, 11, ESP_HUB_COLOR_RED);
     EspNativeGameplayHubTouchUi_drawMiniText(
-        fb, "MISSION FAILED", 80, 21, ESP_HUB_COLOR_STEEL);
+        fb, "MISSION FAILED", 80, 20, 0xf6afU);
 
     for (row = 0; row < 4; ++row) {
-        int top = DEATH_MENU_ROW0_TOP +
-                  row * (DEATH_MENU_ROW_HEIGHT + DEATH_MENU_ROW_GAP);
-        int bottom = top + DEATH_MENU_ROW_HEIGHT - 1;
-        const int enabled = row == 0 && deathState.loadAvailable != 0U;
-        const char* hint = row == 0
-            ? (enabled ? "TAP TO LOAD" : "NO SAVE") : "NOT AVAILABLE";
-        const uint16_t accent = enabled ? ESP_HUB_COLOR_AMBER
-                                       : ESP_HUB_COLOR_STEEL_DARK;
+        const int top = DEATH_MENU_ROW0_TOP +
+            row * (DEATH_MENU_ROW_HEIGHT + DEATH_MENU_ROW_GAP);
+        const int bottom = top + DEATH_MENU_ROW_HEIGHT - 1;
+        const int enabled =
+            (row == 0 && deathState.loadAvailable != 0U) ||
+            (row == 1 && entryMapId != ESP_MAP_ID_INTRO &&
+             deathState.preDeathCaptured != 0U) ||
+            (row == 2 && entryCaptured != 0U) || row == 3;
 
-        fillRect(fb, DEATH_MENU_LEFT, top, DEATH_MENU_RIGHT, bottom,
-                 enabled ? ESP_HUB_COLOR_PANEL_ALT : ESP_HUB_COLOR_PANEL);
-        drawRect(fb, DEATH_MENU_LEFT, top, DEATH_MENU_RIGHT, bottom, accent);
-        fillRect(fb, DEATH_MENU_LEFT + 3, top + 3,
-                 DEATH_MENU_LEFT + 4, bottom - 3, accent);
+        /* First JUNCTION tap in late sectors must remain visible after
+         * removing the crowded second-line hint. Confirm uses the shared
+         * pressed industrial palette and replaces the single action face. */
+        const int confirming = row == 1 && deathState.junctionConfirm != 0U;
+        if (!EspMainMenuSkin_paintPlate(
+                fb, DEATH_VIEWPORT_WIDTH, DEATH_VIEWPORT_WIDTH,
+                DEATH_SCREEN_HEIGHT, DEATH_MENU_LEFT, top,
+                DEATH_MENU_RIGHT, bottom,
+                confirming ? ESP_MAIN_MENU_SKIN_CONFIRM :
+                             ESP_MAIN_MENU_SKIN_IDLE))
+            return 0;
+        /* The 19px plate has room for ONE 5x7 face, not stacked 5x7 +
+         * 3x5 captions: their pixels otherwise collide with the copper
+         * seams at top+3 and bottom-3. Keep the glyph wholly in the
+         * dark inset (top+6..12), without changing finger hitboxes. */
         EspNativeGameplayHubTouchUi_drawCrispText(
-            fb, labels[row], 83, top + 3,
-            enabled ? ESP_HUB_COLOR_IVORY : ESP_HUB_COLOR_STEEL);
-        EspNativeGameplayHubTouchUi_drawMiniText(
-            fb, hint, 83, top + 12,
-            enabled ? ESP_HUB_COLOR_AMBER :
-            row == 0 ? ESP_HUB_COLOR_RED : ESP_HUB_COLOR_STEEL_DARK);
+            fb, confirming ? "CONFIRM JUNCTION" : labels[row],
+            80, top + 6,
+            enabled ? (confirming ? 0xffffU : 0xf6afU) : 0x9cd3U);
     }
     return Esp32PlatformVideo_present();
 }
 
 void EspNativeGameplayPlayerDeath_reset(void) {
     memset(&deathState, 0, sizeof(deathState));
+    memset(&entryPlayer, 0, sizeof(entryPlayer));
+    entryMapId = 0U;
+    entryCaptured = 0U;
+}
+
+/* One capture per activated native session. After manual LOAD this is the
+ * resumed session pose/resources, not a fabricated historical sector autosave.
+ * RETRY still rebuilds the complete BSP from its immutable PAK source. */
+int EspNativeGameplayPlayerDeath_captureEntry(void) {
+    const EspPlayerViewState* view = EspPlayerView_view();
+    if (entryCaptured) return 1;
+    if (deathState.active || view == NULL || view->active != 1U ||
+        !EspMapCatalog_isValidId(view->targetMapId) ||
+        view->viewX != view->destX || view->viewY != view->destY ||
+        !EspNativeGameplayPlayerState_snapshot(&entryPlayer) ||
+        (entryPlayer.param1 & 0xffU) == 0U) return 0;
+    entryMapId = view->targetMapId;
+    entryCaptured = 1U;
+    printf("[DEATHROUTE] ENTRY map=%u playerFNV=%08x bytes=%u source=first-native-session-frame\n",
+           (unsigned int)entryMapId,
+           (unsigned int)EspNativeGameplayPlayerState_fingerprint(),
+           (unsigned int)sizeof(entryPlayer));
+    return 1;
+}
+
+void EspNativeGameplayPlayerDeath_cancelQueuedRoute(void) {
+    if (!deathState.routeQueued ||
+        deathState.phase != ESP_NATIVE_GAMEPLAY_PLAYER_DEATH_MENU_READY)
+        return;
+    deathState.routeQueued = 0U;
+    deathState.junctionConfirm = 0U;
+    deathState.menuPainted = paintDeathMenu() ? 1U : 0U;
+    printf("[DEATHROUTE] RETURN menu=death painted=%u sourceWorld=unchanged\n",
+           (unsigned int)deathState.menuPainted);
 }
 
 int EspNativeGameplayPlayerDeath_isActive(void) {
@@ -220,7 +293,7 @@ int EspNativeGameplayPlayerDeath_handleTap(int logicalX, int logicalY) {
     int action;
     if (!EspNativeGameplayPlayerDeath_isMenuReady() ||
         deathState.menuPainted == 0U ||
-        deathState.pendingAction != 0U) {
+        deathState.pendingAction != 0U || deathState.routeQueued != 0U) {
         return 0;
     }
     if (EspNativeGameplaySave_mainSelectorActive()) {
@@ -236,6 +309,12 @@ int EspNativeGameplayPlayerDeath_handleTap(int logicalX, int logicalY) {
     if (logicalX < DEATH_MENU_LEFT || logicalX > DEATH_MENU_RIGHT) return 0;
     action = menuRowForY(logicalY);
     if (action == 0) return 0;
+    if ((action == DEATH_MENU_LOAD && !deathState.loadAvailable) ||
+        (action == DEATH_MENU_JUNCTION &&
+         (entryMapId == ESP_MAP_ID_INTRO ||
+          !deathState.preDeathCaptured)) ||
+        (action == DEATH_MENU_RETRY && !entryCaptured)) return 0;
+    if (action != DEATH_MENU_JUNCTION) deathState.junctionConfirm = 0U;
     deathState.pendingAction = (uint8_t)action;
     if (deathState.menuTaps != UINT8_MAX) ++deathState.menuTaps;
     printf("[DEATHMENU] TAP n=%u logical=%d,%d action=%u route=%s queued=yes\n",
@@ -311,6 +390,8 @@ static int armDeath(struct DoomRPG_s* doomRpgBase,
     deathState.lastFade = 255U;
     deathState.deathRand = useReservedRand
         ? reservedRand : DoomRPG_randNextByte(&doomRpg->random);
+    deathState.preDeathPlayer = playerBefore;
+    deathState.preDeathCaptured = 1U;
     deathState.phase = ESP_NATIVE_GAMEPLAY_PLAYER_DEATH_FALL;
     deathState.active = 1U;
 
@@ -372,10 +453,54 @@ int EspNativeGameplayPlayerDeath_service(struct DoomRPG_s* doomRpgBase) {
             return 1;
         }
 
-        printf("[DEATHMENU] DEFER action=%s reason=route-backend-unowned mutation=no sessionReplace=no menu=retained\n",
-               action == DEATH_MENU_JUNCTION ? "JUNCTION" :
-               action == DEATH_MENU_RETRY ? "RETRY" : "MAIN");
-        return 1;
+        if (action == DEATH_MENU_RETRY) {
+            if (entryCaptured && entryMapId != 0U &&
+                EspNativeStartup_queueDeathRoute(entryMapId, &entryPlayer)) {
+                deathState.routeQueued = 1U;
+                printf("[DEATHMENU] DISPATCH action=RETRY target=%u route=PAK-fresh-map player=entry-snapshot saveWrite=no\n",
+                       (unsigned int)entryMapId);
+            } else {
+                printf("[DEATHMENU] REFUSED action=RETRY reason=no-safe-native-entry menu=retained\n");
+            }
+            return 1;
+        }
+        if (action == DEATH_MENU_JUNCTION) {
+            EspNativeGameplayPlayerState recovered;
+            const uint8_t sourceMap = entryMapId;
+            if (sourceMap == ESP_MAP_ID_INTRO ||
+                !deathState.preDeathCaptured) return 1;
+            /* Legacy after the destroyed Junction asks for confirmation
+             * before returning to normal Junction. Keep the native contract
+             * visible without importing desktop MenuSystem states. */
+            if (sourceMap >= 10U && !deathState.junctionConfirm) {
+                deathState.junctionConfirm = 1U;
+                if (!paintDeathMenu()) return 0;
+                printf("[DEATHMENU] CONFIRM action=JUNCTION source=%u tap-again=yes\n",
+                       (unsigned int)sourceMap);
+                return 1;
+            }
+            recovered = deathState.preDeathPlayer;
+            recovered.param1 = (recovered.param1 & ~0xffU) |
+                ((recovered.param1 >> 8) & 0xffU); /* full HP */
+            if (EspNativeStartup_queueDeathRoute(
+                    ESP_MAP_ID_JUNCTION, &recovered)) {
+                deathState.routeQueued = 1U;
+                printf("[DEATHMENU] DISPATCH action=JUNCTION target=%u route=PAK-fresh-map player=predeath-recovered saveWrite=no\n",
+                       (unsigned int)ESP_MAP_ID_JUNCTION);
+            } else {
+                printf("[DEATHMENU] REFUSED action=JUNCTION reason=unsafe-native-entry menu=retained\n");
+            }
+            return 1;
+        }
+        if (action == DEATH_MENU_MAIN) {
+            if (EspNativeResidentGameplay_requestExitToMenuFromDeath()) {
+                printf("[DEATHMENU] DISPATCH action=MAIN route=native-outer-loop checkpoint=unchanged\n");
+                return 1;
+            }
+            printf("[DEATHMENU] REFUSED action=MAIN reason=unsafe-teardown-boundary menu=retained\n");
+            return 1;
+        }
+
     }
 
     now = DoomRPG_GetUpTimeMS();
@@ -393,7 +518,7 @@ int EspNativeGameplayPlayerDeath_service(struct DoomRPG_s* doomRpgBase) {
         if (!paintDeathMenu()) return 0;
         deathState.menuPainted = 1U;
         ++deathState.framesPresented;
-        printf("[PLAYERDEATH] READY seq=%u tile=%u elapsedMs=%u phase=death-menu-ready viewZ=%d fade=0 frames=%u input=death-menu load=%s routes=LOAD-live/JUNCTION+RETRY+MAIN-fail-closed menuOwner=native\n",
+        printf("[PLAYERDEATH] READY seq=%u tile=%u elapsedMs=%u phase=death-menu-ready viewZ=%d fade=0 frames=%u input=death-menu load=%s routes=LOAD+JUNCTION+RETRY+MAIN-native menuOwner=native\n",
                (unsigned int)deathState.sequence,
                (unsigned int)deathState.tileIndex,
                (unsigned int)elapsed,

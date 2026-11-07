@@ -75,8 +75,9 @@ assert menu.count("DoomRPG_esp32MainMenuCardRect(") == 1
 assert touch.count("DoomRPG_esp32MainMenuCardRect(") == 0
 assert touch.count("DoomRPG_esp32IndustrialMainCardRect(") == 1
 assert "return findHitItem(screenX / DOOMRPG_INTEGER_SCALE" in touch
-assert "DoomRPG_esp32MainMenuCardRect(item, &left, &top, &right, &bottom)" in options
-assert "DoomRPG_esp32MainMenuCardRect(OPTIONS_BACK_ITEM" in options
+assert "DoomRPG_esp32OptionsCardRect(item, &left, &top, &right, &bottom)" in options
+assert "DoomRPG_esp32OptionsCardRect(OPTIONS_BACK_ITEM" in options
+assert "DoomRPG_esp32VideoCardRect(item, &l, &t, &r, &b)" in options
 assert "DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_LEFT" not in options
 assert "DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_TOP" not in options
 assert "cardRect(item, &left, &top, &right, &bottom)" in touch
@@ -85,9 +86,12 @@ assert "DOOMRPG_ESP32_MAIN_MENU_CARD_COL1" not in touch
 assert "DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0" not in touch
 assert "DOOMRPG_ESP32_MAIN_MENU_CARD_ROW1" not in menu
 assert "focused = selected && armed && enabled" in menu
-card = function(menu, "static void drawDashboardCard(")
-assert "MAIN_DOOM_RED_HOT" in card and "ESP_HUB_COLOR_AMBER" not in card
-assert card.count("drawRect565(") == 1  # no orange/white nested ring
+card = function(menu, "static int drawDashboardCard(")
+assert "ESP_MAIN_MENU_SKIN_ARMED" in card
+assert "EspMainMenuSkin_paintPlate(" in card
+assert "EspMainMenuSkin_paintText(" in card
+assert "EspNativeCanvas_drawText(" not in card
+assert "drawRect565(" not in card  # no competing legacy border
 drawCards = function(menu, "int DoomRPG_esp32PaintMenuDashboardCards(")
 assert "DASH_RAIL_LEFT" in drawCards and "DASH_RAIL_RIGHT" in drawCards
 assert "DASH_RAIL_TOP" in drawCards and "DASH_RAIL_BOTTOM" in drawCards
@@ -129,30 +133,33 @@ assert "framebuffer[" not in function(video, 'extern "C" int Esp32Backlight_setP
 # Luminosité is a real child screen. Root keeps the original 2-tap navigation
 # while the five child presets are directly selectable with one released tap.
 assert "DoomRPG_esp32PaintMainMenuOptionsDashboardSelection(" in options_painter
-assert '"LUMINOSITE"' in options_painter
+assert '"LUMINOSITE"' in function(menu, "int DoomRPG_esp32PaintVideoMenuCards(")
+assert "DoomRPG_esp32PaintMainMenuVideoDashboardSelection(" in options_painter
+assert '"VIDEO"' in options_painter
 assert '"BRT %u"' not in options_painter
-assert 'strcmp(label, "LUMINOSITE") == 0' in menu
-smallLabel = function(menu, "static void drawLuminositeLabel(")
-assert "static const uint8_t glyphs[10][7]" in smallLabel
-assert "putPixel(render, x + ch * 5 + col, y + row, color)" in smallLabel
+assert "drawLuminositeLabel" not in menu
+assert "drawOrientationLabel" not in menu
+assert "EspMainMenuSkin_paintText(" in menu
 assert "Esp32Backlight_isReady()" in options_painter
 assert "DoomRPG_esp32PaintBrightnessPresetCards(" in options_painter
-assert '"ORIENTATION"' in options_painter
+assert '"ORIENTATION"' in function(menu, "int DoomRPG_esp32PaintVideoMenuCards(")
 assert "DoomRPG_esp32PaintOrientationPresetCards(" in options_painter
 assert "EspNativeConfig_saveOrientation(after)" in options
 assert "Esp32Orientation_set(after)" in options
 assert options.index("EspNativeConfig_saveOrientation(after)") < options.index("Esp32Orientation_set(after)")
 assert "orientationOpen = 1U;" in options
 assert "PlatformInput_requireFreshTapAfterRelease();" in options
-assert "framebuffer=single" in options
+assert "confirmation=two-tap autoBack=VIDEO" in options
 
-presets = function(menu, "int DoomRPG_esp32PaintBrightnessPresetCards(")
-assert '"BACK", "25%", "50%", "75%", "100%"' in presets
-assert "DoomRPG_esp32BrightnessCardRect(item," in presets
-assert "DASH_RAIL_LEFT" in presets and "DASH_RAIL_RIGHT" in presets
-assert "item != 0 && activePercent == percent" in presets
-assert "DoomRPG_esp32MainMenuCardRect(item, &left, &top, &right, &bottom)" in options
+presets = function(menu, "int DoomRPG_esp32PaintBrightnessPresetCardsSelection(")
+assert '"BACK","25%","50%","75%","100%"' in presets
+assert "paintChildCard(doomRpg, item, names[item]" in presets
+assert "DASH_RAIL_LEFT" in function(menu, "static int paintChildRail(")
+assert "DASH_RAIL_RIGHT" in function(menu, "static int paintChildRail(")
+assert "DoomRPG_esp32BrightnessCardRect(item, &l, &t, &r, &b)" in function(menu, "static int paintChildCard(")
+assert "(uint8_t)(item * 25U) == activePercent" in presets
 assert "DoomRPG_esp32BrightnessCardRect(item, &left, &top, &right, &bottom)" in options
+assert "DoomRPG_esp32VideoCardRect(item, &left, &top, &right, &bottom)" in options
 assert "luminositeOpen ? luminositeItemAt" in options
 assert "if (luminositeOpen)" in options
 assert "if (armedItem != item)" in options
@@ -168,7 +175,19 @@ assert "OPTIONSBRIGHTNESS] OPEN" in options
 assert "OPTIONSBRIGHTNESS] BACK" in options
 assert "DoomRPG_esp32MainMenuReturnToMain(" in options
 assert "optionsExpectedFrameFNV" in options
-assert "Sound stays fail-closed" in options
+assert "SOUND is intentionally deferred" in options
+assert "#define OPTIONS_ITEM_COUNT DOOMRPG_ESP32_OPTIONS_CARD_COUNT" in options
+assert "videoOpen = 1U;" in options
+assert "videoOpen = 0U;" in options
+assert "if (videoOpen)" in options
+assert "if (!paintVideoState(VIDEO_BACK_ITEM, 0))" in options
+assert "OPEN from=Options cards=BACK/LUMINOSITE/ORIENTATION/THEME" in options
+assert "BACK to=VIDEO" in options
+assert "DoomRPG_esp32OptionsCardRect(" in menu
+assert "DoomRPG_esp32VideoCardRect(" in menu
+assert "themeOpen = 1U;" in options
+assert "EspNativeConfig_saveTheme(after)" in options
+assert "DoomRPG_esp32PaintThemePresetCards(" in menu
 assert "logoDst.x" in paintOptions and "SDL_RenderCopy(" in paintOptions
 
 assert 'static char noSaveLabel[] = "NO SAVE";' in load
@@ -292,7 +311,7 @@ int main(void) {
         int l, t, r, b;
         DoomRPG_esp32BrightnessCardRect(i, &l, &t, &r, &b);
         assert(l == 104 && r == 157);
-        assert(t == 6 + i*22 && b == 25 + i*22);
+        assert(t == 6 + i*22 && b == 26 + i*22);
         assert(t > DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP);
         assert(b < DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM);
         if (i < DOOMRPG_ESP32_BRIGHTNESS_CARD_COUNT-1) {

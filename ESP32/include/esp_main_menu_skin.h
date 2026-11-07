@@ -17,6 +17,33 @@ typedef enum {
     ESP_MAIN_MENU_SKIN_CONFIRM = 2
 } EspMainMenuSkinState;
 
+/* ROM-only glyph palettes, persisted in the native 12-byte SD config.
+ * No RAM framebuffer copy and no change to the industrial metal chassis. */
+#define ESP_MAIN_MENU_THEME_CLASSIC 0U
+#define ESP_MAIN_MENU_THEME_INFERNO 1U
+#define ESP_MAIN_MENU_THEME_PHOSPHORE 2U
+uint8_t EspMainMenuSkin_getTheme(void);
+int EspMainMenuSkin_setTheme(uint8_t theme);
+uint16_t EspMainMenuSkin_letterTone(int row, int rows);
+
+/* Theme-matched line/seam color for the industrial plates and Options
+ * ornaments. CLASSIC is pixel-identical to the historical copper palette;
+ * INFERNO has warm ember seams and PHOSPHORE mint/green seams. Returns 0
+ * on an invalid plate state, without mutating theme or framebuffer. */
+uint16_t EspMainMenuSkin_accentTone(EspMainMenuSkinState state);
+
+/* Six-row loading progress ink, independently colored by the selected theme.
+ * CLASSIC stays byte-identical to the original amber gauge. Bounds checked,
+ * ROM-only (no cache or extra framebuffer). */
+uint16_t EspMainMenuSkin_progressTone(int row, int rows);
+
+/* Paint all 9 original glyph rows (including A/E/H crossbars). Long
+ * words sample three columns, never omit rows. No shift, shadow or IO. */
+int EspMainMenuSkin_paintText(uint16_t* framebuffer, int stride,
+                              int width, int height,
+                              int left, int top, int right, int bottom,
+                              const char* label, int selected, int enabled);
+
 /* Shared procedural gunmetal chassis. No text, heap or IO. Strict 160x120
  * framebuffer and bounded rectangle; invalid inputs leave pixels untouched.
  * The same IDLE geometry/palette is used by the loading presentation. */

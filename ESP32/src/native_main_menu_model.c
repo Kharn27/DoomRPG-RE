@@ -11,6 +11,7 @@
 
 #include "esp_legacy_asset_source.h"
 #include "native_main_menu_model.h"
+#include "native_main_menu_160x120_layout.h"
 #include "platform_video_config.h"
 
 #define ESP32_SND_FLG_LOOP       1U
@@ -204,9 +205,8 @@ static int buildFixedOptionsModel(DoomRPG_t* doomRpg) {
 
     setFixedItem(&menuSystem->items[menuSystem->numItems++], "Back", 0);
     setFixedItem(&menuSystem->items[menuSystem->numItems++], "Video", 0);
-    setFixedItem(&menuSystem->items[menuSystem->numItems++], "Orientation", 0);
     setFixedItem(&menuSystem->items[menuSystem->numItems++], "Sound", 0);
-    return menuSystem->numItems == 4;
+    return menuSystem->numItems == DOOMRPG_ESP32_OPTIONS_CARD_COUNT;
 }
 
 static int buildBoundedHelpModel(DoomRPG_t* doomRpg) {

@@ -38,33 +38,27 @@
 #define HUB_UI_FONT_SOURCE_HEIGHT 72U
 #define HUB_UI_FONT_TRANSPARENT 1U
 
-#define HUB_UI_INV_LEFT 2
-#define HUB_UI_INV_TOP 21
-#define HUB_UI_INV_RIGHT 52
-#define HUB_UI_INV_BOTTOM 33
-#define HUB_UI_STATUS_LEFT 54
-#define HUB_UI_STATUS_TOP 21
-#define HUB_UI_STATUS_RIGHT 104
-#define HUB_UI_STATUS_BOTTOM 33
-#define HUB_UI_SYSTEM_LEFT 106
-#define HUB_UI_SYSTEM_TOP 21
-#define HUB_UI_SYSTEM_RIGHT 157
-#define HUB_UI_SYSTEM_BOTTOM 33
+/* Tabs now live in top HUD y2..17, not a duplicate row at y21..33.
+ * Standalone Weapons keeps its own BACK button in the viewport. */
 #define HUB_UI_WEAPON_BACK_LEFT 116
 #define HUB_UI_WEAPON_BACK_RIGHT 157
+#define HUB_UI_WEAPON_BACK_TOP 21
+#define HUB_UI_WEAPON_BACK_BOTTOM 33
 
 #define HUB_UI_ROW_LEFT 2
 #define HUB_UI_ROW_RIGHT 157
 #define HUB_UI_ROW_TOUCH_LEFT 10
 #define HUB_UI_ROW_TOUCH_RIGHT 149
-#define HUB_UI_ROW0_TOP 36
-#define HUB_UI_ROW0_BOTTOM 54
-#define HUB_UI_ROW1_TOP 57
-#define HUB_UI_ROW1_BOTTOM 75
-#define HUB_UI_ROW2_TOP 78
-#define HUB_UI_ROW2_BOTTOM 96
-#define HUB_UI_ROW3_TOP 99
-#define HUB_UI_ROW3_BOTTOM 117
+/* Former tab row becomes real inventory space. Four 21px readable
+ * cards at y23..43 / 47..67 / 71..91 / 95..115, 3px gaps. */
+#define HUB_UI_ROW0_TOP 23
+#define HUB_UI_ROW0_BOTTOM 43
+#define HUB_UI_ROW1_TOP 47
+#define HUB_UI_ROW1_BOTTOM 67
+#define HUB_UI_ROW2_TOP 71
+#define HUB_UI_ROW2_BOTTOM 91
+#define HUB_UI_ROW3_TOP 95
+#define HUB_UI_ROW3_BOTTOM 115
 #define HUB_UI_INVENTORY_ROWS 4U
 
 static const uint8_t inventoryRowTops[HUB_UI_INVENTORY_ROWS] = {
@@ -218,6 +212,47 @@ static void drawTab(uint16_t* framebuffer,
              selected ? HUB_UI_FOCUS : HUB_UI_STEEL);
     drawCrispText(framebuffer, label, (left + right) / 2,
                   top + 3, selected ? HUB_UI_FOCUS : HUB_UI_TEXT);
+}
+
+/* Header tabs can only be written to the upper band. Ordinary HUB putPixel
+ * intentionally rejects y<20, preventing in-game body painters overwriting
+ * gameplay chrome. No snapshot or separate header buffer is allocated. */
+static void topPixel(uint16_t* framebuffer, int x, int y, uint16_t color) {
+    if (framebuffer == NULL || x < 32 || x >= DOOMRPG_LOGICAL_WIDTH ||
+        y < 0 || y >= HUB_UI_TOP) return;
+    framebuffer[y * DOOMRPG_LOGICAL_WIDTH + x] = color;
+}
+
+int EspNativeGameplayHubTouchUi_paintHeaderTabs(
+    uint16_t* framebuffer, uint8_t page) {
+    static const char* const labels[ESP_NATIVE_HUB_TOP_TAB_COUNT] =
+        {"INV", "STAT", "SYS"};
+    static const uint8_t pages[ESP_NATIVE_HUB_TOP_TAB_COUNT] = {
+        ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY,
+        ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS,
+        ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM
+    };
+    int tab;
+    if (framebuffer == NULL || page >= ESP_NATIVE_GAMEPLAY_HUB_PAGE_COUNT ||
+        page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS) return 0;
+    for (tab = 0; tab < ESP_NATIVE_HUB_TOP_TAB_COUNT; ++tab) {
+        int l, r, x, y;
+        const int selected = pages[tab] == page;
+        const uint16_t border = selected ? HUB_UI_FOCUS : HUB_UI_STEEL;
+        const uint16_t face = selected ? HUB_UI_PANEL_ALT : HUB_UI_PANEL;
+        if (!EspNativeGameplayHubTouchUi_headerTabBounds(tab, &l, &r))
+            return 0;
+        for (y = ESP_NATIVE_HUB_TOP_TAB_TOP;
+             y <= ESP_NATIVE_HUB_TOP_TAB_BOTTOM; ++y)
+            for (x = l; x <= r; ++x)
+                topPixel(framebuffer, x, y,
+                         (x == l || x == r ||
+                          y == ESP_NATIVE_HUB_TOP_TAB_TOP ||
+                          y == ESP_NATIVE_HUB_TOP_TAB_BOTTOM) ? border : face);
+        drawCrispText(framebuffer, labels[tab], (l + r) / 2, 6,
+                      selected ? HUB_UI_FOCUS : HUB_UI_TEXT);
+    }
+    return 1;
 }
 
 static uint8_t inventoryWindowStart(uint8_t selectedEntry, uint8_t entryCount) {
@@ -418,13 +453,13 @@ static void drawStatusMetricCard(uint16_t* framebuffer,
                                  uint8_t current,
                                  uint8_t maximum,
                                  uint16_t gaugeColor) {
-    const int gaugeTop = 37;
-    const int gaugeBottom = 50;
+    const int gaugeTop = 25;
+    const int gaugeBottom = 49;
     const int gaugeHeight = gaugeBottom - gaugeTop + 1;
     int filled = 0;
 
-    fillRect(framebuffer, left, 35, right, 52, HUB_UI_PANEL);
-    drawRect(framebuffer, left, 35, right, 52, HUB_UI_DIM);
+    fillRect(framebuffer, left, 23, right, 51, HUB_UI_PANEL);
+    drawRect(framebuffer, left, 23, right, 51, HUB_UI_DIM);
     fillRect(framebuffer, left + 2, gaugeTop,
              left + 3, gaugeBottom, HUB_UI_DIM);
     if (maximum != 0U) {
@@ -436,8 +471,8 @@ static void drawStatusMetricCard(uint16_t* framebuffer,
         fillRect(framebuffer, left + 2, gaugeBottom - filled + 1,
                  left + 3, gaugeBottom, gaugeColor);
     }
-    drawMiniTextAt(framebuffer, label, left + 7, 37, 1, HUB_UI_STEEL);
-    drawCrispText(framebuffer, value, (left + right) / 2, 44, HUB_UI_TEXT);
+    drawMiniTextAt(framebuffer, label, left + 7, 27, 1, HUB_UI_STEEL);
+    drawCrispText(framebuffer, value, (left + right) / 2, 39, HUB_UI_TEXT);
 }
 
 static void drawStatusProgress(uint16_t* framebuffer,
@@ -548,35 +583,35 @@ static int paintStatusDashboard(
     drawStatusMetricCard(framebuffer, 81, 157, "ARMOR", value,
                          armor, maxArmor, HUB_UI_ARMOR);
 
-    fillRect(framebuffer, 2, 57, 157, 74, HUB_UI_PANEL_ALT);
-    drawRect(framebuffer, 2, 57, 157, 74, HUB_UI_DIM);
-    drawMiniTextAt(framebuffer, "LEVEL", 7, 61, 1, HUB_UI_STEEL);
+    fillRect(framebuffer, 2, 55, 157, 77, HUB_UI_PANEL_ALT);
+    drawRect(framebuffer, 2, 55, 157, 77, HUB_UI_DIM);
+    drawMiniTextAt(framebuffer, "LEVEL", 7, 60, 1, HUB_UI_STEEL);
     snprintf(value, sizeof(value), "%u", (unsigned int)player->level);
-    drawMiniTextRight(framebuffer, value, 48, 61, HUB_UI_TEXT);
-    drawMiniTextAt(framebuffer, "XP", 55, 61, 1, HUB_UI_STEEL);
+    drawMiniTextRight(framebuffer, value, 48, 60, HUB_UI_TEXT);
+    drawMiniTextAt(framebuffer, "XP", 55, 60, 1, HUB_UI_STEEL);
     snprintf(value, sizeof(value), "%lu/%lu",
              (unsigned long)player->currentXP,
              (unsigned long)player->nextLevelXP);
-    drawMiniTextRight(framebuffer, value, 153, 61, HUB_UI_TEXT);
-    drawStatusProgress(framebuffer, 55, 153, 71,
+    drawMiniTextRight(framebuffer, value, 153, 60, HUB_UI_TEXT);
+    drawStatusProgress(framebuffer, 55, 153, 74,
                        player->currentXP, player->nextLevelXP);
 
-    fillRect(framebuffer, 2, 78, 157, 101, HUB_UI_BLACK);
-    drawRect(framebuffer, 2, 78, 157, 101, HUB_UI_DIM);
-    fillRect(framebuffer, 79, 80, 80, 99, HUB_UI_DIM);
-    fillRect(framebuffer, 4, 89, 155, 89, HUB_UI_DIM);
-    drawStatusAttribute(framebuffer, "DEF", defense, 7, 72, 81);
-    drawStatusAttribute(framebuffer, "STR", strength, 86, 151, 81);
-    drawStatusAttribute(framebuffer, "AGI", agility, 7, 72, 93);
-    drawStatusAttribute(framebuffer, "ACC", accuracy, 86, 151, 93);
+    fillRect(framebuffer, 2, 81, 157, 104, HUB_UI_BLACK);
+    drawRect(framebuffer, 2, 81, 157, 104, HUB_UI_DIM);
+    fillRect(framebuffer, 79, 83, 80, 102, HUB_UI_DIM);
+    fillRect(framebuffer, 4, 93, 155, 93, HUB_UI_DIM);
+    drawStatusAttribute(framebuffer, "DEF", defense, 7, 72, 84);
+    drawStatusAttribute(framebuffer, "STR", strength, 86, 151, 84);
+    drawStatusAttribute(framebuffer, "AGI", agility, 7, 72, 96);
+    drawStatusAttribute(framebuffer, "ACC", accuracy, 86, 151, 96);
 
-    fillRect(framebuffer, 2, 105, 157, 117, HUB_UI_PANEL);
-    drawRect(framebuffer, 2, 105, 157, 117, HUB_UI_DIM);
+    fillRect(framebuffer, 2, 107, 157, 118, HUB_UI_PANEL);
+    drawRect(framebuffer, 2, 107, 157, 118, HUB_UI_DIM);
     drawMiniTextAt(framebuffer, "CRED", 7, 109, 1, HUB_UI_STEEL);
     snprintf(value, sizeof(value), "%lu", (unsigned long)player->credits);
     drawMiniTextRight(framebuffer, value, 74, 109, HUB_UI_TEXT);
     drawStatusKeys(framebuffer, player->keys);
-    printf("[HUBSTAT] FRAME layout=compact-read-only font=3x5 vitals=two-card-gauges hpGauge=green-or-red armorGauge=blue xp=progress attributes=2x2 keys=owned-color-cards keyMask=%08lx touchTargets=tab-only mutation=no turn=no\n",
+    printf("[HUBSTAT] FRAME layout=topbar-reclaimed-read-only font=3x5 vitals=two-card-gauges hpGauge=green-or-red armorGauge=blue xp=progress attributes=2x2 keys=owned-color-cards keyMask=%08lx touchTargets=tab-only mutation=no turn=no\n",
            (unsigned long)player->keys);
     return 1;
 }
@@ -717,22 +752,13 @@ int EspNativeGameplayHubTouchUi_paint(uint16_t* framebuffer,
     uint8_t count;
     if (framebuffer == NULL || page >= ESP_NATIVE_GAMEPLAY_HUB_PAGE_COUNT) return 0;
 
-    fillRect(framebuffer, 1, 21, 158, 33, HUB_UI_PANEL);
     if (page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS) {
-        /* Standalone grid: none of the HUB tabs appear here. */
+        /* Standalone grid keeps its own BACK in the content viewport. */
+        fillRect(framebuffer, 1, HUB_UI_WEAPON_BACK_TOP, 158,
+                 HUB_UI_WEAPON_BACK_BOTTOM, HUB_UI_PANEL);
         drawCrispText(framebuffer, "WEAPONS", 54, 24, HUB_UI_TEXT);
-        drawTab(framebuffer, HUB_UI_WEAPON_BACK_LEFT, HUB_UI_INV_TOP,
-                HUB_UI_WEAPON_BACK_RIGHT, HUB_UI_INV_BOTTOM, "BACK", 0);
-    } else {
-        drawTab(framebuffer, HUB_UI_INV_LEFT, HUB_UI_INV_TOP,
-                HUB_UI_INV_RIGHT, HUB_UI_INV_BOTTOM, "INV",
-                page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY);
-        drawTab(framebuffer, HUB_UI_STATUS_LEFT, HUB_UI_STATUS_TOP,
-                HUB_UI_STATUS_RIGHT, HUB_UI_STATUS_BOTTOM, "STAT",
-                page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS);
-        drawTab(framebuffer, HUB_UI_SYSTEM_LEFT, HUB_UI_SYSTEM_TOP,
-                HUB_UI_SYSTEM_RIGHT, HUB_UI_SYSTEM_BOTTOM, "SYS",
-                page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM);
+        drawTab(framebuffer, HUB_UI_WEAPON_BACK_LEFT, HUB_UI_WEAPON_BACK_TOP,
+                HUB_UI_WEAPON_BACK_RIGHT, HUB_UI_WEAPON_BACK_BOTTOM, "BACK", 0);
     }
 
     memset(&player, 0, sizeof(player));
@@ -805,6 +831,12 @@ static uint8_t tabAction(uint8_t currentPage, uint8_t targetPage) {
             : ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT);
 }
 
+static const uint8_t headerTabPages[ESP_NATIVE_HUB_TOP_TAB_COUNT] = {
+    ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY,
+    ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS,
+    ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM
+};
+
 static int classifyTab(const EspNativeGameplayHubView* view,
                        int logicalX,
                        int logicalY,
@@ -837,35 +869,38 @@ int EspNativeGameplayHubTouchUi_classify(
     if (outHit == NULL || view == NULL || view->active == 0U) return 0;
     if (logicalX < 0 || logicalX >= DOOMRPG_LOGICAL_WIDTH ||
         logicalY < 0 || logicalY >= DOOMRPG_LOGICAL_HEIGHT) return 0;
-    if (logicalY < HUB_UI_TOP || logicalY > HUB_UI_BOTTOM) return 0;
+    if (logicalY > HUB_UI_BOTTOM) return 0;
     memset(outHit, 0, sizeof(*outHit));
+
+    if (logicalY < HUB_UI_TOP) {
+        int k;
+        /* Hand/menu (x0..31) is still the single legitimate fall-through.
+         * Everything else is HUB-owned, never the world AUTOMAP/PASS TURN. */
+        if (logicalX <= 31) return 0;
+        if (view->page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS) return -1;
+        for (k = 0; k < ESP_NATIVE_HUB_TOP_TAB_COUNT; ++k) {
+            int l, r;
+            if (!EspNativeGameplayHubTouchUi_headerTabBounds(k, &l, &r))
+                return -1;
+            tab = classifyTab(view, logicalX, logicalY,
+                              headerTabPages[k], l,
+                              ESP_NATIVE_HUB_TOP_TAB_TOP, r,
+                              ESP_NATIVE_HUB_TOP_TAB_BOTTOM, outHit);
+            if (tab != 0) return tab;
+        }
+        return -1;
+    }
 
     if (view->page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS) {
         if (inside(logicalX, logicalY, HUB_UI_WEAPON_BACK_LEFT,
-                   HUB_UI_INV_TOP, HUB_UI_WEAPON_BACK_RIGHT,
-                   HUB_UI_INV_BOTTOM)) {
+                   HUB_UI_WEAPON_BACK_TOP, HUB_UI_WEAPON_BACK_RIGHT,
+                   HUB_UI_WEAPON_BACK_BOTTOM)) {
             setHit(outHit, ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN,
                    ESP_NATIVE_GAMEPLAY_ZONE_MENU,
-                   HUB_UI_WEAPON_BACK_LEFT, HUB_UI_INV_TOP,
-                   HUB_UI_WEAPON_BACK_RIGHT, HUB_UI_INV_BOTTOM);
+                   HUB_UI_WEAPON_BACK_LEFT, HUB_UI_WEAPON_BACK_TOP,
+                   HUB_UI_WEAPON_BACK_RIGHT, HUB_UI_WEAPON_BACK_BOTTOM);
             return 1;
         }
-    } else {
-    tab = classifyTab(view, logicalX, logicalY,
-                      ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY,
-                      HUB_UI_INV_LEFT, HUB_UI_INV_TOP,
-                      HUB_UI_INV_RIGHT, HUB_UI_INV_BOTTOM, outHit);
-    if (tab != 0) return tab;
-    tab = classifyTab(view, logicalX, logicalY,
-                      ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS,
-                      HUB_UI_STATUS_LEFT, HUB_UI_STATUS_TOP,
-                      HUB_UI_STATUS_RIGHT, HUB_UI_STATUS_BOTTOM, outHit);
-    if (tab != 0) return tab;
-    tab = classifyTab(view, logicalX, logicalY,
-                      ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM,
-                      HUB_UI_SYSTEM_LEFT, HUB_UI_SYSTEM_TOP,
-                      HUB_UI_SYSTEM_RIGHT, HUB_UI_SYSTEM_BOTTOM, outHit);
-    if (tab != 0) return tab;
     }
 
     if (view->page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY &&
@@ -965,23 +1000,19 @@ int EspNativeGameplayHubTouchUi_consumedPageTarget(uint8_t* outPage) {
         view->active == 0U || input->active == 0U || input->pending != 0U ||
         (input->action != ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT &&
          input->action != ESP_NATIVE_GAMEPLAY_ACTION_TURN_RIGHT)) return 0;
-    if (inside(input->logicalX, input->logicalY,
-               HUB_UI_INV_LEFT, HUB_UI_INV_TOP,
-               HUB_UI_INV_RIGHT, HUB_UI_INV_BOTTOM)) {
-        *outPage = ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY;
-        return 1;
-    }
-    if (inside(input->logicalX, input->logicalY,
-               HUB_UI_STATUS_LEFT, HUB_UI_STATUS_TOP,
-               HUB_UI_STATUS_RIGHT, HUB_UI_STATUS_BOTTOM)) {
-        *outPage = ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS;
-        return 1;
-    }
-    if (inside(input->logicalX, input->logicalY,
-               HUB_UI_SYSTEM_LEFT, HUB_UI_SYSTEM_TOP,
-               HUB_UI_SYSTEM_RIGHT, HUB_UI_SYSTEM_BOTTOM)) {
-        *outPage = ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM;
-        return 1;
+    if (view->page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS ||
+        input->logicalY < ESP_NATIVE_HUB_TOP_TAB_TOP ||
+        input->logicalY > ESP_NATIVE_HUB_TOP_TAB_BOTTOM) return 0;
+    for (int k = 0; k < ESP_NATIVE_HUB_TOP_TAB_COUNT; ++k) {
+        int left, right;
+        if (!EspNativeGameplayHubTouchUi_headerTabBounds(k, &left, &right))
+            return 0;
+        if (inside(input->logicalX, input->logicalY,
+                   left, ESP_NATIVE_HUB_TOP_TAB_TOP,
+                   right, ESP_NATIVE_HUB_TOP_TAB_BOTTOM)) {
+            *outPage = headerTabPages[k];
+            return 1;
+        }
     }
     return 0;
 }

@@ -1973,6 +1973,21 @@ int EspNativeResidentGameplay_requestExitToMenu(void) {
     return 1;
 }
 
+/* The dead player cannot open HUB/SYS. Reuse the *same* outer-loop
+ * teardown, but only when the native death menu actually owns input. */
+int EspNativeResidentGameplay_requestExitToMenuFromDeath(void) {
+    if (!EspNativeResidentGameplay_isActive() ||
+        !EspNativeGameplaySession_isActive() ||
+        !EspNativeGameplaySession_canService() ||
+        !EspNativeGameplayPlayerDeath_isMenuReady() ||
+        EspAssetPack_isOpen() || gameplayState.exitRequested) {
+        return 0;
+    }
+    gameplayState.exitRequested = 1U;
+    printf("[DEATHMENU] MAIN-EXIT queued=outer-loop saveWrite=no\n");
+    return 1;
+}
+
 void EspNativeResidentGameplay_serviceMenuExit(struct DoomRPG_s* doomRpgBase) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     uint32_t finalFNV = 0U;
@@ -2138,6 +2153,10 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
             gameplayState.firstWorldPresentArmed = 0U;
             gameplayState.checkpointResumeArmed = 0U;
             gameplayState.active = 1U;
+            if (!EspNativeGameplayPlayerDeath_captureEntry()) {
+                disableGameplay("death-sector-entry-snapshot");
+                return;
+            }
             EspPlayerFreshMap_beginTimer(
                 (uint32_t)(esp_timer_get_time() / 1000LL));
             PlatformInput_setTapCallback(onGameplayTap);

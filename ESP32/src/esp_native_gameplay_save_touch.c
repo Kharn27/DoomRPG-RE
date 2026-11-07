@@ -72,7 +72,7 @@ int __wrap_EspNativeGameplayHubTouchUi_classify(
             }
             return 1;
         }
-        if (logicalY >= 35) return -1;
+        if (logicalY >= 21) return -1;
     }
     if (outHit != NULL &&
         targetForPoint(logicalX, logicalY, &target, &top, &bottom)) {
@@ -91,7 +91,7 @@ int __wrap_EspNativeGameplayHubTouchUi_classify(
 
     /* Preserve tabs/header Back, but never let blank SYS content synthesize a
      * generic SELECT that could confirm Exit outside its own button. */
-    if (logicalY >= 35 && logicalY < 120) return -1;
+    if (logicalY >= 21 && logicalY < 120) return -1;
     return __real_EspNativeGameplayHubTouchUi_classify(
         logicalX, logicalY, outHitBase);
 }

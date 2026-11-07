@@ -19,7 +19,9 @@ assert '"WEAPONS"' in ui and '"BACK"' in ui
 assert "ESP_NATIVE_GAMEPLAY_ACTION_NONE;" in ui
 pages = ui.split("int EspNativeGameplayHubTouchUi_consumedPageTarget(",1)[1].split(
     "int EspNativeGameplayHubTouchUi_consumedInventoryTarget",1)[0]
-assert "ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS" not in pages
+assert "view->page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS" in pages
+assert "*outPage = headerTabPages[k];" in pages
+assert "ESP_NATIVE_HUB_TOP_TAB_TOP" in pages
 selection = hub.split("static EspNativeGameplayHubStatus handleWeaponGridSelect(void)",1)[1].split(
     "EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction",1)[0]
 assert "GRID-DEFER" in selection and "cause=not-owned" in selection

@@ -12,6 +12,7 @@
 #include "esp_native_audio_intent.h"
 #include "esp_native_backlight.h"
 #include "esp_native_orientation.h"
+#include "esp_main_menu_skin.h"
 
 #include "native_main_menu_160x120_layout.h"
 #include "native_main_menu_model.h"
@@ -26,26 +27,21 @@
 /* Keep ESP-IDF's stdbool macros after DoomRPG's legacy boolean enum. */
 #include <esp_heap_caps.h>
 
-#define OPTIONS_ITEM_COUNT 4
+#define OPTIONS_ITEM_COUNT DOOMRPG_ESP32_OPTIONS_CARD_COUNT
 #define OPTIONS_BACK_ITEM 0
 #define OPTIONS_VIDEO_ITEM 1
-#define OPTIONS_ORIENTATION_ITEM 2
+#define OPTIONS_SOUND_ITEM 2
 #define OPTIONS_ENABLED_MASK (1U << OPTIONS_BACK_ITEM)
 
 static const char* expectedOptionsItems[OPTIONS_ITEM_COUNT] = {
-    "Back",
-    "Video",
-    "Orientation",
-    "Sound"
+    "Back", "Video", "Sound"
 };
 
-/* The 10-character French title has a compact 4x7 glyph in the dashboard
- * painter so it fits within the same 54-pixel-wide protected rail. */
+/* Only these three belong to the immutable MENU_MAIN_OPTIONS model.
+ * VIDEO/LUMINOSITE/ORIENTATION/THEME are compact native UI sublayers,
+ * not new desktop MenuSystem models or allocations. */
 static const char* optionsDashboardLabels[OPTIONS_ITEM_COUNT] = {
-    "BACK",
-    "LUMINOSITE",
-    "ORIENTATION",
-    "SOUND"
+    "BACK", "VIDEO", "SOUND"
 };
 
 static uint32_t heap8Free(void) {
@@ -124,18 +120,17 @@ int DoomRPG_esp32PaintMainMenuOptionsDashboardSelection(
     const char* labels[OPTIONS_ITEM_COUNT] = {
         optionsDashboardLabels[0],
         optionsDashboardLabels[1],
-        optionsDashboardLabels[2],
-        optionsDashboardLabels[3]
+        optionsDashboardLabels[2]
     };
     uint8_t mask = OPTIONS_ENABLED_MASK;
 
     if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
         !validateOptionsModel(doomRpg->menuSystem) ||
-        selectedItem < OPTIONS_BACK_ITEM || selectedItem > OPTIONS_ORIENTATION_ITEM) {
+        selectedItem < OPTIONS_BACK_ITEM || selectedItem > OPTIONS_VIDEO_ITEM) {
         return 0;
     }
-    if (Esp32Backlight_isReady()) mask |= (1U << OPTIONS_VIDEO_ITEM);
-    if (Esp32Orientation_isReady()) mask |= (1U << OPTIONS_ORIENTATION_ITEM);
+    /* VIDEO always available: even without PWM/TFT, THEME is usable. */
+    mask |= (1U << OPTIONS_VIDEO_ITEM);
     return DoomRPG_esp32PaintMenuDashboardCards(
         doomRpg, labels, selectedItem, armed, mask, framebufferFNV);
 }
@@ -146,6 +141,21 @@ int DoomRPG_esp32PaintMainMenuOptionsDashboard(
     uint32_t* framebufferFNV) {
     return DoomRPG_esp32PaintMainMenuOptionsDashboardSelection(
         doomRpgBase, OPTIONS_BACK_ITEM, backArmed, framebufferFNV);
+}
+
+int DoomRPG_esp32PaintMainMenuVideoDashboardSelection(
+    struct DoomRPG_s* doomRpgBase, int selectedItem, int armed,
+    uint32_t* framebufferFNV) {
+    DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
+    uint8_t enabledMask = (uint8_t)((1U << 0) | (1U << 3));
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
+        !validateOptionsModel(doomRpg->menuSystem) ||
+        selectedItem < 0 || selectedItem >= DOOMRPG_ESP32_VIDEO_CARD_COUNT)
+        return 0;
+    if (Esp32Backlight_isReady()) enabledMask |= (uint8_t)(1U << 1);
+    if (Esp32Orientation_isReady()) enabledMask |= (uint8_t)(1U << 2);
+    return DoomRPG_esp32PaintVideoMenuCards(
+        doomRpg, selectedItem, armed, enabledMask, framebufferFNV);
 }
 
 int DoomRPG_esp32PaintMainMenuBrightnessDashboard(
@@ -169,6 +179,15 @@ int DoomRPG_esp32PaintMainMenuOrientationDashboard(
         !Esp32Orientation_isReady()) return 0;
     return DoomRPG_esp32PaintOrientationPresetCards(
         doomRpg, Esp32Orientation_get(), framebufferFNV);
+}
+
+int DoomRPG_esp32PaintMainMenuThemeDashboard(
+    struct DoomRPG_s* doomRpgBase, uint32_t* framebufferFNV) {
+    DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
+        !validateOptionsModel(doomRpg->menuSystem)) return 0;
+    return DoomRPG_esp32PaintThemePresetCards(
+        doomRpg, EspMainMenuSkin_getTheme(), framebufferFNV);
 }
 
 static int paintOptionsBounded(DoomRPG_t* doomRpg,
@@ -312,8 +331,7 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase,
                menuSystem->items[i].flags,
                menuSystem->items[i].action,
                (i == OPTIONS_BACK_ITEM ||
-            (i == OPTIONS_VIDEO_ITEM && Esp32Backlight_isReady()) ||
-             (i == OPTIONS_ORIENTATION_ITEM && Esp32Orientation_isReady())) ? "yes" : "no",
+             i == OPTIONS_VIDEO_ITEM) ? "yes" : "no",
                i == menuSystem->selectedIndex ? "yes" : "no");
     }
 
@@ -351,8 +369,9 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase,
 
     SDL_RenderPresent(NULL);
     if (finalFramebufferFNV != NULL) *finalFramebufferFNV = finalHash;
-    printf("[MAINOPTIONS] Presented real MENU_MAIN_OPTIONS model with shared split logo-left/cards-right dashboard paint, Luminosite entry brightness=%u ready=%d Orientation ready=%d\n",
-           (unsigned int)Esp32Backlight_percent(), Esp32Backlight_isReady(), Esp32Orientation_isReady());
+    printf("[MAINOPTIONS] Presented MENU_MAIN_OPTIONS root=BACK/VIDEO/SOUND videoChild=BRIGHTNESS/ORIENTATION/THEME brightness=%u ready=%d orientationReady=%d theme=%u\n",
+           (unsigned int)Esp32Backlight_percent(), Esp32Backlight_isReady(),
+           Esp32Orientation_isReady(), (unsigned int)EspMainMenuSkin_getTheme());
     printf("[MAINOPTIONS] READY explicit MENU_MAIN -> MENU_MAIN_OPTIONS composition; no legacy Render_render, no map reload, no gameplay loader\n");
     return 1;
 }

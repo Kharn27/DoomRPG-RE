@@ -11,6 +11,8 @@
 #include "esp_native_gameplay_player_death.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_save_ui.h"
+#include "esp_native_startup.h"
+#include "esp_map_catalog.h"
 #include "esp_player_view_state.h"
 
 static uint16_t pixels[160 * 120 + 2];
@@ -24,6 +26,20 @@ static int selectorBeginOk = 1, selectorTapResult, selectorTaps;
 static int loadOk = 1;
 static unsigned int deathRngCalls;
 static int automapOwnsScreen, liveHudRepaints, failLiveHud;
+static int deathRoutes, exitRequests, routeAllowed = 1;
+static uint8_t lastRouteMap;
+static EspNativeGameplayPlayerState lastRoutePlayer;
+int EspNativeStartup_queueDeathRoute(
+    uint8_t target, const EspNativeGameplayPlayerState* source) {
+    if (!routeAllowed || source == NULL) return 0;
+    ++deathRoutes;
+    lastRouteMap = target;
+    lastRoutePlayer = *source;
+    return 1;
+}
+int EspNativeResidentGameplay_requestExitToMenuFromDeath(void) {
+    ++exitRequests; return 1;
+}
 
 void* Esp32PlatformVideo_framebuffer(void) { return pixels + 1; }
 size_t Esp32PlatformVideo_framebufferSizeBytes(void) {
@@ -111,23 +127,27 @@ static int colorCount(int top, int bottom, uint16_t color) {
         for (int x = 0; x < 160; ++x) count += pixel(x, y) == color;
     return count;
 }
-static void start(DoomRPG_t* doom, int hasSave) {
+static void start(DoomRPG_t* doom, int hasSave, uint8_t mapId) {
     EspNativeGameplayPlayerDeath_reset();
     memset(&view, 0, sizeof(view)); memset(&hud, 0, sizeof(hud));
     memset(&player, 0, sizeof(player));
     view.active = 1; view.viewZ = 36; view.viewAngle = view.destAngle = 64;
+    view.targetMapId = mapId;
     hud.active = hud.painted = 1;
     hud.model.weapon = 1; /* Intentionally obsolete immutable map-entry HUD. */
     player.active = 1;
     player.weapons = (uint16_t)(1U << 3);
     player.weapon = 3; /* Chosen with the native weapon grid before death. */
     player.ammo[2] = 17;
-    player.param1 = (34U << 8) | (12U << 16) | (23U << 24);
+    player.param1 = 8U | (34U << 8) | (12U << 16) | (23U << 24);
+    assert(EspNativeGameplayPlayerDeath_captureEntry());
+    player.param1 &= ~0xffU; /* Lethal hit committed before death arm. */
     automapOwnsScreen = failLiveHud = liveHudRepaints = 0;
     available = hasSave; clockMs = 0; presents = 0;
     selectorActive = selectorReady = selectorBegins = selectorFinishes = 0;
     selectorTaps = selectorTapResult = 0;
     selectorBeginOk = loadOk = 1;
+    routeAllowed = validBuffer = presentOk = 1;
     for (int i = 0; i < 160 * 120 + 2; ++i) pixels[i] = 0xdead;
     assert(EspNativeGameplayPlayerDeath_arm(doom, 1, 0));
     assert(liveHudRepaints == 1);
@@ -159,12 +179,30 @@ static void preview(const char* path) {
 }
 int main(int argc, char** argv) {
     DoomRPG_t doom = {0}; doom.render = (void*)1;
-    start(&doom, 1);
+    start(&doom, 1, ESP_MAP_ID_INTRO);
     assert(pixel(3, 3) == ESP_HUB_COLOR_STEEL_DARK);
-    assert(pixel(8, 7) == ESP_HUB_COLOR_RED);
-    assert(pixel(10, 33) == ESP_HUB_COLOR_AMBER);
-    assert(colorCount(10, 16, ESP_HUB_COLOR_RED) > 40);
-    assert(colorCount(36, 42, ESP_HUB_COLOR_IVORY) > 100);
+    /* The passive warning stencil must NOT resemble a fifth button:
+     * no gunmetal raised bezel or copper border across y=8/26; the title
+     * is printed on the screen bulkhead. Caution chevrons mirror exactly. */
+    assert(pixel(80, 5) == ESP_HUB_COLOR_BG);
+    assert(pixel(25, 8) == ESP_HUB_COLOR_BG);
+    assert(pixel(25, 26) == ESP_HUB_COLOR_BG);
+    assert(pixel(14, 11) == 0xd344U);
+    assert(pixel(145, 11) == 0xd344U);
+    assert(pixel(80, 27) == ESP_HUB_COLOR_RED);
+    assert(colorCount(5, 10, ESP_HUB_COLOR_RED) == 0);
+    assert(colorCount(11, 17, ESP_HUB_COLOR_RED) > 40);
+    assert(colorCount(18, 24, 0xf6afU) > 30);
+    assert(colorCount(25, 29, 0xf6afU) == 0);
+    assert(pixel(25, 36) == 0xd344U);
+    /* The physical photo exposed overlapping text/seams in 19px plates.
+     * Each action now has exactly one 5x7 face centered at top+6..12.
+     * No ivory/gray caption may intrude into the copper bottom seam. */
+    assert(colorCount(39, 45, 0xf6afU) > 40);
+    assert(colorCount(33, 38, 0xf6afU) == 0);
+    assert(colorCount(46, 51, 0xf6afU) == 0);
+    assert(colorCount(60, 66, 0x9cd3U) > 40); /* INTRO Junction muted but legible */
+    assert(colorCount(67, 72, 0x9cd3U) == 0);
     if (argc > 1) preview(argv[1]);
     /* Header, margin, all gaps, footer and out-of-screen taps stay inert. */
     const int gaps[] = {-1, 0, 28, 32, 52, 53, 73, 74, 94, 95, 115, 119, 120};
@@ -185,7 +223,7 @@ int main(int argc, char** argv) {
     selectorTapResult = -1; /* BACK repaints the death menu. */
     assert(EspNativeGameplayPlayerDeath_handleTap(80, 8));
     assert(!selectorActive && loads == 0);
-    assert(pixel(10, 33) == ESP_HUB_COLOR_AMBER);
+    assert(pixel(25, 36) == 0xd344U);
     assert(EspNativeGameplayPlayerDeath_handleTap(10, 33));
     assert(EspNativeGameplayPlayerDeath_service(&doom));
     assert(selectorBegins == 2 && loads == 0);
@@ -198,7 +236,7 @@ int main(int argc, char** argv) {
     assert(selectorFinishes == 1 && !selectorActive);
 
     /* Selector open failure, unready choice and restore failure stay closed. */
-    start(&doom, 1);
+    start(&doom, 1, ESP_MAP_ID_INTRO);
     selectorBeginOk = 0;
     assert(EspNativeGameplayPlayerDeath_handleTap(80, 40));
     assert(EspNativeGameplayPlayerDeath_service(&doom));
@@ -220,20 +258,58 @@ int main(int argc, char** argv) {
     assert(EspNativeGameplayPlayerDeath_service(&doom));
     assert(loads == 3 && selectorFinishes == 1 && !selectorActive);
 
-    start(&doom, 0);
-    assert(pixel(10, 33) == ESP_HUB_COLOR_STEEL_DARK);
-    assert(colorCount(36, 42, ESP_HUB_COLOR_IVORY) == 0);
-    assert(colorCount(45, 49, ESP_HUB_COLOR_RED) > 10);
+    /* Disabled LOAD and INTRO Junction never queue. Retry and MAIN route
+     * solely from confirmed death-menu taps, then block duplicate inputs. */
+    start(&doom, 0, ESP_MAP_ID_INTRO);
+    assert(pixel(25, 36) == 0xd344U); /* industrial top copper seam */
+    assert(colorCount(39, 45, 0x9cd3U) > 40); /* LOAD disabled, still legible */
+    assert(colorCount(46, 51, 0x9cd3U) == 0);
     if (argc > 2) preview(argv[2]);
-    for (int row = 0; row < 4; ++row) {
-        const int top = 33 + row * 21;
-        assert(EspNativeGameplayPlayerDeath_handleTap(149, top + 18));
-        assert(EspNativeGameplayPlayerDeath_service(&doom));
-        assert(loads == 3 && EspNativeGameplayPlayerDeath_isMenuReady());
-        assert(EspNativeGameplayPlayerDeath_handleTap(10, top));
-        assert(EspNativeGameplayPlayerDeath_service(&doom));
-    }
-    assert(loads == 3 && selectorBegins == 0 && selectorFinishes == 0);
+    assert(!EspNativeGameplayPlayerDeath_handleTap(80, 40));
+    assert(!EspNativeGameplayPlayerDeath_handleTap(80, 60));
+    const int routesBefore = deathRoutes;
+    assert(EspNativeGameplayPlayerDeath_handleTap(80, 84));
+    assert(deathRoutes == routesBefore);
+    assert(EspNativeGameplayPlayerDeath_service(&doom));
+    assert(deathRoutes == routesBefore + 1 &&
+           lastRouteMap == ESP_MAP_ID_INTRO &&
+           (lastRoutePlayer.param1 & 0xffU) == 8U);
+    assert(!EspNativeGameplayPlayerDeath_handleTap(80, 108));
+
+    start(&doom, 0, ESP_MAP_ID_INTRO);
+    const int exitsBefore = exitRequests;
+    assert(EspNativeGameplayPlayerDeath_handleTap(80, 108));
+    assert(exitRequests == exitsBefore);
+    assert(EspNativeGameplayPlayerDeath_service(&doom));
+    assert(exitRequests == exitsBefore + 1);
+    assert(EspNativeGameplayPlayerDeath_isMenuReady());
+
+    /* Non-intro Junction recovers pre-death resources and max HP. */
+    start(&doom, 0, 2U);
+    assert(colorCount(60, 66, 0xf6afU) > 40); /* JUNCTION enabled */
+    assert(EspNativeGameplayPlayerDeath_handleTap(80, 60));
+    assert(EspNativeGameplayPlayerDeath_service(&doom));
+    assert(lastRouteMap == ESP_MAP_ID_JUNCTION);
+    assert((lastRoutePlayer.param1 & 0xffU) == 34U);
+    assert(lastRoutePlayer.weapon == 3U &&
+           lastRoutePlayer.weapons == (1U << 3));
+    assert(!EspNativeGameplayPlayerDeath_handleTap(80, 108));
+
+    /* Post-Junction zones use the legacy safety confirmation. */
+    start(&doom, 0, 10U);
+    const int routeBeforeConfirm = deathRoutes;
+    assert(EspNativeGameplayPlayerDeath_handleTap(80, 60));
+    assert(EspNativeGameplayPlayerDeath_service(&doom));
+    assert(deathRoutes == routeBeforeConfirm);
+    assert(colorCount(60, 66, 0xffffU) > 40); /* visible pressed confirmation */
+    assert(colorCount(67, 72, 0xffffU) == 0); /* no second-line overlap */
+    assert(EspNativeGameplayPlayerDeath_handleTap(80, 60));
+    assert(EspNativeGameplayPlayerDeath_service(&doom));
+    assert(deathRoutes == routeBeforeConfirm + 1 &&
+           lastRouteMap == ESP_MAP_ID_JUNCTION);
+    assert(pixels[0] == 0xdead &&
+           pixels[160 * 120 + 1] == 0xdead);
+
     /* A malformed buffer or failed present must not publish a usable menu. */
     EspNativeGameplayPlayerDeath_reset();
     view.viewZ = 36; clockMs = 0;
@@ -309,6 +385,6 @@ int main(int argc, char** argv) {
         automapOwnsScreen = 0;
         EspNativeGameplayPlayerDeath_reset();
     }
-    puts("Death menu: PASS live post-death HUD, stale retained HUD forbidden, automap lethal raw-present stays map-exact, rollback/RNG, menu/timing/slots");
+    puts("Death menu: PASS industrial plates, safe four-way dispatch, explicit save slots, entry snapshot, death HUD/automap/rollback/RNG");
     return 0;
 }

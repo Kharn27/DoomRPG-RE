@@ -10,11 +10,12 @@ extern "C" {
  * PAK. Boot defaults to 100% brightness/NORMAL and never writes defaults. */
 void EspNativeConfig_loadAtBoot(int sdMounted);
 
-/* Durable verified v2 transaction (tmp -> backup -> primary, readback).
+/* Durable verified v3 12-byte transaction (tmp -> backup -> primary, readback).
  * Neither function changes hardware; callers apply hardware only after
  * successful persistence. Settings preserve the other current preference. */
 int EspNativeConfig_saveBrightness(uint8_t percent);
 int EspNativeConfig_saveOrientation(uint8_t orientation);
+int EspNativeConfig_saveTheme(uint8_t theme);
 
 #ifdef __cplusplus
 }
