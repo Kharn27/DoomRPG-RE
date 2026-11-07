@@ -1546,6 +1546,15 @@ static const char* directionCueName(uint8_t side) {
     }
 }
 
+/* One optional synchronous paint hook into the CURRENT red-flash
+ * presentation; never schedules a new frame or changes feedback timing.
+ * The impact layer registers at native gameplay-session service entry.
+ * Ordinary host harnesses / early boot leave this NULL. */
+static void (*impactPainter)(void);
+void EspNativeGameplayActionEngine_setImpactPainter(void (*paint)(void)) {
+    impactPainter = paint;
+}
+
 /* Keep the existing nonlethal text and red flash grouped AFTER the
  * synchronous monster FX tail. No direction-specific presentation occurs. */
 void EspNativeGameplayActionEngine_beginMonsterVisualWork(void) {
@@ -1564,8 +1573,11 @@ void EspNativeGameplayActionEngine_endMonsterVisualWork(void) {
     directionCue.workActive = 0U;
     directionCue.stageNonlethalBorder = 0U;
     if (staged != 0U && actionState.viewportFlashPending != 0U) {
-        /* The ordinary present paints text + 2px red contour + translucent
-         * side together, starting their ONE 500ms blink at this present. */
+        /* The original center impact belongs to THIS first red flash.
+         * Intermediate monster-frame presents must not expose it early.
+         * Paint onto the existing fresh framebuffer, then let the proven
+         * flash compositor paint text/2px red/direction and publish once. */
+        if (impactPainter != NULL) impactPainter();
         (void)__wrap_Esp32PlatformVideo_present();
     }
 }
