@@ -27,6 +27,7 @@ int main(void) {
     /* No ordinary, critical, lethal or miss path may invent familiar blood. */
     assert(EspNativePlayerPainVisual_stage(77U,ESP_NATIVE_PLAYER_PAIN_RIGHT,100U));
     assert(EspNativePlayerPainVisual_commit(77U));
+    assert(EspNativePlayerPainVisual_firstPresented(100U));
     assert(!EspNativePlayerPainVisual_dogInfo(200U,&seed,&age));
     assert(EspNativePlayerPainVisual_stageDog(
         78U,ESP_NATIVE_PLAYER_PAIN_LEFT,200U));
@@ -36,6 +37,7 @@ int main(void) {
     assert(EspNativePlayerPainVisual_stageDog(
         79U,ESP_NATIVE_PLAYER_PAIN_FRONT,400U));
     assert(EspNativePlayerPainVisual_commit(79U));
+    assert(EspNativePlayerPainVisual_firstPresented(400U));
     assert(EspNativePlayerPainVisual_dogInfo(499U,&seed,&age)&&age==99U);
     for(idx=0U;idx<ESP_NATIVE_DOG_BLOOD_COUNT;idx++){
         EspNativeDogBloodParticle p,q;
