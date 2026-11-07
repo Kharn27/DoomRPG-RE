@@ -32,6 +32,41 @@ int main(void) {
         assert(EspNativePlayerPainVisual_weaponColor((uint16_t)i) ==
                refColor((uint16_t)i));
     }
+    /* Regression for the physical CYD witness: legacy ordered monster
+     * movement may consume 784ms AFTER staging. Under the old clock the
+     * new l.bmp face, weapon tint and shake were all already expired at
+     * the first LCD present, while the independent old flash still showed.
+     * COMMIT does not imply visible, and a delayed LCD must get 500ms. */
+    assert(EspNativePlayerPainVisual_stage(
+        901U,ESP_NATIVE_PLAYER_PAIN_RIGHT,1000U));
+    assert(!EspNativePlayerPainVisual_firstPresented(1001U)); /* staged */
+    assert(EspNativePlayerPainVisual_face(25U,30U,0U,1784U)==6U);
+    assert(EspNativePlayerPainVisual_isActive(1784U));
+    assert(!EspNativePlayerPainVisual_expiryDue(1784U));
+    assert(EspNativePlayerPainVisual_commit(901U));
+    assert(EspNativePlayerPainVisual_isActive(1784U));
+    assert(!EspNativePlayerPainVisual_expiryDue(1784U));
+    assert(EspNativePlayerPainVisual_firstPresented(1784U));
+    assert(!EspNativePlayerPainVisual_firstPresented(1785U));
+    assert(EspNativePlayerPainVisual_face(25U,30U,0U,2283U)==6U);
+    assert(EspNativePlayerPainVisual_isActive(2283U));
+    assert(!EspNativePlayerPainVisual_expiryDue(2283U));
+    assert(!EspNativePlayerPainVisual_isActive(2284U));
+    assert(EspNativePlayerPainVisual_expiryDue(2284U));
+    assert(EspNativePlayerPainVisual_ackExpiry(2284U));
+    assert(!EspNativePlayerPainVisual_firstPresented(2285U));
+    /* Also cover COMMIT that waits across an even longer renderer tail:
+     * no expiry or invisible-shake progression before a real publish. */
+    EspNativePlayerPainVisual_reset();
+    assert(EspNativePlayerPainVisual_stage(
+        902U,ESP_NATIVE_PLAYER_PAIN_LEFT,3000U));
+    assert(EspNativePlayerPainVisual_commit(902U));
+    assert(EspNativePlayerPainVisual_isActive(9000U));
+    assert(!EspNativePlayerPainVisual_expiryDue(9000U));
+    assert(EspNativePlayerPainVisual_firstPresented(9000U));
+    assert(EspNativePlayerPainVisual_isActive(9499U));
+    assert(EspNativePlayerPainVisual_expiryDue(9500U));
+
     for (i = 0; i < sizeof(sides) / sizeof(sides[0]); ++i) {
         EspNativePlayerPainVisual_reset();
         assert(EspNativePlayerPainVisual_stage(10U + i, sides[i], 1000U));
@@ -41,6 +76,7 @@ int main(void) {
         assert(EspNativePlayerPainVisual_face(25U, 30U, 1U, 1200U) == 8U);
         assert(EspNativePlayerPainVisual_face(0U, 30U, 0U, 1200U) == 3U);
         assert(EspNativePlayerPainVisual_commit(10U + i));
+        assert(EspNativePlayerPainVisual_firstPresented(1000U));
         assert(!EspNativePlayerPainVisual_expiryDue(1499U));
         assert(!EspNativePlayerPainVisual_isActive(1500U));
         assert(EspNativePlayerPainVisual_expiryDue(1500U));
@@ -59,6 +95,7 @@ int main(void) {
     /* A failed transaction must restore a previously committed hit EXACTLY. */
     assert(EspNativePlayerPainVisual_stage(100U, ESP_NATIVE_PLAYER_PAIN_LEFT, 2000U));
     assert(EspNativePlayerPainVisual_commit(100U));
+    assert(EspNativePlayerPainVisual_firstPresented(2000U));
     oldTag = EspNativePlayerPainVisual_tag(2075U);
     assert(EspNativePlayerPainVisual_face(20U, 30U, 0U, 2075U) == 5U);
     assert(EspNativePlayerPainVisual_stage(101U, ESP_NATIVE_PLAYER_PAIN_BACK, 2075U));
@@ -69,6 +106,7 @@ int main(void) {
     assert(EspNativePlayerPainVisual_face(20U, 30U, 0U, 2075U) == 5U);
     assert(EspNativePlayerPainVisual_stage(102U, ESP_NATIVE_PLAYER_PAIN_RIGHT, 2100U));
     assert(EspNativePlayerPainVisual_commit(102U));
+    assert(EspNativePlayerPainVisual_firstPresented(2100U));
     assert(!EspNativePlayerPainVisual_cancel(102U));
     assert(EspNativePlayerPainVisual_face(20U, 30U, 0U, 2100U) == 6U);
     assert(EspNativePlayerPainVisual_isActive(2599U));
@@ -91,8 +129,9 @@ int main(void) {
             assert(y >= 20 && y + 18 <= 100);
         }
         assert(EspNativePlayerPainVisual_commit(200U+i));
+        assert(EspNativePlayerPainVisual_firstPresented(3000U));
         assert(!EspNativePlayerPainVisual_arrow(3500U, &x, &y, &srcY));
     }
-    puts("PASS player pain: 65536 palette colors, 5 sides, 9 faces, n.bmp source rectangles, commit/rollback, overlap and exact 500ms expiry");
+    puts("PASS player pain: 65536 palette colors, 5 sides, 9 faces, n.bmp source rectangles, 784ms monster-tail and 6000ms pending expiry held, clock starts at physical LCD, commit/rollback/overlap and exact 500ms visible window");
     return 0;
 }
