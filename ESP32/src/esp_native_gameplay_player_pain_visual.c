@@ -17,7 +17,8 @@ typedef struct PainLease_s {
     uint8_t expired;
     uint8_t dogBlood;
     uint8_t lastShakeStep;
-    uint8_t padding[3];
+    uint8_t padding;
+    uint16_t impactLogical;
 } PainLease;
 
 /* The second tiny record is the complete pre-stage rollback, including an
@@ -47,6 +48,7 @@ int EspNativePlayerPainVisual_stage(uint32_t probe,
     lease.phase = PAIN_STAGED;
     lease.expired = 0U;
     lease.dogBlood = 0U;
+    lease.impactLogical = 0U;
     lease.lastShakeStep = UINT8_MAX;
     memset(lease.padding, 0, sizeof(lease.padding));
     return 1;
@@ -58,6 +60,105 @@ int EspNativePlayerPainVisual_stageDog(uint32_t probe,
     if (!EspNativePlayerPainVisual_stage(probe, side, nowMs)) return 0;
     lease.dogBlood = 1U;
     return 1;
+}
+
+/* Exact Combat_updateProjectile() missileAnim -> Game_gsprite_allocAnim()
+ * index -> Game.c gameSprite->info mapping (bitshape sprite ID, NOT
+ * packed image ID). Melee scratch 12/13/14 uses 188/189/190;
+ * 12 + subtype8 uses 190. Other monster ranged weapons have their own
+ * source-backed flash 180..187. No fabricated hit art for weapons 2-4,
+ * and no art for a miss because the caller stages only committed hits. */
+uint16_t EspNativePlayerPainVisual_impactSprite(
+    uint8_t weaponId, uint8_t monsterSubtype) {
+    switch (weaponId) {
+    case 6U: return 182U; /* projectile anim5 */
+    case 7U: return 180U; /* projectile anim1 */
+    case 8U: return 181U; /* projectile anim4 */
+    case 12U: return monsterSubtype == 8U ? 190U : 188U;
+    case 13U: return 189U;
+    case 14U: return 190U;
+    case 15U: return monsterSubtype == 10U ? 187U : 184U;
+    case 16U: return 185U;
+    case 17U: return 186U;
+    default: return 0U;
+    }
+}
+
+int EspNativePlayerPainVisual_stageImpact(
+    uint32_t probe, uint8_t weaponId, uint8_t monsterSubtype) {
+    if (lease.phase != PAIN_STAGED || probe == 0U ||
+        lease.probe != probe) return 0;
+    lease.impactLogical =
+        EspNativePlayerPainVisual_impactSprite(weaponId,monsterSubtype);
+    return lease.impactLogical != 0U;
+}
+
+int EspNativePlayerPainVisual_impactInfo(
+    uint32_t nowMs, uint32_t* outProbe,
+    uint16_t* outLogical, uint8_t* outFrame) {
+    uint32_t age;
+    if (outProbe != NULL) *outProbe = 0U;
+    if (outLogical != NULL) *outLogical = 0U;
+    if (outFrame != NULL) *outFrame = 0U;
+    if (outProbe == NULL || outLogical == NULL || outFrame == NULL ||
+        lease.impactLogical == 0U ||
+        !EspNativePlayerPainVisual_isActive(nowMs)) return 0;
+    age = lease.phase == PAIN_VISIBLE ? nowMs-lease.begunMs : 0U;
+    /* Game_gsprite_update: animation frames 0,1,2 every 150ms,
+     * duration 450ms. The last frame is held until the native 500ms
+     * pain lease restores the whole world. No extra LCD owner/flash. */
+    *outProbe = lease.probe;
+    *outLogical = lease.impactLogical;
+    *outFrame = age >= 300U ? 2U : (uint8_t)(age / 150U);
+    return 1;
+}
+
+int EspNativePlayerPainVisual_paintImpactBitshape(
+    uint16_t* framebuffer,
+    uint32_t width, uint32_t height,
+    const uint8_t* columnMasks, uint32_t maskBytes,
+    const uint8_t* packedTexels, uint32_t packedBytes,
+    const uint16_t* palette,
+    int16_t sourceXMin, int16_t sourceYMin,
+    uint8_t sourceWidth, uint8_t sourceHeight,
+    uint8_t columnPitch) {
+    uint32_t expectedOpaque=0U,px=0U;
+    uint32_t column,row;
+    if (framebuffer == NULL || columnMasks == NULL ||
+        packedTexels == NULL || palette == NULL ||
+        width != 160U || height != 120U ||
+        sourceWidth == 0U || sourceWidth > 64U ||
+        sourceHeight == 0U || sourceHeight > 64U ||
+        columnPitch != (uint8_t)((sourceHeight+7U)/8U) ||
+        maskBytes != (uint32_t)sourceWidth*columnPitch ||
+        maskBytes > 512U || packedBytes > 2048U ||
+        sourceXMin < 0 || sourceYMin < 0 ||
+        sourceXMin + sourceWidth > 64 ||
+        sourceYMin + sourceHeight > 64) return -1;
+    /* Decode the EXACT active-pixel scan order used by the original
+     * bitshape; source masks are column-major, lsb-first rows. */
+    for (column=0U;column<sourceWidth;++column) {
+        const uint8_t* mask=columnMasks+column*columnPitch;
+        for (row=0U;row<sourceHeight;++row) {
+            int x,y;
+            uint16_t color;
+            if ((mask[row>>3U] & (uint8_t)(1U<<(row&7U)))==0U) continue;
+            if ((expectedOpaque>>1U)>=packedBytes) return -1;
+            color=palette[
+                (packedTexels[expectedOpaque>>1U] >>
+                 ((expectedOpaque&1U)*4U)) & 15U];
+            x=80 + (int)sourceXMin + (int)column - 32;
+            y=60 + (int)sourceYMin + (int)row - 32;
+            if(x>=0&&x<160&&y>=20&&y<100) {
+                framebuffer[(uint32_t)y*160U+(uint32_t)x]=color;
+                ++px;
+            }
+            ++expectedOpaque;
+        }
+    }
+    if(expectedOpaque == 0U ||
+       packedBytes != ((expectedOpaque+1U)>>1U)) return -1;
+    return (int)px;
 }
 
 int EspNativePlayerPainVisual_dogInfo(uint32_t nowMs,
