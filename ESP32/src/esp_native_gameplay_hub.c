@@ -713,6 +713,31 @@ static EspNativeGameplayHubStatus openPage(uint8_t firstPage) {
         return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
     }
     framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
+    /*
+     * The world can enter the HUB with an older/partially refreshed lower
+     * HUD even though PlayerState already holds the newest HP/armor/ammo.
+     * The CYD showed this as baseline 478495be versus live 7ac03eca:
+     * unchanged-player MENU closes then failed exactBottom and fell back to
+     * HUB-RECOVER. Canonicalize *before* capturing the reference. The HUB
+     * immediately owns both HUD bands, so there is no extra presentation.
+     *
+     * Do not weaken the close comparison or accept an idempotence-only
+     * substitute: the baseline and every clean close must match the same
+     * current native PlayerState pixels. No buffer, persistent owner, RNG
+     * consumption or world-turn mutation is introduced here.
+     */
+    {
+        const uint32_t beforeBottom = hudProtectedFNV();
+        uint32_t canonicalBottom;
+        if (beforeBottom == 0U || !repaintGameplayHud())
+            return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
+        canonicalBottom = hudProtectedFNV();
+        if (canonicalBottom == 0U) return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
+        if (beforeBottom != canonicalBottom) {
+            printf("[HUBHUD] BASELINE-PRIME displayed=%08x canonical=%08x source=live-player repaint=before-capture allocation=no\n",
+                   (unsigned int)beforeBottom, (unsigned int)canonicalBottom);
+        }
+    }
     if (!menuOverlayCapture(framebuffer)) return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
 
     ++hub.opens;
