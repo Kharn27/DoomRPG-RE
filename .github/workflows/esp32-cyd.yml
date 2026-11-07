@@ -194,7 +194,9 @@ jobs:
           cc -O2 -std=c11 -Wall -Wextra -Werror -Wno-unused-variable -Wno-type-limits \
             -D_POSIX_C_SOURCE=200809L -ffunction-sections -fdata-sections \
             -IESP32/test/host_include -IESP32/include -IESP32/src -Isrc \
-            ESP32/test/damage_cue_timing_host.c -Wl,--gc-sections -o /tmp/doomrpg-damage-cue-timing-test
+            ESP32/test/damage_cue_timing_host.c \
+            ESP32/src/esp_native_gameplay_player_pain_visual.c \
+            -Wl,--gc-sections -o /tmp/doomrpg-damage-cue-timing-test
           /tmp/doomrpg-damage-cue-timing-test
 
       - name: Test actual automap PASS_TURN including hazard, rollback and death (host C)
