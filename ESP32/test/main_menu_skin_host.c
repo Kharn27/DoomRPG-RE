@@ -171,18 +171,34 @@ int main(void) {
         assert(EspMainMenuSkin_progressTone(6,6) == 0U);
     }
     assert(EspMainMenuSkin_getTheme() == ESP_MAIN_MENU_THEME_CLASSIC);
+    assert(EspMainMenuSkin_uiAccent() == 0xfd20U);
+    assert(EspMainMenuSkin_uiAccentDim() == 0x7a80U);
+    assert(EspMainMenuSkin_uiInk() == 0xf6afU);
     assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_INFERNO));
+    assert(EspMainMenuSkin_uiAccent() == 0xf926U);
+    assert(EspMainMenuSkin_uiAccentDim() == 0x9002U);
+    assert(EspMainMenuSkin_uiInk() == 0xff75U);
     {
         static const uint16_t hot[5] = {0xff75U,0xff75U,0xd344U,0xd344U,0xc002U};
         for (int row = 0; row < 5; ++row)
             assert(EspMainMenuSkin_letterTone(row, 5) == hot[row]);
         static const uint16_t emberFill[6] = {
-            0xff75U,0xfbeaU,0xf447U,0xd344U,0xc982U,0xc002U
+            0xf946U,0xf905U,0xf804U,0xd004U,0xb003U,0x9002U
         };
-        for (int y=0;y<6;++y)
-            assert(EspMainMenuSkin_progressTone(y,6) == emberFill[y]);
+        for (int y=0;y<6;++y) {
+            const uint16_t tone = EspMainMenuSkin_progressTone(y,6);
+            const unsigned red=(tone >> 11) & 31U;
+            const unsigned green=(tone >> 5) & 63U;
+            const unsigned blue=tone & 31U;
+            assert(tone == emberFill[y]);
+            /* Even the bright top row must read red, not amber/orange. */
+            assert(red >= 18U && red > 2U*green && red > 3U*blue);
+        }
     }
     assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_PHOSPHORE));
+    assert(EspMainMenuSkin_uiAccent() == 0x87e0U);
+    assert(EspMainMenuSkin_uiAccentDim() == 0x246aU);
+    assert(EspMainMenuSkin_uiInk() == 0xdff6U);
     {
         static const uint16_t phosphor[9] = {
             0xdff6U,0xdff6U,0xdff6U,
