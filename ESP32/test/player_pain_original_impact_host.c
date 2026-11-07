@@ -48,6 +48,11 @@ int main(void) {
         if(wi==15U&&sub==10U) expected=187U;
         assert(EspNativePlayerPainVisual_impactSprite(
             (uint8_t)wi,(uint8_t)sub)==expected);
+        /* Independent desktop oracle: Combat_updateProjectile()
+         * renderMode=7 for 6/8/15/17 only, regardless of subtype. */
+        assert(EspNativePlayerPainVisual_impactRenderMode(expected) ==
+               (expected!=0U &&
+                (wi==6U||wi==8U||wi==15U||wi==17U) ? 7U:0U));
     }
     assert(EspNativePlayerPainVisual_impactSprite(19U,0U)==0U);
     assert(EspNativePlayerPainVisual_impactSprite(255U,255U)==0U);
@@ -111,7 +116,7 @@ int main(void) {
     initPixels();
     painted=EspNativePlayerPainVisual_paintImpactBitshape(
         framebuffer,160U,120U,bits,4U,texels,2U,
-        colors,30,29,4U,4U,1U);
+        colors,30,29,4U,4U,1U,0U);
     assert(painted==4);
     assert(framebuffer[57U*160U+78U]==0xf800U); /* col0 row0 */
     assert(framebuffer[60U*160U+78U]==0x001fU); /* col0 row3 */
@@ -119,21 +124,40 @@ int main(void) {
     assert(framebuffer[59U*160U+79U]==0xffffU); /* col1 row2 */
     guards();
 
+    /* Compare exactly against the ORIGINAL Render_SpanMode7 saturating
+     * carry algorithm, with independently calculated literal RGB565
+     * oracles. This fixes Malwrath weapon15 logical184 which previously
+     * used normal opaque mode0 and looked like a solid rocket explosion.
+     * Do NOT change weapon13 / dog scratch189: it is original mode0. */
+    initPixels();
+    painted=EspNativePlayerPainVisual_paintImpactBitshape(
+        framebuffer,160U,120U,bits,4U,texels,2U,
+        colors,30,29,4U,4U,1U,7U);
+    assert(painted==4);
+    assert(framebuffer[57U*160U+78U]==0xe5c2U);
+    assert(framebuffer[60U*160U+78U]==0x15dcU);
+    assert(framebuffer[58U*160U+79U]==0x1782U);
+    assert(framebuffer[59U*160U+79U]==0xe79cU);
+    guards();
+
     /* Invalid metadata cannot write any pixels, even on the bounds. */
     initPixels();
     assert(EspNativePlayerPainVisual_paintImpactBitshape(
         framebuffer,159U,120U,bits,4U,texels,2U,
-        colors,30,29,4U,4U,1U)==-1);
+        colors,30,29,4U,4U,1U,0U)==-1);
     assert(EspNativePlayerPainVisual_paintImpactBitshape(
         framebuffer,160U,120U,bits,3U,texels,2U,
-        colors,30,29,4U,4U,1U)==-1);
+        colors,30,29,4U,4U,1U,0U)==-1);
     assert(EspNativePlayerPainVisual_paintImpactBitshape(
         framebuffer,160U,120U,bits,4U,texels,1U,
-        colors,30,29,4U,4U,1U)==-1);
+        colors,30,29,4U,4U,1U,0U)==-1);
     assert(EspNativePlayerPainVisual_paintImpactBitshape(
         framebuffer,160U,120U,bits,4U,texels,2U,
-        colors,62,29,4U,4U,1U)==-1);
+        colors,62,29,4U,4U,1U,0U)==-1);
+    assert(EspNativePlayerPainVisual_paintImpactBitshape(
+        framebuffer,160U,120U,bits,4U,texels,2U,
+        colors,30,29,4U,4U,1U,8U)==-1);
     guards();
-    puts("PASS original impact source: 266 weapon/subtype mappings, 12/13/14 claws vs 15-17 missiles, 784ms delayed LCD, 3x150ms PAK frames, exact cancel, column-major packed texel mask, 160x80 clipping, zero HUD/guard writes");
+    puts("PASS original impact source: 266 weapon/subtype mappings, 12/13/14 claws vs 15-17 missiles, 784ms delayed LCD, 3x150ms PAK frames, exact cancel, column-major packed texel mask, 160x80 clipping, mode7 Malwrath saturating pixel exact vs source and mode0 dog unchanged, zero HUD/guard writes");
     return 0;
 }
