@@ -50,7 +50,7 @@ int EspNativePlayerPainVisual_stage(uint32_t probe,
     lease.dogBlood = 0U;
     lease.impactLogical = 0U;
     lease.lastShakeStep = UINT8_MAX;
-    memset(lease.padding, 0, sizeof(lease.padding));
+    lease.padding = 0U;
     return 1;
 }
 
