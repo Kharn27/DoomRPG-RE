@@ -37,6 +37,14 @@ uint16_t EspMainMenuSkin_accentTone(EspMainMenuSkinState state);
  * ROM-only (no cache or extra framebuffer). */
 uint16_t EspMainMenuSkin_progressTone(int row, int rows);
 
+/* Shared 160x120 native-menu accents for HUB/SYSTEM/fullscreen reports.
+ * CLASSIC returns the historical amber, muted amber and ivory ink;
+ * INFERNO hot red, PHOSPHORE mint. Pure, allocation-free theme reads.
+ * Gameplay health/armor and danger semantics are not palette-swapped. */
+uint16_t EspMainMenuSkin_uiAccent(void);
+uint16_t EspMainMenuSkin_uiAccentDim(void);
+uint16_t EspMainMenuSkin_uiInk(void);
+
 /* Paint all 9 original glyph rows (including A/E/H crossbars). Long
  * words sample three columns, never omit rows. No shift, shadow or IO. */
 int EspMainMenuSkin_paintText(uint16_t* framebuffer, int stride,
