@@ -370,6 +370,44 @@ int main(void) {
     assert(__wrap_Esp32PlatformVideo_present());
     assert(presents == 4U);
 
-    puts("damage_cue_timing_host: PASS shared 3-pulse red+translucent direction, one 500ms clock, failed ON/OFF retry, exact new-world restore, white pickup 3-pulse exact restore, automap, menu isolation");
+    /* Reproduce true CYD scheduling, not just pure lease math:
+     * The attack has rendered one intermediate world frame, but the DAMAGE
+     * flash is deliberately deferred until 818ms of ordered monster visual
+     * work have finished. This was the original invisible pain bug:
+     * old stage-time +500 expired before the first physical damage present.
+     * The REAL compositor plus REAL pain owner must anchor at that present. */
+    seedUnpainted();
+    EspNativePlayerPainVisual_reset();
+    clockMs = 1000U;
+    armRed();
+    actionState.feedbackPending = 1U;
+    actionState.feedbackKind = ACTION_FEEDBACK_DAMAGE;
+    strcpy(actionState.feedbackText, "12 damage!");
+    assert(EspNativePlayerPainVisual_stage(
+        901U,ESP_NATIVE_PLAYER_PAIN_RIGHT,clockMs));
+    EspNativeGameplayActionEngine_beginMonsterVisualWork();
+    EspNativeGameplayActionEngine_stageNonlethalMonsterFlash();
+    assert(__wrap_Esp32PlatformVideo_present());
+    assert(presents == 1U);
+    assert(EspNativePlayerPainVisual_commit(901U));
+    clockMs += 818U;
+    assert(EspNativePlayerPainVisual_isActive(clockMs));
+    assert(!EspNativePlayerPainVisual_expiryDue(clockMs));
+    assert(EspNativePlayerPainVisual_face(25U,30U,0U,clockMs)==6U);
+    EspNativeGameplayActionEngine_endMonsterVisualWork();
+    assert(presents == 2U);
+    assert(actionState.viewportFlashShownAtMs == clockMs);
+    assert(EspNativePlayerPainVisual_isActive(clockMs));
+    assert(!EspNativePlayerPainVisual_firstPresented(clockMs));
+    clockMs += 499U;
+    assert(EspNativePlayerPainVisual_isActive(clockMs));
+    assert(!EspNativePlayerPainVisual_expiryDue(clockMs));
+    clockMs += 1U;
+    assert(!EspNativePlayerPainVisual_isActive(clockMs));
+    assert(EspNativePlayerPainVisual_expiryDue(clockMs));
+    assert(EspNativePlayerPainVisual_ackExpiry(clockMs));
+    EspNativePlayerPainVisual_reset();
+
+    puts("damage_cue_timing_host: PASS shared 3-pulse red+translucent direction, real compositor 818ms hidden monster tail and new 500ms visible pain lease, failed ON/OFF retry, exact world restore, white pickup, automap, menu isolation");
     return 0;
 }

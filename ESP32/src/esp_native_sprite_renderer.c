@@ -20,6 +20,8 @@
 #include "esp_native_sprite_visual_legacy.h"
 #include "esp_native_graphics_catalog.h"
 #include "esp_native_gameplay_monster_drop.h"
+#include "esp_native_gameplay_monster_combat.h"
+#include "esp_native_gameplay_player_pain_visual.h"
 #include "esp_native_sprite_renderer.h"
 #include "esp_native_ambient_sprite.h"
 #include "esp_native_first_frame.h"
@@ -623,6 +625,58 @@ static int loadFrame(const Sources* sources,
     return 1;
 }
 
+/* Original Combat_updateProjectile() impact: source sprite 180..190
+ * via Game_gsprite_allocAnim() and Game.c's sprite->info table. We reuse
+ * the SAME production indexed shape decoder as 3D sprite rendering, but
+ * compose its result as a bounded first-person mark because the legacy
+ * impact spawns at the camera's own tile and the native near plane would
+ * otherwise cull it. This screen-space choice is a CYD presentation
+ * adaptation, NOT a new desktop gameplay entity or persistent gSprite. */
+int EspNativeSpriteRenderer_paintPlayerImpact(
+    uint16_t* framebuffer, uint32_t width, uint32_t height,
+    uint16_t logical, uint8_t animation) {
+    Frame* frame=NULL;
+    Sources sources;
+    EspNativeSpriteStats stats;
+    uint32_t seenLogical[8];
+    EspNativeGraphicsCatalogStatus status;
+    int painted=-1;
+    int opened=0;
+
+    if (framebuffer == NULL || width != 160U || height != 120U ||
+        logical < 180U || logical > 190U || animation > 2U ||
+        !EspNativeGraphicsCatalog_isReady() || EspAssetPack_isOpen()) {
+        return -1;
+    }
+    if (EspNativeGraphicsCatalog_findSprite(logical) == NULL) {
+        status=EspNativeGraphicsCatalog_ensureSprite(logical);
+        if (status != ESP_NATIVE_GRAPHICS_CATALOG_OK &&
+            status != ESP_NATIVE_GRAPHICS_CATALOG_ALREADY_ACTIVE) {
+            return -1;
+        }
+    }
+    frame=(Frame*)malloc(sizeof(*frame));
+    if (frame==NULL) return -1;
+    memset(&sources,0,sizeof sources);
+    memset(&stats,0,sizeof stats);
+    memset(seenLogical,0,sizeof seenLogical);
+    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) goto done;
+    opened=1;
+    if (!initSources(&sources,&stats) ||
+        !loadFrame(&sources,logical,animation,0,frame,seenLogical,&stats))
+        goto done;
+    painted=EspNativePlayerPainVisual_paintImpactBitshape(
+        framebuffer,width,height,frame->mask,frame->maskBytes,
+        frame->texels,frame->packedBytes,frame->palette,
+        (int16_t)frame->xMin,(int16_t)frame->yMin,
+        (uint8_t)frame->width,(uint8_t)frame->height,
+        (uint8_t)frame->pitch);
+done:
+    if (opened) EspAssetPack_close();
+    free(frame);
+    return painted;
+}
+
 static int buildOrder(Render_t* render,
                       const EspMapRuntimeView* runtime,
                       const EspNativeBspVisibilityState* visibility,
@@ -1031,7 +1085,8 @@ static int buildPersistentDropOrder(
         int32_t sortZ;
 
         if (drop->active == 0U || drop->taken != 0U) continue;
-        if (drop->tileIndex == playerTile) {
+        if (drop->tileIndex == playerTile &&
+            drop->type != ESP_NATIVE_GAMEPLAY_DOG_CORPSE_TYPE) {
             printf("[MONSTERDROP] RENDER-CULL slot=%u tile=%u reason=player-tile pickup=pending-after-commit\n",
                    (unsigned int)slot,
                    (unsigned int)drop->tileIndex);
@@ -1098,8 +1153,10 @@ static int drawPersistentDrop(Render_t* render,
 
     if (resourceLogical >= 256U ||
         EspNativeGraphicsCatalog_findSprite(resourceLogical) == NULL ||
-        !loadFrame(sources, resourceLogical, 0U, 0,
-                   frame, seenLogical, stats)) {
+        !loadFrame(sources, resourceLogical,
+                   drop->type == ESP_NATIVE_GAMEPLAY_DOG_CORPSE_TYPE
+                       ? 2U : 0U,
+                   0, frame, seenLogical, stats)) {
         return 0;
     }
 
@@ -1238,6 +1295,8 @@ static int drawAt(Render_t* render,
     uint8_t entityType, entitySubtype;
     uint16_t entityLink, entityOrdinal;
     uint32_t rasterPixelsBefore;
+    uint16_t originalPalette[16];
+    uint8_t tinted = 0U;
     int minimum;
     int maximum;
     int spriteX;
@@ -1382,9 +1441,33 @@ static int drawAt(Render_t* render,
     EspNativeRenderGeometry_projectVertex(
         render->screenWidth, render->fracHalfScreenWidth,
         &line.vert2.x, &line.vert2.y, &line.vert2.z);
-    if (!spans(render, &line, frame, renderMode, glow, stats)) {
-        TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=span-failed animation=%u glow=%u\n", (unsigned int)parent->index, (unsigned int)animation, (unsigned int)(glow != 0));
-        return 0;
+    /* Source Render_renderSpriteObject() sets damageBlend while this monster's
+     * 100ms damageBlendTime lives. Render_getSpanMode() then saturates its
+     * 16-entry palette once and clears that flag before drawing the span.
+     * This affects only real enemy base sprites, not glow/billboards or the
+     * cached immutable resource. Restore all 32 palette bytes even if a
+     * span fails, so CROSS reuse, subsequent enemies and retries are exact. */
+    if (entityType == ENEMY_TYPE && glow == 0 &&
+        renderMode == RENDER_MODE_NORMAL &&
+        EspNativeGameplayMonsterCombat_damageBlend(
+            parent->index, DoomRPG_GetUpTimeMS())) {
+        unsigned int k;
+        memcpy(originalPalette, frame->palette, sizeof(originalPalette));
+        for (k = 0U; k < 16U; ++k) {
+            frame->palette[k] =
+                EspNativePlayerPainVisual_weaponColor(frame->palette[k]);
+        }
+        tinted = 1U;
+    }
+    {
+        const int drawn = spans(render, &line, frame, renderMode, glow, stats);
+        if (tinted != 0U) {
+            memcpy(frame->palette, originalPalette, sizeof(originalPalette));
+        }
+        if (!drawn) {
+            TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=span-failed animation=%u glow=%u\n", (unsigned int)parent->index, (unsigned int)animation, (unsigned int)(glow != 0));
+            return 0;
+        }
     }
     TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=rasterized pos=%d,%d logical=%u animation=%u actual=%u glow=%u pixels=%u\n",
                  (unsigned int)parent->index, spriteX, spriteY,

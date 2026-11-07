@@ -16,6 +16,7 @@
 #include "esp_native_gameplay_hub_action_gate.h"
 #include "esp_native_gameplay_level_up.h"
 #include "esp_native_gameplay_monster_combat.h"
+#include "esp_native_gameplay_monster_pain_tint.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_monster_drop.h"
 #include "esp_native_gameplay_monster_trace.h"
@@ -327,6 +328,14 @@ const EspNativeGameplayMonsterCombatView* EspNativeGameplayMonsterCombat_view(vo
                                               : MONSTER_NO_SPRITE;
     combatOwner.view.currentMonsterFNV1a = currentMonsterFNV();
     return &combatOwner.view;
+}
+
+int EspNativeGameplayMonsterCombat_damageBlend(
+    uint16_t spriteIndex, uint32_t nowMs) {
+    if (combatOwner.view.active == 0U) return 0;
+    return EspNativeMonsterPainTint_active(
+        nowMs, combatOwner.painUntilMs,
+        combatOwner.view.painSpriteIndex, spriteIndex);
 }
 
 static void applyPain(EspNativeGameplayMonsterRecord* record,
