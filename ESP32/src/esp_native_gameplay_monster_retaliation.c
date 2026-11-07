@@ -448,8 +448,20 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
             /* When dog dies, source also mutates a captured Entity/Sprite
              * or spawns dog corpse and selects a new weapon. None of these
              * world side effects have a transaction owner in this family. */
+            EspNativeDogFamiliarDeathPlan deathPlan;
+            const int deathPlanned = EspNativeDogFamiliar_planDeath(
+                &playerBefore,total,&deathPlan);
             doomRpg->random = randomBefore;
             ++retaliationView.dogFamiliarDeferred;
+            if (deathPlanned != 0) {
+                printf("[DOGDEATH] PLAN probe=%u corpseGSprite=%u nextWeapon=%u weapons=%04x->%04x dogHP=%u->0 mutation=NONE entityRelinkOrSpawn=unowned sound5090=deferred gameplayRng=rolled-back\n",
+                       (unsigned int)turn->attackProbes,
+                       (unsigned int)deathPlan.corpseGSpriteKind,
+                       (unsigned int)deathPlan.nextWeapon,
+                       (unsigned int)playerBefore.weapons,
+                       (unsigned int)deathPlan.playerAfter.weapons,
+                       (unsigned int)playerBefore.ammo[5]);
+            }
             printf("[MONSTERRETAL] DOG-DEFER probe=%u sprite=%u reason=%s status=%u dogHP=%u damage=%u cause=dog-death-world-effects-unowned rngRollback=yes playerMutation=no blood=no\n",
                    (unsigned int)turn->attackProbes,
                    (unsigned int)monster->spriteIndex,
