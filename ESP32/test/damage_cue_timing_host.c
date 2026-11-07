@@ -414,6 +414,11 @@ int main(void) {
            impactWithRedPresent == 0U);
     assert(pixels[1U+60U*160U+80U]!=0xdde1U);
     assert(EspNativePlayerPainVisual_commit(901U));
+    /* In real monster retaliation, the directional cue is published only
+     * after player damage COMMIT, and the first buffered physical present
+     * must carry BOTH the provenance and the original impact. */
+    assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
+        901U,157U,ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_RIGHT));
     clockMs += 818U;
     assert(EspNativePlayerPainVisual_isActive(clockMs));
     assert(!EspNativePlayerPainVisual_expiryDue(clockMs));
