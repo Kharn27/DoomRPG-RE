@@ -1902,6 +1902,7 @@ int __wrap_Esp32PlatformVideo_present(void) {
     int hadFeedback = 0;
     int flashPainted = 0;
     int ok;
+    uint32_t physicalPresentedAtMs;
 
     /*
      * The gameplay compositor never owns MENU_MAIN, SAVESLOTS, INTRO or the
@@ -2021,6 +2022,9 @@ int __wrap_Esp32PlatformVideo_present(void) {
 
     ok = __real_Esp32PlatformVideo_present();
     if (!ok) return 0;
+    /* One immutable timestamp for the single successful LCD present:
+     * border + direction + face + source impact all share this anchor. */
+    physicalPresentedAtMs = actionNowMs();
     /* Start the source 500ms pain face / weapon / shake lease ONLY after
      * a successful PHYSICAL LCD present. Monster-turn visual work defers
      * the already-proven damage flash until endMonsterVisualWork(); its
@@ -2028,7 +2032,8 @@ int __wrap_Esp32PlatformVideo_present(void) {
      * must not silently expire under that barrier. The same barrier keeps
      * us from counting invisible intermediate world frames. */
     if (directionCue.stageNonlethalBorder == 0U) {
-        (void)EspNativePlayerPainVisual_firstPresented(actionNowMs());
+        (void)EspNativePlayerPainVisual_firstPresented(
+            physicalPresentedAtMs);
     }
     if (flashPainted) {
         actionState.viewportFlashLit = 1U;
@@ -2048,7 +2053,7 @@ int __wrap_Esp32PlatformVideo_present(void) {
     if (flashPainted && actionState.viewportFlashPending != 0U) {
         actionState.viewportFlashPending = 0U;
         actionState.viewportFlashVisible = 1U;
-        actionState.viewportFlashShownAtMs = actionNowMs();
+        actionState.viewportFlashShownAtMs = physicalPresentedAtMs;
         printf("[VIEWFLASH] PAINT color565=%04x viewport=0,%u,%u,%u thickness=%u pixels=%u durationMs=%u snapshot=bounded present=caller feedback=%u blink=%s\n",
                (unsigned int)actionState.viewportFlashColor565,
                (unsigned int)FEEDBACK_VIEW_Y,
