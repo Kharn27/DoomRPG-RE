@@ -1160,7 +1160,7 @@ int EspNativeGameplayActionEngine_present(void) {
             impactLoggedFrame != impactFrame) {
             impactLoggedProbe=impactProbe;
             impactLoggedFrame=impactFrame;
-            printf("[PLAYERIMPACT] %s probe=%u sprite=%u frame=%u/2 pixels=%d source=original-PAK-Game_gsprite_allocAnim cadence=150ms lifetime=shared-pain-500ms gameplayRng=untouched\\n",
+            printf("[PLAYERIMPACT] %s probe=%u sprite=%u frame=%u/2 pixels=%d source=original-PAK-Game_gsprite_allocAnim cadence=150ms lifetime=shared-pain-500ms gameplayRng=untouched\n",
                    pixels>=0?"PAINT":"SKIP",
                    (unsigned int)impactProbe,
                    (unsigned int)impactLogical,
