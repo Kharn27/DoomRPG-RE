@@ -6,6 +6,7 @@
 #include "esp_entity_def_type_catalog.h"
 #include "esp_native_gameplay_hub_weapon_grid.h"
 #include "esp_native_gameplay_hub_theme.h"
+#include "esp_main_menu_skin.h"
 #include "platform_video_config.h"
 
 #define GRID_LEFT 2
@@ -21,7 +22,7 @@
 #define GRID_DIM_BORDER ESP_HUB_COLOR_STEEL_DARK
 #define GRID_OWNED_BORDER ESP_HUB_COLOR_STEEL
 #define GRID_FOCUS ESP_HUB_COLOR_IVORY
-#define GRID_EQUIPPED ESP_HUB_COLOR_AMBER
+#define GRID_EQUIPPED EspMainMenuSkin_uiAccent()
 
 #define GRID_ENTITY_TYPE_WEAPON 5U
 #define GRID_ENTITY_TYPE_AMMO 6U
