@@ -670,7 +670,8 @@ int EspNativeSpriteRenderer_paintPlayerImpact(
         frame->texels,frame->packedBytes,frame->palette,
         (int16_t)frame->xMin,(int16_t)frame->yMin,
         (uint8_t)frame->width,(uint8_t)frame->height,
-        (uint8_t)frame->pitch);
+        (uint8_t)frame->pitch,
+        EspNativePlayerPainVisual_impactRenderMode(logical));
 done:
     if (opened) EspAssetPack_close();
     free(frame);
