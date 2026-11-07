@@ -123,6 +123,14 @@ jobs:
             -o /tmp/doomrpg-player-pain-visual-test
           /tmp/doomrpg-player-pain-visual-test
 
+      - name: Test original source projectile impact/claw sprites and packed bitshape (host C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+            ESP32/src/esp_native_gameplay_player_pain_visual.c \
+            ESP32/test/player_pain_original_impact_host.c \
+            -o /tmp/doomrpg-original-impact-test
+          /tmp/doomrpg-original-impact-test
+
       - name: Test native 500ms original player pain camera shake (host C)
         run: |
           cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
