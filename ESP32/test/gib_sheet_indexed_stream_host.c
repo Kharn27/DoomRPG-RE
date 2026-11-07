@@ -71,7 +71,7 @@ int EspAssetPack_findEntry(const char* name,EspAssetPackEntry* e){
     memset(e,0,sizeof *e);e->size=BMP_BYTES;e->nameHash=1234U;return 1;
 }
 int EspAssetPack_readRange(const EspAssetPackEntry* e,uint32_t off,
-                           void* out,uint32_t bytes) {
+                           void* out,size_t bytes) {
     ++reads;readBytes+=bytes;
     if(!isOpen||e==NULL||out==NULL||
        bytes>BMP_BYTES||off>BMP_BYTES-bytes)return 0;
