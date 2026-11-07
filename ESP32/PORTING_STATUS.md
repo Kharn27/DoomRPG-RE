@@ -1,3 +1,18 @@
+## PR #253 — PASS matériel fonctionnel ciblé, préparation du merge utilisateur (7 novembre 2026)
+
+[PR #253](https://github.com/Kharn27/DoomRPG-RE/pull/253), branche `agent/esp32-death-menu-industrial-actions` sur `main=67494a4f7b99f04ddd0bbec657ffb685e3c0205e` (PR #255 incluse). **Code gelé et testé sur vrai CYD normal : `712348dbced422cbf2497e45876f7db8ee6e89f1`.** [CI push SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42315451726) et [CI PR SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42315456256). Preuve : `device-monitor-261107-010724.log` (2 593 lignes), retour utilisateur « ça marche niquel on va pouvoir merger ».
+
+- **Validation observée :** OPTIONS → VIDEO → THÈME (config V3 SD 12 B, changements `1→2→0`, double tap/retour automatique) ; LOAD V11 slot04, Malwrath et coups reçus, PLAYERDEATH → menu de mort → **RETRY** réinitialisant Entrance depuis PAK sans écriture SAV ; fresh gameplay/dialogues/portes/pickups ; topbar du HUB (INV/STAT/SYS) et consommation d'items ; LOAD slot06 via SYSTEM ; sortie Entrance→Junction avec statistiques, ACK et session cible. `HEADROOM_OK`, heap8 ~111 276 B en LOAD Entrance, ~112 100 B en RETRY fresh, ~120 900 B à Junction, largest8=86 004 B en jeu, Render_t=184 B, PAK241, PSRAM0, `shapeData/mediaTexels=NULL`. Aucune panic/WDT dans le log.
+- **Réserve à ne pas effacer :** deux `[HUB] CLOSE` renvoient `exactHud=NO exactBottom=NO` puis `HUB-RECOVER status=NOT_READY`. La récupération world fonctionne et la session reste jouable, **mais le contrat HUD pixel-exact échoue sur ces fermetures**. Signaler/suivre séparément, ne jamais présenter comme un PASS strict. Les autres fermetures peuvent être exactes ou `topbar-pending` après mutation.
+- **Hors preuve de cette capture :** routes **LOAD/JUNCTION/MAIN depuis le menu de mort**, persistance du thème après nouveau reboot et présentation LOADING sous PHOSPHORE (la sélection revient à CLASSIC avant LOAD), tous les BSP, audio. Ne pas les confondre avec LOAD normal, CHANGEMAP de niveau ou tests hôte.
+- Après accord utilisateur, **clôture documentation seulement**, CI finale et sortie de Draft ; aucune modification de code et **aucun merge main par l'agent**.
+
+Rapport détaillé : [MILESTONE_PR253_DEATH_MENU_THEMES_HUB_CYD_PASS.md](MILESTONE_PR253_DEATH_MENU_THEMES_HUB_CYD_PASS.md).
+
+---
+
+### Historique : premier PASS visuel #253 (5 novembre 2026)
+
 ## PR #253 — écran de mort industriel : PASS visuel ciblé, routes non validées (5 novembre 2026)
 
 **Branche unique** `agent/esp32-death-menu-industrial-actions`, [PR #253](https://github.com/Kharn27/DoomRPG-RE/pull/253) empilée sur [#251](https://github.com/Kharn27/DoomRPG-RE/pull/251) encore ouverte. **Code visible testé** au SHA `5e695b8ed0946bea0876919196d697cfb5b208a7`. Tests hôte et firmwares normal/bringup/trace : [CI push SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42102571837), [CI PR SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42102585194). Après la première version, l'utilisateur a noté que le titre ressemblait trop à un bouton ; la version testée remplace le cinquième faux bouton par une **signalétique de danger fixe**, sans châssis cliquable, avec titre rouge, sous-titre ambre, hachures et rails industriels. Retour réel classic CYD : **« je prends, on va pouvoir merger »**. **PASS visuel seulement**, sans nouveau log Serial ni mesure mémoire matérielle.
