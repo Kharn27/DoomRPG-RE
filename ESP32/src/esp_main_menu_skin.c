@@ -80,12 +80,31 @@ uint16_t EspMainMenuSkin_progressTone(int row, int rows) {
      * CLASSIC pixel unchanged; alternate themes recolor only filled pixels. */
     static const uint16_t gradients[3][6] = {
         {0xf6afU, 0xf447U, 0xf447U, 0xd344U, 0xd344U, 0x9243U},
-        {0xff75U, 0xfbeaU, 0xf447U, 0xd344U, 0xc982U, 0xc002U},
+        /* INFERNO: six genuinely red rows, not an amber face with a red seam. */
+        {0xf946U, 0xf905U, 0xf804U, 0xd004U, 0xb003U, 0x9002U},
         {0xdff6U, 0xbff3U, 0xa7f1U, 0x87e0U, 0x5e2aU, 0x246aU}
     };
     if (rows != 6 || row < 0 || row >= rows ||
         selectedLetterTheme > ESP_MAIN_MENU_THEME_PHOSPHORE) return 0U;
     return gradients[selectedLetterTheme][row];
+}
+
+/* One shared, immutable palette for native modal surfaces. CLASSIC keeps
+ * its historical HUB amber and warm ivory pixels; danger, health and armor
+ * remain semantic colors at their call sites. No owner or new framebuffer. */
+uint16_t EspMainMenuSkin_uiAccent(void) {
+    static const uint16_t colors[3] = {0xfd20U, 0xf926U, 0x87e0U};
+    return colors[selectedLetterTheme];
+}
+
+uint16_t EspMainMenuSkin_uiAccentDim(void) {
+    static const uint16_t colors[3] = {0x7a80U, 0x9002U, 0x246aU};
+    return colors[selectedLetterTheme];
+}
+
+uint16_t EspMainMenuSkin_uiInk(void) {
+    static const uint16_t colors[3] = {0xf6afU, 0xff75U, 0xdff6U};
+    return colors[selectedLetterTheme];
 }
 
 static const char letters[] = "ADEHILNOPRSTBCFGJKMQUVWXYZ0123456789% ";
@@ -296,6 +315,37 @@ int EspMainMenuSkin_paintPlate(uint16_t* fb, int stride,
         dot(fb, stride, r - 5, b - 5, l, t, r, b, p->shadow);
     }
 
+    return 1;
+}
+
+/* Unframed industrial modal title, modeled on the death-menu stencil.
+ * Both native reports share exactly this paint; the longest 5x7 title
+ * (MISSION COMPLETE, 16 glyphs at x34..128) has a fully clear ink corridor.
+ * Leave the rest of the 160x120 framebuffer, metrics and tap targets alone. */
+int EspMainMenuSkin_paintModalTitleStencil(uint16_t* fb, int stride,
+                                           int width, int height) {
+    const int l = 0, t = 0, r = SKIN_W - 1, b = SKIN_H - 1;
+    int stripe, y;
+    if (fb == NULL || width != SKIN_W || height != SKIN_H ||
+        stride < width) return 0;
+
+    horizontal(fb, stride, 9, 25, 7, l, t, r, b, 0x6b4dU);
+    horizontal(fb, stride, 134, 150, 7, l, t, r, b, 0x6b4dU);
+    for (stripe = 0; stripe < 3; ++stripe) {
+        const uint16_t hatch = stripe == 1 ? 0x632bU :
+            EspMainMenuSkin_uiAccentDim();
+        for (y = 10; y <= 23; ++y) {
+            const int x = 11 + stripe * 5 + (y - 10) / 7;
+            dot(fb, stride, x, y, l, t, r, b, hatch);
+            dot(fb, stride, x + 1, y, l, t, r, b, hatch);
+            dot(fb, stride, SKIN_W - 2 - x, y, l, t, r, b, hatch);
+            dot(fb, stride, SKIN_W - 1 - x, y, l, t, r, b, hatch);
+        }
+    }
+    horizontal(fb, stride, 47, 112, 27, l, t, r, b,
+               EspMainMenuSkin_uiAccentDim());
+    horizontal(fb, stride, 73, 86, 27, l, t, r, b,
+               EspMainMenuSkin_uiAccent());
     return 1;
 }
 

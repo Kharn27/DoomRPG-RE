@@ -37,12 +37,30 @@ uint16_t EspMainMenuSkin_accentTone(EspMainMenuSkinState state);
  * ROM-only (no cache or extra framebuffer). */
 uint16_t EspMainMenuSkin_progressTone(int row, int rows);
 
+/* Shared 160x120 native-menu accents for HUB/SYSTEM/fullscreen reports.
+ * CLASSIC returns the historical amber, muted amber and ivory ink;
+ * INFERNO hot red, PHOSPHORE mint. Pure, allocation-free theme reads.
+ * Gameplay health/armor and danger semantics are not palette-swapped. */
+uint16_t EspMainMenuSkin_uiAccent(void);
+uint16_t EspMainMenuSkin_uiAccentDim(void);
+uint16_t EspMainMenuSkin_uiInk(void);
+
 /* Paint all 9 original glyph rows (including A/E/H crossbars). Long
  * words sample three columns, never omit rows. No shift, shadow or IO. */
 int EspMainMenuSkin_paintText(uint16_t* framebuffer, int stride,
                               int width, int height,
                               int left, int top, int right, int bottom,
                               const char* label, int selected, int enabled);
+
+/* Non-clickable upper-bulkhead stencil inspired by YOU DIED:
+ * small steel rules, side hazard hatches, thin lower signal; NO plate rim.
+ * Its central x=28..131/y=10..26 area is text-safe for the 16-character
+ * MISSION COMPLETE 5x7 title plus its second-line label. Paints only
+ * x=9..150 / y=7..27, allocation-free; invalid framebuffer is untouched. */
+int EspMainMenuSkin_paintModalTitleStencil(uint16_t* framebuffer,
+                                           int stridePixels,
+                                           int logicalWidth,
+                                           int logicalHeight);
 
 /* Shared procedural gunmetal chassis. No text, heap or IO. Strict 160x120
  * framebuffer and bounded rectangle; invalid inputs leave pixels untouched.

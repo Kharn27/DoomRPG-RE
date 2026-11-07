@@ -202,12 +202,12 @@ static int paintDeathMenu(void) {
             }
         }
     }
-    fillRect(fb, 47, 27, 112, 27, ESP_HUB_COLOR_AMBER_DIM);
+    fillRect(fb, 47, 27, 112, 27, EspMainMenuSkin_uiAccentDim());
     fillRect(fb, 73, 27, 86, 27, ESP_HUB_COLOR_RED);
     EspNativeGameplayHubTouchUi_drawCrispText(
         fb, "YOU DIED", 80, 11, ESP_HUB_COLOR_RED);
     EspNativeGameplayHubTouchUi_drawMiniText(
-        fb, "MISSION FAILED", 80, 20, 0xf6afU);
+        fb, "MISSION FAILED", 80, 20, EspMainMenuSkin_uiInk());
 
     for (row = 0; row < 4; ++row) {
         const int top = DEATH_MENU_ROW0_TOP +
@@ -237,7 +237,7 @@ static int paintDeathMenu(void) {
         EspNativeGameplayHubTouchUi_drawCrispText(
             fb, confirming ? "CONFIRM JUNCTION" : labels[row],
             80, top + 6,
-            enabled ? (confirming ? 0xffffU : 0xf6afU) : 0x9cd3U);
+            enabled ? (confirming ? 0xffffU : EspMainMenuSkin_uiInk()) : 0x9cd3U);
     }
     return Esp32PlatformVideo_present();
 }

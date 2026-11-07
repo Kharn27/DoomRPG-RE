@@ -25,6 +25,7 @@
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_hub.h"
 #include "esp_native_gameplay_hub_theme.h"
+#include "esp_main_menu_skin.h"
 #include "esp_native_gameplay_hub_touch_ui.h"
 #include "esp_native_gameplay_input.h"
 #include "esp_native_gameplay_monster_activation.h"
@@ -3339,7 +3340,7 @@ void drawCenteredWord(uint16_t* fb, int centerX, int y, const char* text,
 void drawSlotNav(uint16_t* fb, int top, int bottom, bool next, bool enabled) {
     const int x0 = 118, x1 = 156;
     const int cx = 137, cy = (top + bottom) / 2;
-    const uint16_t color = enabled ? ESP_HUB_COLOR_AMBER : ESP_HUB_COLOR_STEEL_DARK;
+    const uint16_t color = enabled ? EspMainMenuSkin_uiAccent() : ESP_HUB_COLOR_STEEL_DARK;
     fillRect(fb, x0, top, x1, bottom, enabled ? ESP_HUB_COLOR_PANEL_ALT : ESP_HUB_COLOR_PANEL);
     drawRect(fb, x0, top, x1, bottom, enabled ? ESP_HUB_COLOR_STEEL : ESP_HUB_COLOR_STEEL_DARK);
     /* Broad 2px chevron, pointing UP for previous, DOWN for next. */
@@ -3380,7 +3381,7 @@ bool paintSaveOverlay(void) {
         fillRect(fb, 2, 21, 157, 118, ESP_HUB_COLOR_BG);
         snprintf(label, sizeof(label), "%s - PAGE %u/2", slotMode == 1U ? "SAVE" : "LOAD",
                  first == 1U ? 1U : 2U);
-        drawCenteredWord(fb, 60, 35, label, ESP_HUB_COLOR_IVORY);
+        drawCenteredWord(fb, 60, 35, label, EspMainMenuSkin_uiAccent());
         for (uint8_t row = 0U; row < 5U; ++row) {
             const uint8_t slot = first + row;
             const int top = 47 + row * 14;
@@ -3390,7 +3391,7 @@ bool paintSaveOverlay(void) {
             fillRect(fb, 7, top, 113, top + 12,
                      focused ? ESP_HUB_COLOR_PANEL_ALT : ESP_HUB_COLOR_PANEL);
             drawRect(fb, 7, top, 113, top + 12,
-                     focused ? ESP_HUB_COLOR_AMBER : ESP_HUB_COLOR_STEEL_DARK);
+                     focused ? EspMainMenuSkin_uiAccent() : ESP_HUB_COLOR_STEEL_DARK);
             drawCenteredWord(fb, 60, top + 3, label,
                              available ? (focused ? ESP_HUB_COLOR_GREEN : ESP_HUB_COLOR_IVORY)
                                        : ESP_HUB_COLOR_STEEL_DARK);
@@ -3411,7 +3412,7 @@ bool paintSaveOverlay(void) {
         const int bottom = top + ESP_NATIVE_SYS_BUTTON_HEIGHT - 1;
         const bool selected = statusCursor == row;
         const uint16_t accent = row == kStatusExit && confirmExit
-            ? ESP_HUB_COLOR_RED : ESP_HUB_COLOR_AMBER;
+            ? ESP_HUB_COLOR_RED : EspMainMenuSkin_uiAccent();
         fillRect(fb, kButtonLeft, top, kButtonRight, bottom,
                  selected ? ESP_HUB_COLOR_PANEL_ALT : ESP_HUB_COLOR_BG);
         drawRect(fb, kButtonLeft, top, kButtonRight, bottom,
@@ -3422,7 +3423,7 @@ bool paintSaveOverlay(void) {
 
     if (confirmationTarget == kStatusSave) {
         saveLabel = "SAVE?";
-        saveColor = ESP_HUB_COLOR_AMBER;
+        saveColor = EspMainMenuSkin_uiAccent();
     }
     else if (lastOperation == 1U) {
         saveLabel = lastOperationOk != 0U ? "SAVED" : "FAILED";
@@ -3435,7 +3436,7 @@ bool paintSaveOverlay(void) {
     }
     else if (confirmationTarget == kStatusLoad) {
         loadLabel = "LOAD?";
-        loadColor = ESP_HUB_COLOR_AMBER;
+        loadColor = EspMainMenuSkin_uiAccent();
     }
     else if (lastOperation == 2U && lastOperationOk == 0U) {
         loadLabel = "FAILED";
@@ -3447,7 +3448,7 @@ bool paintSaveOverlay(void) {
     drawCenteredWord(fb, 80, systemRowTop(kStatusSave) + 8, saveLabel, saveColor);
     drawCenteredWord(fb, 80, systemRowTop(kStatusLoad) + 8, loadLabel, loadColor);
     drawCenteredWord(fb, 80, systemRowTop(kStatusExit) + (confirmExit ? 4 : 8),
-                     exitLabel, confirmExit ? ESP_HUB_COLOR_AMBER : ESP_HUB_COLOR_IVORY);
+                     exitLabel, confirmExit ? EspMainMenuSkin_uiAccent() : ESP_HUB_COLOR_IVORY);
     if (confirmExit) drawCenteredWord(fb, 80, systemRowTop(kStatusExit) + 14,
                                      "UNSAVED CHANGES LOST", ESP_HUB_COLOR_RED);
     return Esp32PlatformVideo_present();
@@ -3469,7 +3470,7 @@ static void paintMainSlots(void) {
     char text[40];
     fillRect(fb, 0, 0, 159, 119, ESP_HUB_COLOR_BG);
     snprintf(text, sizeof(text), "LOAD - PAGE %u/2", first == 1U ? 1U : 2U);
-    drawCenteredWord(fb, 60, 15, text, ESP_HUB_COLOR_IVORY);
+    drawCenteredWord(fb, 60, 15, text, EspMainMenuSkin_uiAccent());
     for (uint8_t row = 0U; row < 5U; ++row) {
         const uint8_t slot = first + row;
         const int y = 32 + row * 14;
@@ -3477,7 +3478,7 @@ static void paintMainSlots(void) {
         const bool occupied = formatSlotCaption(
             slot, focused && slotArmed == slot, text, sizeof(text));
         fillRect(fb, 7, y, 113, y + 12, focused ? ESP_HUB_COLOR_PANEL_ALT : ESP_HUB_COLOR_PANEL);
-        drawRect(fb, 7, y, 113, y + 12, focused ? ESP_HUB_COLOR_AMBER : ESP_HUB_COLOR_STEEL_DARK);
+        drawRect(fb, 7, y, 113, y + 12, focused ? EspMainMenuSkin_uiAccent() : ESP_HUB_COLOR_STEEL_DARK);
         drawCenteredWord(fb, 60, y + 3, text,
                          occupied ? (focused ? ESP_HUB_COLOR_GREEN : ESP_HUB_COLOR_IVORY)
                                   : ESP_HUB_COLOR_STEEL_DARK);

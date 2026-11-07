@@ -99,7 +99,7 @@ jobs:
 
       - name: Test all twelve native WPN grid and familiar touch cells (host C)
         run: |
-          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/include ESP32/src/esp_native_gameplay_hub_weapon_grid.c ESP32/test/hub_weapon_grid_native_host.c -Wl,--gc-sections -o /tmp/doomrpg-native-weapon-grid-test
+          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/include ESP32/src/esp_native_gameplay_hub_weapon_grid.c ESP32/src/esp_main_menu_skin.c ESP32/test/hub_weapon_grid_native_host.c -Wl,--gc-sections -o /tmp/doomrpg-native-weapon-grid-test
           /tmp/doomrpg-native-weapon-grid-test
 
       - name: Test native store catalog and purchase semantics (host C)
@@ -268,6 +268,7 @@ jobs:
             -o /tmp/doomrpg-menu-skin-test
           /tmp/doomrpg-menu-skin-test
           python ESP32/test/main_menu_skin_integration_host.py
+          python ESP32/test/native_modal_theme_host.py
 
       - name: Test native HUB topbar tabs and no AUTOMAP leak
         run: python ESP32/test/native_hub_topbar_host.py
@@ -277,7 +278,7 @@ jobs:
           cc -std=c11 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
             -IESP32/include ESP32/test/hub_topbar_live_host.c \
             ESP32/src/esp_native_gameplay_hub_touch_ui.c \
-            ESP32/src/esp_native_gameplay_input.c -Wl,--gc-sections \
+            ESP32/src/esp_native_gameplay_input.c ESP32/src/esp_main_menu_skin.c -Wl,--gc-sections \
             -o /tmp/doomrpg-hub-topbar-live-test
           /tmp/doomrpg-hub-topbar-live-test
 
@@ -331,7 +332,7 @@ jobs:
 
       - name: Test native dialog BACK touch and cancel semantics (host C)
         run: |
-          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/test/host_include -IESP32/include ESP32/test/dialog_touch_host.c ESP32/src/esp_native_gameplay_hub_touch_ui.c -Wl,--gc-sections -o /tmp/doomrpg-dialog-touch-test
+          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/test/host_include -IESP32/include ESP32/test/dialog_touch_host.c ESP32/src/esp_native_gameplay_hub_touch_ui.c ESP32/src/esp_main_menu_skin.c -Wl,--gc-sections -o /tmp/doomrpg-dialog-touch-test
           /tmp/doomrpg-dialog-touch-test
 
       - name: Test automap restoration on script startup failure (host C)
