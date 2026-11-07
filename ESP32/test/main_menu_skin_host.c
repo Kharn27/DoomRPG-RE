@@ -177,11 +177,31 @@ int main(void) {
     assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_INFERNO));
     assert(EspMainMenuSkin_uiAccent() == 0xf926U);
     assert(EspMainMenuSkin_uiAccentDim() == 0x9002U);
-    assert(EspMainMenuSkin_uiInk() == 0xff75U);
+    /* INFERNO top ink is blush/pale rose, not the previous straw yellow.
+     * The same hue feeds the modal labels; copper and deep red stay exact. */
+    assert(EspMainMenuSkin_uiInk() == 0xfebcU);
     {
-        static const uint16_t hot[5] = {0xff75U,0xff75U,0xd344U,0xd344U,0xc002U};
+        static const uint16_t hot[5] = {0xfebcU,0xfebcU,0xd344U,0xd344U,0xc002U};
+        static const uint16_t hot7[7] = {
+            0xfebcU,0xfebcU,0xfebcU,0xd344U,0xd344U,0xc002U,0xc002U
+        };
+        static const uint16_t hot9[9] = {
+            0xfebcU,0xfebcU,0xfebcU,0xd344U,0xd344U,0xd344U,
+            0xc002U,0xc002U,0xc002U
+        };
+        const uint16_t rose = EspMainMenuSkin_letterTone(0, 9);
+        const unsigned green = (rose >> 5) & 63U;
+        const unsigned blue = rose & 31U;
+        assert(((rose >> 11) & 31U) == 31U);
+        /* The original yellow was 0xff75: less blue than green/2.
+         * Pale pink must contain a substantial blue component. */
+        assert(blue * 2U > green);
         for (int row = 0; row < 5; ++row)
             assert(EspMainMenuSkin_letterTone(row, 5) == hot[row]);
+        for (int row = 0; row < 7; ++row)
+            assert(EspMainMenuSkin_letterTone(row, 7) == hot7[row]);
+        for (int row = 0; row < 9; ++row)
+            assert(EspMainMenuSkin_letterTone(row, 9) == hot9[row]);
         static const uint16_t emberFill[6] = {
             0xf946U,0xf905U,0xf804U,0xd004U,0xb003U,0x9002U
         };
