@@ -21,6 +21,7 @@
 #include "esp_native_gameplay_player_pain_visual.h"
 #include "esp_native_gameplay_dog_familiar.h"
 #include "esp_native_gameplay_monster_drop.h"
+#include "esp_native_audio_intent.h"
 #include "esp_player_view_state.h"
 #include "platform_video_c_bridge.h"
 
@@ -818,6 +819,17 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
     /* renderTurn already presented the staged native face+weapon palette;
      * publication is an owner-state change only and consumes no RNG. */
     (void)EspNativePlayerPainVisual_commit(turn->attackProbes);
+    /* Player_painEvent() emits 5089 for dog interception, 5081 for
+     * ordinary hurt, then Player_pain() emits 5090 when the dog dies.
+     * Publish ONLY after the player/world/frame transaction commits:
+     * no orphaned audio intents or altered gameplay RNG on rollback.
+     * The existing backend intentionally remains silent. */
+    (void)EspNativeAudioIntent_publish(
+        dogCandidate != 0U ? 5089U : 5081U, 0U,
+        dogCandidate != 0U ? 3U : 2U);
+    if (dogDied != 0U) {
+        (void)EspNativeAudioIntent_publish(5090U,0U,3U);
+    }
     ++retaliationView.committedAttacks;
     retaliationView.lastResolvedProbe = turn->attackProbes;
     /* AUTOMAP has its own 900ms visual lease, only AFTER an actual committed
@@ -837,7 +849,7 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
     playerFNVAfter = EspNativeGameplayPlayerState_fingerprint();
     randomFNVAfter = randomFNV(&doomRpg->random);
     if (dogDied != 0U) {
-        printf("[DOGDEATH] COMMIT probe=%u sprite=%u dogHP=%u->0 playerHP=%u->%u armor=%u->%u weapon=%u->%u weapons=%04x->%04x corpseGSprite=%u frame=2 slot=%u world=%u,%u V11=persistent damage=%u sound5090=deferred capturedEntity=no nativeFallback=yes rng=%08x->%08x rollback=closed\n",
+        printf("[DOGDEATH] COMMIT probe=%u sprite=%u dogHP=%u->0 playerHP=%u->%u armor=%u->%u weapon=%u->%u weapons=%04x->%04x corpseGSprite=%u frame=2 slot=%u world=%u,%u V11=persistent damage=%u sound5090=audio-intent-silent capturedEntity=no nativeFallback=yes rng=%08x->%08x rollback=closed\n",
                (unsigned int)turn->attackProbes,
                (unsigned int)monster->spriteIndex,
                (unsigned int)playerBefore.ammo[5],
@@ -871,7 +883,7 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
                (unsigned int)randomFNVBefore,
                (unsigned int)randomFNVAfter);
     }
-    printf("[MONSTERRETAL] COMMIT probe=%u reason=%s sprite=%u subtype=%u mType=%u weapon=%u alt=%u loops=%u hitLoops=%u firstRandHit=%u firstCalcHit=%d firstCritLimit=%d firstRandDamage=%u totalDamage=%d armorDamage=%d crit=%u aiRand=%s%u rngCalls=%u combatRngCalls=%u missProjectileRng=%u playerHP=%u->%u armor=%u->%u playerFNV=%08x->%08x rng=%08x->%08x frame=%08x presented=%u message=\"%s\" damageTotal=%d redFlash=b800/%ums passMessage=%s rollback=closed attackVisual=complete-before-resolution attackMessage=deferred painFace=native-500ms weaponBlend=native-500ms shake=native-world-weapon-500ms sound=deferred statusWarnings=deferred playerDeath=nonlethal turn=closed\n",
+    printf("[MONSTERRETAL] COMMIT probe=%u reason=%s sprite=%u subtype=%u mType=%u weapon=%u alt=%u loops=%u hitLoops=%u firstRandHit=%u firstCalcHit=%d firstCritLimit=%d firstRandDamage=%u totalDamage=%d armorDamage=%d crit=%u aiRand=%s%u rngCalls=%u combatRngCalls=%u missProjectileRng=%u playerHP=%u->%u armor=%u->%u playerFNV=%08x->%08x rng=%08x->%08x frame=%08x presented=%u message=\"%s\" damageTotal=%d redFlash=b800/%ums passMessage=%s rollback=closed attackVisual=complete-before-resolution attackMessage=deferred painFace=native-500ms weaponBlend=native-500ms shake=native-world-weapon-500ms sound=5081-or-5089-5090-intent-silent statusWarnings=deferred playerDeath=nonlethal turn=closed\n",
            (unsigned int)turn->attackProbes,
            reasonName(turn->lastReason),
            (unsigned int)monster->spriteIndex,
