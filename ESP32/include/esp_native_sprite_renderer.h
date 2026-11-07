@@ -72,6 +72,16 @@ void EspNativeSpriteRenderer_resetAmbient(void);
 int EspNativeSpriteRenderer_render(struct Render_s* render,
                                    EspNativeSpriteStats* outStats);
 
+/* One optional source bitshape impact at the center of the 160x80
+ * first-person world. Render from original PAK logical 180..190 + frame 0..2,
+ * without keeping decoded source pixels across frames; backed by the same
+ * production mask/texel decoder as the native 3D renderer.
+ * Returns painted pixel count, -1 for absent asset/invalid/owner busy.
+ * Never changes the legacy monster/weapon path, view, BSP or RNG. */
+int EspNativeSpriteRenderer_paintPlayerImpact(
+    uint16_t* framebuffer, uint32_t width, uint32_t height,
+    uint16_t logical, uint8_t animation);
+
 /* No activation or automap publication for intermediate visual poses. */
 int EspNativeSpriteRenderer_renderVisual(
     struct Render_s* render,
