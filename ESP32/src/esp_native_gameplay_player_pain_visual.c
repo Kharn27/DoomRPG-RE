@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "esp_native_gameplay_player_pain_visual.h"
@@ -91,10 +92,18 @@ int EspNativePlayerPainVisual_commit(uint32_t probe) {
  * PAIN_STAGED and PAIN_COMMITTED are intentionally timeless; PAIN_VISIBLE
  * begins at the first actual LCD publish, and only then may expire. */
 int EspNativePlayerPainVisual_firstPresented(uint32_t nowMs) {
+    uint32_t hiddenMs;
     if (lease.phase != PAIN_COMMITTED || lease.expired != 0U) return 0;
+    hiddenMs = nowMs - lease.begunMs;
     lease.phase = PAIN_VISIBLE;
     lease.begunMs = nowMs;
     lease.lastShakeStep = 0U; /* initial displayed viewport = step zero */
+    printf("[PLAYERPAINFX] FIRST-PRESENT probe=%u hiddenMs=%u visibleWindowMs=%u side=%u dogBlood=%u clock=physical-lcd rng=visual-only\\n",
+           (unsigned int)lease.probe,
+           (unsigned int)hiddenMs,
+           (unsigned int)ESP_NATIVE_PLAYER_PAIN_MS,
+           (unsigned int)lease.side,
+           (unsigned int)lease.dogBlood);
     return 1;
 }
 
