@@ -30,7 +30,7 @@ int main(void) {
        0U,0U,0U,0U,0U,0U,182U,180U,181U,0U,
        0U,0U,188U,189U,190U,184U,185U,186U,0U
     };
-    static const uint8_t bits[4] = {0x09U,0x06U,0x01U,0x08U};
+    static const uint8_t bits[4] = {0x09U,0x06U,0x00U,0x00U};
     static const uint8_t texels[2] = {0x21U,0x43U};
     static const uint16_t colors[16] = {
         0U,0xf800U,0x001fU,0x07e0U,0xffffU,0U,0U,0U,
