@@ -1,3 +1,15 @@
+## PR #253 — interface industrielle : essai CYD normal et limites (7 novembre 2026)
+
+La composition `agent/esp32-death-menu-industrial-actions` est validée **fonctionnellement sur les parcours observés** au SHA `712348dbced422cbf2497e45876f7db8ee6e89f1` ; CI push/PR SUCCESS. La capture réelle `device-monitor-261107-010724.log` montre : choix THÈME V3 par deux taps (`1→2→0` avec SAVE SD et retour VIDEO), décès Malwrath → menu de mort → **RETRY** de la carte Entrance depuis le PAK, HUB avec onglets INV/STAT/SYS dans la barre supérieure, notebook/items/STATUS, LOAD V11 via SYSTEM, reprise gameplay, et statistiques Entrance→Junction. Pas de PANIC/WDT, 0 PSRAM, `shapeData/mediaTexels=0x0`, marges RAM `HEADROOM_OK`. L'utilisateur confirme « ça marche niquel on va pouvoir merger ».
+
+**Limite importante :** deux fermetures du HUB échouent au contrôle de restitution HUD `exactBottom=NO`, suivies du chemin fail-closed `HUB-RECOVER status=NOT_READY` puis reprise du monde. Ce n'est pas un crash, mais **pas de preuve d'intégrité pixel-exact du HUD pour ces fermetures**. La capture ne teste pas LOAD/JUNCTION/MAIN *depuis le menu de mort*, ni reboot après changement PHOSPHORE, ni LOADING sous PHOSPHORE. Les tests host ne remplacent pas cette preuve. Maintenir ce diagnostic visible à l'occasion de la fusion ; gel du code testé et commits post-test documentaires uniquement.
+
+[Rapport matériel détaillé PR #253](MILESTONE_PR253_DEATH_MENU_THEMES_HUB_CYD_PASS.md) · [PR #253](https://github.com/Kharn27/DoomRPG-RE/pull/253) · [CI push](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42315451726) · [CI PR](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42315456256).
+
+---
+
+### Historique : premier PASS graphique de #253
+
 ## PR #253 — menu de mort : validation graphique uniquement (5 novembre 2026)
 
 Sur [PR #253](https://github.com/Kharn27/DoomRPG-RE/pull/253), commit visuel `5e695b8ed0946bea0876919196d697cfb5b208a7`, le vrai CYD présente le bandeau non interactif de type signalétique de danger « YOU DIED / MISSION FAILED » assorti aux quatre plaques industrielles du menu. L'utilisateur accepte explicitement cette variante (« je prends, on va pouvoir merger »). [CI push](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42102571837) et [CI PR](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42102585194) SUCCESS, tests hôte et firmwares trois profils. Aucune nouvelle capture Serial dans ce retour : **PASS visuel ciblé**, pas PASS de gameplay.
