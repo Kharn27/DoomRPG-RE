@@ -1124,15 +1124,13 @@ static void serviceExpiry(struct DoomRPG_s* doomRpg) {
  * action-feedback presenter is now presentBase(), allowing this generic effect
  * layer to decorate only the shared framebuffer before the already-proven
  * feedback + physical-present chain. */
-int EspNativeGameplayActionEngine_present(void) {
-    uint32_t seed = 0U;
-    uint32_t age = 0U;
+/* Presentation-only component of the EXISTING damage compositor.
+ * Called once at the FIRST red-flash paint via the owner callback, then
+ * naturally on 75ms shake redraws. Never creates its own timer/present. */
+static void decoratePlayerImpact(void) {
     uint32_t impactProbe = 0U;
     uint16_t impactLogical = 0U;
     uint8_t impactFrame = 0U;
-    decorateActiveHit();
-    decorateActiveGib();
-    decorateNewGibs();
     /* Original Combat_updateProjectile() -> Game_gsprite_allocAnim()
      * paints source logical 180..190 impact at the player's camera.
      * Unlike the existing native HUD pain face, this is the missing
@@ -1169,6 +1167,15 @@ int EspNativeGameplayActionEngine_present(void) {
         }
         if (pixels < 0) impactUnavailableProbe=impactProbe;
     }
+}
+
+int EspNativeGameplayActionEngine_present(void) {
+    uint32_t seed = 0U;
+    uint32_t age = 0U;
+    decorateActiveHit();
+    decorateActiveGib();
+    decorateNewGibs();
+    decoratePlayerImpact();
     /* This layer belongs ONLY to true familiar absorption. A plain dog
      * enemy hit cannot select it. Fail closed if the shared framebuffer is
      * missing or a modal/transition compositor owns the physical present.
@@ -1203,6 +1210,9 @@ int EspNativeGameplayActionEngine_present(void) {
  * Random_t byte-for-byte; the already-proven byte RNG guard owns the future
  * exact live replay. */
 void __wrap_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg) {
+    /* Permanent player impact layer shares the ONE existing DAMAGE red
+     * border/arrow physical-present owner. No independent animation loop. */
+    EspNativeGameplayActionEngine_setImpactPainter(decoratePlayerImpact);
     EspNativeGameplayPlayerResources_sessionService(doomRpg);
     EspNativeGameplayMonsterAttackVisual_service(doomRpg);
     /* The first 85ms damage-cue pulse must not begin before synchronous
@@ -1223,6 +1233,7 @@ void __wrap_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg) {
 }
 
 void __wrap_EspNativeGameplaySession_reset(void) {
+    EspNativeGameplayActionEngine_setImpactPainter(NULL);
     EspNativeGameplayPlayerResources_sessionReset();
     EspNativeGameplayMonsterAttackVisual_reset();
     EspNativeGameplayMonsterRetaliation_reset();
