@@ -102,7 +102,12 @@ int EspNativePlayerPainVisual_impactInfo(
     if (outFrame != NULL) *outFrame = 0U;
     if (outProbe == NULL || outLogical == NULL || outFrame == NULL ||
         lease.impactLogical == 0U ||
+        (lease.phase != PAIN_COMMITTED && lease.phase != PAIN_VISIBLE) ||
         !EspNativePlayerPainVisual_isActive(nowMs)) return 0;
+    /* Strict first-red-flash publication: a STAGED hit may be rendered
+     * during monster movement, while the original border is intentionally
+     * withheld. Do not draw the center impact until the successful player
+     * hit is committed and the SAME red flash presenter calls the painter. */
     age = lease.phase == PAIN_VISIBLE ? nowMs-lease.begunMs : 0U;
     /* Game_gsprite_update: animation frames 0,1,2 every 150ms,
      * duration 450ms. The last frame is held until the native 500ms
