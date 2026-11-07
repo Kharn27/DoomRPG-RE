@@ -60,6 +60,12 @@ void EspNativeGameplayMonsterCombat_reset(void);
 int EspNativeGameplayMonsterCombat_isReady(void);
 const EspNativeGameplayMonsterCombatView* EspNativeGameplayMonsterCombat_view(void);
 
+/* Legacy Render_renderSpriteObject reads monster->damageBlendTime, which is
+ * set by Combat_spawnBloodParticles() to exactly +100ms on a real hit.
+ * The native pain pose lasts 250ms, so DO NOT brighten the full pose. */
+int EspNativeGameplayMonsterCombat_damageBlend(
+    uint16_t spriteIndex, uint32_t nowMs);
+
 #ifdef __cplusplus
 }
 #endif

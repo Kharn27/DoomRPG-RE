@@ -31,6 +31,7 @@
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_graphics_catalog.h"
 #include "esp_native_gameplay_player_state.h"
+#include "esp_native_gameplay_player_pain_visual.h"
 #include "esp_native_gameplay_player_death.h"
 #include "esp_native_resident_gameplay.h"
 #include "esp_native_rng_replay_guard.h"
@@ -1545,6 +1546,15 @@ static const char* directionCueName(uint8_t side) {
     }
 }
 
+/* One optional synchronous paint hook into the CURRENT red-flash
+ * presentation; never schedules a new frame or changes feedback timing.
+ * The impact layer registers at native gameplay-session service entry.
+ * Ordinary host harnesses / early boot leave this NULL. */
+static void (*impactPainter)(void);
+void EspNativeGameplayActionEngine_setImpactPainter(void (*paint)(void)) {
+    impactPainter = paint;
+}
+
 /* Keep the existing nonlethal text and red flash grouped AFTER the
  * synchronous monster FX tail. No direction-specific presentation occurs. */
 void EspNativeGameplayActionEngine_beginMonsterVisualWork(void) {
@@ -1563,8 +1573,11 @@ void EspNativeGameplayActionEngine_endMonsterVisualWork(void) {
     directionCue.workActive = 0U;
     directionCue.stageNonlethalBorder = 0U;
     if (staged != 0U && actionState.viewportFlashPending != 0U) {
-        /* The ordinary present paints text + 2px red contour + translucent
-         * side together, starting their ONE 500ms blink at this present. */
+        /* The original center impact belongs to THIS first red flash.
+         * Intermediate monster-frame presents must not expose it early.
+         * Paint onto the existing fresh framebuffer, then let the proven
+         * flash compositor paint text/2px red/direction and publish once. */
+        if (impactPainter != NULL) impactPainter();
         (void)__wrap_Esp32PlatformVideo_present();
     }
 }
@@ -1889,6 +1902,7 @@ int __wrap_Esp32PlatformVideo_present(void) {
     int hadFeedback = 0;
     int flashPainted = 0;
     int ok;
+    uint32_t physicalPresentedAtMs;
 
     /*
      * The gameplay compositor never owns MENU_MAIN, SAVESLOTS, INTRO or the
@@ -2008,6 +2022,19 @@ int __wrap_Esp32PlatformVideo_present(void) {
 
     ok = __real_Esp32PlatformVideo_present();
     if (!ok) return 0;
+    /* One immutable timestamp for the single successful LCD present:
+     * border + direction + face + source impact all share this anchor. */
+    physicalPresentedAtMs = actionNowMs();
+    /* Start the source 500ms pain face / weapon / shake lease ONLY after
+     * a successful PHYSICAL LCD present. Monster-turn visual work defers
+     * the already-proven damage flash until endMonsterVisualWork(); its
+     * synchronous movement tail can exceed 500ms. The earlier staged frame
+     * must not silently expire under that barrier. The same barrier keeps
+     * us from counting invisible intermediate world frames. */
+    if (directionCue.stageNonlethalBorder == 0U) {
+        (void)EspNativePlayerPainVisual_firstPresented(
+            physicalPresentedAtMs);
+    }
     if (flashPainted) {
         actionState.viewportFlashLit = 1U;
         if (directionCue.pendingValid != 0U &&
@@ -2026,7 +2053,7 @@ int __wrap_Esp32PlatformVideo_present(void) {
     if (flashPainted && actionState.viewportFlashPending != 0U) {
         actionState.viewportFlashPending = 0U;
         actionState.viewportFlashVisible = 1U;
-        actionState.viewportFlashShownAtMs = actionNowMs();
+        actionState.viewportFlashShownAtMs = physicalPresentedAtMs;
         printf("[VIEWFLASH] PAINT color565=%04x viewport=0,%u,%u,%u thickness=%u pixels=%u durationMs=%u snapshot=bounded present=caller feedback=%u blink=%s\n",
                (unsigned int)actionState.viewportFlashColor565,
                (unsigned int)FEEDBACK_VIEW_Y,

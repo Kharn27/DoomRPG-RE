@@ -15,6 +15,7 @@
 #include "esp_map_ui_intent.h"
 #include "esp_native_gameplay_event_chain.h"
 #include "esp_native_gameplay_frame.h"
+#include "esp_native_indexed_bmp.h"
 #include "esp_native_first_frame.h"
 #include "esp_native_plane_renderer.h"
 #include "esp_native_sprite_renderer.h"
@@ -164,6 +165,27 @@ int EspAssetPack_findEntry(const char* name, EspAssetPackEntry* entry) {
     (void)name; memset(entry, 0, sizeof(*entry)); return 1;
 }
 void EspAssetPack_residentGetStats(EspAssetPackResidentStats* out) { memset(out, 0, sizeof(*out)); }
+/* Paid-interaction C harness has no real PAK bitmap bytes. The source
+ * geometry/streaming caller stays linked unchanged, but the BMP media
+ * provider fails closed exactly as an absent optional gib sheet. */
+EspNativeIndexedBmpStatus EspNativeIndexedBmp_open(
+    const char* name, EspNativeIndexedBmp* outBmp,
+    EspNativeIndexedBmpStats* stats) {
+    (void)name;(void)outBmp;(void)stats;
+    return ESP_NATIVE_INDEXED_BMP_NOT_FOUND;
+}
+EspNativeIndexedBmpStatus EspNativeIndexedBmp_blit(
+    const EspNativeIndexedBmp* bmp, uint16_t* framebuffer,
+    uint16_t framebufferWidth, uint16_t framebufferHeight,
+    uint16_t sourceX,uint16_t sourceY,uint16_t width,uint16_t height,
+    int16_t destinationX,int16_t destinationY,
+    uint8_t transparentMagenta,EspNativeIndexedBmpStats* stats) {
+    (void)bmp;(void)framebuffer;(void)framebufferWidth;
+    (void)framebufferHeight;(void)sourceX;(void)sourceY;
+    (void)width;(void)height;(void)destinationX;(void)destinationY;
+    (void)transparentMagenta;(void)stats;
+    return ESP_NATIVE_INDEXED_BMP_UNSUPPORTED;
+}
 EspNativeGameplayDialogBeginStatus __real_EspNativeGameplayDialog_begin(
     uint16_t event, uint8_t offset, uint32_t flags) {
     assert(event == 67U && offset == 13U && flags == 0x500U);

@@ -115,6 +115,81 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/include -Isrc ESP32/test/barrel_lethal_damage_host.c ESP32/src/esp_native_gameplay_player_state.c -Wl,--gc-sections -o /tmp/doomrpg-barrel-lethal-test
           /tmp/doomrpg-barrel-lethal-test
 
+      - name: Test original player pain face/palette and reversible expiry (host C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+            ESP32/src/esp_native_gameplay_player_pain_visual.c \
+            ESP32/test/player_pain_visual_host.c \
+            -o /tmp/doomrpg-player-pain-visual-test
+          /tmp/doomrpg-player-pain-visual-test
+
+      - name: Test original source projectile impact/claw sprites and packed bitshape (host C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+            ESP32/src/esp_native_gameplay_player_pain_visual.c \
+            ESP32/test/player_pain_original_impact_host.c \
+            -o /tmp/doomrpg-original-impact-test
+          /tmp/doomrpg-original-impact-test
+
+      - name: Test native 500ms original player pain camera shake (host C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+            ESP32/src/esp_native_gameplay_player_pain_visual.c \
+            ESP32/test/player_pain_shake_host.c \
+            -o /tmp/doomrpg-player-pain-shake
+          /tmp/doomrpg-player-pain-shake
+
+      - name: Test original 100ms monster damage palette tint (host C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+            ESP32/src/esp_native_gameplay_player_pain_visual.c \
+            ESP32/test/monster_damage_blend_host.c \
+            -o /tmp/doomrpg-monster-damage-blend
+          /tmp/doomrpg-monster-damage-blend
+
+      - name: Test original gibs_24.bmp 4x6 animation and safe viewport clipping (host C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+            ESP32/src/esp_native_gameplay_gib_sheet.c \
+            ESP32/test/gib_sheet_host.c \
+            -o /tmp/doomrpg-gib-sheet-test
+          /tmp/doomrpg-gib-sheet-test
+
+      - name: Test native original gibs atlas through real indexed BMP PAK row reader
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+            ESP32/src/esp_native_indexed_bmp.c \
+            ESP32/src/esp_native_gameplay_gib_sheet.c \
+            ESP32/test/gib_sheet_indexed_stream_host.c \
+            -o /tmp/doomrpg-gib-sheet-indexed
+          /tmp/doomrpg-gib-sheet-indexed
+
+      - name: Test real dog-familiar native absorption reducer and death fail-closed (host C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+            ESP32/src/esp_native_gameplay_dog_familiar.c \
+            ESP32/test/dog_familiar_absorb_host.c \
+            -o /tmp/doomrpg-dog-familiar
+          /tmp/doomrpg-dog-familiar
+
+      - name: Test original terminal dog corpse and V11 save rollback (real host C owner)
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -IESP32/include \
+            ESP32/src/esp_native_gameplay_monster_drop.c \
+            ESP32/src/esp_native_gameplay_dog_familiar.c \
+            ESP32/test/dog_corpse_world_host.c \
+            -o /tmp/doomrpg-dog-corpse-v11
+          /tmp/doomrpg-dog-corpse-v11
+
+      - name: Test dog-familiar source-backed blood (host C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+            ESP32/src/esp_native_gameplay_player_pain_visual.c \
+            ESP32/src/esp_native_gameplay_dog_blood.c \
+            ESP32/test/dog_blood_visual_host.c \
+            -o /tmp/doomrpg-dog-blood-test
+          /tmp/doomrpg-dog-blood-test
+
       - name: Test monster damage direction for all cardinal facings (host C)
         run: |
           cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/directional_damage_side_host.c -o /tmp/doomrpg-directional-damage-test
@@ -127,7 +202,9 @@ jobs:
           cc -O2 -std=c11 -Wall -Wextra -Werror -Wno-unused-variable -Wno-type-limits \
             -D_POSIX_C_SOURCE=200809L -ffunction-sections -fdata-sections \
             -IESP32/test/host_include -IESP32/include -IESP32/src -Isrc \
-            ESP32/test/damage_cue_timing_host.c -Wl,--gc-sections -o /tmp/doomrpg-damage-cue-timing-test
+            ESP32/test/damage_cue_timing_host.c \
+            ESP32/src/esp_native_gameplay_player_pain_visual.c \
+            -Wl,--gc-sections -o /tmp/doomrpg-damage-cue-timing-test
           /tmp/doomrpg-damage-cue-timing-test
 
       - name: Test actual automap PASS_TURN including hazard, rollback and death (host C)
@@ -322,6 +399,8 @@ jobs:
             ESP32/src/esp_map_events.c ESP32/src/esp_map_event_filter.c \
             ESP32/src/esp_map_opcode_executor.c ESP32/src/esp_map_catalog.c \
             ESP32/src/esp_native_gameplay_gib_fx.c ESP32/src/esp_native_gameplay_frame.c \
+            ESP32/src/esp_native_gameplay_player_pain_visual.c \
+            ESP32/src/esp_native_gameplay_gib_sheet.c \
             ESP32/src/esp_native_dynamic_line_render.c ESP32/src/esp_native_gameplay_present_gate.c \
             -Wl,--gc-sections -Wl,--wrap=EspNativeGameplayFrame_renderTurn \
             -Wl,--wrap=EspNativeGameplayFrame_renderAmbient \
