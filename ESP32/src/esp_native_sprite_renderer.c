@@ -625,6 +625,58 @@ static int loadFrame(const Sources* sources,
     return 1;
 }
 
+/* Original Combat_updateProjectile() impact: source sprite 180..190
+ * via Game_gsprite_allocAnim() and Game.c's sprite->info table. We reuse
+ * the SAME production indexed shape decoder as 3D sprite rendering, but
+ * compose its result as a bounded first-person mark because the legacy
+ * impact spawns at the camera's own tile and the native near plane would
+ * otherwise cull it. This screen-space choice is a CYD presentation
+ * adaptation, NOT a new desktop gameplay entity or persistent gSprite. */
+int EspNativeSpriteRenderer_paintPlayerImpact(
+    uint16_t* framebuffer, uint32_t width, uint32_t height,
+    uint16_t logical, uint8_t animation) {
+    Frame* frame=NULL;
+    Sources sources;
+    EspNativeSpriteStats stats;
+    uint32_t seenLogical[8];
+    EspNativeGraphicsCatalogStatus status;
+    int painted=-1;
+    int opened=0;
+
+    if (framebuffer == NULL || width != 160U || height != 120U ||
+        logical < 180U || logical > 190U || animation > 2U ||
+        !EspNativeGraphicsCatalog_isReady() || EspAssetPack_isOpen()) {
+        return -1;
+    }
+    if (EspNativeGraphicsCatalog_findSprite(logical) == NULL) {
+        status=EspNativeGraphicsCatalog_ensureSprite(logical);
+        if (status != ESP_NATIVE_GRAPHICS_CATALOG_OK &&
+            status != ESP_NATIVE_GRAPHICS_CATALOG_ALREADY_ACTIVE) {
+            return -1;
+        }
+    }
+    frame=(Frame*)malloc(sizeof(*frame));
+    if (frame==NULL) return -1;
+    memset(&sources,0,sizeof sources);
+    memset(&stats,0,sizeof stats);
+    memset(seenLogical,0,sizeof seenLogical);
+    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) goto done;
+    opened=1;
+    if (!initSources(&sources,&stats) ||
+        !loadFrame(&sources,logical,animation,0,frame,seenLogical,&stats))
+        goto done;
+    painted=EspNativePlayerPainVisual_paintImpactBitshape(
+        framebuffer,width,height,frame->mask,frame->maskBytes,
+        frame->texels,frame->packedBytes,frame->palette,
+        (int16_t)frame->xMin,(int16_t)frame->yMin,
+        (uint8_t)frame->width,(uint8_t)frame->height,
+        (uint8_t)frame->pitch);
+done:
+    if (opened) EspAssetPack_close();
+    free(frame);
+    return painted;
+}
+
 static int buildOrder(Render_t* render,
                       const EspMapRuntimeView* runtime,
                       const EspNativeBspVisibilityState* visibility,
