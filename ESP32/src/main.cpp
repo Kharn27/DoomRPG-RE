@@ -10,6 +10,7 @@
 #include "esp_native_config.h"
 #include "engine_metrics.h"
 #include "esp_native_gameplay_session.h"
+#include "esp_native_startup.h"
 #include "esp_native_resident_gameplay.h"
 #include "esp32_sdl_platform.h"
 #include "menu_bsp_probe.h"
@@ -490,6 +491,7 @@ void loop()
         EspNativeGameplaySession_service(doomRpg);
     }
     EspNativeResidentGameplay_serviceMenuExit(doomRpg);
+    EspNativeStartup_serviceDeathRoute(doomRpg);
     updateTouchDiagnostic();
     printHeartbeat();
     delay(5);

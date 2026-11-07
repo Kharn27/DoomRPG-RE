@@ -14,7 +14,11 @@ assert '#include "esp_main_menu_skin.h"' in loading
 assert "EspMainMenuSkin_paintPlate(framebuffer()," in loading
 assert loading.count("paintLoadingCard(target)") == 2
 assert "fillRect(16, 32, 143, 75, COLOR_PANEL);" not in loading
-assert "0xf6afU" in loading
+assert "EspMainMenuSkin_letterTone(row, 5)" in loading
+assert "EspMainMenuSkin_progressTone(row, trackHeight)" in loading
+assert "const uint16_t tone = row == 0 ? 0xf6afU" not in loading
+assert "return gradients[selectedLetterTheme][row];" in skin
+assert "EspMainMenuSkin_letterTone(row, 9)" in skin
 # Both loading entry and checkpoint progress repaints draw the same plates.
 # Geometry stays inside 160x120, with a visible gap between the two modules.
 assert "#define TRANSITION_LOADING_CARD_TOP 26" in loading
@@ -24,7 +28,13 @@ assert "#define TRANSITION_PROGRESS_TOP 82" in loading
 assert "#define TRANSITION_PROGRESS_WIDTH 128" in loading
 assert "#define TRANSITION_PROGRESS_HEIGHT 18" in loading
 assert loading.count("EspMainMenuSkin_paintPlate(framebuffer(),") == 2
-assert 'drawMiniTextCentered("LOADING", 80, 34, 2, 0xf6afU);' in loading
+# LOADING remains the same centered 3x5 mini glyphs, enlarged x2.
+assert 'drawLoadingTitle();' in loading
+assert 'drawMiniTextCentered("LOADING"' not in loading
+assert 'drawMiniTextAt(title, 80 - miniTextWidth(title, 2) / 2,' in loading
+assert '34, 2, 0U, 1);' in loading
+assert 'const uint16_t tone = idleGradient' in loading
+assert 'top + row * scale' in loading and 'top + row * scale + scale - 1' in loading
 assert 'drawMiniTextCentered("ENTERING", 80, 49, 1, COLOR_STEEL);' in loading
 # At 100%, the fill covers the full 120px inset: no 6px black rectangular
 # pockets at either end, as seen on the physical CYD photo.
@@ -57,7 +67,11 @@ assert "EspMainMenuSkin_paintPlate(fb, stride, width, height," in skin
 assert "const int industrialMain = labels == dashboardLabels;" in menu
 assert "if (industrialMain) {" in menu
 assert "EspMainMenuSkin_paint(" in menu
-assert "} else {\n            drawDashboardCard(" in menu
+assert "} else {\n            if (!drawDashboardCard(" in menu
+assert "EspMainMenuSkin_paintText(" in menu
+assert "const int itemCount = industrialMain ? DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT :" in menu
+assert "DOOMRPG_ESP32_OPTIONS_CARD_COUNT;" in menu
+assert "DoomRPG_esp32PaintVideoMenuCards(" in menu
 assert "DoomRPG_esp32MainMenuPaintDashboardSelection(" in menu
 assert "DoomRPG_esp32PaintBrightnessPresetCards(" in menu
 assert "DoomRPG_esp32PaintOrientationPresetCards(" in menu
@@ -102,12 +116,14 @@ assert 'second = "ABOUT"' not in skin
 assert 'word(fb, stride, l, t, r, b, first, p,' in skin
 # The final UI follows the physical reference: one bold word in each
 # forged card, not two small yellow terminal-style lines.
-assert "glyphs[12][9]" in skin
+assert "glyphs[][9]" in skin
 assert "length * 6 - 1" in skin
 assert "row < 9" in skin and "bit < 5" in skin
 assert "0xf6afU" in skin and "0xe4e9U" in skin and "0xaa85U" in skin
 assert "0xffffU" in skin and "p->ink" in skin
 assert "for (pass = armed ? 0 : 1; pass < 2; ++pass)" in skin
+assert "EspMainMenuSkin_letterTone(row, 9)" in skin
+assert "EspMainMenuSkin_paintText(" in skin
 assert 'p == &palettes[ESP_MAIN_MENU_SKIN_CONFIRM]' in skin
 assert "0xd5a0U" not in skin
 assert "0xfff5U" not in skin
@@ -120,10 +136,20 @@ assert "industrialMain ? 0x0800U : MAIN_DOOM_METAL" in menu
 assert "industrialMain ? 0x4a48U : ESP_HUB_COLOR_STEEL_DARK" in menu
 # Only Options keeps its historical top/bottom decoration; MENU_MAIN removes it.
 rail = menu[menu.index("int DoomRPG_esp32PaintMenuDashboardCards("):
-            menu.index("/* The child reuses the same protected right rail;")]
+            menu.index("static int paintChildRail(")]
 assert "if (!industrialMain) {" in rail
+assert "const uint16_t trimAccent" in rail
+assert "EspMainMenuSkin_getTheme() == ESP_MAIN_MENU_THEME_CLASSIC" in rail
+assert "EspMainMenuSkin_accentTone(ESP_MAIN_MENU_SKIN_IDLE)" in rail
 assert rail.index("if (!industrialMain) {") < rail.index(
-    "fillRect565(render, 105, 7, 125, 8, MAIN_DOOM_RED);")
+    "fillRect565(render, 105, 7, 125, 8,")
 assert rail.index("if (!industrialMain) {") < rail.index(
-    "fillRect565(render, 105, 112, 118, 112, MAIN_DOOM_RED);")
-print("[MENUSKIN-INTEGRATION] PASS main-only, actions 0..3, untouched touch/Options, no heap or IO")
+    "fillRect565(render, 105, 112, 118, 112,")
+assert rail.count("trimAccent);") == 2
+assert "MAIN_DOOM_RED" not in rail
+# Same palette function owns both main/submenu seam pixels and loading rims.
+assert "seam = EspMainMenuSkin_accentTone(state);" in skin
+assert "l, t, r, b, seam);" in skin
+assert skin.count("l, t, r, b, seam);") == 4
+assert "p->copper);" not in skin
+print("[MENUSKIN-INTEGRATION] PASS main + 3 Options + 4 VIDEO cards, theme, unchanged gameplay touch and zero heap")

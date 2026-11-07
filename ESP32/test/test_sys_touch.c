@@ -66,7 +66,7 @@ int main(void) {
 
     /* Every logical content pixel must belong to exactly its painted card or
      * be rejected, especially gaps/margins while Exit is armed. */
-    for (int y = 35; y < 120; ++y) {
+    for (int y = 21; y < 120; ++y) {
         for (int x = 0; x < 160; ++x) {
             int expectedRow = -1;
             for (int row = 0; row < ESP_NATIVE_SYS_COUNT; ++row) {
@@ -85,7 +85,7 @@ int main(void) {
         }
     }
     assert(__wrap_EspNativeGameplayHubTouchUi_classify(10, 10, &hit) == 0);
-    assert(__wrap_EspNativeGameplayHubTouchUi_classify(80, 25, &hit) == 0);
+    assert(__wrap_EspNativeGameplayHubTouchUi_classify(80, 25, &hit) == -1);
 
     consumeStatus = ESP_NATIVE_GAMEPLAY_INPUT_OK;
     pending.action = ESP_NATIVE_GAMEPLAY_ACTION_SELECT;
@@ -122,7 +122,7 @@ int main(void) {
     slotSelector = 1;
     cursor = ESP_NATIVE_SYS_EXIT;
     navigationFails = 0;
-    for (int y = 35; y < 120; ++y) {
+    for (int y = 21; y < 120; ++y) {
         for (int x = 0; x < 160; ++x) {
             int result = __wrap_EspNativeGameplayHubTouchUi_classify(x, y, &hit);
             assert(result == (y >= 47 && y <= 116 ? 1 : -1));
@@ -133,7 +133,7 @@ int main(void) {
             }
         }
     }
-    assert(__wrap_EspNativeGameplayHubTouchUi_classify(80, 25, &hit) == 0);
+    assert(__wrap_EspNativeGameplayHubTouchUi_classify(80, 25, &hit) == -1);
     consumeStatus = ESP_NATIVE_GAMEPLAY_INPUT_OK;
     pending.logicalX = 123; pending.logicalY = 60;
     for (slotResult = 0; slotResult <= 2; ++slotResult) {

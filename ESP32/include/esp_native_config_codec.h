@@ -7,14 +7,23 @@
 extern "C" {
 #endif
 
-/* DRCF byte layout remains exactly 12 bytes:
- * 0..3 magic, 4 version, 5 brightness, 6 orientation, 7 reserved=0,
- * 8..11 little-endian FNV-1a of bytes 0..7. V1 requires both 6 and 7
- * to be zero, and decodes as NORMAL without losing brightness. */
+/* DRCF record is still exactly 12 bytes: magic[0..3], version[4],
+ * brightness[5], orientation[6], theme[7], FNV-1a[8..11].
+ * V1: orientation/theme=0. V2: theme=0. V3: theme=0/1/2.
+ * Historical files decode without writes; next SAVE migrates to V3. */
 #define ESP_NATIVE_CONFIG_BYTES 12U
 #define ESP_NATIVE_CONFIG_VERSION_V1 1U
-#define ESP_NATIVE_CONFIG_VERSION 2U
+#define ESP_NATIVE_CONFIG_VERSION_V2 2U
+#define ESP_NATIVE_CONFIG_VERSION 3U
 
+int EspNativeConfigCodec_encodeWithTheme(uint8_t percent, uint8_t orientation,
+                                        uint8_t theme,
+                                        uint8_t output[ESP_NATIVE_CONFIG_BYTES]);
+int EspNativeConfigCodec_decodeWithTheme(const uint8_t* bytes, uint32_t length,
+                                        uint8_t* outPercent, uint8_t* outOrientation,
+                                        uint8_t* outTheme);
+
+/* Older callers stay valid: they encode CLASSIC and decode ignoring theme. */
 int EspNativeConfigCodec_encode(uint8_t percent, uint8_t orientation,
                                uint8_t output[ESP_NATIVE_CONFIG_BYTES]);
 int EspNativeConfigCodec_decode(const uint8_t* bytes, uint32_t length,

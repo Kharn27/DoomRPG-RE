@@ -24,8 +24,72 @@ static const SkinPalette palettes[3] = {
     {0x0800U,0x4248U,0x83ceU,0x0800U,0x2903U,0xdba5U,0x2800U,0xffffU}
 };
 
-static const char letters[] = "ADEHILNOPRST";
-static const uint8_t glyphs[12][9] = {
+/* The only mutable UI-theme state: one byte, never allocated on the heap.
+ * Boot's native config loader applies it before the first MENU_MAIN paint. */
+static uint8_t selectedLetterTheme = ESP_MAIN_MENU_THEME_CLASSIC;
+
+uint8_t EspMainMenuSkin_getTheme(void) { return selectedLetterTheme; }
+
+int EspMainMenuSkin_setTheme(uint8_t theme) {
+    if (theme > ESP_MAIN_MENU_THEME_PHOSPHORE) return 0;
+    selectedLetterTheme = theme;
+    return 1;
+}
+
+uint16_t EspMainMenuSkin_letterTone(int row, int rows) {
+    if (rows != 5 && rows != 7 && rows != 9) return 0U;
+    if (row < 0 || row >= rows) return 0U;
+    if (selectedLetterTheme == ESP_MAIN_MENU_THEME_INFERNO) {
+        /* Pale warm straw-yellow -> copper/bronze -> deep Doom red.
+         * The previous 0xffe0 was pure saturated yellow. This is softer
+         * without changing font masks, shadows or other theme colors. */
+        if (row < (rows + 2) / 3) return 0xff75U;
+        if (row < (2 * rows + 2) / 3) return 0xd344U;
+        return 0xc002U;
+    }
+    if (selectedLetterTheme == ESP_MAIN_MENU_THEME_PHOSPHORE) {
+        /* Pale mint -> acidic phosphor -> deep petrol green (RGB565).
+         * Face pixels only, no offset halo, allocations or assets. */
+        if (row < (rows + 2) / 3) return 0xdff6U;
+        if (row < (2 * rows + 2) / 3) return 0x87e0U;
+        return 0x246aU;
+    }
+    /* Exactly the former untouched MENU_MAIN idle tones. */
+    if (row < (rows + 2) / 3) return 0xf6afU;
+    if (row < (2 * rows + 2) / 3)
+        return palettes[ESP_MAIN_MENU_SKIN_IDLE].typeFace;
+    return 0xaa85U;
+}
+
+uint16_t EspMainMenuSkin_accentTone(EspMainMenuSkinState state) {
+    /* Three ROM-only seam variants per theme: idle, armed, confirmed.
+     * Metal, bevel, shadow, ink and hitbox geometry never change. */
+    static const uint16_t ember[3] = {0xd1a2U, 0xfb25U, 0xb9a4U};
+    static const uint16_t phosphor[3] = {0x5e2aU, 0xa7f1U, 0x3dc9U};
+    if ((int)state < (int)ESP_MAIN_MENU_SKIN_IDLE ||
+        (int)state > (int)ESP_MAIN_MENU_SKIN_CONFIRM) return 0U;
+    if (selectedLetterTheme == ESP_MAIN_MENU_THEME_INFERNO)
+        return ember[(int)state];
+    if (selectedLetterTheme == ESP_MAIN_MENU_THEME_PHOSPHORE)
+        return phosphor[(int)state];
+    return palettes[(int)state].copper; /* CLASSIC unchanged, byte-exact */
+}
+
+uint16_t EspMainMenuSkin_progressTone(int row, int rows) {
+    /* The existing LOADING fill is exactly six logical rows. Keep each
+     * CLASSIC pixel unchanged; alternate themes recolor only filled pixels. */
+    static const uint16_t gradients[3][6] = {
+        {0xf6afU, 0xf447U, 0xf447U, 0xd344U, 0xd344U, 0x9243U},
+        {0xff75U, 0xfbeaU, 0xf447U, 0xd344U, 0xc982U, 0xc002U},
+        {0xdff6U, 0xbff3U, 0xa7f1U, 0x87e0U, 0x5e2aU, 0x246aU}
+    };
+    if (rows != 6 || row < 0 || row >= rows ||
+        selectedLetterTheme > ESP_MAIN_MENU_THEME_PHOSPHORE) return 0U;
+    return gradients[selectedLetterTheme][row];
+}
+
+static const char letters[] = "ADEHILNOPRSTBCFGJKMQUVWXYZ0123456789% ";
+static const uint8_t glyphs[][9] = {
     {0x0e,0x11,0x11,0x1f,0x11,0x11,0x11,0x11,0x11}, /* A */
     {0x1e,0x11,0x11,0x11,0x11,0x11,0x11,0x11,0x1e}, /* D */
     {0x1f,0x10,0x10,0x1e,0x10,0x10,0x10,0x10,0x1f}, /* E */
@@ -37,7 +101,33 @@ static const uint8_t glyphs[12][9] = {
     {0x1e,0x11,0x11,0x11,0x1e,0x10,0x10,0x10,0x10}, /* P */
     {0x1e,0x11,0x11,0x11,0x1e,0x14,0x12,0x11,0x11}, /* R */
     {0x0f,0x10,0x10,0x0e,0x01,0x01,0x01,0x11,0x1e}, /* S */
-    {0x1f,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04}  /* T */
+    {0x1f,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04}, /* T */
+    {30,17,17,17,30,17,17,17,30}, /* B */
+    {14,17,16,16,16,16,16,17,14}, /* C */
+    {31,16,16,16,30,16,16,16,16}, /* F */
+    {14,17,16,16,23,17,17,17,15}, /* G */
+    {7,2,2,2,2,2,18,18,12}, /* J */
+    {17,18,20,24,24,20,20,18,17}, /* K */
+    {17,27,21,21,21,17,17,17,17}, /* M */
+    {14,17,17,17,17,21,18,13,1}, /* Q */
+    {17,17,17,17,17,17,17,17,14}, /* U */
+    {17,17,17,17,17,17,10,10,4}, /* V */
+    {17,17,17,17,21,21,21,27,17}, /* W */
+    {17,17,10,10,4,10,10,17,17}, /* X */
+    {17,17,10,10,4,4,4,4,4}, /* Y */
+    {31,1,1,2,4,8,16,16,31}, /* Z */
+    {14,17,19,21,21,25,17,17,14}, /* 0 */
+    {4,12,4,4,4,4,4,4,14}, /* 1 */
+    {14,17,1,1,2,4,8,16,31}, /* 2 */
+    {30,1,1,1,14,1,1,1,30}, /* 3 */
+    {2,6,10,18,31,2,2,2,2}, /* 4 */
+    {31,16,16,16,30,1,1,17,14}, /* 5 */
+    {14,17,16,16,30,17,17,17,14}, /* 6 */
+    {31,1,1,2,2,4,4,8,8}, /* 7 */
+    {14,17,17,17,14,17,17,17,14}, /* 8 */
+    {14,17,17,17,15,1,1,17,14}, /* 9 */
+    {25,25,2,2,4,8,8,19,19}, /* % */
+    {0,0,0,0,0,0,0,0,0} /* space */
 };
 
 static void dot(uint16_t* fb, int stride, int x, int y,
@@ -74,7 +164,7 @@ static void word(uint16_t* fb, int stride, int l, int t, int r, int b,
     for (pass = armed ? 0 : 1; pass < 2; ++pass) {
         for (i = 0; i < length; ++i) {
             int letter = -1, j;
-            for (j = 0; j < 12; ++j)
+            for (j = 0; j < (int)(sizeof(glyphs) / sizeof(glyphs[0])); ++j)
                 if (letters[j] == value[i]) { letter = j; break; }
             if (letter < 0) continue;
             for (row = 0; row < 9; ++row)
@@ -89,11 +179,54 @@ static void word(uint16_t* fb, int stride, int l, int t, int r, int b,
                         else
                             dot(fb, stride, x, y, l, t, r, b,
                                 armed ? p->typeFace :
-                                (row < 3 ? 0xf6afU :
-                                 row < 6 ? p->typeFace : 0xaa85U));
+                                EspMainMenuSkin_letterTone(row, 9));
                     }
         }
     }
+}
+
+/* The old seven-row reduction skipped source glyph row 3, deleting
+ * the A/E/H crossbars. Always render all original nine rows in submenus.
+ * The 3-column compression for long labels keeps every horizontal stroke,
+ * with no duplicate pass, halo or clipping outside the 54px plate. */
+int EspMainMenuSkin_paintText(uint16_t* fb, int stride, int width, int height,
+                              int l, int t, int r, int b,
+                              const char* label, int selected, int enabled) {
+    int length = 0, compact, advance, glyphWidth, x0, y0, i, row, col;
+    if (fb == NULL || label == NULL || width != SKIN_W || height != SKIN_H ||
+        stride < width || l < 0 || r >= width || t < 0 || b >= height ||
+        r - l + 1 < 16 || b - t + 1 < 16 ||
+        (selected != 0 && selected != 1) ||
+        (enabled != 0 && enabled != 1)) return 0;
+    while (label[length] != '\0') {
+        int found = 0;
+        for (i = 0; i < (int)(sizeof(glyphs) / sizeof(glyphs[0])); ++i)
+            if (letters[i] == label[length]) { found = 1; break; }
+        if (!found || ++length > 12) return 0;
+    }
+    if (length == 0) return 0;
+    compact = (length * 6 - 1) > (r - l - 10);
+    advance = compact ? 4 : 6;
+    glyphWidth = compact ? 3 : 5;
+    if (length * advance - 1 > r - l - 8) return 0;
+    x0 = (l + r + 1 - (length * advance - 1)) / 2;
+    y0 = t + ((b - t + 1) - 9) / 2;
+    for (i = 0; i < length; ++i) {
+        int glyph = 0;
+        while (letters[glyph] != label[i]) ++glyph;
+        for (row = 0; row < 9; ++row) {
+            const uint8_t mask = glyphs[glyph][row];
+            const uint16_t color = !enabled ? 0x9cd3U :
+                selected ? 0xffffU : EspMainMenuSkin_letterTone(row, 9);
+            for (col = 0; col < glyphWidth; ++col) {
+                const int inputCol = compact ? col * 2 : col;
+                if (mask & (uint8_t)(16U >> inputCol))
+                    dot(fb, stride, x0 + i * advance + col, y0 + row,
+                        l, t, r, b, color);
+            }
+        }
+    }
+    return 1;
 }
 
 /* Shared plate painter: exact menu chassis geometry and colors, extended to
@@ -103,6 +236,7 @@ int EspMainMenuSkin_paintPlate(uint16_t* fb, int stride,
                                int l, int t, int r, int b,
                                EspMainMenuSkinState state) {
     int x, y;
+    uint16_t seam;
     const SkinPalette* p;
     if (fb == NULL || width != SKIN_W || height != SKIN_H ||
         stride < width || l < 0 || t < 0 ||
@@ -111,6 +245,7 @@ int EspMainMenuSkin_paintPlate(uint16_t* fb, int stride,
         (int)state < (int)ESP_MAIN_MENU_SKIN_IDLE ||
         (int)state > (int)ESP_MAIN_MENU_SKIN_CONFIRM) return 0;
     p = &palettes[(int)state];
+    seam = EspMainMenuSkin_accentTone(state);
 
     /* Gunmetal UAC plate: large bevelled chassis, deep inset black panel.
      * Geometry stays within the existing 54x24 touch rectangle. */
@@ -137,16 +272,17 @@ int EspMainMenuSkin_paintPlate(uint16_t* fb, int stride,
             dot(fb, stride, x, y, l, t, r, b, color);
         }
 
-    /* Warm engine-light seams, muted in idle, brighter while armed.
-     * The loading gauge's entire inner width covers its old side squares. */
+    /* Theme-matched internal engine-light seams. These are the ONLY
+     * theme-dependent chassis pixels, including the LOADING title/bar.
+     * Width, cap geometry and full-width gauge inset remain unchanged. */
     horizontal(fb, stride, l + 9, r - 9, t + 3,
-               l, t, r, b, p->copper);
+               l, t, r, b, seam);
     horizontal(fb, stride, l + 9, r - 9, b - 3,
-               l, t, r, b, p->copper);
+               l, t, r, b, seam);
     vertical(fb, stride, l + 3, t + 7, b - 7,
-             l, t, r, b, p->copper);
+             l, t, r, b, seam);
     vertical(fb, stride, r - 3, t + 7, b - 7,
-             l, t, r, b, p->copper);
+             l, t, r, b, seam);
 
     /* Bolt heads belong to the 24px+ menu/loading cards, not the 18px
      * progress chassis: on a thin gauge they look like two unfilled end caps.

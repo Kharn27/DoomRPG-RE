@@ -16,6 +16,26 @@ int EspNativeGameplayHubTouchUi_paint(uint16_t* framebuffer,
                                       uint8_t page,
                                       uint8_t selectedRow);
 
+/* Three directly touchable upper-band tabs, to the RIGHT of the preserved
+ * 32x20 hand/menu icon. All three remain inside y=2..17, leaving viewport
+ * y=20..119 available for content. Geometry is shared by paint and touch. */
+#define ESP_NATIVE_HUB_TOP_TAB_TOP 2
+#define ESP_NATIVE_HUB_TOP_TAB_BOTTOM 17
+#define ESP_NATIVE_HUB_TOP_TAB_COUNT 3
+static inline int EspNativeGameplayHubTouchUi_headerTabBounds(
+    int tab, int* left, int* right) {
+    static const uint8_t starts[ESP_NATIVE_HUB_TOP_TAB_COUNT] = {34U, 76U, 117U};
+    static const uint8_t ends[ESP_NATIVE_HUB_TOP_TAB_COUNT] = {74U, 115U, 157U};
+    if (tab < 0 || tab >= ESP_NATIVE_HUB_TOP_TAB_COUNT) return 0;
+    if (left != 0) *left = starts[tab];
+    if (right != 0) *right = ends[tab];
+    return 1;
+}
+
+/* Draws header tabs ONLY in x34..157/y2..17, never the hand/menu underlay. */
+int EspNativeGameplayHubTouchUi_paintHeaderTabs(
+    uint16_t* framebuffer, uint8_t page);
+
 /* Shared allocation-free 5x7 face for HUB and full-screen mission reports. */
 void EspNativeGameplayHubTouchUi_drawCrispText(uint16_t* framebuffer,
                                              const char* text,

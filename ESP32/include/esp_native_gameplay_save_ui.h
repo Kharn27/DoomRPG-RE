@@ -27,7 +27,8 @@ int EspNativeGameplaySave_slotSelectorActive(void);
 int EspNativeGameplaySave_touchSlot(int logicalX, int logicalY);
 
 /* One layout contract for painting and touch: 24 logical pixels = 48 physical
- * pixels per row. No title/slot number consumes the reclaimed SYS space. */
+ * pixels per row historically; upper HUB tabs now free room to enlarge
+ * the three system rows. Slot-selector coordinates remain unchanged. */
 enum {
     ESP_NATIVE_SYS_SAVE = 0,
     ESP_NATIVE_SYS_LOAD = 1,
@@ -35,9 +36,9 @@ enum {
     ESP_NATIVE_SYS_COUNT = 3,
     ESP_NATIVE_SYS_BUTTON_LEFT = 16,
     ESP_NATIVE_SYS_BUTTON_RIGHT = 143,
-    ESP_NATIVE_SYS_BUTTON_TOP = 39,
-    ESP_NATIVE_SYS_BUTTON_HEIGHT = 24,
-    ESP_NATIVE_SYS_BUTTON_GAP = 2
+    ESP_NATIVE_SYS_BUTTON_TOP = 27,
+    ESP_NATIVE_SYS_BUTTON_HEIGHT = 28,
+    ESP_NATIVE_SYS_BUTTON_GAP = 3
 };
 
 /* Shared checkpoint entry points used by both HUB -> SYS and MENU_MAIN.

@@ -80,7 +80,57 @@ int main(void) {
     for (int i = 0; i < 3; ++i)
         assert(DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_TOP(i + 1) -
                DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_BOTTOM(i) - 1 == 3);
-    /* Old child-screen cards retain the original 54px geometry. */
+    /* Spacious OPTIONS (three cards) and VIDEO (four) use distinct,
+     * paired paint/touch rectangles. No collisions or logo overlap. */
+    assert(DOOMRPG_ESP32_OPTIONS_CARD_COUNT == 3);
+    assert(DOOMRPG_ESP32_VIDEO_CARD_COUNT == 4);
+    for (int layer = 0; layer < 2; ++layer) {
+        const int count = layer ? DOOMRPG_ESP32_VIDEO_CARD_COUNT :
+                                  DOOMRPG_ESP32_OPTIONS_CARD_COUNT;
+        int previousBottom = -1;
+        for (int k = 0; k < count; ++k) {
+            int l, t, r, b;
+            if (layer)
+                DoomRPG_esp32VideoCardRect(k, &l, &t, &r, &b);
+            else
+                DoomRPG_esp32OptionsCardRect(k, &l, &t, &r, &b);
+            assert(l == 104 && r == 157 &&
+                   b - t + 1 == (layer ? 26 : 32));
+            assert(t > DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP);
+            assert(b < DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM);
+            assert(previousBottom < t);
+            if (k != 0) assert(t - previousBottom == (layer ? 3 : 5));
+            previousBottom = b;
+        }
+        int firstL, firstT, firstR, firstB;
+        int lastL, lastT, lastR, lastB;
+        if (layer) {
+            DoomRPG_esp32VideoCardRect(0, &firstL, &firstT, &firstR, &firstB);
+            DoomRPG_esp32VideoCardRect(count-1, &lastL, &lastT, &lastR, &lastB);
+            assert(firstT == 6 && lastT == 90 && lastB == 115);
+        } else {
+            DoomRPG_esp32OptionsCardRect(0, &firstL, &firstT, &firstR, &firstB);
+            DoomRPG_esp32OptionsCardRect(count-1, &lastL, &lastT, &lastR, &lastB);
+            assert(firstT == 8 && lastT == 80 && lastB == 111);
+        }
+        assert(firstL == lastL && firstR == lastR);
+    }
+    /* Narrow five-preset brightness rail: height raised to 21 without
+     * changing the 22px pitch. Three-option choices have 28px height. */
+    assert(DOOMRPG_ESP32_BRIGHTNESS_CARD_HEIGHT == 21);
+    assert(DOOMRPG_ESP32_BRIGHTNESS_CARD_PITCH == 22);
+    {
+        int last = -1;
+        for (int k = 0; k < DOOMRPG_ESP32_BRIGHTNESS_CARD_COUNT; ++k) {
+            int l,t,r,b;
+            DoomRPG_esp32BrightnessCardRect(k,&l,&t,&r,&b);
+            assert(l == 104 && r == 157 && b-t+1 == 21);
+            assert(t == 6 + 22*k && b == 26+22*k);
+            assert(last < t && t > 4 && b < 116);
+            last=b;
+        }
+    }
+    /* Historical main-compatibility card layout remains unchanged. */
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT == 104);
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT == 157);
     {
@@ -88,6 +138,68 @@ int main(void) {
         DoomRPG_esp32MainMenuCardRect(1, &ol, &ot, &oright, &ob);
         assert(ol == 104 && oright == 157 && ot == 38 && ob == 57);
     }
+    /* Exact menu and LOADING face bands, no halo or second text pass. */
+    {
+        static const uint16_t menu[9] = {
+            0xf6afU, 0xf6afU, 0xf6afU,
+            0xe4e9U, 0xe4e9U, 0xe4e9U,
+            0xaa85U, 0xaa85U, 0xaa85U
+        };
+        static const uint16_t loading[5] = {
+            0xf6afU, 0xf6afU, 0xe4e9U, 0xe4e9U, 0xaa85U
+        };
+        int row;
+        for (row = 0; row < 9; ++row)
+            assert(EspMainMenuSkin_letterTone(row, 9) == menu[row]);
+        for (row = 0; row < 5; ++row)
+            assert(EspMainMenuSkin_letterTone(row, 5) == loading[row]);
+        assert(EspMainMenuSkin_letterTone(-1, 5) == 0U);
+        assert(EspMainMenuSkin_letterTone(5, 5) == 0U);
+        assert(EspMainMenuSkin_letterTone(9, 9) == 0U);
+        assert(EspMainMenuSkin_letterTone(0, 0) == 0U);
+        assert(EspMainMenuSkin_letterTone(0, 6) == 0U);
+        assert(EspMainMenuSkin_letterTone(0, 7) == 0xf6afU);
+        assert(EspMainMenuSkin_letterTone(3, 7) == 0xe4e9U);
+        assert(EspMainMenuSkin_letterTone(6, 7) == 0xaa85U);
+        static const uint16_t classicFill[6] = {
+            0xf6afU,0xf447U,0xf447U,0xd344U,0xd344U,0x9243U
+        };
+        for (int y=0;y<6;++y)
+            assert(EspMainMenuSkin_progressTone(y,6) == classicFill[y]);
+        assert(EspMainMenuSkin_progressTone(-1,6) == 0U);
+        assert(EspMainMenuSkin_progressTone(0,5) == 0U);
+        assert(EspMainMenuSkin_progressTone(6,6) == 0U);
+    }
+    assert(EspMainMenuSkin_getTheme() == ESP_MAIN_MENU_THEME_CLASSIC);
+    assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_INFERNO));
+    {
+        static const uint16_t hot[5] = {0xff75U,0xff75U,0xd344U,0xd344U,0xc002U};
+        for (int row = 0; row < 5; ++row)
+            assert(EspMainMenuSkin_letterTone(row, 5) == hot[row]);
+        static const uint16_t emberFill[6] = {
+            0xff75U,0xfbeaU,0xf447U,0xd344U,0xc982U,0xc002U
+        };
+        for (int y=0;y<6;++y)
+            assert(EspMainMenuSkin_progressTone(y,6) == emberFill[y]);
+    }
+    assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_PHOSPHORE));
+    {
+        static const uint16_t phosphor[9] = {
+            0xdff6U,0xdff6U,0xdff6U,
+            0x87e0U,0x87e0U,0x87e0U,
+            0x246aU,0x246aU,0x246aU
+        };
+        for (int row = 0; row < 9; ++row)
+            assert(EspMainMenuSkin_letterTone(row, 9) == phosphor[row]);
+        static const uint16_t greenFill[6] = {
+            0xdff6U,0xbff3U,0xa7f1U,0x87e0U,0x5e2aU,0x246aU
+        };
+        for (int y=0;y<6;++y)
+            assert(EspMainMenuSkin_progressTone(y,6) == greenFill[y]);
+    }
+    assert(!EspMainMenuSkin_setTheme(3U));
+    assert(EspMainMenuSkin_getTheme() == ESP_MAIN_MENU_THEME_PHOSPHORE);
+    assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
     for (item = 0; item < 4; ++item) {
         int l, t, r, b;
         DoomRPG_esp32IndustrialMainCardRect(item, &l, &t, &r, &b);
@@ -247,6 +359,161 @@ int main(void) {
             else
                 assert(fb[y * W + x] == SENTINEL);
         }
+    }
+
+    /* All three themes use exactly the same single-pass child glyph masks,
+     * including the horizontal crossbars, within the same 54px rail. */
+    {
+        uint32_t originalHash = 2166136261U, infernoHash = 2166136261U;
+        const char* labels[] = {"BACK","LUMINOSITE","ORIENTATION",
+                                "THEME","SOUND","CLASSIC","INFERNO","PHOSPHORE","100%"};
+        for (size_t i = 0; i < sizeof(labels) / sizeof(labels[0]); ++i) {
+            resetFrame();
+            assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
+            assert(EspMainMenuSkin_paintPlate(fb, W, W, H, 104, 6, 157, 25,
+                                              ESP_MAIN_MENU_SKIN_IDLE));
+            assert(EspMainMenuSkin_paintText(fb, W, W, H, 104, 6, 157, 25,
+                                             labels[i], 0, 1));
+            for (int y = 0; y < H; ++y)
+                for (int x = 0; x < W; ++x)
+                    if ((x < 104 || x > 157 || y < 6 || y > 25))
+                        assert(fb[y * W + x] == SENTINEL);
+            assert(arena[0] == SENTINEL &&
+                   arena[GUARD + W * H + GUARD - 1] == SENTINEL);
+        }
+        resetFrame();
+        assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
+        assert(EspMainMenuSkin_paintPlate(fb, W, W, H, 104, 6, 157, 25,
+                                          ESP_MAIN_MENU_SKIN_IDLE));
+        assert(EspMainMenuSkin_paintText(fb, W, W, H, 104, 6, 157, 25,
+                                         "INFERNO", 0, 1));
+        for (int y = 6; y <= 25; ++y)
+            for (int x = 104; x <= 157; ++x) {
+                const uint16_t c = fb[y * W + x];
+                originalHash = (originalHash ^ (uint8_t)c) * 16777619U;
+                originalHash = (originalHash ^ (uint8_t)(c >> 8)) * 16777619U;
+            }
+        resetFrame();
+        assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_INFERNO));
+        assert(EspMainMenuSkin_paintPlate(fb, W, W, H, 104, 6, 157, 25,
+                                          ESP_MAIN_MENU_SKIN_IDLE));
+        assert(EspMainMenuSkin_paintText(fb, W, W, H, 104, 6, 157, 25,
+                                         "INFERNO", 0, 1));
+        for (int y = 6; y <= 25; ++y)
+            for (int x = 104; x <= 157; ++x) {
+                const uint16_t c = fb[y * W + x];
+                infernoHash = (infernoHash ^ (uint8_t)c) * 16777619U;
+                infernoHash = (infernoHash ^ (uint8_t)(c >> 8)) * 16777619U;
+            }
+        assert(originalHash != infernoHash);
+        assert(!EspMainMenuSkin_paintText(fb, W, W, H, 104, 6, 157, 25,
+                                          "UNKNOWN?", 0, 1));
+        assert(EspMainMenuSkin_paintText(fb, W, W, H, 104, 6, 157, 25,
+                                         "BACK", 1, 1));
+        assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
+    }
+
+    /* The old seven-row downsampling removed source row 3. Prove every
+     * crossbar of A, E and H is present in the 9-row child glyph render. */
+    for (int letter = 0; letter < 3; ++letter) {
+        const char* label = letter == 0 ? "A" : (letter == 1 ? "E" : "H");
+        const int x0 = (104 + 157 + 1 - 5) / 2;
+        const int y0 = 8 + (32 - 9) / 2;
+        const int barLen = letter == 1 ? 4 : 5;
+        resetFrame();
+        assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
+        assert(EspMainMenuSkin_paintPlate(fb, W, W, H, 104, 8, 157, 39,
+                                          ESP_MAIN_MENU_SKIN_IDLE));
+        assert(EspMainMenuSkin_paintText(fb, W, W, H, 104, 8, 157, 39,
+                                         label, 0, 1));
+        for (int col = 0; col < barLen; ++col)
+            assert(fb[(y0+3)*W+x0+col] == EspMainMenuSkin_letterTone(3,9));
+    }
+    /* Long names retain three crossbar pixels even with compressed columns. */
+    {
+        const int x0 = (104 + 157 + 1 - (9 * 4 - 1)) / 2;
+        const int y0 = 6 + (26 - 9) / 2;
+        resetFrame();
+        assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_PHOSPHORE));
+        assert(EspMainMenuSkin_paintText(fb, W, W, H, 104, 6, 157, 31,
+                                         "PHOSPHORE", 0, 1));
+        for (int col = 0; col < 3; ++col)
+            assert(fb[(y0+3)*W+x0+4+col] == EspMainMenuSkin_letterTone(3,9));
+        assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
+    }
+    /* Strict theme-accent isolation across main, nested menus and both
+     * LOADING plates. For each plate geometry and state, only the four exact
+     * seam segments may differ from CLASSIC. No extra assets/heap in runtime. */
+    {
+        static uint16_t classicPlate[W * H];
+        static const int regions[6][4] = {
+            {104, 8, 157, 31},   /* MENU_MAIN 54x24 */
+            {104, 8, 157, 39},   /* OPTIONS 54x32 */
+            {104, 6, 157, 31},   /* VIDEO/PHOSPHORE 54x26 */
+            {104, 6, 157, 26},   /* BRIGHTNESS 54x21 */
+            {16, 26, 143, 69},   /* LOADING title 128x44 */
+            {16, 82, 143, 99}    /* LOADING progress rim 128x18 */
+        };
+        static const uint16_t seamColors[3][3] = {
+            {0xd344U, 0xf447U, 0xdba5U},
+            {0xd1a2U, 0xfb25U, 0xb9a4U},
+            {0x5e2aU, 0xa7f1U, 0x3dc9U}
+        };
+        assert(EspMainMenuSkin_accentTone((EspMainMenuSkinState)-1) == 0U);
+        assert(EspMainMenuSkin_accentTone((EspMainMenuSkinState)3) == 0U);
+        for (int box = 0; box < 6; ++box) {
+            const int l = regions[box][0], t = regions[box][1];
+            const int r = regions[box][2], b = regions[box][3];
+            for (int stateIndex = 0; stateIndex < 3; ++stateIndex) {
+                const EspMainMenuSkinState st =
+                    (EspMainMenuSkinState)stateIndex;
+                resetFrame();
+                assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
+                assert(EspMainMenuSkin_accentTone(st) ==
+                       seamColors[0][stateIndex]);
+                assert(EspMainMenuSkin_paintPlate(fb, W, W, H,
+                                                  l, t, r, b, st));
+                memcpy(classicPlate, fb, sizeof(classicPlate));
+                for (int theme = 1; theme <= 2; ++theme) {
+                    int seamPixels = 0;
+                    resetFrame();
+                    assert(EspMainMenuSkin_setTheme((uint8_t)theme));
+                    assert(EspMainMenuSkin_accentTone(st) ==
+                           seamColors[theme][stateIndex]);
+                    assert(EspMainMenuSkin_paintPlate(fb, W, W, H,
+                                                      l, t, r, b, st));
+                    for (int y = 0; y < H; ++y) {
+                        for (int x = 0; x < W; ++x) {
+                            const int isHorizontal =
+                                x >= l + 9 && x <= r - 9 &&
+                                (y == t + 3 || y == b - 3);
+                            const int isVertical =
+                                (x == l + 3 || x == r - 3) &&
+                                y >= t + 7 && y <= b - 7;
+                            const int seam = isHorizontal || isVertical;
+                            if (seam) {
+                                ++seamPixels;
+                                assert(fb[y * W + x] ==
+                                       seamColors[theme][stateIndex]);
+                                assert(classicPlate[y * W + x] ==
+                                       seamColors[0][stateIndex]);
+                            } else {
+                                /* Preserve exact steel/base/bevel/shadow/groove,
+                                 * framebuffer sentinels and left logo. */
+                                assert(fb[y * W + x] ==
+                                       classicPlate[y * W + x]);
+                            }
+                        }
+                    }
+                    assert(seamPixels > 0);
+                    for (int guard = 0; guard < GUARD; ++guard) {
+                        assert(arena[guard] == SENTINEL);
+                        assert(arena[GUARD + W * H + guard] == SENTINEL);
+                    }
+                }
+            }
+        }
+        assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
     }
 
     resetFrame();

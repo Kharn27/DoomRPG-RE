@@ -326,6 +326,21 @@ jobs:
           /tmp/doomrpg-menu-skin-test
           python ESP32/test/main_menu_skin_integration_host.py
 
+      - name: Test native HUB topbar tabs and no AUTOMAP leak
+        run: python ESP32/test/native_hub_topbar_host.py
+
+      - name: Test real HUB topbar classifier and world input isolation (host C)
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+            -IESP32/include ESP32/test/hub_topbar_live_host.c \
+            ESP32/src/esp_native_gameplay_hub_touch_ui.c \
+            ESP32/src/esp_native_gameplay_input.c -Wl,--gc-sections \
+            -o /tmp/doomrpg-hub-topbar-live-test
+          /tmp/doomrpg-hub-topbar-live-test
+
+      - name: Test nested VIDEO menu paint/touch parity and Back routing
+        run: python ESP32/test/native_video_menu_nesting_host.py
+
       - name: Test native canvas audio handoff without desktop Sound ABI (host C)
         run: python ESP32/test/native_audio_handoff_host.py
 
@@ -352,7 +367,7 @@ jobs:
 
       - name: Test death menu and explicit slot confirmation (host C)
         run: |
-          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/include -Isrc ESP32/test/test_death_menu.c ESP32/src/esp_native_gameplay_player_death.c ESP32/src/esp_native_gameplay_hub_touch_ui.c -Wl,--gc-sections -o /tmp/doomrpg-death-menu-test
+          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/include -Isrc ESP32/test/test_death_menu.c ESP32/src/esp_native_gameplay_player_death.c ESP32/src/esp_native_gameplay_hub_touch_ui.c ESP32/src/esp_main_menu_skin.c ESP32/src/esp_map_catalog.c -Wl,--gc-sections -o /tmp/doomrpg-death-menu-test
           /tmp/doomrpg-death-menu-test
 
       - name: Test credit-gated script with dialog and WAIT (host C)

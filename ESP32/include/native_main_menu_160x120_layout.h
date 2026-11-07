@@ -45,8 +45,8 @@
 
 #define DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT 104
 #define DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT 157
-/* Main-only 54x24: equal 4px top/bottom rail margins and 3px gaps.
- * Child Options retains its original 54x20 placement and touch gates. */
+/* Main 54x24 is unchanged. Nested pages have their own deliberately
+ * taller hitboxes, shared byte-for-byte between painters and touch. */
 #define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_LEFT 104
 #define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_RIGHT 157
 #define DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_WIDTH \
@@ -72,13 +72,57 @@
      DOOMRPG_ESP32_MAIN_MENU_CARD_HEIGHT - 1)
 #define DOOMRPG_ESP32_MAIN_MENU_DASH_FOOTER_Y 119
 
-/* Brightness child lives inside Options, without creating another desktop
- * MenuSystem model. Five 54x20 cards fit the same right rail with 2px gaps.
- * Card 0: Back; 1..4: 25/50/75/100 percent. Shared paint/touch geometry. */
+/* Native Options root is spacious (3 cards), VIDEO is a separate middle
+ * layer (4 cards). Exactly the same rectangles are used by paint and touch.
+ * The logo remains x=0..101 and all cards x=104..157. */
+#define DOOMRPG_ESP32_OPTIONS_CARD_COUNT 3
+#define DOOMRPG_ESP32_VIDEO_CARD_COUNT 4
+/* OPTIONS 3x28: y12..39 / 46..73 / 80..107, 6px gaps.
+ * VIDEO 4x24: y8..31 / 35..58 / 62..85 / 89..112, 3px gaps.
+ * Both keep the logo and the single-column 54px touch rail. */
+/* OPTIONS/ORIENTATION 3x32: 8..39,44..75,80..111 (4px gaps).
+ * VIDEO/THEME 4x26: 6..31,34..59,62..87,90..115 (2px gaps).
+ * Shared paint/touch rects; main cards unchanged. */
+#define DOOMRPG_ESP32_OPTIONS_CARD_FIRST_TOP 8
+#define DOOMRPG_ESP32_OPTIONS_CARD_HEIGHT 32
+#define DOOMRPG_ESP32_OPTIONS_CARD_PITCH 36
+#define DOOMRPG_ESP32_VIDEO_CARD_FIRST_TOP 6
+#define DOOMRPG_ESP32_VIDEO_CARD_HEIGHT 26
+#define DOOMRPG_ESP32_VIDEO_CARD_PITCH 28
+#define DOOMRPG_ESP32_OPTIONS_CARD_TOP(index) \
+    (DOOMRPG_ESP32_OPTIONS_CARD_FIRST_TOP + \
+     (index) * DOOMRPG_ESP32_OPTIONS_CARD_PITCH)
+#define DOOMRPG_ESP32_VIDEO_CARD_TOP(index) \
+    (DOOMRPG_ESP32_VIDEO_CARD_FIRST_TOP + \
+     (index) * DOOMRPG_ESP32_VIDEO_CARD_PITCH)
+
+static inline void DoomRPG_esp32OptionsCardRect(
+    int item, int* left, int* top, int* right, int* bottom) {
+    if (left != 0) *left = DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT;
+    if (right != 0) *right = DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT;
+    if (top != 0) *top = DOOMRPG_ESP32_OPTIONS_CARD_TOP(item);
+    if (bottom != 0) *bottom = DOOMRPG_ESP32_OPTIONS_CARD_TOP(item) +
+                                 DOOMRPG_ESP32_OPTIONS_CARD_HEIGHT - 1;
+}
+static inline void DoomRPG_esp32VideoCardRect(
+    int item, int* left, int* top, int* right, int* bottom) {
+    if (left != 0) *left = DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT;
+    if (right != 0) *right = DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT;
+    if (top != 0) *top = DOOMRPG_ESP32_VIDEO_CARD_TOP(item);
+    if (bottom != 0) *bottom = DOOMRPG_ESP32_VIDEO_CARD_TOP(item) +
+                                 DOOMRPG_ESP32_VIDEO_CARD_HEIGHT - 1;
+}
+
+/* Brightness remains five choices in one narrow rail. 21px is the
+ * absolute safe gain without overlapping the 113px available band:
+ * y6..26,28..48,50..70,72..92,94..114 with 1px gaps.
+ * The orientation and theme pickers have only 3 choices, so they reuse
+ * OPTIONS 28px tall plates; every painter and tap maps to the same rect. */
 #define DOOMRPG_ESP32_BRIGHTNESS_CARD_COUNT 5
 #define DOOMRPG_ESP32_ORIENTATION_CARD_COUNT 3
+#define DOOMRPG_ESP32_THEME_CARD_COUNT 4
 #define DOOMRPG_ESP32_BRIGHTNESS_CARD_FIRST_TOP 6
-#define DOOMRPG_ESP32_BRIGHTNESS_CARD_HEIGHT 20
+#define DOOMRPG_ESP32_BRIGHTNESS_CARD_HEIGHT 21
 #define DOOMRPG_ESP32_BRIGHTNESS_CARD_PITCH 22
 #define DOOMRPG_ESP32_BRIGHTNESS_CARD_TOP(index) \
     (DOOMRPG_ESP32_BRIGHTNESS_CARD_FIRST_TOP + \
@@ -95,8 +139,8 @@ static inline void DoomRPG_esp32BrightnessCardRect(
     if (bottom != 0) *bottom = DOOMRPG_ESP32_BRIGHTNESS_CARD_BOTTOM(item);
 }
 
-/* Main painter and touch share 54x24, no logo/rail overlap; child
- * Options, brightness and orientation remain on the 54x20 layout. */
+/* Main painter and touch share 54x24, no logo/rail overlap.
+ * Nested layouts are independently centered with no intersecting zones. */
 static inline void DoomRPG_esp32IndustrialMainCardRect(
     int item, int* left, int* top, int* right, int* bottom) {
     if (left != 0) *left = DOOMRPG_ESP32_INDUSTRIAL_MAIN_CARD_LEFT;

@@ -16,13 +16,18 @@ struct DoomRPG_s;
 int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpg,
                                          uint32_t* finalFramebufferFNV);
 
-/* Repaint only the shared right-hand rail; selectedItem is 0 (Back) or
- * 1 (Luminosité) or 2 (Orientation), armed is the first-tap state.
- * Sound remains disabled; the left logo remains untouched. */
+/* Root Options: BACK / VIDEO / disabled SOUND, 3 spacious 54x20 cards.
+ * The immutable MENU_MAIN_OPTIONS model and logo stage stay unchanged. */
 int DoomRPG_esp32PaintMainMenuOptionsDashboardSelection(
     struct DoomRPG_s* doomRpg,
     int selectedItem,
     int armed,
+    uint32_t* framebufferFNV);
+
+/* VIDEO middle layer: BACK/LUMINOSITE/ORIENTATION/THEME (4 cards).
+ * Model remains MENU_MAIN_OPTIONS; only the native UI presentation changes. */
+int DoomRPG_esp32PaintMainMenuVideoDashboardSelection(
+    struct DoomRPG_s* doomRpg, int selectedItem, int armed,
     uint32_t* framebufferFNV);
 
 /* Paint five bounded preset cards into the same right-hand rail while
@@ -35,6 +40,11 @@ int DoomRPG_esp32PaintMainMenuBrightnessDashboard(
  * choices (Back, Normal, Inverse); source framebuffer stays unchanged. */
 int DoomRPG_esp32PaintMainMenuOrientationDashboard(
     struct DoomRPG_s* doomRpg, uint32_t* framebufferFNV);
+
+/* Theme child: Back/Classic/Inferno; same fixed 54x20 rail. */
+int DoomRPG_esp32PaintMainMenuThemeDashboard(
+    struct DoomRPG_s* doomRpg,
+    uint32_t* framebufferFNV);
 
 /* Compatibility entry used for initial Options composition. */
 int DoomRPG_esp32PaintMainMenuOptionsDashboard(

@@ -17,6 +17,11 @@
 #include "esp_map_catalog.h"
 #include "esp_map_resident_lifecycle.h"
 #include "esp_native_gameplay_dispatch.h"
+#include "esp_native_gameplay_combat_math.h"
+#include "esp_native_gameplay_player_death.h"
+#include "esp_native_gameplay_player_state.h"
+#include "esp_native_startup.h"
+#include "platform_touch_events.h"
 #include "esp_native_gameplay_session.h"
 #include "esp_native_intro_state.h"
 #include "esp_native_transition_presentation.h"
@@ -62,6 +67,20 @@ typedef struct EspNativeStartupState_s {
 } EspNativeStartupState;
 
 static EspNativeStartupState startupState;
+
+/* One small, explicitly owned death recovery transaction. Unlike a manual
+ * LOAD this intentionally resets sector world state from immutable PAK data,
+ * then restores the captured player state (sector-entry for RETRY). */
+typedef struct EspNativeDeathRouteScratch_s {
+    EspBspInventory inventory;
+    EspMapResidentSnapshot resident;
+    EspPlayerSpawnState spawnPreflight;
+    EspNativeGameplaySessionConfig config;
+    EspNativeGameplayPlayerState player;
+    uint8_t targetMapId;
+    uint8_t queued;
+} EspNativeDeathRouteScratch;
+static EspNativeDeathRouteScratch deathRoute;
 
 static int introResourcesAreReleased(const DoomRPG_t* doomRpg) {
     return doomRpg != NULL && EspNativeIntroState_view(doomRpg) == NULL;
@@ -272,7 +291,9 @@ static int routeInitialSpawn(DoomRPG_t* doomRpg) {
                     ? EspHudRefresh_routePostSpawn()
                     : ESP_HUD_REFRESH_VIEW_INVALID;
     freshStatus = hudStatus == ESP_HUD_REFRESH_OK
-                      ? EspPlayerFreshMap_route(DoomRPG_GetUpTimeMS(), 0U)
+                      ? EspPlayerFreshMap_route(
+                          DoomRPG_GetUpTimeMS(),
+                          EspNativeGameplayPlayerState_view()->disabledWeapons)
                       : ESP_PLAYER_FRESH_MAP_VIEW_INVALID;
     if (viewStatus != ESP_PLAYER_VIEW_APPLY_OK ||
         hudStatus != ESP_HUD_REFRESH_OK ||
@@ -282,7 +303,8 @@ static int routeInitialSpawn(DoomRPG_t* doomRpg) {
     }
 
     firstTileStatus = EspPlayerInitialTile_route(
-        0U, 0U, &deferredCode, &deferredOffset);
+        EspNativeGameplayPlayerState_view()->keys, 0U,
+        &deferredCode, &deferredOffset);
     if (firstTileStatus != ESP_PLAYER_INITIAL_TILE_OK) {
         printf("[NATIVEBOOT] BLOCKED stage=FIRST_TILE status=%u opcode=%u commandOffset=%u\n",
                (unsigned int)firstTileStatus,
@@ -301,7 +323,8 @@ static int routeInitialSpawn(DoomRPG_t* doomRpg) {
     deferredCode = 0U;
     deferredOffset = 0U;
     secondTileStatus = EspPlayerFinishRotationTile_route(
-        0U, 0U, &deferredCode, &deferredOffset);
+        EspNativeGameplayPlayerState_view()->keys, 0U,
+        &deferredCode, &deferredOffset);
     if (secondTileStatus != ESP_PLAYER_FINISH_ROTATION_TILE_OK) {
         printf("[NATIVEBOOT] BLOCKED stage=SECOND_TILE status=%u opcode=%u commandOffset=%u\n",
                (unsigned int)secondTileStatus,
@@ -379,6 +402,7 @@ void EspNativeStartup_reset(void) {
     EspMapResidentLifecycle_resetAll();
     resetSpawnOwners();
     memset(&startupState, 0, sizeof(startupState));
+    memset(&deathRoute, 0, sizeof(deathRoute));
 
     if (!EspNativeGameplaySession_configure(&freshGame)) {
         failStartup("gameplay session configuration");
@@ -386,6 +410,182 @@ void EspNativeStartup_reset(void) {
     }
 
     printf("[NATIVEBOOT] RESET generic resident bootstrap armed\n");
+}
+
+/* RETRY/JUNCTION cannot reuse legacy DoomCanvas_loadState or an
+ * unrelated manual save. Fail before teardown if target/player are invalid.
+ * The caller is the native death owner and queues only after a real tap. */
+int EspNativeStartup_queueDeathRoute(
+    uint8_t targetMapId, const EspNativeGameplayPlayerState* player) {
+    if (deathRoute.queued || player == NULL || player->active != 1U ||
+        (player->param1 & 0xffU) == 0U ||
+        !EspMapCatalog_isValidId(targetMapId) ||
+        !EspNativeGameplayPlayerDeath_isMenuReady() ||
+        !EspNativeGameplaySession_isActive() ||
+        !EspMapResidentLifecycle_isReady() || EspAssetPack_isOpen())
+        return 0;
+
+    deathRoute.player = *player;
+    deathRoute.targetMapId = targetMapId;
+    deathRoute.queued = 1U;
+    return 1;
+}
+
+/* Config matches the existing native CHANGEMAP handoff: no desktop Player,
+ * no world-wide entity allocations, no reassignment of saved slot paths. */
+static int deathSessionConfig(void) {
+    const EspNativeGameplayPlayerState* p = &deathRoute.player;
+    const EspNativeGameplayWeaponSpec* w = NULL;
+    uint8_t ammoType;
+
+    /* Fresh-map setup explicitly rejects disabled weapons. Never tear down
+     * the dying sector when this source-player contract cannot be re-spawned. */
+    if (p->disabledWeapons != 0U) return 0;
+    if (p->weapon >= ESP_NATIVE_GAMEPLAY_PLAYER_WEAPON_LIMIT ||
+        p->weapons == 0U ||
+        (p->weapons & (uint16_t)(1U << p->weapon)) == 0U)
+        return 0;
+    if (p->weapon < ESP_NATIVE_GAMEPLAY_STANDARD_WEAPONS) {
+        w = EspNativeGameplayCombatMath_weapon(p->weapon);
+        if (w == NULL ||
+            w->ammoType >= ESP_NATIVE_GAMEPLAY_PLAYER_AMMO_TYPES)
+            return 0;
+        ammoType = w->ammoType;
+    } else {
+        ammoType = 5U; /* existing CHANGEMAP familiar ammo type */
+    }
+    memset(&deathRoute.config, 0, sizeof(deathRoute.config));
+    deathRoute.config.health = (uint8_t)(p->param1 & 0xffU);
+    deathRoute.config.maxHealth = (uint8_t)((p->param1 >> 8) & 0xffU);
+    deathRoute.config.armor = (uint8_t)((p->param1 >> 16) & 0xffU);
+    deathRoute.config.maxArmor = (uint8_t)((p->param1 >> 24) & 0xffU);
+    deathRoute.config.ammo = p->ammo[ammoType];
+    deathRoute.config.weapon = p->weapon;
+    deathRoute.config.ammoType = ammoType;
+    deathRoute.config.weaponsPresent = 1U;
+    return deathRoute.config.maxHealth > 0U &&
+           deathRoute.config.health <= deathRoute.config.maxHealth &&
+           deathRoute.config.armor <= deathRoute.config.maxArmor;
+}
+
+/* Invoked once the composed gameplay service has returned to loop().
+ * Never destroy a source world on the tap callback's call stack. */
+void EspNativeStartup_serviceDeathRoute(struct DoomRPG_s* doomRpgBase) {
+    DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
+    const char* name;
+    EspMapResidentLifecycleStatus loadStatus;
+    EspPlayerSpawnStatus spawnStatus;
+    uint8_t target;
+
+    if (!deathRoute.queued) return;
+    target = deathRoute.targetMapId;
+    name = EspMapCatalog_nameForId(target);
+    if (doomRpg == NULL || doomRpg->render == NULL ||
+        doomRpg->player != NULL || doomRpg->game != NULL ||
+        !EspNativeGameplaySession_isActive() ||
+        !EspNativeGameplayPlayerDeath_isMenuReady() ||
+        !EspMapResidentLifecycle_isReady() || EspAssetPack_isOpen() ||
+        name == NULL || !deathSessionConfig()) {
+        deathRoute.queued = 0U;
+        EspNativeGameplayPlayerDeath_cancelQueuedRoute();
+        printf("[DEATHROUTE] REFUSED stage=source-preflight target=%u mutation=no\n",
+               (unsigned int)target);
+        return;
+    }
+
+    memset(&deathRoute.inventory, 0, sizeof(deathRoute.inventory));
+    if (!EspAssetPack_sourceProbeBegin(name)) {
+        deathRoute.queued = 0U;
+        EspNativeGameplayPlayerDeath_cancelQueuedRoute();
+        printf("[DEATHROUTE] REFUSED stage=source-probe target=%u mutation=no\n",
+               (unsigned int)target);
+        return;
+    }
+    {
+        const int valid = EspBspReader_inventoryPackEntry(
+            name, &deathRoute.inventory);
+        EspAssetPack_sourceProbeEnd();
+        if (!valid || deathRoute.inventory.sourceBytes == 0U ||
+            deathRoute.inventory.consumedBytes != deathRoute.inventory.sourceBytes ||
+            deathRoute.inventory.trailingBytes != 0U ||
+            deathRoute.inventory.crc32 == 0U ||
+            deathRoute.inventory.crc32 != deathRoute.inventory.expectedCrc32 ||
+            deathRoute.inventory.plan.persistentBytes == 0U ||
+            EspAssetPack_isOpen() || EspAssetPack_isSourceProbeActive()) {
+            deathRoute.queued = 0U;
+            EspNativeGameplayPlayerDeath_cancelQueuedRoute();
+            printf("[DEATHROUTE] REFUSED stage=target-inventory target=%u mutation=no\n",
+                   (unsigned int)target);
+            return;
+        }
+    }
+    memset(&deathRoute.spawnPreflight, 0, sizeof(deathRoute.spawnPreflight));
+    spawnStatus = EspPlayerSpawn_prepareInitial(
+        target, &deathRoute.inventory, ESP_PLAYER_SPAWN_LOAD_FRESH_MAP,
+        0U, &deathRoute.spawnPreflight);
+    if (spawnStatus != ESP_PLAYER_SPAWN_OK) {
+        deathRoute.queued = 0U;
+        EspNativeGameplayPlayerDeath_cancelQueuedRoute();
+        printf("[DEATHROUTE] REFUSED stage=target-spawn target=%u status=%u mutation=no\n",
+               (unsigned int)target, (unsigned int)spawnStatus);
+        return;
+    }
+    if (!EspNativeTransitionPresentation_beginLoading(target)) {
+        deathRoute.queued = 0U;
+        EspNativeGameplayPlayerDeath_cancelQueuedRoute();
+        printf("[DEATHROUTE] REFUSED stage=loading target=%u mutation=no\n",
+               (unsigned int)target);
+        return;
+    }
+
+    printf("[DEATHROUTE] BEGIN target=%u source=death-menu player=compact-snapshot world=fresh-pack state=preflight-ok\n",
+           (unsigned int)target);
+    PlatformInput_setTapCallback(NULL);
+    EspNativeGameplaySession_reset();
+    EspMapResidentLifecycle_resetAll();
+    resetSpawnOwners();
+    EspAssetPack_mapFlashSetProgressCallback(
+        EspNativeTransitionPresentation_progress);
+    const int prepared = EspAssetPack_mapFlashPrepare(target);
+    EspAssetPack_mapFlashSetProgressCallback(NULL);
+    if (!prepared || !EspAssetPack_isMapFlashActive() ||
+        EspAssetPack_isOpen()) {
+        failStartup("death target map-flash prepare");
+        deathRoute.queued = 0U;
+        return;
+    }
+    EspNativeTransitionPresentation_checkpointProgress(30U, "BSP");
+    memset(&deathRoute.resident, 0, sizeof(deathRoute.resident));
+    loadStatus = EspMapResidentLifecycle_loadFromEmpty(
+        name, &deathRoute.inventory, &deathRoute.resident);
+    if (loadStatus != ESP_MAP_RESIDENT_OK ||
+        !EspMapResidentLifecycle_isReady() ||
+        deathRoute.resident.runtimeArenaBytes !=
+            deathRoute.inventory.plan.persistentBytes ||
+        EspAssetPack_isOpen() ||
+        !legacyRuntimeIsClear(doomRpg->render)) {
+        failStartup("death target resident load");
+        deathRoute.queued = 0U;
+        return;
+    }
+    EspNativeTransitionPresentation_checkpointProgress(60U, "RUNTIME");
+    if (!EspNativeGameplayPlayerState_restore(&deathRoute.player)) {
+        failStartup("death player restore");
+        deathRoute.queued = 0U;
+        return;
+    }
+    startupState.targetMapId = target;
+    startupState.stage = ESP_NATIVE_STARTUP_RESIDENT_READY;
+    if (!routeInitialSpawn(doomRpg) ||
+        !EspNativeGameplaySession_configure(&deathRoute.config)) {
+        failStartup("death spawn/session");
+        deathRoute.queued = 0U;
+        return;
+    }
+    deathRoute.queued = 0U;
+    printf("[DEATHROUTE] SESSION target=%u playerHP=%u/%u runtime=fresh session=reprime-pending saveWrite=no\n",
+           (unsigned int)target, (unsigned int)deathRoute.config.health,
+           (unsigned int)deathRoute.config.maxHealth);
 }
 
 void EspNativeStartup_service(struct DoomRPG_s* doomRpgBase) {
