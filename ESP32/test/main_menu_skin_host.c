@@ -532,6 +532,38 @@ int main(void) {
         assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
     }
 
+    /* Real shared title-stencil painter: neither the longest 5x7 report
+     * header (MISSION COMPLETE spans x34..128 at y11..17) nor its
+     * y20..26 subtitle can touch a steel rim, hatch or corner bolt. */
+    for (int theme = 0; theme < 3; ++theme) {
+        resetFrame();
+        assert(EspMainMenuSkin_setTheme((uint8_t)theme));
+        assert(!EspMainMenuSkin_paintModalTitleStencil(NULL,W,W,H));
+        assert(!EspMainMenuSkin_paintModalTitleStencil(fb,W-1,W,H));
+        assert(!EspMainMenuSkin_paintModalTitleStencil(fb,W,W-1,H));
+        assert(!EspMainMenuSkin_paintModalTitleStencil(fb,W,W,H-1));
+        for (int p = 0; p < W * H; ++p) assert(fb[p] == SENTINEL);
+        assert(EspMainMenuSkin_paintModalTitleStencil(fb,W,W,H));
+        assert(fb[7*W+9] == 0x6b4dU);
+        assert(fb[7*W+150] == 0x6b4dU);
+        assert(fb[27*W+47] == EspMainMenuSkin_uiAccentDim());
+        assert(fb[27*W+80] == EspMainMenuSkin_uiAccent());
+        assert(fb[11*W+11] != SENTINEL);
+        assert(fb[11*W+147] != SENTINEL);
+        for (int y = 0; y < H; ++y) {
+            for (int x = 0; x < W; ++x) {
+                if (y < 7 || y > 27 || x < 9 || x > 150 ||
+                    (y >= 10 && y <= 26 && x >= 26 && x <= 133))
+                    assert(fb[y*W+x] == SENTINEL);
+            }
+        }
+        for (int guard=0;guard<GUARD;++guard) {
+            assert(arena[guard]==SENTINEL);
+            assert(arena[GUARD+W*H+guard]==SENTINEL);
+        }
+    }
+    assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
+
     resetFrame();
     assert(!EspMainMenuSkin_paint(NULL, W, W, H, 0, ESP_MAIN_MENU_SKIN_IDLE));
     assert(!EspMainMenuSkin_paint(fb, W - 1, W, H, 0, ESP_MAIN_MENU_SKIN_IDLE));
