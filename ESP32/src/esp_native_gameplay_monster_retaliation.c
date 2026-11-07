@@ -750,6 +750,16 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
                feedbackRollback ? "yes" : "NO");
         return;
     }
+    /* Combat_updateProjectile() only spawns an impact animation for
+     * a successful projectile whose aggregate player damage is nonzero.
+     * This optional art choice is part of the already-staged face lease:
+     * cancel() restores it on any failed player/world/raster transaction.
+     * Source weapon12/13/14 => scratch sprites188/189/190, the other
+     * projectile families => source180..187. No gameplay RNG reads. */
+    if (roll.totalDamage + roll.totalArmorDamage > 0) {
+        (void)EspNativePlayerPainVisual_stageImpact(
+            turn->attackProbes,weaponId,monster->subtype);
+    }
     /* The player, feedback, visual lease and corpse must be a single
      * rollback unit. Commit the V11 dynamic corpse only after every
      * cheap preflight above; any renderer or RNG failure restores its
