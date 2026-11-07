@@ -25,6 +25,36 @@ typedef struct EspNativeGibSheetRect_s {
     uint8_t variant;
 } EspNativeGibSheetRect;
 
+/* One original negative-size (gib chunk) particle from the source
+ * Combat_spawnBloodParticles -> ParticleSystem_calculateParticles/render.
+ * One visual PRNG is replayed from a stable seed; the particle has exactly
+ * four random fields (startX,startY,velX,velY), while its variant comes
+ * from the single source randNext%6 draw shared by all five chunks.
+ * Geometry/velocity scales match source 160x80 render and 160x120 HUD.
+ * 25ms deterministic integrations adapt the original per-present update to
+ * a turn-based CYD without consuming gameplay RNG or a framebuffer. */
+#define ESP_NATIVE_GIB_KINETIC_COUNT 5U
+#define ESP_NATIVE_GIB_KINETIC_STEP_MS 25U
+#define ESP_NATIVE_GIB_KINETIC_LIFETIME_MS 350U
+
+typedef struct EspNativeGibKineticPoint_s {
+    int16_t centerX;
+    int16_t centerY;
+    int16_t velocityX; /* Original source fixed point, used for frame flip. */
+    uint8_t variant;
+    uint8_t reserved;
+} EspNativeGibKineticPoint;
+
+int EspNativeGibSheet_sampleParticle(uint32_t visualSeed,
+                                      uint8_t index,
+                                      uint8_t tileDistance,
+                                      uint32_t elapsedMs,
+                                      EspNativeGibKineticPoint* outPoint);
+
+/* Combat_worldDistToTileDist uses squared world distance and exactly
+ * four inclusive thresholds; outside 4 tiles, the gib effect is absent. */
+uint8_t EspNativeGibSheet_tileDistance(uint32_t squaredWorldDistance);
+
 /* Exact source frame/row selection and viewport clipping, independent of
  * asset availability. VelX sign mirrors the 0..3 frame direction.
  * Returns 0 for malformed metadata, invalid row or completely offscreen. */
