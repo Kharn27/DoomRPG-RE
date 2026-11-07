@@ -147,6 +147,15 @@ jobs:
             -o /tmp/doomrpg-gib-sheet-test
           /tmp/doomrpg-gib-sheet-test
 
+      - name: Test native original gibs atlas through real indexed BMP PAK row reader
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+            ESP32/src/esp_native_indexed_bmp.c \
+            ESP32/src/esp_native_gameplay_gib_sheet.c \
+            ESP32/test/gib_sheet_indexed_stream_host.c \
+            -o /tmp/doomrpg-gib-sheet-indexed
+          /tmp/doomrpg-gib-sheet-indexed
+
       - name: Test dog-familiar source-backed blood (host C)
         run: |
           cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
