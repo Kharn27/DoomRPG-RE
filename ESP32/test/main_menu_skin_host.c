@@ -56,10 +56,88 @@ static void assertOutsideCardUntouched(const uint16_t* fb, int card) {
     assert(fb[19 * W + 102] == SENTINEL);
 }
 
+
+/* Both caps must be genuinely mirrored before any label/gauge overlay.
+ * Exercises all live card sizes, the narrow LOADING gauge, all state palettes
+ * and all three themes. Full-frame guards also reject any overdraw. */
+static void assertPlateCapSymmetry(uint16_t* fb) {
+    static const int boxes[][4] = {
+        {104, 8, 157, 31},   /* MENU_MAIN */
+        {104, 8, 157, 39},   /* OPTIONS */
+        {104, 6, 157, 31},   /* VIDEO */
+        {104, 6, 157, 26},   /* BRIGHTNESS */
+        {16, 26, 143, 69},  /* LOADING title */
+        {16, 82, 143, 99}   /* LOADING gauge chassis */
+    };
+    static const uint16_t steel[3] = {0x4a48U, 0x632bU, 0x4248U};
+    static const uint16_t bevel[3] = {0x838dU, 0xa4d1U, 0x83ceU};
+    static const uint16_t shadow[3] = {0x0820U, 0x0800U, 0x0800U};
+    static const uint16_t groove[3] = {0x3123U, 0x39a5U, 0x2903U};
+    static const uint16_t base[3] = {0x0800U, 0x1000U, 0x0800U};
+
+    for (int theme = 0; theme < 3; ++theme) {
+        assert(EspMainMenuSkin_setTheme((uint8_t)theme));
+        for (int state = 0; state < 3; ++state) {
+            const EspMainMenuSkinState st = (EspMainMenuSkinState)state;
+            for (int box = 0; box < (int)(sizeof(boxes)/sizeof(boxes[0])); ++box) {
+                const int l = boxes[box][0], t = boxes[box][1];
+                const int r = boxes[box][2], b = boxes[box][3];
+                resetFrame();
+                assert(EspMainMenuSkin_paintPlate(fb, W, W, H,
+                                                  l, t, r, b, st));
+                for (int y = 0; y < H; ++y) {
+                    for (int x = 0; x < W; ++x) {
+                        if (x < l || x > r || y < t || y > b) {
+                            assert(fb[y*W+x] == SENTINEL);
+                        } else {
+                            assert(fb[y*W+x] == fb[(t+b-y)*W+x]);
+                        }
+                    }
+                }
+                for (int k = 0; k < GUARD; ++k) {
+                    assert(arena[k] == SENTINEL);
+                    assert(arena[GUARD+W*H+k] == SENTINEL);
+                }
+                /* Exact paired highlights, recessed inner grooves and
+                 * theme seam. No replacement of palette or red gauge ink. */
+                for (int cap = 0; cap < 2; ++cap) {
+                    const int end = cap ? b : t;
+                    const int step = cap ? -1 : 1;
+                    assert(fb[end*W+l+10] == bevel[state]);
+                    assert(fb[(end+step)*W+l+10] == bevel[state]);
+                    assert(fb[(end+2*step)*W+l+10] == steel[state]);
+                    assert(fb[(end+3*step)*W+l+10] ==
+                           EspMainMenuSkin_accentTone(st));
+                    assert(fb[(end+4*step)*W+l+10] == groove[state]);
+                    assert(fb[end*W+l] == shadow[state]);
+                    assert(fb[end*W+r] == shadow[state]);
+                    if (b-t+1 >= 24) {
+                        assert(fb[(end+5*step)*W+l+5] == shadow[state]);
+                        assert(fb[(end+6*step)*W+l+5] == bevel[state]);
+                        assert(fb[(end+5*step)*W+r-5] == shadow[state]);
+                        assert(fb[(end+6*step)*W+r-5] == bevel[state]);
+                    }
+                }
+                if (box == 5) {
+                    /* The 120x6 LOADING track area is untouched by the
+                     * chassis, including the previously unwanted end caps. */
+                    for (int y = 88; y <= 93; ++y)
+                        for (int x = 20; x <= 139; ++x)
+                            assert(fb[y*W+x] == base[state]);
+                    assert(fb[87*W+21] == base[state]);
+                    assert(fb[94*W+138] == base[state]);
+                }
+            }
+        }
+    }
+    assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
+}
+
 int main(void) {
     uint16_t* fb = arena + GUARD;
     uint32_t fingerprints[4][3];
     int item, state;
+    assertPlateCapSymmetry(fb);
     assert(DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH == 102);
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_HEIGHT == 20);
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_PITCH == 25);

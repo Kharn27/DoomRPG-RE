@@ -62,9 +62,9 @@ int EspMainMenuSkin_paintModalTitleStencil(uint16_t* framebuffer,
                                            int logicalWidth,
                                            int logicalHeight);
 
-/* Shared procedural gunmetal chassis. No text, heap or IO. Strict 160x120
- * framebuffer and bounded rectangle; invalid inputs leave pixels untouched.
- * The same IDLE geometry/palette is used by the loading presentation. */
+/* Shared procedural gunmetal chassis with mirrored top/bottom bevel, groove
+ * and bolt caps. No text, heap or IO. Strict 160x120 framebuffer and bounded
+ * rectangle; invalid inputs leave pixels untouched. LOADING uses IDLE. */
 int EspMainMenuSkin_paintPlate(uint16_t* framebuffer,
                                int stridePixels, int logicalWidth,
                                int logicalHeight, int left, int top,

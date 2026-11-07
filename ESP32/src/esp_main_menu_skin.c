@@ -276,20 +276,22 @@ int EspMainMenuSkin_paintPlate(uint16_t* fb, int stride,
         for (x = l; x <= r; ++x) {
             const int dx = x - l;
             const int dy = y - t;
+            const int edgeY = dy < b - y ? dy : b - y;
             const int corner = dx + dy < 3 ||
                 (r - x) + dy < 3 ||
                 dx + (b - y) < 3 ||
                 (r - x) + (b - y) < 3;
             uint16_t color = p->base;
-            if (dx <= 2 || x >= r - 2 ||
-                dy <= 3 || y >= b - 3)
+            /* Match both end caps: the former bottom three-row shadow
+             * swallowed the steel rim and made the lower edge look flat.
+             * The right-hand shadow remains a deliberate lateral relief. */
+            if (dx <= 2 || x >= r - 2 || edgeY <= 3)
                 color = p->steel;
-            if (dy <= 1 && dx > 3 && x < r - 3)
+            if (edgeY <= 1 && dx > 3 && x < r - 3)
                 color = p->bevel;
-            if (dy >= b - t - 2 || dx == r)
+            if (dx == r - l)
                 color = p->shadow;
-            if (dx == 3 || x == r - 3 ||
-                dy == 4 || y == b - 4)
+            if (dx == 3 || x == r - 3 || edgeY == 4)
                 color = p->groove;
             if (corner) color = p->shadow;
             dot(fb, stride, x, y, l, t, r, b, color);
@@ -307,16 +309,17 @@ int EspMainMenuSkin_paintPlate(uint16_t* fb, int stride,
     vertical(fb, stride, r - 3, t + 7, b - 7,
              l, t, r, b, seam);
 
-    /* Bolt heads belong to the 24px+ menu/loading cards, not the 18px
-     * progress chassis: on a thin gauge they look like two unfilled end caps.
-     * Keep every MENU_MAIN pixel exactly as before. */
+    /* Mirror the two-pixel bolt heads across both caps. On the 18px
+     * progress chassis bolts still stay absent: they look like empty ends. */
     if (b - t + 1 >= 24) {
         dot(fb, stride, l + 5, t + 5, l, t, r, b, p->shadow);
         dot(fb, stride, l + 5, t + 6, l, t, r, b, p->bevel);
         dot(fb, stride, r - 5, t + 5, l, t, r, b, p->shadow);
         dot(fb, stride, r - 5, t + 6, l, t, r, b, p->bevel);
         dot(fb, stride, l + 5, b - 5, l, t, r, b, p->shadow);
+        dot(fb, stride, l + 5, b - 6, l, t, r, b, p->bevel);
         dot(fb, stride, r - 5, b - 5, l, t, r, b, p->shadow);
+        dot(fb, stride, r - 5, b - 6, l, t, r, b, p->bevel);
     }
 
     return 1;
