@@ -6,6 +6,16 @@
 
 int main(void) {
     EspNativeGibSheetRect p;
+    {
+        unsigned c;
+        for (c=0U;c<65536U;++c) {
+            unsigned r=(c>>11U)&31U,g=(c>>5U)&63U,b=c&31U;
+            const uint16_t expected =
+                (uint16_t)(((r+8U>31U?31U:r+8U)<<11U) |
+                           ((g>>1U)<<5U) | (b>>1U));
+            assert(EspNativeGibSheet_berserk565((uint16_t)c)==expected);
+        }
+    }
     uint8_t row, frame;
     uint32_t checks=0U;
     for(row=0U;row<6U;++row)for(frame=0U;frame<4U;++frame) {
@@ -38,7 +48,7 @@ int main(void) {
     assert(!EspNativeGibSheet_plan(0U,0U,-99,52,0,96,144,&p));
     assert(!EspNativeGibSheet_plan(0U,0U,80,140,0,96,144,&p));
     assert(!EspNativeGibSheet_plan(0U,0U,80,52,0,96,144,NULL));
-    printf("PASS gib sheet: %u complete 4x6 velocity/reverse frames, exact source and viewport clip, fail closed\n",
+    printf("PASS gib sheet: 65536 exact legacy berserk RGB565 colors, %u complete 4x6 velocity/reverse frames, exact source and viewport clip, fail closed\n",
            (unsigned)checks);
     return 0;
 }
