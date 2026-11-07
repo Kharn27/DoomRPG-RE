@@ -116,6 +116,12 @@ typedef struct EspNativeGameplayDamageCue_s {
  * follows synchronous FX work in this same loopTask iteration. */
 void EspNativeGameplayActionEngine_beginMonsterVisualWork(void);
 void EspNativeGameplayActionEngine_endMonsterVisualWork(void);
+/* The single existing DAMAGE flash publisher invokes this optional native
+ * visual-only callback immediately BEFORE painting its first red border.
+ * In particular, it must NOT invoke it for intermediate monster-visual frames
+ * before the flash is eligible. NULL disables optional impact art in host
+ * fixtures and during early boot. No second clock or physical present. */
+void EspNativeGameplayActionEngine_setImpactPainter(void (*paint)(void));
 
 /* Opt-in only for nonlethal monster retaliation: its frame/feedback is still
  * committed as usual, but postpone the existing border and text until
