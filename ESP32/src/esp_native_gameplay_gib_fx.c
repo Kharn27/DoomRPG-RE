@@ -25,6 +25,7 @@
 #include "esp_native_gameplay_dog_blood.h"
 #include "esp_native_resident_gameplay.h"
 #include "esp_native_gameplay_monster_state.h"
+#include "esp_native_gameplay_monster_position.h"
 #include "esp_native_gameplay_player_resources.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_transition_handoff.h"
@@ -78,6 +79,8 @@ typedef struct GibFxOwner_s {
     uint16_t activeSpriteIndex;
     uint8_t activeParticles;
     uint8_t active;
+    uint8_t activeDistance;
+    uint8_t activeFrameTick;
 } GibFxOwner;
 
 static GibFxOwner gibFxOwner;
@@ -503,14 +506,17 @@ static void drawHitBurst(uint16_t* framebuffer) {
 static uint32_t drawOriginalGibChunks(uint16_t* framebuffer,
                                       uint32_t chunkSeed,
                                       uint32_t nowMs,
+                                      uint32_t ageMs,
+                                      uint8_t distance,
                                       uint8_t* outFallback) {
     EspNativeIndexedBmpStats stats;
     uint32_t pixels = 0U;
     uint32_t i;
-    uint8_t rowBase;
     const EspNativeIndexedBmp* sheet = &originalGibs24;
     if (outFallback == NULL || framebuffer == NULL) return 0U;
     *outFallback = 1U;
+    if (distance == 0U || distance > 4U ||
+        ageMs >= GIBFX_DISPLAY_MS) return 0U;
     if (originalGibs24Unavailable != 0U ||
         !EspNativeResidentGameplay_ownsWorldPresent() ||
         EspNativeGameplayControls_isActive() ||
@@ -577,41 +583,42 @@ static uint32_t drawOriginalGibChunks(uint16_t* framebuffer,
         }
     }
 
-    /* Legacy ParticleSystem_calculateParticles chooses randNext%6,
-     * then -(1+(randNext+cnt2)%6) for the first five chunk particles.
-     * We retain its modulo-six row family but drive positions and frame
-     * direction with the visual generator, NOT gameplay Random_t. */
-    rowBase = (uint8_t)(chunkSeed % ESP_NATIVE_GIB_SHEET_ROWS);
-    for (i = 0U; i < GIBFX_CHUNKS; ++i) {
-        uint32_t r = xorshift32(&chunkSeed);
-        const int16_t x = (int16_t)(GIBFX_CENTER_X +
-                                   (int)(r % 35U) - 17);
-        const int16_t y = (int16_t)(GIBFX_CENTER_Y +
-                                   (int)((r >> 8) % 23U) - 13);
-        const int16_t vx = (int16_t)(((r >> 18) & 1U) != 0U ? 50 : -50);
-        const uint8_t variant = (uint8_t)((rowBase + i + 1U) % 6U);
+    /* Source Combat_spawnBloodParticles() parameters for z=true:
+     * start[-6..6,-9..11], velocity[-150..100,-175..-75], gravity=10.
+     * ParticleSystem_calculateScales(tileDist) uses 174/256 decay.
+     * We replay its 1+4*N visual RNG draws from chunkSeed and integrate
+     * real fixed-point update equations in deterministic 25ms steps.
+     * Frame column is still source wall-clock time / 175ms. */
+    for (i=0U;i<GIBFX_CHUNKS;++i) {
+        EspNativeGibKineticPoint particle;
         EspNativeGibSheetRect rect;
+        if (!EspNativeGibSheet_sampleParticle(
+                chunkSeed,(uint8_t)i,distance,ageMs,&particle)) {
+            EspAssetPack_close();
+            return pixels;
+        }
         if (EspNativeGibSheet_plan(
-                nowMs, variant, x, y, vx, sheet->width,
-                sheet->height, &rect)) {
+                nowMs, particle.variant, particle.centerX,
+                particle.centerY, particle.velocityX,
+                sheet->width, sheet->height, &rect)) {
             EspNativeIndexedBmpStats drawStats;
-            memset(&drawStats, 0, sizeof(drawStats));
+            memset(&drawStats,0,sizeof drawStats);
             if (EspNativeIndexedBmp_blit(
-                    sheet, framebuffer, DOOMRPG_LOGICAL_WIDTH,
-                    DOOMRPG_LOGICAL_HEIGHT, rect.sourceX, rect.sourceY,
-                    rect.width, rect.height, rect.destinationX,
-                    rect.destinationY, 1U, &drawStats) !=
+                    sheet,framebuffer,DOOMRPG_LOGICAL_WIDTH,
+                    DOOMRPG_LOGICAL_HEIGHT,rect.sourceX,rect.sourceY,
+                    rect.width,rect.height,rect.destinationX,
+                    rect.destinationY,1U,&drawStats) !=
                 ESP_NATIVE_INDEXED_BMP_OK) {
                 if (originalGibs24Report == 0U) {
-                    printf("[GIBSHEET] READ-FAILED frame=%u row=%u recovery=circle-fallback next=retry\n",
+                    printf("[GIBSHEET] READ-FAILED frame=%u row=%u recovery=old-fragments\n",
                            (unsigned int)rect.frame,
                            (unsigned int)rect.variant);
-                    originalGibs24Report = 1U;
+                    originalGibs24Report=1U;
                 }
                 EspAssetPack_close();
                 return pixels;
             }
-            pixels += drawStats.pixelsWritten;
+            pixels+=drawStats.pixelsWritten;
         }
     }
     EspAssetPack_close();
@@ -622,7 +629,9 @@ static uint32_t drawOriginalGibChunks(uint16_t* framebuffer,
 static uint32_t drawGibPixels(uint16_t* framebuffer,
                               uint32_t seed,
                               uint32_t particles,
-                              uint32_t nowMs) {
+                              uint32_t nowMs,
+                              uint32_t ageMs,
+                              uint8_t distance) {
     uint32_t pixels = 0U;
     uint32_t i;
 
@@ -653,7 +662,8 @@ static uint32_t drawGibPixels(uint16_t* framebuffer,
     {
         uint8_t fallback = 1U;
         const uint32_t painted =
-            drawOriginalGibChunks(framebuffer, seed, nowMs, &fallback);
+            drawOriginalGibChunks(framebuffer,seed,nowMs,
+                                  ageMs,distance,&fallback);
         pixels += painted;
         if (fallback != 0U) {
             for (i = 0U; i < GIBFX_CHUNKS; ++i) {
@@ -668,14 +678,39 @@ static uint32_t drawGibPixels(uint16_t* framebuffer,
     return pixels;
 }
 
+/* Matches Combat_worldDistToTileDist() of Entity_calcWorldDistance()
+ * for the current monster position and settled player camera. No map-wide
+ * renderer pointers, square roots, or new mutable ownership. */
+static uint8_t sourceMonsterTileDistance(uint16_t spriteIndex) {
+    const EspNativeGameplayMonsterPositionRecord* monster =
+        EspNativeGameplayMonsterPosition_find(spriteIndex);
+    const EspPlayerViewState* player = EspPlayerView_view();
+    int64_t dx,dy;
+    uint64_t squared;
+    if (monster == NULL || player == NULL || player->active != 1U) {
+        /* The old effect is centered and distance-independent; preserve
+         * that witness when a position owner has not been materialized. */
+        return 1U;
+    }
+    dx=(int64_t)monster->worldX-player->viewX;
+    dy=(int64_t)monster->worldY-player->viewY;
+    squared=(uint64_t)(dx*dx+dy*dy);
+    return squared>65536U ? 0U
+        : EspNativeGibSheet_tileDistance((uint32_t)squared);
+}
+
 static void drawBurst(uint16_t* framebuffer,
                       const EspNativeGameplayMonsterRecord* monster,
                       const EspNativeGameplayMonsterView* view) {
     uint32_t seed;
     uint32_t particles;
     uint32_t pixels;
+    uint8_t distance;
+    uint32_t nowMs;
 
     if (framebuffer == NULL || monster == NULL || view == NULL) return;
+    distance=sourceMonsterTileDistance(monster->spriteIndex);
+    nowMs=DoomRPG_GetUpTimeMS();
     seed = view->sourceArenaFNV1a ^ view->stateFNV1a ^
            ((uint32_t)monster->spriteIndex * 0x9e3779b9U) ^ 0xa511e9b3U;
     particles = particleCount(monster);
@@ -685,8 +720,8 @@ static void drawBurst(uint16_t* framebuffer,
      * its victim is centered in the viewport. Keep this owner bounded and
      * presentation-only; later projection ownership can replace the center
      * constants without changing monster/gameplay state. */
-    pixels = drawGibPixels(framebuffer, seed, particles,
-                           DoomRPG_GetUpTimeMS());
+    pixels = drawGibPixels(framebuffer,seed,particles,nowMs,
+                           0U,distance);
 
     ++gibFxOwner.bursts;
     gibFxOwner.pixels += pixels;
@@ -694,7 +729,9 @@ static void drawBurst(uint16_t* framebuffer,
     gibFxOwner.activeRepaints = 0U;
     gibFxOwner.activeSpriteIndex = monster->spriteIndex;
     gibFxOwner.activeParticles = (uint8_t)particles;
-    gibFxOwner.clearAtMs = DoomRPG_GetUpTimeMS() + GIBFX_DISPLAY_MS;
+    gibFxOwner.activeDistance = distance;
+    gibFxOwner.activeFrameTick = 0U;
+    gibFxOwner.clearAtMs = nowMs + GIBFX_DISPLAY_MS;
     gibFxOwner.active = 1U;
     printf("[GIBFX] PAINT sprite=%u subtype=%u particles=%u chunks=%u pixels=%u center=%d,%d ownerBytes=%u leaseMs=%u visualRng=local gameplayRng=untouched legacyParticleSystem=no\n",
            (unsigned int)monster->spriteIndex,
@@ -738,7 +775,9 @@ static void decorateActiveGib(void) {
 
     pixels = drawGibPixels(framebuffer,
                            gibFxOwner.activeSeed,
-                           gibFxOwner.activeParticles, now);
+                           gibFxOwner.activeParticles,now,
+                           now-(gibFxOwner.clearAtMs-GIBFX_DISPLAY_MS),
+                           gibFxOwner.activeDistance);
     ++gibFxOwner.activeRepaints;
     gibFxOwner.pixels += pixels;
     if (gibFxOwner.activeRepaints == 1U) {
