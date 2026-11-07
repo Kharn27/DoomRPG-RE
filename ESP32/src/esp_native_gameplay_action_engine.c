@@ -31,6 +31,7 @@
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_graphics_catalog.h"
 #include "esp_native_gameplay_player_state.h"
+#include "esp_native_gameplay_player_pain_visual.h"
 #include "esp_native_gameplay_player_death.h"
 #include "esp_native_resident_gameplay.h"
 #include "esp_native_rng_replay_guard.h"
@@ -2008,6 +2009,15 @@ int __wrap_Esp32PlatformVideo_present(void) {
 
     ok = __real_Esp32PlatformVideo_present();
     if (!ok) return 0;
+    /* Start the source 500ms pain face / weapon / shake lease ONLY after
+     * a successful PHYSICAL LCD present. Monster-turn visual work defers
+     * the already-proven damage flash until endMonsterVisualWork(); its
+     * synchronous movement tail can exceed 500ms. The earlier staged frame
+     * must not silently expire under that barrier. The same barrier keeps
+     * us from counting invisible intermediate world frames. */
+    if (directionCue.stageNonlethalBorder == 0U) {
+        (void)EspNativePlayerPainVisual_firstPresented(actionNowMs());
+    }
     if (flashPainted) {
         actionState.viewportFlashLit = 1U;
         if (directionCue.pendingValid != 0U &&
