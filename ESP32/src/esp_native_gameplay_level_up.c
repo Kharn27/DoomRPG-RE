@@ -127,24 +127,20 @@ static int paint(void) {
     fillRect(3, 3, 156, 116, COLOR_BG);
     rect(3, 3, 156, 116, COLOR_STEEL_DARK);
 
-    /* The same theme-aware industrial header as the sector report. Keep
-     * the six upgrade cards, semantic gain colors and dismissal exactly as
-     * before; painting has no gameplay or allocation side effects. */
-    if (!EspMainMenuSkin_paintPlate(
+    /* The death-menu title is a stencil on the bulkhead, NOT a button:
+     * no raised plate / border / inner seam behind either title line.
+     * Keep the six gain cards, touch dismiss and semantic gains untouched. */
+    if (!EspMainMenuSkin_paintModalTitleStencil(
             framebuffer(), DOOMRPG_LOGICAL_WIDTH,
-            DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
-            8, 7, 151, 29, ESP_MAIN_MENU_SKIN_IDLE)) return 0;
-    fillRect(10, 13, 11, 24, EspMainMenuSkin_uiAccent());
-    fillRect(148, 13, 149, 24, EspMainMenuSkin_uiAccent());
-    fillRect(14, 27, 145, 28, EspMainMenuSkin_uiAccentDim());
+            DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT)) return 0;
 
     EspNativeGameplayHubTouchUi_drawCrispText(
-        framebuffer(), "LEVEL UP", 80, 9, EspMainMenuSkin_uiAccent());
+        framebuffer(), "LEVEL UP", 80, 11, EspMainMenuSkin_uiAccent());
     snprintf(levelText, sizeof(levelText), "LEVEL %u -> %u",
              (unsigned int)levelUp.levelBefore,
              (unsigned int)levelUp.levelAfter);
     EspNativeGameplayHubTouchUi_drawCrispText(
-        framebuffer(), levelText, 80, 19, COLOR_IVORY);
+        framebuffer(), levelText, 80, 20, COLOR_IVORY);
 
     drawGainCard(10, 34, "MAX HP",
                  levelUp.maxHealthCurrent, levelUp.maxHealthGain);
