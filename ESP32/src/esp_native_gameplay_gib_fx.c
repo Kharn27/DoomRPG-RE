@@ -87,7 +87,9 @@ static GibFxOwner gibFxOwner;
  * rows from the native PAK into the existing 160x120 framebuffer. Never
  * keep an unpacked sheet, ZIP entry, or second framebuffer. */
 static EspNativeIndexedBmp originalGibs24;
+static EspNativeIndexedBmp originalGibs24Berserk;
 static uint8_t originalGibs24Ready;
+static uint8_t originalGibs24BerserkReady;
 static uint8_t originalGibs24Unavailable;
 static uint8_t originalGibs24Report;
 
@@ -506,6 +508,7 @@ static uint32_t drawOriginalGibChunks(uint16_t* framebuffer,
     uint32_t pixels = 0U;
     uint32_t i;
     uint8_t rowBase;
+    const EspNativeIndexedBmp* sheet = &originalGibs24;
     if (outFallback == NULL || framebuffer == NULL) return 0U;
     *outFallback = 1U;
     if (originalGibs24Unavailable != 0U ||
@@ -548,6 +551,32 @@ static uint32_t drawOriginalGibChunks(uint16_t* framebuffer,
                (unsigned int)sizeof(originalGibs24));
     }
 
+    {
+        const EspNativeGameplayPlayerState* player =
+            EspNativeGameplayPlayerState_view();
+        if (player != NULL && player->active == 1U &&
+            player->berserkerTics != 0U) {
+            if (originalGibs24BerserkReady == 0U) {
+                uint32_t p;
+                originalGibs24Berserk = originalGibs24;
+                for (p = 0U; p < originalGibs24Berserk.paletteCount; ++p) {
+                    const uint16_t original =
+                        originalGibs24.paletteRgb565[p];
+                    /* Desktop SDL has a color-key by indexed pixel ID.
+                     * The native indexed blitter keys by RGB565 instead:
+                     * do not recolor magenta or it becomes opaque pink. */
+                    if (original != 0xf81fU) {
+                        originalGibs24Berserk.paletteRgb565[p] =
+                            EspNativeGibSheet_berserk565(original);
+                    }
+                }
+                originalGibs24BerserkReady = 1U;
+                printf("[GIBSHEET] BERSERK palette=red+8-greenblue-half key=magenta preserved=1 metadata=bounded gameplayRng=untouched\n");
+            }
+            sheet = &originalGibs24Berserk;
+        }
+    }
+
     /* Legacy ParticleSystem_calculateParticles chooses randNext%6,
      * then -(1+(randNext+cnt2)%6) for the first five chunk particles.
      * We retain its modulo-six row family but drive positions and frame
@@ -563,12 +592,12 @@ static uint32_t drawOriginalGibChunks(uint16_t* framebuffer,
         const uint8_t variant = (uint8_t)((rowBase + i + 1U) % 6U);
         EspNativeGibSheetRect rect;
         if (EspNativeGibSheet_plan(
-                nowMs, variant, x, y, vx, originalGibs24.width,
-                originalGibs24.height, &rect)) {
+                nowMs, variant, x, y, vx, sheet->width,
+                sheet->height, &rect)) {
             EspNativeIndexedBmpStats drawStats;
             memset(&drawStats, 0, sizeof(drawStats));
             if (EspNativeIndexedBmp_blit(
-                    &originalGibs24, framebuffer, DOOMRPG_LOGICAL_WIDTH,
+                    sheet, framebuffer, DOOMRPG_LOGICAL_WIDTH,
                     DOOMRPG_LOGICAL_HEIGHT, rect.sourceX, rect.sourceY,
                     rect.width, rect.height, rect.destinationX,
                     rect.destinationY, 1U, &drawStats) !=
@@ -840,7 +869,9 @@ static void resetFx(void) {
     memset(&gibFxOwner, 0, sizeof(gibFxOwner));
     gibFxOwner.activeSpriteIndex = GIBFX_NO_SPRITE;
     memset(&originalGibs24, 0, sizeof(originalGibs24));
+    memset(&originalGibs24Berserk, 0, sizeof(originalGibs24Berserk));
     originalGibs24Ready = 0U;
+    originalGibs24BerserkReady = 0U;
     originalGibs24Unavailable = 0U;
     originalGibs24Report = 0U;
     memset(&hitFxOwner, 0, sizeof(hitFxOwner));
