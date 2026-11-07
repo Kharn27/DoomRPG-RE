@@ -1019,6 +1019,47 @@ static void servicePlayerPainExpiry(struct DoomRPG_s* doomRpgBase) {
            (unsigned int)frame.frameAfterFNV);
 }
 
+/* Two source atlas poses over a short 350ms corpse-gib lease:
+ * initial painted pose, then one present >=175ms later. Never an eager
+ * game-FPS loop or catch-up burst. A busy PAK/dialog/touch lease skips
+ * that visual tick rather than delaying player input. */
+static void serviceGibAnimation(struct DoomRPG_s* doomRpgBase) {
+    DoomRPG_t* runtime=(DoomRPG_t*)doomRpgBase;
+    const EspPlayerViewState* view;
+    EspNativeGameplayFrameStats frame;
+    const uint32_t nowMs=DoomRPG_GetUpTimeMS();
+    uint32_t ageMs;
+    if (gibFxOwner.active==0U ||
+        gibFxOwner.activeFrameTick!=0U ||
+        gibFxOwner.clearAtMs==0U ||
+        !EspNativeResidentGameplay_ownsWorldPresent() ||
+        EspNativeResidentGameplay_isAutomapActive() ||
+        EspNativeGameplayControls_isActive() ||
+        EspNativeGameplayEventChain_isWaiting() ||
+        EspAssetPack_isOpen()) return;
+    ageMs=nowMs-(gibFxOwner.clearAtMs-GIBFX_DISPLAY_MS);
+    if (ageMs < ESP_NATIVE_GIB_FRAME_MS || ageMs >= GIBFX_DISPLAY_MS)
+        return;
+    view=EspPlayerView_view();
+    if (runtime==NULL || runtime->render==NULL || view==NULL ||
+        view->active!=1U || view->viewX!=view->destX ||
+        view->viewY!=view->destY ||
+        view->viewAngle!=view->destAngle) return;
+    memset(&frame,0,sizeof frame);
+    if (!EspNativeGameplayFrame_renderTurn(
+            runtime->render,(uint8_t)view->viewAngle,&frame)) {
+        printf("[GIBFX] ANIM-RETRY sprite=%u frame=first->second cause=redraw-failed\n",
+               (unsigned int)gibFxOwner.activeSpriteIndex);
+        return;
+    }
+    gibFxOwner.activeFrameTick=1U;
+    printf("[GIBFX] ANIM-TICK sprite=%u ageMs=%u frame=%08x presented=%u atlas=source-175ms step=1/1 gameplayRng=untouched\n",
+           (unsigned int)gibFxOwner.activeSpriteIndex,
+           (unsigned int)ageMs,
+           (unsigned int)frame.frameAfterFNV,
+           (unsigned int)frame.finalPresented);
+}
+
 static void serviceExpiry(struct DoomRPG_s* doomRpg) {
     DoomRPG_t* runtime = (DoomRPG_t*)doomRpg;
     const EspPlayerViewState* playerView;
@@ -1121,6 +1162,7 @@ void __wrap_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg) {
     serviceHitExpiry(doomRpg);
     servicePlayerPainShake(doomRpg);
     servicePlayerPainExpiry(doomRpg);
+    serviceGibAnimation(doomRpg);
     serviceExpiry(doomRpg);
     /* A showStats=0 CHANGEMAP is staged by resident gameplay and consumed only
      * after that source-map service has returned from its SELECT transaction. */
