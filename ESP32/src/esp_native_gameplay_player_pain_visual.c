@@ -135,6 +135,19 @@ int EspNativePlayerPainVisual_paintImpactBitshape(
         sourceXMin < 0 || sourceYMin < 0 ||
         sourceXMin + sourceWidth > 64 ||
         sourceYMin + sourceHeight > 64) return -1;
+    /* Strictly preflight the whole source before touching a single
+     * framebuffer byte. This also keeps failed/malformed optional artwork
+     * from corrupting the already-proven player damage presentation. */
+    for (column=0U;column<sourceWidth;++column) {
+        const uint8_t* mask=columnMasks+column*columnPitch;
+        for (row=0U;row<sourceHeight;++row) {
+            if ((mask[row>>3U]&(uint8_t)(1U<<(row&7U)))!=0U)
+                ++expectedOpaque;
+        }
+    }
+    if(expectedOpaque==0U ||
+       packedBytes!=((expectedOpaque+1U)>>1U)) return -1;
+    expectedOpaque=0U;
     /* Decode the EXACT active-pixel scan order used by the original
      * bitshape; source masks are column-major, lsb-first rows. */
     for (column=0U;column<sourceWidth;++column) {
@@ -142,8 +155,7 @@ int EspNativePlayerPainVisual_paintImpactBitshape(
         for (row=0U;row<sourceHeight;++row) {
             int x,y;
             uint16_t color;
-            if ((mask[row>>3U] & (uint8_t)(1U<<(row&7U)))==0U) continue;
-            if ((expectedOpaque>>1U)>=packedBytes) return -1;
+            if ((mask[row>>3U]&(uint8_t)(1U<<(row&7U)))==0U) continue;
             color=palette[
                 (packedTexels[expectedOpaque>>1U] >>
                  ((expectedOpaque&1U)*4U)) & 15U];
@@ -156,8 +168,6 @@ int EspNativePlayerPainVisual_paintImpactBitshape(
             ++expectedOpaque;
         }
     }
-    if(expectedOpaque == 0U ||
-       packedBytes != ((expectedOpaque+1U)>>1U)) return -1;
     return (int)px;
 }
 
