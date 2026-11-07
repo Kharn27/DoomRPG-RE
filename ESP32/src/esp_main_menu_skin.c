@@ -318,6 +318,37 @@ int EspMainMenuSkin_paintPlate(uint16_t* fb, int stride,
     return 1;
 }
 
+/* Unframed industrial modal title, modeled on the death-menu stencil.
+ * Both native reports share exactly this paint; the longest 5x7 title
+ * (MISSION COMPLETE, 16 glyphs at x34..128) has a fully clear ink corridor.
+ * Leave the rest of the 160x120 framebuffer, metrics and tap targets alone. */
+int EspMainMenuSkin_paintModalTitleStencil(uint16_t* fb, int stride,
+                                           int width, int height) {
+    const int l = 0, t = 0, r = SKIN_W - 1, b = SKIN_H - 1;
+    int stripe, y;
+    if (fb == NULL || width != SKIN_W || height != SKIN_H ||
+        stride < width) return 0;
+
+    horizontal(fb, stride, 9, 25, 7, l, t, r, b, 0x6b4dU);
+    horizontal(fb, stride, 134, 150, 7, l, t, r, b, 0x6b4dU);
+    for (stripe = 0; stripe < 3; ++stripe) {
+        const uint16_t hatch = stripe == 1 ? 0x632bU :
+            EspMainMenuSkin_uiAccentDim();
+        for (y = 10; y <= 23; ++y) {
+            const int x = 11 + stripe * 5 + (y - 10) / 7;
+            dot(fb, stride, x, y, l, t, r, b, hatch);
+            dot(fb, stride, x + 1, y, l, t, r, b, hatch);
+            dot(fb, stride, SKIN_W - 2 - x, y, l, t, r, b, hatch);
+            dot(fb, stride, SKIN_W - 1 - x, y, l, t, r, b, hatch);
+        }
+    }
+    horizontal(fb, stride, 47, 112, 27, l, t, r, b,
+               EspMainMenuSkin_uiAccentDim());
+    horizontal(fb, stride, 73, 86, 27, l, t, r, b,
+               EspMainMenuSkin_uiAccent());
+    return 1;
+}
+
 int EspMainMenuSkin_paint(uint16_t* fb, int stride,
                           int width, int height, int item,
                           EspMainMenuSkinState state) {
