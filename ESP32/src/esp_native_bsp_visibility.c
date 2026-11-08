@@ -14,6 +14,7 @@
 #include "esp_native_dynamic_clip.h"
 #include "esp_native_sprite_visual_legacy.h"
 #include "esp_player_view_state.h"
+#include "platform_video_config.h"
 
 #define MAX_BSP_DEPTH 64U
 /* Small immutable BSP leaf lookup sidecar: 2 KB BSS max, no map-expanded
@@ -127,7 +128,7 @@ static int setupView(Render_t* r, const EspPlayerViewState* v) {
 
     if (r == NULL || v == NULL || r->framebuffer == NULL ||
         r->columnScale == NULL || r->screenWidth != SCREEN_W ||
-        r->screenHeight != SCREEN_H || r->screenX != 0 || r->screenY != 20) {
+        r->screenHeight != SCREEN_H) {
         return 0;
     }
 
@@ -150,7 +151,10 @@ static int setupView(Render_t* r, const EspPlayerViewState* v) {
     r->viewCos = cos_;
     r->viewTransY = -((vx * r->viewSin) + (vy * r->viewCos));
     r->viewAngle = v->viewAngle;
-    r->pixels = (short*)&r->framebuffer[r->pitch * r->screenY];
+    /* Logical viewport origin is an immutable CYD layout contract, not a
+     * duplicated mutable Render_t screenX/screenY pair. */
+    r->pixels = (short*)&r->framebuffer[r->pitch * DOOMRPG_VIEWPORT_Y +
+        DOOMRPG_VIEWPORT_X * (int)sizeof(short)];
     r->screenLeft = 0;
     r->screenTop = 0;
     r->screenRight = SCREEN_W;
@@ -478,7 +482,6 @@ int EspNativeBspVisibility_buildForView(struct Render_s* renderBase,
     if (render == NULL || outState == NULL || runtime == NULL || view == NULL ||
         render->framebuffer == NULL || render->columnScale == NULL ||
         render->screenWidth != SCREEN_W || render->screenHeight != SCREEN_H ||
-        render->screenX != 0 || render->screenY != 20 ||
         !EspMapRuntime_isLoaded() || runtime->nodeCount == 0U ||
         runtime->nodeCount > ESP_NATIVE_BSP_VISIBILITY_MAX_NODES ||
         runtime->lineCount == 0U ||
