@@ -26,13 +26,14 @@ def macro(name):
 start = model.index("static const char* const helpLines[]")
 end = model.index("#define MAIN_HELP_LINE_COUNT", start)
 lines = re.findall(r'^\s*"([^"]*)",$', model[start:end], re.M)
-assert len(lines) == 84
+assert len(lines) == 98
 assert len(lines) % 7 == 0
-assert [lines[p * 7] for p in range(12)] == [
+assert [lines[p * 7] for p in range(14)] == [
     "DOOM RPG ON CYD", "DOOM RPG: THE GAME", "MENU CONTROLS",
-    "TURN-BASED GAME", "TOP HUD BAR", "CYD TOUCH (1/2)",
-    "CYD TOUCH (2/2)", "ACTION / CENTER", "WEAPONS & STATUS",
-    "SYSTEM / SAVE LOAD", "TACTICAL TIPS", "ABOUT CYD PORT"]
+    "TURN-BASED GAME", "TOP HUD BAR", "MAIN GAMEPLAY",
+    "TOP ROW: MOVE", "MIDDLE ROW: ACTION", "BOTTOM ROW: WEAPONS",
+    "ACTION / CENTER", "WEAPONS & STATUS", "SYSTEM / SAVE LOAD",
+    "TACTICAL TIPS", "ABOUT CYD PORT"]
 assert lines[1:6] == [
     "Kharn27", "Erick V. Garcia", "id + Fountainhead",
     "John Carmack:", "Endless admiration!"]
@@ -47,24 +48,30 @@ hud_page = lines[4 * 7 : 5 * 7]
 assert hud_page == [
     "TOP HUD BAR", "3 VIRTUAL BUTTONS", "LEFT: game menu",
     "CENTER: pass a turn", "RIGHT: show automap", "", ""]
-assert lines[8 * 7 + 6] == "Tap gun: weapons"
+assert lines[10 * 7 + 6] == "Tap gun: weapons"
 scene_page = lines[5 * 7 : 6 * 7]
-assert scene_page == [
-    "CYD TOUCH (1/2)", "",
-    "GREEN: MOVE / TURN", "RED: ACT", "YELLOW: WEAPONS", "", ""]
-assert lines[6 * 7] == "CYD TOUCH (2/2)"
+assert scene_page == ["MAIN GAMEPLAY", "", "", "", "", "", ""]
+assert [lines[i * 7 : i * 7 + 5] for i in range(6, 9)] == [
+    ["TOP ROW: MOVE", "3 TOP TOUCH ZONES", "LEFT: STRAFE LEFT",
+     "CENTER: MOVE FORWARD", "RIGHT: STRAFE RIGHT"],
+    ["MIDDLE ROW: ACTION", "3 MIDDLE TOUCH ZONES", "LEFT: TURN LEFT",
+     "CENTER: ATTACK / USE", "RIGHT: TURN RIGHT"],
+    ["BOTTOM ROW: WEAPONS", "3 BOTTOM TOUCH ZONES", "LEFT: PREV WEAPON",
+     "CENTER: MOVE BACK", "RIGHT: NEXT WEAPON"]]
+assert all(lines[i * 7 + 5:i * 7 + 7] == ["", ""] for i in range(6, 9))
+assert "#define MAIN_HELP_MAX_LINES 98" in model
 
 assert "DOWN: controls" not in lines
 assert max(map(len, lines)) <= 20  # source font=7px/char, x=12
 assert len(lines) == len(set((i, line) for i, line in enumerate(lines)))
 assert any("CYD" in line for line in lines)
 assert all(label in lines for label in (
-    "DOOM RPG: THE GAME", "TURN-BASED GAME", "CYD TOUCH (1/2)",
+    "DOOM RPG: THE GAME", "TURN-BASED GAME", "MAIN GAMEPLAY",
     "TOP HUD BAR", "WEAPONS & STATUS", "SYSTEM / SAVE LOAD",
     "MENU CONTROLS", "TACTICAL TIPS", "ABOUT CYD PORT"))
 assert all(term in lines for term in (
     "LEFT: game menu", "CENTER: pass a turn", "RIGHT: show automap",
-    "Prev gun / Back /", "Turn L / ACT /", "Tap again: confirm."))
+    "LEFT: PREV WEAPON", "CENTER: ATTACK / USE", "Tap again: confirm."))
 assert "EspLegacyAssetSource_readAlloc" not in model
 assert "EspLegacyAssetSource_stat" not in model
 assert "static int buildBoundedHelpModel(" in model
@@ -239,7 +246,7 @@ assert 27 + 12 - 1 < 43
 assert 88 + 12 - 1 < 100
 
 # Breath deliberately slowed from 1.32s to 2.64s (220ms/step),
-# shared by the two illustrated pages, without a blind FPS loop.
+# shared by MAIN GAMEPLAY and each instructional row, without a blind FPS loop.
 assert macro("MAIN_HELP_HUD_BREATH_STEP_MS") == 220
 assert macro("MAIN_HELP_HUD_BREATH_STEPS") == 12
 wave = [n if n <= 6 else 12 - n for n in range(12)]
@@ -257,7 +264,7 @@ assert 'EspNativeGameplayInput_route(' not in actions
 assert 'EspNativeGameplayHud_routeInitial(' not in actions
 assert 'DoomRPG_esp32MainMenuReturnToMain(' in actions
 
-# CYD TOUCH 1/2 shows the actual native-palette grid over a bounded
+# MAIN GAMEPLAY shows the actual native-palette grid over a bounded
 # PAK-derived wall-perspective illustration; never render a gameplay map here.
 scene = (SRC / "esp_native_help_scene.c").read_text()
 scene_api = (INC / "esp_native_help_scene.h").read_text()
@@ -265,6 +272,22 @@ pack = (SRC / "esp_asset_pack.cpp").read_text()
 pack_api = (INC / "esp_asset_pack.h").read_text()
 controls = (SRC / "esp_native_gameplay_controls.c").read_text()
 assert '#define MAIN_HELP_SCENE_PAGE_SCROLL (5 * MAIN_HELP_VISIBLE_LINES)' in actions
+assert '#define MAIN_HELP_ROW_FIRST_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)' in actions
+assert '#define MAIN_HELP_ROW_LAST_SCROLL (8 * MAIN_HELP_VISIBLE_LINES)' in actions
+assert 'helpIsRowHelpPage(menuSystem->scrollIndex)' in actions
+assert 'helpIsAnimatedScenePage(' in actions
+assert 'helpDoomRpg->menuSystem->scrollIndex)' in actions
+assert 'EspNativeHelpScene_paintRow(' in actions
+assert '64 + (i - 2) * MAIN_HELP_LINE_HEIGHT' in actions
+assert 64 + 2 * 12 + 12 - 1 == 99
+assert 'EspNativeHelpScene_paintRow(uint16_t* framebuffer, uint8_t sourceRow,' in scene_api
+assert 'if (level == 0U) return;' in scene
+assert 'if (fb == NULL || !material.ready || sourceRow > 2U || level > 6U)' in scene
+assert 'static void helpPaintTouchCell(' in scene
+assert 'const int top = 39, bottom = 61;' in scene
+assert 'sourceRow, col,' in scene
+assert 'top, bottom, level);' in scene
+assert actions.count('helpSceneBreathStep = step;') == 2
 assert 'else if (menuSystem->scrollIndex == MAIN_HELP_SCENE_PAGE_SCROLL &&' in actions
 assert 'EspNativeHelpScene_isReady()' in actions
 assert 'EspNativeHelpScene_paint(' in actions
@@ -392,6 +415,6 @@ for scroll in range(len(lines)):
     page = (clamped + 6) // 7 + 1
     assert 1 <= page <= (len(lines) + 6) // 7
 
-print("PASS HELP: 12 pages, credits/story, TOP HUD fifth and 128x16 k.bmp,")
-print("           per-prefix theme tones, 2.64s breath, bright 144x68 PAK scene,")
-print("           bounded 3x3 semantic grid, flash-map identity and FNV release")
+print("PASS HELP: 14 pages, 3 illustrated input rows after MAIN GAMEPLAY,")
+print("           220ms all-buttons-off breath, bounded 144x68+144x23 PAK scene,")
+print("           theme/flash map, original 3x3 controls and FNV release")
