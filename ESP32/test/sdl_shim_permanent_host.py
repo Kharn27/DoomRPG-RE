@@ -174,8 +174,6 @@ static void exerciseIndexed(int bpp) {
     SDL_Rect bad{0, 0, 0, 2};
     assert(SDL_RenderCopy(nullptr, t, &bad, &dst) == -1);
     SDL_DestroyTexture(t);
-    if (pixelsFreed != 1 || paletteFreed != 1)
-        std::fprintf(stderr, "indexed bpp=%d frees pixel=%d palette=%d\\n", bpp, pixelsFreed, paletteFreed);
     assert(pixelsFreed == 1 && paletteFreed == 1);
     trackedPixels = trackedPalette = nullptr;
 }
@@ -244,6 +242,7 @@ def main():
         test.write_text(HARNESS)
         output = tmp / "permanent"
         cmd = CXX + ["-std=c++17", "-O2", "-Wall", "-Wextra", "-Werror",
+                     "-fno-builtin-free", "-fno-builtin-calloc",
                      "-Wl,--wrap=calloc", "-Wl,--wrap=free",
                      "-I", str(tmp), "-I", str(ROOT),
                      "-I", str(ROOT / "ESP32/include"),
