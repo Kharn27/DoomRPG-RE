@@ -385,17 +385,14 @@ static int helpPaintTopHudIllustration(uint16_t* framebuffer) {
     static const char* const labels[3] = {"MENU", "PASS TURN", "MAP"};
     const int step = helpBreathStepAt(DoomRPG_GetUpTimeMS());
     const uint8_t level = helpBreathLevel(step);
-    const uint8_t tint = (uint8_t)(2U + level);
-    const uint16_t neon = (uint16_t)(0x0013U + 2U * level);
+    const uint8_t power = EspNativeHelpScene_breathPower(level);
+    const uint8_t tint = (uint8_t)(power / 16U);
+    const uint16_t neon = (uint16_t)(((uint32_t)power * 31U) / 255U);
     int zone, x, y;
 
     if (!helpPaintMiniHudBacking(framebuffer)) return 0;
-    /* The SAME zero-level breath used by 3x3 and each row: backing
-     * remains visible, but every blue frame/button label is off. */
-    if (level == 0U) {
-        helpHudBreathStep = step;
-        return 1;
-    }
+    /* MENU/PASS/MAP remain legible throughout the breath.
+     * Only the blue neon/texture gain follows a smoothstep. */
 
     /* Gently bias the original textured pixels toward blue, not a flat
      * opaque rectangle. The high five bits of RGB565 blue stay bounded. */
@@ -411,6 +408,7 @@ static int helpPaintTopHudIllustration(uint16_t* framebuffer) {
         }
     }
 
+    if (power > 0U) {
     for (zone = 0; zone < 3; ++zone) {
         for (x = left[zone]; x <= right[zone]; ++x) {
             framebuffer[MAIN_HELP_HUD_BAR_Y * DOOMRPG_LOGICAL_WIDTH + x] =
@@ -428,11 +426,12 @@ static int helpPaintTopHudIllustration(uint16_t* framebuffer) {
     for (zone = 0; zone < 2; ++zone) {
         x = zone == 0 ? left[1] : left[2];
         framebuffer[(MAIN_HELP_HUD_BAR_Y + 1) * DOOMRPG_LOGICAL_WIDTH + x] =
-            0x001fU;
+            neon;
         framebuffer[(MAIN_HELP_HUD_BAR_Y + MAIN_HELP_HUD_BAR_HEIGHT - 2) *
-                    DOOMRPG_LOGICAL_WIDTH + x] = 0x001fU;
+                    DOOMRPG_LOGICAL_WIDTH + x] = neon;
     }
 
+    }
     for (zone = 0; zone < 3; ++zone)
         helpPaintMiniHudLabel(framebuffer, labels[zone],
                               left[zone], right[zone],
@@ -533,50 +532,50 @@ int DoomRPG_esp32MainMenuReturnToMain(struct DoomRPG_s* doomRpgBase,
     return 1;
 }
 
-/* The bottom game HUD is not a 3-button touch grid. Show the real k.bmp
- * panel and a bounded procedural *miniature* of its HP/armor/face/ammo/heading
- * readouts (not a live character snapshot). No l.bmp/m.bmp preload required. */
+/* Original k/m/l/o/a BMPs, exact gameplay HUD painter, no substitutes.
+ * Stage y100..119 once before HELP footer plates overwrite those pixels,
+ * and keep only a 128x16 RGB565 thumbnail for subsequent soft repaints. */
 static int helpPaintBottomHudIllustration(uint16_t* fb) {
-    static const int separator[4] = {42, 68, 90, 117};
     const int step = helpBreathStepAt(DoomRPG_GetUpTimeMS());
-    const uint8_t level = helpBreathLevel(step);
-    const uint16_t blue = (uint16_t)(0x0013U + 2U * level);
-    const uint16_t skin = 0xfba0U;
-    int i, x, y;
-
-    if (!helpPaintMiniHudBacking(fb)) return 0;
-    if (level == 0U) {
-        helpHudBreathStep = step;
-        return 1;
+    const uint8_t power = EspNativeHelpScene_breathPower(
+        helpBreathLevel(step));
+    const uint16_t blue = (uint16_t)(((uint32_t)power * 31U) / 255U);
+    int x, y;
+    if (fb == NULL) return 0;
+    if (!helpBottomHudReady) {
+        if (!EspNativeGameplayHud_paintHelpBottomBand(fb)) {
+            printf("[MAINHELP] BOTTOM-HUD FAIL native k/m/l/o/a ownership\n");
+            return 0;
+        }
+        for (y = 0; y < MAIN_HELP_HUD_BAR_HEIGHT; ++y) {
+            for (x = 0; x < MAIN_HELP_HUD_BAR_WIDTH; ++x) {
+                const int sy = 100 + y * 20 / MAIN_HELP_HUD_BAR_HEIGHT;
+                const int sx = x * 160 / MAIN_HELP_HUD_BAR_WIDTH;
+                helpBottomHudMini[y * MAIN_HELP_HUD_BAR_WIDTH + x] =
+                    fb[sy * DOOMRPG_LOGICAL_WIDTH + sx];
+            }
+        }
+        helpBottomHudReady = 1U;
     }
-    for (x = MAIN_HELP_HUD_BAR_X;
-         x < MAIN_HELP_HUD_BAR_X + MAIN_HELP_HUD_BAR_WIDTH; ++x) {
-        fb[MAIN_HELP_HUD_BAR_Y * DOOMRPG_LOGICAL_WIDTH + x] = blue;
-        fb[(MAIN_HELP_HUD_BAR_Y + MAIN_HELP_HUD_BAR_HEIGHT - 1) *
-           DOOMRPG_LOGICAL_WIDTH + x] = blue;
-    }
-    for (i = 0; i < 4; ++i)
-        for (y = MAIN_HELP_HUD_BAR_Y; y < MAIN_HELP_HUD_BAR_Y + 16; ++y)
-            fb[y * DOOMRPG_LOGICAL_WIDTH + separator[i]] = blue;
+    for (y = 0; y < MAIN_HELP_HUD_BAR_HEIGHT; ++y)
+        for (x = 0; x < MAIN_HELP_HUD_BAR_WIDTH; ++x)
+            fb[(MAIN_HELP_HUD_BAR_Y + y) * DOOMRPG_LOGICAL_WIDTH +
+               MAIN_HELP_HUD_BAR_X + x] =
+                helpBottomHudMini[y * MAIN_HELP_HUD_BAR_WIDTH + x];
 
-    helpPaintMiniHudLabel(fb, "HP30", 16, 41, 47);
-    helpPaintMiniHudLabel(fb, "AR20", 43, 67, 47);
-    helpPaintMiniHudLabel(fb, "AM12", 91, 116, 47);
-    helpPaintMiniHudLabel(fb, "N", 118, 143, 47);
-    /* Familiar marine face: small helmet/flesh icon, two eyes and mouth.
-     * 11x11 inside its own group x69..89. */
-    for (y = 45; y <= 55; ++y) {
-        for (x = 75; x <= 85; ++x) {
-            const int dx = x - 80, dy = y - 50;
-            if (dx * dx + dy * dy <= 27)
-                fb[y * DOOMRPG_LOGICAL_WIDTH + x] = skin;
+    /* Original icons, face and native a.bmp numbers never blink.
+     * Only a restrained blue outer hairline breathes above them. */
+    if (blue != 0U) {
+        for (x = MAIN_HELP_HUD_BAR_X;
+             x < MAIN_HELP_HUD_BAR_X + MAIN_HELP_HUD_BAR_WIDTH; ++x) {
+            const int row0 = MAIN_HELP_HUD_BAR_Y * DOOMRPG_LOGICAL_WIDTH + x;
+            const int row1 = (MAIN_HELP_HUD_BAR_Y +
+                             MAIN_HELP_HUD_BAR_HEIGHT - 1) *
+                             DOOMRPG_LOGICAL_WIDTH + x;
+            fb[row0] = (uint16_t)((fb[row0] & 0xffe0U) | blue);
+            fb[row1] = (uint16_t)((fb[row1] & 0xffe0U) | blue);
         }
     }
-    fb[48 * DOOMRPG_LOGICAL_WIDTH + 77] = 0x0000U;
-    fb[48 * DOOMRPG_LOGICAL_WIDTH + 83] = 0x0000U;
-    for (x = 78; x <= 82; ++x)
-        fb[53 * DOOMRPG_LOGICAL_WIDTH + x] = 0x6000U;
-
     helpHudBreathStep = step;
     return 1;
 }
