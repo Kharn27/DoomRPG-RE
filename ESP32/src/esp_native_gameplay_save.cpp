@@ -3467,17 +3467,16 @@ static void paintMainSlots(void) {
     const uint8_t first = slotFocus <= 5U ? 1U : 6U;
     char text[40];
     fillRect(fb, 0, 0, 159, 119, ESP_HUB_COLOR_BG);
-    /* This is a non-clickable title, not a raised button: reuse the exact
-     * LOAD/LEVEL/DEATH report stencil and leave the center label unobscured. */
-    if (!EspMainMenuSkin_paintModalTitleStencil(
+    /* Standalone LOAD title only: no side triple-hatches. The restrained
+     * centered signal rail is NOT a clickable chassis and stays clear of
+     * the 5x9 gradient lettering at y11..19. Other modal titles retain
+     * their established stencil and cannot regress through this change. */
+    fillRect(fb, 45, 27, 114, 27, EspMainMenuSkin_uiAccentDim());
+    fillRect(fb, 73, 27, 86, 27, EspMainMenuSkin_uiAccent());
+    if (!EspMainMenuSkin_paintText(
             fb, DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_WIDTH,
-            DOOMRPG_LOGICAL_HEIGHT)) return;
-    drawCenteredWord(fb, 80, 11, "LOAD GAME", EspMainMenuSkin_uiInk());
-    /* Compact 3x5 fraction sits above the right-column UP key; its x132..142,
-     * y25..29 ink is clear of the stencil, list and y34 arrow chassis. */
-    snprintf(text, sizeof(text), "%u/2", first == 1U ? 1U : 2U);
-    EspNativeGameplayHubTouchUi_drawMiniText(
-        fb, text, 137, 25, EspMainMenuSkin_uiAccent());
+            DOOMRPG_LOGICAL_HEIGHT, 28, 7, 131, 23,
+            "LOAD GAME", 0, 1)) return;
     for (uint8_t row = 0U; row < 5U; ++row) {
         const uint8_t slot = first + row;
         const int y = 32 + row * 14;
@@ -3492,6 +3491,12 @@ static void paintMainSlots(void) {
     }
     drawSlotNav(fb, 34, 62, false, first != 1U);
     drawSlotNav(fb, 69, 98, true, first == 1U);
+    /* Page fraction belongs BELOW DOWN, not in the title area.
+     * Mini 3x5 text occupies x132..142/y106..110: fully outside both
+     * arrow hitboxes and the BACK chassis x34..111/y102..118. */
+    snprintf(text, sizeof(text), "%u/2", first == 1U ? 1U : 2U);
+    EspNativeGameplayHubTouchUi_drawMiniText(
+        fb, text, 137, 106, EspMainMenuSkin_uiAccent());
     /* Raise BACK 3px to obtain a real 17px symmetric industrial plate.
      * Only one blank scanline separates it from the fifth slot (y88..100),
      * and its x34..111 touch target remains independent of the nav arrows. */
@@ -3500,7 +3505,13 @@ static void paintMainSlots(void) {
             DOOMRPG_LOGICAL_HEIGHT, kMainLoadBackLeft, kMainLoadBackTop,
             kMainLoadBackRight, kMainLoadBackBottom,
             ESP_MAIN_MENU_SKIN_IDLE)) return;
-    drawCenteredWord(fb, 72, 107, "BACK", EspMainMenuSkin_uiInk());
+    /* The same full nine-row theme gradient as LOAD GAME; black inset
+     * at y106..114 keeps every glyph away from the copper seams. */
+    if (!EspMainMenuSkin_paintText(
+            fb, DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_WIDTH,
+            DOOMRPG_LOGICAL_HEIGHT, kMainLoadBackLeft, kMainLoadBackTop,
+            kMainLoadBackRight, kMainLoadBackBottom,
+            "BACK", 0, 1)) return;
     (void)Esp32PlatformVideo_present();
 }
 extern "C" int EspNativeGameplaySave_mainSelectorBegin(void) {
