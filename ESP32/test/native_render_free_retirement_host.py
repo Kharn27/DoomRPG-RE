@@ -164,4 +164,4 @@ with tempfile.TemporaryDirectory(prefix="private-render-free-") as temp:
                     "-Wall", "-Wextra", "-Werror", str(p), "-o", str(exe)],
                    check=True)
     subprocess.run([str(exe)], check=True)
-print("PASS Render_free=retired FNV=6ebb123a no SDL texture; Render_freeRuntime FNV=90894947")
+print("PASS Render_free=retired FNV=b9c5fcf9 no SDL texture; Render_freeRuntime FNV=90894947")

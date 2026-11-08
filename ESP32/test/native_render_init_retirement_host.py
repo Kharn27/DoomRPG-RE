@@ -82,4 +82,4 @@ with tempfile.TemporaryDirectory(prefix="native-render-init-") as d:
     subprocess.run([shutil.which("cc") or "cc", "-std=c11", "-O2",
                     "-Wall", "-Wextra", "-Werror", str(p), "-o", exe], check=True)
     subprocess.run([exe], check=True)
-print("PASS Render_init=retired nativeRoot=yes bodyFNV=93715dad raster-flags=desktop-only")
+print("PASS Render_init=retired nativeRoot=yes bodyFNV=d5805374 raster-flags=desktop-only")

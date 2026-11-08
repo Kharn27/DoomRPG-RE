@@ -144,4 +144,4 @@ with tempfile.TemporaryDirectory(prefix="render-setup-retirement-") as d:
     subprocess.run([shutil.which("cc") or "cc", "-std=c11", "-O2", "-Wall",
                     "-Wextra", "-Werror", str(source), "-o", exe], check=True)
     subprocess.run([exe], check=True)
-print("PASS Render_setup=retired owner=layout FNV=9d11fa55 native-screen-origin=SDL_Rect owner; 4096 cycles, 1 OOM, arrays=640B")
+print("PASS Render_setup=retired owner=layout FNV=67b0fc80 native-screen-origin=SDL_Rect owner; 4096 cycles, 1 OOM, arrays=640B")
