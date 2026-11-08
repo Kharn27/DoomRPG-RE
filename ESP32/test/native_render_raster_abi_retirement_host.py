@@ -361,8 +361,9 @@ assert "boolean skipCull;" in HEADER
 assert "sizeof(Render_t) == 156U" in startup
 
 # Post-PR252: two desktop setup-only half-screen intermediates have no
-# native readers. Preserve halfScreenHeight; retire the unused desktop
-# fracHalfScreenWidth intermediate too. Check every compiled native owner.
+# Render_t readers. Preserve halfScreenHeight; retire the desktop
+# fracHalfScreenWidth *Render member* while keeping the explicit native
+# EspNativeRenderProjection.fracHalfScreenWidth parameter for geometry parity.
 for field in ("halfScreenWidth", "fracHalfScreenHeight", "fracHalfScreenWidth"):
     decl = r"\bint\s+" + field + r";"
     guard = (r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
@@ -376,7 +377,13 @@ for field in ("halfScreenWidth", "fracHalfScreenHeight", "fracHalfScreenWidth"):
             code = path.read_text(encoding="latin-1")
             code = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"',
                           " ", code, flags=re.S)
-            assert not re.search(r"(?:->|\.)\s*" + field + r"\b", code), (path, field)
+            if field == "fracHalfScreenWidth":
+                # Explicit EspNativeRenderProjection.view->fracHalfScreenWidth
+                # remains essential; only forbid accesses to Render_t.
+                assert not re.search(r"\b(?:render|r|rootRender|renderBase)\s*->\s*"
+                                     + field + r"\b", code), (path, field)
+            else:
+                assert not re.search(r"(?:->|\.)\s*" + field + r"\b", code), (path, field)
 # Current milestone: Render_t::screenX/screenY are dead desktop-origin mirrors.
 # CYD obtains viewport origin from the owned SDL_Rect, not from Render.
 # Keep the original desktop ABI and the same diagnostic coordinate values.
