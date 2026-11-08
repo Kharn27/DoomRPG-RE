@@ -30,6 +30,15 @@ def extract(signature):
 
 draw = extract("static int drawAt(Render_t* render,")
 cross = extract("static int drawLegacyCross(Render_t* render,")
+# Compile the actual pure native fixed-width helper alongside the extracted
+# sprite bodies: no duplicated formula and no legacy Render_t mirror.
+geom_header = (ROOT / "ESP32/include/esp_render_geometry_primitives.h").read_text()
+scalar_signature = "static inline int EspNativeRenderGeometry_fracHalfScreenWidth(int screenWidth)"
+assert geom_header.count(scalar_signature) == 1
+scalar_begin = geom_header.index(scalar_signature)
+scalar_end = geom_header.index("\n}\n", scalar_begin) + len("\n}")
+scalar_owner = geom_header[scalar_begin:scalar_end]
+
 assert "uint32_t* crossAnimation" in draw
 assert "crossAnimation != NULL && *crossAnimation != UINT32_MAX" in draw
 assert "uint32_t crossAnimation = UINT32_MAX;" in cross
@@ -98,7 +107,7 @@ typedef struct {uint16_t index, logical;uint32_t info;int32_t sortZ;} Order;
 typedef struct {uint16_t logical,actual; int xMin,xMax;uint16_t palette[16];uint8_t texels[4];} Frame;
 typedef struct {
     int viewCos_,viewSin_,viewSin,viewCos,viewTransX,viewTransY;
-    int viewX,viewY,screenWidth,fracHalfScreenWidth;
+    int viewX,viewY,screenWidth;
     uint32_t rasterHash;
 } Render_t;
 typedef struct {
@@ -282,7 +291,7 @@ int main(void) {
 with tempfile.TemporaryDirectory(prefix="doomrpg-cross-reuse-") as td:
     unit=Path(td)/"cross.c"
     program=Path(td)/"cross"
-    unit.write_text(shim+"\n"+reference_draw+"\n"+reference_cross+
+    unit.write_text(shim+"\n"+scalar_owner+"\n"+reference_draw+"\n"+reference_cross+
                     "\n"+draw+"\n"+cross+"\n"+cases)
     for defines in ([], ["-DDOOMRPG_ESP32_TRACE_SPRITE=7"]):
         subprocess.run([
