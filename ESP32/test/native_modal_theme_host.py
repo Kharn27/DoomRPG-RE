@@ -62,6 +62,27 @@ assert "COLOR_GREEN" in level
 assert "TAP TO CONTINUE" in level
 assert "__real_Esp32PlatformVideo_present()" in level
 
+system = load("ESP32/src/esp_native_gameplay_save.cpp")
+
+# Both page chevrons (LOAD GAME and HUB SAVE/LOAD) now use the same real
+# industrial painter; their four touch rectangles and page predicates remain
+# exactly as before. No extra framebuffer or read of slot data for styling.
+nav = system.split("void drawSlotNav(", 1)[1].split("bool paintSaveOverlay(", 1)[0]
+assert "EspMainMenuSkin_paintNavKey(" in nav
+assert "fillRect(fb" not in nav and "drawRect(fb" not in nav
+assert "118, top, 156, bottom, next ? 1 : 0, enabled ? 1 : 0" in nav
+for call in (
+    "drawSlotNav(fb, 34, 62, false, first != 1U);",
+    "drawSlotNav(fb, 69, 98, true, first == 1U);",
+    "drawSlotNav(fb, 49, 78, false, first != 1U);",
+    "drawSlotNav(fb, 83, 112, true, first == 1U);",
+):
+    assert call in system
+assert "if (x >= 118 && x <= 156 && y >= 34 && y <= 98)" in system
+assert "if (x >= 118 && x <= 156)" in system
+assert "const bool previous = y >= 49 && y <= 78;" in system
+assert "const bool next = y >= 83 && y <= 112;" in system
+
 # HUB owns exactly its 160x120 framebuffer, and navigation remains within
 # the pre-existing tabs, inventory, notebook, weapons and SYSTEM controls.
 assert "#define HUB_UI_FOCUS EspMainMenuSkin_uiAccent()" in hubui

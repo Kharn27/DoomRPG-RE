@@ -24,6 +24,11 @@ static const SkinPalette palettes[3] = {
     {0x0800U,0x4248U,0x83ceU,0x0800U,0x2903U,0xdba5U,0x2800U,0xffffU}
 };
 
+/* Light pastel rose RGB565 (approx. #ffd6e6): the bright INFERNO ink,
+ * replacing straw-yellow on menu glyph faces and related modal labels.
+ * The bronze midtone, red foot and entirely red loading track stay put. */
+#define INFERNO_PALE_ROSE 0xfebcU
+
 /* The only mutable UI-theme state: one byte, never allocated on the heap.
  * Boot's native config loader applies it before the first MENU_MAIN paint. */
 static uint8_t selectedLetterTheme = ESP_MAIN_MENU_THEME_CLASSIC;
@@ -40,10 +45,9 @@ uint16_t EspMainMenuSkin_letterTone(int row, int rows) {
     if (rows != 5 && rows != 7 && rows != 9) return 0U;
     if (row < 0 || row >= rows) return 0U;
     if (selectedLetterTheme == ESP_MAIN_MENU_THEME_INFERNO) {
-        /* Pale warm straw-yellow -> copper/bronze -> deep Doom red.
-         * The previous 0xffe0 was pure saturated yellow. This is softer
-         * without changing font masks, shadows or other theme colors. */
-        if (row < (rows + 2) / 3) return 0xff75U;
+        /* Pale blush rose -> copper/bronze -> deep Doom red.
+         * Pure glyph-face change: masks, shadows and geometry untouched. */
+        if (row < (rows + 2) / 3) return INFERNO_PALE_ROSE;
         if (row < (2 * rows + 2) / 3) return 0xd344U;
         return 0xc002U;
     }
@@ -103,7 +107,7 @@ uint16_t EspMainMenuSkin_uiAccentDim(void) {
 }
 
 uint16_t EspMainMenuSkin_uiInk(void) {
-    static const uint16_t colors[3] = {0xf6afU, 0xff75U, 0xdff6U};
+    static const uint16_t colors[3] = {0xf6afU, INFERNO_PALE_ROSE, 0xdff6U};
     return colors[selectedLetterTheme];
 }
 
@@ -272,20 +276,22 @@ int EspMainMenuSkin_paintPlate(uint16_t* fb, int stride,
         for (x = l; x <= r; ++x) {
             const int dx = x - l;
             const int dy = y - t;
+            const int edgeY = dy < b - y ? dy : b - y;
             const int corner = dx + dy < 3 ||
                 (r - x) + dy < 3 ||
                 dx + (b - y) < 3 ||
                 (r - x) + (b - y) < 3;
             uint16_t color = p->base;
-            if (dx <= 2 || x >= r - 2 ||
-                dy <= 3 || y >= b - 3)
+            /* Match both end caps: the former bottom three-row shadow
+             * swallowed the steel rim and made the lower edge look flat.
+             * The right-hand shadow remains a deliberate lateral relief. */
+            if (dx <= 2 || x >= r - 2 || edgeY <= 3)
                 color = p->steel;
-            if (dy <= 1 && dx > 3 && x < r - 3)
+            if (edgeY <= 1 && dx > 3 && x < r - 3)
                 color = p->bevel;
-            if (dy >= b - t - 2 || dx == r)
+            if (dx == r - l)
                 color = p->shadow;
-            if (dx == 3 || x == r - 3 ||
-                dy == 4 || y == b - 4)
+            if (dx == 3 || x == r - 3 || edgeY == 4)
                 color = p->groove;
             if (corner) color = p->shadow;
             dot(fb, stride, x, y, l, t, r, b, color);
@@ -303,18 +309,55 @@ int EspMainMenuSkin_paintPlate(uint16_t* fb, int stride,
     vertical(fb, stride, r - 3, t + 7, b - 7,
              l, t, r, b, seam);
 
-    /* Bolt heads belong to the 24px+ menu/loading cards, not the 18px
-     * progress chassis: on a thin gauge they look like two unfilled end caps.
-     * Keep every MENU_MAIN pixel exactly as before. */
+    /* Mirror the two-pixel bolt heads across both caps. On the 18px
+     * progress chassis bolts still stay absent: they look like empty ends. */
     if (b - t + 1 >= 24) {
         dot(fb, stride, l + 5, t + 5, l, t, r, b, p->shadow);
         dot(fb, stride, l + 5, t + 6, l, t, r, b, p->bevel);
         dot(fb, stride, r - 5, t + 5, l, t, r, b, p->shadow);
         dot(fb, stride, r - 5, t + 6, l, t, r, b, p->bevel);
         dot(fb, stride, l + 5, b - 5, l, t, r, b, p->shadow);
+        dot(fb, stride, l + 5, b - 6, l, t, r, b, p->bevel);
         dot(fb, stride, r - 5, b - 5, l, t, r, b, p->shadow);
+        dot(fb, stride, r - 5, b - 6, l, t, r, b, p->bevel);
     }
 
+    return 1;
+}
+
+
+/* Shared industrial PAGE UP / PAGE DOWN keys used by MENU_MAIN -> LOAD
+ * and by HUB -> SAVE/LOAD. Geometry is caller-owned touch geometry:
+ * 39x29 or 39x30; the skin only paints INSIDE those fixed bounds.
+ * The arrow uses the existing theme accent, while disabled arrows use
+ * subdued steel without pretending another page is selectable. */
+int EspMainMenuSkin_paintNavKey(uint16_t* fb, int stride,
+                                 int width, int height,
+                                 int l, int t, int r, int b,
+                                 int next, int enabled) {
+    const int cx = (l + r) / 2;
+    const int cy = (t + b) / 2;
+    uint16_t arrow;
+    int i;
+    if ((next != 0 && next != 1) || (enabled != 0 && enabled != 1) ||
+        r - l + 1 != 39 || (b - t + 1 != 29 && b - t + 1 != 30))
+        return 0;
+    if (!EspMainMenuSkin_paintPlate(fb, stride, width, height,
+                                      l, t, r, b, ESP_MAIN_MENU_SKIN_IDLE))
+        return 0;
+    arrow = enabled ? EspMainMenuSkin_uiAccent() :
+                      palettes[ESP_MAIN_MENU_SKIN_IDLE].steel;
+    /* Keep the old broad 2px chevron silhouette and centering. Only the
+     * backing plate changes; zero change to arrow coordinates or touch. */
+    for (i = 0; i < 7; ++i) {
+        const int yy = next ? cy - 3 + i : cy + 3 - i;
+        const int left = cx - 7 + i;
+        const int right = cx + 7 - i;
+        horizontal(fb, stride, left, left + 2, yy, l, t, r, b, arrow);
+        horizontal(fb, stride, left, left + 2, yy + 1, l, t, r, b, arrow);
+        horizontal(fb, stride, right - 2, right, yy, l, t, r, b, arrow);
+        horizontal(fb, stride, right - 2, right, yy + 1, l, t, r, b, arrow);
+    }
     return 1;
 }
 
