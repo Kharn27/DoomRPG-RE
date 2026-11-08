@@ -3,32 +3,69 @@
 #include <string.h>
 
 #include "esp_asset_pack.h"
+#include "esp_bsp_reader.h"
+#include "esp_map_catalog.h"
 #include "esp_native_help_scene.h"
 #include "platform_video_config.h"
 
 #if DOOMRPG_LOGICAL_WIDTH != 160 || DOOMRPG_LOGICAL_HEIGHT != 120
-#error "HELP viewport thumbnail requires a 160x120 logical CYD framebuffer"
+#error "Native HELP illustration requires classic CYD 160x120"
 #endif
 
 #define PREVIEW_X 8
 #define PREVIEW_Y 29
 #define PREVIEW_W 144
 #define PREVIEW_H 68
-/* Small persistent thumbnail of a REAL presented gameplay frame.
- * 128x64xRGB565=16384 B, not a second 160x120 framebuffer and not a map.
- * Capture once per level; original source viewport is 160x80 at y20..99.
- * No screenshot of an invented wall or randomly selected PAK door texture. */
-#define HELP_SNAPSHOT_W 128
-#define HELP_SNAPSHOT_H 64
+
+#define HELP_TEXTURE_BYTES 2048U
+#define HELP_TEXTURE_COLORS 16U
+#define HELP_MATERIAL_COUNT 3U
+#define HELP_MAP_CELLS 1024U
+#define HELP_MAP_BYTES 256U
+#define HELP_MAPPING_HEADER 16U
+#define HELP_MAPPINGS_PAIR 8U
+
+/* One PAK-first, world-free, bounded illustration owner. Geometric structure
+ * comes from the real 32x32 BSP blockmap and authentic spawn point. Three
+ * wall materials come from that map's required resource IDs, excluding known
+ * door indicator families. Unlike the retired wallpaper, this raster casts
+ * spatial rays through the genuine map. It never loads an EspMapRuntime,
+ * allocates a world, mutates the map, advances a turn or touches the zip. */
+typedef struct HelpWallMaterial_s {
+    uint8_t packed[HELP_TEXTURE_BYTES];
+    uint16_t palette[HELP_TEXTURE_COLORS];
+    uint16_t logicalId;
+} HelpWallMaterial;
 
 static struct {
-    uint16_t pixel[HELP_SNAPSHOT_W * HELP_SNAPSHOT_H];
+    HelpWallMaterial walls[HELP_MATERIAL_COUNT];
+    uint8_t blockMap[HELP_MAP_BYTES];
+    uint16_t spawnTile;
+    uint16_t ceilingRgb565;
+    uint16_t floorRgb565;
+    uint8_t spawnDirection;
+    uint8_t materialCount;
     uint8_t mapId;
-    uint8_t valid;
-} lastWorld;
-static uint8_t helpActive;
-static uint8_t requestedMapId;
+    uint8_t active;
+    uint8_t ready;
+} scene;
 
+static uint16_t readLe16(const uint8_t* p) {
+    return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
+}
+static uint32_t readLe32(const uint8_t* p) {
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+static uint16_t sourceBgrTo565(uint16_t c) {
+    return (uint16_t)(((c & 31U) << 11) |
+                      (c & 0x07e0U) | ((c >> 11) & 31U));
+}
+static uint16_t rgb565(const uint8_t rgb[3]) {
+    return (uint16_t)(((uint16_t)(rgb[0] & 0xf8U) << 8) |
+                      ((uint16_t)(rgb[1] & 0xfcU) << 3) |
+                      (uint16_t)(rgb[2] >> 3));
+}
 static uint16_t dim565(uint16_t c, unsigned int scale) {
     const unsigned int r = ((c >> 11) & 31U) * scale / 256U;
     const unsigned int g = ((c >> 5) & 63U) * scale / 256U;
@@ -44,48 +81,165 @@ static uint16_t add565(uint16_t base, uint16_t gain) {
     if (b > 31U) b = 31U;
     return (uint16_t)((r << 11) | (g << 5) | b);
 }
-
-
-void EspNativeHelpScene_reset(void) {
-    /* Opening/closing HELP does not erase the snapshot owned by gameplay.
-     * A new map will replace it on its next successful native present. */
-    helpActive = 0U;
-    requestedMapId = 0U;
+static uint16_t sampleMaterial(const HelpWallMaterial* wall,
+                                int u, int v) {
+    const uint32_t at = (uint32_t)((u & 63) * 64 + (v & 63));
+    const uint8_t packed = wall->packed[at >> 1];
+    return wall->palette[(at & 1U) ? (packed >> 4) : (packed & 15U)];
 }
-void EspNativeHelpScene_begin(uint8_t cachedMapId) {
-    helpActive = 1U;
-    requestedMapId = cachedMapId;
+static int helpTileWall(int x, int y) {
+    uint32_t at;
+    if (x < 0 || y < 0 || x >= 32 || y >= 32) return 1;
+    at = (uint32_t)y * 32U + (uint32_t)x;
+    return (scene.blockMap[at >> 2] >> ((at & 3U) * 2U)) & 1U;
 }
-int EspNativeHelpScene_isReady(void) { return helpActive != 0U; }
-int EspNativeHelpScene_hasGameplaySnapshot(void) {
-    return helpActive != 0U && lastWorld.valid != 0U &&
-           requestedMapId != 0U && lastWorld.mapId == requestedMapId;
+static int isDoorIndicator(uint16_t id) {
+    /* Map entrance, animated door and indicator texture families are NOT
+     * suitable for the continuous brick/concrete wall material. */
+    return id == 7U || id == 8U || id == 9U || id == 10U ||
+           id == 15U || id == 16U;
 }
-uint8_t EspNativeHelpScene_snapshotMapId(void) {
-    return EspNativeHelpScene_hasGameplaySnapshot() ? lastWorld.mapId : 0U;
-}
-int EspNativeHelpScene_captureGameplayViewport(const uint16_t* fb,
-                                               uint8_t mapId) {
-    int x, y;
-    if (fb == NULL || mapId == 0U) return 0;
-    /* Exactly one 16 KB copy per new map. No cost on ordinary turn redraws.
-     * Capture is called only after a canonical published, non-automap frame. */
-    if (lastWorld.valid != 0U && lastWorld.mapId == mapId) return 1;
-    lastWorld.valid = 0U;
-    for (y = 0; y < HELP_SNAPSHOT_H; ++y) {
-        const int sourceY = 20 + y * 80 / HELP_SNAPSHOT_H;
-        for (x = 0; x < HELP_SNAPSHOT_W; ++x) {
-            const int sourceX = x * 160 / HELP_SNAPSHOT_W;
-            lastWorld.pixel[y * HELP_SNAPSHOT_W + x] =
-                fb[sourceY * DOOMRPG_LOGICAL_WIDTH + sourceX];
-        }
+static int loadMaterial(const EspAssetPackEntry* mappings,
+                        const EspAssetPackEntry* palettes,
+                        const EspAssetPackEntry* textures,
+                        uint32_t pairCount, uint32_t paletteSize,
+                        uint32_t idBase, uint16_t logicalId,
+                        HelpWallMaterial* wall) {
+    uint8_t id[2], pair[8], colors[32];
+    uint8_t used[16] = {0U};
+    uint32_t actual, src, palette, i, distinct = 0U;
+    if (wall == NULL ||
+        !EspAssetPack_readRange(mappings, idBase + (uint32_t)logicalId * 2U,
+                                id, sizeof(id))) return 0;
+    actual = readLe16(id);
+    if (actual >= pairCount ||
+        !EspAssetPack_readRange(mappings,
+               HELP_MAPPING_HEADER + actual * HELP_MAPPINGS_PAIR,
+               pair, sizeof(pair))) return 0;
+    src = readLe32(pair);
+    palette = readLe32(pair + 4U);
+    if ((int32_t)src < 0 || (src & 1U) != 0U ||
+        (int32_t)palette < 0 || palette > paletteSize / 2U ||
+        HELP_TEXTURE_COLORS > paletteSize / 2U - palette ||
+        src / 2U > textures->size - 4U ||
+        HELP_TEXTURE_BYTES > textures->size - 4U - src / 2U ||
+        !EspAssetPack_readRange(
+            palettes, 4U + palette * 2U, colors, sizeof(colors)) ||
+        !EspAssetPack_readRange(
+            textures, 4U + src / 2U, wall->packed, HELP_TEXTURE_BYTES))
+        return 0;
+    for (i = 0U; i < HELP_TEXTURE_BYTES; i += 31U) {
+        used[wall->packed[i] & 15U] = 1U;
+        used[wall->packed[i] >> 4] = 1U;
     }
-    lastWorld.mapId = mapId;
-    lastWorld.valid = 1U;
+    for (i = 0U; i < 16U; ++i) distinct += used[i] != 0U;
+    if (distinct < 4U) return 0;
+    for (i = 0U; i < HELP_TEXTURE_COLORS; ++i)
+        wall->palette[i] = sourceBgrTo565(readLe16(&colors[i * 2U]));
+    wall->logicalId = logicalId;
     return 1;
 }
-/* One unique 2.56s smoothstep breath clock (32 x 80ms), shared by
- * top/bottom HUD miniatures, full 3x3, and every instructional row. */
+void EspNativeHelpScene_reset(void) {
+    /* A HELP close releases only its own tiny immutable lookup; the real
+     * gameplay map owner remains completely untouched. */
+    memset(&scene, 0, sizeof(scene));
+}
+int EspNativeHelpScene_begin(uint8_t cachedMapId) {
+    const uint8_t mapId = EspMapCatalog_isValidId(cachedMapId)
+                              ? cachedMapId : 1U; /* Entrance at cold boot */
+    const char* const name = EspMapCatalog_nameForId(mapId);
+    EspBspInventory inventory;
+    EspAssetPackEntry entry, mappings, palettes, textures;
+    uint8_t mh[16], ph[4], wh[4];
+    uint32_t pairCount, shapeCount, logicalCount, spriteCount, paletteSize;
+    uint32_t idBase, id, pass;
+    int ok = 0;
+
+    EspNativeHelpScene_reset();
+    scene.active = 1U;
+    if (name == NULL || EspAssetPack_isOpen() ||
+        !EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) return 0;
+    if (!EspBspReader_inventoryPackEntry(name, &inventory) ||
+        inventory.spawnIndex >= HELP_MAP_CELLS ||
+        inventory.sections.blockMapOffset >= inventory.sourceBytes ||
+        !EspAssetPack_findEntry(name, &entry) ||
+        !EspAssetPack_findEntry("mappings.bin", &mappings) ||
+        !EspAssetPack_findEntry("palettes.bin", &palettes) ||
+        !EspAssetPack_findEntry("wtexels.bin", &textures) ||
+        !EspAssetPack_readRange(
+            &entry, inventory.sections.blockMapOffset,
+            scene.blockMap, sizeof(scene.blockMap)) ||
+        !EspAssetPack_readRange(&mappings, 0U, mh, sizeof(mh)) ||
+        !EspAssetPack_readRange(&palettes, 0U, ph, sizeof(ph)) ||
+        !EspAssetPack_readRange(&textures, 0U, wh, sizeof(wh)))
+        goto done;
+
+    pairCount = readLe32(mh);
+    shapeCount = readLe32(mh + 4U);
+    logicalCount = readLe32(mh + 8U);
+    spriteCount = readLe32(mh + 12U);
+    paletteSize = readLe32(ph);
+    if (pairCount == 0U || pairCount > 4096U ||
+        shapeCount == 0U || shapeCount > 4096U ||
+        logicalCount == 0U || logicalCount > 4096U ||
+        spriteCount > 4096U ||
+        (uint64_t)HELP_MAPPING_HEADER +
+            (uint64_t)(pairCount + shapeCount) * 8U +
+            (uint64_t)(logicalCount + spriteCount) * 2U != mappings.size ||
+        paletteSize < 32U || paletteSize != palettes.size - 4U ||
+        readLe32(wh) != textures.size - 4U)
+        goto done;
+    idBase = HELP_MAPPING_HEADER + (pairCount + shapeCount) * 8U;
+
+    /* Prefer only actual map-required wall materials; if there are fewer
+     * than three, the shared renderer can reuse those materials in different
+     * spatial views. Never pick a random unrelated door sprite. */
+    for (pass = 0U; pass < 2U &&
+          scene.materialCount < HELP_MATERIAL_COUNT; ++pass) {
+        for (id = 1U; id < logicalCount && id < 256U &&
+             scene.materialCount < HELP_MATERIAL_COUNT; ++id) {
+            HelpWallMaterial* target;
+            uint8_t j, duplicate = 0U;
+            if (isDoorIndicator((uint16_t)id)) continue;
+            if (pass == 0U &&
+                (inventory.lineTextureIdBits[id >> 5] &
+                 (1UL << (id & 31U))) == 0U) continue;
+            for (j = 0U; j < scene.materialCount; ++j)
+                if (scene.walls[j].logicalId == id) duplicate = 1U;
+            if (duplicate) continue;
+            target = &scene.walls[scene.materialCount];
+            if (loadMaterial(&mappings, &palettes, &textures,
+                             pairCount, paletteSize, idBase,
+                             (uint16_t)id, target))
+                ++scene.materialCount;
+        }
+    }
+    if (scene.materialCount == 0U) goto done;
+
+    scene.spawnTile = inventory.spawnIndex;
+    scene.spawnDirection = inventory.spawnDirection;
+    scene.floorRgb565 = rgb565(inventory.floorRgb);
+    scene.ceilingRgb565 = rgb565(inventory.ceilingRgb);
+    scene.mapId = mapId;
+    scene.ready = 1U;
+    ok = 1;
+done:
+    EspAssetPack_close();
+    if (!ok) scene.ready = 0U;
+    return ok;
+}
+int EspNativeHelpScene_isReady(void) {
+    return scene.active != 0U && scene.ready != 0U;
+}
+uint8_t EspNativeHelpScene_previewMapId(void) {
+    return EspNativeHelpScene_isReady() ? scene.mapId : 0U;
+}
+uint8_t EspNativeHelpScene_materialCount(void) {
+    return EspNativeHelpScene_isReady() ? scene.materialCount : 0U;
+}
+
+/* One mathematically smooth 2.56s breath clock, shared by both HUD guides,
+ * main gameplay grid and its three row-by-row previews. */
 uint8_t EspNativeHelpScene_breathStep(uint32_t elapsedMs) {
     return (uint8_t)((elapsedMs / ESP_NATIVE_HELP_BREATH_STEP_MS) %
                      ESP_NATIVE_HELP_BREATH_STEPS);
@@ -96,15 +250,95 @@ uint8_t EspNativeHelpScene_breathLevel(uint8_t step) {
 }
 uint8_t EspNativeHelpScene_breathPower(uint8_t level) {
     if (level > 16U) return 0U;
-    /* smoothstep 3t²-2t³, t=level/16. Adjacent steps are near-identical
-     * around darkness/peak: no jump from all-off to bright button glyphs. */
     return (uint8_t)(((uint32_t)level * level *
         (48U - 2U * level) * 255U + 2048U) / 4096U);
 }
-static uint16_t snapshotPixel(int lx, int ly) {
-    const int x = lx * HELP_SNAPSHOT_W / PREVIEW_W;
-    const int y = ly * HELP_SNAPSHOT_H / PREVIEW_H;
-    return lastWorld.pixel[y * HELP_SNAPSHOT_W + x];
+
+/* Bounded ray samples through the genuine 2-bit BSP blockmap; distance and
+ * wall texture are map-derived. This is explicitly an instructional mini
+ * raycast, not a second game world, live BSP compositor or synthetic corridor.
+ * Distinct cameras face different directions from walkable nearby cells. */
+static void cameraFor(uint8_t variant, int* px, int* py, int* direction) {
+    static const int8_t offsetX[9] = {0, 1, 0, -1, 0, 2, -2, 1, -1};
+    static const int8_t offsetY[9] = {0, 0, 1, 0, -1, 0, 0, -1, 1};
+    const int sx = scene.spawnTile & 31U;
+    const int sy = scene.spawnTile >> 5;
+    int i;
+    *px = sx * 1024 + 512;
+    *py = sy * 1024 + 512;
+    *direction = ((int)(scene.spawnDirection + variant * 64U + 32U) >> 6) & 3;
+    if (variant == 0U) return;
+    for (i = 0; i < 9; ++i) {
+        const int k = (i + variant * 2) % 9;
+        const int x = sx + offsetX[k], y = sy + offsetY[k];
+        if (!helpTileWall(x, y)) {
+            *px = x * 1024 + 512;
+            *py = y * 1024 + 512;
+            return;
+        }
+    }
+}
+static uint16_t mapRayPixel(int x, int y, int width, int height,
+                            uint8_t variant) {
+    static const int8_t forwardX[4] = {1, 0, -1, 0};
+    static const int8_t forwardY[4] = {0, -1, 0, 1};
+    static const int8_t rightX[4] = {0, 1, 0, -1};
+    static const int8_t rightY[4] = {1, 0, -1, 0};
+    int px, py, dir, side, dx, dy, prevX, prevY;
+    int atX, atY, tileX, tileY, u = 0;
+    int step, wallHeight, wallTop, wallBottom;
+    uint16_t color;
+    const HelpWallMaterial* material;
+
+    if (!EspNativeHelpScene_isReady() || width < 2 || height < 2)
+        return 0U;
+    cameraFor(variant, &px, &py, &dir);
+    side = (x * 2 - (width - 1)) * 620 / (width - 1);
+    dx = forwardX[dir] * 64 + rightX[dir] * side / 16;
+    dy = forwardY[dir] * 64 + rightY[dir] * side / 16;
+    prevX = px >> 10;
+    prevY = py >> 10;
+    for (step = 1; step <= 160; ++step) {
+        px += dx;
+        py += dy;
+        tileX = px >> 10;
+        tileY = py >> 10;
+        if (helpTileWall(tileX, tileY)) break;
+        prevX = tileX;
+        prevY = tileY;
+    }
+    if (step > 160) step = 160;
+    atX = tileX < 0 ? 0 : tileX;
+    atY = tileY < 0 ? 0 : tileY;
+    material = &scene.walls[
+        (unsigned int)(atX * 3 + atY * 5 + variant) %
+        scene.materialCount];
+    if (tileX != prevX)
+        u = (py & 1023) >> 4;
+    else
+        u = (px & 1023) >> 4;
+    wallHeight = height * 26 / (step + 20);
+    if (wallHeight < 1) wallHeight = 1;
+    if (wallHeight > height) wallHeight = height;
+    wallTop = (height - wallHeight) / 2;
+    wallBottom = wallTop + wallHeight;
+    if (y < wallTop) return scene.ceilingRgb565;
+    if (y >= wallBottom) return scene.floorRgb565;
+    color = sampleMaterial(material, u, (y - wallTop) * 64 / wallHeight);
+    {
+        const int shade = step * 2 > 120 ? 136 : 256 - step * 2;
+        color = dim565(color, (unsigned int)shade);
+    }
+    return color;
+}
+static void paintWorld(uint16_t* fb, int top, int bottom,
+                       uint8_t variant) {
+    int x, y;
+    const int height = bottom - top + 1;
+    for (x = 0; x < PREVIEW_W; ++x)
+        for (y = 0; y < height; ++y)
+            fb[(top + y) * DOOMRPG_LOGICAL_WIDTH + PREVIEW_X + x] =
+                mapRayPixel(x, y, PREVIEW_W, height, variant);
 }
 
 static void putGlow(uint16_t* framebuffer, int x, int y,
@@ -285,55 +519,41 @@ static void helpPaintTouchCell(uint16_t* fb, int row, int col,
 int EspNativeHelpScene_paint(uint16_t* fb, uint8_t level) {
     static const int xZone[4] = {0, 48, 96, PREVIEW_W};
     static const int yZone[4] = {0, 22, 45, PREVIEW_H};
-    int lx, ly, row, col;
-    if (fb == NULL || !helpActive || level > 16U) return 0;
-
-    /* REAL sampled first-person gameplay view if this map has been played;
-     * first-ever boot falls back to the original starfield reading window,
-     * never an artificial corridor or random door sprite. */
-    if (EspNativeHelpScene_hasGameplaySnapshot()) {
-        for (ly = 0; ly < PREVIEW_H; ++ly)
-            for (lx = 0; lx < PREVIEW_W; ++lx)
-                fb[(PREVIEW_Y + ly) * DOOMRPG_LOGICAL_WIDTH +
-                   PREVIEW_X + lx] = snapshotPixel(lx, ly);
-    }
-
-    /* Exact 3x3 native touch order; no active world/map renderer. */
+    int row, col;
+    if (fb == NULL || !EspNativeHelpScene_isReady() || level > 16U)
+        return 0;
+    paintWorld(fb, PREVIEW_Y, PREVIEW_Y + PREVIEW_H - 1, 0U);
     for (row = 0; row < 3; ++row) {
         for (col = 0; col < 3; ++col) {
-            const int left = PREVIEW_X + xZone[col];
-            const int right = PREVIEW_X + xZone[col + 1] - 1;
-            const int top = PREVIEW_Y + yZone[row];
-            const int bottom = PREVIEW_Y + yZone[row + 1] - 1;
-            helpPaintTouchCell(fb, row, col, left, right, top, bottom, level);
+            helpPaintTouchCell(fb, row, col,
+                               PREVIEW_X + xZone[col],
+                               PREVIEW_X + xZone[col + 1] - 1,
+                               PREVIEW_Y + yZone[row],
+                               PREVIEW_Y + yZone[row + 1] - 1,
+                               level);
         }
     }
+    helpPaintTouchDividers(fb, PREVIEW_Y, PREVIEW_Y + PREVIEW_H - 1,
+                          PREVIEW_X, PREVIEW_X + PREVIEW_W - 1, level, 1);
     return 1;
 }
 
-/* x8..151/y39..61: downsample the SAME real saved native viewpoint.
- * No screenshot? Preserve the starfield. Icons and breath stay identical. */
+/* Each control row uses a DISTINCT real BSP camera (three directions /
+ * nearby walkable spawn cells), not one cropped copy of the main image. */
 int EspNativeHelpScene_paintRow(uint16_t* fb, uint8_t sourceRow,
                                 uint8_t level) {
     static const int xZone[4] = {0, 48, 96, PREVIEW_W};
     const int top = 39, bottom = 61;
-    int lx, ly, col;
-    if (fb == NULL || !helpActive || sourceRow > 2U || level > 16U)
-        return 0;
-    if (EspNativeHelpScene_hasGameplaySnapshot()) {
-        for (ly = top; ly <= bottom; ++ly) {
-            for (lx = 0; lx < PREVIEW_W; ++lx) {
-                fb[ly * DOOMRPG_LOGICAL_WIDTH + PREVIEW_X + lx] =
-                    snapshotPixel(lx, (ly - top) *
-                                   (PREVIEW_H - 1) / (bottom - top));
-            }
-        }
-    }
-    for (col = 0; col < 3; ++col) {
+    int col;
+    if (fb == NULL || !EspNativeHelpScene_isReady() ||
+        sourceRow > 2U || level > 16U) return 0;
+    paintWorld(fb, top, bottom, (uint8_t)(sourceRow + 1U));
+    for (col = 0; col < 3; ++col)
         helpPaintTouchCell(fb, sourceRow, col,
                            PREVIEW_X + xZone[col],
                            PREVIEW_X + xZone[col + 1] - 1,
                            top, bottom, level);
-    }
+    helpPaintTouchDividers(fb, top, bottom, PREVIEW_X,
+                          PREVIEW_X + PREVIEW_W - 1, level, 0);
     return 1;
 }
