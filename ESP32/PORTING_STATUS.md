@@ -1,3 +1,11 @@
+## PR #266-C — Render_t diagnostic numLines retiré : PASS CYD, merge autorisé (8 novembre 2026)
+
+**Code C testé `6f888ce8e4aa4f58aa6f565919426d1d5fbcdb7a`** sur [PR #266](https://github.com/Kharn27/DoomRPG-RE/pull/266). `Render_t` ESP32 **148→144 octets** (`Render=144 Game=0 Canvas=44 Total=948`), `numLines` retiré du shell natif ; l'identifiant exact de ligne BSP pour les cinq erreurs murales/span réside uniquement dans `FirstFrameWork.diagnosticLineIndex` transitoire. Desktop/oracle inchangés. CI [push #42441414866](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42441414866) et [PR #42441419274](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42441419274) **SUCCESS 99/99** chacun, harnais fail-closed ligne161, trois firmwares.
+
+**Test matériel `device-monitor-261108-210342.log` (1279 lignes)**, retour « Ca marche niquel » et **fusion explicitement demandée** : NEW GAME Entrance, portes/caisses/dialogues/loot, EXIT propre, LOAD V11 slot04 Entrance, Malwrath deux triples salves et impacts, mort et XP, secret deux portes, deuxième EXIT propre ; 2× `HEADROOM_OK`, `largest8=86004`, 2× `RESIDENTRESET empty=1`, 2× `SYSEXIT MENU-READY`, `shapeData=mediaTexels=NULL`, zéro panic/WDT/échec renderer. **PASS ciblé, gain de taille de structure seulement**. [Rapport détaillé](MILESTONE_PR266_C_RENDER_NUM_LINES_CYD_PASS.md). Code C figé ; documentation post-test strictement docs-only ; intégrer `main` #265 et vérifier la CI avant fusion effective.
+
+---
+
 ## PR #266-B — Retrait des compteurs BSP Render_t : PASS matériel (8 novembre 2026)
 
 **Code B validé : `9899d2af07429dd00923cc73a3cf6ce604a29002`**, même [PR #266](https://github.com/Kharn27/DoomRPG-RE/pull/266), `Render_t 156→148 B` mesurés sur classic CYD, deux compteurs de parcours hérités `lineCount/nodeCount` retirés du shell normal/bringup/trace mais conservés desktop/oracle. Le diagnostic de nœuds passe en `FirstFrameWork.nodesTraversed` temporaire, visibilité `state->nodes` maintenue et inventaires map inchangés. CI [push #42440393287](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42440393287) / [PR #42440396940](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42440396940) : SUCCESS, 99 étapes, trois firmwares.

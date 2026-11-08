@@ -1,3 +1,9 @@
+## PR #266-C — Retrait définitif du miroir Render_t::numLines ESP32 : PASS matériel (8 novembre 2026)
+
+Code C `6f888ce8e4aa4f58aa6f565919426d1d5fbcdb7a` testé sur le classic CYD ; `Render_t 148→144 B` mesurés, `numLines` déplacé vers `FirstFrameWork.diagnosticLineIndex` transitoire pour conserver les diagnostics du BSP mural, oracle desktop intact. [CI push #42441414866](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42441414866) et [PR #42441419274](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42441419274) **SUCCESS 99/99**. Le log `device-monitor-261108-210342.log` montre START/LOAD V11 Entrance, dialogues, caisses et ramassages, porte et animation, Malwrath 2 triples salves puis mort, secret, 2× `HEADROOM_OK`, 2× `RESIDENTRESET empty=1`, retour menu exact sans panic/WDT, invariants `shapeData/mediaTexels=NULL`. [Rapport C](MILESTONE_PR266_C_RENDER_NUM_LINES_CYD_PASS.md). Accord utilisateur pour fusion après PASS et CI ; code C figé, doc-only post-test.
+
+---
+
 ## PR #266-B — Render_t n'héberge plus les compteurs de parcours BSP (PASS CYD, 8 novembre 2026)
 
 Le jalon B, code `9899d2af07429dd00923cc73a3cf6ce604a29002`, retire `Render_t::lineCount` et `Render_t::nodeCount` des trois firmwares ESP32 (**156→148 B** mesurés). Desktop/oracle conservent l'ABI ; le décompte d'échec BSP garde `FirstFrameWork.nodesTraversed` sur heap temporaire, `state->nodes` existe toujours dans le culler, et les inventaires `EspMapRuntime` restent inchangés. Les deux CI GitHub push/PR **#42440393287 / #42440396940 SUCCESS**, 99 étapes sur le push.
