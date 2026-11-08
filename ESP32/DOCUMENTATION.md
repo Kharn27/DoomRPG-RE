@@ -1,3 +1,11 @@
+## PR #260 — frontière de présentation HUB et retrait du Render desktop : PASS CYD (8 novembre 2026)
+
+La PR #260 conserve seulement `Render_t=160` octets côté ESP32 au lieu de 184 initialement, avec `viewAngle/spanMode`, compteurs de raster et coordonnées desktop retirés des propriétaires natifs et maintenus dans l'oracle desktop. Le monde continue de lire `EspPlayerViewState`. Les expirations de douleur et les autres effets du monde n'ont plus droit de redessiner sous la grille d'armes. Plus important, `EspNativeGameplayActionEngine_present()` emprunte directement le physical-present quand `EspNativeGameplayHub_isActive()`, avant `decoratePlayerImpact` et les autres décorateurs. La fermeture HUB reste un redraw complet et l'expiration de douleur est reprise ensuite. Pas de deuxième framebuffer, de nouvelle ressource PAK ni de changement d'input/monstres.
+
+**Preuve :** correctif code `ab1c51fdf369e7a4b84788abc5a79c5f62fcce5c`, CI push [#42436230988](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42436230988) + PR [#42436234682](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42436234682) SUCCESS (98 étapes chacune). Essai réel sur le CYD avec Malwrath, grille pendant `PLAYERPAINFX FIRST-PRESENT`, aucune `PLAYERIMPACT` insérée entre `HUBWGRID FRAME` et `HUB FRAME`, deux sorties exactes `exactHud=yes exactBottom=yes`, `heap8=109740 largest8=86004`, `HEADROOM_OK`, retour menu propre. Validation utilisateur « Impeccable tu vas pouvoir merger ces belles modifs ». Rapport détaillé : [`MILESTONE_PR260_RENDER_PASSIVE_VIEW_AND_HUB_MODAL_CYD_PASS.md`](MILESTONE_PR260_RENDER_PASSIVE_VIEW_AND_HUB_MODAL_CYD_PASS.md).
+
+---
+
 ## PR #262 — LOAD GAME : page en bas, titre sobre et dégradés — PASS visuel (8 novembre 2026)
 
 La version finale de [PR #262](https://github.com/Kharn27/DoomRPG-RE/pull/262), code `603de6c884f92c43c36a49050a749751e6972895`, est créée sur `main=a6b151709ee3a083d163b231b090779fbf0231f2` (#259 déjà fusionnée). Sur **MENU_MAIN → LOAD GAME** uniquement, `LOAD GAME` est un vrai titre non cliquable, sans les six hachures latérales du stencil partagé ; un rail bas discret demeure à y27. Le titre et le bouton `BACK` sont rendus avec `EspMainMenuSkin_paintText` : neuf lignes de dégradé propre aux thèmes CLASSIC, INFERNO rose pâle→bronze→rouge, PHOSPHORE. La pagination mini `1/2`/`2/2` est sous les touches UP/DOWN, à x137/y106..110 ; l'emplacement des deux touches et les cinq slots ne changent pas. BACK occupe x34..111/y102..118, châssis métallique partagé, hitbox identique au rectangle dessiné ; aucun autre touch owner n'est modifié.
@@ -21,6 +29,20 @@ Les trois thèmes conservent la trame métallique, les touches et les pixels fon
 **Code fonctionnel gelé** : `3a664b606053cdc9d03a347f59eff1e09b8672e5` dans [PR #259](https://github.com/Kharn27/DoomRPG-RE/pull/259), construite sur `main=63ab8f88591050b3e0f3554bf2b740f9f290aea0`. CI [push #42426992143](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42426992143) / [PR #42426996954](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42426996954) SUCCESS, dont `esp32-cyd` normal, bringup et trace. Retour visuel de l'utilisateur après flash demandé : **« Impec ;) »**. PASS visuel rapporté, **sans nouveau Serial ni mesure RAM/performance vérifiable** ; ne pas extrapoler aux scénarios non testés. Suite : documentation seulement, CI finale, PR merge-ready, fusion par l'utilisateur exclusivement.
 
 ---
+## PR #260-B — retrait des compteurs de raster desktop, validé sur CYD (8 novembre 2026)
+
+`Render_t::lineRasterCount` et `Render_t::nodeRasterCount` sont absents de l'ABI ESP32 normal/bringup/trace, mais conservés côté desktop/oracle. Les trois propriétaires de rendu ont cessé de les sauvegarder, restaurer ou incrémenter. `Render_t` **176→168 B**, aucune refonte de projection. Code testé `b323fee6213f7195370a66bd68ebbd591df0e593`, [CI #42430844225](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42430844225) SUCCESS. Capture `device-monitor-261108-014743.log` : premières frames et setup identiques, START et LOAD, portes/dialogues/caisse/HUD/HUB, ripostes Malwrath et impacts, deux fermetures HUB exactes, deux EXIT sans échec, `HEADROOM_OK`, PSRAM zéro, `shapeData/mediaTexels==NULL`. **Ce PASS n'autorise pas de déduire la parité pixel-perfect ou un gain de heap mesuré**. Poursuite sur la même PR explicitement demandée, mais nouveau commit de code = nouveau gate matériel. [Rapport #260-B](MILESTONE_PR260_RENDER_RASTER_COUNTERS_CYD_PASS.md).
+
+---
+
+## PR #260 — géométrie viewport : origine possédée par ESP32 (8 novembre 2026)
+
+Sur `agent/esp32-render-retire-desktop-screen-origin` (code `995ff6aead71dbf9fd441494e37fbe1c9c591675`), suppression côté firmware de `Render_t::screenX/Y`, conservés pour desktop et oracle géométrique. Les offsets de raster du BSP, de la première frame, des sprites, du compositeur, de l'arme et des diagnostics viennent de `DOOMRPG_VIEWPORT_X=0`, `DOOMRPG_VIEWPORT_Y=20` dans `platform_video_config.h`; le message de setup lit directement `SDL_Rect.x/y`. `Render_t` **184 → 176 B**, sans nouvelle allocation/cache ni changement intentionnel des images, du PAK ou du RNG.
+
+CI code [#42429005622](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42429005622) **SUCCESS** ; log physique `device-monitor-261108-012736.log` : `[RENDERCORE] INIT bytes=176`, setup `160x80@0,20`, première frame Entrance `71ca7465`, START neuf et LOAD V11 slot04, rendu murs/sprites/arme, Malwrath et impacts, portes, HUD/HUB, deux sorties sans fuite visible, `HEADROOM_OK` et `shapeData/mediaTexels=NULL`. **Validation fonctionnelle, pas parité visuelle absolue** ; aucun SHA embarqué dans la capture, aucune mesure heap A/B attribuable aux seuls huit octets. Code gelé au SHA testé ; clôture docs-only. [Rapport matériel #260](MILESTONE_PR260_RENDER_VIEWPORT_ORIGIN_CYD_PASS.md).
+
+---
+
 ## PR #256 — clôture impacts du joueur : accepté avec écarts de fidélité (8 novembre 2026)
 
 Sur `agent/esp32-desktop-player-pain-visual-parity`, code final `2cc11cfe50eeedc95aef81164f06eb1051e6a13c` ; CI [#42421101696](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42421101696) SUCCESS. L'utilisateur a observé le système de dégâts combiné sur classic CYD, confirmé « Ca marche bien » puis demandé explicitement le merge. Aucun log Serial récent et exhaustif du dernier SHA ne permet de déclarer toutes les correspondances ennemis/bitshapes conformes au J2ME.

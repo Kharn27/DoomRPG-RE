@@ -12,6 +12,7 @@
 #include "esp_entity_def_type_catalog.h"
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_hit_feedback.h"
+#include "esp_native_gameplay_hub.h"
 #include "esp_native_gameplay_controls.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_event_chain.h"
@@ -930,6 +931,10 @@ static void resetFx(void) {
     hitFxOwner.spriteIndex = GIBFX_NO_SPRITE;
 }
 
+/* Modal HUB/weapon grid owns the 160x120 framebuffer. All time-driven
+ * world redraws must leave its pixels untouched, including pain-face expiry.
+ * Keep expired leases pending until the HUB closes; do not acknowledge them
+ * while a world redraw cannot safely be presented. */
 static void serviceHitExpiry(struct DoomRPG_s* doomRpg) {
     DoomRPG_t* runtime = (DoomRPG_t*)doomRpg;
     const EspPlayerViewState* playerView;
@@ -944,7 +949,8 @@ static void serviceHitExpiry(struct DoomRPG_s* doomRpg) {
     /* Keep exact short framebuffer owners and dialog PAK leases authoritative.
      * Action feedback is serviced earlier in the same session chain, so a fresh
      * redraw here can repaint an unexpired top-bar lease without truncating it. */
-    if (EspNativeGameplayControls_isActive() || EspAssetPack_isOpen() ||
+    if (EspNativeGameplayHub_isActive() ||
+        EspNativeGameplayControls_isActive() || EspAssetPack_isOpen() ||
         EspNativeGameplayEventChain_isWaiting()) return;
 
     playerView = EspPlayerView_view();
@@ -984,6 +990,7 @@ static void servicePlayerPainShake(struct DoomRPG_s* doomRpgBase) {
     EspNativeGameplayFrameStats frame;
     const uint32_t nowMs = DoomRPG_GetUpTimeMS();
     if (!EspNativePlayerPainVisual_shakeRefreshDue(nowMs) ||
+        EspNativeGameplayHub_isActive() ||
         !EspNativeResidentGameplay_ownsWorldPresent() ||
         EspNativeGameplayControls_isActive() || EspAssetPack_isOpen() ||
         EspNativeGameplayEventChain_isWaiting() ||
@@ -1010,7 +1017,8 @@ static void servicePlayerPainExpiry(struct DoomRPG_s* doomRpgBase) {
     const uint32_t nowMs = DoomRPG_GetUpTimeMS();
 
     if (!EspNativePlayerPainVisual_expiryDue(nowMs)) return;
-    if (EspNativeGameplayControls_isActive() || EspAssetPack_isOpen() ||
+    if (EspNativeGameplayHub_isActive() ||
+        EspNativeGameplayControls_isActive() || EspAssetPack_isOpen() ||
         EspNativeGameplayEventChain_isWaiting() ||
         EspNativeResidentGameplay_isAutomapActive()) return;
     playerView = EspPlayerView_view();
@@ -1045,6 +1053,7 @@ static void serviceGibAnimation(struct DoomRPG_s* doomRpgBase) {
     if (gibFxOwner.active==0U ||
         gibFxOwner.activeFrameTick!=0U ||
         gibFxOwner.clearAtMs==0U ||
+        EspNativeGameplayHub_isActive() ||
         !EspNativeResidentGameplay_ownsWorldPresent() ||
         EspNativeResidentGameplay_isAutomapActive() ||
         EspNativeGameplayControls_isActive() ||
@@ -1087,7 +1096,8 @@ static void serviceExpiry(struct DoomRPG_s* doomRpg) {
     /* Touch feedback owns an exact framebuffer snapshot for its short lease.
      * Clearing underneath it would be restored by the touch layer afterwards,
      * resurrecting the gib pixels. Retry on the next gameplay service instead. */
-    if (EspNativeGameplayControls_isActive() ||
+    if (EspNativeGameplayHub_isActive() ||
+        EspNativeGameplayControls_isActive() ||
         EspNativeGameplayEventChain_isWaiting()) return;
 
     playerView = EspPlayerView_view();
@@ -1140,6 +1150,7 @@ static void decoratePlayerImpact(void) {
      * shake redraw requests, with no new global FPS loop. Failed source
      * preflight fails only the optional visual, never the combat commit. */
     if (EspNativeResidentGameplay_ownsWorldPresent() &&
+        !EspNativeGameplayHub_isActive() &&
         !EspNativeResidentGameplay_isAutomapActive() &&
         !EspNativeGameplayControls_isActive() &&
         !EspAssetPack_isOpen() &&
@@ -1171,9 +1182,20 @@ static void decoratePlayerImpact(void) {
     }
 }
 
+/* The HUB (including the weapon grid) presents the already-owned modal
+ * framebuffer. It must never go through world hit/gib/player-impact/dog
+ * decorators OR through the action feedback base presenter. Otherwise an
+ * active impact lease paints onto the freshly drawn grid *during* present.
+ * Keep all visual leases untouched; the world presenter resumes at HUB close.
+ * This uses the existing physical present, no additional pixels or heap. */
+extern int __real_Esp32PlatformVideo_present(void);
+
 int EspNativeGameplayActionEngine_present(void) {
     uint32_t seed = 0U;
     uint32_t age = 0U;
+    if (EspNativeGameplayHub_isActive()) {
+        return __real_Esp32PlatformVideo_present();
+    }
     decorateActiveHit();
     decorateActiveGib();
     decorateNewGibs();
@@ -1183,6 +1205,7 @@ int EspNativeGameplayActionEngine_present(void) {
      * missing or a modal/transition compositor owns the physical present.
      * The lease must have been staged by a transaction that can roll back. */
     if (EspNativeResidentGameplay_ownsWorldPresent() &&
+        !EspNativeGameplayHub_isActive() &&
         !EspNativeResidentGameplay_isAutomapActive() &&
         !EspNativeGameplayControls_isActive() &&
         !EspAssetPack_isOpen() &&

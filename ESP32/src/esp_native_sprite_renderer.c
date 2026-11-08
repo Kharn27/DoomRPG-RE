@@ -26,6 +26,7 @@
 #include "esp_native_ambient_sprite.h"
 #include "esp_native_first_frame.h"
 #include "esp_player_view_state.h"
+#include "platform_video_config.h"
 
 #define MAP_HEADER 16U
 #define PALETTE_HEADER 4U
@@ -123,17 +124,13 @@ typedef struct Scratch_s {
     int viewX;
     int viewY;
     int viewZ;
-    int viewAngle;
     int lineCount;
-    int lineRasterCount;
     int nodeCount;
-    int nodeRasterCount;
     int screenLeft;
     int screenTop;
     int screenRight;
     int screenBottom;
     int numLines;
-    byte spanMode;
     short* pixels;
     int columnScale[SCREEN_W];
 } Scratch;
@@ -310,17 +307,13 @@ static void saveScratch(Render_t* render, Scratch* scratch) {
     scratch->viewX = render->viewX;
     scratch->viewY = render->viewY;
     scratch->viewZ = render->viewZ;
-    scratch->viewAngle = render->viewAngle;
     scratch->lineCount = render->lineCount;
-    scratch->lineRasterCount = render->lineRasterCount;
     scratch->nodeCount = render->nodeCount;
-    scratch->nodeRasterCount = render->nodeRasterCount;
     scratch->screenLeft = render->screenLeft;
     scratch->screenTop = render->screenTop;
     scratch->screenRight = render->screenRight;
     scratch->screenBottom = render->screenBottom;
     scratch->numLines = render->numLines;
-    scratch->spanMode = render->spanMode;
     scratch->pixels = render->pixels;
     memcpy(scratch->columnScale, render->columnScale,
            sizeof(scratch->columnScale));
@@ -336,17 +329,13 @@ static void restoreScratch(Render_t* render, const Scratch* scratch) {
     render->viewX = scratch->viewX;
     render->viewY = scratch->viewY;
     render->viewZ = scratch->viewZ;
-    render->viewAngle = scratch->viewAngle;
     render->lineCount = scratch->lineCount;
-    render->lineRasterCount = scratch->lineRasterCount;
     render->nodeCount = scratch->nodeCount;
-    render->nodeRasterCount = scratch->nodeRasterCount;
     render->screenLeft = scratch->screenLeft;
     render->screenTop = scratch->screenTop;
     render->screenRight = scratch->screenRight;
     render->screenBottom = scratch->screenBottom;
     render->numLines = scratch->numLines;
-    render->spanMode = scratch->spanMode;
     render->pixels = scratch->pixels;
     memcpy(render->columnScale, scratch->columnScale,
            sizeof(scratch->columnScale));
@@ -363,17 +352,13 @@ static int scratchMatches(const Render_t* render, const Scratch* scratch) {
            render->viewX == scratch->viewX &&
            render->viewY == scratch->viewY &&
            render->viewZ == scratch->viewZ &&
-           render->viewAngle == scratch->viewAngle &&
            render->lineCount == scratch->lineCount &&
-           render->lineRasterCount == scratch->lineRasterCount &&
            render->nodeCount == scratch->nodeCount &&
-           render->nodeRasterCount == scratch->nodeRasterCount &&
            render->screenLeft == scratch->screenLeft &&
            render->screenTop == scratch->screenTop &&
            render->screenRight == scratch->screenRight &&
            render->screenBottom == scratch->screenBottom &&
            render->numLines == scratch->numLines &&
-           render->spanMode == scratch->spanMode &&
            render->pixels == scratch->pixels &&
            memcmp(render->columnScale, scratch->columnScale,
                   sizeof(scratch->columnScale)) == 0;
@@ -390,7 +375,7 @@ static int setupDrawView(Render_t* render,
     if (render == NULL || view == NULL || visibility == NULL ||
         render->framebuffer == NULL || render->columnScale == NULL ||
         render->screenWidth != SCREEN_W || render->screenHeight != SCREEN_H ||
-        render->screenX != 0 || render->screenY != 20) {
+        DOOMRPG_VIEWPORT_X != 0 || DOOMRPG_VIEWPORT_Y != 20) {
         return 0;
     }
 
@@ -414,17 +399,15 @@ static int setupDrawView(Render_t* render,
     render->viewCos = cos_;
     render->viewTransY = -((viewX * render->viewSin) +
                            (viewY * render->viewCos));
-    render->viewAngle = view->viewAngle;
-    render->pixels = (short*)&render->framebuffer[render->pitch * render->screenY];
+    render->pixels = (short*)&render->framebuffer[
+        render->pitch * DOOMRPG_VIEWPORT_Y +
+        DOOMRPG_VIEWPORT_X * (int)sizeof(short)];
     render->screenLeft = 0;
     render->screenTop = 0;
     render->screenRight = SCREEN_W;
     render->screenBottom = SCREEN_H;
     render->lineCount = 0;
-    render->lineRasterCount = 0;
     render->nodeCount = 0;
-    render->nodeRasterCount = 0;
-    render->spanMode = 0;
     memcpy(render->columnScale, visibility->columnScale,
            sizeof(visibility->columnScale));
     return 1;
