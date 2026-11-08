@@ -26,34 +26,40 @@ def macro(name):
 start = model.index("static const char* const helpLines[]")
 end = model.index("#define MAIN_HELP_LINE_COUNT", start)
 lines = re.findall(r'^\s*"([^"]*)",$', model[start:end], re.M)
-assert len(lines) == 77
+assert len(lines) == 84
 assert len(lines) % 7 == 0
-assert [lines[p * 7] for p in range(11)] == [
-    "DOOM RPG ON CYD", "MENU CONTROLS", "TURN-BASED GAME",
-    "TOP HUD BAR", "CYD TOUCH (1/2)", "CYD TOUCH (2/2)",
-    "ACTION / CENTER", "WEAPONS & STATUS", "SYSTEM / SAVE LOAD",
-    "TACTICAL TIPS", "ABOUT CYD PORT"]
-assert lines[1] == "Kharn27"
+assert [lines[p * 7] for p in range(12)] == [
+    "DOOM RPG ON CYD", "DOOM RPG: THE GAME", "MENU CONTROLS",
+    "TURN-BASED GAME", "TOP HUD BAR", "CYD TOUCH (1/2)",
+    "CYD TOUCH (2/2)", "ACTION / CENTER", "WEAPONS & STATUS",
+    "SYSTEM / SAVE LOAD", "TACTICAL TIPS", "ABOUT CYD PORT"]
+assert lines[1:6] == [
+    "Kharn27", "Erick V. Garcia", "id + Fountainhead",
+    "John Carmack:", "Endless admiration!"]
+assert lines[7:14] == [
+    "DOOM RPG: THE GAME", "On Mars, UAC labs", "are overrun by Hell.",
+    "As a lone marine,", "explore dark halls,", "fight turn by turn,",
+    "Find keys, secrets."]
 assert lines[6] == ""  # no unwanted DOWN: controls callout
-# The fourth page (before CYD TOUCH) illustrates the real 160x20
+# The fifth page (before CYD TOUCH) illustrates the real 160x20
 # upper HUD in miniature; preserve weapon guidance on the next relevant page.
-hud_page = lines[3 * 7 : 4 * 7]
+hud_page = lines[4 * 7 : 5 * 7]
 assert hud_page == [
     "TOP HUD BAR", "3 VIRTUAL BUTTONS", "LEFT: game menu",
     "CENTER: pass a turn", "RIGHT: show automap", "", ""]
-assert lines[7 * 7 + 6] == "Tap gun: weapons"
-scene_page = lines[4 * 7 : 5 * 7]
+assert lines[8 * 7 + 6] == "Tap gun: weapons"
+scene_page = lines[5 * 7 : 6 * 7]
 assert scene_page == [
-    "CYD TOUCH (1/2)", "TOP: STR L/FWD/STR R",
+    "CYD TOUCH (1/2)", "",
     "GREEN: MOVE / TURN", "RED: ACT", "YELLOW: WEAPONS", "", ""]
-assert lines[5 * 7] == "CYD TOUCH (2/2)"
+assert lines[6 * 7] == "CYD TOUCH (2/2)"
 
 assert "DOWN: controls" not in lines
 assert max(map(len, lines)) <= 20  # source font=7px/char, x=12
 assert len(lines) == len(set((i, line) for i, line in enumerate(lines)))
 assert any("CYD" in line for line in lines)
 assert all(label in lines for label in (
-    "YOU ARE THE MARINE", "TURN-BASED GAME", "CYD TOUCH (1/2)",
+    "DOOM RPG: THE GAME", "TURN-BASED GAME", "CYD TOUCH (1/2)",
     "TOP HUD BAR", "WEAPONS & STATUS", "SYSTEM / SAVE LOAD",
     "MENU CONTROLS", "TACTICAL TIPS", "ABOUT CYD PORT"))
 assert all(term in lines for term in (
@@ -124,20 +130,20 @@ assert "return EspMainMenuSkin_letterTone(1, 9);" in actions
 assert "return EspMainMenuSkin_letterTone(4, 9);" in actions
 assert "helpColor888(helpTitleTopTone())" in actions
 assert "helpColor888(helpBodyMiddleTone())" in actions
-assert "const uint16_t ink = helpTitleTopTone();" in actions
+assert "static uint16_t helpThirdTone(void)" in actions
 assert "EspMainMenuSkin_uiInk()" not in actions
-assert 'helpPaintCopyrightMark(framebuffer);' in actions
+assert 'helpPaintCopyrightMark(framebuffer, y, tone);' in actions
 assert '"Kharn27"' in model
 assert "helpDrawThemedPageTitle(doomRpg, canvas, line, 12, y);" in actions
 assert "EspMainMenuSkin_letterTone(band * 3 + 1, 9)" in actions
 assert "DoomRPG_setClipTrue(doomRpg, x, y + band * 4," in actions
 assert "DoomRPG_setClipFalse(doomRpg);" in actions
-assert "helpPaintCopyrightMark(framebuffer);" in actions
-assert "i == 1 && menuSystem->scrollIndex == 0" in actions
+assert "helpPaintCopyrightMark(framebuffer, y, tone);" in actions
+assert "i >= 1 && i <= 3 && menuSystem->scrollIndex == 0" in actions
 assert "EspNativeCanvas_drawText(canvas, line, 27, y, 0);" in actions
 assert "static const uint16_t rows[12]" in actions
 assert "for (x = 0; x < 12; ++x)" in actions
-assert "fb[(26 + y) * DOOMRPG_LOGICAL_WIDTH + 12 + x] = ink;" in actions
+assert "fb[(top + y) * DOOMRPG_LOGICAL_WIDTH + 12 + x] = ink;" in actions
 assert 'i % MAIN_HELP_VISIBLE_LINES == 0' in actions
 # The logo and section heading never occupy the footer/button pixels;
 # the original 9x12 explanation glyphs and 12px line height remain unchanged.
@@ -157,7 +163,7 @@ assert list(map(lambda h: int(h, 16), logo_rows)) == [
     0x0f0, 0x30c, 0x402, 0x8f1, 0x901, 0x901,
     0x901, 0x901, 0x8f1, 0x402, 0x30c, 0x0f0]
 assert "for (y = 0; y < 12; ++y)" in copyright
-assert "const uint16_t ink = helpTitleTopTone();" in copyright
+assert "int top, uint16_t ink" in copyright
 
 assert "EspMainMenuSkin_uiAccent()" in actions
 # k.bmp is already a 20x20 tiled native PAK asset in gameplay.
@@ -175,7 +181,7 @@ assert 'helpHudBarBG.width != MAIN_HELP_HUD_SOURCE_TILE' in actions
 assert 'DoomRPG_freeImage(helpSpaceOwner, &helpHudBarBG);' in actions
 assert 'helpPaintTopHudIllustration(framebuffer)' in actions
 assert 'if (menuSystem->scrollIndex == MAIN_HELP_HUD_PAGE_SCROLL)' in actions
-assert '#define MAIN_HELP_HUD_PAGE_SCROLL (3 * MAIN_HELP_VISIBLE_LINES)' in actions
+assert '#define MAIN_HELP_HUD_PAGE_SCROLL (4 * MAIN_HELP_VISIBLE_LINES)' in actions
 assert macro("MAIN_HELP_HUD_BAR_X") == 16
 assert macro("MAIN_HELP_HUD_BAR_Y") == 43
 assert macro("MAIN_HELP_HUD_BAR_WIDTH") == 128
@@ -195,12 +201,15 @@ assert 'static const HelpHudGlyph helpHudGlyphs[]' in actions
 assert 'framebuffer[(y + row) * DOOMRPG_LOGICAL_WIDTH +' in actions
 assert '0xffffU; /* white, all themes */' in actions
 # "3 VIRTUAL BUTTONS" is WHITE, as are the tiny ROM button glyphs;
-# LEFT/CENTER/RIGHT captions below use the skin's middle tone.
+# LEFT/CENTER/RIGHT prefixes use the theme's first, second and third tones.
 assert "/* The control-identification caption stays white;" in actions
 hud_paint_section = actions.split(
     'if (menuSystem->scrollIndex == MAIN_HELP_HUD_PAGE_SCROLL) {', 1
 )[1].split('    else if (menuSystem->scrollIndex == MAIN_HELP_SCENE_PAGE_SCROLL &&', 1)[0]
-assert hud_paint_section.count('helpColor888(helpBodyMiddleTone())') == 1
+assert 'helpDrawHudCaption(doomRpg, canvas, label, i - 2,' in hud_paint_section
+assert 'static const int tones[3] = {1, 4, 7};' in actions
+assert 'EspNativeCanvas_drawText(canvas, prefixes[zone], 12, y, 0);' in actions
+assert '12 + (int)n * 7, y, 0);' in actions
 assert 'DoomRPG_setFontColor(doomRpg, 0xffffffffU);' in hud_paint_section
 assert '0xffffU; /* white, all themes */' in actions
 
@@ -255,7 +264,7 @@ scene_api = (INC / "esp_native_help_scene.h").read_text()
 pack = (SRC / "esp_asset_pack.cpp").read_text()
 pack_api = (INC / "esp_asset_pack.h").read_text()
 controls = (SRC / "esp_native_gameplay_controls.c").read_text()
-assert '#define MAIN_HELP_SCENE_PAGE_SCROLL (4 * MAIN_HELP_VISIBLE_LINES)' in actions
+assert '#define MAIN_HELP_SCENE_PAGE_SCROLL (5 * MAIN_HELP_VISIBLE_LINES)' in actions
 assert 'else if (menuSystem->scrollIndex == MAIN_HELP_SCENE_PAGE_SCROLL &&' in actions
 assert 'EspNativeHelpScene_isReady()' in actions
 assert 'EspNativeHelpScene_paint(' in actions
@@ -278,10 +287,10 @@ assert 'EspMapRuntime_' not in scene
 assert 'ESP_NATIVE_GAMEPLAY_ACTION_' not in scene
 assert 'WALL_BYTES 2048U' in scene
 assert 'static HelpMaterial material;' in scene
-assert 'static const int xZone[4] = {0, 42, 85, PREVIEW_W};' in scene
-assert 'static const int yZone[4] = {0, 17, 35, PREVIEW_H};' in scene
-assert 'PREVIEW_X 16' in scene and 'PREVIEW_Y 42' in scene
-assert 'PREVIEW_W 128' in scene and 'PREVIEW_H 53' in scene
+assert 'static const int xZone[4] = {0, 48, 96, PREVIEW_W};' in scene
+assert 'static const int yZone[4] = {0, 22, 45, PREVIEW_H};' in scene
+assert 'PREVIEW_X 8' in scene and 'PREVIEW_Y 29' in scene
+assert 'PREVIEW_W 144' in scene and 'PREVIEW_H 68' in scene
 assert 'EspAssetPack_findEntry("wtexels.bin", &walls)' in scene
 assert 'EspAssetPack_findEntry("mappings.bin", &mappings)' in scene
 assert 'EspAssetPack_findEntry("palettes.bin", &palettes)' in scene
@@ -316,14 +325,14 @@ assert turn_points == [
 assert all(abs(b[0] - a[0]) <= 3 and abs(b[1] - a[1]) <= 3
            for a, b in zip(turn_points, turn_points[1:]))
 # Turning symbols and their mirrored arrowheads fit their own green cell.
-for left, right in ((16, 57), (101, 143)):
+for left, right in ((8, 55), (104, 151)):
     cx = (left + right) // 2
-    cy = (59 + 76) // 2
-    mirror = 1 if left == 16 else -1
+    cy = (51 + 73) // 2
+    mirror = 1 if left == 8 else -1
     outline = [(cx + mirror * x, cy + y) for x, y in turn_points]
     outline.extend((cx - mirror * dx, cy + dy)
                    for dx, dy in ((3, -3), (6, 0), (3, 3)))
-    assert all(left < x < right and 59 < y < 76
+    assert all(left < x < right and 51 < y < 73
                for x, y in outline)
 
 assert 'static void helpPaintWeaponCaption(' in scene
@@ -347,18 +356,20 @@ for letter, row_text in glyphs:
 
 # Two 5x7 lines, a one-pixel gap, and the dimmed reading pad must
 # all stay inside the bottom-left and bottom-right 42/43x18px zones.
-for left, right in ((16, 57), (101, 143)):
+for left, right in ((8, 55), (104, 151)):
     cx = (left + right) // 2
     assert left < cx - 14 and cx + 13 < right
     for text in ("WPN", "PREV", "NEXT"):
         w = len(text) * 6 - 1
         x = cx - w // 2
         assert left < x and x + w - 1 < right
-    assert 77 < 78 and 78 + 7 - 1 < 86
-    assert 86 + 7 - 1 < 94
+    assert 74 < 75 and 75 + 7 - 1 < 83
+    assert 83 + 7 - 1 < 97
 
-assert 16 <= 16 + 128 <= 155
-assert 42 + 53 - 1 < 100
+assert 8 <= 8 + 144 <= 155
+assert 29 + 68 - 1 < 100
+assert 'ink = sampleWall(u, v);' in scene
+assert 'ink = dim565(sampleWall(u, v), light);' not in scene
 assert 'if (shift == helpSpaceShift &&' in actions
 assert 'helpExpectedFrameFNV = finalFNV;' in actions
 
@@ -381,5 +392,6 @@ for scroll in range(len(lines)):
     page = (clamped + 6) // 7 + 1
     assert 1 <= page <= (len(lines) + 6) // 7
 
-print("PASS HELP: 11 pages, TOP HUD fourth, 128x16 k.bmp and 2.64s breath, white button glyphs,")
-print("           CYD touch PAK wall 3x3 semantic grid, flash-map identity and FNV release")
+print("PASS HELP: 12 pages, credits/story, TOP HUD fifth and 128x16 k.bmp,")
+print("           per-prefix theme tones, 2.64s breath, bright 144x68 PAK scene,")
+print("           bounded 3x3 semantic grid, flash-map identity and FNV release")
