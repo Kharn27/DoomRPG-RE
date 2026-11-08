@@ -87,7 +87,7 @@ assert "DoomRPG_freeImage(helpSpaceOwner, &helpSpaceBG);" in actions
 assert "Esp32PlatformVideo_framebuffer()" in actions
 assert "SDL_RenderCopy(NULL, helpSpaceBG.imgBitmap" in actions
 assert "MAIN_HELP_STAR_VIRTUAL_WIDTH" in actions
-assert "if (shift == helpSpaceShift) return;" in actions
+assert "if (shift == helpSpaceShift &&" in actions  # breath can repaint without star shift
 assert "DoomRPG_esp32MainMenuHelpService();" in loop
 assert "void DoomRPG_esp32MainMenuHelpService(void);" in header
 assert loop.index("Esp32IntroClock_service();") < loop.index("DoomRPG_esp32MainMenuHelpService();")
