@@ -325,6 +325,42 @@ int EspMainMenuSkin_paintPlate(uint16_t* fb, int stride,
     return 1;
 }
 
+
+/* Shared industrial PAGE UP / PAGE DOWN keys used by MENU_MAIN -> LOAD
+ * and by HUB -> SAVE/LOAD. Geometry is caller-owned touch geometry:
+ * 39x29 or 39x30; the skin only paints INSIDE those fixed bounds.
+ * The arrow uses the existing theme accent, while disabled arrows use
+ * subdued steel without pretending another page is selectable. */
+int EspMainMenuSkin_paintNavKey(uint16_t* fb, int stride,
+                                 int width, int height,
+                                 int l, int t, int r, int b,
+                                 int next, int enabled) {
+    const int cx = (l + r) / 2;
+    const int cy = (t + b) / 2;
+    uint16_t arrow;
+    int i;
+    if ((next != 0 && next != 1) || (enabled != 0 && enabled != 1) ||
+        r - l + 1 != 39 || (b - t + 1 != 29 && b - t + 1 != 30))
+        return 0;
+    if (!EspMainMenuSkin_paintPlate(fb, stride, width, height,
+                                      l, t, r, b, ESP_MAIN_MENU_SKIN_IDLE))
+        return 0;
+    arrow = enabled ? EspMainMenuSkin_uiAccent() :
+                      palettes[ESP_MAIN_MENU_SKIN_IDLE].steel;
+    /* Keep the old broad 2px chevron silhouette and centering. Only the
+     * backing plate changes; zero change to arrow coordinates or touch. */
+    for (i = 0; i < 7; ++i) {
+        const int yy = next ? cy - 3 + i : cy + 3 - i;
+        const int left = cx - 7 + i;
+        const int right = cx + 7 - i;
+        horizontal(fb, stride, left, left + 2, yy, l, t, r, b, arrow);
+        horizontal(fb, stride, left, left + 2, yy + 1, l, t, r, b, arrow);
+        horizontal(fb, stride, right - 2, right, yy, l, t, r, b, arrow);
+        horizontal(fb, stride, right - 2, right, yy + 1, l, t, r, b, arrow);
+    }
+    return 1;
+}
+
 /* Unframed industrial modal title, modeled on the death-menu stencil.
  * Both native reports share exactly this paint; the longest 5x7 title
  * (MISSION COMPLETE, 16 glyphs at x34..128) has a fully clear ink corridor.

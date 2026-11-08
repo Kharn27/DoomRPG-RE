@@ -133,11 +133,81 @@ static void assertPlateCapSymmetry(uint16_t* fb) {
     assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
 }
 
+
+/* Regress the real production nav-key painter against its exact plate
+ * background, across both LOAD GAME and HUB slot layouts. All chevrons
+ * retain their original 2-pixel silhouette; no writes outside touch bounds. */
+static void assertIndustrialNavKeys(uint16_t* fb) {
+    static const int regions[][4] = {
+        {118, 34, 156, 62},  /* MAIN LOAD UP: 39x29 */
+        {118, 69, 156, 98},  /* MAIN LOAD DOWN: 39x30 */
+        {118, 49, 156, 78},  /* HUB slot UP: 39x30 */
+        {118, 83, 156, 112} /* HUB slot DOWN: 39x30 */
+    };
+    static uint16_t plate[W * H];
+    for (int theme = 0; theme < 3; ++theme) {
+        assert(EspMainMenuSkin_setTheme((uint8_t)theme));
+        for (int rectangle = 0; rectangle < 4; ++rectangle) {
+            const int l = regions[rectangle][0], t = regions[rectangle][1];
+            const int r = regions[rectangle][2], b = regions[rectangle][3];
+            const int cx = (l + r) / 2, cy = (t + b) / 2;
+            resetFrame();
+            assert(EspMainMenuSkin_paintPlate(fb,W,W,H,l,t,r,b,
+                                              ESP_MAIN_MENU_SKIN_IDLE));
+            memcpy(plate, fb, sizeof(plate));
+            for (int next = 0; next < 2; ++next) {
+                for (int enabled = 0; enabled < 2; ++enabled) {
+                    const uint16_t arrow = enabled ?
+                        EspMainMenuSkin_uiAccent() : 0x4a48U;
+                    resetFrame();
+                    assert(EspMainMenuSkin_paintNavKey(fb,W,W,H,l,t,r,b,
+                                                      next,enabled));
+                    for (int y = 0; y < H; ++y)
+                        for (int x = 0; x < W; ++x) {
+                            if (x < l || x > r || y < t || y > b) {
+                                assert(fb[y*W+x] == SENTINEL);
+                                continue;
+                            }
+                            int chevron = 0;
+                            for (int i = 0; i < 7; ++i) {
+                                const int yy = next ? cy - 3 + i : cy + 3 - i;
+                                const int left = cx - 7 + i;
+                                const int right = cx + 7 - i;
+                                if ((y == yy || y == yy + 1) &&
+                                    ((x >= left && x <= left + 2) ||
+                                     (x >= right - 2 && x <= right)))
+                                    chevron = 1;
+                            }
+                            assert(fb[y*W+x] ==
+                                   (chevron ? arrow : plate[y*W+x]));
+                        }
+                    for (int guard = 0; guard < GUARD; ++guard) {
+                        assert(arena[guard] == SENTINEL);
+                        assert(arena[GUARD + W*H + guard] == SENTINEL);
+                    }
+                }
+            }
+        }
+    }
+    resetFrame();
+    assert(!EspMainMenuSkin_paintNavKey(NULL,W,W,H,118,34,156,62,0,1));
+    assert(!EspMainMenuSkin_paintNavKey(fb,W-1,W,H,118,34,156,62,0,1));
+    assert(!EspMainMenuSkin_paintNavKey(fb,W,W,H,118,34,155,62,0,1));
+    assert(!EspMainMenuSkin_paintNavKey(fb,W,W,H,118,34,156,63,0,1));
+    assert(!EspMainMenuSkin_paintNavKey(fb,W,W,H,118,34,156,62,2,1));
+    assert(!EspMainMenuSkin_paintNavKey(fb,W,W,H,118,34,156,62,0,-1));
+    assert(!EspMainMenuSkin_paintNavKey(fb,W,W,H,118,34,160,62,0,1));
+    for (int i=0;i<(int)(sizeof(arena)/sizeof(arena[0]));++i)
+        assert(arena[i] == SENTINEL);
+    assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
+}
+
 int main(void) {
     uint16_t* fb = arena + GUARD;
     uint32_t fingerprints[4][3];
     int item, state;
     assertPlateCapSymmetry(fb);
+    assertIndustrialNavKeys(fb);
     assert(DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH == 102);
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_HEIGHT == 20);
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_PITCH == 25);
