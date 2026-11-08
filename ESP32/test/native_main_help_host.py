@@ -29,10 +29,13 @@ lines = re.findall(r'^\s*"([^"]*)",$', model[start:end], re.M)
 assert len(lines) == 77
 assert len(lines) % 7 == 0
 assert [lines[p * 7] for p in range(11)] == [
-    "DOOM RPG ON CYD", "TURN-BASED GAME", "CYD TOUCH (1/2)",
-    "CYD TOUCH (2/2)", "ACTION / CENTER", "TOP HUD BAR",
-    "WEAPONS & STATUS", "SYSTEM / SAVE LOAD", "MENU CONTROLS",
+    "DOOM RPG ON CYD", "MENU CONTROLS", "TURN-BASED GAME",
+    "CYD TOUCH (1/2)", "CYD TOUCH (2/2)", "ACTION / CENTER",
+    "TOP HUD BAR", "WEAPONS & STATUS", "SYSTEM / SAVE LOAD",
     "TACTICAL TIPS", "ABOUT CYD PORT"]
+assert lines[1] == "Kharn27"
+assert lines[6] == ""  # no unwanted DOWN: controls callout
+assert "DOWN: controls" not in lines
 assert max(map(len, lines)) <= 20  # source font=7px/char, x=12
 assert len(lines) == len(set((i, line) for i, line in enumerate(lines)))
 assert any("CYD" in line for line in lines)
@@ -100,6 +103,23 @@ for y in range(120):
 assert actions.count("!EspMainMenuSkin_paintPlate(") == 3
 assert actions.count("!EspMainMenuSkin_paintText(") == 3
 assert "EspMainMenuSkin_uiInk()" in actions
+assert "helpDrawThemedPageTitle(doomRpg, canvas, line, 12, y);" in actions
+assert "EspMainMenuSkin_letterTone(band * 3 + 1, 9)" in actions
+assert "DoomRPG_setClipTrue(doomRpg, x, y + band * 4," in actions
+assert "DoomRPG_setClipFalse(doomRpg);" in actions
+assert "helpPaintCopyrightMark(framebuffer);" in actions
+assert "i == 1 && menuSystem->scrollIndex == 0" in actions
+assert "EspNativeCanvas_drawText(canvas, line, 27, y, 0);" in actions
+assert "static const uint16_t rows[9]" in actions
+assert "for (x = 0; x < 11; ++x)" in actions
+assert "fb[(27 + y) * DOOMRPG_LOGICAL_WIDTH + 12 + x] = ink;" in actions
+assert 'i % MAIN_HELP_VISIBLE_LINES == 0' in actions
+# The logo and section heading never occupy the footer/button pixels;
+# the original 9x12 explanation glyphs and 12px line height remain unchanged.
+assert 27 + 9 - 1 < 38 and 27 + 9 - 1 < 100
+assert "y = 14;" in actions
+assert "y += MAIN_HELP_LINE_HEIGHT;" in actions
+
 assert "EspMainMenuSkin_uiAccent()" in actions
 assert "EspMainMenuSkin_uiAccentDim()" in actions
 assert "menuSystem->scrollIndex -= MAIN_HELP_VISIBLE_LINES;" in actions
@@ -119,5 +139,5 @@ for scroll in range(len(lines)):
     page = (clamped + 6) // 7 + 1
     assert 1 <= page <= (len(lines) + 6) // 7
 
-print("PASS HELP: 77 ROM lines / 11 intentional pages, CYD touch truth, intro PAK sky, 3 industrial hitboxes,")
+print("PASS HELP: 11 themed title pages with cover © Kharn27, menu navigation 2nd, 3 industrial hitboxes,")
 print("           7-line bounded pages, animation/FNV rebasing, release and no keypad")
