@@ -2,31 +2,38 @@
 #define DOOMRPG_ESP32_NATIVE_HELP_SCENE_H
 
 #include <stdint.h>
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* Map-dependent illustrative first-person corridor built from ONE real PAK wall
- * resource. No BSP, resident game state, ZIP, map-wide texels or framebuffer
- * duplication. The preview is not a screenshot of an actual map position. */
-int EspNativeHelpScene_load(uint8_t cachedMapId, uint32_t activationSeed);
+#define ESP_NATIVE_HELP_BREATH_STEP_MS 80U
+#define ESP_NATIVE_HELP_BREATH_STEPS 32U
+
+/* A 128x64 RGB565 snapshot of a REAL already-presented native gameplay
+ * viewport, captured once per map without PAK/BSP/world ownership or heap.
+ * 16384 bytes static BSS; no second 160x120 frame. Only a 160x80 viewport
+ * rendered by the canonical native compositor may call this. */
+int EspNativeHelpScene_captureGameplayViewport(const uint16_t* framebuffer,
+                                               uint8_t mapId);
+/* HELP owns only the display; closing it preserves last completed snapshot. */
+void EspNativeHelpScene_begin(uint8_t cachedMapId);
 void EspNativeHelpScene_reset(void);
 int EspNativeHelpScene_isReady(void);
-uint16_t EspNativeHelpScene_textureId(void);
+int EspNativeHelpScene_hasGameplaySnapshot(void);
+uint8_t EspNativeHelpScene_snapshotMapId(void);
 
-/* Draw x8..151 / y29..96 onto the existing 160x120 RGB565 framebuffer.
- * level is a 0..6 triangle intensity shared with the HELP HUD breathing. */
+/* One mathematically smooth, symmetric 2.56s breath for all illustrations. */
+uint8_t EspNativeHelpScene_breathStep(uint32_t elapsedMs);
+uint8_t EspNativeHelpScene_breathLevel(uint8_t step);
+uint8_t EspNativeHelpScene_breathPower(uint8_t level);
+
+/* Paint directly into the only 160x120 RGB565 frame, never touch the HUD
+ * footer or live game world. At cold boot: starfield, no fake corridor. */
 int EspNativeHelpScene_paint(uint16_t* framebuffer, uint8_t level);
-
-/* Render only one 3-button row (0=top, 1=middle, 2=bottom), x8..151,
- * y39..61. The genuine PAK wall texels and feedback icons are reused.
- * Level 0 deliberately lights no buttons. Failure writes nothing. */
 int EspNativeHelpScene_paintRow(uint16_t* framebuffer, uint8_t sourceRow,
                                 uint8_t level);
 
 #ifdef __cplusplus
 }
 #endif
-
 #endif
