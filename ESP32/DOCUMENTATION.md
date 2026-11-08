@@ -1,3 +1,11 @@
+## PR #260 — géométrie viewport : origine possédée par ESP32 (8 novembre 2026)
+
+Sur `agent/esp32-render-retire-desktop-screen-origin` (code `995ff6aead71dbf9fd441494e37fbe1c9c591675`), suppression côté firmware de `Render_t::screenX/Y`, conservés pour desktop et oracle géométrique. Les offsets de raster du BSP, de la première frame, des sprites, du compositeur, de l'arme et des diagnostics viennent de `DOOMRPG_VIEWPORT_X=0`, `DOOMRPG_VIEWPORT_Y=20` dans `platform_video_config.h`; le message de setup lit directement `SDL_Rect.x/y`. `Render_t` **184 → 176 B**, sans nouvelle allocation/cache ni changement intentionnel des images, du PAK ou du RNG.
+
+CI code [#42429005622](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42429005622) **SUCCESS** ; log physique `device-monitor-261108-012736.log` : `[RENDERCORE] INIT bytes=176`, setup `160x80@0,20`, première frame Entrance `71ca7465`, START neuf et LOAD V11 slot04, rendu murs/sprites/arme, Malwrath et impacts, portes, HUD/HUB, deux sorties sans fuite visible, `HEADROOM_OK` et `shapeData/mediaTexels=NULL`. **Validation fonctionnelle, pas parité visuelle absolue** ; aucun SHA embarqué dans la capture, aucune mesure heap A/B attribuable aux seuls huit octets. Code gelé au SHA testé ; clôture docs-only. [Rapport matériel #260](MILESTONE_PR260_RENDER_VIEWPORT_ORIGIN_CYD_PASS.md).
+
+---
+
 ## PR #256 — clôture impacts du joueur : accepté avec écarts de fidélité (8 novembre 2026)
 
 Sur `agent/esp32-desktop-player-pain-visual-parity`, code final `2cc11cfe50eeedc95aef81164f06eb1051e6a13c` ; CI [#42421101696](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42421101696) SUCCESS. L'utilisateur a observé le système de dégâts combiné sur classic CYD, confirmé « Ca marche bien » puis demandé explicitement le merge. Aucun log Serial récent et exhaustif du dernier SHA ne permet de déclarer toutes les correspondances ennemis/bitshapes conformes au J2ME.
