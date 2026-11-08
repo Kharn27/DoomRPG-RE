@@ -251,44 +251,61 @@ assert 43 + 16 - 1 < 64 and 43 + 16 - 1 < 100
 assert 27 + 12 - 1 < 43
 assert 88 + 12 - 1 < 100
 
-# Breath deliberately slowed from 1.32s to 2.64s (220ms/step),
-# shared by MAIN GAMEPLAY and each instructional row, without a blind FPS loop.
-assert macro("MAIN_HELP_BREATH_STEP_MS") == 220
-assert macro("MAIN_HELP_BREATH_STEPS") == 12
-wave = [n if n <= 6 else 12 - n for n in range(12)]
-assert wave == [0, 1, 2, 3, 4, 5, 6, 5, 4, 3, 2, 1]
-assert all(0x0013 + 2 * n <= 0x001f for n in wave)
-assert all(2 <= 2 + n <= 8 for n in wave)
-assert 'const uint16_t neon = (uint16_t)(0x0013U + 2U * level);' in actions
-assert 'const uint8_t tint = (uint8_t)(2U + level);' in actions
+# One smoothstep breath source, 32 x 80ms = 2.56s.
+# Keep text/icon backing stable while only the neon accent eases in/out.
+scene_api = (INC / "esp_native_help_scene.h").read_text()
+scene = (SRC / "esp_native_help_scene.c").read_text()
+hud_c = (SRC / "esp_native_gameplay_hud.c").read_text()
+frame_c = (SRC / "esp_native_gameplay_frame.c").read_text()
+assert '#define ESP_NATIVE_HELP_BREATH_STEP_MS 80U' in scene_api
+assert '#define ESP_NATIVE_HELP_BREATH_STEPS 32U' in scene_api
+assert 'EspNativeHelpScene_breathStep(now - helpSpaceEpoch)' in actions
+assert 'EspNativeHelpScene_breathLevel((uint8_t)step)' in actions
+assert 'EspNativeHelpScene_breathPower(level)' in scene
+assert 'EspNativeHelpScene_breathPower(level)' in actions
+assert '3t²-2t³' in scene
+assert 'const uint16_t neon = (uint16_t)(((uint32_t)power * 31U) / 255U);' in actions
+assert 'MENU/PASS/MAP remain legible throughout the breath.' in actions
+assert actions.count('if (level == 0U) {') == 0  # no binary blackout
+wave = [n if n <= 16 else 32 - n for n in range(32)]
+assert wave == list(range(17)) + list(range(15, 0, -1))
+power = [(n * n * (48 - 2 * n) * 255 + 2048) // 4096 for n in wave]
+assert power[0] == 0 and power[16] == 255 and power[-1] > 0
+assert all(a <= b for a, b in zip(power[:16], power[1:17]))
+assert max(abs(a - b) for a, b in zip(power, power[1:])) < 26
 assert 'helpHudBreathStep == helpBreathStepAt(now)' in actions
 assert '!helpIsAnimatedHudPage(helpDoomRpg->menuSystem->scrollIndex)' in actions
-assert 'static int helpBreathStepAt(uint32_t now)' in actions
-assert 'static uint8_t helpBreathLevel(int step)' in actions
-assert 'helpBreathLevel(step)' in actions
-assert actions.count('if (level == 0U) {') == 2  # both mini HUDs fully off
-assert 'helpPaintMiniHudBacking(framebuffer)' in actions
-assert 'helpPaintMiniHudBacking(fb)' in actions
-assert 'static int helpPaintBottomHudIllustration(' in actions
-assert 'helpPaintBottomHudIllustration(framebuffer)' in actions
-assert 'MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL (9 * MAIN_HELP_VISIBLE_LINES)' in actions
-assert 'static const int separator[4] = {42, 68, 90, 117};' in actions
-assert 'helpPaintMiniHudLabel(fb, "HP30",' in actions
-assert 'helpPaintMiniHudLabel(fb, "AR20",' in actions
-assert 'helpPaintMiniHudLabel(fb, "AM12",' in actions
-assert 'helpPaintMiniHudLabel(fb, "N",' in actions
-assert 'static const int tones[3] = {1, 4, 7};' in actions
 assert 'helpHudBreathStep = step;' in actions
-assert actions.count('helpHudBreathStep = -1;') == 3  # declaration, release, start
+assert actions.count('helpHudBreathStep = -1;') == 3
 assert 'helpExpectedFrameFNV = finalFNV;' in actions
 assert 'EspNativeGameplayInput_route(' not in actions
 assert 'EspNativeGameplayHud_routeInitial(' not in actions
 assert 'DoomRPG_esp32MainMenuReturnToMain(' in actions
 
-# MAIN GAMEPLAY shows the actual native-palette grid over a bounded
-# PAK-derived wall-perspective illustration; never render a gameplay map here.
-scene = (SRC / "esp_native_help_scene.c").read_text()
-scene_api = (INC / "esp_native_help_scene.h").read_text()
+# Real HUD miniature is produced by gameplay's own 5-asset painter.
+# Source bottom y100..119 is only scratch, overwritten by HELP footer plates.
+assert 'static uint16_t helpBottomHudMini[MAIN_HELP_HUD_BAR_WIDTH *' in actions
+assert 'helpBottomHudReady = 0U;' in actions
+assert 'EspNativeGameplayHud_paintHelpBottomBand(fb)' in actions
+assert 'static int helpPaintBottomHudIllustration(' in actions
+assert 'helpPaintBottomHudIllustration(framebuffer)' in actions
+assert 'MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL (9 * MAIN_HELP_VISIBLE_LINES)' in actions
+assert 'helpBottomHudMini[y * MAIN_HELP_HUD_BAR_WIDTH + x]' in actions
+assert 'const int sy = 100 + y * 20 / MAIN_HELP_HUD_BAR_HEIGHT;' in actions
+assert 'const int sx = x * 160 / MAIN_HELP_HUD_BAR_WIDTH;' in actions
+assert '"HP30"' not in actions and '"AR20"' not in actions
+assert '"AM12"' not in actions and 'skin = 0xfba0U' not in actions
+assert 'int EspNativeGameplayHud_paintHelpBottomBand(' in hud_c
+assert 'paintPrepared(&prepared, framebuffer, NULL, 1)' in hud_c
+assert 'if (!bottomOnly) drawTopTouchNotches(framebuffer, stats);' in hud_c
+assert 'paintPrepared(&prepared, framebuffer, outStats, 0)' in hud_c
+assert all(f'openAsset("{x}.bmp", &bmp,' in hud_c
+           for x in ('k','m','l','o','a'))
+assert 'static const int tones[3] = {1, 4, 7};' in actions
+
+# The scene is a REAL screenshot downsample of the fully presented
+# 160x80 native viewport, captured once per map.  Cold boot keeps c.bmp,
+# rather than fabricating a door-tiled corridor or loading a BSP in HELP.
 pack = (SRC / "esp_asset_pack.cpp").read_text()
 pack_api = (INC / "esp_asset_pack.h").read_text()
 controls = (SRC / "esp_native_gameplay_controls.c").read_text()
@@ -297,61 +314,57 @@ assert '#define MAIN_HELP_ROW_FIRST_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)' in act
 assert '#define MAIN_HELP_ROW_LAST_SCROLL (8 * MAIN_HELP_VISIBLE_LINES)' in actions
 assert 'helpIsRowHelpPage(menuSystem->scrollIndex)' in actions
 assert 'helpIsAnimatedScenePage(' in actions
-assert 'helpDoomRpg->menuSystem->scrollIndex)' in actions
 assert 'EspNativeHelpScene_paintRow(' in actions
 assert '63 + (i - 2) * MAIN_HELP_LINE_HEIGHT' in actions
 assert 63 + 2 * 12 + 12 - 1 == 98
-assert 98 < 99  # leave the HELP reading-window bottom border visible
 assert 'EspNativeHelpScene_paintRow(uint16_t* framebuffer, uint8_t sourceRow,' in scene_api
-assert 'if (level == 0U) return;' in scene
-assert 'if (fb == NULL || !material.ready || sourceRow > 2U || level > 6U)' in scene
+assert 'if (fb == NULL || !helpActive || sourceRow > 2U || level > 16U)' in scene
 assert 'static void helpPaintTouchCell(' in scene
 assert 'const int top = 39, bottom = 61;' in scene
 assert 'sourceRow, col,' in scene
 assert 'top, bottom, level);' in scene
 assert actions.count('helpSceneBreathStep = step;') == 2
-assert 'else if (menuSystem->scrollIndex == MAIN_HELP_SCENE_PAGE_SCROLL &&' in actions
 assert 'EspNativeHelpScene_isReady()' in actions
 assert 'EspNativeHelpScene_paint(' in actions
 assert 'helpSceneBreathStep == helpBreathStepAt(now)' in actions
 assert 'EspNativeHelpScene_reset();' in actions
 assert 'EspAssetPack_mapFlashCachedMapId()' in actions
-assert 'EspNativeHelpScene_load(cachedMapId,' in actions
-assert 'EspNativeHelpScene_load(uint8_t cachedMapId, uint32_t seed)' in scene
-assert 'EspNativeHelpScene_load(uint8_t cachedMapId, uint32_t activationSeed)' in scene_api
+assert 'EspNativeHelpScene_begin(cachedMapId);' in actions
+assert 'void EspNativeHelpScene_begin(uint8_t cachedMapId)' in scene_api
+assert 'int EspNativeHelpScene_captureGameplayViewport(' in scene_api
+assert 'EspNativeHelpScene_captureGameplayViewport(' in frame_c
+assert 'if (!preview) {' in frame_c
+assert 'view->targetMapId);' in frame_c
+assert 'lastWorld.valid != 0U && lastWorld.mapId == mapId' in scene
+assert 'lastWorld.pixel[y * HELP_SNAPSHOT_W + x]' in scene
+assert 'sourceY = 20 + y * 80 / HELP_SNAPSHOT_H' in scene
+assert 'sourceX = x * 160 / HELP_SNAPSHOT_W' in scene
+assert 'HELP_SNAPSHOT_W 128' in scene and 'HELP_SNAPSHOT_H 64' in scene
+assert 128 * 64 * 2 == 16384
+assert 'EspNativeHelpScene_hasGameplaySnapshot()' in scene
+assert 'snapshotPixel(lx, ly)' in scene
+assert 'snapshotPixel(lx, (ly - top) *' in scene
+assert 'requestedMapId != 0U && lastWorld.mapId == requestedMapId' in scene
 assert 'uint8_t EspAssetPack_mapFlashCachedMapId(void)' in pack
 assert 'uint8_t EspAssetPack_mapFlashCachedMapId(void);' in pack_api
-assert 'mapFlashHeaderLooksValid(cached, partition)' in pack
-assert 'cached.currentMapHash !=' in pack
-assert 'EspMapCatalog_nameForId(cached.currentMapId)' in pack
-assert 'esp_partition_read(partition, 0U, &cached, sizeof(cached))' in pack
-assert 'mapFlash.stats.currentMapId' in pack  # the live stage owner still exists
 assert 'EspAssetPack_mapFlashStage(' not in actions
 assert 'EspAssetPack_mapFlashPrepare(' not in actions
 assert 'EspMapRuntime_' not in scene
 assert 'ESP_NATIVE_GAMEPLAY_ACTION_' not in scene
-assert 'WALL_BYTES 2048U' in scene
-assert 'static HelpMaterial material;' in scene
+assert 'HelpMaterial' not in scene and 'helpCorridorPixel' not in scene
+assert 'EspAssetPack_' not in scene and 'sampleWall(' not in scene
 assert 'static const int xZone[4] = {0, 48, 96, PREVIEW_W};' in scene
 assert 'static const int yZone[4] = {0, 22, 45, PREVIEW_H};' in scene
 assert 'PREVIEW_X 8' in scene and 'PREVIEW_Y 29' in scene
 assert 'PREVIEW_W 144' in scene and 'PREVIEW_H 68' in scene
-assert 'EspAssetPack_findEntry("wtexels.bin", &walls)' in scene
-assert 'EspAssetPack_findEntry("mappings.bin", &mappings)' in scene
-assert 'EspAssetPack_findEntry("palettes.bin", &palettes)' in scene
-assert 'const uint32_t start = cachedMapId != 0U' in scene
-assert 'MAX_CANDIDATES 24U' in scene
 assert 'row == 1 && col == 1 ? 0xf800U' in scene
 assert 'row == 2 && col != 1 ? 0xffe0U' in scene
-assert '0x07e0U;' in scene
 for color in ('NEON_GREEN_CORE  0x07e0U',
               'NEON_RED_CORE    0xf800U',
               'NEON_YELLOW_CORE 0xffe0U'):
     assert color in controls
-assert 'DRAW' not in scene or 'shapeData' not in scene
-assert 'mediaTexels' not in scene or 'not map-wide mediaTexels' in scene
+assert 'mediaTexels' not in scene
 assert 'malloc(' not in scene
-assert 'EspAssetPack_close();' in scene
 
 # Hardware feedback on CYD TOUCH: turn symbols must curve, not be
 # three perpendicular line segments; weapon controls need explicit words.
@@ -387,8 +400,9 @@ assert 'col == 0 ? "PREV" : "NEXT"' in scene
 assert 'helpPaintWeaponWord(fb, centerX, top + 1, "WPN", ink);' in scene
 assert 'helpPaintWeaponWord(fb, centerX, top + 9, secondLine, ink);' in scene
 assert 'if (row == 2 && col != 1)' in scene
-assert 'const uint16_t textInk = dim565(' in scene
-assert 'neon, 170U + (uint32_t)level * 13U);' in scene
+assert 'helpPaintWeaponCaption(fb, (left + right) / 2, top,' in scene
+assert 'col == 0 ? "PREV" : "NEXT", 0xffe0U);' in scene
+assert 'if (power > 0U)' in scene
 assert 'dim565(*pixel, 160U)' in scene
 glyph_data = scene.split('static const HelpWeaponGlyph helpWeaponGlyphs[] = {', 1)[1].split('};', 1)[0]
 glyphs = re.findall(r"'([A-Z])',\s*\{([^}]+)\}", glyph_data)
@@ -413,16 +427,11 @@ for left, right in ((8, 55), (104, 151)):
 
 assert 8 <= 8 + 144 <= 155
 assert 29 + 68 - 1 < 100
-assert 'static uint16_t helpCorridorPixel(int lx, int ly)' in scene
-assert 'const int side = flank < 54;' in scene
-assert 'const int u = lx < PREVIEW_W / 2' in scene
-assert '6 + flank / 4 : 42 + flank / 4;' in scene
-assert 'ink = sampleWall(u, v);' in scene
-assert 'ink = dim565(sampleWall(u, v), 202U);' in scene
-assert 'helpCorridorPixel(lx, ly);' in scene
-assert 'helpCorridorPixel(lx, (ly - top) *' in scene
-assert 'sampleWall(lx * 63 / (PREVIEW_W - 1),' not in scene
-assert 'ink = dim565(sampleWall(u, v), light);' not in scene
+assert 'helpCorridorPixel' not in scene
+assert 'sampleWall(' not in scene
+assert 'if (EspNativeHelpScene_hasGameplaySnapshot()) {' in scene
+assert 'snapshotPixel(lx, ly);' in scene
+assert 'snapshotPixel(lx, (ly - top) *' in scene
 assert 'if (shift == helpSpaceShift &&' in actions
 assert 'helpExpectedFrameFNV = finalFNV;' in actions
 
@@ -445,6 +454,6 @@ for scroll in range(len(lines)):
     page = (clamped + 6) // 7 + 1
     assert 1 <= page <= (len(lines) + 6) // 7
 
-print("PASS HELP: 15 pages, 3 illustrated rows, TOP/BOTTOM themed mini HUDs,")
-print("           unified 220ms off-phase, 144x68+144x23 PAK-backed corridor,")
-print("           native 3x3 controls, no allocations, FNV + title/line bounds")
+print("PASS HELP: 15 pages, real 128x64 native scene on map exit,")
+print("           5-BMP exact bottom HUD, 32x80ms soft breath, real grid")
+print("           no synthetic door wall, no extra full frame, FNV + bounds")
