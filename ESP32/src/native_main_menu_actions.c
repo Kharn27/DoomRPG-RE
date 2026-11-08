@@ -60,6 +60,8 @@
 #define MAIN_HELP_HUD_BREATH_STEP_MS 220U
 #define MAIN_HELP_HUD_BREATH_STEPS 12U
 #define MAIN_HELP_SCENE_PAGE_SCROLL (5 * MAIN_HELP_VISIBLE_LINES)
+#define MAIN_HELP_ROW_FIRST_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)
+#define MAIN_HELP_ROW_LAST_SCROLL (8 * MAIN_HELP_VISIBLE_LINES)
 
 static DoomRPG_t* helpDoomRpg;
 static uint32_t helpExpectedFrameFNV;
@@ -240,7 +242,7 @@ static void helpPaintCopyrightMark(uint16_t* fb, int top, uint16_t ink) {
 }
 
 /* Breathing is time-derived: no timers, extra state owner or gameplay RNG.
- * Twelve steps of 110ms form a 1.32s triangle, including a gentle dim phase. */
+ * Twelve 220ms steps (2.64s), including one fully extinguished 3x3 phase. */
 static int helpHudBreathIndex(uint32_t now) {
     return (int)(((now - helpSpaceEpoch) / MAIN_HELP_HUD_BREATH_STEP_MS) %
                  MAIN_HELP_HUD_BREATH_STEPS);
@@ -248,6 +250,17 @@ static int helpHudBreathIndex(uint32_t now) {
 
 static uint8_t helpHudBreathLevel(int step) {
     return (uint8_t)(step <= 6 ? step : 12 - step);
+}
+
+/* All four scene pages share one phase and one loaded PAK wall material. */
+static int helpIsRowHelpPage(int scroll) {
+    return scroll >= MAIN_HELP_ROW_FIRST_SCROLL &&
+           scroll <= MAIN_HELP_ROW_LAST_SCROLL &&
+           scroll % MAIN_HELP_VISIBLE_LINES == 0;
+}
+static int helpIsAnimatedScenePage(int scroll) {
+    return scroll == MAIN_HELP_SCENE_PAGE_SCROLL ||
+           helpIsRowHelpPage(scroll);
 }
 
 /* Compact white 5x7 ROM glyphs for the illustration. Our game's normal
@@ -562,10 +575,8 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
     }
     else if (menuSystem->scrollIndex == MAIN_HELP_SCENE_PAGE_SCROLL &&
              EspNativeHelpScene_isReady()) {
-        /* A miniature first-person *illustration*, not a snapshot or a
-         * second active game: real wall material, 3x3 semantic feedback
-         * palette, and no HUD top/bottom bars. The next page retains the
-         * detailed descriptions of the center/bottom touch zones. */
+        /* MAIN GAMEPLAY: illustrative PAK scene with nine touch areas.
+         * The next three pages detail one control row each. */
         const char* title = DoomRPG_esp32MainMenuHelpLine(
             MAIN_HELP_SCENE_PAGE_SCROLL);
         const int step = helpHudBreathIndex(DoomRPG_GetUpTimeMS());
@@ -574,6 +585,36 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
         /* No TOP caption: the larger preview begins at y29. */
         if (!EspNativeHelpScene_paint(
                  framebuffer, helpHudBreathLevel(step))) return 0;
+        helpSceneBreathStep = step;
+    }
+    else if (helpIsRowHelpPage(menuSystem->scrollIndex) &&
+             EspNativeHelpScene_isReady()) {
+        const int sourceRow = (menuSystem->scrollIndex -
+                               MAIN_HELP_ROW_FIRST_SCROLL) /
+                              MAIN_HELP_VISIBLE_LINES;
+        const int step = helpHudBreathIndex(DoomRPG_GetUpTimeMS());
+        const char* title = DoomRPG_esp32MainMenuHelpLine(
+            menuSystem->scrollIndex);
+        const char* caption = DoomRPG_esp32MainMenuHelpLine(
+            menuSystem->scrollIndex + 1);
+        if (title == NULL || caption == NULL || visible != 7 ||
+            sourceRow < 0 || sourceRow > 2) return 0;
+        helpDrawThemedPageTitle(doomRpg, canvas, title, 12, 14);
+        DoomRPG_setFontColor(doomRpg, 0xffffffffU);
+        EspNativeCanvas_drawText(canvas, caption, 12, 27, 0);
+        if (!EspNativeHelpScene_paintRow(
+                framebuffer, (uint8_t)sourceRow,
+                helpHudBreathLevel(step))) return 0;
+        /* Three explicit explanations below the illustrated 3-button row,
+         * last baseline at y88 and ink ending at y99, before footer y100. */
+        for (i = 2; i <= 4; ++i) {
+            const char* label = DoomRPG_esp32MainMenuHelpLine(
+                menuSystem->scrollIndex + i);
+            if (label == NULL || label[0] == '\0') return 0;
+            DoomRPG_setFontColor(doomRpg, helpColor888(helpBodyMiddleTone()));
+            EspNativeCanvas_drawText(canvas, label, 12,
+                                     64 + (i - 2) * MAIN_HELP_LINE_HEIGHT, 0);
+        }
         helpSceneBreathStep = step;
     }
     else {
@@ -674,13 +715,13 @@ void DoomRPG_esp32MainMenuHelpService(void) {
                   MAIN_HELP_STAR_VIRTUAL_WIDTH);
     shift = (phase * DOOMRPG_LOGICAL_WIDTH) /
             (int)MAIN_HELP_STAR_VIRTUAL_WIDTH;
-    /* Only the two illustrated pages need redraws for their breathing
-     * phases. The other nine pages remain starfield-driven (~5Hz).
-     * No timers, gameplay RNG or extra buffers. */
+    /* HUD plus four illustrated gameplay pages redraw for breath updates;
+     * the other pages use the starfield cadence. No extra buffers. */
     if (shift == helpSpaceShift &&
         (helpDoomRpg->menuSystem->scrollIndex != MAIN_HELP_HUD_PAGE_SCROLL ||
          helpHudBreathStep == helpHudBreathIndex(now)) &&
-        (helpDoomRpg->menuSystem->scrollIndex != MAIN_HELP_SCENE_PAGE_SCROLL ||
+        (!helpIsAnimatedScenePage(
+             helpDoomRpg->menuSystem->scrollIndex) ||
          !EspNativeHelpScene_isReady() ||
          helpSceneBreathStep == helpHudBreathIndex(now)))
         return;
