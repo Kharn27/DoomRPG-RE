@@ -65,7 +65,7 @@ assert lines[9 * 7 : 10 * 7] == [
     "BOTTOM HUD BAR", "STATUS AT A GLANCE", "LEFT: HP + ARMOR",
     "CENTER: FACE / AMMO", "RIGHT: DIRECTION", "", ""]
 assert lines[10 * 7 : 11 * 7] == [
-    "WEAPON SELECT", "Tap HUD gun icon", "", "", "",
+    "WEAPON SELECT", "Tap gun icon", "", "", "",
     "Tap owned to equip", ""]
 
 assert "DOWN: controls" not in lines
@@ -388,6 +388,9 @@ assert '#define MAIN_HELP_WEAPON_MINI_H 42' in actions
 assert 'static uint16_t helpWeaponMini[MAIN_HELP_WEAPON_MINI_W *' in actions
 assert 'helpBuildWeaponGridMini(framebuffer)' in actions
 assert 'helpDrawWeaponGridMini(framebuffer);' in actions
+assert 'helpDrawWeaponButtonCue(framebuffer);' in actions
+assert 'helpBottomHudMini[sy * MAIN_HELP_HUD_BAR_WIDTH + 80 + x]' in actions
+assert 'if (!helpBottomHudReady)' in actions
 assert 'EspEntityDefTypeCatalog_buildFromPackEntry(&entities)' in actions
 assert 'EspNativeGameplayHubWeaponGrid_paint(framebuffer, &demo, 2U)' in actions
 assert 'demo.active = 1U;' in actions
