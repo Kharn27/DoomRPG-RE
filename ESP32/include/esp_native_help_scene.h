@@ -19,6 +19,12 @@ uint16_t EspNativeHelpScene_textureId(void);
  * level is a 0..6 triangle intensity shared with the HELP HUD breathing. */
 int EspNativeHelpScene_paint(uint16_t* framebuffer, uint8_t level);
 
+/* Render only one 3-button row (0=top, 1=middle, 2=bottom), x8..151,
+ * y39..61. The genuine PAK wall texels and feedback icons are reused.
+ * Level 0 deliberately lights no buttons. Failure writes nothing. */
+int EspNativeHelpScene_paintRow(uint16_t* framebuffer, uint8_t sourceRow,
+                                uint8_t level);
+
 #ifdef __cplusplus
 }
 #endif
