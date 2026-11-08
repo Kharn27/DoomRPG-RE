@@ -251,6 +251,9 @@ jobs:
       - name: Test native DoomRPG image and PAK resource lifetime (host C)
         run: python ESP32/test/doomrpg_image_resources_host.py
 
+      - name: Exercise real permanent indexed SDL shim (host C++)
+        run: python ESP32/test/sdl_shim_permanent_host.py
+
       - name: Test native presentation and clip pixel parity (host C)
         run: python ESP32/test/doomrpg_presentation_host.py
 
@@ -538,6 +541,17 @@ jobs:
             }
           done
 
+      - name: Build exact main SDL-A baseline for all three ELF profiles
+        run: |
+          git fetch --no-tags origin 77649ebf992e57aa5f57ff6efd138b45d871c9c2
+          git worktree add --detach "$RUNNER_TEMP/doomrpg-sdl-a-main" 77649ebf992e57aa5f57ff6efd138b45d871c9c2
+          for profile in esp32-cyd esp32-cyd-bringup esp32-cyd-trace; do
+            ( cd "$RUNNER_TEMP/doomrpg-sdl-a-main/ESP32" &&
+              pio run -e "$profile" > "$RUNNER_TEMP/sdl-a-main-$profile.log" 2>&1 ) || {
+              tail -n 100 "$RUNNER_TEMP/sdl-a-main-$profile.log"; exit 1;
+            }
+          done
+
       - name: Reject generated Render source registration in all profiles
         working-directory: ESP32
         run: |
@@ -557,6 +571,8 @@ jobs:
               --compiledb compile_commands.json --require-retired-doomrpg-config-read
             python tools/audit_desktop_elf.py ".pio/build/$profile" \
               --compiledb compile_commands.json --require-retired-doomrpg-keybinds
+            python test/sdl_shim_build_ownership_host.py "$profile" \
+              --baseline-dir "$RUNNER_TEMP/doomrpg-sdl-a-main"
           done
 
       - name: Upload firmware artifacts
@@ -567,10 +583,13 @@ jobs:
           path: |
             ESP32/.pio/build/esp32-cyd/*.bin
             ESP32/.pio/build/esp32-cyd/firmware.elf
+            ESP32/.pio/build/esp32-cyd/sdl_a_elf_report.json
             ESP32/.pio/build/esp32-cyd-trace/*.bin
             ESP32/.pio/build/esp32-cyd-trace/firmware.elf
+            ESP32/.pio/build/esp32-cyd-trace/sdl_a_elf_report.json
             ESP32/.pio/build/esp32-cyd-bringup/*.bin
             ESP32/.pio/build/esp32-cyd-bringup/firmware.elf
+            ESP32/.pio/build/esp32-cyd-bringup/sdl_a_elf_report.json
           if-no-files-found: error
           include-hidden-files: true
           retention-days: 14

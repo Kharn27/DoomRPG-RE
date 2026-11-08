@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Prove the CYD builder generates only the live packed SDL shim.
+"""Prove the CYD builder no longer generates any shim or desktop oracle.
 
 Run the *real* SCons pre-script with a mocked environment and a deliberately
 unusable desktop DoomRPG.c. The real source-parity/CRC and behavior regression
 tests exercise src/DoomRPG.c -> permanent native owners independently.
-This test is not a firmware/ELF or hardware-parity claim.
+This test verifies pre-script ownership and stale cleanup, not ELF or hardware parity.
 """
 from contextlib import redirect_stdout
 from io import StringIO
@@ -55,8 +55,9 @@ def main():
     assert "doom_rpg_source_text" not in real_builder
     assert "doom_rpg_patched" not in real_builder
     assert "retired_desktop_units" in real_builder
-    assert 'retired_oracle = join(patched_dir, "DoomRPG.c")' in real_builder
-    assert 'src_filter=["+<esp32_sdl.cpp>"]' in real_builder
+    assert 'for stale_name in ("DoomRPG.c", "esp32_sdl.cpp")' in real_builder
+    assert "env.BuildSources(" not in real_builder
+    assert "texture_struct_needle" not in real_builder
 
     with tempfile.TemporaryDirectory(prefix="cyd-no-desktop-oracle-") as temp:
         work = Path(temp)
@@ -80,37 +81,38 @@ def main():
 
         obsolete = staged / "DoomRPG.c"
         obsolete.write_text("stale generated C root\n")
+        stale_shim = staged / "esp32_sdl.cpp"
+        stale_shim.write_text("stale generated shim\n")
+        stale_objects = build / "doomrpg_esp32_sdl_patched"
+        stale_objects.mkdir()
+        (stale_objects / "esp32_sdl.cpp.o").write_text("stale object\n")
         env = FakeEnv(project, build)
         log = execute_build_script(env)
         assert "C oracle generation retired" in log
         assert "compiledOriginal=0 compiledPatchedC=0" in log
         assert not obsolete.exists(), "stale generated root was not retired"
 
-        generated = staged / "esp32_sdl.cpp"
-        assert generated.exists()
-        shim = generated.read_text(encoding="utf-8")
+        # SDL-A owns its exact packed implementation in the permanent TU.
+        permanent = native / "esp32_sdl.cpp"
+        snapshot = permanent.read_bytes()
+        shim = snapshot.decode("utf-8")
         assert "Uint8* indexedPixels;" in shim
-        assert "SDL_CreateTextureFromSurface" in shim
         assert "texture->indexed = true;" in shim
         assert "surface->pixels = nullptr;" in shim
         assert "surface->format->palette->colors = nullptr;" in shim
         assert "if (texture->indexedBitsPerPixel == 8)" in shim
         assert "else if (texture->indexedBitsPerPixel == 4)" in shim
-        assert "SDL_DestroyTexture" in shim
-        assert shim != (native / "esp32_sdl.cpp").read_text(encoding="utf-8")
-        assert env.sources == [
-            (str(build / "doomrpg_esp32_sdl_patched"),
-             str(staged), ["+<esp32_sdl.cpp>"])]
+        assert "free(texture->indexedPixels);" in shim
+        assert env.sources == [], "generated sources unexpectedly registered"
+        assert not stale_shim.exists() and not stale_objects.exists()
         assert len(env.includes) == 3
 
-        # Deterministic regeneration: an independent second run creates the
-        # same packed shim, with no generated DoomRPG.c or extra build input.
-        expected = generated.read_bytes()
+        # A second build must not write or mutate the permanent source.
         env2 = FakeEnv(project, build)
         execute_build_script(env2)
-        assert generated.read_bytes() == expected
-        assert not obsolete.exists()
-        assert env2.sources == env.sources
+        assert permanent.read_bytes() == snapshot
+        assert not obsolete.exists() and not stale_shim.exists()
+        assert env2.sources == []
 
         # The 21-file denylist is intentional and fails closed if the desktop
         # tree changes, rather than silently compiling a new original C file.
@@ -147,18 +149,17 @@ def main():
             raise AssertionError("native layout owner removal was accepted")
         layout_source.write_text(layout_body, encoding="utf-8")
 
-        # SDL patching also retains its exact single-anchor failure guard.
-        (desktop / "Unexpected.c").unlink()
-        (native / "esp32_sdl.cpp").write_text("broken SDL source\n")
+        # A missing permanent shim must fail closed at the build boundary.
+        permanent.unlink()
         try:
             execute_build_script(FakeEnv(project, build))
         except RuntimeError as exc:
-            assert "Unable to locate SDL_Texture layout" in str(exc)
+            assert "Missing permanent SDL shim source" in str(exc)
         else:
-            raise AssertionError("SDL anchor drift was accepted")
+            raise AssertionError("missing permanent SDL source accepted")
 
-    print("PASS generated DoomRPG C=0, packed SDL only, stale copy removed, "
-          "desktop TU inventory and SDL anchors fail closed")
+    print("PASS generated C/SDL=0, permanent packed shim, stale copies/objects removed, "
+          "desktop TU inventory and missing source fail closed")
 
 
 if __name__ == "__main__":
