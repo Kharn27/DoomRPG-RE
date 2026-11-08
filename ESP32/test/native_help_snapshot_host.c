@@ -18,7 +18,7 @@ static uint16_t before[W * H], after[W * H], rowFrame[W * H];
 static uint8_t mappingData[78];
 static uint8_t palettesData[164];
 static uint8_t wallData[4 + 5 * 2048];
-static uint8_t bspData[400];
+static uint8_t bspData[40 + 256 + 2048];
 static int openPack, packOpens, blockReads;
 
 static void le16(uint8_t* p, uint16_t v) {
@@ -89,6 +89,7 @@ int EspBspReader_inventoryPackEntry(const char* name,
     out->spawnDirection = 0U;
     out->sourceBytes = sizeof(bspData);
     out->sections.blockMapOffset = 40U;
+    out->sections.planeTexturesOffset = 40U + 256U;
     out->floorRgb[0] = 55U;
     out->floorRgb[1] = 47U;
     out->floorRgb[2] = 41U;
@@ -131,7 +132,42 @@ static void initializePak(void) {
             const int tile = y * 32 + x;
             if (blocked) bspData[40 + tile / 4] |=
                 (uint8_t)(1U << ((tile % 4) * 2));
+            /* The true BSP has 1024 floor cells then 1024 ceiling cells.
+             * Include distinct map PAK material IDs, not fake flat bands. */
+            bspData[40 + 256 + tile] = (uint8_t)(1U + (x / 5 + y / 7) % 3);
+            bspData[40 + 256 + 1024 + tile] =
+                (uint8_t)(2U + ((x / 6 + y / 5) % 2));
         }
+}
+static int diversePixels(const uint16_t* data, int top, int height) {
+    const uint16_t first = data[top * W + 12];
+    int x, y, different = 0;
+    for (y = top; y < top + height; ++y)
+        for (x = 12; x < 148; ++x)
+            different += (data[y * W + x] != first);
+    return different;
+}
+static int pulseAllowed(int x, int y) {
+    const int left[3] = {8, 56, 104};
+    const int top[3] = {29, 51, 74};
+    const int right[3] = {55, 103, 151};
+    const int bottom[3] = {50, 73, 96};
+    int row, col;
+    for (row = 0; row < 3; ++row) {
+        if (y < top[row] || y > bottom[row]) continue;
+        for (col = 0; col < 3; ++col) {
+            const int cx = (left[col] + right[col]) / 2;
+            const int cy = (top[row] + bottom[row]) / 2;
+            if (x < left[col] || x > right[col]) continue;
+            /* The two 1px cell edges and their 1px inner halos. */
+            if (y <= top[row] + 1 || y >= bottom[row] - 1 ||
+                x <= left[col] + 1 || x >= right[col] - 1) return 1;
+            /* The glyph itself (including rounded U-turn and WPN label). */
+            if (x >= cx - 15 && x <= cx + 14 &&
+                y >= cy - 10 && y <= cy + 10) return 1;
+        }
+    }
+    return 0;
 }
 static uint32_t hashRect(const uint16_t* data, int x0, int y0,
                          int width, int height) {
@@ -147,13 +183,14 @@ static uint32_t hashRect(const uint16_t* data, int x0, int y0,
 int main(void) {
     uint32_t rowHash[3];
     int x, y, changed = 0;
+    int red, green, yellow;
     initializePak();
     assert(!EspNativeHelpScene_isReady());
     assert(EspNativeHelpScene_begin(0)); /* Valid even before FIRST GAME */
     assert(EspNativeHelpScene_isReady());
     assert(EspNativeHelpScene_previewMapId() == 1);
     assert(EspNativeHelpScene_materialCount() == 3);
-    assert(!openPack && packOpens == 1 && blockReads == 1);
+    assert(!openPack && packOpens == 1 && blockReads == 2);
 
     for (x = 0; x <= 16; ++x) {
         const int current = EspNativeHelpScene_breathPower((uint8_t)x);
@@ -168,14 +205,31 @@ int main(void) {
     assert(EspNativeHelpScene_paint(before, 0U));
     assert(EspNativeHelpScene_paint(after, 16U));
     assert(hashRect(before, 8, 29, 144, 68) != 0);
+    assert(diversePixels(after, 30, 8) > 160); /* Textured top! */
+    assert(diversePixels(after, 88, 8) > 160); /* Textured bottom! */
     for (y = 0; y < H; ++y)
         for (x = 0; x < W; ++x)
             if (before[y * W + x] != after[y * W + x]) {
                 assert(x >= 8 && x <= 151 && y >= 29 && y <= 96);
-                assert(x == 56 || x == 104 || y == 51 || y == 74);
+                assert(pulseAllowed(x, y));
                 ++changed;
             }
-    assert(changed > 0); /* Only imaginary separators can breathe. */
+    assert(changed > 300); /* Contours and labels BOTH breathe. */
+    assert(changed < 2900); /* Never tint all 144*68 background pixels. */
+
+    /* RGB565 action colors must match gameplay: turn/move GREEN,
+     * attack/use RED, PREV/NEXT YELLOW. No blanket BLUE dividers. */
+    green = after[29 * W + 30];
+    red = after[51 * W + 78];
+    yellow = after[74 * W + 30];
+    assert(((green >> 5) & 63) > 2 * ((green >> 11) & 31));
+    assert(((green >> 5) & 63) > 2 * (green & 31));
+    assert(((red >> 11) & 31) > 2 * ((red >> 5) & 63));
+    assert(((red >> 11) & 31) > 2 * (red & 31));
+    assert(((yellow >> 11) & 31) > 2 * (yellow & 31));
+    assert(((yellow >> 5) & 63) > 2 * (yellow & 31));
+    /* Sample a non-border MOVE glyph pixel; its neon varies too. */
+    assert(before[39 * W + 79] != after[39 * W + 79]);
 
     for (x = 0; x < 3; ++x) {
         memset(rowFrame, 0, sizeof(rowFrame));
@@ -193,6 +247,6 @@ int main(void) {
     assert(EspNativeHelpScene_begin(1)); /* Re-enter without gameplay. */
     assert(EspNativeHelpScene_isReady());
     assert(packOpens == 2 && !openPack);
-    puts("PASS HELP BSP: cold-boot real PAK/map, three cameras, 1px divider-only breath");
+    puts("PASS HELP BSP: full-height textured PAK planes, three cameras, RGB action contours+labels breathing");
     return 0;
 }
