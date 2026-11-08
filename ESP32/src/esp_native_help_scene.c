@@ -205,6 +205,85 @@ static void segment(uint16_t* framebuffer, int x0, int y0, int x1, int y1,
     }
 }
 
+/* A rounded return-arrow arc instead of the previous three right-angle
+ * segments. These connected 1px strokes are mirrored for TURN L / TURN R,
+ * stay within a 43x18 miniature touch cell and retain the live green pulse. */
+static void helpPaintTurnArc(uint16_t* fb, int cx, int cy,
+                             int col, uint16_t core) {
+    static const int8_t turnCurve[][2] = {
+        { 5,  4}, { 5,  1}, { 4, -2}, { 2, -4},
+        { 0, -5}, {-2, -4}, {-4, -2}, {-5,  0}
+    };
+    const int mirror = col == 0 ? 1 : -1;
+    unsigned int i;
+    for (i = 1U; i < sizeof(turnCurve) / sizeof(turnCurve[0]); ++i) {
+        segment(fb,
+                cx + mirror * turnCurve[i - 1U][0],
+                cy + turnCurve[i - 1U][1],
+                cx + mirror * turnCurve[i][0],
+                cy + turnCurve[i][1], core);
+    }
+    /* Pointing left on the left-hand button, right on the right-hand one. */
+    segment(fb, cx - mirror * 3, cy - 3,
+            cx - mirror * 6, cy, core);
+    segment(fb, cx - mirror * 6, cy,
+            cx - mirror * 3, cy + 3, core);
+}
+
+/* Only the eight glyphs used by WPN/PREV/NEXT. 5x7 ROM masks cost 56B,
+ * no texture, new font owner, allocation, or offscreen render surface. */
+typedef struct HelpWeaponGlyph_s {
+    char letter;
+    uint8_t rows[7];
+} HelpWeaponGlyph;
+static const HelpWeaponGlyph helpWeaponGlyphs[] = {
+    {'W', {0x11, 0x11, 0x11, 0x15, 0x15, 0x1b, 0x11}},
+    {'P', {0x1e, 0x11, 0x11, 0x1e, 0x10, 0x10, 0x10}},
+    {'N', {0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11}},
+    {'R', {0x1e, 0x11, 0x11, 0x1e, 0x14, 0x12, 0x11}},
+    {'E', {0x1f, 0x10, 0x1e, 0x10, 0x10, 0x10, 0x1f}},
+    {'V', {0x11, 0x11, 0x11, 0x11, 0x11, 0x0a, 0x04}},
+    {'X', {0x11, 0x11, 0x0a, 0x04, 0x0a, 0x11, 0x11}},
+    {'T', {0x1f, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04}}
+};
+
+static void helpPaintWeaponWord(uint16_t* fb, int centerX, int y,
+                                const char* word, uint16_t ink) {
+    const int length = (int)strlen(word);
+    const int firstX = centerX - (length * 6 - 1) / 2;
+    int i, glyph, r, x;
+    for (i = 0; i < length; ++i) {
+        for (glyph = 0;
+             glyph < (int)(sizeof(helpWeaponGlyphs) /
+                           sizeof(helpWeaponGlyphs[0])); ++glyph) {
+            if (helpWeaponGlyphs[glyph].letter != word[i]) continue;
+            for (r = 0; r < 7; ++r) {
+                for (x = 0; x < 5; ++x) {
+                    if ((helpWeaponGlyphs[glyph].rows[r] &
+                         (uint8_t)(0x10U >> x)) != 0U)
+                        putGlow(fb, firstX + i * 6 + x, y + r, ink);
+                }
+            }
+            break;
+        }
+    }
+}
+
+static void helpPaintWeaponCaption(uint16_t* fb, int centerX, int top,
+                                   const char* secondLine, uint16_t ink) {
+    int x, y;
+    /* A small translucent-black reading pad makes the yellow text legible
+     * against bright PAK wall textures while keeping the cell frame visible. */
+    for (y = top + 1; y <= top + 16; ++y) {
+        for (x = centerX - 14; x <= centerX + 13; ++x) {
+            uint16_t* pixel = &fb[y * DOOMRPG_LOGICAL_WIDTH + x];
+            *pixel = dim565(*pixel, 160U);
+        }
+    }
+    helpPaintWeaponWord(fb, centerX, top + 1, "WPN", ink);
+    helpPaintWeaponWord(fb, centerX, top + 9, secondLine, ink);
+}
+
 static void drawActionMark(uint16_t* framebuffer, int row, int col,
                            int cx, int cy, uint16_t core) {
     /* Feedback icon vocabulary from esp_native_gameplay_controls.c.
@@ -222,21 +301,8 @@ static void drawActionMark(uint16_t* framebuffer, int row, int col,
         segment(framebuffer, cx, cy + 2, cx, cy + 5, core);
         putGlow(framebuffer, cx, cy, core);
     }
-    else if (row == 2) {
-        const int d = col == 0 ? -1 : 1;
-        segment(framebuffer, cx - d*2, cy - 4,
-                cx + d*3, cy, core);
-        segment(framebuffer, cx + d*3, cy,
-                cx - d*2, cy + 4, core);
-    }
     else if (row == 1) {
-        const int d = col == 0 ? -1 : 1;
-        segment(framebuffer, cx - d*3, cy + 4,
-                cx - d*3, cy - 2, core);
-        segment(framebuffer, cx - d*3, cy - 2,
-                cx + d*4, cy - 2, core);
-        segment(framebuffer, cx + d*4, cy - 2,
-                cx + d, cy - 5, core);
+        helpPaintTurnArc(framebuffer, cx, cy, col, core);
     }
     else {
         const int d = col == 0 ? -1 : 1;
@@ -309,9 +375,20 @@ int EspNativeHelpScene_paint(uint16_t* fb, uint8_t level) {
                 putGlow(fb, left + 1, y, halo);
                 putGlow(fb, right - 1, y, halo);
             }
-            drawActionMark(fb, row, col,
-                           (left + right) / 2,
-                           (top + bottom) / 2, core);
+            if (row == 2 && col != 1) {
+                /* WPN/PREV and WPN/NEXT replace the ambiguous yellow arrows.
+                 * Two 7px lines plus a 1px gap fit the 18px-high cells. */
+                const uint16_t textInk = dim565(
+                    neon, 170U + (uint32_t)level * 13U);
+                helpPaintWeaponCaption(fb, (left + right) / 2, top,
+                                       col == 0 ? "PREV" : "NEXT",
+                                       textInk);
+            }
+            else {
+                drawActionMark(fb, row, col,
+                               (left + right) / 2,
+                               (top + bottom) / 2, core);
+            }
         }
     }
     return 1;
