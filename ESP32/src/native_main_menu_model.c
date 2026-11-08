@@ -9,7 +9,6 @@
 #include "esp_native_canvas_text.h"
 #include "esp_native_intro_state.h"
 
-#include "esp_legacy_asset_source.h"
 #include "native_main_menu_model.h"
 #include "native_main_menu_160x120_layout.h"
 #include "platform_video_config.h"
@@ -96,34 +95,99 @@ void EspNativeMainMenu_transitionCanvasState(DoomCanvas_t* doomCanvas, int state
         (void)EspNativeAudioIntent_publish(5067U, 0U, 3U);
     }
 }
-#define MAIN_HELP_ASSET_NAME "help.txt"
-#define MAIN_HELP_HEADER_BYTES 3U
-#define MAIN_HELP_ASSET_MAX_BYTES 4096U
-#define MAIN_HELP_LINE_MAX_CHARS 31
+/* Native ROM-owned CYD guide: no obsolete 2005 keypad help.txt parser,
+ * no SD allocation/read and no pointer-heavy MenuItem table. ASCII text
+ * is at most 20 glyphs wide (7px advance, x=12 on the 160px canvas).
+ */
 #define MAIN_HELP_MAX_LINES 96
-
-static uint8_t* helpData;
-static uint16_t helpLineOffsets[MAIN_HELP_MAX_LINES];
-static int helpLineCount;
-static uint32_t helpAssetSize;
-
-static void releaseHelpData(void) {
-    if (helpData != NULL) {
-        SDL_free(helpData);
-        helpData = NULL;
-    }
-    helpLineCount = 0;
-    helpAssetSize = 0U;
-}
+static const char* const helpLines[] = {
+    "DOOM RPG ON CYD",
+    "",
+    "THE MISSION",
+    "Explore the UAC base",
+    "Find the exit.",
+    "Fight demons.",
+    "Collect new gear.",
+    "Watch HP and armor.",
+    "",
+    "TURN-BASED GAME",
+    "Moves take a turn.",
+    "Enemies take turns.",
+    "Plan each attack.",
+    "Actions use turns.",
+    "",
+    "CYD TOUCH SCREEN",
+    "Play area is 3 x 3.",
+    "TOP ROW:",
+    "Strafe L / Forward /",
+    "Strafe R",
+    "MIDDLE ROW:",
+    "Turn L / ACT /",
+    "Turn R",
+    "BOTTOM ROW:",
+    "Prev gun / Back /",
+    "Next gun",
+    "",
+    "ACTION / CENTER",
+    "Attack facing foes.",
+    "Open doors, crates.",
+    "Walk onto pickups.",
+    "Use nearby objects.",
+    "",
+    "TOP HUD BAR",
+    "LEFT: game menu",
+    "CENTER: pass a turn",
+    "RIGHT: show automap",
+    "",
+    "WEAPONS & HUD",
+    "Tap gun at bottom",
+    "to open weapons.",
+    "HUD: HP and armor,",
+    "ammo and direction.",
+    "Switch guns often.",
+    "Ammo can run out.",
+    "",
+    "SYSTEM MENU",
+    "INVENTORY: use gear",
+    "STATUS: hero info",
+    "SYSTEM: save, load,",
+    "options and exit.",
+    "",
+    "HOW MENUS WORK",
+    "Tap a main button",
+    "once to select it.",
+    "Tap again: confirm",
+    "Use BACK to return.",
+    "",
+    "TIPS FROM DOOM RPG",
+    "Search every room.",
+    "Keys unlock doors.",
+    "Health items heal.",
+    "Watch for secrets.",
+    "Enemies block paths.",
+    "Use the automap.",
+    "",
+    "OPTIONS",
+    "VIDEO: brightness,",
+    "rotation and theme.",
+    "Saves go to SD.",
+    "",
+    "ABOUT THIS PORT",
+    "Original DOOM RPG",
+    "Ported to ESP32 CYD.",
+    "Data read from PAK.",
+    "Have fun, Marine!",
+};
+#define MAIN_HELP_LINE_COUNT ((int)(sizeof(helpLines) / sizeof(helpLines[0])))
+_Static_assert(MAIN_HELP_LINE_COUNT <= MAIN_HELP_MAX_LINES,
+               "CYD native help exceeds fixed bounded model");
 
 const char* DoomRPG_esp32MainMenuHelpLine(int index) {
-    if (helpData == NULL || index < 0 || index >= helpLineCount) return NULL;
-    if ((uint32_t)helpLineOffsets[index] >= helpAssetSize) return NULL;
-    return (const char*)&helpData[helpLineOffsets[index]];
+    return index >= 0 && index < MAIN_HELP_LINE_COUNT ? helpLines[index] : NULL;
 }
 
 int DoomRPG_esp32MainMenuHelpLineCount(void) {
-    return helpLineCount;
+    return MAIN_HELP_LINE_COUNT;
 }
 
 static int supportedModel(int menuId) {
@@ -211,121 +275,18 @@ static int buildFixedOptionsModel(DoomRPG_t* doomRpg) {
 
 static int buildBoundedHelpModel(DoomRPG_t* doomRpg) {
     EspNativeMenuState_t* menuSystem;
-    uint8_t* data = NULL;
-    uint32_t assetSize = 0U;
-    int readSize = 0;
-    int declaredItems;
-    int item;
-    uint32_t readPos = MAIN_HELP_HEADER_BYTES;
-    uint32_t writePos = MAIN_HELP_HEADER_BYTES;
-
-    releaseHelpData();
-
     if (doomRpg == NULL || doomRpg->menuSystem == NULL ||
-        !EspLegacyAssetSource_stat(MAIN_HELP_ASSET_NAME, &assetSize) ||
-        assetSize < MAIN_HELP_HEADER_BYTES ||
-        assetSize > MAIN_HELP_ASSET_MAX_BYTES) {
-        printf("[MAINMODEL] HELP-PARSE FAILED stat bytes=%u bound=%u\n",
-               (unsigned int)assetSize,
-               (unsigned int)MAIN_HELP_ASSET_MAX_BYTES);
+        MAIN_HELP_LINE_COUNT <= 0 || MAIN_HELP_LINE_COUNT > MAIN_HELP_MAX_LINES)
         return 0;
-    }
-
-    data = EspLegacyAssetSource_readAlloc(MAIN_HELP_ASSET_NAME, &readSize);
-    if (data == NULL || readSize != (int)assetSize) {
-        printf("[MAINMODEL] HELP-PARSE FAILED read bytes=%d expected=%u\n",
-               readSize, (unsigned int)assetSize);
-        if (data != NULL) SDL_free(data);
-        return 0;
-    }
-
-    declaredItems = (int)data[1] + ((int)data[0] * 10) - 528;
-    if (declaredItems <= 0 || declaredItems > MAIN_HELP_MAX_LINES) {
-        printf("[MAINMODEL] HELP-PARSE FAILED declaredItems=%d header=%02x/%02x/%02x lineBound=%d\n",
-               declaredItems,
-               (unsigned int)data[0],
-               (unsigned int)data[1],
-               (unsigned int)data[2],
-               MAIN_HELP_MAX_LINES);
-        SDL_free(data);
-        return 0;
-    }
-
     menuSystem = doomRpg->menuSystem;
     menuSystem->scrollIndex = 0;
     menuSystem->selectedIndex = 0;
-    menuSystem->numItems = declaredItems;
+    menuSystem->numItems = MAIN_HELP_LINE_COUNT;
     menuSystem->imgBG = NULL;
     menuSystem->oldMenu = MENU_MAIN;
     menuSystem->type = 5;
-
-    for (item = 0; item < declaredItems; ++item) {
-        int lineLength = 0;
-        int terminated = 0;
-
-        helpLineOffsets[item] = (uint16_t)writePos;
-        while (readPos < assetSize) {
-            uint8_t ch = data[readPos++];
-
-            if (ch == 0U) {
-                printf("[MAINMODEL] HELP-PARSE FAILED premature-NUL item=%d offset=%u/%u\n",
-                       item,
-                       (unsigned int)(readPos - 1U),
-                       (unsigned int)assetSize);
-                SDL_free(data);
-                menuSystem->numItems = 0;
-                return 0;
-            }
-
-            if (ch == (uint8_t)'\n') {
-                data[writePos++] = 0U;
-                terminated = 1;
-                break;
-            }
-
-            if (ch == (uint8_t)'\r') continue;
-
-            if (lineLength >= MAIN_HELP_LINE_MAX_CHARS || writePos >= assetSize) {
-                printf("[MAINMODEL] HELP-PARSE FAILED line-too-long item=%d offset=%u len>%d\n",
-                       item,
-                       (unsigned int)(readPos - 1U),
-                       MAIN_HELP_LINE_MAX_CHARS);
-                SDL_free(data);
-                menuSystem->numItems = 0;
-                return 0;
-            }
-
-            data[writePos++] = ch == (uint8_t)'~' ? 0x80U : ch;
-            ++lineLength;
-        }
-
-        if (!terminated) {
-            printf("[MAINMODEL] HELP-PARSE FAILED truncated item=%d offset=%u/%u\n",
-                   item,
-                   (unsigned int)readPos,
-                   (unsigned int)assetSize);
-            SDL_free(data);
-            menuSystem->numItems = 0;
-            return 0;
-        }
-    }
-
-    helpData = data;
-    helpLineCount = declaredItems;
-    helpAssetSize = assetSize;
-
-    printf("[MAINMODEL] HELP-PARSE bytes=%u header=%02x/%02x/%02x declared=%d parsed=%d consumed=%u compactBytes=%u menuItemSlots=%d lineChars<=%d trailing=%u headerTrusted=no source=pak result=valid\n",
-           (unsigned int)assetSize,
-           (unsigned int)data[0],
-           (unsigned int)data[1],
-           (unsigned int)data[2],
-           declaredItems,
-           helpLineCount,
-           (unsigned int)readPos,
-           (unsigned int)writePos,
-           ESP_NATIVE_MENU_MAX_ITEMS,
-           MAIN_HELP_LINE_MAX_CHARS,
-           (unsigned int)(assetSize - readPos));
+    printf("[MAINMODEL] HELP-NATIVE lines=%d source=ROM keypadLegacy=no heap=none sdRead=no\n",
+           MAIN_HELP_LINE_COUNT);
     return 1;
 }
 
@@ -347,7 +308,6 @@ int DoomRPG_esp32MainMenuModelEnter(struct DoomRPG_s* doomRpgBase,
     menuSystem = doomRpg->menuSystem;
     canvas = doomRpg->doomCanvas;
 
-    if (menuId != MENU_MAIN_HELP_ABOUT) releaseHelpData();
 
     if (menuId == MENU_MAIN) {
         builder = "native-fixed-main";
@@ -431,7 +391,6 @@ int DoomRPG_esp32MainMenuModelLeave(struct DoomRPG_s* doomRpgBase) {
     menuSystem = doomRpg->menuSystem;
     canvas = doomRpg->doomCanvas;
 
-    releaseHelpData();
     menuSystem->menu = MENU_NONE;
     menuSystem->numItems = 0;
     printf("[MAINMODEL] LEAVE target=%d state=%d items=%d viewInvalidation=retired dispatcher=native\n",
