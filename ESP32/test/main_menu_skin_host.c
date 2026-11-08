@@ -193,7 +193,7 @@ static void assertIndustrialNavKeys(uint16_t* fb) {
     assert(!EspMainMenuSkin_paintNavKey(NULL,W,W,H,118,34,156,62,0,1));
     assert(!EspMainMenuSkin_paintNavKey(fb,W-1,W,H,118,34,156,62,0,1));
     assert(!EspMainMenuSkin_paintNavKey(fb,W,W,H,118,34,155,62,0,1));
-    assert(!EspMainMenuSkin_paintNavKey(fb,W,W,H,118,34,156,63,0,1));
+    assert(!EspMainMenuSkin_paintNavKey(fb,W,W,H,118,34,156,64,0,1));
     assert(!EspMainMenuSkin_paintNavKey(fb,W,W,H,118,34,156,62,2,1));
     assert(!EspMainMenuSkin_paintNavKey(fb,W,W,H,118,34,156,62,0,-1));
     assert(!EspMainMenuSkin_paintNavKey(fb,W,W,H,118,34,160,62,0,1));
