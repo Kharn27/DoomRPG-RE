@@ -1,3 +1,11 @@
+## PR #259 — flèches industrielles LOAD GAME / HUB : PASS visuel (8 novembre 2026)
+
+Le painter natif `EspMainMenuSkin_paintNavKey` remplace uniquement les anciens fonds plats des commandes de page **UP/DOWN** de LOAD GAME et du sélecteur SAVE/LOAD du HUB par la plaque métallique symétrique existante. Les quatre rectangles 39×29/30 et leurs hitboxes originales, le chevron de 2 px, les règles disabled/enabled, les pages 1–5/6–10 et la sélection/confirmation des sauvegardes sont inchangés. Les couleurs s'appuient sur l'état thématique CLASSIC/INFERNO/PHOSPHORE ; le nouveau rose INFERNO des glyphes et le remplissage rouge de LOADING restent intacts. Les rapports et titres non cliquables ne sont pas repeints.
+
+**Code figé testé** `9c78065fbcfcb1994bce571f3b4181614a28f4b0` sur [PR #259](https://github.com/Kharn27/DoomRPG-RE/pull/259) après mise à jour avec le `main` issu de #256. CI [push #42429844894](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42429844894) et [PR #42429849036](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42429849036) SUCCESS : tests hôte + trois firmwares. Retour utilisateur après invitation à tester `esp32-cyd` : **« Impecc, tu vas pouvoir merger »**, donc **PASS visuel déclaré par le testeur et demande explicite de fusion**. Aucun nouveau Serial ni mesure RAM/latence fourni : validation délibérément limitée au rendu et à l'acceptation du testeur. Commits après essai exclusivement documentaires, vérification CI puis merge #259 autorisé.
+
+---
+
 ## PR #259 — industrial skin : symétrie haut/bas, approbation visuelle CYD (8 novembre 2026)
 
 Les trois thèmes conservent la trame métallique, les touches et les pixels fonctionnels de leurs écrans respectifs. Le seul changement du painter `EspMainMenuSkin_paintPlate` est de rendre le bas des plaques équivalent au haut : même hauteur de biseau/acier/gorge, coins toujours tronqués et paire de reflets sur les boulons inférieurs ; le relief latéral reste distinct. Six formats de plaque, trois états et trois thèmes sont contrôlés par miroir pixel à pixel et gardes d'écriture. Le texte, les pochoirs non cliquables YOU DIED / LEVEL UP / MISSION COMPLETE et la jauge rouge INFERNO restent inchangés.
