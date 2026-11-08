@@ -245,6 +245,46 @@ int EspNativeGameplayMonsterDrop_prepare(
     return 1;
 }
 
+/* Native no-captured-Entity fallback of Game_gsprite_alloc(kind,2,x,y).
+ * The V11 checkpoint pool is already a rotating, persisted world billboard
+ * owner; one reserved record class adds neither pointers nor another arena. */
+static int dogCorpseRecordValid(
+    const EspNativeGameplayMonsterDropRecord* r) {
+    return r != NULL &&
+           r->type == ESP_NATIVE_GAMEPLAY_DOG_CORPSE_TYPE &&
+           r->subtype >= ESP_NATIVE_GAMEPLAY_DOG_CORPSE_FIRST &&
+           r->subtype <= ESP_NATIVE_GAMEPLAY_DOG_CORPSE_LAST &&
+           r->defTile == r->subtype && r->taken == 0U;
+}
+
+int EspNativeGameplayMonsterDrop_prepareDogCorpse(
+    uint8_t logical, uint16_t worldX, uint16_t worldY,
+    EspNativeGameplayMonsterDropSpawnPlan* plan) {
+    if (plan != NULL) memset(plan,0,sizeof *plan);
+    if (plan == NULL ||
+        logical < ESP_NATIVE_GAMEPLAY_DOG_CORPSE_FIRST ||
+        logical > ESP_NATIVE_GAMEPLAY_DOG_CORPSE_LAST ||
+        !worldCoordinate(worldX) || !worldCoordinate(worldY) ||
+        !EspNativeGameplayMonsterDrop_ensure() ||
+        drops.view.spawnSerial == UINT32_MAX) return 0;
+    plan->sourceArenaFNV1a=drops.view.sourceArenaFNV1a;
+    plan->dropRoll=0U; /* custom gSprite, not an RNG-based loot roll */
+    plan->spawnSerialBefore=drops.view.spawnSerial;
+    plan->slot=drops.view.nextSlot;
+    plan->nextSlotBefore=drops.view.nextSlot;
+    plan->outcome=ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SPAWN;
+    plan->record.spawnOrder=drops.view.spawnSerial+1U;
+    plan->record.tileIndex=(uint16_t)(((worldY>>6U)<<5U)|(worldX>>6U));
+    plan->record.defTile=logical;
+    plan->record.worldX=worldX;
+    plan->record.worldY=worldY;
+    plan->record.type=ESP_NATIVE_GAMEPLAY_DOG_CORPSE_TYPE;
+    plan->record.subtype=logical;
+    plan->record.active=1U;
+    plan->record.taken=0U;
+    return 1;
+}
+
 int EspNativeGameplayMonsterDrop_commit(
     const EspNativeGameplayMonsterDropSpawnPlan* plan) {
     EspNativeGameplayMonsterDropRecord* slot;
@@ -259,7 +299,9 @@ int EspNativeGameplayMonsterDrop_commit(
         drops.view.nextSlot != plan->nextSlotBefore ||
         plan->slot != drops.view.nextSlot ||
         plan->record.active != 1U || plan->record.taken != 0U ||
-        plan->record.spawnOrder != drops.view.spawnSerial + 1U) {
+        plan->record.spawnOrder != drops.view.spawnSerial + 1U ||
+        (plan->record.type == ESP_NATIVE_GAMEPLAY_DOG_CORPSE_TYPE &&
+         !dogCorpseRecordValid(&plan->record))) {
         return 0;
     }
 
@@ -274,7 +316,7 @@ int EspNativeGameplayMonsterDrop_commit(
         ++drops.view.visibleCount;
     }
 
-    printf("[MONSTERDROP] COMMIT roll=%08x slot=%u overwriteVisible=%u type=%u subtype=%u def=%u tile=%u pos=%u,%u visible=%u next=%u ownerBytes=%u persistence=map-session-live/save-deferred\n",
+    printf("[MONSTERDROP] COMMIT roll=%08x slot=%u overwriteVisible=%u type=%u subtype=%u def=%u tile=%u pos=%u,%u visible=%u next=%u ownerBytes=%u persistence=map-session-live/V11-checkpoint corpse=%s\n",
            (unsigned int)plan->dropRoll,
            (unsigned int)plan->slot,
            (unsigned int)wasVisible,
@@ -286,7 +328,9 @@ int EspNativeGameplayMonsterDrop_commit(
            (unsigned int)slot->worldY,
            (unsigned int)drops.view.visibleCount,
            (unsigned int)drops.view.nextSlot,
-           (unsigned int)sizeof(drops));
+           (unsigned int)sizeof(drops),
+           slot->type == ESP_NATIVE_GAMEPLAY_DOG_CORPSE_TYPE
+               ? "dog-gsprite-2" : "no");
     return 1;
 }
 
@@ -298,6 +342,7 @@ int EspNativeGameplayMonsterDrop_setTaken(uint8_t slotIndex, int taken) {
         return 0;
     }
     record = &drops.records[slotIndex];
+    if (record->type == ESP_NATIVE_GAMEPLAY_DOG_CORPSE_TYPE) return 0;
     if (record->active == 0U) return 0;
     if (record->taken == nextTaken) return 1;
     if (nextTaken != 0U) {
@@ -354,7 +399,9 @@ int EspNativeGameplayMonsterDrop_snapshotShapeValid(
             !worldCoordinate(record->worldY) ||
             record->tileIndex !=
                 (uint16_t)(((uint32_t)(record->worldY >> 6U) * 32U) +
-                           (uint32_t)(record->worldX >> 6U))) {
+                           (uint32_t)(record->worldX >> 6U)) ||
+            (record->type == ESP_NATIVE_GAMEPLAY_DOG_CORPSE_TYPE &&
+             !dogCorpseRecordValid(record))) {
             return 0;
         }
     }
@@ -392,9 +439,12 @@ int EspNativeGameplayMonsterDrop_restore(
             &snapshot->records[slot];
         uint16_t expectedDefTile = 0U;
         if (record->active == 0U) continue;
-        if (!EspEntityDefTypeCatalog_findTileIndex(
-                record->type, record->subtype, &expectedDefTile) ||
-            expectedDefTile != record->defTile) {
+        if (record->type == ESP_NATIVE_GAMEPLAY_DOG_CORPSE_TYPE) {
+            if (!dogCorpseRecordValid(record)) return 0;
+        }
+        else if (!EspEntityDefTypeCatalog_findTileIndex(
+                     record->type, record->subtype, &expectedDefTile) ||
+                 expectedDefTile != record->defTile) {
             return 0;
         }
         if (record->taken == 0U) ++visibleCount;

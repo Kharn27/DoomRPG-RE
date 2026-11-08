@@ -8,6 +8,21 @@ static uint32_t clockMs;
 static int controls, levelUp, pack, failPresent, automapOwner, worldActive, firstWorldLease, facingDirty;
 static unsigned topBarTiles;
 static unsigned presents, concurrentPresents, damageGlyphs, groupedTextPresents;
+static unsigned impactPaintCalls,impactWithRedPresent;
+/* Host's source impact glyph: assert the ONE red flash presenter owns it.
+ * A pre-COMMIT monster frame cannot paint the marked center pixel. */
+static void paintOriginalImpactOnSharedRed(void) {
+    uint32_t probe=0U;
+    uint16_t logical=0U;
+    uint8_t frame=255U;
+    assert(actionState.viewportFlashPending!=0U);
+    assert(directionCue.stageNonlethalBorder==0U);
+    assert(EspNativePlayerPainVisual_impactInfo(
+        clockMs,&probe,&logical,&frame));
+    assert(probe==901U&&logical==188U&&frame==0U);
+    pixels[1U+60U*160U+80U]=0xdde1U;
+    ++impactPaintCalls;
+}
 unsigned int DoomRPG_GetUpTimeMS(void) { return clockMs; }
 const EspPlayerViewState* EspPlayerView_view(void) { return NULL; }
 void* Esp32PlatformVideo_framebuffer(void) { return &pixels[1]; }
@@ -75,6 +90,8 @@ int __real_Esp32PlatformVideo_present(void) {
         pixels[1U + 20U * 160U + 80U] == FEEDBACK_DAMAGE_RED565) {
         ++concurrentPresents; /* same real framebuffer present as red border */
         if (damageGlyphs != 0U) ++groupedTextPresents;
+        if (pixels[1U+60U*160U+80U]==0xdde1U)
+            ++impactWithRedPresent;
     }
     return 1;
 }
@@ -89,6 +106,8 @@ static void seedUnpainted(void) {
     firstWorldLease = 0;
     topBarTiles = 0U;
     presents = concurrentPresents = damageGlyphs = groupedTextPresents = 0U;
+    impactPaintCalls = impactWithRedPresent = 0U;
+    EspNativeGameplayActionEngine_setImpactPainter(NULL);
 }
 static void armRed(void) {
     actionState.viewportFlashPending = 1U;
@@ -370,6 +389,57 @@ int main(void) {
     assert(__wrap_Esp32PlatformVideo_present());
     assert(presents == 4U);
 
-    puts("damage_cue_timing_host: PASS shared 3-pulse red+translucent direction, one 500ms clock, failed ON/OFF retry, exact new-world restore, white pickup 3-pulse exact restore, automap, menu isolation");
+    /* Reproduce true CYD scheduling, not just pure lease math:
+     * The attack has rendered one intermediate world frame, but the DAMAGE
+     * flash is deliberately deferred until 818ms of ordered monster visual
+     * work have finished. This was the original invisible pain bug:
+     * old stage-time +500 expired before the first physical damage present.
+     * The REAL compositor plus REAL pain owner must anchor at that present. */
+    seedUnpainted();
+    EspNativePlayerPainVisual_reset();
+    clockMs = 1000U;
+    armRed();
+    actionState.feedbackPending = 1U;
+    actionState.feedbackKind = ACTION_FEEDBACK_DAMAGE;
+    strcpy(actionState.feedbackText, "12 damage!");
+    assert(EspNativePlayerPainVisual_stage(
+        901U,ESP_NATIVE_PLAYER_PAIN_RIGHT,clockMs));
+    assert(EspNativePlayerPainVisual_stageImpact(901U,12U,0U));
+    EspNativeGameplayActionEngine_setImpactPainter(
+        paintOriginalImpactOnSharedRed);
+    EspNativeGameplayActionEngine_beginMonsterVisualWork();
+    EspNativeGameplayActionEngine_stageNonlethalMonsterFlash();
+    assert(__wrap_Esp32PlatformVideo_present());
+    assert(presents == 1U && impactPaintCalls == 0U &&
+           impactWithRedPresent == 0U);
+    assert(pixels[1U+60U*160U+80U]!=0xdde1U);
+    assert(EspNativePlayerPainVisual_commit(901U));
+    /* In real monster retaliation, the directional cue is published only
+     * after player damage COMMIT, and the first buffered physical present
+     * must carry BOTH the provenance and the original impact. */
+    assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
+        901U,157U,ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_RIGHT));
+    clockMs += 818U;
+    assert(EspNativePlayerPainVisual_isActive(clockMs));
+    assert(!EspNativePlayerPainVisual_expiryDue(clockMs));
+    assert(EspNativePlayerPainVisual_face(25U,30U,0U,clockMs)==6U);
+    EspNativeGameplayActionEngine_endMonsterVisualWork();
+    assert(presents == 2U);
+    assert(impactPaintCalls==1U && impactWithRedPresent==1U);
+    assert(pixels[1U+60U*160U+80U]==0xdde1U);
+    assert(actionState.viewportFlashShownAtMs == clockMs);
+    assert(EspNativePlayerPainVisual_isActive(clockMs));
+    assert(!EspNativePlayerPainVisual_firstPresented(clockMs));
+    clockMs += 499U;
+    assert(EspNativePlayerPainVisual_isActive(clockMs));
+    assert(!EspNativePlayerPainVisual_expiryDue(clockMs));
+    clockMs += 1U;
+    assert(!EspNativePlayerPainVisual_isActive(clockMs));
+    assert(EspNativePlayerPainVisual_expiryDue(clockMs));
+    assert(EspNativePlayerPainVisual_ackExpiry(clockMs));
+    EspNativeGameplayActionEngine_setImpactPainter(NULL);
+    EspNativePlayerPainVisual_reset();
+
+    puts("damage_cue_timing_host: PASS ONE red+translucent direction+original center impact present after hidden 818ms monster tail, no pre-COMMIT glyph, shared 500ms visible pain lease, failed ON/OFF retry, exact world restore, white pickup, automap, menu isolation");
     return 0;
 }

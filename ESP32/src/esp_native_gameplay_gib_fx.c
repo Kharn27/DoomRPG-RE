@@ -16,11 +16,19 @@
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_event_chain.h"
 #include "esp_native_gameplay_gib_fx.h"
+#include "esp_native_gameplay_gib_sheet.h"
+#include "esp_native_indexed_bmp.h"
 #include "esp_native_gameplay_monster_attack_visual.h"
 #include "esp_native_gameplay_monster_movement_probe.h"
 #include "esp_native_gameplay_monster_retaliation.h"
+#include "esp_native_gameplay_player_pain_visual.h"
+#include "esp_native_sprite_renderer.h"
+#include "esp_native_gameplay_dog_blood.h"
+#include "esp_native_resident_gameplay.h"
 #include "esp_native_gameplay_monster_state.h"
+#include "esp_native_gameplay_monster_position.h"
 #include "esp_native_gameplay_player_resources.h"
+#include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_transition_handoff.h"
 #include "esp_player_view_state.h"
 #include "platform_video_c_bridge.h"
@@ -72,9 +80,26 @@ typedef struct GibFxOwner_s {
     uint16_t activeSpriteIndex;
     uint8_t activeParticles;
     uint8_t active;
+    uint8_t activeDistance;
+    uint8_t activeFrameTick;
 } GibFxOwner;
 
 static GibFxOwner gibFxOwner;
+/* One diagnostic witness per source sprite frame; no decoded atlas remains. */
+static uint32_t impactLoggedProbe;
+static uint8_t impactLoggedFrame;
+static uint32_t impactUnavailableProbe;
+
+/* Real original indexed gibs_24.bmp atlas is stored only as <= 550B of
+ * validated immutable metadata. Actual pixels are streamed in bounded
+ * rows from the native PAK into the existing 160x120 framebuffer. Never
+ * keep an unpacked sheet, ZIP entry, or second framebuffer. */
+static EspNativeIndexedBmp originalGibs24;
+static EspNativeIndexedBmp originalGibs24Berserk;
+static uint8_t originalGibs24Ready;
+static uint8_t originalGibs24BerserkReady;
+static uint8_t originalGibs24Unavailable;
+static uint8_t originalGibs24Report;
 
 typedef struct HitFxOwner_s {
     uint32_t sourceArenaFNV1a;
@@ -479,9 +504,139 @@ static void drawHitBurst(uint16_t* framebuffer) {
     }
 }
 
+/* Source ParticleSystem_startup selects gibs_24.bmp for our 160px
+ * displayRect. The six variant rows and four animation columns are
+ * source-derived; trajectories remain presentation-only approximations.
+ * If that resource is absent, preserve the previous dark-circle fallback. */
+static uint32_t drawOriginalGibChunks(uint16_t* framebuffer,
+                                      uint32_t chunkSeed,
+                                      uint32_t nowMs,
+                                      uint32_t ageMs,
+                                      uint8_t distance,
+                                      uint8_t* outFallback) {
+    EspNativeIndexedBmpStats stats;
+    uint32_t pixels = 0U;
+    uint32_t i;
+    const EspNativeIndexedBmp* sheet = &originalGibs24;
+    if (outFallback == NULL || framebuffer == NULL) return 0U;
+    *outFallback = 1U;
+    if (distance == 0U || distance > 4U ||
+        ageMs >= GIBFX_DISPLAY_MS) return 0U;
+    if (originalGibs24Unavailable != 0U ||
+        !EspNativeResidentGameplay_ownsWorldPresent() ||
+        EspNativeGameplayControls_isActive() ||
+        EspNativeResidentGameplay_isAutomapActive() ||
+        EspAssetPack_isOpen() ||
+        !EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) return 0U;
+    memset(&stats, 0, sizeof(stats));
+    if (originalGibs24Ready == 0U) {
+        const EspNativeIndexedBmpStatus result =
+            EspNativeIndexedBmp_open("gibs_24.bmp",
+                                      &originalGibs24, &stats);
+        if (result != ESP_NATIVE_INDEXED_BMP_OK ||
+            originalGibs24.width < ESP_NATIVE_GIB_SHEET_WIDTH ||
+            originalGibs24.height < ESP_NATIVE_GIB_SHEET_HEIGHT) {
+            if (result == ESP_NATIVE_INDEXED_BMP_NOT_FOUND ||
+                result == ESP_NATIVE_INDEXED_BMP_UNSUPPORTED ||
+                (result == ESP_NATIVE_INDEXED_BMP_OK &&
+                 (originalGibs24.width < ESP_NATIVE_GIB_SHEET_WIDTH ||
+                  originalGibs24.height < ESP_NATIVE_GIB_SHEET_HEIGHT))) {
+                originalGibs24Unavailable = 1U;
+            }
+            if (originalGibs24Report == 0U) {
+                printf("[GIBSHEET] FALLBACK name=gibs_24.bmp status=%u width=%u height=%u source=legacy-atlas unavailable=%u\n",
+                       (unsigned int)result,
+                       (unsigned int)originalGibs24.width,
+                       (unsigned int)originalGibs24.height,
+                       (unsigned int)originalGibs24Unavailable);
+                originalGibs24Report = 1U;
+            }
+            EspAssetPack_close();
+            return 0U;
+        }
+        originalGibs24Ready = 1U;
+        printf("[GIBSHEET] READY source=gibs_24.bmp width=%u height=%u frame=24x24 grid=4x6 indexed=%u metadataBytes=%u fullSheetBuffer=no\n",
+               (unsigned int)originalGibs24.width,
+               (unsigned int)originalGibs24.height,
+               (unsigned int)originalGibs24.bitsPerPixel,
+               (unsigned int)sizeof(originalGibs24));
+    }
+
+    {
+        const EspNativeGameplayPlayerState* player =
+            EspNativeGameplayPlayerState_view();
+        if (player != NULL && player->active == 1U &&
+            player->berserkerTics != 0U) {
+            if (originalGibs24BerserkReady == 0U) {
+                uint32_t p;
+                originalGibs24Berserk = originalGibs24;
+                for (p = 0U; p < originalGibs24Berserk.paletteCount; ++p) {
+                    const uint16_t original =
+                        originalGibs24.paletteRgb565[p];
+                    /* Desktop SDL has a color-key by indexed pixel ID.
+                     * The native indexed blitter keys by RGB565 instead:
+                     * do not recolor magenta or it becomes opaque pink. */
+                    if (original != 0xf81fU) {
+                        originalGibs24Berserk.paletteRgb565[p] =
+                            EspNativeGibSheet_berserk565(original);
+                    }
+                }
+                originalGibs24BerserkReady = 1U;
+                printf("[GIBSHEET] BERSERK palette=red+8-greenblue-half key=magenta preserved=1 metadata=bounded gameplayRng=untouched\n");
+            }
+            sheet = &originalGibs24Berserk;
+        }
+    }
+
+    /* Source Combat_spawnBloodParticles() parameters for z=true:
+     * start[-6..6,-9..11], velocity[-150..100,-175..-75], gravity=10.
+     * ParticleSystem_calculateScales(tileDist) uses 174/256 decay.
+     * We replay its 1+4*N visual RNG draws from chunkSeed and integrate
+     * real fixed-point update equations in deterministic 25ms steps.
+     * Frame column is still source wall-clock time / 175ms. */
+    for (i=0U;i<GIBFX_CHUNKS;++i) {
+        EspNativeGibKineticPoint particle;
+        EspNativeGibSheetRect rect;
+        if (!EspNativeGibSheet_sampleParticle(
+                chunkSeed,(uint8_t)i,distance,ageMs,&particle)) {
+            EspAssetPack_close();
+            return pixels;
+        }
+        if (EspNativeGibSheet_plan(
+                nowMs, particle.variant, particle.centerX,
+                particle.centerY, particle.velocityX,
+                sheet->width, sheet->height, &rect)) {
+            EspNativeIndexedBmpStats drawStats;
+            memset(&drawStats,0,sizeof drawStats);
+            if (EspNativeIndexedBmp_blit(
+                    sheet,framebuffer,DOOMRPG_LOGICAL_WIDTH,
+                    DOOMRPG_LOGICAL_HEIGHT,rect.sourceX,rect.sourceY,
+                    rect.width,rect.height,rect.destinationX,
+                    rect.destinationY,1U,&drawStats) !=
+                ESP_NATIVE_INDEXED_BMP_OK) {
+                if (originalGibs24Report == 0U) {
+                    printf("[GIBSHEET] READ-FAILED frame=%u row=%u recovery=old-fragments\n",
+                           (unsigned int)rect.frame,
+                           (unsigned int)rect.variant);
+                    originalGibs24Report=1U;
+                }
+                EspAssetPack_close();
+                return pixels;
+            }
+            pixels+=drawStats.pixelsWritten;
+        }
+    }
+    EspAssetPack_close();
+    *outFallback = 0U;
+    return pixels;
+}
+
 static uint32_t drawGibPixels(uint16_t* framebuffer,
                               uint32_t seed,
-                              uint32_t particles) {
+                              uint32_t particles,
+                              uint32_t nowMs,
+                              uint32_t ageMs,
+                              uint8_t distance) {
     uint32_t pixels = 0U;
     uint32_t i;
 
@@ -504,18 +659,49 @@ static uint32_t drawGibPixels(uint16_t* framebuffer,
         drawDisc(framebuffer, x, y, radius, color, &pixels);
     }
 
-    /* The legacy z=true path promotes five particles into gib chunks. We do not
-     * import imgGibs or ParticleSystem ownership; five larger dark-red fragments
-     * preserve that readable overkill cue with no asset allocation or gameplay
-     * RNG consumption. */
-    for (i = 0U; i < GIBFX_CHUNKS; ++i) {
-        uint32_t r = xorshift32(&seed);
-        int x = GIBFX_CENTER_X + (int)(r % 35U) - 17;
-        int y = GIBFX_CENTER_Y + (int)((r >> 8) % 23U) - 13;
-        drawDisc(framebuffer, x, y, 2, GIBFX_RED_DARK, &pixels);
+    /* Source 4x6 gibs_24.bmp atlas, 5 negative-sized chunks. The bitmap
+     * range reader owns only the existing 1 KiB shared BMP scratch, and
+     * does not retain a heap texture. Missing assets keep the old bounded
+     * fallback explicitly instead of producing a spurious dead-monster
+     * event or trying the original ZIP at runtime. */
+    {
+        uint8_t fallback = 1U;
+        const uint32_t painted =
+            drawOriginalGibChunks(framebuffer,seed,nowMs,
+                                  ageMs,distance,&fallback);
+        pixels += painted;
+        if (fallback != 0U) {
+            for (i = 0U; i < GIBFX_CHUNKS; ++i) {
+                uint32_t r = xorshift32(&seed);
+                int x = GIBFX_CENTER_X + (int)(r % 35U) - 17;
+                int y = GIBFX_CENTER_Y + (int)((r >> 8) % 23U) - 13;
+                drawDisc(framebuffer, x, y, 2, GIBFX_RED_DARK, &pixels);
+            }
+        }
     }
 
     return pixels;
+}
+
+/* Matches Combat_worldDistToTileDist() of Entity_calcWorldDistance()
+ * for the current monster position and settled player camera. No map-wide
+ * renderer pointers, square roots, or new mutable ownership. */
+static uint8_t sourceMonsterTileDistance(uint16_t spriteIndex) {
+    const EspNativeGameplayMonsterPositionRecord* monster =
+        EspNativeGameplayMonsterPosition_find(spriteIndex);
+    const EspPlayerViewState* player = EspPlayerView_view();
+    int64_t dx,dy;
+    uint64_t squared;
+    if (monster == NULL || player == NULL || player->active != 1U) {
+        /* The old effect is centered and distance-independent; preserve
+         * that witness when a position owner has not been materialized. */
+        return 1U;
+    }
+    dx=(int64_t)monster->worldX-player->viewX;
+    dy=(int64_t)monster->worldY-player->viewY;
+    squared=(uint64_t)(dx*dx+dy*dy);
+    return squared>65536U ? 0U
+        : EspNativeGibSheet_tileDistance((uint32_t)squared);
 }
 
 static void drawBurst(uint16_t* framebuffer,
@@ -524,8 +710,20 @@ static void drawBurst(uint16_t* framebuffer,
     uint32_t seed;
     uint32_t particles;
     uint32_t pixels;
+    uint8_t distance;
+    uint32_t nowMs;
 
     if (framebuffer == NULL || monster == NULL || view == NULL) return;
+    distance=sourceMonsterTileDistance(monster->spriteIndex);
+    if (distance == 0U) {
+        /* Combat_explodeOnMonster() explicitly suppresses its blood
+         * particles when worldDist exceeds 65536 (tileDist==-1).
+         * A distant native corpse must not fabricate a gore burst. */
+        printf("[GIBFX] SKIP sprite=%u source=Combat_worldDistToTileDist distance=out-of-range-4 gore=no gameplayRng=untouched\n",
+               (unsigned int)monster->spriteIndex);
+        return;
+    }
+    nowMs=DoomRPG_GetUpTimeMS();
     seed = view->sourceArenaFNV1a ^ view->stateFNV1a ^
            ((uint32_t)monster->spriteIndex * 0x9e3779b9U) ^ 0xa511e9b3U;
     particles = particleCount(monster);
@@ -535,7 +733,8 @@ static void drawBurst(uint16_t* framebuffer,
      * its victim is centered in the viewport. Keep this owner bounded and
      * presentation-only; later projection ownership can replace the center
      * constants without changing monster/gameplay state. */
-    pixels = drawGibPixels(framebuffer, seed, particles);
+    pixels = drawGibPixels(framebuffer,seed,particles,nowMs,
+                           0U,distance);
 
     ++gibFxOwner.bursts;
     gibFxOwner.pixels += pixels;
@@ -543,7 +742,9 @@ static void drawBurst(uint16_t* framebuffer,
     gibFxOwner.activeRepaints = 0U;
     gibFxOwner.activeSpriteIndex = monster->spriteIndex;
     gibFxOwner.activeParticles = (uint8_t)particles;
-    gibFxOwner.clearAtMs = DoomRPG_GetUpTimeMS() + GIBFX_DISPLAY_MS;
+    gibFxOwner.activeDistance = distance;
+    gibFxOwner.activeFrameTick = 0U;
+    gibFxOwner.clearAtMs = nowMs + GIBFX_DISPLAY_MS;
     gibFxOwner.active = 1U;
     printf("[GIBFX] PAINT sprite=%u subtype=%u particles=%u chunks=%u pixels=%u center=%d,%d ownerBytes=%u leaseMs=%u visualRng=local gameplayRng=untouched legacyParticleSystem=no\n",
            (unsigned int)monster->spriteIndex,
@@ -587,7 +788,9 @@ static void decorateActiveGib(void) {
 
     pixels = drawGibPixels(framebuffer,
                            gibFxOwner.activeSeed,
-                           gibFxOwner.activeParticles);
+                           gibFxOwner.activeParticles,now,
+                           now-(gibFxOwner.clearAtMs-GIBFX_DISPLAY_MS),
+                           gibFxOwner.activeDistance);
     ++gibFxOwner.activeRepaints;
     gibFxOwner.pixels += pixels;
     if (gibFxOwner.activeRepaints == 1U) {
@@ -717,6 +920,12 @@ int EspNativeGameplayGibFx_adoptCheckpointState(void) {
 static void resetFx(void) {
     memset(&gibFxOwner, 0, sizeof(gibFxOwner));
     gibFxOwner.activeSpriteIndex = GIBFX_NO_SPRITE;
+    memset(&originalGibs24, 0, sizeof(originalGibs24));
+    memset(&originalGibs24Berserk, 0, sizeof(originalGibs24Berserk));
+    originalGibs24Ready = 0U;
+    originalGibs24BerserkReady = 0U;
+    originalGibs24Unavailable = 0U;
+    originalGibs24Report = 0U;
     memset(&hitFxOwner, 0, sizeof(hitFxOwner));
     hitFxOwner.spriteIndex = GIBFX_NO_SPRITE;
 }
@@ -765,6 +974,101 @@ static void serviceHitExpiry(struct DoomRPG_s* doomRpg) {
            (unsigned int)HITFX_DISPLAY_MS,
            (unsigned int)hitFxOwner.paints,
            (unsigned int)hitFxOwner.pixels,
+           (unsigned int)frame.frameAfterFNV,
+           (unsigned int)frame.finalPresented);
+}
+
+static void servicePlayerPainShake(struct DoomRPG_s* doomRpgBase) {
+    DoomRPG_t* runtime = (DoomRPG_t*)doomRpgBase;
+    const EspPlayerViewState* view;
+    EspNativeGameplayFrameStats frame;
+    const uint32_t nowMs = DoomRPG_GetUpTimeMS();
+    if (!EspNativePlayerPainVisual_shakeRefreshDue(nowMs) ||
+        !EspNativeResidentGameplay_ownsWorldPresent() ||
+        EspNativeGameplayControls_isActive() || EspAssetPack_isOpen() ||
+        EspNativeGameplayEventChain_isWaiting() ||
+        EspNativeResidentGameplay_isAutomapActive()) return;
+    view = EspPlayerView_view();
+    if (runtime == NULL || runtime->render == NULL ||
+        view == NULL || view->active != 1U ||
+        view->viewX != view->destX || view->viewY != view->destY ||
+        view->viewAngle != view->destAngle) return;
+    /* A maximum of one full world redraw per 75ms bucket. Reusing the
+     * existing world composition avoids a shake framebuffer/copy and
+     * ensures a skipped frame never blocks input or burns gameplay RNG. */
+    memset(&frame, 0, sizeof(frame));
+    if (!EspNativeGameplayFrame_renderTurn(
+            runtime->render, (uint8_t)view->viewAngle, &frame)) {
+        printf("[PLAYERPAINSHAKE] RETRY cause=redraw-failed\n");
+    }
+}
+
+static void servicePlayerPainExpiry(struct DoomRPG_s* doomRpgBase) {
+    DoomRPG_t* runtime = (DoomRPG_t*)doomRpgBase;
+    const EspPlayerViewState* playerView;
+    EspNativeGameplayFrameStats frame;
+    const uint32_t nowMs = DoomRPG_GetUpTimeMS();
+
+    if (!EspNativePlayerPainVisual_expiryDue(nowMs)) return;
+    if (EspNativeGameplayControls_isActive() || EspAssetPack_isOpen() ||
+        EspNativeGameplayEventChain_isWaiting() ||
+        EspNativeResidentGameplay_isAutomapActive()) return;
+    playerView = EspPlayerView_view();
+    if (runtime == NULL || runtime->render == NULL || playerView == NULL ||
+        playerView->active != 1U ||
+        playerView->viewX != playerView->destX ||
+        playerView->viewY != playerView->destY ||
+        playerView->viewAngle != playerView->destAngle) return;
+    /* Exactly one ordinary world redraw removes the original l.bmp pain face
+     * and the weapon palette tint. No second framebuffer or input cooldown. */
+    memset(&frame, 0, sizeof(frame));
+    if (!EspNativeGameplayFrame_renderTurn(
+            runtime->render, (uint8_t)playerView->viewAngle, &frame)) {
+        printf("[PLAYERPAINFX] EXPIRE-REDRAW-FAILED recovery=next-service\n");
+        return;
+    }
+    (void)EspNativePlayerPainVisual_ackExpiry(nowMs);
+    printf("[PLAYERPAINFX] EXPIRE face=health-tier weapon=normal frame=%08x gameplayRng=untouched\n",
+           (unsigned int)frame.frameAfterFNV);
+}
+
+/* Two source atlas poses over a short 350ms corpse-gib lease:
+ * initial painted pose, then one present >=175ms later. Never an eager
+ * game-FPS loop or catch-up burst. A busy PAK/dialog/touch lease skips
+ * that visual tick rather than delaying player input. */
+static void serviceGibAnimation(struct DoomRPG_s* doomRpgBase) {
+    DoomRPG_t* runtime=(DoomRPG_t*)doomRpgBase;
+    const EspPlayerViewState* view;
+    EspNativeGameplayFrameStats frame;
+    const uint32_t nowMs=DoomRPG_GetUpTimeMS();
+    uint32_t ageMs;
+    if (gibFxOwner.active==0U ||
+        gibFxOwner.activeFrameTick!=0U ||
+        gibFxOwner.clearAtMs==0U ||
+        !EspNativeResidentGameplay_ownsWorldPresent() ||
+        EspNativeResidentGameplay_isAutomapActive() ||
+        EspNativeGameplayControls_isActive() ||
+        EspNativeGameplayEventChain_isWaiting() ||
+        EspAssetPack_isOpen()) return;
+    ageMs=nowMs-(gibFxOwner.clearAtMs-GIBFX_DISPLAY_MS);
+    if (ageMs < ESP_NATIVE_GIB_FRAME_MS || ageMs >= GIBFX_DISPLAY_MS)
+        return;
+    view=EspPlayerView_view();
+    if (runtime==NULL || runtime->render==NULL || view==NULL ||
+        view->active!=1U || view->viewX!=view->destX ||
+        view->viewY!=view->destY ||
+        view->viewAngle!=view->destAngle) return;
+    memset(&frame,0,sizeof frame);
+    if (!EspNativeGameplayFrame_renderTurn(
+            runtime->render,(uint8_t)view->viewAngle,&frame)) {
+        printf("[GIBFX] ANIM-RETRY sprite=%u frame=first->second cause=redraw-failed\n",
+               (unsigned int)gibFxOwner.activeSpriteIndex);
+        return;
+    }
+    gibFxOwner.activeFrameTick=1U;
+    printf("[GIBFX] ANIM-TICK sprite=%u ageMs=%u frame=%08x presented=%u atlas=source-175ms step=1/1 gameplayRng=untouched\n",
+           (unsigned int)gibFxOwner.activeSpriteIndex,
+           (unsigned int)ageMs,
            (unsigned int)frame.frameAfterFNV,
            (unsigned int)frame.finalPresented);
 }
@@ -820,10 +1124,82 @@ static void serviceExpiry(struct DoomRPG_s* doomRpg) {
  * action-feedback presenter is now presentBase(), allowing this generic effect
  * layer to decorate only the shared framebuffer before the already-proven
  * feedback + physical-present chain. */
+/* Presentation-only component of the EXISTING damage compositor.
+ * Called once at the FIRST red-flash paint via the owner callback, then
+ * naturally on 75ms shake redraws. Never creates its own timer/present. */
+static void decoratePlayerImpact(void) {
+    uint32_t impactProbe = 0U;
+    uint16_t impactLogical = 0U;
+    uint8_t impactFrame = 0U;
+    /* Original Combat_updateProjectile() -> Game_gsprite_allocAnim()
+     * paints source logical 180..190 impact at the player's camera.
+     * Unlike the existing native HUD pain face, this is the missing
+     * CENTER-VIEW hit animation, not an invented procedural claw.
+     * A single bounded PAK bitshape decode feeds the existing 160x120
+     * framebuffer; every 150ms pose naturally follows the existing 75ms
+     * shake redraw requests, with no new global FPS loop. Failed source
+     * preflight fails only the optional visual, never the combat commit. */
+    if (EspNativeResidentGameplay_ownsWorldPresent() &&
+        !EspNativeResidentGameplay_isAutomapActive() &&
+        !EspNativeGameplayControls_isActive() &&
+        !EspAssetPack_isOpen() &&
+        Esp32PlatformVideo_framebufferSizeBytes() ==
+            DOOMRPG_LOGICAL_WIDTH * DOOMRPG_LOGICAL_HEIGHT *
+                sizeof(uint16_t) &&
+        EspNativePlayerPainVisual_impactInfo(
+            DoomRPG_GetUpTimeMS(),&impactProbe,
+            &impactLogical,&impactFrame) &&
+        impactProbe != impactUnavailableProbe) {
+        const int pixels=EspNativeSpriteRenderer_paintPlayerImpact(
+            (uint16_t*)Esp32PlatformVideo_framebuffer(),
+            DOOMRPG_LOGICAL_WIDTH,DOOMRPG_LOGICAL_HEIGHT,
+            impactLogical,impactFrame);
+        if (impactLoggedProbe != impactProbe ||
+            impactLoggedFrame != impactFrame) {
+            impactLoggedProbe=impactProbe;
+            impactLoggedFrame=impactFrame;
+            printf("[PLAYERIMPACT] %s probe=%u sprite=%u frame=%u/2 pixels=%d renderMode=%u source=original-PAK-Game_gsprite_allocAnim cadence=150ms lifetime=shared-pain-500ms gameplayRng=untouched\n",
+                   pixels>=0?"PAINT":"SKIP",
+                   (unsigned int)impactProbe,
+                   (unsigned int)impactLogical,
+                   (unsigned int)impactFrame,
+                   pixels,
+                   (unsigned int)EspNativePlayerPainVisual_impactRenderMode(
+                       impactLogical));
+        }
+        if (pixels < 0) impactUnavailableProbe=impactProbe;
+    }
+}
+
 int EspNativeGameplayActionEngine_present(void) {
+    uint32_t seed = 0U;
+    uint32_t age = 0U;
     decorateActiveHit();
     decorateActiveGib();
     decorateNewGibs();
+    decoratePlayerImpact();
+    /* This layer belongs ONLY to true familiar absorption. A plain dog
+     * enemy hit cannot select it. Fail closed if the shared framebuffer is
+     * missing or a modal/transition compositor owns the physical present.
+     * The lease must have been staged by a transaction that can roll back. */
+    if (EspNativeResidentGameplay_ownsWorldPresent() &&
+        !EspNativeResidentGameplay_isAutomapActive() &&
+        !EspNativeGameplayControls_isActive() &&
+        !EspAssetPack_isOpen() &&
+        EspNativePlayerPainVisual_dogInfo(
+            DoomRPG_GetUpTimeMS(), &seed, &age) &&
+        Esp32PlatformVideo_framebufferSizeBytes() ==
+            DOOMRPG_LOGICAL_WIDTH * DOOMRPG_LOGICAL_HEIGHT *
+                sizeof(uint16_t)) {
+        const EspNativeGameplayPlayerState* player =
+            EspNativeGameplayPlayerState_view();
+        const uint8_t berserker = player != NULL && player->active == 1U &&
+                                  player->berserkerTics != 0U;
+        (void)EspNativeDogBlood_paint(
+            (uint16_t*)Esp32PlatformVideo_framebuffer(),
+            DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT, seed, age,
+            berserker);
+    }
     return EspNativeGameplayActionEngine_presentBase();
 }
 
@@ -836,6 +1212,9 @@ int EspNativeGameplayActionEngine_present(void) {
  * Random_t byte-for-byte; the already-proven byte RNG guard owns the future
  * exact live replay. */
 void __wrap_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg) {
+    /* Permanent player impact layer shares the ONE existing DAMAGE red
+     * border/arrow physical-present owner. No independent animation loop. */
+    EspNativeGameplayActionEngine_setImpactPainter(decoratePlayerImpact);
     EspNativeGameplayPlayerResources_sessionService(doomRpg);
     EspNativeGameplayMonsterAttackVisual_service(doomRpg);
     /* The first 85ms damage-cue pulse must not begin before synchronous
@@ -845,6 +1224,9 @@ void __wrap_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg) {
     EspNativeGameplayMonsterRetaliation_service(doomRpg);
     EspNativeGameplayMonsterMovementProbe_service(doomRpg);
     serviceHitExpiry(doomRpg);
+    servicePlayerPainShake(doomRpg);
+    servicePlayerPainExpiry(doomRpg);
+    serviceGibAnimation(doomRpg);
     serviceExpiry(doomRpg);
     /* A showStats=0 CHANGEMAP is staged by resident gameplay and consumed only
      * after that source-map service has returned from its SELECT transaction. */
@@ -853,9 +1235,14 @@ void __wrap_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg) {
 }
 
 void __wrap_EspNativeGameplaySession_reset(void) {
+    EspNativeGameplayActionEngine_setImpactPainter(NULL);
     EspNativeGameplayPlayerResources_sessionReset();
     EspNativeGameplayMonsterAttackVisual_reset();
     EspNativeGameplayMonsterRetaliation_reset();
+    EspNativePlayerPainVisual_reset();
     EspNativeGameplayMonsterMovementProbe_reset();
     resetFx();
+    impactLoggedProbe=0U;
+    impactLoggedFrame=0xffU;
+    impactUnavailableProbe=0U;
 }

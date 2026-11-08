@@ -11,6 +11,13 @@ extern "C" {
 
 #define ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SLOTS 8U
 #define ESP_NATIVE_GAMEPLAY_MONSTER_DROP_NO_SLOT 0xffU
+/* Reserved native custom gSprite class, kept in the existing 8-slot V11
+ * rotating dynamic-world owner. Not an entity definition or pickup.
+ * Player_pain() emits Game_gsprite_alloc(20|21|22, 2, playerX, playerY)
+ * when there is no captured legacy Entity_t pointer. */
+#define ESP_NATIVE_GAMEPLAY_DOG_CORPSE_TYPE 0xfeU
+#define ESP_NATIVE_GAMEPLAY_DOG_CORPSE_FIRST 20U
+#define ESP_NATIVE_GAMEPLAY_DOG_CORPSE_LAST 22U
 
 typedef enum EspNativeGameplayMonsterDropOutcome_e {
     ESP_NATIVE_GAMEPLAY_MONSTER_DROP_INVALID = 0,
@@ -79,6 +86,14 @@ int EspNativeGameplayMonsterDrop_prepare(
     uint32_t dropRoll,
     const EspNativeGameplayMonsterRecord* monster,
     EspNativeGameplayMonsterDropSpawnPlan* outPlan);
+/* Purely plan one persistent, non-pickup custom corpse sprite.
+ * The source 20/21/22 logical ID doubles as subtype/defTile sentinel.
+ * Coordinates must be centered on an actual 64-unit map tile. */
+int EspNativeGameplayMonsterDrop_prepareDogCorpse(
+    uint8_t customSpriteLogical,
+    uint16_t playerWorldX, uint16_t playerWorldY,
+    EspNativeGameplayMonsterDropSpawnPlan* outPlan);
+
 int EspNativeGameplayMonsterDrop_commit(
     const EspNativeGameplayMonsterDropSpawnPlan* plan);
 
