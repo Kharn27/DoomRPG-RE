@@ -1150,6 +1150,7 @@ static void decoratePlayerImpact(void) {
      * shake redraw requests, with no new global FPS loop. Failed source
      * preflight fails only the optional visual, never the combat commit. */
     if (EspNativeResidentGameplay_ownsWorldPresent() &&
+        !EspNativeGameplayHub_isActive() &&
         !EspNativeResidentGameplay_isAutomapActive() &&
         !EspNativeGameplayControls_isActive() &&
         !EspAssetPack_isOpen() &&
@@ -1181,9 +1182,20 @@ static void decoratePlayerImpact(void) {
     }
 }
 
+/* The HUB (including the weapon grid) presents the already-owned modal
+ * framebuffer. It must never go through world hit/gib/player-impact/dog
+ * decorators OR through the action feedback base presenter. Otherwise an
+ * active impact lease paints onto the freshly drawn grid *during* present.
+ * Keep all visual leases untouched; the world presenter resumes at HUB close.
+ * This uses the existing physical present, no additional pixels or heap. */
+extern int __real_Esp32PlatformVideo_present(void);
+
 int EspNativeGameplayActionEngine_present(void) {
     uint32_t seed = 0U;
     uint32_t age = 0U;
+    if (EspNativeGameplayHub_isActive()) {
+        return __real_Esp32PlatformVideo_present();
+    }
     decorateActiveHit();
     decorateActiveGib();
     decorateNewGibs();
@@ -1193,6 +1205,7 @@ int EspNativeGameplayActionEngine_present(void) {
      * missing or a modal/transition compositor owns the physical present.
      * The lease must have been staged by a transaction that can roll back. */
     if (EspNativeResidentGameplay_ownsWorldPresent() &&
+        !EspNativeGameplayHub_isActive() &&
         !EspNativeResidentGameplay_isAutomapActive() &&
         !EspNativeGameplayControls_isActive() &&
         !EspAssetPack_isOpen() &&

@@ -125,3 +125,113 @@ with tempfile.TemporaryDirectory() as directory:
     subprocess.run([str(executable)], check=True)
 
 print("PASS 5 asynchronous world services fail closed during HUB weapon/modal owner")
+
+
+# The former crash is cured but the following hardware session proves a
+# second, independent modal leak: [HUBWGRID] FRAME -> [PLAYERIMPACT] PAINT ->
+# [HUB] FRAME. The presentation wrapper must return to direct physical LCD
+# publishing before any live impact or action feedback can touch the grid.
+def production_signature(signature: str) -> str:
+    begin = source.index(signature)
+    opening = source.index("{", begin)
+    depth = 0
+    for i in range(opening, len(source)):
+        if source[i] == "{":
+            depth += 1
+        elif source[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[begin:i + 1]
+    raise AssertionError("unbalanced production function " + signature)
+
+
+present = production_signature("int EspNativeGameplayActionEngine_present(void)")
+assert present.index("if (EspNativeGameplayHub_isActive())") < present.index(
+    "decorateActiveHit();"
+)
+assert present.index("return __real_Esp32PlatformVideo_present();") < present.index(
+    "decoratePlayerImpact();"
+)
+assert 'extern int __real_Esp32PlatformVideo_present(void);' in source
+impact = production_function("decoratePlayerImpact")
+assert "!EspNativeGameplayHub_isActive()" in impact
+assert impact.index("!EspNativeGameplayHub_isActive()") < impact.index(
+    "EspNativeSpriteRenderer_paintPlayerImpact("
+)
+dog = present.split("if (EspNativeResidentGameplay_ownsWorldPresent()", 1)[1]
+assert "!EspNativeGameplayHub_isActive()" in dog
+
+presentation_body = r'''
+#include <stdint.h>
+#include <stddef.h>
+#include <assert.h>
+#include <stdio.h>
+typedef struct EspNativeGameplayPlayerState_s {
+    uint8_t active;
+    uint32_t berserkerTics;
+} EspNativeGameplayPlayerState;
+#define DOOMRPG_LOGICAL_WIDTH 160
+#define DOOMRPG_LOGICAL_HEIGHT 120
+static int modal = 1, directPresents, basePresents, decorators;
+static uint16_t pixels[160 * 120];
+int EspNativeGameplayHub_isActive(void) { return modal; }
+void decorateActiveHit(void) { ++decorators; }
+void decorateActiveGib(void) { ++decorators; }
+void decorateNewGibs(void) { ++decorators; }
+void decoratePlayerImpact(void) { ++decorators; }
+int __real_Esp32PlatformVideo_present(void) {
+    ++directPresents;
+    return 1;
+}
+int EspNativeGameplayActionEngine_presentBase(void) {
+    ++basePresents;
+    return 1;
+}
+int EspNativeResidentGameplay_ownsWorldPresent(void) { return 1; }
+int EspNativeResidentGameplay_isAutomapActive(void) { return 0; }
+int EspNativeGameplayControls_isActive(void) { return 0; }
+int EspAssetPack_isOpen(void) { return 0; }
+size_t Esp32PlatformVideo_framebufferSizeBytes(void) { return sizeof(pixels); }
+void* Esp32PlatformVideo_framebuffer(void) { return pixels; }
+uint32_t DoomRPG_GetUpTimeMS(void) { return 200; }
+int EspNativePlayerPainVisual_dogInfo(uint32_t ms, uint32_t* seed,
+                                     uint32_t* age) {
+    (void)ms; (void)seed; (void)age; return 0;
+}
+const EspNativeGameplayPlayerState* EspNativeGameplayPlayerState_view(void) {
+    static EspNativeGameplayPlayerState player = {1, 0};
+    return &player;
+}
+int EspNativeDogBlood_paint(uint16_t* fb, int width, int height,
+                            uint32_t seed, uint32_t age, uint8_t berserker) {
+    (void)fb; (void)width; (void)height; (void)seed;
+    (void)age; (void)berserker; assert(0); return 0;
+}
+'''
+presentation_body += "\n" + present + "\n"
+presentation_body += r'''
+int main(void) {
+    // The real resident world remains active during an open HUB. A live
+    // impact callback is registered but must not decorate those pixels.
+    assert(EspNativeGameplayActionEngine_present());
+    assert(directPresents == 1 && basePresents == 0 && decorators == 0);
+    modal = 0;
+    assert(EspNativeGameplayActionEngine_present());
+    assert(directPresents == 1 && basePresents == 1 && decorators == 4);
+    modal = 1;
+    assert(EspNativeGameplayActionEngine_present());
+    assert(directPresents == 2 && basePresents == 1 && decorators == 4);
+    puts("PASS real compositor: modal directly presented, world decorations deferred");
+    return 0;
+}
+'''
+with tempfile.TemporaryDirectory() as directory:
+    path = Path(directory)
+    c = path / "hub_present.c"
+    executable = path / "hub_present"
+    c.write_text(presentation_body)
+    subprocess.run(["cc", "-std=c11", "-O2", "-Wall", "-Wextra",
+                    "-Werror", str(c), "-o", str(executable)], check=True)
+    subprocess.run([str(executable)], check=True)
+
+print("PASS source impact/owner guard and real compositor own direct-modal-present path")
