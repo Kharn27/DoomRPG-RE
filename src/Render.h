@@ -321,7 +321,11 @@ typedef struct Render_s
 	int frameTime;
 #endif
 	struct DoomRPG_s* doomRpg;
+/* The legacy desktop renderer caches canvas clipping. The ESP32 uses
+ * its native canvas geometry and platform framebuffer directly. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	SDL_Rect clipRect;
+#endif
 #ifndef DOOMRPG_ESP32
 	SDL_Texture* piDIB;
 #endif

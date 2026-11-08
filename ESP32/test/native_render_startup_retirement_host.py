@@ -32,7 +32,7 @@ normalized = (body.replace("static int " + name + "(", "int Render_startup(")
 h = 2166136261
 for byte in normalized.encode("utf-8"):
     h = ((h ^ byte) * 16777619) & 0xffffffff
-assert h == 0x794a2f4a, f"Render_startup implementation drift: {h:08x}"
+assert h == 0x1ca3268b, f"Render_startup implementation drift: {h:08x}"
 
 # Reject any ESP32 C/C++ call/definition with the retired name, ignoring
 # comments and diagnostic strings (which intentionally retain old labels).
@@ -56,7 +56,6 @@ typedef struct DoomRPG_s { void* doomCanvas; } DoomRPG_t;
 typedef struct Render_s {
     DoomRPG_t* doomRpg;
     /* Sine table lives in native process owner. */
-    SDL_Rect clipRect;
     int pitch;
     byte* framebuffer;
     short* mediaPalettes;
@@ -134,13 +133,22 @@ int main(void) {
         assert(EspNativeRenderStartup_initialize(&render)==1);
         assert(render.pitch==320);
         assert(render.framebuffer==framebuffer);
-        assert(render.clipRect.x==0 && render.clipRect.y==0);
-        assert(render.clipRect.w==160 && render.clipRect.h==120);
         assert(framebuffer[0]==255 && framebuffer[sizeof(framebuffer)-1]==255);
         assert(trigValues[0]==0 && trigValues[255]==255);
         assert(render.mediaPalettesLength==3280 && render.mediaPalettes);
         assert(fileReads==1 && fileFrees==1 && paletteLoads==1 && trigInstalls==1);
     }
+    /* The cached legacy clip rectangle is gone. Both real renderer dimensions
+     * must fail closed before loading the sine table or touching the FB. */
+    resetProbes();sdlVideo.rendererW=159;
+    assert(EspNativeRenderStartup_initialize(&render)==0);
+    assert(fileReads==0 && paletteLoads==0 && trigInstalls==0);
+    sdlVideo.rendererW=160;
+    resetProbes();sdlVideo.rendererH=119;
+    assert(EspNativeRenderStartup_initialize(&render)==0);
+    assert(fileReads==0 && paletteLoads==0 && trigInstalls==0);
+    sdlVideo.rendererH=120;
+
     resetProbes();
     assert(EspNativeRenderStartup_initialize(NULL)==0);
     assert(fileReads==0 && paletteLoads==0);
@@ -181,4 +189,4 @@ with tempfile.TemporaryDirectory(prefix="private-render-startup-") as d:
                     "-Wall", "-Wextra", "-Werror", str(src), "-o", exe],
                    check=True)
     subprocess.run([exe], check=True)
-print("PASS Render_startup retired; shared framebuffer only, native init FNV=794a2f4a")
+print("PASS Render_startup retired; shared framebuffer only, native init FNV=1ca3268b")
