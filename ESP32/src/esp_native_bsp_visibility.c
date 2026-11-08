@@ -487,7 +487,7 @@ int EspNativeBspVisibility_buildForView(struct Render_s* renderBase,
         .viewTransX = render->viewTransX,
         .viewTransY = render->viewTransY,
         .screenWidth = render->screenWidth,
-        .fracHalfScreenWidth = rendeEspNativeRenderGeometry_fracHalfScreenWidth(r->screenWidth),
+        .fracHalfScreenWidth = EspNativeRenderGeometry_fracHalfScreenWidth(render->screenWidth),
         .columnScale = render->columnScale
     };
         if (walkNode(render, runtime, 0U, 0U,
