@@ -83,6 +83,66 @@ assert "if (x >= 118 && x <= 156)" in system
 assert "const bool previous = y >= 49 && y <= 78;" in system
 assert "const bool next = y >= 83 && y <= 112;" in system
 
+
+# MENU_MAIN -> LOAD GAME is the only layout changed. The shared 5x9 skin
+# painter gives the title and BACK their true 3-theme row gradient, while
+# the label's non-clickable title rail has no triple-hatch side ornaments.
+# The page fraction sits BELOW the unchanged DOWN key.
+main_load = system.split("static void paintMainSlots(void) {", 1)[1].split(
+    'extern "C" int EspNativeGameplaySave_mainSelectorBegin(', 1)[0]
+main_tap = system.split('extern "C" int EspNativeGameplaySave_mainSelectorTap(', 1)[1].split(
+    'extern "C" int EspNativeGameplaySave_slotSelectorActive(', 1)[0]
+hub_slots = system.split("bool paintSaveOverlay(void) {", 1)[1].split(
+    "}  // namespace", 1)[0]
+assert "EspMainMenuSkin_paintModalTitleStencil(" not in main_load
+assert 'fillRect(fb, 45, 27, 114, 27, EspMainMenuSkin_uiAccentDim());' in main_load
+assert 'fillRect(fb, 73, 27, 86, 27, EspMainMenuSkin_uiAccent());' in main_load
+assert '"LOAD GAME", 0, 1)) return;' in main_load
+assert '"LOAD - PAGE' not in main_load
+assert 'snprintf(text, sizeof(text), "%u/2", first == 1U ? 1U : 2U);' in main_load
+assert "EspNativeGameplayHubTouchUi_drawMiniText(" in main_load
+assert "fb, text, 137, 106, EspMainMenuSkin_uiAccent());" in main_load
+assert main_load.index("drawSlotNav(fb, 69, 98, true, first == 1U);") < main_load.index(
+    'snprintf(text, sizeof(text), "%u/2",')
+assert 98 < 106 and 106 + 5 <= 118  # fraction under DOWN in safe 20px foot
+assert (137 - 5, 137 + 5) == (132, 142)  # 3 glyphs x 3 + gaps=11px
+assert 111 < 132  # fraction cannot collide with BACK on same y band
+# Title and BACK both use the true 9-row skin palette and no flat color face.
+assert main_load.count("EspMainMenuSkin_paintText(") == 2
+assert 'drawCenteredWord(fb, 80, 11, "LOAD GAME"' not in main_load
+assert 'drawCenteredWord(fb, 72, 107, "BACK"' not in main_load
+assert "kMainLoadBackLeft = 34;" in system
+assert "kMainLoadBackRight = 111;" in system
+assert "kMainLoadBackTop = 102;" in system
+assert "kMainLoadBackBottom = 118;" in system
+assert "kMainLoadBackLeft, kMainLoadBackTop," in main_load
+assert "kMainLoadBackRight, kMainLoadBackBottom," in main_load
+assert "EspMainMenuSkin_paintPlate(" in main_load
+assert '"BACK", 0, 1)) return;' in main_load
+assert "fillRect(fb, 34, 105, 111, 118" not in main_load
+assert "drawRect(fb, 34, 105, 111, 118" not in main_load
+assert "if (y >= kMainLoadBackTop)" in main_tap
+assert "if (y <= kMainLoadBackBottom &&" in main_tap
+assert "x >= kMainLoadBackLeft && x <= kMainLoadBackRight" in main_tap
+# All five original 107x13 row cards, their select/confirm cadence, page
+# arrows, and the HUB's separate save overlay remain untouched.
+for call in (
+    "const int y = 32 + row * 14;",
+    "fillRect(fb, 7, y, 113, y + 12,",
+    "drawSlotNav(fb, 34, 62, false, first != 1U);",
+    "drawSlotNav(fb, 69, 98, true, first == 1U);",
+):
+    assert call in main_load
+assert "const uint8_t row = (uint8_t)((y - 32) / 14);" in main_tap
+assert "if (x >= 118 && x <= 156 && y >= 34 && y <= 98)" in main_tap
+assert "(!previous && (y < 69 || page != 1U))" in main_tap
+assert "slotArmed = 0U;" in main_tap
+assert "mainSlotReady = 1U;" in main_tap
+assert "EspMainMenuSkin_paintModalTitleStencil(" not in hub_slots
+assert '"%s - PAGE %u/2"' in hub_slots
+assert "drawSlotNav(fb, 49, 78, false, first != 1U);" in hub_slots
+assert "drawSlotNav(fb, 83, 112, true, first == 1U);" in hub_slots
+
 # HUB owns exactly its 160x120 framebuffer, and navigation remains within
 # the pre-existing tabs, inventory, notebook, weapons and SYSTEM controls.
 assert "#define HUB_UI_FOCUS EspMainMenuSkin_uiAccent()" in hubui
