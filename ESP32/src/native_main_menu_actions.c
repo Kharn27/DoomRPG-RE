@@ -135,6 +135,16 @@ static uint32_t helpColor888(uint16_t ink) {
     return 0xff000000U | (r << 16) | (g << 8) | b;
 }
 
+/* Reuse the *same* upper and middle rows as the industrial menu lettering.
+ * With no additional palette, each HELP repaint follows the selected theme. */
+static uint16_t helpTitleTopTone(void) {
+    return EspMainMenuSkin_letterTone(1, 9);
+}
+
+static uint16_t helpBodyMiddleTone(void) {
+    return EspMainMenuSkin_letterTone(4, 9);
+}
+
 /* Nine-row native menu lettering is our theme reference. The existing
  * 9x12 game bitmap is reused as-is: three 4-row clipped passes provide
  * the same three-tone CLASSIC/INFERNO/PHOSPHORE gradient, without a font
@@ -163,7 +173,8 @@ static void helpPaintCopyrightMark(uint16_t* fb) {
         0x0f8U, 0x104U, 0x272U, 0x441U, 0x441U,
         0x441U, 0x272U, 0x104U, 0x0f8U
     };
-    const uint16_t ink = EspMainMenuSkin_uiInk();
+    /* The © and Kharn27 deliberately share the theme's top-row tone. */
+    const uint16_t ink = helpTitleTopTone();
     int y, x;
     if (fb == NULL) return;
     for (y = 0; y < 9; ++y) {
@@ -302,7 +313,7 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
     end = menuSystem->scrollIndex + visible;
 
     if (!helpDrawStarfield(doomRpg)) return 0;
-    DoomRPG_setFontColor(doomRpg, helpColor888(EspMainMenuSkin_uiInk()));
+    DoomRPG_setFontColor(doomRpg, helpColor888(helpTitleTopTone()));
     EspNativeCanvas_drawText(canvas, "HELP / CYD", 12, 0, 0);
     SDL_snprintf(page, sizeof(page), "%d/%d",
                  (menuSystem->scrollIndex + MAIN_HELP_VISIBLE_LINES - 1) /
@@ -323,13 +334,15 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
         else if (i == 1 && menuSystem->scrollIndex == 0) {
             /* Signature only on the cover, directly below its title. */
             DoomRPG_setFontColor(doomRpg,
-                helpColor888(EspMainMenuSkin_uiInk()));
+                helpColor888(helpTitleTopTone()));
             EspNativeCanvas_drawText(canvas, line, 27, y, 0);
             helpPaintCopyrightMark(framebuffer);
-            DoomRPG_setFontColor(doomRpg, 0xffffffffU);
         }
         else if (line[0] != '\0') {
-            DoomRPG_setFontColor(doomRpg, 0xffffffffU);
+            /* Mid-band skin tone replaces white explanations, not the
+             * themed headings or the top-tone © Kharn27 signature. */
+            DoomRPG_setFontColor(doomRpg,
+                helpColor888(helpBodyMiddleTone()));
             EspNativeCanvas_drawText(canvas, line, 12, y, 0);
         }
         y += MAIN_HELP_LINE_HEIGHT;
