@@ -1,6 +1,7 @@
 #include <SDL.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "DoomRPG.h"
 #include "DoomCanvas.h"
@@ -311,7 +312,7 @@ static void helpDrawHudCaption(DoomRPG_t* doomRpg, DoomCanvas_t* canvas,
     if (doomRpg == NULL || canvas == NULL || label == NULL ||
         zone < 0 || zone > 2) return;
     n = SDL_strlen(prefixes[zone]);
-    if (SDL_strncmp(label, prefixes[zone], n) != 0) return;
+    if (strncmp(label, prefixes[zone], n) != 0) return;
     DoomRPG_setFontColor(doomRpg,
                          helpColor888(EspMainMenuSkin_letterTone(tones[zone], 9)));
     EspNativeCanvas_drawText(canvas, prefixes[zone], 12, y, 0);
