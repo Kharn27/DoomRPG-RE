@@ -278,8 +278,9 @@ assert 'helpIsRowHelpPage(menuSystem->scrollIndex)' in actions
 assert 'helpIsAnimatedScenePage(' in actions
 assert 'helpDoomRpg->menuSystem->scrollIndex)' in actions
 assert 'EspNativeHelpScene_paintRow(' in actions
-assert '64 + (i - 2) * MAIN_HELP_LINE_HEIGHT' in actions
-assert 64 + 2 * 12 + 12 - 1 == 99
+assert '63 + (i - 2) * MAIN_HELP_LINE_HEIGHT' in actions
+assert 63 + 2 * 12 + 12 - 1 == 98
+assert 98 < 99  # leave the HELP reading-window bottom border visible
 assert 'EspNativeHelpScene_paintRow(uint16_t* framebuffer, uint8_t sourceRow,' in scene_api
 assert 'if (level == 0U) return;' in scene
 assert 'if (fb == NULL || !material.ready || sourceRow > 2U || level > 6U)' in scene
