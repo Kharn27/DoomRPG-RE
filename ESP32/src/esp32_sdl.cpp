@@ -675,15 +675,8 @@ int SDL_ShowSimpleMessageBox(Uint32, const char* title, const char* message, SDL
     return 0;
 }
 
-int SDL_SetHint(const char*, const char*) { return SDL_TRUE; }
-int SDL_ShowCursor(int toggle) { return toggle; }
-int SDL_SetWindowFullscreen(SDL_Window*, Uint32) { return 0; }
-int SDL_NumJoysticks(void) { return 0; }
-SDL_bool SDL_IsGameController(int) { return SDL_FALSE; }
-int SDL_GameControllerRumble(SDL_GameController*, Uint16, Uint16, Uint32) { return 0; }
-int SDL_HapticRumblePlay(SDL_Haptic*, float, Uint32) { return 0; }
-int SDL_HapticRumbleStop(SDL_Haptic*) { return 0; }
-
+// SDL-B: legacy window, cursor, hint, joystick and haptic stubs were not
+// linked by any CYD profile. The active SDL image/presentation ABI stays here.
 }  // extern "C"
 
 void Esp32Sdl_attachDisplay(TFT_eSPI* display) {
