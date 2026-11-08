@@ -35,6 +35,15 @@ assert [lines[p * 7] for p in range(11)] == [
     "TACTICAL TIPS", "ABOUT CYD PORT"]
 assert lines[1] == "Kharn27"
 assert lines[6] == ""  # no unwanted DOWN: controls callout
+# The seventh page is a visual, non-interactive replica of the real 160x20
+# upper HUD strip; keep every action explanation while moving the weapon
+# advice to the following page rather than dropping it.
+hud_page = lines[6 * 7 : 7 * 7]
+assert hud_page == [
+    "TOP HUD BAR", "3 VIRTUAL BUTTONS", "LEFT: game menu",
+    "CENTER: pass a turn", "RIGHT: show automap", "", ""]
+assert lines[7 * 7 + 6] == "Tap gun: weapons"
+
 assert "DOWN: controls" not in lines
 assert max(map(len, lines)) <= 20  # source font=7px/char, x=12
 assert len(lines) == len(set((i, line) for i, line in enumerate(lines)))
@@ -147,6 +156,45 @@ assert "for (y = 0; y < 12; ++y)" in copyright
 assert "const uint16_t ink = helpTitleTopTone();" in copyright
 
 assert "EspMainMenuSkin_uiAccent()" in actions
+# k.bmp is already a 20x20 tiled native PAK asset in gameplay. HELP
+# loads it exactly once while the screen owns the texture and releases it
+# on BACK/failure; the 5Hz animated repaint never opens the PAK.
+hud_c = (SRC / "esp_native_gameplay_hud.c").read_text()
+assert '"k.bmp"' in hud_c
+assert 'bmp.width == 20U && bmp.height == 20U' in (
+    SRC / "esp_native_gameplay_hud_direction.c").read_text()
+assert '"k.bmp", false, &helpHudBarBG' in actions
+assert 'helpHudBarBG.width != MAIN_HELP_HUD_BAR_TILE' in actions
+assert 'DoomRPG_freeImage(helpSpaceOwner, &helpHudBarBG);' in actions
+assert 'helpPaintTopHudIllustration(canvas, framebuffer)' in actions
+assert 'if (menuSystem->scrollIndex == MAIN_HELP_HUD_PAGE_SCROLL)' in actions
+assert '#define MAIN_HELP_HUD_PAGE_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)' in actions
+assert '#define MAIN_HELP_HUD_BAR_Y 41' in actions
+assert macro("MAIN_HELP_HUD_BAR_TILE") == 20
+assert macro("MAIN_HELP_HUD_BAR_HEIGHT") == 20
+assert macro("MAIN_HELP_HUD_MENU_RIGHT") == 31
+assert macro("MAIN_HELP_HUD_PASS_LEFT") == 32
+assert macro("MAIN_HELP_HUD_PASS_RIGHT") == 127
+assert macro("MAIN_HELP_HUD_MAP_LEFT") == 128
+assert 'tileX += MAIN_HELP_HUD_BAR_TILE' in actions
+assert 'SDL_RenderCopy(NULL, helpHudBarBG.imgBitmap, NULL, &dst)' in actions
+assert 'static const char* const label[3] = {"MENU", "PASS TURN", "MAP"};' in actions
+assert 'const uint16_t notchTone = 0x001fU;' in actions
+# These zones reproduce exactly the gameplay classifier's logical hitboxes.
+assert '#define GAMEPLAY_MENU_RIGHT 31' in input_c
+assert '#define GAMEPLAY_PASS_TURN_LEFT 32' in input_c
+assert '#define GAMEPLAY_PASS_TURN_RIGHT 127' in input_c
+assert '#define GAMEPLAY_AUTOMAP_LEFT 128' in input_c
+# Title, secondary line, original 20px bar, and three 12px descriptions
+# fit between the HELP header and the active 100..119px footer.
+assert 14 + 12 - 1 < 27
+assert 27 + 12 - 1 < 41
+assert 41 + 20 - 1 < 64
+assert 88 + 12 - 1 < 100
+assert 'EspNativeGameplayInput_route(' not in actions
+assert 'EspNativeGameplayHud_routeInitial(' not in actions
+assert 'DoomRPG_esp32MainMenuReturnToMain(' in actions
+
 assert "EspMainMenuSkin_uiAccentDim()" in actions
 assert "menuSystem->scrollIndex -= MAIN_HELP_VISIBLE_LINES;" in actions
 assert "menuSystem->scrollIndex += MAIN_HELP_VISIBLE_LINES;" in actions
@@ -165,5 +213,5 @@ for scroll in range(len(lines)):
     page = (clamped + 6) // 7 + 1
     assert 1 <= page <= (len(lines) + 6) // 7
 
-print("PASS HELP: 11 themed title pages, upper-tone 12px © Kharn27, middle-tone body, menu page 2,")
+print("PASS HELP: 11 pages, real k.bmp HUD strip + exact virtual top buttons on page 7, themed ink,")
 print("           7-line bounded pages, animation/FNV rebasing, release and no keypad")
