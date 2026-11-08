@@ -1,3 +1,11 @@
+## PR #266 — projection géométrique native sans demi-largeur persistante : PASS CYD (8 novembre 2026)
+
+La branche [PR #266](https://github.com/Kharn27/DoomRPG-RE/pull/266) a figé le code fonctionnel au SHA `03bd64d70fa20104c80eed29cdecdbeb98361bea`. `Render_t` ESP32 passe de **160 à 156 octets** en supprimant `fracHalfScreenWidth` de l'objet natif, conservé en desktop/oracle. La primitive pure `EspNativeRenderGeometry_fracHalfScreenWidth(width)` reconstruit l'exacte demi-largeur 16.16 avec biais d'un demi-pixel aux **12 points de lecture** BSP, première frame et sprites. Aucun nouveau framebuffer, allocation ou changement d'entrée/gameplay ; builds normal, bringup et trace, tests différentiels et host : **CI push #42438971302 et PR #42438975212 SUCCESS (99 étapes chacun)**.
+
+Test sur le vrai CYD `device-monitor-261108-033922.log` avec acceptation « niquel ! » : boot `Render=156`, entrée et LOAD V11 Entrance, deux ouvertures/fermetures de porte, dialogues 8→19, HUD/HUB exact, Malwrath (3 salves + impacts), automap, pickups, deux retours menu libérant l'état résident, `shapeData/mediaTexels=NULL`, deux `HEADROOM_OK`, `largest8=86004`, aucune trace panic/WDT. Ce test ne démontre pas un gain de heap A/B ou une parité pixel-perfect exhaustive. [Rapport complet #266](MILESTONE_PR266_RENDER_FRAC_HALF_WIDTH_CYD_PASS.md). **Les modifications post-test sont uniquement documentaires ; fusion main réservée à l'utilisateur.**
+
+---
+
 ## PR #260 — frontière de présentation HUB et retrait du Render desktop : PASS CYD (8 novembre 2026)
 
 La PR #260 conserve seulement `Render_t=160` octets côté ESP32 au lieu de 184 initialement, avec `viewAngle/spanMode`, compteurs de raster et coordonnées desktop retirés des propriétaires natifs et maintenus dans l'oracle desktop. Le monde continue de lire `EspPlayerViewState`. Les expirations de douleur et les autres effets du monde n'ont plus droit de redessiner sous la grille d'armes. Plus important, `EspNativeGameplayActionEngine_present()` emprunte directement le physical-present quand `EspNativeGameplayHub_isActive()`, avant `decoratePlayerImpact` et les autres décorateurs. La fermeture HUB reste un redraw complet et l'expiration de douleur est reprise ensuite. Pas de deuxième framebuffer, de nouvelle ressource PAK ni de changement d'input/monstres.
