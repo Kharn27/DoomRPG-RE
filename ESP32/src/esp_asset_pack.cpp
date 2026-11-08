@@ -1732,6 +1732,40 @@ void EspAssetPack_mapFlashGetStats(EspAssetPackMapFlashStats* outStats)
     outStats->active = EspAssetPack_isMapFlashActive() ? 1U : 0U;
 }
 
+uint8_t EspAssetPack_mapFlashCachedMapId(void)
+{
+    const esp_partition_t* partition = nullptr;
+    MapFlashHeader cached = {};
+    const char* name = nullptr;
+    /* An active lease is already structurally verified. Otherwise inspect
+     * only the persisted committed header without activating the slot or
+     * reading the payload. Staging still requires full verification. */
+    if (EspAssetPack_isMapFlashActive()) {
+        cached = mapFlash.header;
+        partition = mapFlash.partition;
+    }
+    else {
+        partition = esp_partition_find_first(
+            ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS,
+            "spiffs");
+        if (partition == nullptr ||
+            esp_partition_read(partition, 0U, &cached, sizeof(cached)) !=
+                ESP_OK) {
+            return 0U;
+        }
+    }
+    if (!mapFlashHeaderLooksValid(cached, partition) ||
+        !EspMapCatalog_isValidId(cached.currentMapId)) {
+        return 0U;
+    }
+    name = EspMapCatalog_nameForId(cached.currentMapId);
+    if (name == nullptr || cached.currentMapHash !=
+                           EspAssetPack_nameHash(name)) {
+        return 0U;
+    }
+    return cached.currentMapId;
+}
+
 int EspAssetPack_residentBegin(void)
 {
     if (openReady) {

@@ -125,6 +125,14 @@ void EspAssetPack_mapFlashDeactivate(void);
 int EspAssetPack_isMapFlashActive(void);
 void EspAssetPack_mapFlashGetStats(EspAssetPackMapFlashStats* outStats);
 
+/* Read-only discovery of the last committed raw-flash map slot, including
+ * after a gameplay session has deactivated its active PAK lease. This only
+ * peeks at the committed header and map-name identity (NOT a full payload
+ * verification). Returns zero if unavailable. Does not reactivate flash,
+ * change leases, stage a map, or allocate any RAM. For HELP illustration
+ * selection only; actual gameplay always uses verified mapFlashPrepare(). */
+uint8_t EspAssetPack_mapFlashCachedMapId(void);
+
 /* Explicit read-only lease on one exact entry in the authoritative SD PAK.
  *
  * This exists for map-load / CHANGEMAP preflight while the current gameplay
