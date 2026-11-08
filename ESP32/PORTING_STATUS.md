@@ -1,3 +1,11 @@
+## PR #268-A — Render_t::skipCull retiré : PASS CYD, suite autorisée sur la même branche (8 novembre 2026)
+
+**Code et tests validés sur le vrai CYD : `b985b94b4f0a8311c86469f13173e4008e059af9`**, [PR #268](https://github.com/Kharn27/DoomRPG-RE/pull/268), branche `agent/esp32-render-retire-skipcull-state`, base `main=77649ebf992e57aa5f57ff6efd138b45d871c9c2`. `Render_t` **144→140 B** : `skipCull` desktop developer menu retiré des trois firmwares ESP32, culling natif normal explicitement constant dans les deux appels BSP, desktop/oracle intacts. CI [push #42523265828](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42523265828) et [PR #42523269645](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42523269645) **SUCCESS 100/100 chacun**, 3 firmwares + différentiel géométrique.
+
+**Test `device-monitor-261108-224813.log` (1 373 lignes)** : NEW GAME Entrance, pickup/caisses, dialogue8/26→19, porte275, EXIT ; LOAD V11 slot04 Entrance, porte113, Malwrath 3 triples salves projectile204/impacts184 puis mort, secret event15, HUB, deuxième EXIT. **2× `HEADROOM_OK`**, `largest8=86004`, **2× `RESIDENTRESET empty=1`**, **2× `SYSEXIT MENU-READY`**, `shapeData/mediaTexels=NULL`, zéro panic/WDT. **PASS ciblé A**, pas de gain heap net démontré. Retour utilisateur « si c'est ok on continue sur cette branche » : autorisation de poursuivre **sur cette même branche** avec un **nouveau jalon B distinct**, après commit docs-only A ; **aucune autorisation de merge**. [Rapport A](MILESTONE_PR268_A_RENDER_SKIPCULL_CYD_PASS.md). Code A figé au SHA testé.
+
+---
+
 ## PR #266-C — Render_t diagnostic numLines retiré : PASS CYD, merge autorisé (8 novembre 2026)
 
 **Code C testé `6f888ce8e4aa4f58aa6f565919426d1d5fbcdb7a`** sur [PR #266](https://github.com/Kharn27/DoomRPG-RE/pull/266). `Render_t` ESP32 **148→144 octets** (`Render=144 Game=0 Canvas=44 Total=948`), `numLines` retiré du shell natif ; l'identifiant exact de ligne BSP pour les cinq erreurs murales/span réside uniquement dans `FirstFrameWork.diagnosticLineIndex` transitoire. Desktop/oracle inchangés. CI [push #42441414866](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42441414866) et [PR #42441419274](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42441419274) **SUCCESS 99/99** chacun, harnais fail-closed ligne161, trois firmwares.
