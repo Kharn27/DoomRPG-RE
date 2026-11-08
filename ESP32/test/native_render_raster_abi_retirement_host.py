@@ -162,7 +162,7 @@ assert "render->framebuffer = NULL;" in root
 # Both native BSP render passes use an explicit immutable culling policy.
 assert re.search(
     r"#ifndef DOOMRPG_ESP32\s+boolean skipStretch;\s+boolean unk4;\s+#endif"
-    r"\s+#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
+    r"\s+/\* The desktop developer menu alone toggles skipCull;[\s\S]*?\*/\s+#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
     r"\s+boolean skipCull;\s+#endif"
     r"\s+#ifndef DOOMRPG_ESP32"
     r"\s+boolean skipBSP;\s+boolean skipLines;\s+boolean unk5;"
