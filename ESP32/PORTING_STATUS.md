@@ -1,3 +1,11 @@
+## PR #266-B — Retrait des compteurs BSP Render_t : PASS matériel (8 novembre 2026)
+
+**Code B validé : `9899d2af07429dd00923cc73a3cf6ce604a29002`**, même [PR #266](https://github.com/Kharn27/DoomRPG-RE/pull/266), `Render_t 156→148 B` mesurés sur classic CYD, deux compteurs de parcours hérités `lineCount/nodeCount` retirés du shell normal/bringup/trace mais conservés desktop/oracle. Le diagnostic de nœuds passe en `FirstFrameWork.nodesTraversed` temporaire, visibilité `state->nodes` maintenue et inventaires map inchangés. CI [push #42440393287](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42440393287) / [PR #42440396940](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42440396940) : SUCCESS, 99 étapes, trois firmwares.
+
+**Log matériel `device-monitor-261108-040005.log`** (1568 lignes, 187372 B) : NEW GAME Entrance, dialogues et fermeture porte275, caisses et effets, LOAD V11 slot04 Entrance, Malwrath triple projectile204 puis dégâts/impact/gibs/drop, LOAD V11 slot02 Sector 1 en session HUB, 3 `RESIDENTRESET empty=1`, 2 `SYSEXIT MENU-READY`, 3 `HEADROOM_OK` et `largest8=86004`. `shapeData=0x0 mediaTexels=0x0`, aucun panic/WDT/échec renderer relevé. **PASS ciblé B** ; pas de preuve d'un gain net heap, de parité pixels ou d'endurance. Rapport [`MILESTONE_PR266_B_BSP_TRAVERSAL_COUNTERS_CYD_PASS.md`](MILESTONE_PR266_B_BSP_TRAVERSAL_COUNTERS_CYD_PASS.md). **Après B : docs-only puis nouveau jalon C autorisé sur cette branche ; PR Draft, pas de merge.**
+
+---
+
 ## PR #266 — Render fractional half-width délogé de Render_t : PASS matériel CYD (8 novembre 2026)
 
 **Code figé validé : `03bd64d70fa20104c80eed29cdecdbeb98361bea`** sur [PR #266](https://github.com/Kharn27/DoomRPG-RE/pull/266), base `main=bb3c03fde1bcafd83656f40893de142c094e3416`. `Render_t` ESP32 **160→156 B** ; le champ fractionnaire de demi-largeur est désormais purement calculé par `EspNativeRenderGeometry_fracHalfScreenWidth` dans les 12 lecteurs BSP/première frame/sprites ; desktop et oracle conservent leur ABI. CI [push #42438971302](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42438971302) + [PR #42438975212](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42438975212) : SUCCESS, 99 étapes chacune et les trois firmwares compilés.
