@@ -10,6 +10,8 @@
 #include "esp_native_audio_intent.h"
 #include "esp_native_canvas_text.h"
 #include "esp_main_menu_skin.h"
+#include "esp_asset_pack.h"
+#include "esp_native_help_scene.h"
 #include "platform_video_c_bridge.h"
 
 #include "native_main_menu_actions.h"
@@ -54,8 +56,9 @@
 #define MAIN_HELP_HUD_PASS_LEFT 26
 #define MAIN_HELP_HUD_PASS_RIGHT 102
 #define MAIN_HELP_HUD_MAP_LEFT 103
-#define MAIN_HELP_HUD_BREATH_STEP_MS 110U
+#define MAIN_HELP_HUD_BREATH_STEP_MS 220U
 #define MAIN_HELP_HUD_BREATH_STEPS 12U
+#define MAIN_HELP_SCENE_PAGE_SCROLL (4 * MAIN_HELP_VISIBLE_LINES)
 
 static DoomRPG_t* helpDoomRpg;
 static uint32_t helpExpectedFrameFNV;
@@ -67,6 +70,7 @@ static int helpSpaceShift;
 static int helpSpaceActive;
 static int helpLoggedScroll = -1;
 static int helpHudBreathStep = -1;
+static int helpSceneBreathStep = -1;
 
 static void helpStop(void) {
     if (helpSpaceOwner != NULL) {
@@ -82,6 +86,8 @@ static void helpStop(void) {
     helpSpaceActive = 0;
     helpLoggedScroll = -1;
     helpHudBreathStep = -1;
+    helpSceneBreathStep = -1;
+    EspNativeHelpScene_reset();
 }
 
 static int helpStart(DoomRPG_t* doomRpg) {
@@ -110,6 +116,19 @@ static int helpStart(DoomRPG_t* doomRpg) {
     helpSpaceShift = -1;
     helpLoggedScroll = -1;
     helpHudBreathStep = -1;
+    helpSceneBreathStep = -1;
+    /* Once the gameplay lease has closed, this read-only peek still finds
+     * the last COMMITTED raw-flash map header. It never stages/loads a map. */
+    {
+        const uint8_t cachedMapId = EspAssetPack_mapFlashCachedMapId();
+        const int preview = EspNativeHelpScene_load(cachedMapId,
+                                                     helpSpaceEpoch);
+        printf("[MAINHELP] PREVIEW scene=%s cachedMap=%u texture=%u backing=%s bytes=2048 world=no\n",
+               preview ? "pak-texture" : "text-fallback",
+               (unsigned int)cachedMapId,
+               (unsigned int)EspNativeHelpScene_textureId(),
+               EspAssetPack_isMapFlashActive() ? "raw-flash" : "sd-pak");
+    }
     helpSpaceActive = 1;
     printf("[MAINHELP] BACKGROUND asset=c.bmp source=pak scroll=intro-157ms/192virtual owner=help hud=k.bmp/20x20\n");
     return 1;
@@ -510,11 +529,9 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
         if (title == NULL || caption == NULL || visible != 7)
             return 0;
         helpDrawThemedPageTitle(doomRpg, canvas, title, 12, 14);
-        /* The illustrated page's explanatory copy shares the active theme's
-         * midpoint tone. Only the tiny labels ON the blue mini buttons
-         * remain white for contrast; the heading keeps its gradient. */
-        DoomRPG_setFontColor(doomRpg,
-                             helpColor888(helpBodyMiddleTone()));
+        /* The control-identification caption stays white; the LEFT/CENTER/
+         * RIGHT explanations below use the active skin's middle tone. */
+        DoomRPG_setFontColor(doomRpg, 0xffffffffU);
         EspNativeCanvas_drawText(canvas, caption, 12, 27, 0);
         if (!helpPaintTopHudIllustration(framebuffer))
             return 0;
@@ -527,6 +544,27 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
             EspNativeCanvas_drawText(canvas, label, 12,
                                      64 + (i - 2) * MAIN_HELP_LINE_HEIGHT, 0);
         }
+    }
+    else if (menuSystem->scrollIndex == MAIN_HELP_SCENE_PAGE_SCROLL &&
+             EspNativeHelpScene_isReady()) {
+        /* A miniature first-person *illustration*, not a snapshot or a
+         * second active game: real wall material, 3x3 semantic feedback
+         * palette, and no HUD top/bottom bars. The next page retains the
+         * detailed descriptions of the center/bottom touch zones. */
+        const char* title = DoomRPG_esp32MainMenuHelpLine(
+            MAIN_HELP_SCENE_PAGE_SCROLL);
+        const char* caption = DoomRPG_esp32MainMenuHelpLine(
+            MAIN_HELP_SCENE_PAGE_SCROLL + 1);
+        const int step = helpHudBreathIndex(DoomRPG_GetUpTimeMS());
+        if (title == NULL || caption == NULL || visible != 7)
+            return 0;
+        helpDrawThemedPageTitle(doomRpg, canvas, title, 12, 14);
+        DoomRPG_setFontColor(doomRpg,
+                             helpColor888(helpBodyMiddleTone()));
+        EspNativeCanvas_drawText(canvas, caption, 12, 27, 0);
+        if (!EspNativeHelpScene_paint(
+                 framebuffer, helpHudBreathLevel(step))) return 0;
+        helpSceneBreathStep = step;
     }
     else {
         DoomRPG_setFontColor(doomRpg, 0xffffffffU);
@@ -625,11 +663,15 @@ void DoomRPG_esp32MainMenuHelpService(void) {
                   MAIN_HELP_STAR_VIRTUAL_WIDTH);
     shift = (phase * DOOMRPG_LOGICAL_WIDTH) /
             (int)MAIN_HELP_STAR_VIRTUAL_WIDTH;
-    /* Only the illustrated page needs a faster refresh for blue breathing.
-     * Other HELP pages preserve the original starfield-driven 5Hz budget. */
+    /* Only the two illustrated pages need redraws for their breathing
+     * phases. The other nine pages remain starfield-driven (~5Hz).
+     * No timers, gameplay RNG or extra buffers. */
     if (shift == helpSpaceShift &&
         (helpDoomRpg->menuSystem->scrollIndex != MAIN_HELP_HUD_PAGE_SCROLL ||
-         helpHudBreathStep == helpHudBreathIndex(now)))
+         helpHudBreathStep == helpHudBreathIndex(now)) &&
+        (helpDoomRpg->menuSystem->scrollIndex != MAIN_HELP_SCENE_PAGE_SCROLL ||
+         !EspNativeHelpScene_isReady() ||
+         helpSceneBreathStep == helpHudBreathIndex(now)))
         return;
     if (!paintHelp(helpDoomRpg, &finalFNV)) {
         DoomRPG_t* owner = helpDoomRpg;
