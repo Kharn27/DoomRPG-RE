@@ -160,8 +160,8 @@ static void helpDrawThemedPageTitle(DoomRPG_t* doomRpg,
  * This fixed 11x9 ROM mask places the C inside the outer circle. */
 static void helpPaintCopyrightMark(uint16_t* fb) {
     static const uint16_t rows[9] = {
-        0x0f8U, 0x204U, 0x462U, 0x488U, 0x488U,
-        0x488U, 0x462U, 0x204U, 0x0f8U
+        0x0f8U, 0x104U, 0x272U, 0x441U, 0x441U,
+        0x441U, 0x272U, 0x104U, 0x0f8U
     };
     const uint16_t ink = EspMainMenuSkin_uiInk();
     int y, x;
