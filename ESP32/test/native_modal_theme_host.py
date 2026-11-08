@@ -125,7 +125,7 @@ for call in (
     assert call in main_load
 assert "const uint8_t row = (uint8_t)((y - 32) / 14);" in main_tap
 assert "if (x >= 118 && x <= 156 && y >= 34 && y <= 98)" in main_tap
-assert "if (y < 69 || page != 1U)" in main_tap
+assert "(!previous && (y < 69 || page != 1U))" in main_tap
 assert "slotArmed = 0U;" in main_tap
 assert "mainSlotReady = 1U;" in main_tap
 assert "EspMainMenuSkin_paintModalTitleStencil(" not in hub_slots
