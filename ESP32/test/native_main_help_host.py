@@ -202,7 +202,7 @@ assert 'framebuffer[(y + row) * DOOMRPG_LOGICAL_WIDTH +' in actions
 assert '0xffffU; /* white, all themes */' in actions
 # "3 VIRTUAL BUTTONS" is WHITE, as are the tiny ROM button glyphs;
 # LEFT/CENTER/RIGHT prefixes use the theme's first, second and third tones.
-assert "/* The control-identification caption stays white;" in actions
+assert "/* The control-identification caption stays white. The three" in actions
 hud_paint_section = actions.split(
     'if (menuSystem->scrollIndex == MAIN_HELP_HUD_PAGE_SCROLL) {', 1
 )[1].split('    else if (menuSystem->scrollIndex == MAIN_HELP_SCENE_PAGE_SCROLL &&', 1)[0]
