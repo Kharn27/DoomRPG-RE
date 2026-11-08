@@ -10,6 +10,7 @@
 #include "esp_asset_pack.h"
 #include "esp_native_gameplay_weapon.h"
 #include "esp_native_gameplay_player_pain_visual.h"
+#include "platform_video_config.h"
 
 #define MAP_HEADER 16U
 #define PALETTE_HEADER 4U
@@ -404,8 +405,8 @@ static int rasterizeFrame(Render_t* render,
 
                 for (dy = y0; dy < y1; ++dy) {
                     uint16_t* row = framebuffer +
-                        (render->screenY + dy) * pitchPixels +
-                        render->screenX;
+                        (DOOMRPG_VIEWPORT_Y + dy) * pitchPixels +
+                        DOOMRPG_VIEWPORT_X;
                     int dx;
                     for (dx = x0; dx < x1; ++dx) {
                         row[dx] = color;
@@ -450,14 +451,14 @@ int EspNativeGameplayWeapon_render(
 
     if ((workspace != NULL && workspace->busy) ||
         render == NULL || outStats == NULL ||
-        render->framebuffer == NULL || render->screenX != 0 ||
-        render->screenY != 20 || render->screenWidth != 160 ||
+        render->framebuffer == NULL || DOOMRPG_VIEWPORT_X != 0 ||
+        DOOMRPG_VIEWPORT_Y != 20 || render->screenWidth != 160 ||
         render->screenHeight != 80 || render->shapeData != NULL ||
         render->mediaTexels != NULL || EspAssetPack_isOpen()) {
         printf("[WEAPON] FAILED contract weapon=%u screen=%d,%d/%dx%d clip=%d,%d..%d,%d shapeData=%p mediaTexels=%p pack=%u\n",
                (unsigned int)weapon,
-               render != NULL ? render->screenX : -1,
-               render != NULL ? render->screenY : -1,
+               render != NULL ? DOOMRPG_VIEWPORT_X : -1,
+               render != NULL ? DOOMRPG_VIEWPORT_Y : -1,
                render != NULL ? render->screenWidth : -1,
                render != NULL ? render->screenHeight : -1,
                render != NULL ? render->screenLeft : -1,
