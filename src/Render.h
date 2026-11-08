@@ -222,9 +222,13 @@ typedef struct Render_s
 	boolean skipViewNudge;
 #endif
 	int lineCount;
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	int lineRasterCount;
+#endif
 	int nodeCount;
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	int nodeRasterCount;
+#endif
 /* Unused desktop sprite-raster diagnostics; native uses its own stats. */
 #ifndef DOOMRPG_ESP32
 	int spriteCount;

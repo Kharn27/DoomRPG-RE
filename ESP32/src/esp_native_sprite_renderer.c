@@ -126,9 +126,7 @@ typedef struct Scratch_s {
     int viewZ;
     int viewAngle;
     int lineCount;
-    int lineRasterCount;
     int nodeCount;
-    int nodeRasterCount;
     int screenLeft;
     int screenTop;
     int screenRight;
@@ -313,9 +311,7 @@ static void saveScratch(Render_t* render, Scratch* scratch) {
     scratch->viewZ = render->viewZ;
     scratch->viewAngle = render->viewAngle;
     scratch->lineCount = render->lineCount;
-    scratch->lineRasterCount = render->lineRasterCount;
     scratch->nodeCount = render->nodeCount;
-    scratch->nodeRasterCount = render->nodeRasterCount;
     scratch->screenLeft = render->screenLeft;
     scratch->screenTop = render->screenTop;
     scratch->screenRight = render->screenRight;
@@ -339,9 +335,7 @@ static void restoreScratch(Render_t* render, const Scratch* scratch) {
     render->viewZ = scratch->viewZ;
     render->viewAngle = scratch->viewAngle;
     render->lineCount = scratch->lineCount;
-    render->lineRasterCount = scratch->lineRasterCount;
     render->nodeCount = scratch->nodeCount;
-    render->nodeRasterCount = scratch->nodeRasterCount;
     render->screenLeft = scratch->screenLeft;
     render->screenTop = scratch->screenTop;
     render->screenRight = scratch->screenRight;
@@ -366,9 +360,7 @@ static int scratchMatches(const Render_t* render, const Scratch* scratch) {
            render->viewZ == scratch->viewZ &&
            render->viewAngle == scratch->viewAngle &&
            render->lineCount == scratch->lineCount &&
-           render->lineRasterCount == scratch->lineRasterCount &&
            render->nodeCount == scratch->nodeCount &&
-           render->nodeRasterCount == scratch->nodeRasterCount &&
            render->screenLeft == scratch->screenLeft &&
            render->screenTop == scratch->screenTop &&
            render->screenRight == scratch->screenRight &&
@@ -424,9 +416,7 @@ static int setupDrawView(Render_t* render,
     render->screenRight = SCREEN_W;
     render->screenBottom = SCREEN_H;
     render->lineCount = 0;
-    render->lineRasterCount = 0;
     render->nodeCount = 0;
-    render->nodeRasterCount = 0;
     render->spanMode = 0;
     memcpy(render->columnScale, visibility->columnScale,
            sizeof(visibility->columnScale));

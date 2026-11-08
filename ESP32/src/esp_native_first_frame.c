@@ -109,9 +109,7 @@ typedef struct RenderScratch_s {
     int viewZ;
     int viewAngle;
     int lineCount;
-    int lineRasterCount;
     int nodeCount;
-    int nodeRasterCount;
     int screenLeft;
     int screenTop;
     int screenRight;
@@ -434,9 +432,7 @@ static void saveRenderScratch(Render_t* render, RenderScratch* scratch) {
     scratch->viewZ = render->viewZ;
     scratch->viewAngle = render->viewAngle;
     scratch->lineCount = render->lineCount;
-    scratch->lineRasterCount = render->lineRasterCount;
     scratch->nodeCount = render->nodeCount;
-    scratch->nodeRasterCount = render->nodeRasterCount;
     scratch->screenLeft = render->screenLeft;
     scratch->screenTop = render->screenTop;
     scratch->screenRight = render->screenRight;
@@ -464,9 +460,7 @@ static void restoreRenderScratch(Render_t* render, const RenderScratch* scratch)
     render->viewZ = scratch->viewZ;
     render->viewAngle = scratch->viewAngle;
     render->lineCount = scratch->lineCount;
-    render->lineRasterCount = scratch->lineRasterCount;
     render->nodeCount = scratch->nodeCount;
-    render->nodeRasterCount = scratch->nodeRasterCount;
     render->screenLeft = scratch->screenLeft;
     render->screenTop = scratch->screenTop;
     render->screenRight = scratch->screenRight;
@@ -883,7 +877,6 @@ static int drawProjectedWall(FirstFrameWork* work,
     i = line->vert2.x - line->vert1.x;
     if (i <= 0) return 1;
 
-    ++render->lineRasterCount;
     i2 = (MAXINT / i) << 1;
     i3 = (int)DoomRPG_FixedMul((line->vert2.y - line->vert1.y), i2);
     i4 = (int)DoomRPG_FixedMul((line->vert2.z - line->vert1.z), i2);
@@ -1198,7 +1191,6 @@ static int walkNodes(FirstFrameWork* work) {
                 return 0;
             }
             ++work->leafNodes;
-            ++work->render->nodeRasterCount;
             work->render->lineCount += (int)lineCount;
             for (i = 0U; i < lineCount; ++i) {
                 if (!drawLine(work, lineStart + i)) return 0;
@@ -1380,9 +1372,7 @@ static int renderFrame(Render_t* render,
     render->screenRight = render->screenWidth;
     render->screenBottom = render->screenHeight;
     render->lineCount = 0;
-    render->lineRasterCount = 0;
     render->nodeCount = 0;
-    render->nodeRasterCount = 0;
     render->spanMode = 0;
 
     EspNativeRenderGeometry_resetColumns(render->columnScale, render->screenWidth);
