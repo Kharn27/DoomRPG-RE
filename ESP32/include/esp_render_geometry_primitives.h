@@ -49,7 +49,7 @@ void EspNativeRenderGeometry_projectVertex(
 
 /* Exact desktop Render_setup half-height after even-height normalization.
  * Native walls, sprites and plane raster use this immutable viewport
- * scalar instead of retaining a duplicate in Render_t. No allocation. */
+ * scalar instead of retaining a duplicate in the renderer shell. No allocation. */
 static inline int EspNativeRenderGeometry_halfScreenHeight(int screenHeight)
 {
     return screenHeight / 2;
