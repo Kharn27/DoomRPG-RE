@@ -161,7 +161,7 @@ assert "EspMainMenuSkin_uiAccent()" in actions
 # on BACK/failure; the 5Hz animated repaint never opens the PAK.
 hud_c = (SRC / "esp_native_gameplay_hud.c").read_text()
 assert '"k.bmp"' in hud_c
-assert 'bmp.width == 20U && bmp.height == 20U' in (
+assert 'bar->width != 20U || bar->height != 20U' in (
     SRC / "esp_native_gameplay_hud_direction.c").read_text()
 assert '"k.bmp", false, &helpHudBarBG' in actions
 assert 'helpHudBarBG.width != MAIN_HELP_HUD_BAR_TILE' in actions
