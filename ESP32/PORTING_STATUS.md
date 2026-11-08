@@ -1,3 +1,13 @@
+## PR #262 — finition LOAD GAME : PASS visuel utilisateur et fusion demandée (8 novembre 2026)
+
+**Accord explicite de fusion après essai visuel du CYD :** « OK ca me va tu va pouvoir merger. » Ce retour couvre la dernière itération du menu **MENU_MAIN → LOAD GAME** et autorise le merge de [PR #262](https://github.com/Kharn27/DoomRPG-RE/pull/262). **Code fonctionnel gelé : `603de6c884f92c43c36a49050a749751e6972895`**, issu de `main=a6b151709ee3a083d163b231b090779fbf0231f2` après merge #259. La preuve est une **acceptation visuelle déclarée** par le testeur ; **aucun nouveau Serial ni mesure RAM/performance n'est fourni ici**, et le retour n'atteste pas un parcours exhaustif de chaque thème ni tous les slots.
+
+**Présentation finale :** titre non cliquable « LOAD GAME » en peinture de texte 5×9/9 lignes de `EspMainMenuSkin_paintText`, palettes CLASSIC/INFERNO (rose pâle→bronze→rouge)/PHOSPHORE. Suppression sur cet écran seulement des triples hachures de chaque côté du titre, remplacées par un rail horizontal discret y27. La fraction 3×5 `1/2` ou `2/2` est déplacée **sous DOWN**, centrée en x137 à y106..110 : elle ne recouvre ni DOWN (y69..98), ni BACK (x34..111/y102..118). BACK utilise un châssis industriel symétrique 17px et un texte à dégradé 9 lignes ; le rectangle tactile suit exactement x34..111/y102..118. Cinq slots, pagination, flèches, confirmation de LOAD et écran HUB SAVE/LOAD inchangés. Aucun asset, allocation ou second framebuffer ajouté ; backing store PAK et frontières gameplay non touchés.
+
+**Validation :** CI [push #42432149865](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42432149865) et [PR #42432153299](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42432153299) **SUCCESS**, tests hôte de géométrie, pixel rows de gradients, garde mémoire, absence de collision/altération HUB ; firmwares `esp32-cyd` normal, bringup, trace compilés. Après ce PASS visuel, **commits docs-only**, diff et CI finale à vérifier avant fusion expressément autorisée.
+
+---
+
 ## PR #259 — touches UP/DOWN industrielles : PASS visuel CYD, fusion autorisée (8 novembre 2026)
 
 **Accord explicite de l'utilisateur :** après essai demandé du firmware normal `esp32-cyd` pour les flèches LOAD GAME, retour **« Impecc, tu vas pouvoir merger »**. Cette acceptation vaut **PASS visuel et autorisation de merge #259**, et ne constitue pas un nouveau log Serial ni une mesure matérielle de RAM/timing. Le précédent PASS « Impec ;) » au SHA `3a664b606053cdc9d03a347f59eff1e09b8672e5` couvre la symétrie des grandes plaques ; la validation des flèches porte sur le **SHA fonctionnel gelé `9c78065fbcfcb1994bce571f3b4181614a28f4b0`**.
