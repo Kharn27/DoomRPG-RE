@@ -681,8 +681,6 @@ static void EspNativeEngineLayout_setupRender(Render_t* render, SDL_Rect* window
 		render->screenHeight = windowRect->h - 1;
 	}
 	render->halfScreenHeight = render->screenHeight / 2;
-	/* Preserve integer-division/FRACBITS semantics without a dormant half-width slot. */
-	render->fracHalfScreenWidth = ((render->screenWidth / 2) << FRACBITS) - 0x8000;
 
 #if 0
 	printf("render->screenWidth %d\n", render->screenWidth);
@@ -690,7 +688,6 @@ static void EspNativeEngineLayout_setupRender(Render_t* render, SDL_Rect* window
 	printf("render->screenX %d\n", windowRect->x);
 	printf("render->screenY %d\n", windowRect->y);
 	printf("render->halfScreenHeight %d\n", render->halfScreenHeight);
-	printf("render->fracHalfScreenWidth %d\n", render->fracHalfScreenWidth);
 #endif
 
 	SDL_free(render->ceilingColor);
