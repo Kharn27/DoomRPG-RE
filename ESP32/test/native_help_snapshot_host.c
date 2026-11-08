@@ -63,7 +63,7 @@ int EspAssetPack_findEntry(const char* name, EspAssetPackEntry* out) {
 }
 int EspAssetPack_readRange(const EspAssetPackEntry* entry,
                            uint32_t offset, void* output,
-                           uint32_t bytes) {
+                           size_t bytes) {
     const uint8_t* data;
     size_t size;
     if (!openPack || entry == NULL || output == NULL ||
