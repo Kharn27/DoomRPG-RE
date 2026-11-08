@@ -606,14 +606,14 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
                 framebuffer, (uint8_t)sourceRow,
                 helpHudBreathLevel(step))) return 0;
         /* Three explicit explanations below the illustrated 3-button row,
-         * last baseline at y88 and ink ending at y99, before footer y100. */
+         * last baseline at y87, glyphs ending y98, above border y99. */
         for (i = 2; i <= 4; ++i) {
             const char* label = DoomRPG_esp32MainMenuHelpLine(
                 menuSystem->scrollIndex + i);
             if (label == NULL || label[0] == '\0') return 0;
             DoomRPG_setFontColor(doomRpg, helpColor888(helpBodyMiddleTone()));
             EspNativeCanvas_drawText(canvas, label, 12,
-                                     64 + (i - 2) * MAIN_HELP_LINE_HEIGHT, 0);
+                                     63 + (i - 2) * MAIN_HELP_LINE_HEIGHT, 0);
         }
         helpSceneBreathStep = step;
     }
