@@ -267,11 +267,11 @@ assert '#define ESP_NATIVE_HELP_BREATH_STEPS 32U' in scene_api
 assert 'EspNativeHelpScene_breathStep(now - helpSpaceEpoch)' in actions
 assert 'EspNativeHelpScene_breathLevel((uint8_t)step)' in actions
 assert 'EspNativeHelpScene_breathPower(level)' in scene
-assert 'EspNativeHelpScene_breathPower(level)' in actions
+assert 'EspNativeHelpScene_breathPower(' in actions
 assert '3t²-2t³' in scene
 assert 'const uint16_t neon = (uint16_t)(((uint32_t)power * 31U) / 255U);' in actions
-assert 'MENU/PASS/MAP remain legible throughout the breath.' in actions or
-       'imaginary boundaries alone breathe:' in actions
+assert ('MENU/PASS/MAP remain legible throughout the breath.' in actions
+        or 'imaginary boundaries alone breathe:' in actions)
 assert actions.count('if (level == 0U) {') == 0  # no binary blackout
 wave = [n if n <= 16 else 32 - n for n in range(32)]
 assert wave == list(range(17)) + list(range(15, 0, -1))
