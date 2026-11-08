@@ -1,3 +1,9 @@
+## PR #260-B — retrait des compteurs de raster desktop, validé sur CYD (8 novembre 2026)
+
+`Render_t::lineRasterCount` et `Render_t::nodeRasterCount` sont absents de l'ABI ESP32 normal/bringup/trace, mais conservés côté desktop/oracle. Les trois propriétaires de rendu ont cessé de les sauvegarder, restaurer ou incrémenter. `Render_t` **176→168 B**, aucune refonte de projection. Code testé `b323fee6213f7195370a66bd68ebbd591df0e593`, [CI #42430844225](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42430844225) SUCCESS. Capture `device-monitor-261108-014743.log` : premières frames et setup identiques, START et LOAD, portes/dialogues/caisse/HUD/HUB, ripostes Malwrath et impacts, deux fermetures HUB exactes, deux EXIT sans échec, `HEADROOM_OK`, PSRAM zéro, `shapeData/mediaTexels==NULL`. **Ce PASS n'autorise pas de déduire la parité pixel-perfect ou un gain de heap mesuré**. Poursuite sur la même PR explicitement demandée, mais nouveau commit de code = nouveau gate matériel. [Rapport #260-B](MILESTONE_PR260_RENDER_RASTER_COUNTERS_CYD_PASS.md).
+
+---
+
 ## PR #260 — géométrie viewport : origine possédée par ESP32 (8 novembre 2026)
 
 Sur `agent/esp32-render-retire-desktop-screen-origin` (code `995ff6aead71dbf9fd441494e37fbe1c9c591675`), suppression côté firmware de `Render_t::screenX/Y`, conservés pour desktop et oracle géométrique. Les offsets de raster du BSP, de la première frame, des sprites, du compositeur, de l'arme et des diagnostics viennent de `DOOMRPG_VIEWPORT_X=0`, `DOOMRPG_VIEWPORT_Y=20` dans `platform_video_config.h`; le message de setup lit directement `SDL_Rect.x/y`. `Render_t` **184 → 176 B**, sans nouvelle allocation/cache ni changement intentionnel des images, du PAK ou du RNG.
