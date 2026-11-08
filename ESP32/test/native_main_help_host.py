@@ -102,7 +102,19 @@ for y in range(120):
         if y < 100: assert not touches
 assert actions.count("!EspMainMenuSkin_paintPlate(") == 3
 assert actions.count("!EspMainMenuSkin_paintText(") == 3
-assert "EspMainMenuSkin_uiInk()" in actions
+# All HELP copy now consumes the live theme's industrial font palette.
+# For every theme: top=CLASSIC warm ivory / INFERNO pale rose /
+# PHOSPHORE mint, middle=CLASSIC amber / INFERNO bronze / PHOSPHORE green.
+assert "static uint16_t helpTitleTopTone(void)" in actions
+assert "static uint16_t helpBodyMiddleTone(void)" in actions
+assert "return EspMainMenuSkin_letterTone(1, 9);" in actions
+assert "return EspMainMenuSkin_letterTone(4, 9);" in actions
+assert "helpColor888(helpTitleTopTone())" in actions
+assert "helpColor888(helpBodyMiddleTone())" in actions
+assert "const uint16_t ink = helpTitleTopTone();" in actions
+assert "EspMainMenuSkin_uiInk()" not in actions
+assert 'helpPaintCopyrightMark(framebuffer);' in actions
+assert '"Kharn27"' in model
 assert "helpDrawThemedPageTitle(doomRpg, canvas, line, 12, y);" in actions
 assert "EspMainMenuSkin_letterTone(band * 3 + 1, 9)" in actions
 assert "DoomRPG_setClipTrue(doomRpg, x, y + band * 4," in actions
@@ -110,15 +122,28 @@ assert "DoomRPG_setClipFalse(doomRpg);" in actions
 assert "helpPaintCopyrightMark(framebuffer);" in actions
 assert "i == 1 && menuSystem->scrollIndex == 0" in actions
 assert "EspNativeCanvas_drawText(canvas, line, 27, y, 0);" in actions
-assert "static const uint16_t rows[9]" in actions
-assert "for (x = 0; x < 11; ++x)" in actions
-assert "fb[(27 + y) * DOOMRPG_LOGICAL_WIDTH + 12 + x] = ink;" in actions
+assert "static const uint16_t rows[12]" in actions
+assert "for (x = 0; x < 12; ++x)" in actions
+assert "fb[(26 + y) * DOOMRPG_LOGICAL_WIDTH + 12 + x] = ink;" in actions
 assert 'i % MAIN_HELP_VISIBLE_LINES == 0' in actions
 # The logo and section heading never occupy the footer/button pixels;
 # the original 9x12 explanation glyphs and 12px line height remain unchanged.
-assert 27 + 9 - 1 < 38 and 27 + 9 - 1 < 100
+assert 26 + 12 - 1 == 37 and 12 + 12 - 1 < 27
 assert "y = 14;" in actions
 assert "y += MAIN_HELP_LINE_HEIGHT;" in actions
+
+# © source pixels occupy exactly 12x12 and preserve the middle-band
+# color selection across animation refreshes without allocating another frame.
+copyright_start = actions.index("static void helpPaintCopyrightMark(")
+copyright_end = actions.index("int DoomRPG_esp32MainMenuReturnToMain(", copyright_start)
+copyright = actions[copyright_start:copyright_end]
+logo_rows = re.findall(r"0x([0-9a-f]{3})U", copyright)
+assert len(logo_rows) == 12
+assert list(map(lambda h: int(h, 16), logo_rows)) == [
+    0x0f0, 0x30c, 0x402, 0x8f1, 0x901, 0x901,
+    0x901, 0x901, 0x8f1, 0x402, 0x30c, 0x0f0]
+assert "for (y = 0; y < 12; ++y)" in copyright
+assert "const uint16_t ink = helpTitleTopTone();" in copyright
 
 assert "EspMainMenuSkin_uiAccent()" in actions
 assert "EspMainMenuSkin_uiAccentDim()" in actions
@@ -139,5 +164,5 @@ for scroll in range(len(lines)):
     page = (clamped + 6) // 7 + 1
     assert 1 <= page <= (len(lines) + 6) // 7
 
-print("PASS HELP: 11 themed title pages with cover © Kharn27, menu navigation 2nd, 3 industrial hitboxes,")
+print("PASS HELP: 11 themed title pages, upper-tone 12px © Kharn27, middle-tone body, menu page 2,")
 print("           7-line bounded pages, animation/FNV rebasing, release and no keypad")
