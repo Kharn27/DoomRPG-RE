@@ -1263,7 +1263,8 @@ static void fillBackground(Render_t* render,
     half = render->screenHeight >> 1;
     for (y = 0; y < render->screenHeight; ++y) {
         uint16_t color = y < half ? ceiling : floor;
-        uint16_t* row = fb + (render->screenY + y) * pitchPixels + render->screenX;
+        uint16_t* row = fb + (DOOMRPG_VIEWPORT_Y + y) * pitchPixels +
+                        DOOMRPG_VIEWPORT_X;
         for (x = 0; x < render->screenWidth; ++x) row[x] = color;
     }
 }
@@ -1294,9 +1295,9 @@ static int renderFrame(Render_t* render,
         render->framebuffer == NULL || render->columnScale == NULL ||
         render->screenWidth <= 0 || render->screenWidth > (int)MAX_SCREEN_WIDTH ||
         render->screenHeight <= 0 ||
-        render->screenX < 0 || render->screenY < 0 ||
-        render->screenX + render->screenWidth > DOOMRPG_LOGICAL_WIDTH ||
-        render->screenY + render->screenHeight > DOOMRPG_LOGICAL_HEIGHT ||
+        DOOMRPG_VIEWPORT_X < 0 || DOOMRPG_VIEWPORT_Y < 0 ||
+        DOOMRPG_VIEWPORT_X + render->screenWidth > DOOMRPG_LOGICAL_WIDTH ||
+        DOOMRPG_VIEWPORT_Y + render->screenHeight > DOOMRPG_LOGICAL_HEIGHT ||
         !legacyGraphicsRuntimeClear(render) || !EspMapRuntime_isLoaded() ||
         !EspNativeGraphicsCatalog_isReady() || EspAssetPack_isOpen()) {
         return 0;
@@ -1372,7 +1373,8 @@ static int renderFrame(Render_t* render,
     render->viewTransY = -((vx * render->viewSin) + (vy * render->viewCos));
     render->viewAngle = playerView->viewAngle;
     render->pixels = (short*)&render->framebuffer[
-        render->pitch * render->screenY + render->screenX * (int)sizeof(short)];
+        render->pitch * DOOMRPG_VIEWPORT_Y +
+        DOOMRPG_VIEWPORT_X * (int)sizeof(short)];
     render->screenLeft = 0;
     render->screenTop = 0;
     render->screenRight = render->screenWidth;
