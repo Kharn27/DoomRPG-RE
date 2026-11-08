@@ -673,10 +673,10 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
 static void EspNativeEngineLayout_setupRender(Render_t* render, SDL_Rect* windowRect)
 {
 	boolean memError = false;
+	/* Source viewport origin remains in the caller's bounded SDL_Rect;
+	 * Render_t only owns the width/height and active raster scratch. */
 	render->screenWidth = windowRect->w;
 	render->screenHeight = windowRect->h;
-	render->screenX = windowRect->x;
-	render->screenY = windowRect->y;
 	if ((windowRect->h & 1) != 0) {
 		render->screenHeight = windowRect->h - 1;
 	}
@@ -687,8 +687,8 @@ static void EspNativeEngineLayout_setupRender(Render_t* render, SDL_Rect* window
 #if 0
 	printf("render->screenWidth %d\n", render->screenWidth);
 	printf("render->screenHeight %d\n", render->screenHeight);
-	printf("render->screenX %d\n", render->screenX);
-	printf("render->screenY %d\n", render->screenY);
+	printf("render->screenX %d\n", windowRect->x);
+	printf("render->screenY %d\n", windowRect->y);
 	printf("render->halfScreenHeight %d\n", render->halfScreenHeight);
 	printf("render->fracHalfScreenWidth %d\n", render->fracHalfScreenWidth);
 #endif
@@ -711,7 +711,7 @@ static void EspNativeEngineLayout_setupRender(Render_t* render, SDL_Rect* window
 	}
 	printf("[RENDERCORE] SETUP owner=esp-native-bridge view=%dx%d@%d,%d arrays=%uB\n",
 	       render->screenWidth, render->screenHeight,
-	       render->screenX, render->screenY,
+	       windowRect->x, windowRect->y,
 	       (unsigned int)(render->screenWidth * (sizeof(short) * 2U + sizeof(int))));
 }
 

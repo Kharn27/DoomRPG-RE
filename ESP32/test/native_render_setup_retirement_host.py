@@ -21,12 +21,19 @@ last = owner.index("\n/* Bounded CYD layout and font initialization", first)
 body = owner[first:last]
 assert "render->halfScreenWidth" not in body
 assert "render->fracHalfScreenHeight" not in body
+# Historical #if 0 printf labels contain the literal "render->screenX"
+# text, but they are not accesses. Scan tokens after stripping literals.
+live_code = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"',
+                   " ", body, flags=re.S)
+assert not re.search(r"\brender->(?:screenX|screenY)\b", live_code)
+assert re.search(r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)\s+int screenX;\s+int screenY;\s+#endif", header)
+assert "windowRect->x, windowRect->y," in body
 assert "render->fracHalfScreenWidth = ((render->screenWidth / 2) << FRACBITS) - 0x8000;" in body
 normalized = body.replace("static void " + name + "(", "void Render_setup(").rstrip()
 h = 2166136261
 for b in normalized.encode("utf-8"):
     h = ((h ^ b) * 16777619) & 0xffffffff
-assert h == 0xdfb8ef59, f"Render_setup source drift {h:08x}"
+assert h == 0x14bba767, f"Render_setup source drift {h:08x}"
 for p in sorted((ROOT / "ESP32/src").rglob("*")):
     if p.suffix not in (".c", ".cpp"):
         continue
@@ -37,6 +44,7 @@ for p in sorted((ROOT / "ESP32/src").rglob("*")):
 shim = r"""
 #include <assert.h>
 #include <stdbool.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,7 +52,7 @@ shim = r"""
 typedef bool boolean;
 typedef struct SDL_Rect { int x,y,w,h; } SDL_Rect;
 typedef struct Render_s {
-    int screenWidth,screenHeight,screenX,screenY;
+    int screenWidth,screenHeight;
     int halfScreenHeight;
     int fracHalfScreenWidth;
     short *ceilingColor,*floorColor;
@@ -62,7 +70,14 @@ void DoomRPG_Error(const char* str) {
 }
 #define SDL_malloc tracked_malloc
 #define SDL_free tracked_free
-#define printf(...) ((void)0)
+static char lastRenderLog[160];
+static void capture_log(const char* fmt, ...) {
+    va_list args;
+    va_start(args,fmt);
+    (void)vsnprintf(lastRenderLog,sizeof(lastRenderLog),fmt,args);
+    va_end(args);
+}
+#define printf capture_log
 """
 main = r"""
 int main(void) {
@@ -73,7 +88,8 @@ int main(void) {
         EspNativeEngineLayout_setupRender(&r,&window);
         assert(mallocs==3 && frees==0 && errors==0);
         assert(r.screenWidth==160 && r.screenHeight==80);
-        assert(r.screenX==5 && r.screenY==20);
+        assert(strcmp(lastRenderLog,
+            "[RENDERCORE] SETUP owner=esp-native-bridge view=160x80@5,20 arrays=1280B\n")==0);
         assert(r.halfScreenHeight==40);
         assert(r.fracHalfScreenWidth==(80<<16)-0x8000);
         assert(r.ceilingColor && r.floorColor && r.columnScale);
@@ -105,4 +121,4 @@ with tempfile.TemporaryDirectory(prefix="render-setup-retirement-") as d:
     subprocess.run([shutil.which("cc") or "cc", "-std=c11", "-O2", "-Wall",
                     "-Wextra", "-Werror", str(source), "-o", exe], check=True)
     subprocess.run([exe], check=True)
-print("PASS Render_setup=retired owner=layout FNV=dfb8ef59 native-dormant-slots=absent")
+print("PASS Render_setup=retired owner=layout FNV=14bba767 native-screen-origin=SDL_Rect owner; 4096 cycles, 3 OOM, unchanged Serial")

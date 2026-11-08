@@ -193,7 +193,7 @@ static int renderComposed(
         (angle & 63U) != 0U ||
         (!preview && view->viewAngle != (int32_t)angle) ||
         render->framebuffer != Esp32PlatformVideo_framebuffer() ||
-        render->screenX != 0 || render->screenY != 20 ||
+        DOOMRPG_VIEWPORT_X != 0 || DOOMRPG_VIEWPORT_Y != 20 ||
         render->screenWidth != 160 || render->screenHeight != 80 ||
         EspAssetPack_isOpen() || EspNativeGameplayPresentGate_isArmed()) {
         return 0;
