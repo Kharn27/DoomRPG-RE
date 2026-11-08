@@ -47,6 +47,14 @@ static inline int EspNativeRenderGeometry_fracHalfScreenWidth(int screenWidth)
 void EspNativeRenderGeometry_projectVertex(
     int screenWidth, int fracHalfScreenWidth, int* x, int* y, int* z);
 
+/* Exact desktop Render_setup half-height after even-height normalization.
+ * Native walls, sprites and plane raster use this immutable viewport
+ * scalar instead of retaining a duplicate in Render_t. No allocation. */
+static inline int EspNativeRenderGeometry_halfScreenHeight(int screenHeight)
+{
+    return screenHeight / 2;
+}
+
 /*
  * Desktop-equivalent view-space 2D transform for one caller-owned (x,y).
  * Coefficients are the six per-frame Render viewCos_, viewSin_, viewSin,

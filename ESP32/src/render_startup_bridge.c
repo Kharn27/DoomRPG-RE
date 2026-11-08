@@ -17,8 +17,8 @@
 #include <esp_heap_caps.h>
 #if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 /* Desktop/bringup retain the original legacy BSP flags; production does not. */
-_Static_assert(sizeof(Render_t) == 140U,
-               "Render_t must omit desktop skipCull toggle, traversal/diagnostic mirrors, fractional half-width, raster state, world and allocations");
+_Static_assert(sizeof(Render_t) == 136U,
+               "Render_t must omit desktop skipCull/half-height mirrors, BSP diagnostics, raster state, world and allocations");
 #endif
 
 

@@ -679,14 +679,12 @@ static void EspNativeEngineLayout_setupRender(Render_t* render, SDL_Rect* window
 	if ((windowRect->h & 1) != 0) {
 		render->screenHeight = windowRect->h - 1;
 	}
-	render->halfScreenHeight = render->screenHeight / 2;
 
 #if 0
 	printf("render->screenWidth %d\n", render->screenWidth);
 	printf("render->screenHeight %d\n", render->screenHeight);
 	printf("render->screenX %d\n", windowRect->x);
 	printf("render->screenY %d\n", windowRect->y);
-	printf("render->halfScreenHeight %d\n", render->halfScreenHeight);
 #endif
 
 	SDL_free(render->ceilingColor);

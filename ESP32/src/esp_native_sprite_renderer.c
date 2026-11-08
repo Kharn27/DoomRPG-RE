@@ -911,7 +911,7 @@ static int spans(Render_t* render,
                 length = y - start;
                 worldY = (64 - (frame->yMin + start)) - render->viewZ;
                 pixels = (length * depth) >> 17;
-                screenY = render->halfScreenHeight - ((worldY * depth) >> 17);
+                screenY = EspNativeRenderGeometry_halfScreenHeight(render->screenHeight) - ((worldY * depth) >> 17);
                 position = ((int64_t)texelBase) << 12;
 
                 if (screenY < render->screenTop) {

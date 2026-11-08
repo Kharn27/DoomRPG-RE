@@ -910,7 +910,7 @@ static int drawProjectedWall(FirstFrameWork* work,
             }
             /* Match the recovered fixed-version wall path exactly. */
             zPos = 64;
-            i16 = render->halfScreenHeight -
+            i16 = EspNativeRenderGeometry_halfScreenHeight(render->screenHeight) -
                   (((zPos - render->viewZ) * i8) >> 17);
             /* The legacy renderer addressed one map-wide mediaTexels array.
              * Native wall texels are already a bounded 2048-byte cache slot,

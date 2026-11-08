@@ -81,7 +81,10 @@ typedef struct Render_s
 #endif
 	int screenWidth;
 	int screenHeight;
+/* The native viewport midpoint is derived from screenHeight, never cached. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	int halfScreenHeight;
+#endif
 /* Desktop half-width setup diagnostic; native raster uses explicit geometry. */
 #ifndef DOOMRPG_ESP32
 	int halfScreenWidth;

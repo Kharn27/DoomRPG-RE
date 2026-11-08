@@ -72,6 +72,14 @@ int main(void) {
         assert(EspNativeRenderGeometry_fracHalfScreenWidth(width) ==
                ((width / 2) * FRACUNIT - 0x8000));
     }
+    /* Desktop setup uses screenHeight/2 after rounding odd heights down.
+     * Native world planes and sprite/wall projection reconstruct that scalar
+     * from the same screenHeight. No retained Render_t half-height needed. */
+    for (int height = 0; height <= 161; ++height) {
+        const int normalized = height & ~1;
+        assert(EspNativeRenderGeometry_halfScreenHeight(normalized) ==
+               (normalized / 2));
+    }
     /* Independent width corpus: the native caller controls bounded storage,
      * and no element outside the inherited viewport may be modified. */
     for (int width = 0; width <= 160; ++width) {
