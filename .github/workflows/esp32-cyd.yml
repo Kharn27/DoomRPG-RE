@@ -288,6 +288,9 @@ jobs:
             -o /tmp/doomrpg-hud-weapon-feedback
           /tmp/doomrpg-hud-weapon-feedback
 
+      - name: Test native CYD HELP animated starfield, guide and touch parity
+        run: python ESP32/test/native_main_help_host.py
+
       - name: Test native Canvas const-text ABI retirement (host Python)
         run: python ESP32/test/native_canvas_text_retirement_host.py
 

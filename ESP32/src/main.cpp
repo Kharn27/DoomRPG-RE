@@ -16,6 +16,7 @@
 #include "menu_bsp_probe.h"
 #include "native_intro_clock.h"
 #include "native_main_menu_model.h"
+#include "native_main_menu_actions.h"
 #include "native_main_menu_touch_layout.h"
 #include "platform_input.h"
 #include "platform_video.h"
@@ -486,6 +487,7 @@ void setup()
 void loop()
 {
     Esp32IntroClock_service();
+    DoomRPG_esp32MainMenuHelpService();
     if (EspNativeGameplaySession_canService())
     {
         EspNativeGameplaySession_service(doomRpg);

@@ -22,7 +22,7 @@ assert re.search(r"#ifndef DOOMRPG_ESP32\s+void DoomCanvas_drawString1\(", legac
 assert 'doomCanvas, "Loading...", DOOMRPG_CANVAS_CENTER_X' in (SRC / "native_main_menu_model.c").read_text(encoding="utf-8")
 assert "(char*)line" not in menu and "(char*)label" not in layout
 assert "(char*)names[item]" not in layout
-assert menu.count("EspNativeCanvas_drawText(") == 5
+assert menu.count("EspNativeCanvas_drawText(") == 6  # themed page title + cover credit; native ABI unchanged
 # All child cards now use the same clipped industrial glyph painter.
 # Native Canvas ABI itself remains byte-for-byte unchanged and call-free here.
 assert layout.count("EspNativeCanvas_drawText(") == 0

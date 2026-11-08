@@ -68,7 +68,9 @@ assert (SRC / "native_main_menu_start_action.c").read_text().count("EspNativeMai
 assert (SRC / "native_main_menu_actions.c").read_text().count("EspNativeMainMenu_transitionCanvasState(") == 1
 assert (SRC / "native_main_menu_touch.c").read_text().count("EspNativeMainMenu_transitionCanvasState(") == 1
 begin = owner.index("static int doomCanvasBeginIntro(")
-end = owner.index("\n#define MAIN_HELP_ASSET_NAME", begin)
+# Only the help data section moved (PAK phone parser -> ROM CYD guide).
+# The handoff body and the hard-coded FNV must remain strictly unchanged.
+end = owner.index("\n/* Native ROM-owned CYD guide:", begin)
 state_body = owner[begin:end].replace("EspNativeMainMenu_transitionCanvasState", "DoomCanvas_setState")
 state_fnv = 2166136261
 for byte in state_body.encode("utf-8"):
