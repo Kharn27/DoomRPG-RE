@@ -14,6 +14,9 @@
 #include "esp_asset_pack.h"
 #include "esp_native_help_scene.h"
 #include "esp_native_gameplay_hud.h"
+#include "esp_native_gameplay_hub_weapon_grid.h"
+#include "esp_native_gameplay_player_state.h"
+#include "esp_entity_def_type_catalog.h"
 #include "platform_video_c_bridge.h"
 
 #include "native_main_menu_actions.h"
@@ -63,6 +66,11 @@
 #define MAIN_HELP_ROW_FIRST_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)
 #define MAIN_HELP_ROW_LAST_SCROLL (8 * MAIN_HELP_VISIBLE_LINES)
 #define MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL (9 * MAIN_HELP_VISIBLE_LINES)
+#define MAIN_HELP_WEAPON_PAGE_SCROLL (10 * MAIN_HELP_VISIBLE_LINES)
+#define MAIN_HELP_WEAPON_MINI_X 16
+#define MAIN_HELP_WEAPON_MINI_Y 40
+#define MAIN_HELP_WEAPON_MINI_W 128
+#define MAIN_HELP_WEAPON_MINI_H 42
 
 static DoomRPG_t* helpDoomRpg;
 static uint32_t helpExpectedFrameFNV;
@@ -81,6 +89,12 @@ static int helpSceneBreathStep = -1;
 static uint16_t helpBottomHudMini[MAIN_HELP_HUD_BAR_WIDTH *
                                   MAIN_HELP_HUD_BAR_HEIGHT];
 static uint8_t helpBottomHudReady;
+/* The exact 4x3 native weapon-selector grid is sampled once from its PAK
+ * icons, before repainting the HELP background. 128x42x2=10752 B BSS.
+ * No second framebuffer or active PlayerState is created. */
+static uint16_t helpWeaponMini[MAIN_HELP_WEAPON_MINI_W *
+                               MAIN_HELP_WEAPON_MINI_H];
+static uint8_t helpWeaponMiniReady;
 
 static void helpStop(void) {
     if (helpSpaceOwner != NULL) {
@@ -98,6 +112,7 @@ static void helpStop(void) {
     helpHudBreathStep = -1;
     helpSceneBreathStep = -1;
     helpBottomHudReady = 0U;
+    helpWeaponMiniReady = 0U;
     EspNativeHelpScene_reset();
 }
 
@@ -129,16 +144,17 @@ static int helpStart(DoomRPG_t* doomRpg) {
     helpHudBreathStep = -1;
     helpSceneBreathStep = -1;
     helpBottomHudReady = 0U;
+    helpWeaponMiniReady = 0U;
     /* Once the gameplay lease has closed, this read-only peek still finds
      * the last COMMITTED raw-flash map header. It never stages/loads a map. */
     {
         const uint8_t cachedMapId = EspAssetPack_mapFlashCachedMapId();
-        EspNativeHelpScene_begin(cachedMapId);
-        printf("[MAINHELP] PREVIEW scene=%s cachedMap=%u capturedMap=%u backing=live-native-frame scratch=128x64x2 world=no\n",
-               EspNativeHelpScene_hasGameplaySnapshot()
-                   ? "real-native-frame" : "starfield-first-run",
+        const int ready = EspNativeHelpScene_begin(cachedMapId);
+        printf("[MAINHELP] PREVIEW source=PAK/BSP ready=%u flashMap=%u previewMap=%u wallMaterials=%u coldBoot=entrance-if-unset geometry=blockmap/32x32 world-owner=no\n",
+               ready ? 1U : 0U,
                (unsigned int)cachedMapId,
-               (unsigned int)EspNativeHelpScene_snapshotMapId());
+               (unsigned int)EspNativeHelpScene_previewMapId(),
+               (unsigned int)EspNativeHelpScene_materialCount());
     }
     helpSpaceActive = 1;
     printf("[MAINHELP] BACKGROUND asset=c.bmp source=pak scroll=intro-157ms/192virtual owner=help hud=k.bmp/20x20\n");
