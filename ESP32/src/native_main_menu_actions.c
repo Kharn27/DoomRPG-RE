@@ -644,6 +644,24 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
                                64 + (i - 2) * MAIN_HELP_LINE_HEIGHT);
         }
     }
+    else if (menuSystem->scrollIndex == MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL) {
+        const char* title = DoomRPG_esp32MainMenuHelpLine(
+            MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL);
+        const char* caption = DoomRPG_esp32MainMenuHelpLine(
+            MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL + 1);
+        if (title == NULL || caption == NULL || visible != 7) return 0;
+        helpDrawThemedPageTitle(doomRpg, canvas, title, 12, 14);
+        DoomRPG_setFontColor(doomRpg, 0xffffffffU);
+        EspNativeCanvas_drawText(canvas, caption, 12, 27, 0);
+        if (!helpPaintBottomHudIllustration(framebuffer)) return 0;
+        for (i = 2; i <= 4; ++i) {
+            const char* label = DoomRPG_esp32MainMenuHelpLine(
+                MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL + i);
+            if (label == NULL || label[0] == '\0') return 0;
+            helpDrawPositionCaption(doomRpg, canvas, label, i - 2,
+                                    64 + (i - 2) * MAIN_HELP_LINE_HEIGHT);
+        }
+    }
     else if (menuSystem->scrollIndex == MAIN_HELP_SCENE_PAGE_SCROLL &&
              EspNativeHelpScene_isReady()) {
         /* MAIN GAMEPLAY: illustrative PAK scene with nine touch areas.
