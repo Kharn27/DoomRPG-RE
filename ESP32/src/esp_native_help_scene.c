@@ -10,10 +10,10 @@
 #error "HELP viewport thumbnail requires a 160x120 logical CYD framebuffer"
 #endif
 
-#define PREVIEW_X 16
-#define PREVIEW_Y 42
-#define PREVIEW_W 128
-#define PREVIEW_H 53
+#define PREVIEW_X 8
+#define PREVIEW_Y 29
+#define PREVIEW_W 144
+#define PREVIEW_H 68
 #define WALL_BYTES 2048U
 #define WALL_PALETTE 16U
 #define MAPPING_HEADER 16U
@@ -207,7 +207,7 @@ static void segment(uint16_t* framebuffer, int x0, int y0, int x1, int y1,
 
 /* A rounded return-arrow arc instead of the previous three right-angle
  * segments. These connected 1px strokes are mirrored for TURN L / TURN R,
- * stay within a 43x18 miniature touch cell and retain the live green pulse. */
+ * stay within a 48x23 miniature touch cell and retain the live green pulse. */
 static void helpPaintTurnArc(uint16_t* fb, int cx, int cy,
                              int col, uint16_t core) {
     static const int8_t turnCurve[][2] = {
@@ -316,41 +316,43 @@ static void drawActionMark(uint16_t* framebuffer, int row, int col,
 }
 
 int EspNativeHelpScene_paint(uint16_t* fb, uint8_t level) {
-    static const int xZone[4] = {0, 42, 85, PREVIEW_W};
-    static const int yZone[4] = {0, 17, 35, PREVIEW_H};
+    static const int xZone[4] = {0, 48, 96, PREVIEW_W};
+    static const int yZone[4] = {0, 22, 45, PREVIEW_H};
     int lx, ly, row, col;
     if (fb == NULL || !material.ready || level > 6U) return 0;
 
     /* A small deterministic perspective illustration with an actual native
      * wall texture; NOT a screenshot and no map/BSP world state. */
     for (lx = 0; lx < PREVIEW_W; ++lx) {
-        const int flank = lx < 48 ? lx :
-                          lx >= 80 ? (127 - lx) : 48;
-        const int wallTop = 15 * flank / 48;
-        const int wallBottom = 52 - 13 * flank / 48;
+        const int flank = lx < 54 ? lx :
+                          lx >= 90 ? (PREVIEW_W - 1 - lx) : 54;
+        const int wallTop = 19 * flank / 54;
+        const int wallBottom = (PREVIEW_H - 1) - 17 * flank / 54;
         for (ly = 0; ly < PREVIEW_H; ++ly) {
             uint16_t ink;
             if (ly < wallTop) {
                 ink = (uint16_t)(0x0842U + ((uint16_t)ly << 5));
             }
             else if (ly > wallBottom) {
-                ink = (uint16_t)(0x1042U + ((uint16_t)(52 - ly) << 5));
+                ink = (uint16_t)(0x1042U +
+                                 ((uint16_t)(PREVIEW_H - 1 - ly) << 5));
             }
             else {
-                int u = lx < 48 ? lx * 2 : lx >= 80 ? (127 - lx) * 2 :
-                        (lx - 48) * 2;
+                int u = lx < 54 ? lx * 2 : lx >= 90
+                        ? (PREVIEW_W - 1 - lx) * 2 : (lx - 54) * 2;
                 int v = (ly - wallTop) * 63 / (wallBottom - wallTop + 1);
-                const unsigned int light = (unsigned int)(155 + flank);
-                ink = dim565(sampleWall(u, v), light);
+                /* Restore the full source-Pak color: the old 155..203/256
+                 * attenuation made the tutorial conspicuously too dark. */
+                ink = sampleWall(u, v);
             }
             fb[(PREVIEW_Y + ly) * DOOMRPG_LOGICAL_WIDTH +
                PREVIEW_X + lx] = ink;
         }
     }
 
-    /* Exact grid proportions from gameplay input 0..52/53..105/106..159
-     * and y20..45/46..72/73..99, reduced into one x128/y53 thumbnail.
-     * Every region has the same semantic feedback color as gameplay. */
+    /* Same 3x3 game control ordering (0..52/53..105/106..159,
+     * y20..45/46..72/73..99), fitted to a larger 144x68 preview.
+     * Every region retains its native feedback color. */
     for (row = 0; row < 3; ++row) {
         for (col = 0; col < 3; ++col) {
             const uint16_t neon = row == 1 && col == 1 ? 0xf800U :
