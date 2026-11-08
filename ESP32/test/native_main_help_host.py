@@ -42,6 +42,11 @@ assert hud_page == [
     "TOP HUD BAR", "3 VIRTUAL BUTTONS", "LEFT: game menu",
     "CENTER: pass a turn", "RIGHT: show automap", "", ""]
 assert lines[7 * 7 + 6] == "Tap gun: weapons"
+scene_page = lines[4 * 7 : 5 * 7]
+assert scene_page == [
+    "CYD TOUCH (1/2)", "TOP: STR L/FWD/STR R",
+    "GREEN: MOVE / TURN", "RED: ACT", "YELLOW: WEAPONS", "", ""]
+assert lines[5 * 7] == "CYD TOUCH (2/2)"
 
 assert "DOWN: controls" not in lines
 assert max(map(len, lines)) <= 20  # source font=7px/char, x=12
@@ -189,14 +194,14 @@ assert 'static const char* const labels[3] = {"MENU", "PASS TURN", "MAP"};' in a
 assert 'static const HelpHudGlyph helpHudGlyphs[]' in actions
 assert 'framebuffer[(y + row) * DOOMRPG_LOGICAL_WIDTH +' in actions
 assert '0xffffU; /* white, all themes */' in actions
-# The miniature 5x7 labels are white over breathing blue; all FOUR lines
-# outside its borders use the theme's middle tone, like normal HELP copy.
-assert '/* The illustrated page\'s explanatory copy shares the active theme\'s' in actions
+# "3 VIRTUAL BUTTONS" is WHITE, as are the tiny ROM button glyphs;
+# LEFT/CENTER/RIGHT captions below use the skin's middle tone.
+assert "/* The control-identification caption stays white;" in actions
 hud_paint_section = actions.split(
     'if (menuSystem->scrollIndex == MAIN_HELP_HUD_PAGE_SCROLL) {', 1
-)[1].split('    else {', 1)[0]
-assert hud_paint_section.count('helpColor888(helpBodyMiddleTone())') == 2
-assert 'DoomRPG_setFontColor(doomRpg, 0xffffffffU);' not in hud_paint_section
+)[1].split('    else if (menuSystem->scrollIndex == MAIN_HELP_SCENE_PAGE_SCROLL &&', 1)[0]
+assert hud_paint_section.count('helpColor888(helpBodyMiddleTone())') == 1
+assert 'DoomRPG_setFontColor(doomRpg, 0xffffffffU);' in hud_paint_section
 assert '0xffffU; /* white, all themes */' in actions
 
 # Preserve the logical input splitter 0..31/32..127/128..159,
@@ -224,9 +229,9 @@ assert 43 + 16 - 1 < 64 and 43 + 16 - 1 < 100
 assert 27 + 12 - 1 < 43
 assert 88 + 12 - 1 < 100
 
-# Breath is a bounded triangular waveform, not a framebuffer-independent
-# infinite 60Hz redraw. Only this HELP page is 110ms-phase-aware.
-assert macro("MAIN_HELP_HUD_BREATH_STEP_MS") == 110
+# Breath deliberately slowed from 1.32s to 2.64s (220ms/step),
+# shared by the two illustrated pages, without a blind FPS loop.
+assert macro("MAIN_HELP_HUD_BREATH_STEP_MS") == 220
 assert macro("MAIN_HELP_HUD_BREATH_STEPS") == 12
 wave = [n if n <= 6 else 12 - n for n in range(12)]
 assert wave == [0, 1, 2, 3, 4, 5, 6, 5, 4, 3, 2, 1]
@@ -242,6 +247,62 @@ assert 'helpExpectedFrameFNV = finalFNV;' in actions
 assert 'EspNativeGameplayInput_route(' not in actions
 assert 'EspNativeGameplayHud_routeInitial(' not in actions
 assert 'DoomRPG_esp32MainMenuReturnToMain(' in actions
+
+# CYD TOUCH 1/2 shows the actual native-palette grid over a bounded
+# PAK-derived wall-perspective illustration; never render a gameplay map here.
+scene = (SRC / "esp_native_help_scene.c").read_text()
+scene_api = (INC / "esp_native_help_scene.h").read_text()
+pack = (SRC / "esp_asset_pack.cpp").read_text()
+pack_api = (INC / "esp_asset_pack.h").read_text()
+controls = (SRC / "esp_native_gameplay_controls.c").read_text()
+assert '#define MAIN_HELP_SCENE_PAGE_SCROLL (4 * MAIN_HELP_VISIBLE_LINES)' in actions
+assert 'else if (menuSystem->scrollIndex == MAIN_HELP_SCENE_PAGE_SCROLL &&' in actions
+assert 'EspNativeHelpScene_isReady()' in actions
+assert 'EspNativeHelpScene_paint(' in actions
+assert 'helpSceneBreathStep == helpHudBreathIndex(now)' in actions
+assert 'EspNativeHelpScene_reset();' in actions
+assert 'EspAssetPack_mapFlashCachedMapId()' in actions
+assert 'EspNativeHelpScene_load(cachedMapId,' in actions
+assert 'EspNativeHelpScene_load(uint8_t cachedMapId, uint32_t seed)' in scene
+assert 'EspNativeHelpScene_load(uint8_t cachedMapId, uint32_t activationSeed)' in scene_api
+assert 'uint8_t EspAssetPack_mapFlashCachedMapId(void)' in pack
+assert 'uint8_t EspAssetPack_mapFlashCachedMapId(void);' in pack_api
+assert 'mapFlashHeaderLooksValid(cached, partition)' in pack
+assert 'cached.currentMapHash !=' in pack
+assert 'EspMapCatalog_nameForId(cached.currentMapId)' in pack
+assert 'esp_partition_read(partition, 0U, &cached, sizeof(cached))' in pack
+assert 'mapFlash.stats.currentMapId' in pack  # the live stage owner still exists
+assert 'EspAssetPack_mapFlashStage(' not in actions
+assert 'EspAssetPack_mapFlashPrepare(' not in actions
+assert 'EspMapRuntime_' not in scene
+assert 'ESP_NATIVE_GAMEPLAY_ACTION_' not in scene
+assert 'WALL_BYTES 2048U' in scene
+assert 'static HelpMaterial material;' in scene
+assert 'static const int xZone[4] = {0, 42, 85, PREVIEW_W};' in scene
+assert 'static const int yZone[4] = {0, 17, 35, PREVIEW_H};' in scene
+assert 'PREVIEW_X 16' in scene and 'PREVIEW_Y 42' in scene
+assert 'PREVIEW_W 128' in scene and 'PREVIEW_H 53' in scene
+assert 'EspAssetPack_findEntry("wtexels.bin", &walls)' in scene
+assert 'EspAssetPack_findEntry("mappings.bin", &mappings)' in scene
+assert 'EspAssetPack_findEntry("palettes.bin", &palettes)' in scene
+assert 'const uint32_t start = cachedMapId != 0U' in scene
+assert 'MAX_CANDIDATES 24U' in scene
+assert 'row == 1 && col == 1 ? 0xf800U' in scene
+assert 'row == 2 && col != 1 ? 0xffe0U' in scene
+assert '0x07e0U;' in scene
+for color in ('NEON_GREEN_CORE  0x07e0U',
+              'NEON_RED_CORE    0xf800U',
+              'NEON_YELLOW_CORE 0xffe0U'):
+    assert color in controls
+assert 'DRAW' not in scene or 'shapeData' not in scene
+assert 'mediaTexels' not in scene or 'not map-wide mediaTexels' in scene
+assert 'malloc(' not in scene
+assert 'EspAssetPack_close();' in scene
+assert 16 <= 16 + 128 <= 155
+assert 42 + 53 - 1 < 100
+assert 'if (shift == helpSpaceShift &&' in actions
+assert 'helpExpectedFrameFNV = finalFNV;' in actions
+
 
 assert "EspMainMenuSkin_uiAccentDim()" in actions
 assert "menuSystem->scrollIndex -= MAIN_HELP_VISIBLE_LINES;" in actions
@@ -261,5 +322,5 @@ for scroll in range(len(lines)):
     page = (clamped + 6) // 7 + 1
     assert 1 <= page <= (len(lines) + 6) // 7
 
-print("PASS HELP: 11 pages, TOP HUD fourth, 128x16 k.bmp and 1.32s breath, white button glyphs,")
-print("           7-line bounded pages, animation/FNV rebasing, release and no keypad")
+print("PASS HELP: 11 pages, TOP HUD fourth, 128x16 k.bmp and 2.64s breath, white button glyphs,")
+print("           CYD touch PAK wall 3x3 semantic grid, flash-map identity and FNV release")
