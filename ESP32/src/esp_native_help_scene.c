@@ -415,7 +415,10 @@ static void putGlow(uint16_t* framebuffer, int x, int y,
     if (x < PREVIEW_X || x >= PREVIEW_X + PREVIEW_W ||
         y < PREVIEW_Y || y >= PREVIEW_Y + PREVIEW_H) return;
     const uint32_t index = (uint32_t)y * DOOMRPG_LOGICAL_WIDTH + (uint32_t)x;
-    framebuffer[index] = add565(framebuffer[index], color);
+    /* Darken ONLY this one-pixel stroke so saturated backgrounds cannot
+     * wash green/yellow/red indicators into white; no rectangular tint. */
+    framebuffer[index] =
+        add565(dim565(framebuffer[index], 116U), color);
 }
 
 static void segment(uint16_t* framebuffer, int x0, int y0, int x1, int y1,
@@ -436,29 +439,38 @@ static void segment(uint16_t* framebuffer, int x0, int y0, int x1, int y1,
     }
 }
 
-/* A rounded return-arrow arc instead of the previous three right-angle
- * segments. These connected 1px strokes are mirrored for TURN L / TURN R,
- * stay within a 48x23 miniature touch cell and retain the live green pulse. */
+/* Smooth, directional J-shaped 180-degree turn glyph, mirrored for
+ * TURN LEFT/RIGHT. A gently arched ten-segment head is more legible at the
+ * 48x23 touch scale than the old square or cramped arc. 2-tone strokes
+ * provide a soft green highlight while retaining strict per-cell bounds. */
 static void helpPaintTurnArc(uint16_t* fb, int cx, int cy,
                              int col, uint16_t core) {
     static const int8_t turnCurve[][2] = {
-        { 5,  4}, { 5,  1}, { 4, -2}, { 2, -4},
-        { 0, -5}, {-2, -4}, {-4, -2}, {-5,  0}
+        { 6,  5}, { 6,  3}, { 6,  0}, { 5, -3},
+        { 3, -5}, { 1, -6}, {-1, -6},
+        {-3, -6}, {-5, -4}, {-6, -2}, {-6, 0}
     };
     const int mirror = col == 0 ? 1 : -1;
+    const uint16_t glow = dim565(core, 100U);
     unsigned int i;
     for (i = 1U; i < sizeof(turnCurve) / sizeof(turnCurve[0]); ++i) {
+        /* One extra soft row below, then a crisp, colored main curve. */
+        segment(fb,
+                cx + mirror * turnCurve[i - 1U][0],
+                cy + turnCurve[i - 1U][1] + 1,
+                cx + mirror * turnCurve[i][0],
+                cy + turnCurve[i][1] + 1, glow);
         segment(fb,
                 cx + mirror * turnCurve[i - 1U][0],
                 cy + turnCurve[i - 1U][1],
                 cx + mirror * turnCurve[i][0],
                 cy + turnCurve[i][1], core);
     }
-    /* Pointing left on the left-hand button, right on the right-hand one. */
-    segment(fb, cx - mirror * 3, cy - 3,
-            cx - mirror * 6, cy, core);
-    segment(fb, cx - mirror * 6, cy,
-            cx - mirror * 3, cy + 3, core);
+    /* Arrowhead faces the turn, never a mirrored forward/backward chevron. */
+    segment(fb, cx - mirror * 3, cy - 4,
+            cx - mirror * 7, cy, core);
+    segment(fb, cx - mirror * 7, cy,
+            cx - mirror * 3, cy + 4, core);
 }
 
 /* Only the eight glyphs used by WPN/PREV/NEXT. 5x7 ROM masks cost 56B,
@@ -546,49 +558,48 @@ static void drawActionMark(uint16_t* framebuffer, int row, int col,
     }
 }
 
-/* One easing curve for the 3x3 and all row overlays; labels are always
- * drawn, while neon contours ease gently to zero instead of blinking. */
-/* The original game's directional glyphs remain steady. THE breath is
- * ONLY an accent on the imaginary touch-zone dividers, not the icon glyphs,
- * not the floor/walls and never a translucent blue fill. */
+/* LIVE vocabulary, identical RGB565 cores to the gameplay feedback:
+ * movement/turn green, attack/use red, weapon prev/next yellow.
+ * Breath affects ONLY drawn neon strokes and glyphs. Never flood a zone.
+ * 32-step smoothstep shares the same phase with all other HELP pages. */
 static void helpPaintTouchCell(uint16_t* fb, int row, int col,
                                int left, int right, int top, int bottom,
                                uint8_t level) {
     const uint16_t neon = row == 1 && col == 1 ? 0xf800U :
                           row == 2 && col != 1 ? 0xffe0U :
                           0x07e0U;
-    const uint16_t labelInk = dim565(neon, 180U);
-    (void)level;
+    const uint8_t power = EspNativeHelpScene_breathPower(level);
+    const uint32_t accent = 72U + ((uint32_t)power * 183U) / 255U;
+    const uint16_t core = dim565(neon, accent);
+    const uint16_t halo = dim565(neon, accent / 4U);
+    int x, y;
+
+    /* One precise pixel at the cell perimeter; 1px inner softer halo.
+     * Colors follow the actual finger action, no global blue separators. */
+    for (x = left; x <= right; ++x) {
+        putGlow(fb, x, top, core);
+        putGlow(fb, x, bottom, core);
+        if (bottom - top >= 4) {
+            putGlow(fb, x, top + 1, halo);
+            putGlow(fb, x, bottom - 1, halo);
+        }
+    }
+    for (y = top + 1; y < bottom; ++y) {
+        putGlow(fb, left, y, core);
+        putGlow(fb, right, y, core);
+        putGlow(fb, left + 1, y, halo);
+        putGlow(fb, right - 1, y, halo);
+    }
     if (row == 2 && col != 1) {
+        /* WPN/PREV/NEXT letters breathe yellow; black glyph reading pad
+         * is stable so there is no flashing or solid-colour wash. */
         helpPaintWeaponCaption(fb, (left + right) / 2, top,
-                               col == 0 ? "PREV" : "NEXT", labelInk);
+                               col == 0 ? "PREV" : "NEXT", core);
     }
     else {
+        /* Every turn/move/select symbol now breathes in its ORIGINAL hue. */
         drawActionMark(fb, row, col, (left + right) / 2,
-                       (top + bottom) / 2, labelInk);
-    }
-}
-
-/* One BLUE pulse, confined to the actual imaginary separators x56/x104,
- * and additionally y51/y74 ONLY on the complete 3x3 demonstration.
- * Geometric extent stays 1 pixel; there is no rectangle fill or flicker. */
-static void helpPaintTouchDividers(uint16_t* fb,
-                                   int top, int bottom,
-                                   int left, int right,
-                                   uint8_t level, int fullGrid) {
-    const uint8_t power = EspNativeHelpScene_breathPower(level);
-    const uint16_t glow = (uint16_t)(((uint32_t)power * 31U) / 255U);
-    int x, y;
-    if (glow == 0U) return;
-    for (y = top; y <= bottom; ++y) {
-        putGlow(fb, left + 48, y, glow);
-        putGlow(fb, left + 96, y, glow);
-    }
-    if (fullGrid) {
-        for (x = left; x <= right; ++x) {
-            putGlow(fb, x, top + 22, glow);
-            putGlow(fb, x, top + 45, glow);
-        }
+                       (top + bottom) / 2, core);
     }
 }
 
@@ -609,8 +620,6 @@ int EspNativeHelpScene_paint(uint16_t* fb, uint8_t level) {
                                level);
         }
     }
-    helpPaintTouchDividers(fb, PREVIEW_Y, PREVIEW_Y + PREVIEW_H - 1,
-                          PREVIEW_X, PREVIEW_X + PREVIEW_W - 1, level, 1);
     return 1;
 }
 
@@ -629,7 +638,5 @@ int EspNativeHelpScene_paintRow(uint16_t* fb, uint8_t sourceRow,
                            PREVIEW_X + xZone[col],
                            PREVIEW_X + xZone[col + 1] - 1,
                            top, bottom, level);
-    helpPaintTouchDividers(fb, top, bottom, PREVIEW_X,
-                          PREVIEW_X + PREVIEW_W - 1, level, 0);
     return 1;
 }
