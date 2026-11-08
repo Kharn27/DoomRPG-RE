@@ -510,8 +510,9 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
         if (title == NULL || caption == NULL || visible != 7)
             return 0;
         helpDrawThemedPageTitle(doomRpg, canvas, title, 12, 14);
-        DoomRPG_setFontColor(doomRpg,
-                             helpColor888(helpBodyMiddleTone()));
+        /* This illustrated page deliberately uses white explanatory
+         * letters against the pulsating blue HUD; its title keeps the theme. */
+        DoomRPG_setFontColor(doomRpg, 0xffffffffU);
         EspNativeCanvas_drawText(canvas, caption, 12, 27, 0);
         if (!helpPaintTopHudIllustration(framebuffer))
             return 0;
@@ -519,8 +520,7 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
             const char* label = DoomRPG_esp32MainMenuHelpLine(
                 MAIN_HELP_HUD_PAGE_SCROLL + i);
             if (label == NULL || label[0] == '\0') return 0;
-            DoomRPG_setFontColor(doomRpg,
-                                 helpColor888(helpBodyMiddleTone()));
+            DoomRPG_setFontColor(doomRpg, 0xffffffffU);
             EspNativeCanvas_drawText(canvas, label, 12,
                                      64 + (i - 2) * MAIN_HELP_LINE_HEIGHT, 0);
         }
