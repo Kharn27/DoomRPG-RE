@@ -278,67 +278,64 @@ static void cameraFor(uint8_t variant, int* px, int* py, int* direction) {
         }
     }
 }
-static uint16_t mapRayPixel(int x, int y, int width, int height,
-                            uint8_t variant) {
+/* One DDA-style bounded 1/16-tile ray per column, never per pixel.
+ * Wall heights and materials are sampled only from the original BSP/PAK.
+ * No gameplay render state, no large transient workspace, no randomization. */
+static void paintWorld(uint16_t* fb, int top, int bottom,
+                       uint8_t variant) {
     static const int8_t forwardX[4] = {1, 0, -1, 0};
     static const int8_t forwardY[4] = {0, -1, 0, 1};
     static const int8_t rightX[4] = {0, 1, 0, -1};
     static const int8_t rightY[4] = {1, 0, -1, 0};
-    int px, py, dir, side, dx, dy, prevX, prevY;
-    int atX, atY, tileX, tileY, u = 0;
-    int step, wallHeight, wallTop, wallBottom;
-    uint16_t color;
-    const HelpWallMaterial* material;
-
-    if (!EspNativeHelpScene_isReady() || width < 2 || height < 2)
-        return 0U;
-    cameraFor(variant, &px, &py, &dir);
-    side = (x * 2 - (width - 1)) * 620 / (width - 1);
-    dx = forwardX[dir] * 64 + rightX[dir] * side / 16;
-    dy = forwardY[dir] * 64 + rightY[dir] * side / 16;
-    prevX = px >> 10;
-    prevY = py >> 10;
-    for (step = 1; step <= 160; ++step) {
-        px += dx;
-        py += dy;
-        tileX = px >> 10;
-        tileY = py >> 10;
-        if (helpTileWall(tileX, tileY)) break;
-        prevX = tileX;
-        prevY = tileY;
-    }
-    if (step > 160) step = 160;
-    atX = tileX < 0 ? 0 : tileX;
-    atY = tileY < 0 ? 0 : tileY;
-    material = &scene.walls[
-        (unsigned int)(atX * 3 + atY * 5 + variant) %
-        scene.materialCount];
-    if (tileX != prevX)
-        u = (py & 1023) >> 4;
-    else
-        u = (px & 1023) >> 4;
-    wallHeight = height * 26 / (step + 20);
-    if (wallHeight < 1) wallHeight = 1;
-    if (wallHeight > height) wallHeight = height;
-    wallTop = (height - wallHeight) / 2;
-    wallBottom = wallTop + wallHeight;
-    if (y < wallTop) return scene.ceilingRgb565;
-    if (y >= wallBottom) return scene.floorRgb565;
-    color = sampleMaterial(material, u, (y - wallTop) * 64 / wallHeight);
-    {
-        const int shade = step * 2 > 120 ? 136 : 256 - step * 2;
-        color = dim565(color, (unsigned int)shade);
-    }
-    return color;
-}
-static void paintWorld(uint16_t* fb, int top, int bottom,
-                       uint8_t variant) {
+    int cx, cy, dir;
     int x, y;
     const int height = bottom - top + 1;
-    for (x = 0; x < PREVIEW_W; ++x)
-        for (y = 0; y < height; ++y)
+    cameraFor(variant, &cx, &cy, &dir);
+    for (x = 0; x < PREVIEW_W; ++x) {
+        int px = cx, py = cy, prevX = cx >> 10, prevY = cy >> 10;
+        const int side = (x * 2 - (PREVIEW_W - 1)) * 620 /
+                          (PREVIEW_W - 1);
+        const int dx = forwardX[dir] * 64 + rightX[dir] * side / 16;
+        const int dy = forwardY[dir] * 64 + rightY[dir] * side / 16;
+        int tileX = prevX, tileY = prevY, u;
+        int step, wallHeight, wallTop, wallBottom, shade;
+        const HelpWallMaterial* wall;
+        for (step = 1; step <= 160; ++step) {
+            px += dx;
+            py += dy;
+            tileX = px >> 10;
+            tileY = py >> 10;
+            if (helpTileWall(tileX, tileY)) break;
+            prevX = tileX;
+            prevY = tileY;
+        }
+        if (step > 160) step = 160;
+        wall = &scene.walls[
+            ((unsigned int)((tileX < 0 ? 0 : tileX) * 3 +
+                             (tileY < 0 ? 0 : tileY) * 5 + variant)) %
+            scene.materialCount];
+        u = (tileX != prevX ? py : px) & 1023;
+        u >>= 4;
+        wallHeight = height * 26 / (step + 20);
+        if (wallHeight < 1) wallHeight = 1;
+        if (wallHeight > height) wallHeight = height;
+        wallTop = (height - wallHeight) / 2;
+        wallBottom = wallTop + wallHeight;
+        shade = step * 2 > 120 ? 136 : 256 - step * 2;
+        for (y = 0; y < height; ++y) {
+            uint16_t ink;
+            if (y < wallTop)
+                ink = scene.ceilingRgb565;
+            else if (y >= wallBottom)
+                ink = scene.floorRgb565;
+            else
+                ink = dim565(sampleMaterial(
+                     wall, u, (y - wallTop) * 64 / wallHeight),
+                     (unsigned int)shade);
             fb[(top + y) * DOOMRPG_LOGICAL_WIDTH + PREVIEW_X + x] =
-                mapRayPixel(x, y, PREVIEW_W, height, variant);
+                ink;
+        }
+    }
 }
 
 static void putGlow(uint16_t* framebuffer, int x, int y,
@@ -479,40 +476,47 @@ static void drawActionMark(uint16_t* framebuffer, int row, int col,
 
 /* One easing curve for the 3x3 and all row overlays; labels are always
  * drawn, while neon contours ease gently to zero instead of blinking. */
+/* The original game's directional glyphs remain steady. THE breath is
+ * ONLY an accent on the imaginary touch-zone dividers, not the icon glyphs,
+ * not the floor/walls and never a translucent blue fill. */
 static void helpPaintTouchCell(uint16_t* fb, int row, int col,
                                int left, int right, int top, int bottom,
                                uint8_t level) {
     const uint16_t neon = row == 1 && col == 1 ? 0xf800U :
                           row == 2 && col != 1 ? 0xffe0U :
                           0x07e0U;
-    const uint8_t power = EspNativeHelpScene_breathPower(level);
-    const uint16_t core = dim565(neon, power);
-    const uint16_t halo = dim565(neon, (uint32_t)power / 4U);
-    int x, y;
-
-    if (power > 0U) {
-    for (x = left + 1; x < right; ++x) {
-        putGlow(fb, x, top, core);
-        putGlow(fb, x, bottom, core);
-        putGlow(fb, x, top + 1, halo);
-        putGlow(fb, x, bottom - 1, halo);
-    }
-    for (y = top + 1; y < bottom; ++y) {
-        putGlow(fb, left, y, core);
-        putGlow(fb, right, y, core);
-        putGlow(fb, left + 1, y, halo);
-        putGlow(fb, right - 1, y, halo);
-    }
-    }
+    const uint16_t labelInk = dim565(neon, 180U);
+    (void)level;
     if (row == 2 && col != 1) {
-        /* Original WPN labels stay readable at rest; ONLY neon breathes.
-         * No abrupt appearance/disappearance of the black reading pad. */
         helpPaintWeaponCaption(fb, (left + right) / 2, top,
-                               col == 0 ? "PREV" : "NEXT", 0xffe0U);
+                               col == 0 ? "PREV" : "NEXT", labelInk);
     }
-    else if (power > 0U) {
+    else {
         drawActionMark(fb, row, col, (left + right) / 2,
-                       (top + bottom) / 2, core);
+                       (top + bottom) / 2, labelInk);
+    }
+}
+
+/* One BLUE pulse, confined to the actual imaginary separators x56/x104,
+ * and additionally y51/y74 ONLY on the complete 3x3 demonstration.
+ * Geometric extent stays 1 pixel; there is no rectangle fill or flicker. */
+static void helpPaintTouchDividers(uint16_t* fb,
+                                   int top, int bottom,
+                                   int left, int right,
+                                   uint8_t level, int fullGrid) {
+    const uint8_t power = EspNativeHelpScene_breathPower(level);
+    const uint16_t glow = (uint16_t)(((uint32_t)power * 31U) / 255U);
+    int x, y;
+    if (glow == 0U) return;
+    for (y = top; y <= bottom; ++y) {
+        putGlow(fb, left + 48, y, glow);
+        putGlow(fb, left + 96, y, glow);
+    }
+    if (fullGrid) {
+        for (x = left; x <= right; ++x) {
+            putGlow(fb, x, top + 22, glow);
+            putGlow(fb, x, top + 45, glow);
+        }
     }
 }
 
