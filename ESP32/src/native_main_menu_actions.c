@@ -165,22 +165,22 @@ static void helpDrawThemedPageTitle(DoomRPG_t* doomRpg,
     DoomRPG_setClipFalse(doomRpg);
 }
 
-/* Small © badge drawn in the existing RGB565 frame at (12,27).
- * The original a.bmp bitmap font doesn't contain a copyright glyph.
- * This fixed 11x9 ROM mask places the C inside the outer circle. */
+/* Same 12px visual height as the existing bitmap "Kharn27" text.
+ * The a.bmp atlas has no ©; this fixed 12x12 outline + C is drawn into
+ * the ONE RGB565 framebuffer at (12,26), with 3px gap before the name.
+ * Both glyph and name use the identical top tone of the selected skin. */
 static void helpPaintCopyrightMark(uint16_t* fb) {
-    static const uint16_t rows[9] = {
-        0x0f8U, 0x104U, 0x272U, 0x441U, 0x441U,
-        0x441U, 0x272U, 0x104U, 0x0f8U
+    static const uint16_t rows[12] = {
+        0x0f0U, 0x30cU, 0x402U, 0x8f1U, 0x901U, 0x901U,
+        0x901U, 0x901U, 0x8f1U, 0x402U, 0x30cU, 0x0f0U
     };
-    /* The © and Kharn27 deliberately share the theme's top-row tone. */
     const uint16_t ink = helpTitleTopTone();
     int y, x;
     if (fb == NULL) return;
-    for (y = 0; y < 9; ++y) {
-        for (x = 0; x < 11; ++x) {
-            if ((rows[y] & (uint16_t)(0x400U >> x)) != 0U) {
-                fb[(27 + y) * DOOMRPG_LOGICAL_WIDTH + 12 + x] = ink;
+    for (y = 0; y < 12; ++y) {
+        for (x = 0; x < 12; ++x) {
+            if ((rows[y] & (uint16_t)(0x800U >> x)) != 0U) {
+                fb[(26 + y) * DOOMRPG_LOGICAL_WIDTH + 12 + x] = ink;
             }
         }
     }
