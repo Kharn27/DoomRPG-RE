@@ -57,8 +57,8 @@
 #define MAIN_HELP_HUD_PASS_LEFT 26
 #define MAIN_HELP_HUD_PASS_RIGHT 102
 #define MAIN_HELP_HUD_MAP_LEFT 103
-#define MAIN_HELP_HUD_BREATH_STEP_MS 220U
-#define MAIN_HELP_HUD_BREATH_STEPS 12U
+#define MAIN_HELP_BREATH_STEP_MS 220U
+#define MAIN_HELP_BREATH_STEPS 12U
 #define MAIN_HELP_SCENE_PAGE_SCROLL (5 * MAIN_HELP_VISIBLE_LINES)
 #define MAIN_HELP_ROW_FIRST_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)
 #define MAIN_HELP_ROW_LAST_SCROLL (8 * MAIN_HELP_VISIBLE_LINES)
@@ -244,12 +244,12 @@ static void helpPaintCopyrightMark(uint16_t* fb, int top, uint16_t ink) {
 
 /* Breathing is time-derived: no timers, extra state owner or gameplay RNG.
  * Twelve 220ms steps (2.64s), including one fully extinguished 3x3 phase. */
-static int helpHudBreathIndex(uint32_t now) {
-    return (int)(((now - helpSpaceEpoch) / MAIN_HELP_HUD_BREATH_STEP_MS) %
-                 MAIN_HELP_HUD_BREATH_STEPS);
+static int helpBreathStepAt(uint32_t now) {
+    return (int)(((now - helpSpaceEpoch) / MAIN_HELP_BREATH_STEP_MS) %
+                 MAIN_HELP_BREATH_STEPS);
 }
 
-static uint8_t helpHudBreathLevel(int step) {
+static uint8_t helpBreathLevel(int step) {
     return (uint8_t)(step <= 6 ? step : 12 - step);
 }
 
@@ -378,8 +378,8 @@ static int helpPaintTopHudIllustration(uint16_t* framebuffer) {
         MAIN_HELP_HUD_BAR_X + MAIN_HELP_HUD_BAR_WIDTH - 1
     };
     static const char* const labels[3] = {"MENU", "PASS TURN", "MAP"};
-    const int step = helpHudBreathIndex(DoomRPG_GetUpTimeMS());
-    const uint8_t level = helpHudBreathLevel(step);
+    const int step = helpBreathStepAt(DoomRPG_GetUpTimeMS());
+    const uint8_t level = helpBreathLevel(step);
     const uint8_t tint = (uint8_t)(2U + level);
     const uint16_t neon = (uint16_t)(0x0013U + 2U * level);
     int zone, x, y;
@@ -533,8 +533,8 @@ int DoomRPG_esp32MainMenuReturnToMain(struct DoomRPG_s* doomRpgBase,
  * readouts (not a live character snapshot). No l.bmp/m.bmp preload required. */
 static int helpPaintBottomHudIllustration(uint16_t* fb) {
     static const int separator[4] = {42, 68, 90, 117};
-    const int step = helpHudBreathIndex(DoomRPG_GetUpTimeMS());
-    const uint8_t level = helpHudBreathLevel(step);
+    const int step = helpBreathStepAt(DoomRPG_GetUpTimeMS());
+    const uint8_t level = helpBreathLevel(step);
     const uint16_t blue = (uint16_t)(0x0013U + 2U * level);
     const uint16_t skin = 0xfba0U;
     int i, x, y;
@@ -668,12 +668,12 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
          * The next three pages detail one control row each. */
         const char* title = DoomRPG_esp32MainMenuHelpLine(
             MAIN_HELP_SCENE_PAGE_SCROLL);
-        const int step = helpHudBreathIndex(DoomRPG_GetUpTimeMS());
+        const int step = helpBreathStepAt(DoomRPG_GetUpTimeMS());
         if (title == NULL || visible != 7) return 0;
         helpDrawThemedPageTitle(doomRpg, canvas, title, 12, 14);
         /* No TOP caption: the larger preview begins at y29. */
         if (!EspNativeHelpScene_paint(
-                 framebuffer, helpHudBreathLevel(step))) return 0;
+                 framebuffer, helpBreathLevel(step))) return 0;
         helpSceneBreathStep = step;
     }
     else if (helpIsRowHelpPage(menuSystem->scrollIndex) &&
@@ -681,7 +681,7 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
         const int sourceRow = (menuSystem->scrollIndex -
                                MAIN_HELP_ROW_FIRST_SCROLL) /
                               MAIN_HELP_VISIBLE_LINES;
-        const int step = helpHudBreathIndex(DoomRPG_GetUpTimeMS());
+        const int step = helpBreathStepAt(DoomRPG_GetUpTimeMS());
         const char* title = DoomRPG_esp32MainMenuHelpLine(
             menuSystem->scrollIndex);
         const char* caption = DoomRPG_esp32MainMenuHelpLine(
@@ -693,7 +693,7 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
         EspNativeCanvas_drawText(canvas, caption, 12, 27, 0);
         if (!EspNativeHelpScene_paintRow(
                 framebuffer, (uint8_t)sourceRow,
-                helpHudBreathLevel(step))) return 0;
+                helpBreathLevel(step))) return 0;
         /* Three explicit explanations below the illustrated 3-button row,
          * last baseline at y87, glyphs ending y98, above border y99. */
         for (i = 2; i <= 4; ++i) {
@@ -807,11 +807,11 @@ void DoomRPG_esp32MainMenuHelpService(void) {
      * the other pages use the starfield cadence. No extra buffers. */
     if (shift == helpSpaceShift &&
         (!helpIsAnimatedHudPage(helpDoomRpg->menuSystem->scrollIndex) ||
-         helpHudBreathStep == helpHudBreathIndex(now)) &&
+         helpHudBreathStep == helpBreathStepAt(now)) &&
         (!helpIsAnimatedScenePage(
              helpDoomRpg->menuSystem->scrollIndex) ||
          !EspNativeHelpScene_isReady() ||
-         helpSceneBreathStep == helpHudBreathIndex(now)))
+         helpSceneBreathStep == helpBreathStepAt(now)))
         return;
     if (!paintHelp(helpDoomRpg, &finalFNV)) {
         DoomRPG_t* owner = helpDoomRpg;
