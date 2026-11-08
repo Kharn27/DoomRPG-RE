@@ -26,17 +26,23 @@ def macro(name):
 start = model.index("static const char* const helpLines[]")
 end = model.index("#define MAIN_HELP_LINE_COUNT", start)
 lines = re.findall(r'^\s*"([^"]*)",$', model[start:end], re.M)
-assert len(lines) == 76
+assert len(lines) == 77
+assert len(lines) % 7 == 0
+assert [lines[p * 7] for p in range(11)] == [
+    "DOOM RPG ON CYD", "TURN-BASED GAME", "CYD TOUCH (1/2)",
+    "CYD TOUCH (2/2)", "ACTION / CENTER", "TOP HUD BAR",
+    "WEAPONS & STATUS", "SYSTEM / SAVE LOAD", "MENU CONTROLS",
+    "TACTICAL TIPS", "ABOUT CYD PORT"]
 assert max(map(len, lines)) <= 20  # source font=7px/char, x=12
 assert len(lines) == len(set((i, line) for i, line in enumerate(lines)))
 assert any("CYD" in line for line in lines)
 assert all(label in lines for label in (
-    "THE MISSION", "TURN-BASED GAME", "CYD TOUCH SCREEN",
-    "TOP HUD BAR", "WEAPONS & HUD", "SYSTEM MENU",
-    "HOW MENUS WORK", "TIPS FROM DOOM RPG", "OPTIONS"))
+    "YOU ARE THE MARINE", "TURN-BASED GAME", "CYD TOUCH (1/2)",
+    "TOP HUD BAR", "WEAPONS & STATUS", "SYSTEM / SAVE LOAD",
+    "MENU CONTROLS", "TACTICAL TIPS", "ABOUT CYD PORT"))
 assert all(term in lines for term in (
     "LEFT: game menu", "CENTER: pass a turn", "RIGHT: show automap",
-    "Prev gun / Back /", "Turn L / ACT /", "Tap again: confirm"))
+    "Prev gun / Back /", "Turn L / ACT /", "Tap again: confirm."))
 assert "EspLegacyAssetSource_readAlloc" not in model
 assert "EspLegacyAssetSource_stat" not in model
 assert "static int buildBoundedHelpModel(" in model
@@ -113,5 +119,5 @@ for scroll in range(len(lines)):
     page = (clamped + 6) // 7 + 1
     assert 1 <= page <= (len(lines) + 6) // 7
 
-print("PASS HELP: 76 ROM lines, CYD touch truth, intro PAK sky, 3 industrial hitboxes,")
+print("PASS HELP: 77 ROM lines / 11 intentional pages, CYD touch truth, intro PAK sky, 3 industrial hitboxes,")
 print("           7-line bounded pages, animation/FNV rebasing, release and no keypad")
