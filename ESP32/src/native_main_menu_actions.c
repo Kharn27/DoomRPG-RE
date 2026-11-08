@@ -48,6 +48,7 @@ static DoomRPG_t* helpSpaceOwner;
 static uint32_t helpSpaceEpoch;
 static int helpSpaceShift;
 static int helpSpaceActive;
+static int helpLoggedScroll = -1;
 
 static void helpStop(void) {
     if (helpSpaceOwner != NULL) {
@@ -58,6 +59,7 @@ static void helpStop(void) {
     helpSpaceEpoch = 0U;
     helpSpaceShift = 0;
     helpSpaceActive = 0;
+    helpLoggedScroll = -1;
 }
 
 static int helpStart(DoomRPG_t* doomRpg) {
@@ -74,6 +76,7 @@ static int helpStart(DoomRPG_t* doomRpg) {
     }
     helpSpaceEpoch = DoomRPG_GetUpTimeMS();
     helpSpaceShift = -1;
+    helpLoggedScroll = -1;
     helpSpaceActive = 1;
     printf("[MAINHELP] BACKGROUND asset=c.bmp source=pak scroll=intro-157ms/192virtual owner=help\n");
     return 1;
@@ -316,10 +319,13 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
     if (frameFNV == 0U) return 0;
     SDL_RenderPresent(NULL);
     if (outFrameFNV != NULL) *outFrameFNV = frameFNV;
-    printf("[MAINHELP] PAINT lines=%d visible=%d range=%d..%d maxScroll=%d frame=%08x background=intro-c.bmp shift=%d buttons=industrial\n",
-           menuSystem->numItems, visible, menuSystem->scrollIndex,
-           end > menuSystem->scrollIndex ? end - 1 : menuSystem->scrollIndex,
-           maxScroll, (unsigned int)frameFNV, helpSpaceShift);
+    if (helpLoggedScroll != menuSystem->scrollIndex) {
+        printf("[MAINHELP] PAINT lines=%d visible=%d range=%d..%d maxScroll=%d frame=%08x background=intro-c.bmp shift=%d buttons=industrial\n",
+               menuSystem->numItems, visible, menuSystem->scrollIndex,
+               end > menuSystem->scrollIndex ? end - 1 : menuSystem->scrollIndex,
+               maxScroll, (unsigned int)frameFNV, helpSpaceShift);
+        helpLoggedScroll = menuSystem->scrollIndex;
+    }
     return 1;
 }
 
