@@ -332,7 +332,7 @@ for field in ("halfScreenWidth", "fracHalfScreenHeight"):
 # CYD obtains viewport origin from the owned SDL_Rect, not from Render.
 # Keep the original desktop ABI and the same diagnostic coordinate values.
 assert re.search(
-    r"#ifndef DOOMRPG_ESP32\s+int screenX;\s+int screenY;\s+#endif",
+    r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)\s+int screenX;\s+int screenY;\s+#endif",
     HEADER
 ), "desktop-only Render viewport origin must be absent on CYD"
 for field in ("screenX", "screenY"):
