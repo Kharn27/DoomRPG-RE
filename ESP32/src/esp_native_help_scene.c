@@ -355,38 +355,63 @@ static void helpPaintTouchCell(uint16_t* fb, int row, int col,
     }
 }
 
+/* A bounded corridor rather than spreading one arbitrary PAK material
+ * across the WHOLE view.  Cropped lateral slices hide the repeated-door
+ * wallpaper artifact; only the distant end-wall can retain a door/panel.
+ * The same pure pixel sampler serves the main 3x3 and all three row previews.
+ * This is a deliberately illustrative perspective, NOT a map/BSP snapshot. */
+static uint16_t helpCorridorPixel(int lx, int ly) {
+    const int rightFlank = PREVIEW_W - 1 - lx;
+    const int flank = lx < PREVIEW_W / 2 ? lx : rightFlank;
+    const int side = flank < 54;
+    const int wallTop = side ? 19 * flank / 54 : 19;
+    const int wallBottom = side
+        ? (PREVIEW_H - 1) - 17 * flank / 54 : 50;
+    const int baseline = ly - wallTop;
+    uint16_t ink;
+
+    if (ly < wallTop) {
+        /* Ceiling recedes toward the far wall; textured, not sky-blue. */
+        ink = dim565(sampleWall((lx + 13) & 63, 2), 150U);
+        if (ly > 0 && ly == wallTop - 1) ink = dim565(ink, 180U);
+    }
+    else if (ly > wallBottom) {
+        /* Floor is darker than walls, with subtle converging seams. */
+        ink = dim565(sampleWall((lx / 2 + 19) & 63, 57), 170U);
+        if (ly > 50 && (ly - 51) % 9 == 0)
+            ink = dim565(ink, 175U);
+    }
+    else if (side) {
+        /* SIDE WALLS use narrow off-center strips of the map-selected
+         * PAK texture; complete door sprites cannot repeat along the view. */
+        const int u = lx < PREVIEW_W / 2
+            ? 6 + flank / 4 : 42 + flank / 4;
+        const int v = baseline * 63 / (wallBottom - wallTop + 1);
+        ink = sampleWall(u, v);
+        if (v > 0 && v % 17 == 0) ink = dim565(ink, 210U);
+    }
+    else {
+        /* End wall is a single small feature at the vanishing point. */
+        const int u = 20 + (lx - 54) * 23 / 36;
+        const int v = baseline * 63 / (wallBottom - wallTop + 1);
+        ink = dim565(sampleWall(u, v), 202U);
+        if (lx == 54 || lx == 89 || ly == 19 || ly == 50)
+            ink = dim565(ink, 112U);
+    }
+    return ink;
+}
+
 int EspNativeHelpScene_paint(uint16_t* fb, uint8_t level) {
     static const int xZone[4] = {0, 48, 96, PREVIEW_W};
     static const int yZone[4] = {0, 22, 45, PREVIEW_H};
     int lx, ly, row, col;
     if (fb == NULL || !material.ready || level > 6U) return 0;
 
-    /* A small deterministic perspective illustration with an actual native
-     * wall texture; NOT a screenshot and no map/BSP world state. */
+    /* Single tiny PAK-backed corridor geometry, shared with row views. */
     for (lx = 0; lx < PREVIEW_W; ++lx) {
-        const int flank = lx < 54 ? lx :
-                          lx >= 90 ? (PREVIEW_W - 1 - lx) : 54;
-        const int wallTop = 19 * flank / 54;
-        const int wallBottom = (PREVIEW_H - 1) - 17 * flank / 54;
         for (ly = 0; ly < PREVIEW_H; ++ly) {
-            uint16_t ink;
-            if (ly < wallTop) {
-                ink = (uint16_t)(0x0842U + ((uint16_t)ly << 5));
-            }
-            else if (ly > wallBottom) {
-                ink = (uint16_t)(0x1042U +
-                                 ((uint16_t)(PREVIEW_H - 1 - ly) << 5));
-            }
-            else {
-                int u = lx < 54 ? lx * 2 : lx >= 90
-                        ? (PREVIEW_W - 1 - lx) * 2 : (lx - 54) * 2;
-                int v = (ly - wallTop) * 63 / (wallBottom - wallTop + 1);
-                /* Restore the full source-Pak color: the old 155..203/256
-                 * attenuation made the tutorial conspicuously too dark. */
-                ink = sampleWall(u, v);
-            }
             fb[(PREVIEW_Y + ly) * DOOMRPG_LOGICAL_WIDTH +
-               PREVIEW_X + lx] = ink;
+               PREVIEW_X + lx] = helpCorridorPixel(lx, ly);
         }
     }
 
@@ -403,9 +428,8 @@ int EspNativeHelpScene_paint(uint16_t* fb, uint8_t level) {
     return 1;
 }
 
-/* x8..151, y39..61. One horizontal slice of the same touch vocabulary:
- * identical symbols, neon/weapon captions and 48px cells as MAIN GAMEPLAY.
- * Draws directly into the existing framebuffer over ONE sampled PAK texture. */
+/* x8..151, y39..61: downsample the SAME procedural 3D corridor.
+ * Same touch vocabulary, icon positions, asset material and breath level. */
 int EspNativeHelpScene_paintRow(uint16_t* fb, uint8_t sourceRow,
                                 uint8_t level) {
     static const int xZone[4] = {0, 48, 96, PREVIEW_W};
@@ -416,8 +440,8 @@ int EspNativeHelpScene_paintRow(uint16_t* fb, uint8_t sourceRow,
     for (ly = top; ly <= bottom; ++ly) {
         for (lx = 0; lx < PREVIEW_W; ++lx) {
             fb[ly * DOOMRPG_LOGICAL_WIDTH + PREVIEW_X + lx] =
-                sampleWall(lx * 63 / (PREVIEW_W - 1),
-                           (ly - top) * 63 / (bottom - top));
+                helpCorridorPixel(lx, (ly - top) *
+                                  (PREVIEW_H - 1) / (bottom - top));
         }
     }
     for (col = 0; col < 3; ++col) {
