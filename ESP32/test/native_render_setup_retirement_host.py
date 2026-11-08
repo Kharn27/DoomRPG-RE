@@ -85,7 +85,7 @@ int main(void) {
         assert(mallocs==3 && frees==0 && errors==0);
         assert(r.screenWidth==160 && r.screenHeight==80);
         assert(strcmp(lastRenderLog,
-            "[RENDERCORE] SETUP owner=esp-native-bridge view=160x80@5,20 arrays=1280B\\n")==0);
+            "[RENDERCORE] SETUP owner=esp-native-bridge view=160x80@5,20 arrays=1280B\n")==0);
         assert(r.halfScreenHeight==40);
         assert(r.fracHalfScreenWidth==(80<<16)-0x8000);
         assert(r.ceilingColor && r.floorColor && r.columnScale);
