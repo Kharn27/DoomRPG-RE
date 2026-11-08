@@ -31,7 +31,7 @@ void EspNativeRenderGeometry_occludeProjectedSpan(
  * refer to distinct scalar fields. No allocations or engine object inputs.
  */
 /* Exact legacy Render_setup half-width: width is the bounded logical viewport.
- * This scalar is reconstructed by native callers, never kept in Render_t.
+ * Native callers reconstruct this scalar without inherited renderer state.
  * FRACBITS is 16 in the Doom RPG fixed-point format. */
 static inline int EspNativeRenderGeometry_fracHalfScreenWidth(int screenWidth)
 {
