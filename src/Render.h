@@ -224,11 +224,17 @@ typedef struct Render_s
 	boolean skipSprites;
 	boolean skipViewNudge;
 #endif
+	/* Desktop/oracle BSP traversal count; native tracks it independently. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	int lineCount;
+#endif
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	int lineRasterCount;
 #endif
+	/* Desktop/oracle BSP traversal count; native tracks it independently. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	int nodeCount;
+#endif
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	int nodeRasterCount;
 #endif

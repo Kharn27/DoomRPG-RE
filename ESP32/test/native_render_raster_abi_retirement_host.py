@@ -358,7 +358,36 @@ for field, type_ in (("viewAngle", "int"), ("spanMode", "byte")):
                     code
                 ), ("retired raster scratch mirror", path, field)
 assert "boolean skipCull;" in HEADER
-assert "sizeof(Render_t) == 156U" in startup
+assert "sizeof(Render_t) == 148U" in startup
+
+# PR266-B: native BSP traversal counters are owned by per-frame work or
+# EspNativeBspVisibilityState. Preserve desktop geometry oracle and the
+# first-frame failure diagnostic, but not the inherited Render_t mirrors.
+for field in ("lineCount", "nodeCount"):
+    assert re.search(
+        r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)\s+int "
+        + field + r";\s+#endif", HEADER
+    ), field
+    assert re.search(r"\brender->" + field + r"\b", DESKTOP), field
+    for owner in ("esp_native_first_frame.c", "esp_native_bsp_visibility.c",
+                  "esp_native_sprite_renderer.c"):
+        native = (NATIVE / "src" / owner).read_text(encoding="utf-8")
+        assert not re.search(
+            r"\b(?:render|r|scratch|s)\s*->\s*" + field + r"\b",
+            native), ("retired Render_t traversal counter", owner, field)
+first_frame = (NATIVE / "src/esp_native_first_frame.c").read_text()
+bsp = (NATIVE / "src/esp_native_bsp_visibility.c").read_text()
+sprite = (NATIVE / "src/esp_native_sprite_renderer.c").read_text()
+assert "uint32_t nodesTraversed;" in first_frame
+assert "++work->nodesTraversed;" in first_frame
+assert "work->nodesTraversed," in first_frame
+assert "(unsigned int)work->nodesTraversed," in first_frame
+assert "++state->nodes;" in bsp
+assert "uint32_t lineCount;" in first_frame and "uint32_t lineCount;" in bsp
+assert "work->lineCandidates" in first_frame
+assert "render->numLines" in first_frame and "render->numLines" in bsp
+assert "spriteLeafCache.nodeCount != runtime->nodeCount" in bsp
+assert "render->screenLeft" in sprite and "render->columnScale" in sprite
 
 # Post-PR252: two desktop setup-only half-screen intermediates have no
 # Render_t readers. Preserve halfScreenHeight; retire the desktop
@@ -535,7 +564,7 @@ for member in ("mapName", "mapNameID", "loadMapID", "introColor",
                 + member + r"\b", clean), (
                 "retired map-header Render field referenced by native", path, member)
 assert "render->mapCameraSpawnIndex = 0;" not in root
-assert "sizeof(Render_t) == 156U" in (
+assert "sizeof(Render_t) == 148U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 
 # Post-#245-B on the same PR: desktop BSP allocation/inventory counts
@@ -556,7 +585,7 @@ assert re.search(
 assert re.search(
     r"render->mapStringsIDs = NULL;\s+render->mapStringCount = 0;\s+#endif",
     startup)
-assert "sizeof(Render_t) == 156U" in startup
+assert "sizeof(Render_t) == 148U" in startup
 
 # The sprite renderer is the other owner of transactional frame scratch.
 # Its clipping/projection lines are function-local too. No CYD Render_t
@@ -565,7 +594,7 @@ sprite = (NATIVE / "src/esp_native_sprite_renderer.c").read_text()
 assert "Line_t tmpLine;" not in sprite
 assert "->tmpLine" not in sprite
 assert "_Static_assert(sizeof(Scratch) <= 740U" in sprite
-assert "sizeof(Render_t) == 156U" in (
+assert "sizeof(Render_t) == 148U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 assert re.search(
     r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"

@@ -82,6 +82,8 @@ typedef struct FirstFrameWork_s {
     uint8_t indicatorSeen;
 
     uint32_t lineCandidates;
+    /* Native per-frame diagnostic: never part of the Render shell. */
+    uint32_t nodesTraversed;
     uint32_t leafNodes;
     uint32_t wallRequests;
     uint32_t wallDraws;
@@ -107,8 +109,6 @@ typedef struct RenderScratch_s {
     int viewX;
     int viewY;
     int viewZ;
-    int lineCount;
-    int nodeCount;
     int screenLeft;
     int screenTop;
     int screenRight;
@@ -428,8 +428,6 @@ static void saveRenderScratch(Render_t* render, RenderScratch* scratch) {
     scratch->viewX = render->viewX;
     scratch->viewY = render->viewY;
     scratch->viewZ = render->viewZ;
-    scratch->lineCount = render->lineCount;
-    scratch->nodeCount = render->nodeCount;
     scratch->screenLeft = render->screenLeft;
     scratch->screenTop = render->screenTop;
     scratch->screenRight = render->screenRight;
@@ -454,8 +452,6 @@ static void restoreRenderScratch(Render_t* render, const RenderScratch* scratch)
     render->viewX = scratch->viewX;
     render->viewY = scratch->viewY;
     render->viewZ = scratch->viewZ;
-    render->lineCount = scratch->lineCount;
-    render->nodeCount = scratch->nodeCount;
     render->screenLeft = scratch->screenLeft;
     render->screenTop = scratch->screenTop;
     render->screenRight = scratch->screenRight;
@@ -1164,7 +1160,7 @@ static int walkNodes(FirstFrameWork* work) {
             return 0;
         }
 
-        ++work->render->nodeCount;
+        ++work->nodesTraversed;
         /* Culling is independent of the renderer's inherited tmpLine. */
         {
             const int culled = EspNativeRenderGeometry_cullBounds(
@@ -1184,7 +1180,6 @@ static int walkNodes(FirstFrameWork* work) {
                 return 0;
             }
             ++work->leafNodes;
-            work->render->lineCount += (int)lineCount;
             for (i = 0U; i < lineCount; ++i) {
                 if (!drawLine(work, lineStart + i)) return 0;
             }
@@ -1363,8 +1358,6 @@ static int renderFrame(Render_t* render,
     render->screenTop = 0;
     render->screenRight = render->screenWidth;
     render->screenBottom = render->screenHeight;
-    render->lineCount = 0;
-    render->nodeCount = 0;
 
     EspNativeRenderGeometry_resetColumns(render->columnScale, render->screenWidth);
     /* Historical --wrap=Render_initColumnScale injected textured floor and
@@ -1379,7 +1372,7 @@ static int renderFrame(Render_t* render,
         if (frameFailure.code == FIRST_FRAME_FAIL_NONE) {
             RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_WALK,
                                  UINT32_MAX, 0U, 0U, 0U, 0U,
-                                 render->nodeCount,
+                                 work->nodesTraversed,
                                  work->lineCandidates,
                                  work->wallRequests,
                                  work->wallDraws);
@@ -1399,7 +1392,7 @@ static int renderFrame(Render_t* render,
     DRPG_LOGT("[NATIVEFRAME] BSP map=%u resource=%s nodes=%u leaves=%u nodeCull=%u lines=%u backface=%u clip=%u occluder=%u spriteSpanDeferred=%u\n",
            (unsigned int)playerView->targetMapId,
            resourceName,
-           (unsigned int)render->nodeCount,
+           (unsigned int)work->nodesTraversed,
            (unsigned int)work->leafNodes,
            (unsigned int)work->nodeCulled,
            (unsigned int)work->lineCandidates,

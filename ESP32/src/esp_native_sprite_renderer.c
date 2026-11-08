@@ -124,8 +124,6 @@ typedef struct Scratch_s {
     int viewX;
     int viewY;
     int viewZ;
-    int lineCount;
-    int nodeCount;
     int screenLeft;
     int screenTop;
     int screenRight;
@@ -307,8 +305,6 @@ static void saveScratch(Render_t* render, Scratch* scratch) {
     scratch->viewX = render->viewX;
     scratch->viewY = render->viewY;
     scratch->viewZ = render->viewZ;
-    scratch->lineCount = render->lineCount;
-    scratch->nodeCount = render->nodeCount;
     scratch->screenLeft = render->screenLeft;
     scratch->screenTop = render->screenTop;
     scratch->screenRight = render->screenRight;
@@ -329,8 +325,6 @@ static void restoreScratch(Render_t* render, const Scratch* scratch) {
     render->viewX = scratch->viewX;
     render->viewY = scratch->viewY;
     render->viewZ = scratch->viewZ;
-    render->lineCount = scratch->lineCount;
-    render->nodeCount = scratch->nodeCount;
     render->screenLeft = scratch->screenLeft;
     render->screenTop = scratch->screenTop;
     render->screenRight = scratch->screenRight;
@@ -352,8 +346,6 @@ static int scratchMatches(const Render_t* render, const Scratch* scratch) {
            render->viewX == scratch->viewX &&
            render->viewY == scratch->viewY &&
            render->viewZ == scratch->viewZ &&
-           render->lineCount == scratch->lineCount &&
-           render->nodeCount == scratch->nodeCount &&
            render->screenLeft == scratch->screenLeft &&
            render->screenTop == scratch->screenTop &&
            render->screenRight == scratch->screenRight &&
@@ -406,8 +398,6 @@ static int setupDrawView(Render_t* render,
     render->screenTop = 0;
     render->screenRight = SCREEN_W;
     render->screenBottom = SCREEN_H;
-    render->lineCount = 0;
-    render->nodeCount = 0;
     memcpy(render->columnScale, visibility->columnScale,
            sizeof(visibility->columnScale));
     return 1;

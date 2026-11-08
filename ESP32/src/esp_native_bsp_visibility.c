@@ -45,8 +45,6 @@ typedef struct Scratch_s {
     int viewX;
     int viewY;
     int viewZ;
-    int lineCount;
-    int nodeCount;
     int screenLeft;
     int screenTop;
     int screenRight;
@@ -75,8 +73,6 @@ static void saveScratch(Render_t* r, Scratch* s) {
     s->viewX = r->viewX;
     s->viewY = r->viewY;
     s->viewZ = r->viewZ;
-    s->lineCount = r->lineCount;
-    s->nodeCount = r->nodeCount;
     s->screenLeft = r->screenLeft;
     s->screenTop = r->screenTop;
     s->screenRight = r->screenRight;
@@ -96,8 +92,6 @@ static void restoreScratch(Render_t* r, const Scratch* s) {
     r->viewX = s->viewX;
     r->viewY = s->viewY;
     r->viewZ = s->viewZ;
-    r->lineCount = s->lineCount;
-    r->nodeCount = s->nodeCount;
     r->screenLeft = s->screenLeft;
     r->screenTop = s->screenTop;
     r->screenRight = s->screenRight;
@@ -146,8 +140,6 @@ static int setupView(Render_t* r, const EspPlayerViewState* v) {
     r->screenTop = 0;
     r->screenRight = SCREEN_W;
     r->screenBottom = SCREEN_H;
-    r->lineCount = 0;
-    r->nodeCount = 0;
 
     for (x = 0; x < SCREEN_W; ++x) r->columnScale[x] = MAXINT;
     return 1;
@@ -295,7 +287,6 @@ static int walkNode(Render_t* r,
         return 0;
     }
 
-    ++r->nodeCount;
     ++state->nodes;
     /* Private transient scratch is owned inside the culler: no tmpLine read. */
     {
@@ -317,7 +308,6 @@ static int walkNode(Render_t* r,
         }
         state->visibleLeaves[nodeIndex >> 5] |= 1U << (nodeIndex & 31U);
         ++state->leaves;
-        r->lineCount += (int)lineCount;
         for (i = 0U; i < lineCount; ++i) {
             if (!depthLine(r, lineStart + i, state)) return 0;
         }
