@@ -106,6 +106,15 @@ constexpr int kPanelBottom = 118;
 constexpr int kButtonLeft = ESP_NATIVE_SYS_BUTTON_LEFT;
 constexpr int kButtonRight = ESP_NATIVE_SYS_BUTTON_RIGHT;
 
+/* Standalone MENU_MAIN -> LOAD selector only. HUB SAVE/LOAD keeps its own
+ * slots, back navigation, header and page arrows completely unchanged.
+ * BACK must be 16px+ for the shared industrial chassis. Extending upward
+ * from y105 to y102 preserves every existing slot/nav rectangle. */
+constexpr int kMainLoadBackLeft = 34;
+constexpr int kMainLoadBackRight = 111;
+constexpr int kMainLoadBackTop = 102;
+constexpr int kMainLoadBackBottom = 118;
+
 int systemRowTop(uint8_t row) {
     return ESP_NATIVE_SYS_BUTTON_TOP + row *
         (ESP_NATIVE_SYS_BUTTON_HEIGHT + ESP_NATIVE_SYS_BUTTON_GAP);
@@ -3458,8 +3467,16 @@ static void paintMainSlots(void) {
     const uint8_t first = slotFocus <= 5U ? 1U : 6U;
     char text[40];
     fillRect(fb, 0, 0, 159, 119, ESP_HUB_COLOR_BG);
-    snprintf(text, sizeof(text), "LOAD - PAGE %u/2", first == 1U ? 1U : 2U);
-    drawCenteredWord(fb, 60, 15, text, EspMainMenuSkin_uiAccent());
+    /* Standalone LOAD title only: no side triple-hatches. The restrained
+     * centered signal rail is NOT a clickable chassis and stays clear of
+     * the 5x9 gradient lettering at y11..19. Other modal titles retain
+     * their established stencil and cannot regress through this change. */
+    fillRect(fb, 45, 27, 114, 27, EspMainMenuSkin_uiAccentDim());
+    fillRect(fb, 73, 27, 86, 27, EspMainMenuSkin_uiAccent());
+    if (!EspMainMenuSkin_paintText(
+            fb, DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_WIDTH,
+            DOOMRPG_LOGICAL_HEIGHT, 28, 7, 131, 23,
+            "LOAD GAME", 0, 1)) return;
     for (uint8_t row = 0U; row < 5U; ++row) {
         const uint8_t slot = first + row;
         const int y = 32 + row * 14;
@@ -3474,9 +3491,27 @@ static void paintMainSlots(void) {
     }
     drawSlotNav(fb, 34, 62, false, first != 1U);
     drawSlotNav(fb, 69, 98, true, first == 1U);
-    fillRect(fb, 34, 105, 111, 118, ESP_HUB_COLOR_PANEL_ALT);
-    drawRect(fb, 34, 105, 111, 118, ESP_HUB_COLOR_RED);
-    drawCenteredWord(fb, 72, 108, "BACK", ESP_HUB_COLOR_IVORY);
+    /* Page fraction belongs BELOW DOWN, not in the title area.
+     * Mini 3x5 text occupies x132..142/y106..110: fully outside both
+     * arrow hitboxes and the BACK chassis x34..111/y102..118. */
+    snprintf(text, sizeof(text), "%u/2", first == 1U ? 1U : 2U);
+    EspNativeGameplayHubTouchUi_drawMiniText(
+        fb, text, 137, 106, EspMainMenuSkin_uiAccent());
+    /* Raise BACK 3px to obtain a real 17px symmetric industrial plate.
+     * Only one blank scanline separates it from the fifth slot (y88..100),
+     * and its x34..111 touch target remains independent of the nav arrows. */
+    if (!EspMainMenuSkin_paintPlate(
+            fb, DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_WIDTH,
+            DOOMRPG_LOGICAL_HEIGHT, kMainLoadBackLeft, kMainLoadBackTop,
+            kMainLoadBackRight, kMainLoadBackBottom,
+            ESP_MAIN_MENU_SKIN_IDLE)) return;
+    /* The same full nine-row theme gradient as LOAD GAME; black inset
+     * at y106..114 keeps every glyph away from the copper seams. */
+    if (!EspMainMenuSkin_paintText(
+            fb, DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_WIDTH,
+            DOOMRPG_LOGICAL_HEIGHT, kMainLoadBackLeft, kMainLoadBackTop,
+            kMainLoadBackRight, kMainLoadBackBottom,
+            "BACK", 0, 1)) return;
     (void)Esp32PlatformVideo_present();
 }
 extern "C" int EspNativeGameplaySave_mainSelectorBegin(void) {
@@ -3489,8 +3524,11 @@ extern "C" int EspNativeGameplaySave_mainSelectorBegin(void) {
 /* 0 stay, 1 confirmed, -1 back */
 extern "C" int EspNativeGameplaySave_mainSelectorTap(int x, int y) {
     if (slotMode != 3U) return 0;
-    if (y >= 104) {
-        if (x >= 34 && x <= 111) {
+    /* Hit-test exactly the new BACK chassis, rather than accepting the
+     * unused last LCD row. Touches above its top remain slot-row owned. */
+    if (y >= kMainLoadBackTop) {
+        if (y <= kMainLoadBackBottom &&
+            x >= kMainLoadBackLeft && x <= kMainLoadBackRight) {
             EspNativeGameplaySave_mainSelectorFinish();
             return -1;
         }

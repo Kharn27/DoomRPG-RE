@@ -67,7 +67,8 @@ static void assertPlateCapSymmetry(uint16_t* fb) {
         {104, 6, 157, 31},   /* VIDEO */
         {104, 6, 157, 26},   /* BRIGHTNESS */
         {16, 26, 143, 69},  /* LOADING title */
-        {16, 82, 143, 99}   /* LOADING gauge chassis */
+        {16, 82, 143, 99},  /* LOADING gauge chassis */
+        {34, 102, 111, 118} /* MAIN LOAD BACK: 17px industrial plate */
     };
     static const uint16_t steel[3] = {0x4a48U, 0x632bU, 0x4248U};
     static const uint16_t bevel[3] = {0x838dU, 0xa4d1U, 0x83ceU};
@@ -133,6 +134,74 @@ static void assertPlateCapSymmetry(uint16_t* fb) {
     assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
 }
 
+
+/* The 17px BACK chassis fits a 7-row crisp label wholly in its dark
+ * inset: no top/bottom seam can touch the glyph corridor at x54..90,
+ * y107..113. This also proves no extra bitmap is needed for the button. */
+static void assertMainLoadBackCorridor(uint16_t* fb) {
+    for (int theme = 0; theme < 3; ++theme) {
+        resetFrame();
+        assert(EspMainMenuSkin_setTheme((uint8_t)theme));
+        assert(EspMainMenuSkin_paintPlate(fb,W,W,H,34,102,111,118,
+                                          ESP_MAIN_MENU_SKIN_IDLE));
+        for (int y = 107; y <= 113; ++y)
+            for (int x = 54; x <= 90; ++x)
+                assert(fb[y*W+x] == 0x0800U);
+        for (int i = 0; i < GUARD; ++i) {
+            assert(arena[i] == SENTINEL);
+            assert(arena[GUARD + W*H + i] == SENTINEL);
+        }
+    }
+    assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
+}
+
+
+/* LOAD GAME and BACK use the actual skin 5x9 face (not a single flat
+ * EspMainMenuSkin_uiInk tint). Check every painted pixel, each of the
+ * nine gradient rows, full-frame guards and the unchanged inset bounds. */
+static void assertLoadTextGradients(uint16_t* fb) {
+    static const struct {
+        int l, t, r, b;
+        const char* label;
+    } cases[] = {
+        {28, 7, 131, 23, "LOAD GAME"},
+        {34, 102, 111, 118, "BACK"}
+    };
+    for (int theme = 0; theme < 3; ++theme) {
+        assert(EspMainMenuSkin_setTheme((uint8_t)theme));
+        for (int item = 0; item < 2; ++item) {
+            const int l=cases[item].l, t=cases[item].t;
+            const int r=cases[item].r, b=cases[item].b;
+            const int y0 = t + ((b-t+1)-9)/2;
+            resetFrame();
+            assert(EspMainMenuSkin_paintText(
+                fb,W,W,H,l,t,r,b,cases[item].label,0,1));
+            int total = 0;
+            for (int y=0;y<H;++y) {
+                int rowPixels=0;
+                for (int x=0;x<W;++x) {
+                    const uint16_t pixel=fb[y*W+x];
+                    if (pixel == SENTINEL) continue;
+                    assert(x >= l && x <= r);
+                    assert(y >= y0 && y < y0 + 9);
+                    assert(pixel == EspMainMenuSkin_letterTone(y-y0,9));
+                    ++rowPixels;
+                    ++total;
+                }
+                if (y >= y0 && y < y0 + 9)
+                    assert(rowPixels > 0);
+            }
+            assert(total > 25);
+            assert(EspMainMenuSkin_letterTone(0,9) !=
+                   EspMainMenuSkin_letterTone(8,9));
+            for (int k=0;k<GUARD;++k) {
+                assert(arena[k] == SENTINEL);
+                assert(arena[GUARD+W*H+k] == SENTINEL);
+            }
+        }
+    }
+    assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
+}
 
 /* Regress the real production nav-key painter against its exact plate
  * background, across both LOAD GAME and HUB slot layouts. All chevrons
@@ -208,6 +277,8 @@ int main(void) {
     int item, state;
     assertPlateCapSymmetry(fb);
     assertIndustrialNavKeys(fb);
+    assertMainLoadBackCorridor(fb);
+    assertLoadTextGradients(fb);
     assert(DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH == 102);
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_HEIGHT == 20);
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_PITCH == 25);
