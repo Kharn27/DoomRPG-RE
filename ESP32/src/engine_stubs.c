@@ -346,8 +346,8 @@ static DoomCanvas_t* EspNativeEngineRoot_initCanvas(DoomCanvas_t* doomCanvas, Do
     return doomCanvas;
 }
 
-/* Native Render constructor owned by the process root. Persistent desktop
- * developer culling state is not part of the CYD Render shell. */
+/* Native Render constructor owned by the process root; old initializer body
+ * is preserved apart from retiring the desktop developer skipCull toggle. */
 static Render_t* EspNativeEngineRoot_initRender(Render_t* render, DoomRPG_t* doomRpg)
 {
 	printf("Render_init\n");
