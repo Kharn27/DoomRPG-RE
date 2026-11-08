@@ -395,9 +395,8 @@ static int helpPaintTopHudIllustration(uint16_t* framebuffer) {
     };
     static const char* const labels[3] = {"MENU", "PASS TURN", "MAP"};
     const int step = helpBreathStepAt(DoomRPG_GetUpTimeMS());
-    const uint8_t level = helpBreathLevel(step);
-    const uint8_t power = EspNativeHelpScene_breathPower(level);
-    const uint8_t tint = (uint8_t)(power / 16U);
+    const uint8_t power = EspNativeHelpScene_breathPower(
+        helpBreathLevel(step));
     const uint16_t neon = (uint16_t)(((uint32_t)power * 31U) / 255U);
     int zone, x, y;
 
@@ -405,44 +404,20 @@ static int helpPaintTopHudIllustration(uint16_t* framebuffer) {
     /* MENU/PASS/MAP remain legible throughout the breath.
      * Only the blue neon/texture gain follows a smoothstep. */
 
-    /* Gently bias the original textured pixels toward blue, not a flat
-     * opaque rectangle. The high five bits of RGB565 blue stay bounded. */
-    for (y = MAIN_HELP_HUD_BAR_Y + 1;
-         y < MAIN_HELP_HUD_BAR_Y + MAIN_HELP_HUD_BAR_HEIGHT - 1; ++y) {
-        for (x = MAIN_HELP_HUD_BAR_X + 1;
-             x < MAIN_HELP_HUD_BAR_X + MAIN_HELP_HUD_BAR_WIDTH - 1; ++x) {
-            uint16_t* pixel = &framebuffer[y * DOOMRPG_LOGICAL_WIDTH + x];
-            const uint16_t blue = (uint16_t)(*pixel & 31U);
-            const uint16_t raised = (uint16_t)(blue +
-                                              ((31U - blue) * tint) / 16U);
-            *pixel = (uint16_t)((*pixel & 0xffe0U) | raised);
+    /* The imaginary boundaries alone breathe: x42 and x119 of the
+     * 128x16 real k.bmp miniature. Never blue-tint its interior or glyphs. */
+    if (neon != 0U) {
+        for (zone = 1; zone <= 2; ++zone) {
+            x = left[zone];
+            for (y = MAIN_HELP_HUD_BAR_Y;
+                 y < MAIN_HELP_HUD_BAR_Y + MAIN_HELP_HUD_BAR_HEIGHT; ++y) {
+                uint16_t* ink = &framebuffer[
+                    y * DOOMRPG_LOGICAL_WIDTH + x];
+                *ink = (uint16_t)((*ink & 0xffe0U) | neon);
+            }
         }
     }
 
-    if (power > 0U) {
-    for (zone = 0; zone < 3; ++zone) {
-        for (x = left[zone]; x <= right[zone]; ++x) {
-            framebuffer[MAIN_HELP_HUD_BAR_Y * DOOMRPG_LOGICAL_WIDTH + x] =
-                neon;
-            framebuffer[(MAIN_HELP_HUD_BAR_Y + MAIN_HELP_HUD_BAR_HEIGHT - 1) *
-                        DOOMRPG_LOGICAL_WIDTH + x] = neon;
-        }
-        for (y = MAIN_HELP_HUD_BAR_Y;
-             y < MAIN_HELP_HUD_BAR_Y + MAIN_HELP_HUD_BAR_HEIGHT; ++y) {
-            framebuffer[y * DOOMRPG_LOGICAL_WIDTH + left[zone]] = neon;
-            framebuffer[y * DOOMRPG_LOGICAL_WIDTH + right[zone]] = neon;
-        }
-    }
-    /* The blue 1-pixel notches are part of the actual native top HUD. */
-    for (zone = 0; zone < 2; ++zone) {
-        x = zone == 0 ? left[1] : left[2];
-        framebuffer[(MAIN_HELP_HUD_BAR_Y + 1) * DOOMRPG_LOGICAL_WIDTH + x] =
-            neon;
-        framebuffer[(MAIN_HELP_HUD_BAR_Y + MAIN_HELP_HUD_BAR_HEIGHT - 2) *
-                    DOOMRPG_LOGICAL_WIDTH + x] = neon;
-    }
-
-    }
     for (zone = 0; zone < 3; ++zone)
         helpPaintMiniHudLabel(framebuffer, labels[zone],
                               left[zone], right[zone],
@@ -574,17 +549,18 @@ static int helpPaintBottomHudIllustration(uint16_t* fb) {
                MAIN_HELP_HUD_BAR_X + x] =
                 helpBottomHudMini[y * MAIN_HELP_HUD_BAR_WIDTH + x];
 
-    /* Original icons, face and native a.bmp numbers never blink.
-     * Only a restrained blue outer hairline breathes above them. */
+    /* Only the two imaginary 3-area separators breathe, at x80/x115.
+     * Real PAK face, numbers and their entire surrounding zone stay pristine. */
     if (blue != 0U) {
-        for (x = MAIN_HELP_HUD_BAR_X;
-             x < MAIN_HELP_HUD_BAR_X + MAIN_HELP_HUD_BAR_WIDTH; ++x) {
-            const int row0 = MAIN_HELP_HUD_BAR_Y * DOOMRPG_LOGICAL_WIDTH + x;
-            const int row1 = (MAIN_HELP_HUD_BAR_Y +
-                             MAIN_HELP_HUD_BAR_HEIGHT - 1) *
-                             DOOMRPG_LOGICAL_WIDTH + x;
-            fb[row0] = (uint16_t)((fb[row0] & 0xffe0U) | blue);
-            fb[row1] = (uint16_t)((fb[row1] & 0xffe0U) | blue);
+        static const int separators[2] = {80, 115};
+        int divider;
+        for (divider = 0; divider < 2; ++divider) {
+            x = separators[divider];
+            for (y = MAIN_HELP_HUD_BAR_Y;
+                 y < MAIN_HELP_HUD_BAR_Y + MAIN_HELP_HUD_BAR_HEIGHT; ++y) {
+                uint16_t* ink = &fb[y * DOOMRPG_LOGICAL_WIDTH + x];
+                *ink = (uint16_t)((*ink & 0xffe0U) | blue);
+            }
         }
     }
     helpHudBreathStep = step;
