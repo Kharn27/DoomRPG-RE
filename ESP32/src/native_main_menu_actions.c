@@ -40,10 +40,10 @@
  * Draw once per resulting logical pixel of motion, about 5Hz, not 60 FPS. */
 #define MAIN_HELP_STAR_PERIOD_MS 157U
 #define MAIN_HELP_STAR_VIRTUAL_WIDTH 192U
-/* Seventh guide page: an 80%-scale, centred illustration, NOT the live
+/* Fourth guide page: an 80%-scale, centred illustration, NOT the live
  * top screen bar. Logical game hitboxes are 0..31 / 32..127 / 128..159.
  * Multiply by 4/5 to keep their 1:3:1 proportion in the miniature. */
-#define MAIN_HELP_HUD_PAGE_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)
+#define MAIN_HELP_HUD_PAGE_SCROLL (3 * MAIN_HELP_VISIBLE_LINES)
 #define MAIN_HELP_HUD_BAR_X 16
 #define MAIN_HELP_HUD_BAR_Y 43
 #define MAIN_HELP_HUD_BAR_WIDTH 128
@@ -510,9 +510,11 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
         if (title == NULL || caption == NULL || visible != 7)
             return 0;
         helpDrawThemedPageTitle(doomRpg, canvas, title, 12, 14);
-        /* This illustrated page deliberately uses white explanatory
-         * letters against the pulsating blue HUD; its title keeps the theme. */
-        DoomRPG_setFontColor(doomRpg, 0xffffffffU);
+        /* The illustrated page's explanatory copy shares the active theme's
+         * midpoint tone. Only the tiny labels ON the blue mini buttons
+         * remain white for contrast; the heading keeps its gradient. */
+        DoomRPG_setFontColor(doomRpg,
+                             helpColor888(helpBodyMiddleTone()));
         EspNativeCanvas_drawText(canvas, caption, 12, 27, 0);
         if (!helpPaintTopHudIllustration(framebuffer))
             return 0;
@@ -520,7 +522,8 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
             const char* label = DoomRPG_esp32MainMenuHelpLine(
                 MAIN_HELP_HUD_PAGE_SCROLL + i);
             if (label == NULL || label[0] == '\0') return 0;
-            DoomRPG_setFontColor(doomRpg, 0xffffffffU);
+            DoomRPG_setFontColor(doomRpg,
+                                 helpColor888(helpBodyMiddleTone()));
             EspNativeCanvas_drawText(canvas, label, 12,
                                      64 + (i - 2) * MAIN_HELP_LINE_HEIGHT, 0);
         }
