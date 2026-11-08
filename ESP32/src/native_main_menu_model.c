@@ -172,7 +172,7 @@ static const char* const helpLines[] = {
     "",
     "",
     "WEAPON SELECT",
-    "Tap HUD gun icon",
+    "Tap gun icon",
     "",
     "",
     "",
