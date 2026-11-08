@@ -26,6 +26,7 @@
 #include "esp_native_ambient_sprite.h"
 #include "esp_native_first_frame.h"
 #include "esp_player_view_state.h"
+#include "platform_video_config.h"
 
 #define MAP_HEADER 16U
 #define PALETTE_HEADER 4U
@@ -390,7 +391,7 @@ static int setupDrawView(Render_t* render,
     if (render == NULL || view == NULL || visibility == NULL ||
         render->framebuffer == NULL || render->columnScale == NULL ||
         render->screenWidth != SCREEN_W || render->screenHeight != SCREEN_H ||
-        render->screenX != 0 || render->screenY != 20) {
+        DOOMRPG_VIEWPORT_X != 0 || DOOMRPG_VIEWPORT_Y != 20) {
         return 0;
     }
 
@@ -415,7 +416,9 @@ static int setupDrawView(Render_t* render,
     render->viewTransY = -((viewX * render->viewSin) +
                            (viewY * render->viewCos));
     render->viewAngle = view->viewAngle;
-    render->pixels = (short*)&render->framebuffer[render->pitch * render->screenY];
+    render->pixels = (short*)&render->framebuffer[
+        render->pitch * DOOMRPG_VIEWPORT_Y +
+        DOOMRPG_VIEWPORT_X * (int)sizeof(short)];
     render->screenLeft = 0;
     render->screenTop = 0;
     render->screenRight = SCREEN_W;
