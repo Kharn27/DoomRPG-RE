@@ -624,6 +624,22 @@ static void helpDrawWeaponGridMini(uint16_t* fb) {
                 helpWeaponMini[y * MAIN_HELP_WEAPON_MINI_W + x];
 }
 
+/* The actual bottom-HUD touch target x100..159 is also illustrated,
+ * using the same five native PAK BMPs as the status-bar help page. */
+static void helpDrawWeaponButtonCue(uint16_t* fb) {
+    int x, y;
+    if (!helpBottomHudReady || fb == NULL) return;
+    /* 160x20 -> 128x16 bottom HUD: source x100 corresponds to x80
+     * within the cached miniature. Show it at x99..146, y27..38. */
+    for (y = 0; y < 12; ++y) {
+        const int sy = y * MAIN_HELP_HUD_BAR_HEIGHT / 12;
+        for (x = 0; x < 48; ++x) {
+            fb[(27 + y) * DOOMRPG_LOGICAL_WIDTH + 99 + x] =
+                helpBottomHudMini[sy * MAIN_HELP_HUD_BAR_WIDTH + 80 + x];
+        }
+    }
+}
+
 static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
     DoomCanvas_t* canvas;
     EspNativeMenuState_t* menuSystem;
@@ -658,9 +674,14 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
     if (visible > menuSystem->maxItems) visible = menuSystem->maxItems;
     end = menuSystem->scrollIndex + visible;
 
-    if (menuSystem->scrollIndex == MAIN_HELP_WEAPON_PAGE_SCROLL &&
-        !helpWeaponMiniAttempted)
-        (void)helpBuildWeaponGridMini(framebuffer);
+    if (menuSystem->scrollIndex == MAIN_HELP_WEAPON_PAGE_SCROLL) {
+        /* Also works when the user directly opens this help page without
+         * visiting BOTTOM HUD BAR first. Every source is PAK-native. */
+        if (!helpBottomHudReady)
+            (void)helpPaintBottomHudIllustration(framebuffer);
+        if (!helpWeaponMiniAttempted)
+            (void)helpBuildWeaponGridMini(framebuffer);
+    }
     if (!helpDrawStarfield(doomRpg)) return 0;
     DoomRPG_setFontColor(doomRpg, helpColor888(helpTitleTopTone()));
     EspNativeCanvas_drawText(canvas, "HELP / CYD", 12, 0, 0);
@@ -725,6 +746,7 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
         helpDrawThemedPageTitle(doomRpg, canvas, title, 12, 14);
         DoomRPG_setFontColor(doomRpg, 0xffffffffU);
         EspNativeCanvas_drawText(canvas, caption, 12, 27, 0);
+        helpDrawWeaponButtonCue(framebuffer);
         if (helpWeaponMiniReady) {
             helpDrawWeaponGridMini(framebuffer);
             EspNativeCanvas_drawText(canvas, detail, 12, 85, 0);
