@@ -26,14 +26,14 @@ def macro(name):
 start = model.index("static const char* const helpLines[]")
 end = model.index("#define MAIN_HELP_LINE_COUNT", start)
 lines = re.findall(r'^\s*"([^"]*)",$', model[start:end], re.M)
-assert len(lines) == 98
+assert len(lines) == 105
 assert len(lines) % 7 == 0
-assert [lines[p * 7] for p in range(14)] == [
+assert [lines[p * 7] for p in range(15)] == [
     "DOOM RPG ON CYD", "DOOM RPG: THE GAME", "MENU CONTROLS",
     "TURN-BASED GAME", "TOP HUD BAR", "MAIN GAMEPLAY",
     "TOP ROW: MOVE", "MIDDLE ROW: ACTION", "BOTTOM ROW: WEAPONS",
-    "ACTION / CENTER", "WEAPONS & STATUS", "SYSTEM / SAVE LOAD",
-    "TACTICAL TIPS", "ABOUT CYD PORT"]
+    "BOTTOM HUD BAR", "ACTION / CENTER", "WEAPONS & STATUS",
+    "SYSTEM / SAVE LOAD", "TACTICAL TIPS", "ABOUT CYD PORT"]
 assert lines[1:6] == [
     "Kharn27", "Erick V. Garcia", "id + Fountainhead",
     "John Carmack:", "Endless admiration!"]
@@ -48,7 +48,7 @@ hud_page = lines[4 * 7 : 5 * 7]
 assert hud_page == [
     "TOP HUD BAR", "3 VIRTUAL BUTTONS", "LEFT: game menu",
     "CENTER: pass a turn", "RIGHT: show automap", "", ""]
-assert lines[10 * 7 + 6] == "Tap gun: weapons"
+assert lines[11 * 7 + 6] == "Tap gun: weapons"
 scene_page = lines[5 * 7 : 6 * 7]
 assert scene_page == ["MAIN GAMEPLAY", "", "", "", "", "", ""]
 assert [lines[i * 7 : i * 7 + 5] for i in range(6, 9)] == [
@@ -59,7 +59,10 @@ assert [lines[i * 7 : i * 7 + 5] for i in range(6, 9)] == [
     ["BOTTOM ROW: WEAPONS", "3 BOTTOM TOUCH ZONES", "LEFT: PREV WEAPON",
      "CENTER: MOVE BACK", "RIGHT: NEXT WEAPON"]]
 assert all(lines[i * 7 + 5:i * 7 + 7] == ["", ""] for i in range(6, 9))
-assert "#define MAIN_HELP_MAX_LINES 98" in model
+assert "#define MAIN_HELP_MAX_LINES 105" in model
+assert lines[9 * 7 : 10 * 7] == [
+    "BOTTOM HUD BAR", "STATUS AT A GLANCE", "LEFT: HP + ARMOR",
+    "CENTER: FACE / AMMO", "RIGHT: DIRECTION", "", ""]
 
 assert "DOWN: controls" not in lines
 assert max(map(len, lines)) <= 20  # source font=7px/char, x=12
@@ -67,7 +70,7 @@ assert len(lines) == len(set((i, line) for i, line in enumerate(lines)))
 assert any("CYD" in line for line in lines)
 assert all(label in lines for label in (
     "DOOM RPG: THE GAME", "TURN-BASED GAME", "MAIN GAMEPLAY",
-    "TOP HUD BAR", "WEAPONS & STATUS", "SYSTEM / SAVE LOAD",
+    "TOP HUD BAR", "BOTTOM HUD BAR", "WEAPONS & STATUS", "SYSTEM / SAVE LOAD",
     "MENU CONTROLS", "TACTICAL TIPS", "ABOUT CYD PORT"))
 assert all(term in lines for term in (
     "LEFT: game menu", "CENTER: pass a turn", "RIGHT: show automap",
@@ -213,7 +216,10 @@ assert "/* The control-identification caption stays white. The three" in actions
 hud_paint_section = actions.split(
     'if (menuSystem->scrollIndex == MAIN_HELP_HUD_PAGE_SCROLL) {', 1
 )[1].split('    else if (menuSystem->scrollIndex == MAIN_HELP_SCENE_PAGE_SCROLL &&', 1)[0]
-assert 'helpDrawHudCaption(doomRpg, canvas, label, i - 2,' in hud_paint_section
+assert 'helpDrawPositionCaption(doomRpg, canvas, label, i - 2,' in hud_paint_section
+assert actions.count('helpDrawPositionCaption(doomRpg, canvas, label, i - 2,') == 2
+assert 'helpDrawPositionCaption(doomRpg, canvas, label, i - 2,' in actions
+assert 'static void helpDrawPositionCaption(' in actions
 assert 'static const int tones[3] = {1, 4, 7};' in actions
 assert 'EspNativeCanvas_drawText(canvas, prefixes[zone], 12, y, 0);' in actions
 assert '12 + (int)n * 7, y, 0);' in actions
@@ -247,16 +253,31 @@ assert 88 + 12 - 1 < 100
 
 # Breath deliberately slowed from 1.32s to 2.64s (220ms/step),
 # shared by MAIN GAMEPLAY and each instructional row, without a blind FPS loop.
-assert macro("MAIN_HELP_HUD_BREATH_STEP_MS") == 220
-assert macro("MAIN_HELP_HUD_BREATH_STEPS") == 12
+assert macro("MAIN_HELP_BREATH_STEP_MS") == 220
+assert macro("MAIN_HELP_BREATH_STEPS") == 12
 wave = [n if n <= 6 else 12 - n for n in range(12)]
 assert wave == [0, 1, 2, 3, 4, 5, 6, 5, 4, 3, 2, 1]
 assert all(0x0013 + 2 * n <= 0x001f for n in wave)
 assert all(2 <= 2 + n <= 8 for n in wave)
 assert 'const uint16_t neon = (uint16_t)(0x0013U + 2U * level);' in actions
 assert 'const uint8_t tint = (uint8_t)(2U + level);' in actions
-assert 'helpHudBreathStep == helpHudBreathIndex(now)' in actions
-assert 'helpDoomRpg->menuSystem->scrollIndex != MAIN_HELP_HUD_PAGE_SCROLL' in actions
+assert 'helpHudBreathStep == helpBreathStepAt(now)' in actions
+assert '!helpIsAnimatedHudPage(helpDoomRpg->menuSystem->scrollIndex)' in actions
+assert 'static int helpBreathStepAt(uint32_t now)' in actions
+assert 'static uint8_t helpBreathLevel(int step)' in actions
+assert 'helpBreathLevel(step)' in actions
+assert actions.count('if (level == 0U) {') == 2  # both mini HUDs fully off
+assert 'helpPaintMiniHudBacking(framebuffer)' in actions
+assert 'helpPaintMiniHudBacking(fb)' in actions
+assert 'static int helpPaintBottomHudIllustration(' in actions
+assert 'helpPaintBottomHudIllustration(framebuffer)' in actions
+assert 'MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL (9 * MAIN_HELP_VISIBLE_LINES)' in actions
+assert 'static const int separator[4] = {42, 68, 90, 117};' in actions
+assert 'helpPaintMiniHudLabel(fb, "HP30",' in actions
+assert 'helpPaintMiniHudLabel(fb, "AR20",' in actions
+assert 'helpPaintMiniHudLabel(fb, "AM12",' in actions
+assert 'helpPaintMiniHudLabel(fb, "N",' in actions
+assert 'static const int tones[3] = {1, 4, 7};' in actions
 assert 'helpHudBreathStep = step;' in actions
 assert actions.count('helpHudBreathStep = -1;') == 3  # declaration, release, start
 assert 'helpExpectedFrameFNV = finalFNV;' in actions
@@ -292,7 +313,7 @@ assert actions.count('helpSceneBreathStep = step;') == 2
 assert 'else if (menuSystem->scrollIndex == MAIN_HELP_SCENE_PAGE_SCROLL &&' in actions
 assert 'EspNativeHelpScene_isReady()' in actions
 assert 'EspNativeHelpScene_paint(' in actions
-assert 'helpSceneBreathStep == helpHudBreathIndex(now)' in actions
+assert 'helpSceneBreathStep == helpBreathStepAt(now)' in actions
 assert 'EspNativeHelpScene_reset();' in actions
 assert 'EspAssetPack_mapFlashCachedMapId()' in actions
 assert 'EspNativeHelpScene_load(cachedMapId,' in actions
@@ -392,7 +413,15 @@ for left, right in ((8, 55), (104, 151)):
 
 assert 8 <= 8 + 144 <= 155
 assert 29 + 68 - 1 < 100
+assert 'static uint16_t helpCorridorPixel(int lx, int ly)' in scene
+assert 'const int side = flank < 54;' in scene
+assert 'const int u = lx < PREVIEW_W / 2' in scene
+assert '6 + flank / 4 : 42 + flank / 4;' in scene
 assert 'ink = sampleWall(u, v);' in scene
+assert 'ink = dim565(sampleWall(u, v), 202U);' in scene
+assert 'helpCorridorPixel(lx, ly);' in scene
+assert 'helpCorridorPixel(lx, (ly - top) *' in scene
+assert 'sampleWall(lx * 63 / (PREVIEW_W - 1),' not in scene
 assert 'ink = dim565(sampleWall(u, v), light);' not in scene
 assert 'if (shift == helpSpaceShift &&' in actions
 assert 'helpExpectedFrameFNV = finalFNV;' in actions
@@ -416,6 +445,6 @@ for scroll in range(len(lines)):
     page = (clamped + 6) // 7 + 1
     assert 1 <= page <= (len(lines) + 6) // 7
 
-print("PASS HELP: 14 pages, 3 illustrated input rows after MAIN GAMEPLAY,")
-print("           220ms all-buttons-off breath, bounded 144x68+144x23 PAK scene,")
-print("           theme/flash map, original 3x3 controls and FNV release")
+print("PASS HELP: 15 pages, 3 illustrated rows, TOP/BOTTOM themed mini HUDs,")
+print("           unified 220ms off-phase, 144x68+144x23 PAK-backed corridor,")
+print("           native 3x3 controls, no allocations, FNV + title/line bounds")
