@@ -18,7 +18,6 @@
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_player_pain_visual.h"
 #include "esp_native_gameplay_present_gate.h"
-#include "esp_native_help_scene.h"
 #include "esp_native_resident_gameplay.h"
 #include "esp_native_gameplay_weapon.h"
 #include "esp_native_plane_renderer.h"
@@ -515,14 +514,6 @@ static int renderComposed(
             }
             if (painShakePainted != 0U) {
                 (void)EspNativePlayerPainVisual_shakeComposed(painShakeStep);
-            }
-            /* Keep the first *real* composed view for each map as an optional
-             * HELP illustration. Bounded 128x64 RGB565 BSS, one copy per map,
-             * no extra presentation, assets, BSP owner or gameplay mutation. */
-            if (!preview) {
-                (void)EspNativeHelpScene_captureGameplayViewport(
-                    (const uint16_t*)Esp32PlatformVideo_framebuffer(),
-                    view->targetMapId);
             }
         }
         stats->presentMicros = elapsedMicros(phaseStart);
