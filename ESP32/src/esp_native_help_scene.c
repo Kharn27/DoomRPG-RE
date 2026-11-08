@@ -315,6 +315,46 @@ static void drawActionMark(uint16_t* framebuffer, int row, int col,
     }
 }
 
+/* A single 220 ms phase with level zero leaves the wall image visible
+ * but none of the nine overlays illuminated, including weapon labels.
+ * Reused by the full 3x3 and the three row-by-row teaching pages. */
+static void helpPaintTouchCell(uint16_t* fb, int row, int col,
+                               int left, int right, int top, int bottom,
+                               uint8_t level) {
+    const uint16_t neon = row == 1 && col == 1 ? 0xf800U :
+                          row == 2 && col != 1 ? 0xffe0U :
+                          0x07e0U;
+    const uint16_t core = dim565(neon, 85U + (uint32_t)level * 27U);
+    const uint16_t halo = dim565(neon, 26U + (uint32_t)level * 9U);
+    int x, y;
+    if (level == 0U) return; /* breath off-frame: no glowing buttons */
+
+    for (x = left + 1; x < right; ++x) {
+        putGlow(fb, x, top, core);
+        putGlow(fb, x, bottom, core);
+        putGlow(fb, x, top + 1, halo);
+        putGlow(fb, x, bottom - 1, halo);
+    }
+    for (y = top + 1; y < bottom; ++y) {
+        putGlow(fb, left, y, core);
+        putGlow(fb, right, y, core);
+        putGlow(fb, left + 1, y, halo);
+        putGlow(fb, right - 1, y, halo);
+    }
+    if (row == 2 && col != 1) {
+        /* Two-line PREV/NEXT weapon hints fit both the 3x3 cells
+         * and the single-row illustrations. */
+        const uint16_t textInk = dim565(
+            neon, 170U + (uint32_t)level * 13U);
+        helpPaintWeaponCaption(fb, (left + right) / 2, top,
+                               col == 0 ? "PREV" : "NEXT", textInk);
+    }
+    else {
+        drawActionMark(fb, row, col, (left + right) / 2,
+                       (top + bottom) / 2, core);
+    }
+}
+
 int EspNativeHelpScene_paint(uint16_t* fb, uint8_t level) {
     static const int xZone[4] = {0, 48, 96, PREVIEW_W};
     static const int yZone[4] = {0, 22, 45, PREVIEW_H};
@@ -350,48 +390,41 @@ int EspNativeHelpScene_paint(uint16_t* fb, uint8_t level) {
         }
     }
 
-    /* Same 3x3 game control ordering (0..52/53..105/106..159,
-     * y20..45/46..72/73..99), fitted to a larger 144x68 preview.
-     * Every region retains its native feedback color. */
+    /* Exact 3x3 native touch order; no active world/map renderer. */
     for (row = 0; row < 3; ++row) {
         for (col = 0; col < 3; ++col) {
-            const uint16_t neon = row == 1 && col == 1 ? 0xf800U :
-                                  row == 2 && col != 1 ? 0xffe0U :
-                                  0x07e0U;
-            const uint16_t core = dim565(neon, 85U + (uint32_t)level * 27U);
-            const uint16_t halo = dim565(neon, 26U + (uint32_t)level * 9U);
             const int left = PREVIEW_X + xZone[col];
             const int right = PREVIEW_X + xZone[col + 1] - 1;
             const int top = PREVIEW_Y + yZone[row];
             const int bottom = PREVIEW_Y + yZone[row + 1] - 1;
-            int x, y;
-            for (x = left + 1; x < right; ++x) {
-                putGlow(fb, x, top, core);
-                putGlow(fb, x, bottom, core);
-                putGlow(fb, x, top + 1, halo);
-                putGlow(fb, x, bottom - 1, halo);
-            }
-            for (y = top + 1; y < bottom; ++y) {
-                putGlow(fb, left, y, core);
-                putGlow(fb, right, y, core);
-                putGlow(fb, left + 1, y, halo);
-                putGlow(fb, right - 1, y, halo);
-            }
-            if (row == 2 && col != 1) {
-                /* WPN/PREV and WPN/NEXT replace the ambiguous yellow arrows.
-                 * Two 7px lines plus a 1px gap fit the 18px-high cells. */
-                const uint16_t textInk = dim565(
-                    neon, 170U + (uint32_t)level * 13U);
-                helpPaintWeaponCaption(fb, (left + right) / 2, top,
-                                       col == 0 ? "PREV" : "NEXT",
-                                       textInk);
-            }
-            else {
-                drawActionMark(fb, row, col,
-                               (left + right) / 2,
-                               (top + bottom) / 2, core);
-            }
+            helpPaintTouchCell(fb, row, col, left, right, top, bottom, level);
         }
+    }
+    return 1;
+}
+
+/* x8..151, y39..61. One horizontal slice of the same touch vocabulary:
+ * identical symbols, neon/weapon captions and 48px cells as MAIN GAMEPLAY.
+ * Draws directly into the existing framebuffer over ONE sampled PAK texture. */
+int EspNativeHelpScene_paintRow(uint16_t* fb, uint8_t sourceRow,
+                                uint8_t level) {
+    static const int xZone[4] = {0, 48, 96, PREVIEW_W};
+    const int top = 39, bottom = 61;
+    int lx, ly, col;
+    if (fb == NULL || !material.ready || sourceRow > 2U || level > 6U)
+        return 0;
+    for (ly = top; ly <= bottom; ++ly) {
+        for (lx = 0; lx < PREVIEW_W; ++lx) {
+            fb[ly * DOOMRPG_LOGICAL_WIDTH + PREVIEW_X + lx] =
+                sampleWall(lx * 63 / (PREVIEW_W - 1),
+                           (ly - top) * 63 / (bottom - top));
+        }
+    }
+    for (col = 0; col < 3; ++col) {
+        helpPaintTouchCell(fb, sourceRow, col,
+                           PREVIEW_X + xZone[col],
+                           PREVIEW_X + xZone[col + 1] - 1,
+                           top, bottom, level);
     }
     return 1;
 }
