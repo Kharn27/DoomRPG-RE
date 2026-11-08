@@ -95,6 +95,7 @@ static uint8_t helpBottomHudReady;
 static uint16_t helpWeaponMini[MAIN_HELP_WEAPON_MINI_W *
                                MAIN_HELP_WEAPON_MINI_H];
 static uint8_t helpWeaponMiniReady;
+static uint8_t helpWeaponMiniAttempted;
 
 static void helpStop(void) {
     if (helpSpaceOwner != NULL) {
@@ -113,6 +114,7 @@ static void helpStop(void) {
     helpSceneBreathStep = -1;
     helpBottomHudReady = 0U;
     helpWeaponMiniReady = 0U;
+    helpWeaponMiniAttempted = 0U;
     EspNativeHelpScene_reset();
 }
 
@@ -145,6 +147,7 @@ static int helpStart(DoomRPG_t* doomRpg) {
     helpSceneBreathStep = -1;
     helpBottomHudReady = 0U;
     helpWeaponMiniReady = 0U;
+    helpWeaponMiniAttempted = 0U;
     /* Once the gameplay lease has closed, this read-only peek still finds
      * the last COMMITTED raw-flash map header. It never stages/loads a map. */
     {
@@ -567,6 +570,60 @@ static int helpPaintBottomHudIllustration(uint16_t* fb) {
     return 1;
 }
 
+/* Build the exact native 4x3 WEAPONS panel from its real sprite PAK
+ * decoder, *without* a resident player, world, modal, turn or gameplay UI.
+ * The compact immutable entity-type catalog may be initialized once from
+ * entities.db; the normal game uses that same catalog later. During this
+ * one-time HELP paint, 160x120 RGB565 serves as a scratch surface. The next
+ * helpDrawStarfield() immediately replaces it before presentation. */
+static int helpBuildWeaponGridMini(uint16_t* framebuffer) {
+    EspAssetPackEntry entities;
+    EspNativeGameplayPlayerState demo;
+    int x, y, ok = 0;
+    if (helpWeaponMiniReady) return 1;
+    if (helpWeaponMiniAttempted || framebuffer == NULL ||
+        EspAssetPack_isOpen()) return 0;
+    helpWeaponMiniAttempted = 1U;
+    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) return 0;
+    if (!EspEntityDefTypeCatalog_isReady() &&
+        (!EspAssetPack_findEntry("/entities.db", &entities) ||
+         !EspEntityDefTypeCatalog_buildFromPackEntry(&entities)))
+        goto done;
+    memset(&demo, 0, sizeof(demo));
+    demo.active = 1U;
+    demo.weapon = 2U;   /* Pistol equipped: sample only, never applied. */
+    demo.weapons = 0x0007U; /* Axe, Fire Extinguisher and Pistol. */
+    if (!EspNativeGameplayHubWeaponGrid_paint(framebuffer, &demo, 2U))
+        goto done;
+    /* Source grid has EXACT native bounds 2..157/y35..118. Downsample
+     * nearest-neighbour to 128x42 in static BSS, no full-screen buffer. */
+    for (y = 0; y < MAIN_HELP_WEAPON_MINI_H; ++y) {
+        const int sy = 35 + y * 84 / MAIN_HELP_WEAPON_MINI_H;
+        for (x = 0; x < MAIN_HELP_WEAPON_MINI_W; ++x) {
+            const int sx = 2 + x * 156 / MAIN_HELP_WEAPON_MINI_W;
+            helpWeaponMini[y * MAIN_HELP_WEAPON_MINI_W + x] =
+                framebuffer[sy * DOOMRPG_LOGICAL_WIDTH + sx];
+        }
+    }
+    helpWeaponMiniReady = 1U;
+    ok = 1;
+done:
+    EspAssetPack_close();
+    printf("[MAINHELP] WEAPON-PREVIEW ready=%u source=real-native-grid/PAK icons=12 layout=4x3 mini=128x42 bytes=%u world=no playerMutation=no packClosed=%u\n",
+           ok ? 1U : 0U, (unsigned int)sizeof(helpWeaponMini),
+           EspAssetPack_isOpen() ? 0U : 1U);
+    return ok;
+}
+static void helpDrawWeaponGridMini(uint16_t* fb) {
+    int x, y;
+    if (fb == NULL || !helpWeaponMiniReady) return;
+    for (y = 0; y < MAIN_HELP_WEAPON_MINI_H; ++y)
+        for (x = 0; x < MAIN_HELP_WEAPON_MINI_W; ++x)
+            fb[(MAIN_HELP_WEAPON_MINI_Y + y) * DOOMRPG_LOGICAL_WIDTH +
+               MAIN_HELP_WEAPON_MINI_X + x] =
+                helpWeaponMini[y * MAIN_HELP_WEAPON_MINI_W + x];
+}
+
 static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
     DoomCanvas_t* canvas;
     EspNativeMenuState_t* menuSystem;
@@ -601,6 +658,9 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
     if (visible > menuSystem->maxItems) visible = menuSystem->maxItems;
     end = menuSystem->scrollIndex + visible;
 
+    if (menuSystem->scrollIndex == MAIN_HELP_WEAPON_PAGE_SCROLL &&
+        !helpWeaponMiniAttempted)
+        (void)helpBuildWeaponGridMini(framebuffer);
     if (!helpDrawStarfield(doomRpg)) return 0;
     DoomRPG_setFontColor(doomRpg, helpColor888(helpTitleTopTone()));
     EspNativeCanvas_drawText(canvas, "HELP / CYD", 12, 0, 0);
@@ -651,6 +711,28 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
             if (label == NULL || label[0] == '\0') return 0;
             helpDrawPositionCaption(doomRpg, canvas, label, i - 2,
                                     64 + (i - 2) * MAIN_HELP_LINE_HEIGHT);
+        }
+    }
+    else if (menuSystem->scrollIndex == MAIN_HELP_WEAPON_PAGE_SCROLL) {
+        const char* title = DoomRPG_esp32MainMenuHelpLine(
+            MAIN_HELP_WEAPON_PAGE_SCROLL);
+        const char* caption = DoomRPG_esp32MainMenuHelpLine(
+            MAIN_HELP_WEAPON_PAGE_SCROLL + 1);
+        const char* detail = DoomRPG_esp32MainMenuHelpLine(
+            MAIN_HELP_WEAPON_PAGE_SCROLL + 5);
+        if (title == NULL || caption == NULL || detail == NULL ||
+            visible != MAIN_HELP_VISIBLE_LINES) return 0;
+        helpDrawThemedPageTitle(doomRpg, canvas, title, 12, 14);
+        DoomRPG_setFontColor(doomRpg, 0xffffffffU);
+        EspNativeCanvas_drawText(canvas, caption, 12, 27, 0);
+        if (helpWeaponMiniReady) {
+            helpDrawWeaponGridMini(framebuffer);
+            EspNativeCanvas_drawText(canvas, detail, 12, 85, 0);
+        }
+        else {
+            /* Corrupt/missing PAK fails closed, never a fabricated weapon. */
+            EspNativeCanvas_drawText(
+                canvas, "Preview unavailable", 12, 54, 0);
         }
     }
     else if (menuSystem->scrollIndex == MAIN_HELP_SCENE_PAGE_SCROLL &&
