@@ -49,9 +49,8 @@ for path in sorted((NATIVE / "src").rglob("*")):
 for name in ("esp_native_first_frame.c", "esp_native_bsp_visibility.c"):
     code = (NATIVE / "src" / name).read_text()
     assert code.count(".skipCull = ESP_NATIVE_BSP_CULL_STANDARD,") == 1, name
-    assert not re.search(
-        r"(?<!\w)\.skipCull\s*=\s*(?!ESP_NATIVE_BSP_CULL_STANDARD)", code
-    ), name
+    assignments = re.findall(r"\.skipCull\s*=\s*([A-Za-z_][A-Za-z0-9_]*)", code)
+    assert assignments == ["ESP_NATIVE_BSP_CULL_STANDARD"], (name, assignments)
 
 # Compile the actual public header, rather than trusting only a textual
 # guard. Negative compilations are expected: the field must not exist in any
