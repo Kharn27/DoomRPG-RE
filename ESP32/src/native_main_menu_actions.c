@@ -9,6 +9,8 @@
 #include "Render.h"
 #include "esp_native_audio_intent.h"
 #include "esp_native_canvas_text.h"
+#include "esp_main_menu_skin.h"
+#include "platform_video_c_bridge.h"
 
 #include "native_main_menu_actions.h"
 #include "native_main_menu_load_action.h"
@@ -25,14 +27,110 @@
 #include "platform_video_config.h"
 
 #define MAIN_HELP_LINE_HEIGHT 12
-#define MAIN_HELP_CONTENT_BOTTOM 95
-#define MAIN_HELP_VISIBLE_LINES 8
-#define MAIN_HELP_FOOTER_TOP 96
-#define MAIN_HELP_BACK_RIGHT 52
-#define MAIN_HELP_UP_RIGHT 105
+#define MAIN_HELP_VISIBLE_LINES 7
+#define MAIN_HELP_FOOTER_TOP 100
+#define MAIN_HELP_BACK_LEFT 1
+#define MAIN_HELP_BACK_RIGHT 51
+#define MAIN_HELP_UP_LEFT 54
+#define MAIN_HELP_UP_RIGHT 104
+#define MAIN_HELP_DOWN_LEFT 107
+#define MAIN_HELP_DOWN_RIGHT 158
+#define MAIN_HELP_BUTTON_BOTTOM 119
+/* c.bmp is the original scrolling starfield (192 virtual pixels wide).
+ * Draw once per resulting logical pixel of motion, about 5Hz, not 60 FPS. */
+#define MAIN_HELP_STAR_PERIOD_MS 157U
+#define MAIN_HELP_STAR_VIRTUAL_WIDTH 192U
 
 static DoomRPG_t* helpDoomRpg;
 static uint32_t helpExpectedFrameFNV;
+static Image_t helpSpaceBG;
+static DoomRPG_t* helpSpaceOwner;
+static uint32_t helpSpaceEpoch;
+static int helpSpaceShift;
+static int helpSpaceActive;
+
+static void helpStop(void) {
+    if (helpSpaceOwner != NULL) {
+        DoomRPG_freeImage(helpSpaceOwner, &helpSpaceBG);
+    }
+    SDL_memset(&helpSpaceBG, 0, sizeof(helpSpaceBG));
+    helpSpaceOwner = NULL;
+    helpSpaceEpoch = 0U;
+    helpSpaceShift = 0;
+    helpSpaceActive = 0;
+}
+
+static int helpStart(DoomRPG_t* doomRpg) {
+    if (doomRpg == NULL || helpSpaceOwner != NULL || helpSpaceActive)
+        return 0;
+    /* Uses the same native PAK-backed c.bmp as ST_INTRO, but does not
+     * enter ST_INTRO or own any intro story/animation state. */
+    helpSpaceOwner = doomRpg;
+    DoomRPG_createImage(doomRpg, "c.bmp", false, &helpSpaceBG);
+    if (helpSpaceBG.imgBitmap == NULL) {
+        printf("[MAINHELP] FAILED c.bmp backing image allocation/load\n");
+        helpStop();
+        return 0;
+    }
+    helpSpaceEpoch = DoomRPG_GetUpTimeMS();
+    helpSpaceShift = -1;
+    helpSpaceActive = 1;
+    printf("[MAINHELP] BACKGROUND asset=c.bmp source=pak scroll=intro-157ms/192virtual owner=help\n");
+    return 1;
+}
+
+static int helpDrawStarfield(DoomRPG_t* doomRpg) {
+    uint16_t* framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
+    const size_t bytes = Esp32PlatformVideo_framebufferSizeBytes();
+    const uint32_t elapsed = DoomRPG_GetUpTimeMS() - helpSpaceEpoch;
+    const int phase = (int)((elapsed / MAIN_HELP_STAR_PERIOD_MS) %
+                            MAIN_HELP_STAR_VIRTUAL_WIDTH);
+    const int shift = (phase * DOOMRPG_LOGICAL_WIDTH) /
+                      (int)MAIN_HELP_STAR_VIRTUAL_WIDTH;
+    SDL_Rect primary = {-shift, 0, DOOMRPG_LOGICAL_WIDTH,
+                        DOOMRPG_LOGICAL_HEIGHT};
+    SDL_Rect wrap = {DOOMRPG_LOGICAL_WIDTH - shift, 0,
+                     DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT};
+    uint16_t accent = EspMainMenuSkin_uiAccent();
+    uint16_t dimAccent = EspMainMenuSkin_uiAccentDim();
+    int x, y;
+
+    if (!helpSpaceActive || helpSpaceOwner != doomRpg ||
+        helpSpaceBG.imgBitmap == NULL || framebuffer == NULL ||
+        bytes != (size_t)DOOMRPG_LOGICAL_WIDTH *
+                     DOOMRPG_LOGICAL_HEIGHT * sizeof(uint16_t))
+        return 0;
+
+    if (doomRpg->graphSetCliping) DoomRPG_setClipFalse(doomRpg);
+    if (SDL_RenderCopy(NULL, helpSpaceBG.imgBitmap, NULL, &primary) != 0 ||
+        (shift > 0 && SDL_RenderCopy(NULL, helpSpaceBG.imgBitmap,
+                                     NULL, &wrap) != 0))
+        return 0;
+
+    /* Translucent dark reading window: edit the ONE shared RGB565 frame,
+     * no alpha texture/overlay allocation and no extra framebuffer. */
+    for (y = 13; y <= 98; ++y) {
+        for (x = 5; x <= 154; ++x) {
+            uint16_t* pixel = &framebuffer[y * DOOMRPG_LOGICAL_WIDTH + x];
+            *pixel = (uint16_t)((*pixel >> 1) & 0x7befU);
+        }
+        framebuffer[y * DOOMRPG_LOGICAL_WIDTH + 5] = dimAccent;
+        framebuffer[y * DOOMRPG_LOGICAL_WIDTH + 154] = dimAccent;
+    }
+    for (x = 5; x <= 154; ++x) {
+        framebuffer[12 * DOOMRPG_LOGICAL_WIDTH + x] = accent;
+        framebuffer[99 * DOOMRPG_LOGICAL_WIDTH + x] = dimAccent;
+    }
+    helpSpaceShift = shift;
+    return 1;
+}
+
+static uint32_t helpColor888(uint16_t ink) {
+    uint32_t r = ((uint32_t)((ink >> 11) & 31U) * 255U) / 31U;
+    uint32_t g = ((uint32_t)((ink >> 5) & 63U) * 255U) / 63U;
+    uint32_t b = ((uint32_t)(ink & 31U) * 255U) / 31U;
+    return 0xff000000U | (r << 16) | (g << 8) | b;
+}
 
 int DoomRPG_esp32MainMenuReturnToMain(struct DoomRPG_s* doomRpgBase,
                                       int expectedChildMenu,
@@ -127,100 +225,136 @@ int DoomRPG_esp32MainMenuReturnToMain(struct DoomRPG_s* doomRpgBase,
 }
 
 static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
-    DoomCanvas_t* canvas = doomRpg->doomCanvas;
-    EspNativeMenuState_t* menuSystem = doomRpg->menuSystem;
-    int visible;
-    int maxScroll;
-    int end;
-    int i;
-    int x;
-    int y;
+    DoomCanvas_t* canvas;
+    EspNativeMenuState_t* menuSystem;
+    uint16_t* framebuffer;
+    int visible, maxScroll, end, i, y;
+    char page[12];
     uint32_t frameFNV;
 
     if (outFrameFNV != NULL) *outFrameFNV = 0U;
-    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
-        menuSystem->menu != MENU_MAIN_HELP_ABOUT ||
-        menuSystem->type != 5 ||
-        menuSystem->oldMenu != MENU_MAIN ||
-        menuSystem->numItems <= 0 ||
-        menuSystem->numItems != DoomRPG_esp32MainMenuHelpLineCount()) {
+    if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
+        doomRpg->menuSystem == NULL || !helpSpaceActive ||
+        !DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg))
         return 0;
-    }
+    canvas = doomRpg->doomCanvas;
+    menuSystem = doomRpg->menuSystem;
+    framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
+    if (menuSystem->menu != MENU_MAIN_HELP_ABOUT ||
+        menuSystem->type != 5 || menuSystem->oldMenu != MENU_MAIN ||
+        menuSystem->numItems <= 0 ||
+        menuSystem->numItems != DoomRPG_esp32MainMenuHelpLineCount() ||
+        framebuffer == NULL)
+        return 0;
 
     menuSystem->maxItems = MAIN_HELP_VISIBLE_LINES;
     maxScroll = menuSystem->numItems > menuSystem->maxItems
-                    ? menuSystem->numItems - menuSystem->maxItems
-                    : 0;
+                    ? menuSystem->numItems - menuSystem->maxItems : 0;
     if (menuSystem->scrollIndex < 0) menuSystem->scrollIndex = 0;
-    if (menuSystem->scrollIndex > maxScroll) {
+    if (menuSystem->scrollIndex > maxScroll)
         menuSystem->scrollIndex = maxScroll;
-    }
     menuSystem->selectedIndex = menuSystem->scrollIndex;
-
     visible = menuSystem->numItems - menuSystem->scrollIndex;
     if (visible > menuSystem->maxItems) visible = menuSystem->maxItems;
     end = menuSystem->scrollIndex + visible;
 
-    DoomRPG_setColor(doomRpg, 0x000000);
-    DoomRPG_fillRect(doomRpg,
-                     0,
-                     0,
-                     DOOMRPG_CANVAS_WIDTH,
-                     DOOMRPG_CANVAS_HEIGHT);
-    DoomRPG_setFontColor(doomRpg, 0xffffffff);
+    if (!helpDrawStarfield(doomRpg)) return 0;
+    DoomRPG_setFontColor(doomRpg, helpColor888(EspMainMenuSkin_uiInk()));
+    EspNativeCanvas_drawText(canvas, "HELP / CYD", 12, 0, 0);
+    SDL_snprintf(page, sizeof(page), "%d/%d",
+                 (menuSystem->scrollIndex + MAIN_HELP_VISIBLE_LINES - 1) /
+                     MAIN_HELP_VISIBLE_LINES + 1,
+                 (menuSystem->numItems + MAIN_HELP_VISIBLE_LINES - 1) /
+                     MAIN_HELP_VISIBLE_LINES);
+    EspNativeCanvas_drawText(canvas, page, 121, 0, 0);
 
-    x = DOOMRPG_CANVAS_CENTER_X - 64;
-    y = 0;
+    DoomRPG_setFontColor(doomRpg, 0xffffffffU);
+    y = 14;
     for (i = menuSystem->scrollIndex; i < end; ++i) {
         const char* line = DoomRPG_esp32MainMenuHelpLine(i);
         if (line == NULL) return 0;
-        if (line[0] != '\0') {
-            EspNativeCanvas_drawText(canvas, line, x, y, 0);
-        }
+        if (line[0] != '\0') EspNativeCanvas_drawText(canvas, line, 12, y, 0);
         y += MAIN_HELP_LINE_HEIGHT;
     }
+    /* Exactly the finger hitboxes below: each chassis stays 100..119.
+     * Shared painter gives CLASSIC/INFERNO/PHOSPHORE the same industrial
+     * relief and 9-row glyph gradients as LOAD GAME. */
+    if (!EspMainMenuSkin_paintPlate(framebuffer, DOOMRPG_LOGICAL_WIDTH,
+            DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
+            MAIN_HELP_BACK_LEFT, MAIN_HELP_FOOTER_TOP,
+            MAIN_HELP_BACK_RIGHT, MAIN_HELP_BUTTON_BOTTOM,
+            ESP_MAIN_MENU_SKIN_IDLE) ||
+        !EspMainMenuSkin_paintText(framebuffer, DOOMRPG_LOGICAL_WIDTH,
+            DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
+            MAIN_HELP_BACK_LEFT, MAIN_HELP_FOOTER_TOP,
+            MAIN_HELP_BACK_RIGHT, MAIN_HELP_BUTTON_BOTTOM,
+            "BACK", 0, 1) ||
+        !EspMainMenuSkin_paintPlate(framebuffer, DOOMRPG_LOGICAL_WIDTH,
+            DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
+            MAIN_HELP_UP_LEFT, MAIN_HELP_FOOTER_TOP,
+            MAIN_HELP_UP_RIGHT, MAIN_HELP_BUTTON_BOTTOM,
+            ESP_MAIN_MENU_SKIN_IDLE) ||
+        !EspMainMenuSkin_paintText(framebuffer, DOOMRPG_LOGICAL_WIDTH,
+            DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
+            MAIN_HELP_UP_LEFT, MAIN_HELP_FOOTER_TOP,
+            MAIN_HELP_UP_RIGHT, MAIN_HELP_BUTTON_BOTTOM,
+            "UP", 0, menuSystem->scrollIndex > 0) ||
+        !EspMainMenuSkin_paintPlate(framebuffer, DOOMRPG_LOGICAL_WIDTH,
+            DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
+            MAIN_HELP_DOWN_LEFT, MAIN_HELP_FOOTER_TOP,
+            MAIN_HELP_DOWN_RIGHT, MAIN_HELP_BUTTON_BOTTOM,
+            ESP_MAIN_MENU_SKIN_IDLE) ||
+        !EspMainMenuSkin_paintText(framebuffer, DOOMRPG_LOGICAL_WIDTH,
+            DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
+            MAIN_HELP_DOWN_LEFT, MAIN_HELP_FOOTER_TOP,
+            MAIN_HELP_DOWN_RIGHT, MAIN_HELP_BUTTON_BOTTOM,
+            "DOWN", 0, menuSystem->scrollIndex < maxScroll))
+        return 0;
 
-    /* Permanent finger-first footer. Keeping it outside the scrolling text
-     * makes all 83 help lines reachable without importing MenuSystem_paint().
-     */
-    DoomRPG_setColor(doomRpg, 0x404040);
-    DoomRPG_drawLine(doomRpg,
-                     0,
-                     MAIN_HELP_FOOTER_TOP,
-                     DOOMRPG_LOGICAL_WIDTH - 1,
-                     MAIN_HELP_FOOTER_TOP);
-    DoomRPG_drawLine(doomRpg,
-                     MAIN_HELP_BACK_RIGHT + 1,
-                     MAIN_HELP_FOOTER_TOP,
-                     MAIN_HELP_BACK_RIGHT + 1,
-                     DOOMRPG_LOGICAL_HEIGHT - 1);
-    DoomRPG_drawLine(doomRpg,
-                     MAIN_HELP_UP_RIGHT + 1,
-                     MAIN_HELP_FOOTER_TOP,
-                     MAIN_HELP_UP_RIGHT + 1,
-                     DOOMRPG_LOGICAL_HEIGHT - 1);
-
-    DoomRPG_setFontColor(doomRpg, 0xffffffff);
-    EspNativeCanvas_drawText(canvas, "BACK", 8, 102, 0);
-    EspNativeCanvas_drawText(canvas, "UP", 70, 102, 0);
-    EspNativeCanvas_drawText(canvas, "DOWN", 118, 102, 0);
-    DoomRPG_setFontColor(doomRpg, 0xffffffff);
-
+    DoomRPG_setFontColor(doomRpg, 0xffffffffU);
     frameFNV = DoomRPG_esp32MainMenuFramebufferHash(doomRpg->render);
     if (frameFNV == 0U) return 0;
-
     SDL_RenderPresent(NULL);
     if (outFrameFNV != NULL) *outFrameFNV = frameFNV;
-
-    printf("[MAINHELP] PAINT lines=%d visible=%d range=%d..%d maxItems=%d maxScroll=%d framebufferFNV=%08x background=opaque-black renderer=native-list footer=BACK|UP|DOWN\n",
-           menuSystem->numItems,
-           visible,
-           menuSystem->scrollIndex,
+    printf("[MAINHELP] PAINT lines=%d visible=%d range=%d..%d maxScroll=%d frame=%08x background=intro-c.bmp shift=%d buttons=industrial\n",
+           menuSystem->numItems, visible, menuSystem->scrollIndex,
            end > menuSystem->scrollIndex ? end - 1 : menuSystem->scrollIndex,
-           menuSystem->maxItems,
-           maxScroll,
-           (unsigned int)frameFNV);
+           maxScroll, (unsigned int)frameFNV, helpSpaceShift);
     return 1;
+}
+
+void DoomRPG_esp32MainMenuHelpService(void) {
+    uint32_t now, finalFNV = 0U;
+    int phase, shift;
+    if (!helpSpaceActive) return;
+    if (helpDoomRpg == NULL || helpDoomRpg != helpSpaceOwner ||
+        helpDoomRpg->menuSystem == NULL ||
+        helpDoomRpg->menuSystem->menu != MENU_MAIN_HELP_ABOUT ||
+        !DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(helpDoomRpg)) {
+        printf("[MAINHELP] STOP invalid animation ownership\n");
+        helpStop();
+        helpDoomRpg = NULL;
+        helpExpectedFrameFNV = 0U;
+        PlatformInput_setTapCallback(NULL);
+        return;
+    }
+    now = DoomRPG_GetUpTimeMS();
+    phase = (int)(((now - helpSpaceEpoch) / MAIN_HELP_STAR_PERIOD_MS) %
+                  MAIN_HELP_STAR_VIRTUAL_WIDTH);
+    shift = (phase * DOOMRPG_LOGICAL_WIDTH) /
+            (int)MAIN_HELP_STAR_VIRTUAL_WIDTH;
+    if (shift == helpSpaceShift) return;
+    if (!paintHelp(helpDoomRpg, &finalFNV)) {
+        DoomRPG_t* owner = helpDoomRpg;
+        printf("[MAINHELP] FAILED animation repaint\n");
+        helpStop();
+        helpDoomRpg = NULL;
+        helpExpectedFrameFNV = 0U;
+        PlatformInput_setTapCallback(NULL);
+        DoomRPG_esp32MainMenuRecover(owner, "help-animation-repaint");
+        return;
+    }
+    helpExpectedFrameFNV = finalFNV;
 }
 
 static void helpTap(int16_t screenX,
@@ -256,6 +390,7 @@ static void helpTap(int16_t screenX,
         PlatformInput_setTapCallback(NULL);
         helpDoomRpg = NULL;
         helpExpectedFrameFNV = 0U;
+        helpStop();
         DoomRPG_esp32MainMenuRecover(doomRpg, "help-touch-precondition");
         return;
     }
@@ -270,14 +405,17 @@ static void helpTap(int16_t screenX,
            menuSystem->scrollIndex,
            (unsigned int)before);
 
-    if (logicalY < MAIN_HELP_FOOTER_TOP) {
+    if (logicalY < MAIN_HELP_FOOTER_TOP ||
+        logicalY > MAIN_HELP_BUTTON_BOTTOM) {
         printf("[MAINHELP] CONTENT tap=no-action footerTop=%d\n",
                MAIN_HELP_FOOTER_TOP);
         return;
     }
 
-    if (logicalX <= MAIN_HELP_BACK_RIGHT) {
+    if (logicalX >= MAIN_HELP_BACK_LEFT &&
+        logicalX <= MAIN_HELP_BACK_RIGHT) {
         PlatformInput_setTapCallback(NULL);
+        helpStop();
 
         if (!DoomRPG_esp32MainMenuReturnToMain(
                 doomRpg,
@@ -304,14 +442,16 @@ static void helpTap(int16_t screenX,
                     ? menuSystem->numItems - MAIN_HELP_VISIBLE_LINES
                     : 0;
 
-    if (logicalX <= MAIN_HELP_UP_RIGHT) {
+    if (logicalX >= MAIN_HELP_UP_LEFT &&
+        logicalX <= MAIN_HELP_UP_RIGHT) {
         menuSystem->scrollIndex -= MAIN_HELP_VISIBLE_LINES;
         if (menuSystem->scrollIndex < 0) menuSystem->scrollIndex = 0;
         printf("[MAINHELP] PAGE-UP scroll=%d->%d\n",
                beforeScroll,
                menuSystem->scrollIndex);
     }
-    else {
+    else if (logicalX >= MAIN_HELP_DOWN_LEFT &&
+             logicalX <= MAIN_HELP_DOWN_RIGHT) {
         menuSystem->scrollIndex += MAIN_HELP_VISIBLE_LINES;
         if (menuSystem->scrollIndex > maxScroll) {
             menuSystem->scrollIndex = maxScroll;
@@ -322,6 +462,8 @@ static void helpTap(int16_t screenX,
                maxScroll);
     }
 
+    else return; /* gaps between plates are deliberately not clickable */
+
     menuSystem->selectedIndex = menuSystem->scrollIndex;
     if (!paintHelp(doomRpg, &finalFNV)) {
         printf("[MAINHELP] FAILED repaint scroll=%d\n",
@@ -329,6 +471,7 @@ static void helpTap(int16_t screenX,
         PlatformInput_setTapCallback(NULL);
         helpDoomRpg = NULL;
         helpExpectedFrameFNV = 0U;
+        helpStop();
         DoomRPG_esp32MainMenuRecover(doomRpg, "help-repaint-failed");
         return;
     }
@@ -369,8 +512,9 @@ static int activateHelp(DoomRPG_t* doomRpg) {
     (void)EspNativeAudioIntent_publish(5046U, 0U, 3U);
     if (!DoomRPG_esp32MainMenuModelEnter(
             doomRpg, MENU_MAIN_HELP_ABOUT) ||
-        !paintHelp(doomRpg, &helpFNV)) {
+        !helpStart(doomRpg) || !paintHelp(doomRpg, &helpFNV)) {
         printf("[MAINHELP] FAILED model/presentation\n");
+        helpStop();
         return 0;
     }
 
