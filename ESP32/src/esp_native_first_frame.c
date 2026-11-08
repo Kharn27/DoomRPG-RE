@@ -84,6 +84,8 @@ typedef struct FirstFrameWork_s {
     uint32_t lineCandidates;
     /* Native per-frame diagnostic: never part of the Render shell. */
     uint32_t nodesTraversed;
+    /* Current source BSP line for fail-closed wall/span diagnostics. */
+    uint32_t diagnosticLineIndex;
     uint32_t leafNodes;
     uint32_t wallRequests;
     uint32_t wallDraws;
@@ -113,7 +115,6 @@ typedef struct RenderScratch_s {
     int screenTop;
     int screenRight;
     int screenBottom;
-    int numLines;
     short* pixels;
     int columnScale[MAX_SCREEN_WIDTH];
 } RenderScratch;
@@ -432,7 +433,6 @@ static void saveRenderScratch(Render_t* render, RenderScratch* scratch) {
     scratch->screenTop = render->screenTop;
     scratch->screenRight = render->screenRight;
     scratch->screenBottom = render->screenBottom;
-    scratch->numLines = render->numLines;
     scratch->pixels = render->pixels;
     if (render->columnScale != NULL && render->screenWidth <= (int)MAX_SCREEN_WIDTH) {
         memcpy(scratch->columnScale,
@@ -456,7 +456,6 @@ static void restoreRenderScratch(Render_t* render, const RenderScratch* scratch)
     render->screenTop = scratch->screenTop;
     render->screenRight = scratch->screenRight;
     render->screenBottom = scratch->screenBottom;
-    render->numLines = scratch->numLines;
     render->pixels = scratch->pixels;
     if (render->columnScale != NULL && render->screenWidth <= (int)MAX_SCREEN_WIDTH) {
         memcpy(render->columnScale,
@@ -768,7 +767,7 @@ static int sampleWallSpan(FirstFrameWork* work,
     if (x < render->screenLeft || x >= render->screenRight ||
         y < render->screenTop || y >= render->screenBottom) {
         RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_SPAN_SCREEN,
-                             render->numLines,
+                             work->diagnosticLineIndex,
                              source->logicalId,
                              source->actualId,
                              0U,
@@ -790,7 +789,7 @@ static int sampleWallSpan(FirstFrameWork* work,
 
         if (localPosition < 0) {
             RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_SPAN_NEGATIVE,
-                                 render->numLines,
+                                 work->diagnosticLineIndex,
                                  source->logicalId,
                                  source->actualId,
                                  0U,
@@ -827,7 +826,7 @@ static int sampleWallSpan(FirstFrameWork* work,
             }
             else {
                 RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_SPAN_OOB,
-                                     render->numLines,
+                                     work->diagnosticLineIndex,
                                      source->logicalId,
                                      source->actualId,
                                      0U,
@@ -885,7 +884,7 @@ static int drawProjectedWall(FirstFrameWork* work,
     while (i5 < i6) {
         if (i8 <= 0) {
             RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_WALL_DEPTH,
-                                 render->numLines,
+                                 work->diagnosticLineIndex,
                                  source->logicalId,
                                  source->actualId,
                                  (uint32_t)line->flags,
@@ -934,7 +933,7 @@ static int drawProjectedWall(FirstFrameWork* work,
                 }
                 else {
                     RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_WALL_RASTER,
-                                         render->numLines,
+                                         work->diagnosticLineIndex,
                                          source->logicalId,
                                          source->actualId,
                                          (uint32_t)line->flags,
@@ -1070,7 +1069,7 @@ static int drawLine(FirstFrameWork* work, uint32_t lineIndex) {
         return 0;
     }
     projected.texture = (short)source->actualId;
-    work->render->numLines = (int)lineIndex;
+    work->diagnosticLineIndex = lineIndex;
     ++work->wallRequests;
 
     if (!acquireWall(work, source, &texels)) {

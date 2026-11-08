@@ -301,7 +301,10 @@ typedef struct Render_s
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	byte spanMode;
 #endif
+	/* Desktop/oracle diagnostic line index; ESP32 first frame owns it transiently. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	int numLines;
+#endif
 	/* Desktop-only animation clock and raster phase timestamps.
 	 * Native ESP32 animation/flash clocks belong to bounded owners. */
 #ifndef DOOMRPG_ESP32

@@ -49,7 +49,6 @@ typedef struct Scratch_s {
     int screenTop;
     int screenRight;
     int screenBottom;
-    int numLines;
     short* pixels;
     int columnScale[SCREEN_W];
 } Scratch;
@@ -77,7 +76,6 @@ static void saveScratch(Render_t* r, Scratch* s) {
     s->screenTop = r->screenTop;
     s->screenRight = r->screenRight;
     s->screenBottom = r->screenBottom;
-    s->numLines = r->numLines;
     s->pixels = r->pixels;
     memcpy(s->columnScale, r->columnScale, sizeof(s->columnScale));
 }
@@ -96,7 +94,6 @@ static void restoreScratch(Render_t* r, const Scratch* s) {
     r->screenTop = s->screenTop;
     r->screenRight = s->screenRight;
     r->screenBottom = s->screenBottom;
-    r->numLines = s->numLines;
     r->pixels = s->pixels;
     memcpy(r->columnScale, s->columnScale, sizeof(s->columnScale));
 }
@@ -213,7 +210,6 @@ static int depthLine(Render_t* r,
 
     if (!EspMapRuntime_getLine(lineIndex, &src)) return 0;
     sourceLine(&src, &line);
-    r->numLines = (int)lineIndex;
     ++state->lines;
 
     if (((line.vert1.x - r->viewX) * (line.vert2.y - line.vert1.y)) +

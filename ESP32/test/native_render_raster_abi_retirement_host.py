@@ -330,7 +330,10 @@ assert re.search(r"#ifndef DOOMRPG_ESP32\s+int spriteCount;\s+int spriteRasterCo
 # desktop spanMode is never consumed by the native raster. Both are passive
 # Render_t mirrors; keep the exact desktop/oracle ABI and fail closed if a
 # Render_t reader is reintroduced in any native source.
-assert "int numLines;" in HEADER
+assert re.search(
+    r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)\s+int numLines;\s+#endif",
+    HEADER), "desktop/oracle retains diagnostic line ID; ESP32 Render_t must not"
+
 for field, type_ in (("viewAngle", "int"), ("spanMode", "byte")):
     assert re.search(
         r"#if !defined\(DOOMRPG_ESP32\) \|\| "
@@ -358,7 +361,7 @@ for field, type_ in (("viewAngle", "int"), ("spanMode", "byte")):
                     code
                 ), ("retired raster scratch mirror", path, field)
 assert "boolean skipCull;" in HEADER
-assert "sizeof(Render_t) == 148U" in startup
+assert "sizeof(Render_t) == 144U" in startup
 
 # PR266-B: native BSP traversal counters are owned by per-frame work or
 # EspNativeBspVisibilityState. Preserve desktop geometry oracle and the
@@ -385,9 +388,33 @@ assert "(unsigned int)work->nodesTraversed," in first_frame
 assert "++state->nodes;" in bsp
 assert "uint32_t lineCount;" in first_frame and "uint32_t lineCount;" in bsp
 assert "work->lineCandidates" in first_frame
-assert "render->numLines" in first_frame and "r->numLines" in bsp
+assert "work->diagnosticLineIndex" in first_frame and "r->numLines" not in bsp
+
 assert "spriteLeafCache.nodeCount != runtime->nodeCount" in bsp
 assert "render->screenLeft" in sprite and "render->columnScale" in sprite
+
+# PR266-C: first-frame wall/span failures must still identify the *source
+# BSP line index*, not the number of lines visited; this is now transient
+# FirstFrameWork scratch, never a permanent Render_t or sprite snapshot.
+assert "uint32_t diagnosticLineIndex;" in first_frame
+assert "work->diagnosticLineIndex = lineIndex;" in first_frame
+assert first_frame.count("work->diagnosticLineIndex,") == 5
+assert "FIRST_FRAME_FAIL_SPAN_SCREEN" in first_frame
+assert "FIRST_FRAME_FAIL_SPAN_NEGATIVE" in first_frame
+assert "FIRST_FRAME_FAIL_SPAN_OOB" in first_frame
+assert "FIRST_FRAME_FAIL_WALL_DEPTH" in first_frame
+assert "FIRST_FRAME_FAIL_WALL_RASTER" in first_frame
+assert "r->numLines" not in bsp
+assert "render->numLines" not in sprite
+for tree in (NATIVE / "src", NATIVE / "include"):
+    for path in sorted(tree.rglob("*")):
+        if path.suffix not in (".c", ".cpp", ".h"):
+            continue
+        native = path.read_text(encoding="latin-1")
+        native = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ", native, flags=re.S)
+        assert not re.search(
+            r"\b(?:render|r|scratch|s)\s*->\s*numLines\b", native
+        ), ("Render_t numLines unexpectedly reinstated on ESP32", path)
 
 # Post-PR252: two desktop setup-only half-screen intermediates have no
 # Render_t readers. Preserve halfScreenHeight; retire the desktop
@@ -564,7 +591,7 @@ for member in ("mapName", "mapNameID", "loadMapID", "introColor",
                 + member + r"\b", clean), (
                 "retired map-header Render field referenced by native", path, member)
 assert "render->mapCameraSpawnIndex = 0;" not in root
-assert "sizeof(Render_t) == 148U" in (
+assert "sizeof(Render_t) == 144U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 
 # Post-#245-B on the same PR: desktop BSP allocation/inventory counts
@@ -585,7 +612,7 @@ assert re.search(
 assert re.search(
     r"render->mapStringsIDs = NULL;\s+render->mapStringCount = 0;\s+#endif",
     startup)
-assert "sizeof(Render_t) == 148U" in startup
+assert "sizeof(Render_t) == 144U" in startup
 
 # The sprite renderer is the other owner of transactional frame scratch.
 # Its clipping/projection lines are function-local too. No CYD Render_t
@@ -594,7 +621,7 @@ sprite = (NATIVE / "src/esp_native_sprite_renderer.c").read_text()
 assert "Line_t tmpLine;" not in sprite
 assert "->tmpLine" not in sprite
 assert "_Static_assert(sizeof(Scratch) <= 740U" in sprite
-assert "sizeof(Render_t) == 148U" in (
+assert "sizeof(Render_t) == 144U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 assert re.search(
     r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"

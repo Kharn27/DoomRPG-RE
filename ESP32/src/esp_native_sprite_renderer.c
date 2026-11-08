@@ -128,7 +128,6 @@ typedef struct Scratch_s {
     int screenTop;
     int screenRight;
     int screenBottom;
-    int numLines;
     short* pixels;
     int columnScale[SCREEN_W];
 } Scratch;
@@ -309,7 +308,6 @@ static void saveScratch(Render_t* render, Scratch* scratch) {
     scratch->screenTop = render->screenTop;
     scratch->screenRight = render->screenRight;
     scratch->screenBottom = render->screenBottom;
-    scratch->numLines = render->numLines;
     scratch->pixels = render->pixels;
     memcpy(scratch->columnScale, render->columnScale,
            sizeof(scratch->columnScale));
@@ -329,7 +327,6 @@ static void restoreScratch(Render_t* render, const Scratch* scratch) {
     render->screenTop = scratch->screenTop;
     render->screenRight = scratch->screenRight;
     render->screenBottom = scratch->screenBottom;
-    render->numLines = scratch->numLines;
     render->pixels = scratch->pixels;
     memcpy(render->columnScale, scratch->columnScale,
            sizeof(scratch->columnScale));
@@ -350,7 +347,6 @@ static int scratchMatches(const Render_t* render, const Scratch* scratch) {
            render->screenTop == scratch->screenTop &&
            render->screenRight == scratch->screenRight &&
            render->screenBottom == scratch->screenBottom &&
-           render->numLines == scratch->numLines &&
            render->pixels == scratch->pixels &&
            memcmp(render->columnScale, scratch->columnScale,
                   sizeof(scratch->columnScale)) == 0;
