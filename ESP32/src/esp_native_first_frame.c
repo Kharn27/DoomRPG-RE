@@ -910,7 +910,7 @@ static int drawProjectedWall(FirstFrameWork* work,
             }
             /* Match the recovered fixed-version wall path exactly. */
             zPos = 64;
-            i16 = render->halfScreenHeight -
+            i16 = EspNativeRenderGeometry_halfScreenHeight(render->screenHeight) -
                   (((zPos - render->viewZ) * i8) >> 17);
             /* The legacy renderer addressed one map-wide mediaTexels array.
              * Native wall texels are already a bounded 2048-byte cache slot,
@@ -1120,7 +1120,7 @@ static int walkNodes(FirstFrameWork* work) {
     cullView = (EspNativeRenderCullView){
         .viewX = work->render->viewX,
         .viewY = work->render->viewY,
-        .skipCull = work->render->skipCull,
+        .skipCull = ESP_NATIVE_BSP_CULL_STANDARD,
         .viewCosNeg = work->render->viewCos_,
         .viewSinNeg = work->render->viewSin_,
         .viewSin = work->render->viewSin,

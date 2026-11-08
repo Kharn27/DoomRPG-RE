@@ -347,7 +347,7 @@ static DoomCanvas_t* EspNativeEngineRoot_initCanvas(DoomCanvas_t* doomCanvas, Do
 }
 
 /* Native Render constructor owned by the process root; old initializer body
- * intentionally unmodified. Other Render owners remain unchanged. */
+ * is preserved apart from retiring the desktop developer skipCull toggle. */
 static Render_t* EspNativeEngineRoot_initRender(Render_t* render, DoomRPG_t* doomRpg)
 {
 	printf("Render_init\n");
@@ -363,7 +363,6 @@ static Render_t* EspNativeEngineRoot_initRender(Render_t* render, DoomRPG_t* doo
 
 	//resourceAsStream.Init(&renderClass->mapFile, doomRPGClass, 1);
 	render->doomRpg = doomRpg;
-	render->skipCull = 0;
 	render->floorColor = NULL;
 	render->ceilingColor = NULL;
 	render->columnScale = NULL;
@@ -680,14 +679,12 @@ static void EspNativeEngineLayout_setupRender(Render_t* render, SDL_Rect* window
 	if ((windowRect->h & 1) != 0) {
 		render->screenHeight = windowRect->h - 1;
 	}
-	render->halfScreenHeight = render->screenHeight / 2;
 
 #if 0
 	printf("render->screenWidth %d\n", render->screenWidth);
 	printf("render->screenHeight %d\n", render->screenHeight);
 	printf("render->screenX %d\n", windowRect->x);
 	printf("render->screenY %d\n", windowRect->y);
-	printf("render->halfScreenHeight %d\n", render->halfScreenHeight);
 #endif
 
 	SDL_free(render->ceilingColor);

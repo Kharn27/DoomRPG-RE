@@ -1,6 +1,12 @@
 #ifndef ESP_RENDER_GEOMETRY_PRIMITIVES_H
 #define ESP_RENDER_GEOMETRY_PRIMITIVES_H
 
+/* The desktop developer menu could disable culling at runtime. The native
+ * CYD has no such menu or mutable renderer flag: all production render and
+ * visibility passes use the original default (culling enabled). Keep the
+ * per-pass skipCull scalar below only to test the desktop opt-out oracle. */
+enum { ESP_NATIVE_BSP_CULL_STANDARD = 0 };
+
 /* Pure in-place frustum clipping on caller-owned transient 16.16 line data.
  * The original interpolation preserves x/y/z aliasing and endpoint order;
  * no renderer graph, dynamic door scope, PAK or heap is required. */
@@ -40,6 +46,14 @@ static inline int EspNativeRenderGeometry_fracHalfScreenWidth(int screenWidth)
 
 void EspNativeRenderGeometry_projectVertex(
     int screenWidth, int fracHalfScreenWidth, int* x, int* y, int* z);
+
+/* Exact desktop Render_setup half-height after even-height normalization.
+ * Native walls, sprites and plane raster use this immutable viewport
+ * scalar instead of retaining a duplicate in the renderer shell. No allocation. */
+static inline int EspNativeRenderGeometry_halfScreenHeight(int screenHeight)
+{
+    return screenHeight / 2;
+}
 
 /*
  * Desktop-equivalent view-space 2D transform for one caller-owned (x,y).
