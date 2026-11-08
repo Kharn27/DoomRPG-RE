@@ -82,6 +82,10 @@ typedef struct FirstFrameWork_s {
     uint8_t indicatorSeen;
 
     uint32_t lineCandidates;
+    /* Native per-frame diagnostic: never part of the Render shell. */
+    uint32_t nodesTraversed;
+    /* Current source BSP line for fail-closed wall/span diagnostics. */
+    uint32_t diagnosticLineIndex;
     uint32_t leafNodes;
     uint32_t wallRequests;
     uint32_t wallDraws;
@@ -107,13 +111,10 @@ typedef struct RenderScratch_s {
     int viewX;
     int viewY;
     int viewZ;
-    int lineCount;
-    int nodeCount;
     int screenLeft;
     int screenTop;
     int screenRight;
     int screenBottom;
-    int numLines;
     short* pixels;
     int columnScale[MAX_SCREEN_WIDTH];
 } RenderScratch;
@@ -428,13 +429,10 @@ static void saveRenderScratch(Render_t* render, RenderScratch* scratch) {
     scratch->viewX = render->viewX;
     scratch->viewY = render->viewY;
     scratch->viewZ = render->viewZ;
-    scratch->lineCount = render->lineCount;
-    scratch->nodeCount = render->nodeCount;
     scratch->screenLeft = render->screenLeft;
     scratch->screenTop = render->screenTop;
     scratch->screenRight = render->screenRight;
     scratch->screenBottom = render->screenBottom;
-    scratch->numLines = render->numLines;
     scratch->pixels = render->pixels;
     if (render->columnScale != NULL && render->screenWidth <= (int)MAX_SCREEN_WIDTH) {
         memcpy(scratch->columnScale,
@@ -454,13 +452,10 @@ static void restoreRenderScratch(Render_t* render, const RenderScratch* scratch)
     render->viewX = scratch->viewX;
     render->viewY = scratch->viewY;
     render->viewZ = scratch->viewZ;
-    render->lineCount = scratch->lineCount;
-    render->nodeCount = scratch->nodeCount;
     render->screenLeft = scratch->screenLeft;
     render->screenTop = scratch->screenTop;
     render->screenRight = scratch->screenRight;
     render->screenBottom = scratch->screenBottom;
-    render->numLines = scratch->numLines;
     render->pixels = scratch->pixels;
     if (render->columnScale != NULL && render->screenWidth <= (int)MAX_SCREEN_WIDTH) {
         memcpy(render->columnScale,
@@ -772,7 +767,7 @@ static int sampleWallSpan(FirstFrameWork* work,
     if (x < render->screenLeft || x >= render->screenRight ||
         y < render->screenTop || y >= render->screenBottom) {
         RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_SPAN_SCREEN,
-                             render->numLines,
+                             work->diagnosticLineIndex,
                              source->logicalId,
                              source->actualId,
                              0U,
@@ -794,7 +789,7 @@ static int sampleWallSpan(FirstFrameWork* work,
 
         if (localPosition < 0) {
             RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_SPAN_NEGATIVE,
-                                 render->numLines,
+                                 work->diagnosticLineIndex,
                                  source->logicalId,
                                  source->actualId,
                                  0U,
@@ -831,7 +826,7 @@ static int sampleWallSpan(FirstFrameWork* work,
             }
             else {
                 RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_SPAN_OOB,
-                                     render->numLines,
+                                     work->diagnosticLineIndex,
                                      source->logicalId,
                                      source->actualId,
                                      0U,
@@ -889,7 +884,7 @@ static int drawProjectedWall(FirstFrameWork* work,
     while (i5 < i6) {
         if (i8 <= 0) {
             RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_WALL_DEPTH,
-                                 render->numLines,
+                                 work->diagnosticLineIndex,
                                  source->logicalId,
                                  source->actualId,
                                  (uint32_t)line->flags,
@@ -938,7 +933,7 @@ static int drawProjectedWall(FirstFrameWork* work,
                 }
                 else {
                     RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_WALL_RASTER,
-                                         render->numLines,
+                                         work->diagnosticLineIndex,
                                          source->logicalId,
                                          source->actualId,
                                          (uint32_t)line->flags,
@@ -1045,10 +1040,10 @@ static int drawLine(FirstFrameWork* work, uint32_t lineIndex) {
         return 1;
     }
     EspNativeRenderGeometry_projectVertex(
-        work->render->screenWidth, work->render->fracHalfScreenWidth,
+        work->render->screenWidth, EspNativeRenderGeometry_fracHalfScreenWidth(work->render->screenWidth),
         &projected.vert1.x, &projected.vert1.y, &projected.vert1.z);
     EspNativeRenderGeometry_projectVertex(
-        work->render->screenWidth, work->render->fracHalfScreenWidth,
+        work->render->screenWidth, EspNativeRenderGeometry_fracHalfScreenWidth(work->render->screenWidth),
         &projected.vert2.x, &projected.vert2.y, &projected.vert2.z);
 
     if ((projected.flags & LINE_FLAG_OCCLUDER_ONLY) != 0) {
@@ -1074,7 +1069,7 @@ static int drawLine(FirstFrameWork* work, uint32_t lineIndex) {
         return 0;
     }
     projected.texture = (short)source->actualId;
-    work->render->numLines = (int)lineIndex;
+    work->diagnosticLineIndex = lineIndex;
     ++work->wallRequests;
 
     if (!acquireWall(work, source, &texels)) {
@@ -1133,7 +1128,7 @@ static int walkNodes(FirstFrameWork* work) {
         .viewTransX = work->render->viewTransX,
         .viewTransY = work->render->viewTransY,
         .screenWidth = work->render->screenWidth,
-        .fracHalfScreenWidth = work->render->fracHalfScreenWidth,
+        .fracHalfScreenWidth = EspNativeRenderGeometry_fracHalfScreenWidth(work->render->screenWidth),
         .columnScale = work->render->columnScale
     };
 
@@ -1164,7 +1159,7 @@ static int walkNodes(FirstFrameWork* work) {
             return 0;
         }
 
-        ++work->render->nodeCount;
+        ++work->nodesTraversed;
         /* Culling is independent of the renderer's inherited tmpLine. */
         {
             const int culled = EspNativeRenderGeometry_cullBounds(
@@ -1184,7 +1179,6 @@ static int walkNodes(FirstFrameWork* work) {
                 return 0;
             }
             ++work->leafNodes;
-            work->render->lineCount += (int)lineCount;
             for (i = 0U; i < lineCount; ++i) {
                 if (!drawLine(work, lineStart + i)) return 0;
             }
@@ -1363,8 +1357,6 @@ static int renderFrame(Render_t* render,
     render->screenTop = 0;
     render->screenRight = render->screenWidth;
     render->screenBottom = render->screenHeight;
-    render->lineCount = 0;
-    render->nodeCount = 0;
 
     EspNativeRenderGeometry_resetColumns(render->columnScale, render->screenWidth);
     /* Historical --wrap=Render_initColumnScale injected textured floor and
@@ -1379,7 +1371,7 @@ static int renderFrame(Render_t* render,
         if (frameFailure.code == FIRST_FRAME_FAIL_NONE) {
             RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_WALK,
                                  UINT32_MAX, 0U, 0U, 0U, 0U,
-                                 render->nodeCount,
+                                 work->nodesTraversed,
                                  work->lineCandidates,
                                  work->wallRequests,
                                  work->wallDraws);
@@ -1399,7 +1391,7 @@ static int renderFrame(Render_t* render,
     DRPG_LOGT("[NATIVEFRAME] BSP map=%u resource=%s nodes=%u leaves=%u nodeCull=%u lines=%u backface=%u clip=%u occluder=%u spriteSpanDeferred=%u\n",
            (unsigned int)playerView->targetMapId,
            resourceName,
-           (unsigned int)render->nodeCount,
+           (unsigned int)work->nodesTraversed,
            (unsigned int)work->leafNodes,
            (unsigned int)work->nodeCulled,
            (unsigned int)work->lineCandidates,

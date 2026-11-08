@@ -124,13 +124,10 @@ typedef struct Scratch_s {
     int viewX;
     int viewY;
     int viewZ;
-    int lineCount;
-    int nodeCount;
     int screenLeft;
     int screenTop;
     int screenRight;
     int screenBottom;
-    int numLines;
     short* pixels;
     int columnScale[SCREEN_W];
 } Scratch;
@@ -307,13 +304,10 @@ static void saveScratch(Render_t* render, Scratch* scratch) {
     scratch->viewX = render->viewX;
     scratch->viewY = render->viewY;
     scratch->viewZ = render->viewZ;
-    scratch->lineCount = render->lineCount;
-    scratch->nodeCount = render->nodeCount;
     scratch->screenLeft = render->screenLeft;
     scratch->screenTop = render->screenTop;
     scratch->screenRight = render->screenRight;
     scratch->screenBottom = render->screenBottom;
-    scratch->numLines = render->numLines;
     scratch->pixels = render->pixels;
     memcpy(scratch->columnScale, render->columnScale,
            sizeof(scratch->columnScale));
@@ -329,13 +323,10 @@ static void restoreScratch(Render_t* render, const Scratch* scratch) {
     render->viewX = scratch->viewX;
     render->viewY = scratch->viewY;
     render->viewZ = scratch->viewZ;
-    render->lineCount = scratch->lineCount;
-    render->nodeCount = scratch->nodeCount;
     render->screenLeft = scratch->screenLeft;
     render->screenTop = scratch->screenTop;
     render->screenRight = scratch->screenRight;
     render->screenBottom = scratch->screenBottom;
-    render->numLines = scratch->numLines;
     render->pixels = scratch->pixels;
     memcpy(render->columnScale, scratch->columnScale,
            sizeof(scratch->columnScale));
@@ -352,13 +343,10 @@ static int scratchMatches(const Render_t* render, const Scratch* scratch) {
            render->viewX == scratch->viewX &&
            render->viewY == scratch->viewY &&
            render->viewZ == scratch->viewZ &&
-           render->lineCount == scratch->lineCount &&
-           render->nodeCount == scratch->nodeCount &&
            render->screenLeft == scratch->screenLeft &&
            render->screenTop == scratch->screenTop &&
            render->screenRight == scratch->screenRight &&
            render->screenBottom == scratch->screenBottom &&
-           render->numLines == scratch->numLines &&
            render->pixels == scratch->pixels &&
            memcmp(render->columnScale, scratch->columnScale,
                   sizeof(scratch->columnScale)) == 0;
@@ -406,8 +394,6 @@ static int setupDrawView(Render_t* render,
     render->screenTop = 0;
     render->screenRight = SCREEN_W;
     render->screenBottom = SCREEN_H;
-    render->lineCount = 0;
-    render->nodeCount = 0;
     memcpy(render->columnScale, visibility->columnScale,
            sizeof(visibility->columnScale));
     return 1;
@@ -1028,10 +1014,10 @@ static int drawWorldDropFrame(Render_t* render,
         return 1;
     }
     EspNativeRenderGeometry_projectVertex(
-        render->screenWidth, render->fracHalfScreenWidth,
+        render->screenWidth, EspNativeRenderGeometry_fracHalfScreenWidth(render->screenWidth),
         &line.vert1.x, &line.vert1.y, &line.vert1.z);
     EspNativeRenderGeometry_projectVertex(
-        render->screenWidth, render->fracHalfScreenWidth,
+        render->screenWidth, EspNativeRenderGeometry_fracHalfScreenWidth(render->screenWidth),
         &line.vert2.x, &line.vert2.y, &line.vert2.z);
     return spans(render, &line, frame, renderMode, 0, stats);
 }
@@ -1232,10 +1218,10 @@ static int drawTransientBatch(Render_t* render,
             continue;
         }
         EspNativeRenderGeometry_projectVertex(
-        render->screenWidth, render->fracHalfScreenWidth,
+        render->screenWidth, EspNativeRenderGeometry_fracHalfScreenWidth(render->screenWidth),
         &line.vert1.x, &line.vert1.y, &line.vert1.z);
         EspNativeRenderGeometry_projectVertex(
-        render->screenWidth, render->fracHalfScreenWidth,
+        render->screenWidth, EspNativeRenderGeometry_fracHalfScreenWidth(render->screenWidth),
         &line.vert2.x, &line.vert2.y, &line.vert2.z);
         if (!spans(render, &line, frame,
                    transientWorldBatch.logical == 204U
@@ -1420,10 +1406,10 @@ static int drawAt(Render_t* render,
         return 1;
     }
     EspNativeRenderGeometry_projectVertex(
-        render->screenWidth, render->fracHalfScreenWidth,
+        render->screenWidth, EspNativeRenderGeometry_fracHalfScreenWidth(render->screenWidth),
         &line.vert1.x, &line.vert1.y, &line.vert1.z);
     EspNativeRenderGeometry_projectVertex(
-        render->screenWidth, render->fracHalfScreenWidth,
+        render->screenWidth, EspNativeRenderGeometry_fracHalfScreenWidth(render->screenWidth),
         &line.vert2.x, &line.vert2.y, &line.vert2.z);
     /* Source Render_renderSpriteObject() sets damageBlend while this monster's
      * 100ms damageBlendTime lives. Render_getSpanMode() then saturates its

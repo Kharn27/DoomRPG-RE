@@ -1,3 +1,25 @@
+## PR #266-C — Retrait définitif du miroir Render_t::numLines ESP32 : PASS matériel (8 novembre 2026)
+
+Code C `6f888ce8e4aa4f58aa6f565919426d1d5fbcdb7a` testé sur le classic CYD ; `Render_t 148→144 B` mesurés, `numLines` déplacé vers `FirstFrameWork.diagnosticLineIndex` transitoire pour conserver les diagnostics du BSP mural, oracle desktop intact. [CI push #42441414866](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42441414866) et [PR #42441419274](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42441419274) **SUCCESS 99/99**. Le log `device-monitor-261108-210342.log` montre START/LOAD V11 Entrance, dialogues, caisses et ramassages, porte et animation, Malwrath 2 triples salves puis mort, secret, 2× `HEADROOM_OK`, 2× `RESIDENTRESET empty=1`, retour menu exact sans panic/WDT, invariants `shapeData/mediaTexels=NULL`. [Rapport C](MILESTONE_PR266_C_RENDER_NUM_LINES_CYD_PASS.md). Accord utilisateur pour fusion après PASS et CI ; code C figé, doc-only post-test.
+
+---
+
+## PR #266-B — Render_t n'héberge plus les compteurs de parcours BSP (PASS CYD, 8 novembre 2026)
+
+Le jalon B, code `9899d2af07429dd00923cc73a3cf6ce604a29002`, retire `Render_t::lineCount` et `Render_t::nodeCount` des trois firmwares ESP32 (**156→148 B** mesurés). Desktop/oracle conservent l'ABI ; le décompte d'échec BSP garde `FirstFrameWork.nodesTraversed` sur heap temporaire, `state->nodes` existe toujours dans le culler, et les inventaires `EspMapRuntime` restent inchangés. Les deux CI GitHub push/PR **#42440393287 / #42440396940 SUCCESS**, 99 étapes sur le push.
+
+Test réel normal `device-monitor-261108-040005.log` : START Entrance, portes, dialogues, caisses, CROSS, Malwrath et projectiles/impacts puis LOAD V11 slot02 Sector 1 depuis le HUB ; PAK 241, deux retours menu, trois resets résidents `empty=1`, trois réserves `HEADROOM_OK`, `largest8=86004`, invariants `shapeData/mediaTexels=NULL`, aucune trace panic/WDT. **PASS B**, pas de mesure A/B heap nette ni endurance. Voir [rapport matériel PR266-B](MILESTONE_PR266_B_BSP_TRAVERSAL_COUNTERS_CYD_PASS.md). Code B figé ; nouveau C sur la même branche à tester séparément, aucune fusion `main`.
+
+---
+
+## PR #266 — projection géométrique native sans demi-largeur persistante : PASS CYD (8 novembre 2026)
+
+La branche [PR #266](https://github.com/Kharn27/DoomRPG-RE/pull/266) a figé le code fonctionnel au SHA `03bd64d70fa20104c80eed29cdecdbeb98361bea`. `Render_t` ESP32 passe de **160 à 156 octets** en supprimant `fracHalfScreenWidth` de l'objet natif, conservé en desktop/oracle. La primitive pure `EspNativeRenderGeometry_fracHalfScreenWidth(width)` reconstruit l'exacte demi-largeur 16.16 avec biais d'un demi-pixel aux **12 points de lecture** BSP, première frame et sprites. Aucun nouveau framebuffer, allocation ou changement d'entrée/gameplay ; builds normal, bringup et trace, tests différentiels et host : **CI push #42438971302 et PR #42438975212 SUCCESS (99 étapes chacun)**.
+
+Test sur le vrai CYD `device-monitor-261108-033922.log` avec acceptation « niquel ! » : boot `Render=156`, entrée et LOAD V11 Entrance, deux ouvertures/fermetures de porte, dialogues 8→19, HUD/HUB exact, Malwrath (3 salves + impacts), automap, pickups, deux retours menu libérant l'état résident, `shapeData/mediaTexels=NULL`, deux `HEADROOM_OK`, `largest8=86004`, aucune trace panic/WDT. Ce test ne démontre pas un gain de heap A/B ou une parité pixel-perfect exhaustive. [Rapport complet #266](MILESTONE_PR266_RENDER_FRAC_HALF_WIDTH_CYD_PASS.md). **Les modifications post-test sont uniquement documentaires ; fusion main réservée à l'utilisateur.**
+
+---
+
 ## PR #260 — frontière de présentation HUB et retrait du Render desktop : PASS CYD (8 novembre 2026)
 
 La PR #260 conserve seulement `Render_t=160` octets côté ESP32 au lieu de 184 initialement, avec `viewAngle/spanMode`, compteurs de raster et coordonnées desktop retirés des propriétaires natifs et maintenus dans l'oracle desktop. Le monde continue de lire `EspPlayerViewState`. Les expirations de douleur et les autres effets du monde n'ont plus droit de redessiner sous la grille d'armes. Plus important, `EspNativeGameplayActionEngine_present()` emprunte directement le physical-present quand `EspNativeGameplayHub_isActive()`, avant `decoratePlayerImpact` et les autres décorateurs. La fermeture HUB reste un redraw complet et l'expiration de douleur est reprise ensuite. Pas de deuxième framebuffer, de nouvelle ressource PAK ni de changement d'input/monstres.

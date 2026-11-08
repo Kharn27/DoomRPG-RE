@@ -65,6 +65,13 @@ static void sameScratch(void) {
 }
 
 int main(void) {
+    /* Render_t no longer stores this projection scalar on CYD. Keep exact
+     * J2ME half-pixel bias for all bounded widths, odd and even. */
+    assert(FRACBITS == 16);
+    for (int width = 0; width <= 160; ++width) {
+        assert(EspNativeRenderGeometry_fracHalfScreenWidth(width) ==
+               ((width / 2) * FRACUNIT - 0x8000));
+    }
     /* Independent width corpus: the native caller controls bounded storage,
      * and no element outside the inherited viewport may be modified. */
     for (int width = 0; width <= 160; ++width) {

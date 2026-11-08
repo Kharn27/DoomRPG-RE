@@ -28,12 +28,12 @@ live_code = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"',
 assert not re.search(r"\brender->(?:screenX|screenY)\b", live_code)
 assert re.search(r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)\s+int screenX;\s+int screenY;\s+#endif", header)
 assert "windowRect->x, windowRect->y," in body
-assert "render->fracHalfScreenWidth = ((render->screenWidth / 2) << FRACBITS) - 0x8000;" in body
+assert "render->fracHalfScreenWidth" not in live_code
 normalized = body.replace("static void " + name + "(", "void Render_setup(").rstrip()
 h = 2166136261
 for b in normalized.encode("utf-8"):
     h = ((h ^ b) * 16777619) & 0xffffffff
-assert h == 0x14bba767, f"Render_setup source drift {h:08x}"
+assert h == 0x06fcc38f, f"Render_setup source drift {h:08x}"
 for p in sorted((ROOT / "ESP32/src").rglob("*")):
     if p.suffix not in (".c", ".cpp"):
         continue
@@ -54,7 +54,6 @@ typedef struct SDL_Rect { int x,y,w,h; } SDL_Rect;
 typedef struct Render_s {
     int screenWidth,screenHeight;
     int halfScreenHeight;
-    int fracHalfScreenWidth;
     short *ceilingColor,*floorColor;
     int *columnScale;
 } Render_t;
@@ -91,7 +90,6 @@ int main(void) {
         assert(strcmp(lastRenderLog,
             "[RENDERCORE] SETUP owner=esp-native-bridge view=160x80@5,20 arrays=1280B\n")==0);
         assert(r.halfScreenHeight==40);
-        assert(r.fracHalfScreenWidth==(80<<16)-0x8000);
         assert(r.ceilingColor && r.floorColor && r.columnScale);
         mallocs=frees=0;
         EspNativeEngineLayout_setupRender(&r,&window);
@@ -121,4 +119,4 @@ with tempfile.TemporaryDirectory(prefix="render-setup-retirement-") as d:
     subprocess.run([shutil.which("cc") or "cc", "-std=c11", "-O2", "-Wall",
                     "-Wextra", "-Werror", str(source), "-o", exe], check=True)
     subprocess.run([exe], check=True)
-print("PASS Render_setup=retired owner=layout FNV=14bba767 native-screen-origin=SDL_Rect owner; 4096 cycles, 3 OOM, unchanged Serial")
+print("PASS Render_setup=retired owner=layout FNV=06fcc38f native-screen-origin=SDL_Rect owner; 4096 cycles, 3 OOM, unchanged Serial")

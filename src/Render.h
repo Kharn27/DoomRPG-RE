@@ -82,11 +82,14 @@ typedef struct Render_s
 	int screenWidth;
 	int screenHeight;
 	int halfScreenHeight;
-/* Desktop setup diagnostic; native projection uses fracHalfScreenWidth. */
+/* Desktop half-width setup diagnostic; native raster uses explicit geometry. */
 #ifndef DOOMRPG_ESP32
 	int halfScreenWidth;
 #endif
+/* Desktop/oracle projection intermediate; no real ESP32 firmware consumer. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	int fracHalfScreenWidth;
+#endif
 /* Desktop-only half-height fixed-point diagnostic. */
 #ifndef DOOMRPG_ESP32
 	int fracHalfScreenHeight;
@@ -221,11 +224,17 @@ typedef struct Render_s
 	boolean skipSprites;
 	boolean skipViewNudge;
 #endif
+	/* Desktop/oracle BSP traversal count; native tracks it independently. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	int lineCount;
+#endif
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	int lineRasterCount;
 #endif
+	/* Desktop/oracle BSP traversal count; native tracks it independently. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	int nodeCount;
+#endif
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	int nodeRasterCount;
 #endif
@@ -292,7 +301,10 @@ typedef struct Render_s
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	byte spanMode;
 #endif
+	/* Desktop/oracle diagnostic line index; ESP32 first frame owns it transiently. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	int numLines;
+#endif
 	/* Desktop-only animation clock and raster phase timestamps.
 	 * Native ESP32 animation/flash clocks belong to bounded owners. */
 #ifndef DOOMRPG_ESP32

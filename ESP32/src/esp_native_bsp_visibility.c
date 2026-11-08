@@ -45,13 +45,10 @@ typedef struct Scratch_s {
     int viewX;
     int viewY;
     int viewZ;
-    int lineCount;
-    int nodeCount;
     int screenLeft;
     int screenTop;
     int screenRight;
     int screenBottom;
-    int numLines;
     short* pixels;
     int columnScale[SCREEN_W];
 } Scratch;
@@ -75,13 +72,10 @@ static void saveScratch(Render_t* r, Scratch* s) {
     s->viewX = r->viewX;
     s->viewY = r->viewY;
     s->viewZ = r->viewZ;
-    s->lineCount = r->lineCount;
-    s->nodeCount = r->nodeCount;
     s->screenLeft = r->screenLeft;
     s->screenTop = r->screenTop;
     s->screenRight = r->screenRight;
     s->screenBottom = r->screenBottom;
-    s->numLines = r->numLines;
     s->pixels = r->pixels;
     memcpy(s->columnScale, r->columnScale, sizeof(s->columnScale));
 }
@@ -96,13 +90,10 @@ static void restoreScratch(Render_t* r, const Scratch* s) {
     r->viewX = s->viewX;
     r->viewY = s->viewY;
     r->viewZ = s->viewZ;
-    r->lineCount = s->lineCount;
-    r->nodeCount = s->nodeCount;
     r->screenLeft = s->screenLeft;
     r->screenTop = s->screenTop;
     r->screenRight = s->screenRight;
     r->screenBottom = s->screenBottom;
-    r->numLines = s->numLines;
     r->pixels = s->pixels;
     memcpy(r->columnScale, s->columnScale, sizeof(s->columnScale));
 }
@@ -146,8 +137,6 @@ static int setupView(Render_t* r, const EspPlayerViewState* v) {
     r->screenTop = 0;
     r->screenRight = SCREEN_W;
     r->screenBottom = SCREEN_H;
-    r->lineCount = 0;
-    r->nodeCount = 0;
 
     for (x = 0; x < SCREEN_W; ++x) r->columnScale[x] = MAXINT;
     return 1;
@@ -221,7 +210,6 @@ static int depthLine(Render_t* r,
 
     if (!EspMapRuntime_getLine(lineIndex, &src)) return 0;
     sourceLine(&src, &line);
-    r->numLines = (int)lineIndex;
     ++state->lines;
 
     if (((line.vert1.x - r->viewX) * (line.vert2.y - line.vert1.y)) +
@@ -248,10 +236,10 @@ static int depthLine(Render_t* r,
         return 1;
     }
     EspNativeRenderGeometry_projectVertex(
-        r->screenWidth, r->fracHalfScreenWidth,
+        r->screenWidth, EspNativeRenderGeometry_fracHalfScreenWidth(r->screenWidth),
         &line.vert1.x, &line.vert1.y, &line.vert1.z);
     EspNativeRenderGeometry_projectVertex(
-        r->screenWidth, r->fracHalfScreenWidth,
+        r->screenWidth, EspNativeRenderGeometry_fracHalfScreenWidth(r->screenWidth),
         &line.vert2.x, &line.vert2.y, &line.vert2.z);
 
     if ((line.flags & OCCLUDER) != 0) {
@@ -295,7 +283,6 @@ static int walkNode(Render_t* r,
         return 0;
     }
 
-    ++r->nodeCount;
     ++state->nodes;
     /* Private transient scratch is owned inside the culler: no tmpLine read. */
     {
@@ -317,7 +304,6 @@ static int walkNode(Render_t* r,
         }
         state->visibleLeaves[nodeIndex >> 5] |= 1U << (nodeIndex & 31U);
         ++state->leaves;
-        r->lineCount += (int)lineCount;
         for (i = 0U; i < lineCount; ++i) {
             if (!depthLine(r, lineStart + i, state)) return 0;
         }
@@ -487,7 +473,7 @@ int EspNativeBspVisibility_buildForView(struct Render_s* renderBase,
         .viewTransX = render->viewTransX,
         .viewTransY = render->viewTransY,
         .screenWidth = render->screenWidth,
-        .fracHalfScreenWidth = render->fracHalfScreenWidth,
+        .fracHalfScreenWidth = EspNativeRenderGeometry_fracHalfScreenWidth(render->screenWidth),
         .columnScale = render->columnScale
     };
         if (walkNode(render, runtime, 0U, 0U,
