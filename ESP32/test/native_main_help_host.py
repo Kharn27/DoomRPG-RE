@@ -156,41 +156,84 @@ assert "for (y = 0; y < 12; ++y)" in copyright
 assert "const uint16_t ink = helpTitleTopTone();" in copyright
 
 assert "EspMainMenuSkin_uiAccent()" in actions
-# k.bmp is already a 20x20 tiled native PAK asset in gameplay. HELP
-# loads it exactly once while the screen owns the texture and releases it
-# on BACK/failure; the 5Hz animated repaint never opens the PAK.
+# k.bmp is already a 20x20 tiled native PAK asset in gameplay.
+# In HELP it is copied as eight native nearest-neighbour 16x16 tiles,
+# creating a compact 128x16 illustration in the central reading window.
+# The 1:3:1 input proportions come from the real gameplay classifier,
+# while the UI remains a visual-only demonstration.
 hud_c = (SRC / "esp_native_gameplay_hud.c").read_text()
+shim = (SRC / "esp32_sdl.cpp").read_text()
 assert '"k.bmp"' in hud_c
 assert 'bar->width != 20U || bar->height != 20U' in (
     SRC / "esp_native_gameplay_hud_direction.c").read_text()
 assert '"k.bmp", false, &helpHudBarBG' in actions
-assert 'helpHudBarBG.width != MAIN_HELP_HUD_BAR_TILE' in actions
+assert 'helpHudBarBG.width != MAIN_HELP_HUD_SOURCE_TILE' in actions
 assert 'DoomRPG_freeImage(helpSpaceOwner, &helpHudBarBG);' in actions
-assert 'helpPaintTopHudIllustration(canvas, framebuffer)' in actions
+assert 'helpPaintTopHudIllustration(framebuffer)' in actions
 assert 'if (menuSystem->scrollIndex == MAIN_HELP_HUD_PAGE_SCROLL)' in actions
 assert '#define MAIN_HELP_HUD_PAGE_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)' in actions
-assert '#define MAIN_HELP_HUD_BAR_Y 41' in actions
-assert macro("MAIN_HELP_HUD_BAR_TILE") == 20
-assert macro("MAIN_HELP_HUD_BAR_HEIGHT") == 20
-assert macro("MAIN_HELP_HUD_MENU_RIGHT") == 31
-assert macro("MAIN_HELP_HUD_PASS_LEFT") == 32
-assert macro("MAIN_HELP_HUD_PASS_RIGHT") == 127
-assert macro("MAIN_HELP_HUD_MAP_LEFT") == 128
-assert 'tileX += MAIN_HELP_HUD_BAR_TILE' in actions
+assert macro("MAIN_HELP_HUD_BAR_X") == 16
+assert macro("MAIN_HELP_HUD_BAR_Y") == 43
+assert macro("MAIN_HELP_HUD_BAR_WIDTH") == 128
+assert macro("MAIN_HELP_HUD_BAR_HEIGHT") == 16
+assert macro("MAIN_HELP_HUD_SOURCE_TILE") == 20
+assert macro("MAIN_HELP_HUD_MINI_TILE") == 16
+assert macro("MAIN_HELP_HUD_MENU_RIGHT") == 25
+assert macro("MAIN_HELP_HUD_PASS_LEFT") == 26
+assert macro("MAIN_HELP_HUD_PASS_RIGHT") == 102
+assert macro("MAIN_HELP_HUD_MAP_LEFT") == 103
+assert 'tileX += MAIN_HELP_HUD_MINI_TILE' in actions
 assert 'SDL_RenderCopy(NULL, helpHudBarBG.imgBitmap, NULL, &dst)' in actions
-assert 'static const char* const label[3] = {"MENU", "PASS TURN", "MAP"};' in actions
-assert 'const uint16_t notchTone = 0x001fU;' in actions
-# These zones reproduce exactly the gameplay classifier's logical hitboxes.
+assert 'const int sourceX = src.x + ((x - dst.x) * src.w) / dst.w;' in shim
+assert 'const int sourceY = src.y + ((y - dst.y) * src.h) / dst.h;' in shim
+assert 'static const char* const labels[3] = {"MENU", "PASS TURN", "MAP"};' in actions
+assert 'static const HelpHudGlyph helpHudGlyphs[]' in actions
+assert 'framebuffer[(y + row) * DOOMRPG_LOGICAL_WIDTH +' in actions
+assert '0xffffU; /* white, all themes */' in actions
+# The three page explanation lines remain white (not theme midpoint).
+assert '/* This illustrated page deliberately uses white explanatory' in actions
+assert 'DoomRPG_setFontColor(doomRpg, 0xffffffffU);' in actions
+
+# Preserve the logical input splitter 0..31/32..127/128..159,
+# scaled and centered with no overlap and two fixed blue dividers.
 assert '#define GAMEPLAY_MENU_RIGHT 31' in input_c
 assert '#define GAMEPLAY_PASS_TURN_LEFT 32' in input_c
 assert '#define GAMEPLAY_PASS_TURN_RIGHT 127' in input_c
 assert '#define GAMEPLAY_AUTOMAP_LEFT 128' in input_c
-# Title, secondary line, original 20px bar, and three 12px descriptions
-# fit between the HELP header and the active 100..119px footer.
-assert 14 + 12 - 1 < 27
-assert 27 + 12 - 1 < 41
-assert 41 + 20 - 1 < 64
+zones = [(16, 41), (42, 118), (119, 143)]
+assert [b - a + 1 for a, b in zones] == [26, 77, 25]
+assert sum(b - a + 1 for a, b in zones) == 128
+assert zones[0][0] == 16 and zones[-1][-1] == 143
+assert zones[0][1] + 1 == zones[1][0]
+assert zones[1][1] + 1 == zones[2][0]
+for left, right in zones:
+    assert 5 <= left < right <= 154
+    assert (right - left + 1) > 0
+for label, (left, right) in zip(("MENU", "PASS TURN", "MAP"), zones):
+    # 5x7 ROM glyphs, 6px advance, one pixel margin in button interior.
+    glyph_width = len(label) * 6 - 1
+    text_x = (left + right - glyph_width + 1) // 2
+    assert left < text_x and text_x + glyph_width - 1 < right
+assert 16 + 128 <= 155 and 43 >= 39
+assert 43 + 16 - 1 < 64 and 43 + 16 - 1 < 100
+assert 27 + 12 - 1 < 43
 assert 88 + 12 - 1 < 100
+
+# Breath is a bounded triangular waveform, not a framebuffer-independent
+# infinite 60Hz redraw. Only this HELP page is 110ms-phase-aware.
+assert macro("MAIN_HELP_HUD_BREATH_STEP_MS") == 110
+assert macro("MAIN_HELP_HUD_BREATH_STEPS") == 12
+wave = [n if n <= 6 else 12 - n for n in range(12)]
+assert wave == [0, 1, 2, 3, 4, 5, 6, 5, 4, 3, 2, 1]
+assert all(0x0013 + 2 * n <= 0x001f for n in wave)
+assert all(2 <= 2 + n <= 8 for n in wave)
+assert 'const uint16_t neon = (uint16_t)(0x0013U + 2U * level);' in actions
+assert 'const uint8_t tint = (uint8_t)(2U + level);' in actions
+assert 'helpHudBreathStep == helpHudBreathIndex(now)' in actions
+assert 'helpDoomRpg->menuSystem->scrollIndex != MAIN_HELP_HUD_PAGE_SCROLL' in actions
+assert 'helpHudBreathStep = step;' in actions
+assert actions.count('helpHudBreathStep = -1;') == 3  # declaration, release, start
+assert 'helpExpectedFrameFNV = finalFNV;' in actions
 assert 'EspNativeGameplayInput_route(' not in actions
 assert 'EspNativeGameplayHud_routeInitial(' not in actions
 assert 'DoomRPG_esp32MainMenuReturnToMain(' in actions
@@ -213,5 +256,5 @@ for scroll in range(len(lines)):
     page = (clamped + 6) // 7 + 1
     assert 1 <= page <= (len(lines) + 6) // 7
 
-print("PASS HELP: 11 pages, real k.bmp HUD strip + exact virtual top buttons on page 7, themed ink,")
+print("PASS HELP: 11 pages, scaled k.bmp 128x16 HUD, blue 1.32s breath, white labels and text,")
 print("           7-line bounded pages, animation/FNV rebasing, release and no keypad")
