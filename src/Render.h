@@ -257,8 +257,12 @@ typedef struct Render_s
 	char* ioBuffer;
 	int ioBufferPos;
 #endif
+/* The desktop viewport origin is not a native Render_t owner: the CYD
+ * layout stage derives it directly from its SDL_Rect/constant geometry. */
+#ifndef DOOMRPG_ESP32
 	int screenX;
 	int screenY;
+#endif
 	byte* mediaTexels;
 	short* mediaPalettes;
 	int mediaPalettesLength;
