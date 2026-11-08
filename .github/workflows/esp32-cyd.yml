@@ -233,6 +233,15 @@ jobs:
           python ESP32/test/desktop_elf_audit_host.py
           python ESP32/test/render_geometry_host.py
 
+      - name: Test retired Render skipCull owner, profile guards and native BSP policy
+        run: python ESP32/test/native_render_skipcull_retirement_host.py
+
+      - name: Test retired Render half-height mirror and native geometry parity
+        run: python ESP32/test/native_render_half_height_retirement_host.py
+
+      - name: Test retired Render clip rectangle and fail-closed platform geometry
+        run: python ESP32/test/native_render_clip_rect_retirement_host.py
+
       - name: Test retirement of generated DoomRPG C oracle and preserved packed SDL (host Python)
         run: python ESP32/test/doomrpg_oracle_retirement_host.py
 
