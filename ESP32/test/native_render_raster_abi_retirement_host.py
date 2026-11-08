@@ -158,16 +158,17 @@ assert "SDL_DestroyTexture(render->piDIB)" not in root
 assert "render->framebuffer = sharedFramebuffer;" in startup
 assert "render->framebuffer = NULL;" in root
 
-# The seven desktop raster gate flags are removed from the CYD layout.
-# Preserve skipCull: native BSP geometry still reads it. Never accidentally
-# delete active spanMode or the culling camera/column scratch.
+# The retired developer-menu skipCull toggle is desktop/oracle-only.
+# Both native BSP render passes use an explicit immutable culling policy.
 assert re.search(
     r"#ifndef DOOMRPG_ESP32\s+boolean skipStretch;\s+boolean unk4;\s+#endif"
-    r"\s+boolean skipCull;\s+#ifndef DOOMRPG_ESP32"
+    r"\s+#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
+    r"\s+boolean skipCull;\s+#endif"
+    r"\s+#ifndef DOOMRPG_ESP32"
     r"\s+boolean skipBSP;\s+boolean skipLines;\s+boolean unk5;"
     r"\s+boolean skipSprites;\s+boolean skipViewNudge;\s+#endif", HEADER
-), "retired raster gates must be desktop-only; skipCull must remain native"
-assert "render->skipCull = 0;" in root
+), "retired raster gates and developer toggle must not persist on CYD"
+assert "render->skipCull" not in root
 
 # Desktop memory ledgers, including the obsolete palette byte counter, are
 # excluded from the native Render shell. Geometry and pixels remain owned.
@@ -258,7 +259,7 @@ for type_, field in (
                 + field + r"\b", code,
             ), ("retired opaque Render field accessed by native owner", path, field)
 assert "render->animFrameTime = 0;" not in root
-assert "render->skipCull = 0;" in root
+assert "render->skipCull" not in root
 assert "int lineRasterCount;" in HEADER and "int nodeRasterCount;" in HEADER
 assert re.search(r"#ifndef DOOMRPG_ESP32\s+int spriteCount;\s+int spriteRasterCount;\s+#endif", HEADER)
 
@@ -361,7 +362,7 @@ for field, type_ in (("viewAngle", "int"), ("spanMode", "byte")):
                     code
                 ), ("retired raster scratch mirror", path, field)
 assert "boolean skipCull;" in HEADER
-assert "sizeof(Render_t) == 144U" in startup
+assert "sizeof(Render_t) == 140U" in startup
 
 # PR266-B: native BSP traversal counters are owned by per-frame work or
 # EspNativeBspVisibilityState. Preserve desktop geometry oracle and the
@@ -612,7 +613,7 @@ assert re.search(
 assert re.search(
     r"render->mapStringsIDs = NULL;\s+render->mapStringCount = 0;\s+#endif",
     startup)
-assert "sizeof(Render_t) == 144U" in startup
+assert "sizeof(Render_t) == 140U" in startup
 
 # The sprite renderer is the other owner of transactional frame scratch.
 # Its clipping/projection lines are function-local too. No CYD Render_t

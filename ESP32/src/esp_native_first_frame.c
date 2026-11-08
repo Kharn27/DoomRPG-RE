@@ -1120,7 +1120,7 @@ static int walkNodes(FirstFrameWork* work) {
     cullView = (EspNativeRenderCullView){
         .viewX = work->render->viewX,
         .viewY = work->render->viewY,
-        .skipCull = work->render->skipCull,
+        .skipCull = ESP_NATIVE_BSP_CULL_STANDARD,
         .viewCosNeg = work->render->viewCos_,
         .viewSinNeg = work->render->viewSin_,
         .viewSin = work->render->viewSin,

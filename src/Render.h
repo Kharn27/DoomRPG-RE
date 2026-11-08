@@ -210,13 +210,17 @@ typedef struct Render_s
 #ifndef DOOMRPG_ESP32
 	int sinTable[256];
 #endif
-	/* Native BSP frustum culling still consumes skipCull. All other flags
-     * in this cluster exclusively controlled the retired desktop raster. */
+	/* The desktop developer menu controlled these retired raster gates. */
 #ifndef DOOMRPG_ESP32
 	boolean skipStretch;
 	boolean unk4;
 #endif
+/* The desktop developer menu alone toggles skipCull; the CYD native
+ * render passes always cull. Retain the field only for the isolated
+ * desktop geometry differential oracle. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	boolean skipCull;
+#endif
 #ifndef DOOMRPG_ESP32
 	boolean skipBSP;
 	boolean skipLines;
