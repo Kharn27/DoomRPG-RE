@@ -237,7 +237,9 @@ typedef struct Render_s
 	int viewX;
 	int viewY;
 	int viewZ;
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	int viewAngle;
+#endif
 	int* columnScale;
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	struct Sprite_s* viewSprites;
@@ -287,7 +289,9 @@ typedef struct Render_s
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	struct Line_s tmpLine;
 #endif
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	byte spanMode;
+#endif
 	int numLines;
 	/* Desktop-only animation clock and raster phase timestamps.
 	 * Native ESP32 animation/flash clocks belong to bounded owners. */

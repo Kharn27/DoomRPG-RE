@@ -107,7 +107,6 @@ typedef struct RenderScratch_s {
     int viewX;
     int viewY;
     int viewZ;
-    int viewAngle;
     int lineCount;
     int nodeCount;
     int screenLeft;
@@ -115,7 +114,6 @@ typedef struct RenderScratch_s {
     int screenRight;
     int screenBottom;
     int numLines;
-    byte spanMode;
     short* pixels;
     int columnScale[MAX_SCREEN_WIDTH];
 } RenderScratch;
@@ -430,7 +428,6 @@ static void saveRenderScratch(Render_t* render, RenderScratch* scratch) {
     scratch->viewX = render->viewX;
     scratch->viewY = render->viewY;
     scratch->viewZ = render->viewZ;
-    scratch->viewAngle = render->viewAngle;
     scratch->lineCount = render->lineCount;
     scratch->nodeCount = render->nodeCount;
     scratch->screenLeft = render->screenLeft;
@@ -438,7 +435,6 @@ static void saveRenderScratch(Render_t* render, RenderScratch* scratch) {
     scratch->screenRight = render->screenRight;
     scratch->screenBottom = render->screenBottom;
     scratch->numLines = render->numLines;
-    scratch->spanMode = render->spanMode;
     scratch->pixels = render->pixels;
     if (render->columnScale != NULL && render->screenWidth <= (int)MAX_SCREEN_WIDTH) {
         memcpy(scratch->columnScale,
@@ -458,7 +454,6 @@ static void restoreRenderScratch(Render_t* render, const RenderScratch* scratch)
     render->viewX = scratch->viewX;
     render->viewY = scratch->viewY;
     render->viewZ = scratch->viewZ;
-    render->viewAngle = scratch->viewAngle;
     render->lineCount = scratch->lineCount;
     render->nodeCount = scratch->nodeCount;
     render->screenLeft = scratch->screenLeft;
@@ -466,7 +461,6 @@ static void restoreRenderScratch(Render_t* render, const RenderScratch* scratch)
     render->screenRight = scratch->screenRight;
     render->screenBottom = scratch->screenBottom;
     render->numLines = scratch->numLines;
-    render->spanMode = scratch->spanMode;
     render->pixels = scratch->pixels;
     if (render->columnScale != NULL && render->screenWidth <= (int)MAX_SCREEN_WIDTH) {
         memcpy(render->columnScale,
@@ -1080,7 +1074,6 @@ static int drawLine(FirstFrameWork* work, uint32_t lineIndex) {
         return 0;
     }
     projected.texture = (short)source->actualId;
-    work->render->spanMode = 0;
     work->render->numLines = (int)lineIndex;
     ++work->wallRequests;
 
@@ -1363,7 +1356,6 @@ static int renderFrame(Render_t* render,
     render->viewSin = sin_;
     render->viewCos = cos_;
     render->viewTransY = -((vx * render->viewSin) + (vy * render->viewCos));
-    render->viewAngle = playerView->viewAngle;
     render->pixels = (short*)&render->framebuffer[
         render->pitch * DOOMRPG_VIEWPORT_Y +
         DOOMRPG_VIEWPORT_X * (int)sizeof(short)];
@@ -1373,7 +1365,6 @@ static int renderFrame(Render_t* render,
     render->screenBottom = render->screenHeight;
     render->lineCount = 0;
     render->nodeCount = 0;
-    render->spanMode = 0;
 
     EspNativeRenderGeometry_resetColumns(render->columnScale, render->screenWidth);
     /* Historical --wrap=Render_initColumnScale injected textured floor and

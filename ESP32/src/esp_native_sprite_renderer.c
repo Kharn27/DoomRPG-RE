@@ -124,7 +124,6 @@ typedef struct Scratch_s {
     int viewX;
     int viewY;
     int viewZ;
-    int viewAngle;
     int lineCount;
     int nodeCount;
     int screenLeft;
@@ -132,7 +131,6 @@ typedef struct Scratch_s {
     int screenRight;
     int screenBottom;
     int numLines;
-    byte spanMode;
     short* pixels;
     int columnScale[SCREEN_W];
 } Scratch;
@@ -309,7 +307,6 @@ static void saveScratch(Render_t* render, Scratch* scratch) {
     scratch->viewX = render->viewX;
     scratch->viewY = render->viewY;
     scratch->viewZ = render->viewZ;
-    scratch->viewAngle = render->viewAngle;
     scratch->lineCount = render->lineCount;
     scratch->nodeCount = render->nodeCount;
     scratch->screenLeft = render->screenLeft;
@@ -317,7 +314,6 @@ static void saveScratch(Render_t* render, Scratch* scratch) {
     scratch->screenRight = render->screenRight;
     scratch->screenBottom = render->screenBottom;
     scratch->numLines = render->numLines;
-    scratch->spanMode = render->spanMode;
     scratch->pixels = render->pixels;
     memcpy(scratch->columnScale, render->columnScale,
            sizeof(scratch->columnScale));
@@ -333,7 +329,6 @@ static void restoreScratch(Render_t* render, const Scratch* scratch) {
     render->viewX = scratch->viewX;
     render->viewY = scratch->viewY;
     render->viewZ = scratch->viewZ;
-    render->viewAngle = scratch->viewAngle;
     render->lineCount = scratch->lineCount;
     render->nodeCount = scratch->nodeCount;
     render->screenLeft = scratch->screenLeft;
@@ -341,7 +336,6 @@ static void restoreScratch(Render_t* render, const Scratch* scratch) {
     render->screenRight = scratch->screenRight;
     render->screenBottom = scratch->screenBottom;
     render->numLines = scratch->numLines;
-    render->spanMode = scratch->spanMode;
     render->pixels = scratch->pixels;
     memcpy(render->columnScale, scratch->columnScale,
            sizeof(scratch->columnScale));
@@ -358,7 +352,6 @@ static int scratchMatches(const Render_t* render, const Scratch* scratch) {
            render->viewX == scratch->viewX &&
            render->viewY == scratch->viewY &&
            render->viewZ == scratch->viewZ &&
-           render->viewAngle == scratch->viewAngle &&
            render->lineCount == scratch->lineCount &&
            render->nodeCount == scratch->nodeCount &&
            render->screenLeft == scratch->screenLeft &&
@@ -366,7 +359,6 @@ static int scratchMatches(const Render_t* render, const Scratch* scratch) {
            render->screenRight == scratch->screenRight &&
            render->screenBottom == scratch->screenBottom &&
            render->numLines == scratch->numLines &&
-           render->spanMode == scratch->spanMode &&
            render->pixels == scratch->pixels &&
            memcmp(render->columnScale, scratch->columnScale,
                   sizeof(scratch->columnScale)) == 0;
@@ -407,7 +399,6 @@ static int setupDrawView(Render_t* render,
     render->viewCos = cos_;
     render->viewTransY = -((viewX * render->viewSin) +
                            (viewY * render->viewCos));
-    render->viewAngle = view->viewAngle;
     render->pixels = (short*)&render->framebuffer[
         render->pitch * DOOMRPG_VIEWPORT_Y +
         DOOMRPG_VIEWPORT_X * (int)sizeof(short)];
@@ -417,7 +408,6 @@ static int setupDrawView(Render_t* render,
     render->screenBottom = SCREEN_H;
     render->lineCount = 0;
     render->nodeCount = 0;
-    render->spanMode = 0;
     memcpy(render->columnScale, visibility->columnScale,
            sizeof(visibility->columnScale));
     return 1;

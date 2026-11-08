@@ -45,7 +45,6 @@ typedef struct Scratch_s {
     int viewX;
     int viewY;
     int viewZ;
-    int viewAngle;
     int lineCount;
     int nodeCount;
     int screenLeft;
@@ -53,7 +52,6 @@ typedef struct Scratch_s {
     int screenRight;
     int screenBottom;
     int numLines;
-    byte spanMode;
     short* pixels;
     int columnScale[SCREEN_W];
 } Scratch;
@@ -77,7 +75,6 @@ static void saveScratch(Render_t* r, Scratch* s) {
     s->viewX = r->viewX;
     s->viewY = r->viewY;
     s->viewZ = r->viewZ;
-    s->viewAngle = r->viewAngle;
     s->lineCount = r->lineCount;
     s->nodeCount = r->nodeCount;
     s->screenLeft = r->screenLeft;
@@ -85,7 +82,6 @@ static void saveScratch(Render_t* r, Scratch* s) {
     s->screenRight = r->screenRight;
     s->screenBottom = r->screenBottom;
     s->numLines = r->numLines;
-    s->spanMode = r->spanMode;
     s->pixels = r->pixels;
     memcpy(s->columnScale, r->columnScale, sizeof(s->columnScale));
 }
@@ -100,7 +96,6 @@ static void restoreScratch(Render_t* r, const Scratch* s) {
     r->viewX = s->viewX;
     r->viewY = s->viewY;
     r->viewZ = s->viewZ;
-    r->viewAngle = s->viewAngle;
     r->lineCount = s->lineCount;
     r->nodeCount = s->nodeCount;
     r->screenLeft = s->screenLeft;
@@ -108,7 +103,6 @@ static void restoreScratch(Render_t* r, const Scratch* s) {
     r->screenRight = s->screenRight;
     r->screenBottom = s->screenBottom;
     r->numLines = s->numLines;
-    r->spanMode = s->spanMode;
     r->pixels = s->pixels;
     memcpy(r->columnScale, s->columnScale, sizeof(s->columnScale));
 }
@@ -144,7 +138,6 @@ static int setupView(Render_t* r, const EspPlayerViewState* v) {
     r->viewSin = sin_;
     r->viewCos = cos_;
     r->viewTransY = -((vx * r->viewSin) + (vy * r->viewCos));
-    r->viewAngle = v->viewAngle;
     /* Logical viewport origin is an immutable CYD layout contract, not a
      * duplicated mutable Render_t screenX/screenY pair. */
     r->pixels = (short*)&r->framebuffer[r->pitch * DOOMRPG_VIEWPORT_Y +
@@ -155,7 +148,6 @@ static int setupView(Render_t* r, const EspPlayerViewState* v) {
     r->screenBottom = SCREEN_H;
     r->lineCount = 0;
     r->nodeCount = 0;
-    r->spanMode = 0;
 
     for (x = 0; x < SCREEN_W; ++x) r->columnScale[x] = MAXINT;
     return 1;

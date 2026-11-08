@@ -326,9 +326,39 @@ for field in ("lineRasterCount", "nodeRasterCount"):
                 path, field
             )
 assert re.search(r"#ifndef DOOMRPG_ESP32\s+int spriteCount;\s+int spriteRasterCount;\s+#endif", HEADER)
-assert "byte spanMode;" in HEADER and "int numLines;" in HEADER
+# PR260-C: native angle is always read from EspPlayerViewState; the
+# desktop spanMode is never consumed by the native raster. Both are passive
+# Render_t mirrors; keep the exact desktop/oracle ABI and fail closed if a
+# Render_t reader is reintroduced in any native source.
+assert "int numLines;" in HEADER
+for field, type_ in (("viewAngle", "int"), ("spanMode", "byte")):
+    assert re.search(
+        r"#if !defined\(DOOMRPG_ESP32\) \|\| "
+        r"defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)\s+"
+        + type_ + r"\s+" + field + r";\s+#endif", HEADER
+    ), field
+    assert re.search(r"\brender->" + field + r"\b", DESKTOP), field
+    for tree in (NATIVE / "src", NATIVE / "include"):
+        for path in sorted(tree.rglob("*")):
+            if path.suffix not in (".c", ".cpp", ".h"):
+                continue
+            code = path.read_text(encoding="latin-1")
+            code = re.sub(r"#if 0\b[\s\S]*?#endif", " ", code)
+            code = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ", code, flags=re.S)
+            # Other game/view objects still own live viewAngle fields.
+            assert not re.search(
+                r"\b(?:render|rootRender|renderBase|r)\s*->\s*"
+                + field + r"\b", code
+            ), ("retired Render_t mirror referenced by native", path, field)
+            if path.name in ("esp_native_first_frame.c",
+                             "esp_native_bsp_visibility.c",
+                             "esp_native_sprite_renderer.c"):
+                assert not re.search(
+                    r"\b(?:scratch|s)\s*->\s*" + field + r"\b",
+                    code
+                ), ("retired raster scratch mirror", path, field)
 assert "boolean skipCull;" in HEADER
-assert "sizeof(Render_t) == 168U" in startup
+assert "sizeof(Render_t) == 160U" in startup
 
 # Post-PR252: two desktop setup-only half-screen intermediates have no
 # native readers. Preserve halfScreenHeight / fracHalfScreenWidth used by
@@ -497,7 +527,7 @@ for member in ("mapName", "mapNameID", "loadMapID", "introColor",
                 + member + r"\b", clean), (
                 "retired map-header Render field referenced by native", path, member)
 assert "render->mapCameraSpawnIndex = 0;" not in root
-assert "sizeof(Render_t) == 168U" in (
+assert "sizeof(Render_t) == 160U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 
 # Post-#245-B on the same PR: desktop BSP allocation/inventory counts
@@ -518,7 +548,7 @@ assert re.search(
 assert re.search(
     r"render->mapStringsIDs = NULL;\s+render->mapStringCount = 0;\s+#endif",
     startup)
-assert "sizeof(Render_t) == 168U" in startup
+assert "sizeof(Render_t) == 160U" in startup
 
 # The sprite renderer is the other owner of transactional frame scratch.
 # Its clipping/projection lines are function-local too. No CYD Render_t
@@ -527,7 +557,7 @@ sprite = (NATIVE / "src/esp_native_sprite_renderer.c").read_text()
 assert "Line_t tmpLine;" not in sprite
 assert "->tmpLine" not in sprite
 assert "_Static_assert(sizeof(Scratch) <= 740U" in sprite
-assert "sizeof(Render_t) == 168U" in (
+assert "sizeof(Render_t) == 160U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 assert re.search(
     r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
