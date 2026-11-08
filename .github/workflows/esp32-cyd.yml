@@ -139,6 +139,9 @@ jobs:
             -o /tmp/doomrpg-player-pain-shake
           /tmp/doomrpg-player-pain-shake
 
+      - name: Test HUB weapon grid blocks asynchronous world pain/effect redraws (host C + source)
+        run: python ESP32/test/hub_pain_modal_present_owner_host.py
+
       - name: Test original 100ms monster damage palette tint (host C)
         run: |
           cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
