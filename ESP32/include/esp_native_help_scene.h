@@ -15,7 +15,7 @@ void EspNativeHelpScene_reset(void);
 int EspNativeHelpScene_isReady(void);
 uint16_t EspNativeHelpScene_textureId(void);
 
-/* Draw x16..143 / y42..94 onto the existing 160x120 RGB565 framebuffer.
+/* Draw x8..151 / y29..96 onto the existing 160x120 RGB565 framebuffer.
  * level is a 0..6 triangle intensity shared with the HELP HUD breathing. */
 int EspNativeHelpScene_paint(uint16_t* framebuffer, uint8_t level);
 
