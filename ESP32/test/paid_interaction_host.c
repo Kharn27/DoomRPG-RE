@@ -23,7 +23,6 @@
 #include "esp_native_gameplay_hud_direction.h"
 #include "esp_native_gameplay_weapon.h"
 #include "esp_native_gameplay_present_gate.h"
-#include "esp_native_help_scene.h"
 #include "esp_native_door_animator.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_player_view_state.h"
@@ -53,14 +52,6 @@ EspNativeGameplayDialogResumeStatus __wrap_EspNativeGameplayDialog_resume(
 int __wrap_EspNativeGameplayDialog_rollbackResume(const EspNativeGameplayDialogResumeResult*);
 const EspMapLineStateView* __wrap_EspMapLineState_view(void);
 int __wrap_EspMapRuntime_getLine(uint32_t index, EspMapLine* out);
-
-/* Production frame compositor now offers a read-only miniature to HELP.
- * In this isolated host test the HELP UI is intentionally not linked. */
-int EspNativeHelpScene_captureGameplayViewport(const uint16_t* fb,
-                                               uint8_t mapId) {
-    (void)fb; (void)mapId;
-    return 1;
-}
 
 size_t heap_caps_get_free_size(unsigned int caps) { (void)caps; return 100000U; }
 unsigned int DoomRPG_GetUpTimeMS(void) { return clockMs; }
