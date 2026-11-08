@@ -291,6 +291,14 @@ jobs:
       - name: Test native CYD HELP animated starfield, guide and touch parity
         run: python ESP32/test/native_main_help_host.py
 
+      - name: Test real native HELP viewport snapshot and smooth breath (host C)
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -IESP32/include \
+            ESP32/test/native_help_snapshot_host.c \
+            ESP32/src/esp_native_help_scene.c \
+            -o /tmp/doomrpg-native-help-snapshot
+          /tmp/doomrpg-native-help-snapshot
+
       - name: Test native Canvas const-text ABI retirement (host Python)
         run: python ESP32/test/native_canvas_text_retirement_host.py
 
