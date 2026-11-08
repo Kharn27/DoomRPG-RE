@@ -86,8 +86,8 @@ typedef struct Render_s
 #ifndef DOOMRPG_ESP32
 	int halfScreenWidth;
 #endif
-/* Original desktop fixed-point half-width intermediate; native has no reader. */
-#ifndef DOOMRPG_ESP32
+/* Desktop/oracle projection intermediate; no real ESP32 firmware consumer. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	int fracHalfScreenWidth;
 #endif
 /* Desktop-only half-height fixed-point diagnostic. */

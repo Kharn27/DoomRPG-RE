@@ -365,7 +365,9 @@ assert "sizeof(Render_t) == 156U" in startup
 # fracHalfScreenWidth intermediate too. Check every compiled native owner.
 for field in ("halfScreenWidth", "fracHalfScreenHeight", "fracHalfScreenWidth"):
     decl = r"\bint\s+" + field + r";"
-    assert re.search(r"#ifndef DOOMRPG_ESP32\s+" + decl + r"\s+#endif", HEADER), field
+    guard = (r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
+             if field == "fracHalfScreenWidth" else r"#ifndef DOOMRPG_ESP32")
+    assert re.search(guard + r"\s+" + decl + r"\s+#endif", HEADER), field
     assert re.search(r"\brender->" + field + r"\b", DESKTOP), field
     for tree in (NATIVE / "src", NATIVE / "include"):
         for path in sorted(tree.rglob("*")):
@@ -400,7 +402,7 @@ for field in ("screenX", "screenY"):
 assert "windowRect->x, windowRect->y," in (
     NATIVE / "src/engine_stubs.c").read_text()
 assert "int halfScreenHeight;" in HEADER
-assert re.search(r"#ifndef DOOMRPG_ESP32\s+int fracHalfScreenWidth;\s+#endif", HEADER)
+assert re.search(r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)\s+int fracHalfScreenWidth;\s+#endif", HEADER)
 assert "render->fracHalfScreenWidth" not in (NATIVE / "src/engine_stubs.c").read_text()
 
 # PR239: map-wide BSP I/O buffer and read cursor only exist in desktop
