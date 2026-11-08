@@ -13,6 +13,7 @@
 #include "esp_main_menu_skin.h"
 #include "esp_asset_pack.h"
 #include "esp_native_help_scene.h"
+#include "esp_native_gameplay_hud.h"
 #include "platform_video_c_bridge.h"
 
 #include "native_main_menu_actions.h"
@@ -57,8 +58,7 @@
 #define MAIN_HELP_HUD_PASS_LEFT 26
 #define MAIN_HELP_HUD_PASS_RIGHT 102
 #define MAIN_HELP_HUD_MAP_LEFT 103
-#define MAIN_HELP_BREATH_STEP_MS 220U
-#define MAIN_HELP_BREATH_STEPS 12U
+/* Breath constants and easing now live in esp_native_help_scene.h. */
 #define MAIN_HELP_SCENE_PAGE_SCROLL (5 * MAIN_HELP_VISIBLE_LINES)
 #define MAIN_HELP_ROW_FIRST_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)
 #define MAIN_HELP_ROW_LAST_SCROLL (8 * MAIN_HELP_VISIBLE_LINES)
@@ -75,6 +75,12 @@ static int helpSpaceActive;
 static int helpLoggedScroll = -1;
 static int helpHudBreathStep = -1;
 static int helpSceneBreathStep = -1;
+/* Cached 128x16 RGB565 downsample of the *real* gameplay HUD (k/m/l/o/a).
+ * One 4096-byte bounded BSS miniature, built only on first visit to page 10.
+ * Never stores a second full framebuffer or a world/gameplay state owner. */
+static uint16_t helpBottomHudMini[MAIN_HELP_HUD_BAR_WIDTH *
+                                  MAIN_HELP_HUD_BAR_HEIGHT];
+static uint8_t helpBottomHudReady;
 
 static void helpStop(void) {
     if (helpSpaceOwner != NULL) {
@@ -91,6 +97,7 @@ static void helpStop(void) {
     helpLoggedScroll = -1;
     helpHudBreathStep = -1;
     helpSceneBreathStep = -1;
+    helpBottomHudReady = 0U;
     EspNativeHelpScene_reset();
 }
 
@@ -121,17 +128,17 @@ static int helpStart(DoomRPG_t* doomRpg) {
     helpLoggedScroll = -1;
     helpHudBreathStep = -1;
     helpSceneBreathStep = -1;
+    helpBottomHudReady = 0U;
     /* Once the gameplay lease has closed, this read-only peek still finds
      * the last COMMITTED raw-flash map header. It never stages/loads a map. */
     {
         const uint8_t cachedMapId = EspAssetPack_mapFlashCachedMapId();
-        const int preview = EspNativeHelpScene_load(cachedMapId,
-                                                     helpSpaceEpoch);
-        printf("[MAINHELP] PREVIEW scene=%s cachedMap=%u texture=%u backing=%s bytes=2048 world=no\n",
-               preview ? "pak-texture" : "text-fallback",
+        EspNativeHelpScene_begin(cachedMapId);
+        printf("[MAINHELP] PREVIEW scene=%s cachedMap=%u capturedMap=%u backing=live-native-frame scratch=128x64x2 world=no\n",
+               EspNativeHelpScene_hasGameplaySnapshot()
+                   ? "real-native-frame" : "starfield-first-run",
                (unsigned int)cachedMapId,
-               (unsigned int)EspNativeHelpScene_textureId(),
-               EspAssetPack_isMapFlashActive() ? "raw-flash" : "sd-pak");
+               (unsigned int)EspNativeHelpScene_snapshotMapId());
     }
     helpSpaceActive = 1;
     printf("[MAINHELP] BACKGROUND asset=c.bmp source=pak scroll=intro-157ms/192virtual owner=help hud=k.bmp/20x20\n");
@@ -242,15 +249,13 @@ static void helpPaintCopyrightMark(uint16_t* fb, int top, uint16_t ink) {
                 fb[(top + y) * DOOMRPG_LOGICAL_WIDTH + 12 + x] = ink;
 }
 
-/* Breathing is time-derived: no timers, extra state owner or gameplay RNG.
- * Twelve 220ms steps (2.64s), including one fully extinguished 3x3 phase. */
+/* Every illustrated page reads the SAME pure 32-step, 80ms smoothstep
+ * breath from EspNativeHelpScene. No duplicate level curves or hard cuts. */
 static int helpBreathStepAt(uint32_t now) {
-    return (int)(((now - helpSpaceEpoch) / MAIN_HELP_BREATH_STEP_MS) %
-                 MAIN_HELP_BREATH_STEPS);
+    return (int)EspNativeHelpScene_breathStep(now - helpSpaceEpoch);
 }
-
 static uint8_t helpBreathLevel(int step) {
-    return (uint8_t)(step <= 6 ? step : 12 - step);
+    return EspNativeHelpScene_breathLevel((uint8_t)step);
 }
 
 /* All four scene pages share one phase and one loaded PAK wall material. */
