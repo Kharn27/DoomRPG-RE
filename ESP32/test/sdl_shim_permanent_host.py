@@ -36,6 +36,7 @@ HARNESS = r"""
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
+#include <iterator>
 
 static bool failNextCalloc = false;
 static void* trackedPixels = nullptr;
