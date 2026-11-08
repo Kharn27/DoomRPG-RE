@@ -270,7 +270,7 @@ static int helpIsAnimatedHudPage(int scroll) {
 
 /* Compact white 5x7 ROM glyphs for the illustration. Our game's normal
  * a.bmp 9x12/7px-advance font cannot fit "MENU" into a 26px button.
- * This is only nine glyphs (63 bytes) and uses the existing RGB565 frame. */
+ * Fourteen glyphs (98 ROM bytes) fit both HUD readouts in the shared RGB565 frame. */
 typedef struct HelpHudGlyph_s {
     char c;
     uint8_t rows[7];
