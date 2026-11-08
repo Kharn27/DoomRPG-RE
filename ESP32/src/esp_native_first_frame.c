@@ -1045,10 +1045,10 @@ static int drawLine(FirstFrameWork* work, uint32_t lineIndex) {
         return 1;
     }
     EspNativeRenderGeometry_projectVertex(
-        work->render->screenWidth, work->render->fracHalfScreenWidth,
+        work->render->screenWidth, EspNativeRenderGeometry_fracHalfScreenWidth(work->render->screenWidth),
         &projected.vert1.x, &projected.vert1.y, &projected.vert1.z);
     EspNativeRenderGeometry_projectVertex(
-        work->render->screenWidth, work->render->fracHalfScreenWidth,
+        work->render->screenWidth, EspNativeRenderGeometry_fracHalfScreenWidth(work->render->screenWidth),
         &projected.vert2.x, &projected.vert2.y, &projected.vert2.z);
 
     if ((projected.flags & LINE_FLAG_OCCLUDER_ONLY) != 0) {
@@ -1133,7 +1133,7 @@ static int walkNodes(FirstFrameWork* work) {
         .viewTransX = work->render->viewTransX,
         .viewTransY = work->render->viewTransY,
         .screenWidth = work->render->screenWidth,
-        .fracHalfScreenWidth = work->render->fracHalfScreenWidth,
+        .fracHalfScreenWidth = EspNativeRenderGeometry_fracHalfScreenWidth(work->render->screenWidth),
         .columnScale = work->render->columnScale
     };
 

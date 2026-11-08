@@ -1028,10 +1028,10 @@ static int drawWorldDropFrame(Render_t* render,
         return 1;
     }
     EspNativeRenderGeometry_projectVertex(
-        render->screenWidth, render->fracHalfScreenWidth,
+        render->screenWidth, EspNativeRenderGeometry_fracHalfScreenWidth(render->screenWidth),
         &line.vert1.x, &line.vert1.y, &line.vert1.z);
     EspNativeRenderGeometry_projectVertex(
-        render->screenWidth, render->fracHalfScreenWidth,
+        render->screenWidth, EspNativeRenderGeometry_fracHalfScreenWidth(render->screenWidth),
         &line.vert2.x, &line.vert2.y, &line.vert2.z);
     return spans(render, &line, frame, renderMode, 0, stats);
 }
@@ -1232,10 +1232,10 @@ static int drawTransientBatch(Render_t* render,
             continue;
         }
         EspNativeRenderGeometry_projectVertex(
-        render->screenWidth, render->fracHalfScreenWidth,
+        render->screenWidth, EspNativeRenderGeometry_fracHalfScreenWidth(render->screenWidth),
         &line.vert1.x, &line.vert1.y, &line.vert1.z);
         EspNativeRenderGeometry_projectVertex(
-        render->screenWidth, render->fracHalfScreenWidth,
+        render->screenWidth, EspNativeRenderGeometry_fracHalfScreenWidth(render->screenWidth),
         &line.vert2.x, &line.vert2.y, &line.vert2.z);
         if (!spans(render, &line, frame,
                    transientWorldBatch.logical == 204U
@@ -1420,10 +1420,10 @@ static int drawAt(Render_t* render,
         return 1;
     }
     EspNativeRenderGeometry_projectVertex(
-        render->screenWidth, render->fracHalfScreenWidth,
+        render->screenWidth, EspNativeRenderGeometry_fracHalfScreenWidth(render->screenWidth),
         &line.vert1.x, &line.vert1.y, &line.vert1.z);
     EspNativeRenderGeometry_projectVertex(
-        render->screenWidth, render->fracHalfScreenWidth,
+        render->screenWidth, EspNativeRenderGeometry_fracHalfScreenWidth(render->screenWidth),
         &line.vert2.x, &line.vert2.y, &line.vert2.z);
     /* Source Render_renderSpriteObject() sets damageBlend while this monster's
      * 100ms damageBlendTime lives. Render_getSpanMode() then saturates its

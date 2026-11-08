@@ -248,10 +248,10 @@ static int depthLine(Render_t* r,
         return 1;
     }
     EspNativeRenderGeometry_projectVertex(
-        r->screenWidth, r->fracHalfScreenWidth,
+        r->screenWidth, EspNativeRenderGeometry_fracHalfScreenWidth(r->screenWidth),
         &line.vert1.x, &line.vert1.y, &line.vert1.z);
     EspNativeRenderGeometry_projectVertex(
-        r->screenWidth, r->fracHalfScreenWidth,
+        r->screenWidth, EspNativeRenderGeometry_fracHalfScreenWidth(r->screenWidth),
         &line.vert2.x, &line.vert2.y, &line.vert2.z);
 
     if ((line.flags & OCCLUDER) != 0) {
@@ -487,7 +487,7 @@ int EspNativeBspVisibility_buildForView(struct Render_s* renderBase,
         .viewTransX = render->viewTransX,
         .viewTransY = render->viewTransY,
         .screenWidth = render->screenWidth,
-        .fracHalfScreenWidth = render->fracHalfScreenWidth,
+        .fracHalfScreenWidth = rendeEspNativeRenderGeometry_fracHalfScreenWidth(r->screenWidth),
         .columnScale = render->columnScale
     };
         if (walkNode(render, runtime, 0U, 0U,

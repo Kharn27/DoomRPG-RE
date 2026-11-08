@@ -30,6 +30,14 @@ void EspNativeRenderGeometry_occludeProjectedSpan(
  * y is depth scale and z is scaled vertical extent. Three pointers must
  * refer to distinct scalar fields. No allocations or engine object inputs.
  */
+/* Exact legacy Render_setup half-width: width is the bounded logical viewport.
+ * This scalar is reconstructed by native callers, never kept in Render_t.
+ * FRACBITS is 16 in the Doom RPG fixed-point format. */
+static inline int EspNativeRenderGeometry_fracHalfScreenWidth(int screenWidth)
+{
+    return ((screenWidth / 2) << 16) - 0x8000;
+}
+
 void EspNativeRenderGeometry_projectVertex(
     int screenWidth, int fracHalfScreenWidth, int* x, int* y, int* z);
 
