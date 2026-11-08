@@ -62,6 +62,7 @@
 #define MAIN_HELP_SCENE_PAGE_SCROLL (5 * MAIN_HELP_VISIBLE_LINES)
 #define MAIN_HELP_ROW_FIRST_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)
 #define MAIN_HELP_ROW_LAST_SCROLL (8 * MAIN_HELP_VISIBLE_LINES)
+#define MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL (9 * MAIN_HELP_VISIBLE_LINES)
 
 static DoomRPG_t* helpDoomRpg;
 static uint32_t helpExpectedFrameFNV;
@@ -262,6 +263,10 @@ static int helpIsAnimatedScenePage(int scroll) {
     return scroll == MAIN_HELP_SCENE_PAGE_SCROLL ||
            helpIsRowHelpPage(scroll);
 }
+static int helpIsAnimatedHudPage(int scroll) {
+    return scroll == MAIN_HELP_HUD_PAGE_SCROLL ||
+           scroll == MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL;
+}
 
 /* Compact white 5x7 ROM glyphs for the illustration. Our game's normal
  * a.bmp 9x12/7px-advance font cannot fit "MENU" into a 26px button.
@@ -316,9 +321,10 @@ static void helpPaintMiniHudLabel(uint16_t* framebuffer,
  * to 16x16, centered at x16..143/y43..58. Exactly three 1:3:1 zones,
  * tinted with a softly breathing neon blue, and white 5x7 labels.
  * No input routing, extra framebuffer, or asset read during repaint. */
-/* LEFT:/CENTER:/RIGHT: are independently themed; descriptions stay white. */
-static void helpDrawHudCaption(DoomRPG_t* doomRpg, DoomCanvas_t* canvas,
-                               const char* label, int zone, int y) {
+/* One positional legend renderer for ALL illustrated help pages:
+ * theme tone 1/4/7 for LEFT/CENTER/RIGHT, white descriptions. */
+static void helpDrawPositionCaption(DoomRPG_t* doomRpg, DoomCanvas_t* canvas,
+                                    const char* label, int zone, int y) {
     static const char* const prefixes[3] = {"LEFT:", "CENTER:", "RIGHT:"};
     static const int tones[3] = {1, 4, 7};
     size_t n;
@@ -569,7 +575,7 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
             const char* label = DoomRPG_esp32MainMenuHelpLine(
                 MAIN_HELP_HUD_PAGE_SCROLL + i);
             if (label == NULL || label[0] == '\0') return 0;
-            helpDrawHudCaption(doomRpg, canvas, label, i - 2,
+            helpDrawPositionCaption(doomRpg, canvas, label, i - 2,
                                64 + (i - 2) * MAIN_HELP_LINE_HEIGHT);
         }
     }
@@ -611,9 +617,8 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
             const char* label = DoomRPG_esp32MainMenuHelpLine(
                 menuSystem->scrollIndex + i);
             if (label == NULL || label[0] == '\0') return 0;
-            DoomRPG_setFontColor(doomRpg, helpColor888(helpBodyMiddleTone()));
-            EspNativeCanvas_drawText(canvas, label, 12,
-                                     63 + (i - 2) * MAIN_HELP_LINE_HEIGHT, 0);
+            helpDrawPositionCaption(doomRpg, canvas, label, i - 2,
+                                    63 + (i - 2) * MAIN_HELP_LINE_HEIGHT);
         }
         helpSceneBreathStep = step;
     }
@@ -718,7 +723,7 @@ void DoomRPG_esp32MainMenuHelpService(void) {
     /* HUD plus four illustrated gameplay pages redraw for breath updates;
      * the other pages use the starfield cadence. No extra buffers. */
     if (shift == helpSpaceShift &&
-        (helpDoomRpg->menuSystem->scrollIndex != MAIN_HELP_HUD_PAGE_SCROLL ||
+        (!helpIsAnimatedHudPage(helpDoomRpg->menuSystem->scrollIndex) ||
          helpHudBreathStep == helpHudBreathIndex(now)) &&
         (!helpIsAnimatedScenePage(
              helpDoomRpg->menuSystem->scrollIndex) ||
