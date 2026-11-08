@@ -21,7 +21,11 @@ last = owner.index("\n/* Bounded CYD layout and font initialization", first)
 body = owner[first:last]
 assert "render->halfScreenWidth" not in body
 assert "render->fracHalfScreenHeight" not in body
-assert "render->screenX" not in body and "render->screenY" not in body
+# Historical #if 0 printf labels contain the literal "render->screenX"
+# text, but they are not accesses. Scan tokens after stripping literals.
+live_code = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"',
+                   " ", body, flags=re.S)
+assert not re.search(r"\brender->(?:screenX|screenY)\b", live_code)
 assert re.search(r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)\s+int screenX;\s+int screenY;\s+#endif", header)
 assert "windowRect->x, windowRect->y," in body
 assert "render->fracHalfScreenWidth = ((render->screenWidth / 2) << FRACBITS) - 0x8000;" in body
