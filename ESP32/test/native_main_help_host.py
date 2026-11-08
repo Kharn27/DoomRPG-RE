@@ -308,7 +308,7 @@ assert 'static const int8_t turnCurve[][2]' in scene
 curve_data = scene.split('static const int8_t turnCurve[][2] = {', 1)[1].split('};', 1)[0]
 turn_points = [
     (int(x), int(y)) for x, y in
-    re.findall(r'\\{\\s*(-?\\d+),\\s*(-?\\d+)\\s*\\}', curve_data)
+    re.findall(r'\{\s*(-?\d+),\s*(-?\d+)\s*\}', curve_data)
 ]
 assert turn_points == [
     (5, 4), (5, 1), (4, -2), (2, -4),
@@ -337,7 +337,7 @@ assert 'const uint16_t textInk = dim565(' in scene
 assert 'neon, 170U + (uint32_t)level * 13U);' in scene
 assert 'dim565(*pixel, 160U)' in scene
 glyph_data = scene.split('static const HelpWeaponGlyph helpWeaponGlyphs[] = {', 1)[1].split('};', 1)[0]
-glyphs = re.findall(r"'([A-Z])',\\s*\\{([^}]+)\\}", glyph_data)
+glyphs = re.findall(r"'([A-Z])',\s*\{([^}]+)\}", glyph_data)
 assert {letter for letter, _ in glyphs} == set("WPNREVXT")
 assert len(glyphs) == 8
 for letter, row_text in glyphs:
