@@ -67,7 +67,8 @@ static void assertPlateCapSymmetry(uint16_t* fb) {
         {104, 6, 157, 31},   /* VIDEO */
         {104, 6, 157, 26},   /* BRIGHTNESS */
         {16, 26, 143, 69},  /* LOADING title */
-        {16, 82, 143, 99}   /* LOADING gauge chassis */
+        {16, 82, 143, 99},  /* LOADING gauge chassis */
+        {34, 102, 111, 118} /* MAIN LOAD BACK: 17px industrial plate */
     };
     static const uint16_t steel[3] = {0x4a48U, 0x632bU, 0x4248U};
     static const uint16_t bevel[3] = {0x838dU, 0xa4d1U, 0x83ceU};
@@ -133,6 +134,26 @@ static void assertPlateCapSymmetry(uint16_t* fb) {
     assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
 }
 
+
+/* The 17px BACK chassis fits a 7-row crisp label wholly in its dark
+ * inset: no top/bottom seam can touch the glyph corridor at x54..90,
+ * y107..113. This also proves no extra bitmap is needed for the button. */
+static void assertMainLoadBackCorridor(uint16_t* fb) {
+    for (int theme = 0; theme < 3; ++theme) {
+        resetFrame();
+        assert(EspMainMenuSkin_setTheme((uint8_t)theme));
+        assert(EspMainMenuSkin_paintPlate(fb,W,W,H,34,102,111,118,
+                                          ESP_MAIN_MENU_SKIN_IDLE));
+        for (int y = 107; y <= 113; ++y)
+            for (int x = 54; x <= 90; ++x)
+                assert(fb[y*W+x] == 0x0800U);
+        for (int i = 0; i < GUARD; ++i) {
+            assert(arena[i] == SENTINEL);
+            assert(arena[GUARD + W*H + i] == SENTINEL);
+        }
+    }
+    assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
+}
 
 /* Regress the real production nav-key painter against its exact plate
  * background, across both LOAD GAME and HUB slot layouts. All chevrons
@@ -208,6 +229,7 @@ int main(void) {
     int item, state;
     assertPlateCapSymmetry(fb);
     assertIndustrialNavKeys(fb);
+    assertMainLoadBackCorridor(fb);
     assert(DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH == 102);
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_HEIGHT == 20);
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_PITCH == 25);
