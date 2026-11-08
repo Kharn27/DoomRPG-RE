@@ -137,7 +137,8 @@ assert "y += MAIN_HELP_LINE_HEIGHT;" in actions
 copyright_start = actions.index("static void helpPaintCopyrightMark(")
 copyright_end = actions.index("int DoomRPG_esp32MainMenuReturnToMain(", copyright_start)
 copyright = actions[copyright_start:copyright_end]
-logo_rows = re.findall(r"0x([0-9a-f]{3})U", copyright)
+logo_mask = copyright.split("static const uint16_t rows[12] = {", 1)[1].split("};", 1)[0]
+logo_rows = re.findall(r"0x([0-9a-f]{3})U", logo_mask)
 assert len(logo_rows) == 12
 assert list(map(lambda h: int(h, 16), logo_rows)) == [
     0x0f0, 0x30c, 0x402, 0x8f1, 0x901, 0x901,
