@@ -99,7 +99,7 @@ void EspNativeMainMenu_transitionCanvasState(DoomCanvas_t* doomCanvas, int state
  * no SD allocation/read and no pointer-heavy MenuItem table. ASCII text
  * is at most 20 glyphs wide (7px advance, x=12 on the 160px canvas).
  */
-#define MAIN_HELP_MAX_LINES 98
+#define MAIN_HELP_MAX_LINES 105
 static const char* const helpLines[] = {
     "DOOM RPG ON CYD",
     "Kharn27",
@@ -162,6 +162,13 @@ static const char* const helpLines[] = {
     "LEFT: PREV WEAPON",
     "CENTER: MOVE BACK",
     "RIGHT: NEXT WEAPON",
+    "",
+    "",
+    "BOTTOM HUD BAR",
+    "STATUS AT A GLANCE",
+    "LEFT: HP + ARMOR",
+    "CENTER: FACE / AMMO",
+    "RIGHT: DIRECTION",
     "",
     "",
     "ACTION / CENTER",
