@@ -285,7 +285,12 @@ static const HelpHudGlyph helpHudGlyphs[] = {
     {'A', {0x0e, 0x11, 0x11, 0x1f, 0x11, 0x11, 0x11}},
     {'S', {0x0f, 0x10, 0x10, 0x0e, 0x01, 0x01, 0x1e}},
     {'T', {0x1f, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04}},
-    {'R', {0x1e, 0x11, 0x11, 0x1e, 0x14, 0x12, 0x11}}
+    {'R', {0x1e, 0x11, 0x11, 0x1e, 0x14, 0x12, 0x11}},
+    {'H', {0x11, 0x11, 0x11, 0x1f, 0x11, 0x11, 0x11}},
+    {'0', {0x0e, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0e}},
+    {'1', {0x04, 0x0c, 0x04, 0x04, 0x04, 0x04, 0x0e}},
+    {'2', {0x0e, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1f}},
+    {'3', {0x1e, 0x01, 0x01, 0x0e, 0x01, 0x01, 0x1e}}
 };
 
 static void helpPaintMiniHudLabel(uint16_t* framebuffer,
@@ -338,6 +343,29 @@ static void helpDrawPositionCaption(DoomRPG_t* doomRpg, DoomCanvas_t* canvas,
     DoomRPG_setFontColor(doomRpg, 0xffffffffU);
     EspNativeCanvas_drawText(canvas, label + n, 12 + (int)n * 7, y, 0);
 }
+/* Real k.bmp backing shared by BOTH help HUD miniatures. One scratch
+ * framebuffer (the live 160x120 canvas), no extra retained bitmap. */
+static int helpPaintMiniHudBacking(uint16_t* fb) {
+    int tileX;
+    if (fb == NULL || helpHudBarBG.imgBitmap == NULL ||
+        helpHudBarBG.width != MAIN_HELP_HUD_SOURCE_TILE ||
+        helpHudBarBG.height != MAIN_HELP_HUD_SOURCE_TILE ||
+        MAIN_HELP_HUD_BAR_X < 5 ||
+        MAIN_HELP_HUD_BAR_X + MAIN_HELP_HUD_BAR_WIDTH > 155 ||
+        MAIN_HELP_HUD_BAR_Y < 39 ||
+        MAIN_HELP_HUD_BAR_Y + MAIN_HELP_HUD_BAR_HEIGHT > 64)
+        return 0;
+    for (tileX = 0; tileX < MAIN_HELP_HUD_BAR_WIDTH;
+         tileX += MAIN_HELP_HUD_MINI_TILE) {
+        SDL_Rect dst = {MAIN_HELP_HUD_BAR_X + tileX,
+                        MAIN_HELP_HUD_BAR_Y, MAIN_HELP_HUD_MINI_TILE,
+                        MAIN_HELP_HUD_BAR_HEIGHT};
+        if (SDL_RenderCopy(NULL, helpHudBarBG.imgBitmap, NULL, &dst) != 0)
+            return 0;
+    }
+    return 1;
+}
+
 static int helpPaintTopHudIllustration(uint16_t* framebuffer) {
     static const int left[3] = {
         MAIN_HELP_HUD_BAR_X,
@@ -354,25 +382,14 @@ static int helpPaintTopHudIllustration(uint16_t* framebuffer) {
     const uint8_t level = helpHudBreathLevel(step);
     const uint8_t tint = (uint8_t)(2U + level);
     const uint16_t neon = (uint16_t)(0x0013U + 2U * level);
-    int tileX, zone, x, y;
+    int zone, x, y;
 
-    if (framebuffer == NULL || helpHudBarBG.imgBitmap == NULL ||
-        helpHudBarBG.width != MAIN_HELP_HUD_SOURCE_TILE ||
-        helpHudBarBG.height != MAIN_HELP_HUD_SOURCE_TILE)
-        return 0;
-    if (MAIN_HELP_HUD_BAR_X < 5 ||
-        MAIN_HELP_HUD_BAR_X + MAIN_HELP_HUD_BAR_WIDTH > 155 ||
-        MAIN_HELP_HUD_BAR_Y < 39 ||
-        MAIN_HELP_HUD_BAR_Y + MAIN_HELP_HUD_BAR_HEIGHT > 64)
-        return 0;
-
-    for (tileX = 0; tileX < MAIN_HELP_HUD_BAR_WIDTH;
-         tileX += MAIN_HELP_HUD_MINI_TILE) {
-        SDL_Rect dst = {MAIN_HELP_HUD_BAR_X + tileX,
-                        MAIN_HELP_HUD_BAR_Y, MAIN_HELP_HUD_MINI_TILE,
-                        MAIN_HELP_HUD_BAR_HEIGHT};
-        if (SDL_RenderCopy(NULL, helpHudBarBG.imgBitmap, NULL, &dst) != 0)
-            return 0;
+    if (!helpPaintMiniHudBacking(framebuffer)) return 0;
+    /* The SAME zero-level breath used by 3x3 and each row: backing
+     * remains visible, but every blue frame/button label is off. */
+    if (level == 0U) {
+        helpHudBreathStep = step;
+        return 1;
     }
 
     /* Gently bias the original textured pixels toward blue, not a flat
@@ -508,6 +525,54 @@ int DoomRPG_esp32MainMenuReturnToMain(struct DoomRPG_s* doomRpgBase,
            menuSystem->menu,
            (unsigned int)finalFNV,
            (unsigned int)elapsedMs);
+    return 1;
+}
+
+/* The bottom game HUD is not a 3-button touch grid. Show the real k.bmp
+ * panel and a bounded procedural *miniature* of its HP/armor/face/ammo/heading
+ * readouts (not a live character snapshot). No l.bmp/m.bmp preload required. */
+static int helpPaintBottomHudIllustration(uint16_t* fb) {
+    static const int separator[4] = {42, 68, 90, 117};
+    const int step = helpHudBreathIndex(DoomRPG_GetUpTimeMS());
+    const uint8_t level = helpHudBreathLevel(step);
+    const uint16_t blue = (uint16_t)(0x0013U + 2U * level);
+    const uint16_t skin = 0xfba0U;
+    int i, x, y;
+
+    if (!helpPaintMiniHudBacking(fb)) return 0;
+    if (level == 0U) {
+        helpHudBreathStep = step;
+        return 1;
+    }
+    for (x = MAIN_HELP_HUD_BAR_X;
+         x < MAIN_HELP_HUD_BAR_X + MAIN_HELP_HUD_BAR_WIDTH; ++x) {
+        fb[MAIN_HELP_HUD_BAR_Y * DOOMRPG_LOGICAL_WIDTH + x] = blue;
+        fb[(MAIN_HELP_HUD_BAR_Y + MAIN_HELP_HUD_BAR_HEIGHT - 1) *
+           DOOMRPG_LOGICAL_WIDTH + x] = blue;
+    }
+    for (i = 0; i < 4; ++i)
+        for (y = MAIN_HELP_HUD_BAR_Y; y < MAIN_HELP_HUD_BAR_Y + 16; ++y)
+            fb[y * DOOMRPG_LOGICAL_WIDTH + separator[i]] = blue;
+
+    helpPaintMiniHudLabel(fb, "HP30", 16, 41, 47);
+    helpPaintMiniHudLabel(fb, "AR20", 43, 67, 47);
+    helpPaintMiniHudLabel(fb, "AM12", 91, 116, 47);
+    helpPaintMiniHudLabel(fb, "N", 118, 143, 47);
+    /* Familiar marine face: small helmet/flesh icon, two eyes and mouth.
+     * 11x11 inside its own group x69..89. */
+    for (y = 45; y <= 55; ++y) {
+        for (x = 75; x <= 85; ++x) {
+            const int dx = x - 80, dy = y - 50;
+            if (dx * dx + dy * dy <= 27)
+                fb[y * DOOMRPG_LOGICAL_WIDTH + x] = skin;
+        }
+    }
+    fb[48 * DOOMRPG_LOGICAL_WIDTH + 77] = 0x0000U;
+    fb[48 * DOOMRPG_LOGICAL_WIDTH + 83] = 0x0000U;
+    for (x = 78; x <= 82; ++x)
+        fb[53 * DOOMRPG_LOGICAL_WIDTH + x] = 0x6000U;
+
+    helpHudBreathStep = step;
     return 1;
 }
 
