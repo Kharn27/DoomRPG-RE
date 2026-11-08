@@ -347,6 +347,9 @@ jobs:
           python ESP32/test/main_menu_skin_integration_host.py
           python ESP32/test/native_modal_theme_host.py
 
+      - name: Test native CYD HELP animated starfield, guide and touch parity
+        run: python ESP32/test/native_main_help_host.py
+
       - name: Test native HUB topbar tabs and no AUTOMAP leak
         run: python ESP32/test/native_hub_topbar_host.py
 

@@ -29,6 +29,11 @@ DoomRpgEsp32MainMenuDispatchResult
 DoomRPG_esp32MainMenuDispatchConfirmed(struct DoomRPG_s* doomRpg,
                                        int action);
 
+/* Cooperative, allocation-free repaint of the Help-only scrolling c.bmp.
+ * Active only for ST_MENU/MENU_MAIN_HELP_ABOUT; no intro-clock handoff.
+ */
+void DoomRPG_esp32MainMenuHelpService(void);
+
 /* Explicit child -> MENU_MAIN Back action for the bounded pre-game menu domain.
  * Only HELP and OPTIONS are valid children in this milestone. The caller owns
  * child-specific touch/frame preconditions; this function owns semantic model
