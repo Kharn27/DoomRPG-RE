@@ -20,6 +20,8 @@
 #define HELP_TEXTURE_BYTES 2048U
 #define HELP_TEXTURE_COLORS 16U
 #define HELP_MATERIAL_COUNT 3U
+#define HELP_PLANE_MATERIALS 4U
+#define HELP_PLANE_MAP_BYTES (2U * HELP_MAP_CELLS)
 #define HELP_MAP_CELLS 1024U
 #define HELP_MAP_BYTES 256U
 #define HELP_MAPPING_HEADER 16U
@@ -39,12 +41,15 @@ typedef struct HelpWallMaterial_s {
 
 static struct {
     HelpWallMaterial walls[HELP_MATERIAL_COUNT];
+    HelpWallMaterial planes[HELP_PLANE_MATERIALS];
     uint8_t blockMap[HELP_MAP_BYTES];
+    uint8_t planeMap[HELP_PLANE_MAP_BYTES];
     uint16_t spawnTile;
     uint16_t ceilingRgb565;
     uint16_t floorRgb565;
     uint8_t spawnDirection;
     uint8_t materialCount;
+    uint8_t planeMaterialCount;
     uint8_t mapId;
     uint8_t active;
     uint8_t ready;
@@ -152,7 +157,8 @@ int EspNativeHelpScene_begin(uint8_t cachedMapId) {
     EspAssetPackEntry entry, mappings, palettes, textures;
     uint8_t mh[16], ph[4], wh[4];
     uint32_t pairCount, shapeCount, logicalCount, spriteCount, paletteSize;
-    uint32_t idBase, id, pass;
+    uint32_t idBase, id, pass, i;
+    uint8_t planeIds[HELP_PLANE_MATERIALS];
     int ok = 0;
 
     EspNativeHelpScene_reset();
@@ -161,7 +167,12 @@ int EspNativeHelpScene_begin(uint8_t cachedMapId) {
         !EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) return 0;
     if (!EspBspReader_inventoryPackEntry(name, &inventory) ||
         inventory.spawnIndex >= HELP_MAP_CELLS ||
-        inventory.sections.blockMapOffset >= inventory.sourceBytes ||
+        inventory.sections.blockMapOffset > inventory.sourceBytes ||
+        HELP_MAP_BYTES > inventory.sourceBytes -
+                         inventory.sections.blockMapOffset ||
+        inventory.sections.planeTexturesOffset > inventory.sourceBytes ||
+        HELP_PLANE_MAP_BYTES > inventory.sourceBytes -
+                               inventory.sections.planeTexturesOffset ||
         !EspAssetPack_findEntry(name, &entry) ||
         !EspAssetPack_findEntry("mappings.bin", &mappings) ||
         !EspAssetPack_findEntry("palettes.bin", &palettes) ||
@@ -169,6 +180,9 @@ int EspNativeHelpScene_begin(uint8_t cachedMapId) {
         !EspAssetPack_readRange(
             &entry, inventory.sections.blockMapOffset,
             scene.blockMap, sizeof(scene.blockMap)) ||
+        !EspAssetPack_readRange(
+            &entry, inventory.sections.planeTexturesOffset,
+            scene.planeMap, sizeof(scene.planeMap)) ||
         !EspAssetPack_readRange(&mappings, 0U, mh, sizeof(mh)) ||
         !EspAssetPack_readRange(&palettes, 0U, ph, sizeof(ph)) ||
         !EspAssetPack_readRange(&textures, 0U, wh, sizeof(wh)))
@@ -215,6 +229,32 @@ int EspNativeHelpScene_begin(uint8_t cachedMapId) {
         }
     }
     if (scene.materialCount == 0U) goto done;
+
+    /* Plane map uses 32x32 floor cells followed by 32x32 ceiling cells,
+     * exactly as the native renderer. Preserve four nearby REAL material IDs.
+     * They share the same 64x64 indexed PAK decode (no map-wide texel buffer).
+     * Unknown/flat cells fall back to a real cached wall texture, never an
+     * empty solid-color strip or fabricated bitmap. */
+    for (pass = 0U; pass < 2U; ++pass) {
+        const uint32_t base = pass * HELP_MAP_CELLS;
+        const uint32_t spawn = inventory.spawnIndex;
+        for (i = 0U; i < HELP_MAP_CELLS &&
+             scene.planeMaterialCount < HELP_PLANE_MATERIALS; ++i) {
+            const uint32_t cell = i == 0U ? spawn : i - 1U;
+            const uint8_t logical = scene.planeMap[base + cell];
+            uint8_t j, duplicate = 0U;
+            if (logical >= logicalCount) continue;
+            for (j = 0U; j < scene.planeMaterialCount; ++j)
+                if (planeIds[j] == logical) duplicate = 1U;
+            if (duplicate) continue;
+            if (loadMaterial(&mappings, &palettes, &textures,
+                             pairCount, paletteSize, idBase,
+                             logical, &scene.planes[scene.planeMaterialCount])) {
+                planeIds[scene.planeMaterialCount] = logical;
+                ++scene.planeMaterialCount;
+            }
+        }
+    }
 
     scene.spawnTile = inventory.spawnIndex;
     scene.spawnDirection = inventory.spawnDirection;
@@ -278,9 +318,28 @@ static void cameraFor(uint8_t variant, int* px, int* py, int* direction) {
         }
     }
 }
-/* One DDA-style bounded 1/16-tile ray per column, never per pixel.
- * Wall heights and materials are sampled only from the original BSP/PAK.
- * No gameplay render state, no large transient workspace, no randomization. */
+/* Source-of-truth spatial samples: blockMap controls wall collisions;
+ * planeMap controls the original texture IDs at their world tile.
+ * The tiny renderer fills ALL pixels: textured wall, textured floor and
+ * textured ceiling, not a narrow middle band on solid-color dead zones. */
+static const HelpWallMaterial* planeMaterial(int wx, int wy, int ceiling) {
+    uint8_t logical;
+    uint8_t i;
+    uint32_t cell;
+    if (wx < 0 || wx >= 32 || wy < 0 || wy >= 32)
+        return &scene.walls[0];
+    cell = (uint32_t)wy * 32U + (uint32_t)wx +
+           (ceiling ? HELP_MAP_CELLS : 0U);
+    logical = scene.planeMap[cell];
+    for (i = 0U; i < scene.planeMaterialCount; ++i)
+        if (scene.planes[i].logicalId == logical)
+            return &scene.planes[i];
+    return &scene.walls[0];
+}
+
+/* Raycast 1/16 tile per step; one ray per screen column, no per-pixel BSP
+ * traversal, no heap or transient frame. The projection scale gives full
+ * height to near walls and leaves textured plane surfaces only at distance. */
 static void paintWorld(uint16_t* fb, int top, int bottom,
                        uint8_t variant) {
     static const int8_t forwardX[4] = {1, 0, -1, 0};
@@ -316,7 +375,7 @@ static void paintWorld(uint16_t* fb, int top, int bottom,
             scene.materialCount];
         u = (tileX != prevX ? py : px) & 1023;
         u >>= 4;
-        wallHeight = height * 26 / (step + 20);
+        wallHeight = height * 72 / (step + 20);
         if (wallHeight < 1) wallHeight = 1;
         if (wallHeight > height) wallHeight = height;
         wallTop = (height - wallHeight) / 2;
@@ -324,14 +383,27 @@ static void paintWorld(uint16_t* fb, int top, int bottom,
         shade = step * 2 > 120 ? 136 : 256 - step * 2;
         for (y = 0; y < height; ++y) {
             uint16_t ink;
-            if (y < wallTop)
-                ink = scene.ceilingRgb565;
-            else if (y >= wallBottom)
-                ink = scene.floorRgb565;
-            else
+            if (y >= wallTop && y < wallBottom) {
                 ink = dim565(sampleMaterial(
-                     wall, u, (y - wallTop) * 64 / wallHeight),
-                     (unsigned int)shade);
+                      wall, u, (y - wallTop) * 64 / wallHeight),
+                      (unsigned int)shade);
+            }
+            else {
+                /* Plane projection from the same camera ray; 64 subtiles per
+                 * actual BSP tile. The nearest matching map texture is reused
+                 * without reading any asset during HELP repaint. */
+                const int delta = y < wallTop ?
+                      height / 2 - y : y - height / 2;
+                const int distance = height * 1600 / (delta * 2 + 24);
+                const int worldX = cx + dx * distance / 64;
+                const int worldY = cy + dy * distance / 64;
+                const int ceiling = y < wallTop;
+                const HelpWallMaterial* surface =
+                    planeMaterial(worldX >> 10, worldY >> 10, ceiling);
+                ink = dim565(sampleMaterial(surface,
+                         worldX >> 4, worldY >> 4),
+                         ceiling ? 190U : 168U);
+            }
             fb[(top + y) * DOOMRPG_LOGICAL_WIDTH + PREVIEW_X + x] =
                 ink;
         }
