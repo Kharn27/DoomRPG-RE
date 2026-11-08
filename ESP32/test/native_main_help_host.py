@@ -30,15 +30,14 @@ assert len(lines) == 77
 assert len(lines) % 7 == 0
 assert [lines[p * 7] for p in range(11)] == [
     "DOOM RPG ON CYD", "MENU CONTROLS", "TURN-BASED GAME",
-    "CYD TOUCH (1/2)", "CYD TOUCH (2/2)", "ACTION / CENTER",
-    "TOP HUD BAR", "WEAPONS & STATUS", "SYSTEM / SAVE LOAD",
+    "TOP HUD BAR", "CYD TOUCH (1/2)", "CYD TOUCH (2/2)",
+    "ACTION / CENTER", "WEAPONS & STATUS", "SYSTEM / SAVE LOAD",
     "TACTICAL TIPS", "ABOUT CYD PORT"]
 assert lines[1] == "Kharn27"
 assert lines[6] == ""  # no unwanted DOWN: controls callout
-# The seventh page is a visual, non-interactive replica of the real 160x20
-# upper HUD strip; keep every action explanation while moving the weapon
-# advice to the following page rather than dropping it.
-hud_page = lines[6 * 7 : 7 * 7]
+# The fourth page (before CYD TOUCH) illustrates the real 160x20
+# upper HUD in miniature; preserve weapon guidance on the next relevant page.
+hud_page = lines[3 * 7 : 4 * 7]
 assert hud_page == [
     "TOP HUD BAR", "3 VIRTUAL BUTTONS", "LEFT: game menu",
     "CENTER: pass a turn", "RIGHT: show automap", "", ""]
@@ -171,7 +170,7 @@ assert 'helpHudBarBG.width != MAIN_HELP_HUD_SOURCE_TILE' in actions
 assert 'DoomRPG_freeImage(helpSpaceOwner, &helpHudBarBG);' in actions
 assert 'helpPaintTopHudIllustration(framebuffer)' in actions
 assert 'if (menuSystem->scrollIndex == MAIN_HELP_HUD_PAGE_SCROLL)' in actions
-assert '#define MAIN_HELP_HUD_PAGE_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)' in actions
+assert '#define MAIN_HELP_HUD_PAGE_SCROLL (3 * MAIN_HELP_VISIBLE_LINES)' in actions
 assert macro("MAIN_HELP_HUD_BAR_X") == 16
 assert macro("MAIN_HELP_HUD_BAR_Y") == 43
 assert macro("MAIN_HELP_HUD_BAR_WIDTH") == 128
@@ -190,9 +189,15 @@ assert 'static const char* const labels[3] = {"MENU", "PASS TURN", "MAP"};' in a
 assert 'static const HelpHudGlyph helpHudGlyphs[]' in actions
 assert 'framebuffer[(y + row) * DOOMRPG_LOGICAL_WIDTH +' in actions
 assert '0xffffU; /* white, all themes */' in actions
-# The three page explanation lines remain white (not theme midpoint).
-assert '/* This illustrated page deliberately uses white explanatory' in actions
-assert 'DoomRPG_setFontColor(doomRpg, 0xffffffffU);' in actions
+# The miniature 5x7 labels are white over breathing blue; all FOUR lines
+# outside its borders use the theme's middle tone, like normal HELP copy.
+assert '/* The illustrated page\'s explanatory copy shares the active theme\'s' in actions
+hud_paint_section = actions.split(
+    'if (menuSystem->scrollIndex == MAIN_HELP_HUD_PAGE_SCROLL) {', 1
+)[1].split('    else {', 1)[0]
+assert hud_paint_section.count('helpColor888(helpBodyMiddleTone())') == 2
+assert 'DoomRPG_setFontColor(doomRpg, 0xffffffffU);' not in hud_paint_section
+assert '0xffffU; /* white, all themes */' in actions
 
 # Preserve the logical input splitter 0..31/32..127/128..159,
 # scaled and centered with no overlap and two fixed blue dividers.
@@ -256,5 +261,5 @@ for scroll in range(len(lines)):
     page = (clamped + 6) // 7 + 1
     assert 1 <= page <= (len(lines) + 6) // 7
 
-print("PASS HELP: 11 pages, scaled k.bmp 128x16 HUD, blue 1.32s breath, white labels and text,")
+print("PASS HELP: 11 pages, TOP HUD fourth, 128x16 k.bmp and 1.32s breath, white button glyphs,")
 print("           7-line bounded pages, animation/FNV rebasing, release and no keypad")
