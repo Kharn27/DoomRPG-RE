@@ -217,7 +217,7 @@ hud_paint_section = actions.split(
     'if (menuSystem->scrollIndex == MAIN_HELP_HUD_PAGE_SCROLL) {', 1
 )[1].split('    else if (menuSystem->scrollIndex == MAIN_HELP_SCENE_PAGE_SCROLL &&', 1)[0]
 assert 'helpDrawPositionCaption(doomRpg, canvas, label, i - 2,' in hud_paint_section
-assert actions.count('helpDrawPositionCaption(doomRpg, canvas, label, i - 2,') == 2
+assert actions.count('helpDrawPositionCaption(doomRpg, canvas, label, i - 2,') == 3
 assert 'helpDrawPositionCaption(doomRpg, canvas, label, i - 2,' in actions
 assert 'static void helpDrawPositionCaption(' in actions
 assert 'static const int tones[3] = {1, 4, 7};' in actions
