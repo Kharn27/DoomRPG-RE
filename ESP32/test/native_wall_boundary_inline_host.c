@@ -27,12 +27,13 @@ typedef struct {
 } LegacyWallGuard;
 typedef struct {
     short* pixels;
-    int pitch, screenLeft, screenRight, screenTop, screenBottom, numLines;
+    int pitch, screenLeft, screenRight, screenTop, screenBottom;
 } Render_t;
 typedef struct {
     Render_t* render;
     EspAssetPackEntry mappings, wallTexels;
     uint32_t spanCalls, pixelsDrawn;
+    uint32_t diagnosticLineIndex;
 } FirstFrameWork;
 typedef struct { uint16_t resourceId; } EspNativeGraphicsCatalogRecord;
 typedef struct {
@@ -127,7 +128,7 @@ int main(void) {
     FirstFrameWork work={0};
     ResolvedWallTexture src={0};
     render.pixels=framebuffer; render.pitch=4; render.screenRight=2;
-    render.screenBottom=4; render.numLines=161;
+    render.screenBottom=4; work.diagnosticLineIndex=161U;
     work.render=&render;
     work.mappings.nameHash=1; work.mappings.size=mappingBytes;
     work.wallTexels.nameHash=2; work.wallTexels.size=texelBytes;
@@ -172,6 +173,7 @@ int main(void) {
     memset(&frameFailure,0,sizeof(frameFailure));
     assert(!sampleWallSpan(&work,&src,wall,0,0,2049<<13,0,1));
     assert(frameFailure.code==FIRST_FRAME_FAIL_SPAN_OOB);
+    assert(frameFailure.lineIndex==161U);
     assert((uint16_t)framebuffer[0]==0x5a5a);
 
     /* Exceeding four distinct boundaries cannot widen the BSS owner. */
@@ -180,6 +182,7 @@ int main(void) {
     framebuffer[0]=(short)0x5a5a;
     assert(!sampleWallSpan(&work,&src,wall,0,0,2048<<13,0,1));
     assert(frameFailure.code==FIRST_FRAME_FAIL_SPAN_OOB);
+    assert(frameFailure.lineIndex==161U);
     assert((uint16_t)framebuffer[0]==0x5a5a);
 
     /* Missing/invalid mapping and closed PAK fail closed before painting. */
@@ -188,6 +191,7 @@ int main(void) {
     framebuffer[0]=(short)0x5a5a;
     assert(!sampleWallSpan(&work,&src,wall,0,0,2048<<13,0,1));
     assert(frameFailure.code==FIRST_FRAME_FAIL_SPAN_OOB);
+    assert(frameFailure.lineIndex==161U);
     assert((uint16_t)framebuffer[0]==0x5a5a);
     fixture();
     work.mappings.size=mappingBytes;
@@ -195,6 +199,7 @@ int main(void) {
     framebuffer[0]=(short)0x5a5a;
     assert(!sampleWallSpan(&work,&src,wall,0,0,2048<<13,0,1));
     assert(frameFailure.code==FIRST_FRAME_FAIL_SPAN_OOB);
+    assert(frameFailure.lineIndex==161U);
     assert((uint16_t)framebuffer[0]==0x5a5a && !packOpened);
 
     printf("PASS native wall boundary inline spans=2000 successor=68 source=32768 guardMax=4 retry=0\\n");
