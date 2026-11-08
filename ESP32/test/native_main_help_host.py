@@ -268,7 +268,7 @@ assert 'EspNativeHelpScene_breathStep(now - helpSpaceEpoch)' in actions
 assert 'EspNativeHelpScene_breathLevel((uint8_t)step)' in actions
 assert 'EspNativeHelpScene_breathPower(level)' in scene
 assert 'EspNativeHelpScene_breathPower(' in actions
-assert '3t²-2t³' in scene
+assert '(48U - 2U * level) * 255U + 2048U' in scene
 assert 'const uint16_t neon = (uint16_t)(((uint32_t)power * 31U) / 255U);' in actions
 assert ('MENU/PASS/MAP remain legible throughout the breath.' in actions
         or 'imaginary boundaries alone breathe:' in actions)
