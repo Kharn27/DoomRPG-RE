@@ -385,7 +385,7 @@ assert "(unsigned int)work->nodesTraversed," in first_frame
 assert "++state->nodes;" in bsp
 assert "uint32_t lineCount;" in first_frame and "uint32_t lineCount;" in bsp
 assert "work->lineCandidates" in first_frame
-assert "render->numLines" in first_frame and "render->numLines" in bsp
+assert "render->numLines" in first_frame and "r->numLines" in bsp
 assert "spriteLeafCache.nodeCount != runtime->nodeCount" in bsp
 assert "render->screenLeft" in sprite and "render->columnScale" in sprite
 
