@@ -40,10 +40,21 @@
  * Draw once per resulting logical pixel of motion, about 5Hz, not 60 FPS. */
 #define MAIN_HELP_STAR_PERIOD_MS 157U
 #define MAIN_HELP_STAR_VIRTUAL_WIDTH 192U
+/* TOP HUD BAR is the seventh fixed 7-line page. Reproduce the *actual*
+ * native 0..31 / 32..127 / 128..159 top-touch layout, visually only. */
+#define MAIN_HELP_HUD_PAGE_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)
+#define MAIN_HELP_HUD_BAR_Y 41
+#define MAIN_HELP_HUD_BAR_TILE 20
+#define MAIN_HELP_HUD_BAR_HEIGHT 20
+#define MAIN_HELP_HUD_MENU_RIGHT 31
+#define MAIN_HELP_HUD_PASS_LEFT 32
+#define MAIN_HELP_HUD_PASS_RIGHT 127
+#define MAIN_HELP_HUD_MAP_LEFT 128
 
 static DoomRPG_t* helpDoomRpg;
 static uint32_t helpExpectedFrameFNV;
 static Image_t helpSpaceBG;
+static Image_t helpHudBarBG;
 static DoomRPG_t* helpSpaceOwner;
 static uint32_t helpSpaceEpoch;
 static int helpSpaceShift;
@@ -52,9 +63,12 @@ static int helpLoggedScroll = -1;
 
 static void helpStop(void) {
     if (helpSpaceOwner != NULL) {
+        if (helpHudBarBG.imgBitmap != NULL)
+            DoomRPG_freeImage(helpSpaceOwner, &helpHudBarBG);
         DoomRPG_freeImage(helpSpaceOwner, &helpSpaceBG);
     }
     SDL_memset(&helpSpaceBG, 0, sizeof(helpSpaceBG));
+    SDL_memset(&helpHudBarBG, 0, sizeof(helpHudBarBG));
     helpSpaceOwner = NULL;
     helpSpaceEpoch = 0U;
     helpSpaceShift = 0;
@@ -74,11 +88,21 @@ static int helpStart(DoomRPG_t* doomRpg) {
         helpStop();
         return 0;
     }
+    /* k.bmp is the real, opaque 20x20 tiled gameplay HUD background.
+     * Retain only its tiny texture during HELP, not a screenshot or world. */
+    DoomRPG_createImage(doomRpg, "k.bmp", false, &helpHudBarBG);
+    if (helpHudBarBG.imgBitmap == NULL ||
+        helpHudBarBG.width != MAIN_HELP_HUD_BAR_TILE ||
+        helpHudBarBG.height != MAIN_HELP_HUD_BAR_HEIGHT) {
+        printf("[MAINHELP] FAILED k.bmp native top HUD asset 20x20\n");
+        helpStop();
+        return 0;
+    }
     helpSpaceEpoch = DoomRPG_GetUpTimeMS();
     helpSpaceShift = -1;
     helpLoggedScroll = -1;
     helpSpaceActive = 1;
-    printf("[MAINHELP] BACKGROUND asset=c.bmp source=pak scroll=intro-157ms/192virtual owner=help\n");
+    printf("[MAINHELP] BACKGROUND asset=c.bmp source=pak scroll=intro-157ms/192virtual owner=help hud=k.bmp/20x20\n");
     return 1;
 }
 
@@ -184,6 +208,74 @@ static void helpPaintCopyrightMark(uint16_t* fb) {
             }
         }
     }
+}
+
+/* Educational illustration only: draw the same k.bmp tiles as gameplay
+ * (8 x 20px, one 160x20 strip), then mark the real top input zones.
+ * No EspNativeGameplayInput routing is performed and no additional framebuffer,
+ * gameplay HUD owner or SD reads occur during the ~5Hz HELP star refresh.
+ * The three captions are drawn inside their 32/96/32px rectangles. */
+static int helpPaintTopHudIllustration(DoomCanvas_t* canvas,
+                                      uint16_t* framebuffer) {
+    static const int left[3] = {0, MAIN_HELP_HUD_PASS_LEFT,
+                               MAIN_HELP_HUD_MAP_LEFT};
+    static const int right[3] = {MAIN_HELP_HUD_MENU_RIGHT,
+                                MAIN_HELP_HUD_PASS_RIGHT,
+                                DOOMRPG_LOGICAL_WIDTH - 1};
+    static const char* const label[3] = {"MENU", "PASS TURN", "MAP"};
+    const uint16_t frameTone = EspMainMenuSkin_uiAccent();
+    const uint16_t notchTone = 0x001fU; /* real HUD split-marker neon blue */
+    int tileX, zone, x, y;
+
+    if (canvas == NULL || framebuffer == NULL ||
+        helpHudBarBG.imgBitmap == NULL ||
+        helpHudBarBG.width != MAIN_HELP_HUD_BAR_TILE ||
+        helpHudBarBG.height != MAIN_HELP_HUD_BAR_HEIGHT)
+        return 0;
+
+    for (tileX = 0; tileX < DOOMRPG_LOGICAL_WIDTH;
+         tileX += MAIN_HELP_HUD_BAR_TILE) {
+        SDL_Rect dst = {tileX, MAIN_HELP_HUD_BAR_Y,
+                        MAIN_HELP_HUD_BAR_TILE, MAIN_HELP_HUD_BAR_HEIGHT};
+        if (SDL_RenderCopy(NULL, helpHudBarBG.imgBitmap, NULL, &dst) != 0)
+            return 0;
+    }
+
+    /* One-pixel virtual button frames, exact same span as classified input.
+     * Frame pixels are drawn in-place after the original PAK background. */
+    for (zone = 0; zone < 3; ++zone) {
+        for (x = left[zone]; x <= right[zone]; ++x) {
+            framebuffer[MAIN_HELP_HUD_BAR_Y * DOOMRPG_LOGICAL_WIDTH + x] =
+                frameTone;
+            framebuffer[(MAIN_HELP_HUD_BAR_Y + MAIN_HELP_HUD_BAR_HEIGHT - 1) *
+                        DOOMRPG_LOGICAL_WIDTH + x] = frameTone;
+        }
+        for (y = MAIN_HELP_HUD_BAR_Y;
+             y < MAIN_HELP_HUD_BAR_Y + MAIN_HELP_HUD_BAR_HEIGHT; ++y) {
+            framebuffer[y * DOOMRPG_LOGICAL_WIDTH + left[zone]] = frameTone;
+            framebuffer[y * DOOMRPG_LOGICAL_WIDTH + right[zone]] = frameTone;
+        }
+    }
+    for (zone = 0; zone < 2; ++zone) {
+        x = zone == 0 ? MAIN_HELP_HUD_PASS_LEFT : MAIN_HELP_HUD_MAP_LEFT;
+        for (y = 1; y <= 2; ++y) {
+            framebuffer[(MAIN_HELP_HUD_BAR_Y + y) *
+                        DOOMRPG_LOGICAL_WIDTH + x] = notchTone;
+            framebuffer[(MAIN_HELP_HUD_BAR_Y + MAIN_HELP_HUD_BAR_HEIGHT -
+                         1 - y) * DOOMRPG_LOGICAL_WIDTH + x] = notchTone;
+        }
+    }
+
+    /* Theme top tone on the actual HUD strip, not in a separate asset. */
+    DoomRPG_setFontColor(canvas->doomRpg, helpColor888(helpTitleTopTone()));
+    for (zone = 0; zone < 3; ++zone) {
+        const int length = (int)SDL_strlen(label[zone]);
+        const int center = (left[zone] + right[zone] + 1) / 2;
+        EspNativeCanvas_drawText(canvas, label[zone],
+                                 center - length * 7 / 2,
+                                 MAIN_HELP_HUD_BAR_Y + 4, 0);
+    }
+    return 1;
 }
 
 int DoomRPG_esp32MainMenuReturnToMain(struct DoomRPG_s* doomRpgBase,
@@ -322,6 +414,32 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
                      MAIN_HELP_VISIBLE_LINES);
     EspNativeCanvas_drawText(canvas, page, 121, 0, 0);
 
+    if (menuSystem->scrollIndex == MAIN_HELP_HUD_PAGE_SCROLL) {
+        /* This one page replaces three abstract rows with the genuine
+         * gameplay bar, plus three labels below. No touch owners change. */
+        const char* title = DoomRPG_esp32MainMenuHelpLine(
+            MAIN_HELP_HUD_PAGE_SCROLL);
+        const char* caption = DoomRPG_esp32MainMenuHelpLine(
+            MAIN_HELP_HUD_PAGE_SCROLL + 1);
+        if (title == NULL || caption == NULL || visible != 7)
+            return 0;
+        helpDrawThemedPageTitle(doomRpg, canvas, title, 12, 14);
+        DoomRPG_setFontColor(doomRpg,
+                             helpColor888(helpBodyMiddleTone()));
+        EspNativeCanvas_drawText(canvas, caption, 12, 27, 0);
+        if (!helpPaintTopHudIllustration(canvas, framebuffer))
+            return 0;
+        for (i = 2; i <= 4; ++i) {
+            const char* label = DoomRPG_esp32MainMenuHelpLine(
+                MAIN_HELP_HUD_PAGE_SCROLL + i);
+            if (label == NULL || label[0] == '\0') return 0;
+            DoomRPG_setFontColor(doomRpg,
+                                 helpColor888(helpBodyMiddleTone()));
+            EspNativeCanvas_drawText(canvas, label, 12,
+                                     64 + (i - 2) * MAIN_HELP_LINE_HEIGHT, 0);
+        }
+    }
+    else {
     DoomRPG_setFontColor(doomRpg, 0xffffffffU);
     y = 14;
     for (i = menuSystem->scrollIndex; i < end; ++i) {
@@ -346,6 +464,7 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
             EspNativeCanvas_drawText(canvas, line, 12, y, 0);
         }
         y += MAIN_HELP_LINE_HEIGHT;
+    }
     }
     /* Exactly the finger hitboxes below: each chassis stays 100..119.
      * Shared painter gives CLASSIC/INFERNO/PHOSPHORE the same industrial
