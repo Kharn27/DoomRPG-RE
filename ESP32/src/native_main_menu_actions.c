@@ -135,6 +135,46 @@ static uint32_t helpColor888(uint16_t ink) {
     return 0xff000000U | (r << 16) | (g << 8) | b;
 }
 
+/* Nine-row native menu lettering is our theme reference. The existing
+ * 9x12 game bitmap is reused as-is: three 4-row clipped passes provide
+ * the same three-tone CLASSIC/INFERNO/PHOSPHORE gradient, without a font
+ * resample, heap, a new atlas, or touching global font/text primitives.
+ * Caller owns a full-frame presentation and no active clipping region. */
+static void helpDrawThemedPageTitle(DoomRPG_t* doomRpg,
+                                    DoomCanvas_t* canvas,
+                                    const char* title, int x, int y) {
+    int band;
+    if (title == NULL || canvas == NULL) return;
+    for (band = 0; band < 3; ++band) {
+        const uint16_t ink = EspMainMenuSkin_letterTone(band * 3 + 1, 9);
+        DoomRPG_setClipTrue(doomRpg, x, y + band * 4,
+                            DOOMRPG_LOGICAL_WIDTH - x, 4);
+        DoomRPG_setFontColor(doomRpg, helpColor888(ink));
+        EspNativeCanvas_drawText(canvas, title, x, y, 0);
+    }
+    DoomRPG_setClipFalse(doomRpg);
+}
+
+/* Small © badge drawn in the existing RGB565 frame at (12,27).
+ * The original a.bmp bitmap font doesn't contain a copyright glyph.
+ * This fixed 11x9 ROM mask places the C inside the outer circle. */
+static void helpPaintCopyrightMark(uint16_t* fb) {
+    static const uint16_t rows[9] = {
+        0x0f8U, 0x204U, 0x462U, 0x488U, 0x488U,
+        0x488U, 0x462U, 0x204U, 0x0f8U
+    };
+    const uint16_t ink = EspMainMenuSkin_uiInk();
+    int y, x;
+    if (fb == NULL) return;
+    for (y = 0; y < 9; ++y) {
+        for (x = 0; x < 11; ++x) {
+            if ((rows[y] & (uint16_t)(0x400U >> x)) != 0U) {
+                fb[(27 + y) * DOOMRPG_LOGICAL_WIDTH + 12 + x] = ink;
+            }
+        }
+    }
+}
+
 int DoomRPG_esp32MainMenuReturnToMain(struct DoomRPG_s* doomRpgBase,
                                       int expectedChildMenu,
                                       const char* source,
@@ -276,7 +316,22 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
     for (i = menuSystem->scrollIndex; i < end; ++i) {
         const char* line = DoomRPG_esp32MainMenuHelpLine(i);
         if (line == NULL) return 0;
-        if (line[0] != '\0') EspNativeCanvas_drawText(canvas, line, 12, y, 0);
+        if (i % MAIN_HELP_VISIBLE_LINES == 0) {
+            /* First visible row is the section title on every fixed page. */
+            helpDrawThemedPageTitle(doomRpg, canvas, line, 12, y);
+        }
+        else if (i == 1 && menuSystem->scrollIndex == 0) {
+            /* Signature only on the cover, directly below its title. */
+            DoomRPG_setFontColor(doomRpg,
+                helpColor888(EspMainMenuSkin_uiInk()));
+            EspNativeCanvas_drawText(canvas, line, 27, y, 0);
+            helpPaintCopyrightMark(framebuffer);
+            DoomRPG_setFontColor(doomRpg, 0xffffffffU);
+        }
+        else if (line[0] != '\0') {
+            DoomRPG_setFontColor(doomRpg, 0xffffffffU);
+            EspNativeCanvas_drawText(canvas, line, 12, y, 0);
+        }
         y += MAIN_HELP_LINE_HEIGHT;
     }
     /* Exactly the finger hitboxes below: each chassis stays 100..119.
