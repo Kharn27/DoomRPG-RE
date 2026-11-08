@@ -71,9 +71,9 @@ static uint32_t viewportFNV(const Render_t* render) {
 
     if (render == NULL || render->framebuffer == NULL ||
         render->screenWidth != DOOMRPG_LOGICAL_WIDTH ||
-        render->screenHeight <= 0 || render->screenX != 0 ||
-        render->screenY < 0 ||
-        render->screenY + render->screenHeight > DOOMRPG_LOGICAL_HEIGHT) {
+        render->screenHeight <= 0 || DOOMRPG_VIEWPORT_X != 0 ||
+        DOOMRPG_VIEWPORT_Y < 0 ||
+        DOOMRPG_VIEWPORT_Y + render->screenHeight > DOOMRPG_LOGICAL_HEIGHT) {
         return 0U;
     }
 
@@ -81,7 +81,7 @@ static uint32_t viewportFNV(const Render_t* render) {
     pitchPixels = render->pitch >> 1;
     for (y = 0; y < render->screenHeight; ++y) {
         const uint16_t* row = framebuffer +
-            (render->screenY + y) * pitchPixels;
+            (DOOMRPG_VIEWPORT_Y + y) * pitchPixels;
         hash = fnvAppend(hash, row, rowBytes);
     }
     return hash;
@@ -108,14 +108,14 @@ static int dumpViewportBmp(const Render_t* render, uint32_t* outFNV) {
     if (outFNV != NULL) *outFNV = 0U;
     if (render == NULL || render->framebuffer == NULL ||
         render->screenWidth != BMP_WIDTH ||
-        render->screenHeight != BMP_HEIGHT || render->screenX != 0 ||
-        render->screenY < 0 ||
-        render->screenY + BMP_HEIGHT > DOOMRPG_LOGICAL_HEIGHT) {
+        render->screenHeight != BMP_HEIGHT || DOOMRPG_VIEWPORT_X != 0 ||
+        DOOMRPG_VIEWPORT_Y < 0 ||
+        DOOMRPG_VIEWPORT_Y + BMP_HEIGHT > DOOMRPG_LOGICAL_HEIGHT) {
         printf("[JUNCTIONFRAME] BMP FAILED viewport=%dx%d@%d,%d\n",
                render != NULL ? render->screenWidth : -1,
                render != NULL ? render->screenHeight : -1,
-               render != NULL ? render->screenX : -1,
-               render != NULL ? render->screenY : -1);
+               render != NULL ? DOOMRPG_VIEWPORT_X : -1,
+               render != NULL ? DOOMRPG_VIEWPORT_Y : -1);
         return 0;
     }
 
@@ -149,7 +149,7 @@ static int dumpViewportBmp(const Render_t* render, uint32_t* outFNV) {
     pitchPixels = render->pitch >> 1;
     for (y = BMP_HEIGHT - 1; y >= 0; --y) {
         const uint16_t* source = framebuffer +
-            (render->screenY + y) * pitchPixels;
+            (DOOMRPG_VIEWPORT_Y + y) * pitchPixels;
         for (x = 0; x < BMP_WIDTH; ++x) {
             const uint16_t color = source[x];
             row[(x * 3) + 0] = expand5(color);
@@ -174,7 +174,7 @@ static int dumpViewportBmp(const Render_t* render, uint32_t* outFNV) {
     printf("[JUNCTIONFRAME] BMP READY path=/junction-viewport.bmp size=%u viewport=%dx%d@%d,%d viewportFNV=%08x postParkDiagnostic=yes\n",
            (unsigned int)BMP_FILE_BYTES,
            render->screenWidth, render->screenHeight,
-           render->screenX, render->screenY,
+           DOOMRPG_VIEWPORT_X, DOOMRPG_VIEWPORT_Y,
            (unsigned int)(outFNV != NULL ? *outFNV : 0U));
     return 1;
 }
@@ -196,7 +196,7 @@ static void measureViewport(const Render_t* render) {
 
     if (render == NULL || render->framebuffer == NULL ||
         render->screenWidth <= 0 || render->screenHeight <= 0 ||
-        render->screenX < 0 || render->screenY < 0) {
+        DOOMRPG_VIEWPORT_X < 0 || DOOMRPG_VIEWPORT_Y < 0) {
         printf("[JUNCTIONFRAME] COLORSTATS FAILED invalid render viewport\n");
         return;
     }
@@ -206,7 +206,7 @@ static void measureViewport(const Render_t* render) {
 
     for (y = 0; y < render->screenHeight; ++y) {
         const uint16_t* source = framebuffer +
-            (render->screenY + y) * pitchPixels + render->screenX;
+            (DOOMRPG_VIEWPORT_Y + y) * pitchPixels + DOOMRPG_VIEWPORT_X;
         for (x = 0; x < render->screenWidth; ++x) {
             const uint16_t color = source[x];
             const uint8_t r = expand5(color >> 11);
@@ -241,7 +241,7 @@ static void measureViewport(const Render_t* render) {
 
     printf("[JUNCTIONFRAME] COLORSTATS viewport=%dx%d@%d,%d meanRGB=%u/%u/%u meanY=%u minY=%u maxY=%u binsY=0-63:%u 64-127:%u 128-191:%u 192-255:%u neutral=%u/%u framebufferUntouched=yes\n",
            render->screenWidth, render->screenHeight,
-           render->screenX, render->screenY,
+           DOOMRPG_VIEWPORT_X, DOOMRPG_VIEWPORT_Y,
            (unsigned int)(sumR / count),
            (unsigned int)(sumG / count),
            (unsigned int)(sumB / count),
