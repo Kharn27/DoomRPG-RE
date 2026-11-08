@@ -257,9 +257,10 @@ typedef struct Render_s
 	char* ioBuffer;
 	int ioBufferPos;
 #endif
-/* The desktop viewport origin is not a native Render_t owner: the CYD
- * layout stage derives it directly from its SDL_Rect/constant geometry. */
-#ifndef DOOMRPG_ESP32
+/* Desktop viewport origin stays available to the host differential
+ * geometry oracle, which still runs extracted Render.c reference bodies.
+ * Production/bringup/trace CYD use the input SDL_Rect instead. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	int screenX;
 	int screenY;
 #endif
