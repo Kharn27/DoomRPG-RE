@@ -62,14 +62,25 @@ int EspMainMenuSkin_paintModalTitleStencil(uint16_t* framebuffer,
                                            int logicalWidth,
                                            int logicalHeight);
 
-/* Shared procedural gunmetal chassis. No text, heap or IO. Strict 160x120
- * framebuffer and bounded rectangle; invalid inputs leave pixels untouched.
- * The same IDLE geometry/palette is used by the loading presentation. */
+/* Shared procedural gunmetal chassis with mirrored top/bottom bevel, groove
+ * and bolt caps. No text, heap or IO. Strict 160x120 framebuffer and bounded
+ * rectangle; invalid inputs leave pixels untouched. LOADING uses IDLE. */
 int EspMainMenuSkin_paintPlate(uint16_t* framebuffer,
                                int stridePixels, int logicalWidth,
                                int logicalHeight, int left, int top,
                                int right, int bottom,
                                EspMainMenuSkinState state);
+
+
+/* Two small industrial page-arrow keys, no allocations or IO. Only the
+ * existing 39x29/30 slot-navigation rectangles are accepted; 'next' 0=UP,
+ * 1=DOWN, and enabled is the unchanged slot-page availability predicate.
+ * Invalid input leaves all framebuffer pixels untouched. */
+int EspMainMenuSkin_paintNavKey(uint16_t* framebuffer,
+                                int stridePixels, int logicalWidth,
+                                int logicalHeight, int left, int top,
+                                int right, int bottom,
+                                int next, int enabled);
 
 /* Returns 0 without writes on invalid arguments. On success, changes pixels
  * ONLY inside the selected card rectangle; caller owns the same framebuffer. */

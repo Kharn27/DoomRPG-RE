@@ -56,10 +56,158 @@ static void assertOutsideCardUntouched(const uint16_t* fb, int card) {
     assert(fb[19 * W + 102] == SENTINEL);
 }
 
+
+/* Both caps must be genuinely mirrored before any label/gauge overlay.
+ * Exercises all live card sizes, the narrow LOADING gauge, all state palettes
+ * and all three themes. Full-frame guards also reject any overdraw. */
+static void assertPlateCapSymmetry(uint16_t* fb) {
+    static const int boxes[][4] = {
+        {104, 8, 157, 31},   /* MENU_MAIN */
+        {104, 8, 157, 39},   /* OPTIONS */
+        {104, 6, 157, 31},   /* VIDEO */
+        {104, 6, 157, 26},   /* BRIGHTNESS */
+        {16, 26, 143, 69},  /* LOADING title */
+        {16, 82, 143, 99}   /* LOADING gauge chassis */
+    };
+    static const uint16_t steel[3] = {0x4a48U, 0x632bU, 0x4248U};
+    static const uint16_t bevel[3] = {0x838dU, 0xa4d1U, 0x83ceU};
+    static const uint16_t shadow[3] = {0x0820U, 0x0800U, 0x0800U};
+    static const uint16_t groove[3] = {0x3123U, 0x39a5U, 0x2903U};
+    static const uint16_t base[3] = {0x0800U, 0x1000U, 0x0800U};
+
+    for (int theme = 0; theme < 3; ++theme) {
+        assert(EspMainMenuSkin_setTheme((uint8_t)theme));
+        for (int state = 0; state < 3; ++state) {
+            const EspMainMenuSkinState st = (EspMainMenuSkinState)state;
+            for (int box = 0; box < (int)(sizeof(boxes)/sizeof(boxes[0])); ++box) {
+                const int l = boxes[box][0], t = boxes[box][1];
+                const int r = boxes[box][2], b = boxes[box][3];
+                resetFrame();
+                assert(EspMainMenuSkin_paintPlate(fb, W, W, H,
+                                                  l, t, r, b, st));
+                for (int y = 0; y < H; ++y) {
+                    for (int x = 0; x < W; ++x) {
+                        if (x < l || x > r || y < t || y > b) {
+                            assert(fb[y*W+x] == SENTINEL);
+                        } else {
+                            assert(fb[y*W+x] == fb[(t+b-y)*W+x]);
+                        }
+                    }
+                }
+                for (int k = 0; k < GUARD; ++k) {
+                    assert(arena[k] == SENTINEL);
+                    assert(arena[GUARD+W*H+k] == SENTINEL);
+                }
+                /* Exact paired highlights, recessed inner grooves and
+                 * theme seam. No replacement of palette or red gauge ink. */
+                for (int cap = 0; cap < 2; ++cap) {
+                    const int end = cap ? b : t;
+                    const int step = cap ? -1 : 1;
+                    assert(fb[end*W+l+10] == bevel[state]);
+                    assert(fb[(end+step)*W+l+10] == bevel[state]);
+                    assert(fb[(end+2*step)*W+l+10] == steel[state]);
+                    assert(fb[(end+3*step)*W+l+10] ==
+                           EspMainMenuSkin_accentTone(st));
+                    assert(fb[(end+4*step)*W+l+10] == groove[state]);
+                    assert(fb[end*W+l] == shadow[state]);
+                    assert(fb[end*W+r] == shadow[state]);
+                    if (b-t+1 >= 24) {
+                        assert(fb[(end+5*step)*W+l+5] == shadow[state]);
+                        assert(fb[(end+6*step)*W+l+5] == bevel[state]);
+                        assert(fb[(end+5*step)*W+r-5] == shadow[state]);
+                        assert(fb[(end+6*step)*W+r-5] == bevel[state]);
+                    }
+                }
+                if (box == 5) {
+                    /* The 120x6 LOADING track area is untouched by the
+                     * chassis, including the previously unwanted end caps. */
+                    for (int y = 88; y <= 93; ++y)
+                        for (int x = 20; x <= 139; ++x)
+                            assert(fb[y*W+x] == base[state]);
+                    assert(fb[87*W+21] == base[state]);
+                    assert(fb[94*W+138] == base[state]);
+                }
+            }
+        }
+    }
+    assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
+}
+
+
+/* Regress the real production nav-key painter against its exact plate
+ * background, across both LOAD GAME and HUB slot layouts. All chevrons
+ * retain their original 2-pixel silhouette; no writes outside touch bounds. */
+static void assertIndustrialNavKeys(uint16_t* fb) {
+    static const int regions[][4] = {
+        {118, 34, 156, 62},  /* MAIN LOAD UP: 39x29 */
+        {118, 69, 156, 98},  /* MAIN LOAD DOWN: 39x30 */
+        {118, 49, 156, 78},  /* HUB slot UP: 39x30 */
+        {118, 83, 156, 112} /* HUB slot DOWN: 39x30 */
+    };
+    static uint16_t plate[W * H];
+    for (int theme = 0; theme < 3; ++theme) {
+        assert(EspMainMenuSkin_setTheme((uint8_t)theme));
+        for (int rectangle = 0; rectangle < 4; ++rectangle) {
+            const int l = regions[rectangle][0], t = regions[rectangle][1];
+            const int r = regions[rectangle][2], b = regions[rectangle][3];
+            const int cx = (l + r) / 2, cy = (t + b) / 2;
+            resetFrame();
+            assert(EspMainMenuSkin_paintPlate(fb,W,W,H,l,t,r,b,
+                                              ESP_MAIN_MENU_SKIN_IDLE));
+            memcpy(plate, fb, sizeof(plate));
+            for (int next = 0; next < 2; ++next) {
+                for (int enabled = 0; enabled < 2; ++enabled) {
+                    const uint16_t arrow = enabled ?
+                        EspMainMenuSkin_uiAccent() : 0x4a48U;
+                    resetFrame();
+                    assert(EspMainMenuSkin_paintNavKey(fb,W,W,H,l,t,r,b,
+                                                      next,enabled));
+                    for (int y = 0; y < H; ++y)
+                        for (int x = 0; x < W; ++x) {
+                            if (x < l || x > r || y < t || y > b) {
+                                assert(fb[y*W+x] == SENTINEL);
+                                continue;
+                            }
+                            int chevron = 0;
+                            for (int i = 0; i < 7; ++i) {
+                                const int yy = next ? cy - 3 + i : cy + 3 - i;
+                                const int left = cx - 7 + i;
+                                const int right = cx + 7 - i;
+                                if ((y == yy || y == yy + 1) &&
+                                    ((x >= left && x <= left + 2) ||
+                                     (x >= right - 2 && x <= right)))
+                                    chevron = 1;
+                            }
+                            assert(fb[y*W+x] ==
+                                   (chevron ? arrow : plate[y*W+x]));
+                        }
+                    for (int guard = 0; guard < GUARD; ++guard) {
+                        assert(arena[guard] == SENTINEL);
+                        assert(arena[GUARD + W*H + guard] == SENTINEL);
+                    }
+                }
+            }
+        }
+    }
+    resetFrame();
+    assert(!EspMainMenuSkin_paintNavKey(NULL,W,W,H,118,34,156,62,0,1));
+    assert(!EspMainMenuSkin_paintNavKey(fb,W-1,W,H,118,34,156,62,0,1));
+    assert(!EspMainMenuSkin_paintNavKey(fb,W,W,H,118,34,155,62,0,1));
+    assert(!EspMainMenuSkin_paintNavKey(fb,W,W,H,118,34,156,64,0,1));
+    assert(!EspMainMenuSkin_paintNavKey(fb,W,W,H,118,34,156,62,2,1));
+    assert(!EspMainMenuSkin_paintNavKey(fb,W,W,H,118,34,156,62,0,-1));
+    assert(!EspMainMenuSkin_paintNavKey(fb,W,W,H,118,34,160,62,0,1));
+    for (int i=0;i<(int)(sizeof(arena)/sizeof(arena[0]));++i)
+        assert(arena[i] == SENTINEL);
+    assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
+}
+
 int main(void) {
     uint16_t* fb = arena + GUARD;
     uint32_t fingerprints[4][3];
     int item, state;
+    assertPlateCapSymmetry(fb);
+    assertIndustrialNavKeys(fb);
     assert(DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH == 102);
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_HEIGHT == 20);
     assert(DOOMRPG_ESP32_MAIN_MENU_CARD_PITCH == 25);
@@ -177,11 +325,31 @@ int main(void) {
     assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_INFERNO));
     assert(EspMainMenuSkin_uiAccent() == 0xf926U);
     assert(EspMainMenuSkin_uiAccentDim() == 0x9002U);
-    assert(EspMainMenuSkin_uiInk() == 0xff75U);
+    /* INFERNO top ink is blush/pale rose, not the previous straw yellow.
+     * The same hue feeds the modal labels; copper and deep red stay exact. */
+    assert(EspMainMenuSkin_uiInk() == 0xfebcU);
     {
-        static const uint16_t hot[5] = {0xff75U,0xff75U,0xd344U,0xd344U,0xc002U};
+        static const uint16_t hot[5] = {0xfebcU,0xfebcU,0xd344U,0xd344U,0xc002U};
+        static const uint16_t hot7[7] = {
+            0xfebcU,0xfebcU,0xfebcU,0xd344U,0xd344U,0xc002U,0xc002U
+        };
+        static const uint16_t hot9[9] = {
+            0xfebcU,0xfebcU,0xfebcU,0xd344U,0xd344U,0xd344U,
+            0xc002U,0xc002U,0xc002U
+        };
+        const uint16_t rose = EspMainMenuSkin_letterTone(0, 9);
+        const unsigned green = (rose >> 5) & 63U;
+        const unsigned blue = rose & 31U;
+        assert(((rose >> 11) & 31U) == 31U);
+        /* The original yellow was 0xff75: less blue than green/2.
+         * Pale pink must contain a substantial blue component. */
+        assert(blue * 2U > green);
         for (int row = 0; row < 5; ++row)
             assert(EspMainMenuSkin_letterTone(row, 5) == hot[row]);
+        for (int row = 0; row < 7; ++row)
+            assert(EspMainMenuSkin_letterTone(row, 7) == hot7[row]);
+        for (int row = 0; row < 9; ++row)
+            assert(EspMainMenuSkin_letterTone(row, 9) == hot9[row]);
         static const uint16_t emberFill[6] = {
             0xf946U,0xf905U,0xf804U,0xd004U,0xb003U,0x9002U
         };

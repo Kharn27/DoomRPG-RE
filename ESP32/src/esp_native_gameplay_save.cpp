@@ -3334,23 +3334,12 @@ void drawCenteredWord(uint16_t* fb, int centerX, int y, const char* text,
     EspNativeGameplayHubTouchUi_drawCrispText(fb, text, centerX, y, color);
 }
 
-/* Two chunky industrial page keys, fixed pixels and no extra framebuffer. */
-/* Two distinct page actions: PREV (upper), NEXT (lower).
- * The inactive direction is visibly disabled and does not consume state. */
+/* Slot page navigation keeps its original touch rectangles and chevrons.
+ * Reuse the exact industrial metal owner for both LOAD GAME and HUB slots. */
 void drawSlotNav(uint16_t* fb, int top, int bottom, bool next, bool enabled) {
-    const int x0 = 118, x1 = 156;
-    const int cx = 137, cy = (top + bottom) / 2;
-    const uint16_t color = enabled ? EspMainMenuSkin_uiAccent() : ESP_HUB_COLOR_STEEL_DARK;
-    fillRect(fb, x0, top, x1, bottom, enabled ? ESP_HUB_COLOR_PANEL_ALT : ESP_HUB_COLOR_PANEL);
-    drawRect(fb, x0, top, x1, bottom, enabled ? ESP_HUB_COLOR_STEEL : ESP_HUB_COLOR_STEEL_DARK);
-    /* Broad 2px chevron, pointing UP for previous, DOWN for next. */
-    for (int i = 0; i < 7; ++i) {
-        const int yy = next ? cy - 3 + i : cy + 3 - i;
-        const int left = cx - 7 + i;
-        const int right = cx + 7 - i;
-        fillRect(fb, left, yy, left + 2, yy + 1, color);
-        fillRect(fb, right - 2, yy, right, yy + 1, color);
-    }
+    (void)EspMainMenuSkin_paintNavKey(fb,
+        DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
+        118, top, 156, bottom, next ? 1 : 0, enabled ? 1 : 0);
 }
 
 bool paintSaveOverlay(void) {
