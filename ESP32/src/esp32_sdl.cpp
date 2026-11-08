@@ -20,6 +20,11 @@ struct SDL_Texture {
     int height;
     int pitch;
     Uint16* pixels;
+    Uint8* indexedPixels;
+    SDL_Color* palette;
+    int paletteSize;
+    Uint8 indexedBitsPerPixel;
+    bool indexed;
     Uint8 red;
     Uint8 green;
     Uint8 blue;
@@ -436,39 +441,66 @@ SDL_Texture* SDL_CreateTexture(SDL_Renderer*, Uint32 format, int, int width, int
     return texture;
 }
 
-SDL_Texture* SDL_CreateTextureFromSurface(SDL_Renderer* renderer, SDL_Surface* surface) {
-    if (surface == nullptr || surface->format == nullptr || surface->format->palette == nullptr) {
+SDL_Texture* SDL_CreateTextureFromSurface(SDL_Renderer*, SDL_Surface* surface) {
+    if (surface == nullptr || surface->format == nullptr ||
+        surface->format->palette == nullptr ||
+        surface->format->palette->colors == nullptr || surface->pixels == nullptr) {
+        setError("unsupported indexed surface");
         return nullptr;
     }
-    SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGB565,
-                                             SDL_TEXTUREACCESS_STREAMING,
-                                             surface->w, surface->h);
-    if (texture == nullptr) return nullptr;
-    texture->hasColorKey = surface->hasColorKey;
-    const Uint8* source = static_cast<const Uint8*>(surface->pixels);
-    for (int y = 0; y < surface->h; ++y) {
-        for (int x = 0; x < surface->w; ++x) {
-            const SDL_Color& color = surface->format->palette->colors[source[y * surface->pitch + x]];
-            texture->pixels[y * surface->w + x] = rgb565(color.r, color.g, color.b);
-        }
+
+    const Uint8 bitsPerPixel = surface->format->BitsPerPixel;
+    if (bitsPerPixel != 1 && bitsPerPixel != 4 && bitsPerPixel != 8) {
+        setError("unsupported indexed surface depth");
+        return nullptr;
     }
+
+    SDL_Texture* texture = static_cast<SDL_Texture*>(calloc(1, sizeof(SDL_Texture)));
+    if (texture == nullptr) {
+        setError("out of memory creating indexed texture");
+        return nullptr;
+    }
+
+    texture->width = surface->w;
+    texture->height = surface->h;
+    texture->pitch = surface->pitch;
+    texture->indexedPixels = static_cast<Uint8*>(surface->pixels);
+    texture->palette = surface->format->palette->colors;
+    texture->paletteSize = surface->format->palette->ncolors;
+    texture->indexedBitsPerPixel = bitsPerPixel;
+    texture->indexed = true;
+    texture->red = texture->green = texture->blue = 255;
+    texture->hasColorKey = surface->hasColorKey;
     if (texture->hasColorKey) {
         texture->colorKey = rgb565((surface->colorKey >> 16) & 0xff,
                                    (surface->colorKey >> 8) & 0xff,
                                    surface->colorKey & 0xff);
     }
+
+    // Transfer ownership to the texture. DoomRPG_createImage() immediately
+    // frees the SDL_Surface after this call, so detaching keeps this zero-copy.
+    surface->pixels = nullptr;
+    surface->format->palette->colors = nullptr;
+
+    Serial.printf("[SDL] Adopt packed indexed texture %dx%d bpp=%u bytes=%u palette=%d\n",
+                  texture->width, texture->height,
+                  texture->indexedBitsPerPixel,
+                  static_cast<unsigned int>(texture->pitch * texture->height),
+                  texture->paletteSize);
     return texture;
 }
 
 void SDL_DestroyTexture(SDL_Texture* texture) {
     if (texture == nullptr) return;
     free(texture->pixels);
+    free(texture->indexedPixels);
+    free(texture->palette);
     free(texture);
 }
 
 int SDL_UpdateTexture(SDL_Texture* texture, const SDL_Rect* rect,
                       const void* pixels, int pitch) {
-    if (texture == nullptr || pixels == nullptr) return -1;
+    if (texture == nullptr || pixels == nullptr || texture->indexed) return -1;
     SDL_Rect area = rect == nullptr ? SDL_Rect{0, 0, texture->width, texture->height} : *rect;
     for (int y = 0; y < area.h; ++y) {
         memcpy(texture->pixels + (area.y + y) * texture->width + area.x,
@@ -507,7 +539,29 @@ int SDL_RenderCopy(SDL_Renderer*, SDL_Texture* texture, const SDL_Rect* source,
             if (!insideClip(x, y)) continue;
             const int sourceX = src.x + ((x - dst.x) * src.w) / dst.w;
             if (sourceX < 0 || sourceX >= texture->width) continue;
-            const Uint16 color = texture->pixels[sourceY * texture->width + sourceX];
+            Uint16 color;
+            if (texture->indexed) {
+                const Uint8* indexedRow =
+                    texture->indexedPixels + sourceY * texture->pitch;
+                Uint8 paletteIndex;
+                if (texture->indexedBitsPerPixel == 8) {
+                    paletteIndex = indexedRow[sourceX];
+                }
+                else if (texture->indexedBitsPerPixel == 4) {
+                    const Uint8 packed = indexedRow[sourceX >> 1];
+                    paletteIndex = (sourceX & 1) ? (packed & 0x0f) : (packed >> 4);
+                }
+                else {
+                    paletteIndex =
+                        (indexedRow[sourceX >> 3] >> (7 - (sourceX & 7))) & 0x01;
+                }
+                if (paletteIndex >= texture->paletteSize) continue;
+                const SDL_Color& paletteColor = texture->palette[paletteIndex];
+                color = rgb565(paletteColor.r, paletteColor.g, paletteColor.b);
+            }
+            else {
+                color = texture->pixels[sourceY * texture->width + sourceX];
+            }
             if (texture->hasColorKey && color == texture->colorKey) continue;
             rendererPixels[y * kLogicalWidth + x] = modulate565(color, texture);
         }
