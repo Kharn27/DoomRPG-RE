@@ -42,10 +42,10 @@
  * Draw once per resulting logical pixel of motion, about 5Hz, not 60 FPS. */
 #define MAIN_HELP_STAR_PERIOD_MS 157U
 #define MAIN_HELP_STAR_VIRTUAL_WIDTH 192U
-/* Fourth guide page: an 80%-scale, centred illustration, NOT the live
+/* Fifth guide page: an 80%-scale, centred illustration, NOT the live
  * top screen bar. Logical game hitboxes are 0..31 / 32..127 / 128..159.
  * Multiply by 4/5 to keep their 1:3:1 proportion in the miniature. */
-#define MAIN_HELP_HUD_PAGE_SCROLL (3 * MAIN_HELP_VISIBLE_LINES)
+#define MAIN_HELP_HUD_PAGE_SCROLL (4 * MAIN_HELP_VISIBLE_LINES)
 #define MAIN_HELP_HUD_BAR_X 16
 #define MAIN_HELP_HUD_BAR_Y 43
 #define MAIN_HELP_HUD_BAR_WIDTH 128
@@ -58,7 +58,7 @@
 #define MAIN_HELP_HUD_MAP_LEFT 103
 #define MAIN_HELP_HUD_BREATH_STEP_MS 220U
 #define MAIN_HELP_HUD_BREATH_STEPS 12U
-#define MAIN_HELP_SCENE_PAGE_SCROLL (4 * MAIN_HELP_VISIBLE_LINES)
+#define MAIN_HELP_SCENE_PAGE_SCROLL (5 * MAIN_HELP_VISIBLE_LINES)
 
 static DoomRPG_t* helpDoomRpg;
 static uint32_t helpExpectedFrameFNV;
@@ -196,6 +196,9 @@ static uint16_t helpTitleTopTone(void) {
 static uint16_t helpBodyMiddleTone(void) {
     return EspMainMenuSkin_letterTone(4, 9);
 }
+static uint16_t helpThirdTone(void) {
+    return EspMainMenuSkin_letterTone(7, 9);
+}
 
 /* Nine-row native menu lettering is our theme reference. The existing
  * 9x12 game bitmap is reused as-is: three 4-row clipped passes provide
@@ -217,25 +220,22 @@ static void helpDrawThemedPageTitle(DoomRPG_t* doomRpg,
     DoomRPG_setClipFalse(doomRpg);
 }
 
-/* Same 12px visual height as the existing bitmap "Kharn27" text.
- * The a.bmp atlas has no ©; this fixed 12x12 outline + C is drawn into
- * the ONE RGB565 framebuffer at (12,26), with 3px gap before the name.
- * Both glyph and name use the identical top tone of the selected skin. */
-static void helpPaintCopyrightMark(uint16_t* fb) {
+/* One 12x12 copyright glyph repeated in three skin tones.
+ * The a.bmp font lacks ©. Compact display attributions stand for
+ * Kharn27; Erick Vásquez García ([GEC], DoomRPG-RE); and the original
+ * developers id Software + Fountainhead Entertainment. */
+static void helpPaintCopyrightMark(uint16_t* fb, int top, uint16_t ink) {
     static const uint16_t rows[12] = {
         0x0f0U, 0x30cU, 0x402U, 0x8f1U, 0x901U, 0x901U,
         0x901U, 0x901U, 0x8f1U, 0x402U, 0x30cU, 0x0f0U
     };
-    const uint16_t ink = helpTitleTopTone();
     int y, x;
-    if (fb == NULL) return;
-    for (y = 0; y < 12; ++y) {
-        for (x = 0; x < 12; ++x) {
-            if ((rows[y] & (uint16_t)(0x800U >> x)) != 0U) {
-                fb[(26 + y) * DOOMRPG_LOGICAL_WIDTH + 12 + x] = ink;
-            }
-        }
-    }
+    if (fb == NULL || top < 0 || top + 12 > MAIN_HELP_FOOTER_TOP)
+        return;
+    for (y = 0; y < 12; ++y)
+        for (x = 0; x < 12; ++x)
+            if ((rows[y] & (uint16_t)(0x800U >> x)) != 0U)
+                fb[(top + y) * DOOMRPG_LOGICAL_WIDTH + 12 + x] = ink;
 }
 
 /* Breathing is time-derived: no timers, extra state owner or gameplay RNG.
@@ -302,6 +302,22 @@ static void helpPaintMiniHudLabel(uint16_t* framebuffer,
  * to 16x16, centered at x16..143/y43..58. Exactly three 1:3:1 zones,
  * tinted with a softly breathing neon blue, and white 5x7 labels.
  * No input routing, extra framebuffer, or asset read during repaint. */
+/* LEFT:/CENTER:/RIGHT: are independently themed; descriptions stay white. */
+static void helpDrawHudCaption(DoomRPG_t* doomRpg, DoomCanvas_t* canvas,
+                               const char* label, int zone, int y) {
+    static const char* const prefixes[3] = {"LEFT:", "CENTER:", "RIGHT:"};
+    static const int tones[3] = {1, 4, 7};
+    size_t n;
+    if (doomRpg == NULL || canvas == NULL || label == NULL ||
+        zone < 0 || zone > 2) return;
+    n = SDL_strlen(prefixes[zone]);
+    if (SDL_strncmp(label, prefixes[zone], n) != 0) return;
+    DoomRPG_setFontColor(doomRpg,
+                         helpColor888(EspMainMenuSkin_letterTone(tones[zone], 9)));
+    EspNativeCanvas_drawText(canvas, prefixes[zone], 12, y, 0);
+    DoomRPG_setFontColor(doomRpg, 0xffffffffU);
+    EspNativeCanvas_drawText(canvas, label + n, 12 + (int)n * 7, y, 0);
+}
 static int helpPaintTopHudIllustration(uint16_t* framebuffer) {
     static const int left[3] = {
         MAIN_HELP_HUD_BAR_X,
@@ -529,8 +545,8 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
         if (title == NULL || caption == NULL || visible != 7)
             return 0;
         helpDrawThemedPageTitle(doomRpg, canvas, title, 12, 14);
-        /* The control-identification caption stays white; the LEFT/CENTER/
-         * RIGHT explanations below use the active skin's middle tone. */
+        /* The control-identification caption stays white. The three
+         * position labels below take their own theme tone. */
         DoomRPG_setFontColor(doomRpg, 0xffffffffU);
         EspNativeCanvas_drawText(canvas, caption, 12, 27, 0);
         if (!helpPaintTopHudIllustration(framebuffer))
@@ -539,10 +555,8 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
             const char* label = DoomRPG_esp32MainMenuHelpLine(
                 MAIN_HELP_HUD_PAGE_SCROLL + i);
             if (label == NULL || label[0] == '\0') return 0;
-            DoomRPG_setFontColor(doomRpg,
-                                 helpColor888(helpBodyMiddleTone()));
-            EspNativeCanvas_drawText(canvas, label, 12,
-                                     64 + (i - 2) * MAIN_HELP_LINE_HEIGHT, 0);
+            helpDrawHudCaption(doomRpg, canvas, label, i - 2,
+                               64 + (i - 2) * MAIN_HELP_LINE_HEIGHT);
         }
     }
     else if (menuSystem->scrollIndex == MAIN_HELP_SCENE_PAGE_SCROLL &&
@@ -553,15 +567,10 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
          * detailed descriptions of the center/bottom touch zones. */
         const char* title = DoomRPG_esp32MainMenuHelpLine(
             MAIN_HELP_SCENE_PAGE_SCROLL);
-        const char* caption = DoomRPG_esp32MainMenuHelpLine(
-            MAIN_HELP_SCENE_PAGE_SCROLL + 1);
         const int step = helpHudBreathIndex(DoomRPG_GetUpTimeMS());
-        if (title == NULL || caption == NULL || visible != 7)
-            return 0;
+        if (title == NULL || visible != 7) return 0;
         helpDrawThemedPageTitle(doomRpg, canvas, title, 12, 14);
-        DoomRPG_setFontColor(doomRpg,
-                             helpColor888(helpBodyMiddleTone()));
-        EspNativeCanvas_drawText(canvas, caption, 12, 27, 0);
+        /* No TOP caption: the larger preview begins at y29. */
         if (!EspNativeHelpScene_paint(
                  framebuffer, helpHudBreathLevel(step))) return 0;
         helpSceneBreathStep = step;
@@ -576,18 +585,19 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
             /* First visible row is the section title on every fixed page. */
             helpDrawThemedPageTitle(doomRpg, canvas, line, 12, y);
         }
-        else if (i == 1 && menuSystem->scrollIndex == 0) {
-            /* Signature only on the cover, directly below its title. */
-            DoomRPG_setFontColor(doomRpg,
-                helpColor888(helpTitleTopTone()));
+        else if (i >= 1 && i <= 3 && menuSystem->scrollIndex == 0) {
+            const uint16_t tone = i == 1 ? helpTitleTopTone() :
+                                  i == 2 ? helpBodyMiddleTone() :
+                                           helpThirdTone();
+            DoomRPG_setFontColor(doomRpg, helpColor888(tone));
             EspNativeCanvas_drawText(canvas, line, 27, y, 0);
-            helpPaintCopyrightMark(framebuffer);
+            helpPaintCopyrightMark(framebuffer, y, tone);
         }
         else if (line[0] != '\0') {
-            /* Mid-band skin tone replaces white explanations, not the
-             * themed headings or the top-tone © Kharn27 signature. */
+            /* John Carmack's tribute closes the cover. */
             DoomRPG_setFontColor(doomRpg,
-                helpColor888(helpBodyMiddleTone()));
+                (menuSystem->scrollIndex == 0 && i == 5)
+                    ? 0xffffffffU : helpColor888(helpBodyMiddleTone()));
             EspNativeCanvas_drawText(canvas, line, 12, y, 0);
         }
         y += MAIN_HELP_LINE_HEIGHT;
