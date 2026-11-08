@@ -298,6 +298,65 @@ assert 'DRAW' not in scene or 'shapeData' not in scene
 assert 'mediaTexels' not in scene or 'not map-wide mediaTexels' in scene
 assert 'malloc(' not in scene
 assert 'EspAssetPack_close();' in scene
+
+# Hardware feedback on CYD TOUCH: turn symbols must curve, not be
+# three perpendicular line segments; weapon controls need explicit words.
+assert 'static void helpPaintTurnArc(' in scene
+assert 'helpPaintTurnArc(framebuffer, cx, cy, col, core);' in scene
+assert 'const int mirror = col == 0 ? 1 : -1;' in scene
+assert 'static const int8_t turnCurve[][2]' in scene
+curve_data = scene.split('static const int8_t turnCurve[][2] = {', 1)[1].split('};', 1)[0]
+turn_points = [
+    (int(x), int(y)) for x, y in
+    re.findall(r'\\{\\s*(-?\\d+),\\s*(-?\\d+)\\s*\\}', curve_data)
+]
+assert turn_points == [
+    (5, 4), (5, 1), (4, -2), (2, -4),
+    (0, -5), (-2, -4), (-4, -2), (-5, 0)]
+assert all(abs(b[0] - a[0]) <= 3 and abs(b[1] - a[1]) <= 3
+           for a, b in zip(turn_points, turn_points[1:]))
+# Turning symbols and their mirrored arrowheads fit their own green cell.
+for left, right in ((16, 57), (101, 143)):
+    cx = (left + right) // 2
+    cy = (59 + 76) // 2
+    mirror = 1 if left == 16 else -1
+    outline = [(cx + mirror * x, cy + y) for x, y in turn_points]
+    outline.extend((cx - mirror * dx, cy + dy)
+                   for dx, dy in ((3, -3), (6, 0), (3, 3)))
+    assert all(left < x < right and 59 < y < 76
+               for x, y in outline)
+
+assert 'static void helpPaintWeaponCaption(' in scene
+assert 'static void helpPaintWeaponWord(' in scene
+assert 'static const HelpWeaponGlyph helpWeaponGlyphs[]' in scene
+assert 'col == 0 ? "PREV" : "NEXT"' in scene
+assert 'helpPaintWeaponWord(fb, centerX, top + 1, "WPN", ink);' in scene
+assert 'helpPaintWeaponWord(fb, centerX, top + 9, secondLine, ink);' in scene
+assert 'if (row == 2 && col != 1)' in scene
+assert 'const uint16_t textInk = dim565(' in scene
+assert 'neon, 170U + (uint32_t)level * 13U);' in scene
+assert 'dim565(*pixel, 160U)' in scene
+glyph_data = scene.split('static const HelpWeaponGlyph helpWeaponGlyphs[] = {', 1)[1].split('};', 1)[0]
+glyphs = re.findall(r"'([A-Z])',\\s*\\{([^}]+)\\}", glyph_data)
+assert {letter for letter, _ in glyphs} == set("WPNREVXT")
+assert len(glyphs) == 8
+for letter, row_text in glyphs:
+    rows = re.findall(r'0x([0-9a-f]{2})', row_text)
+    assert len(rows) == 7, letter
+    assert all(0 < int(mask, 16) < 32 for mask in rows), letter
+
+# Two 5x7 lines, a one-pixel gap, and the dimmed reading pad must
+# all stay inside the bottom-left and bottom-right 42/43x18px zones.
+for left, right in ((16, 57), (101, 143)):
+    cx = (left + right) // 2
+    assert left < cx - 14 and cx + 13 < right
+    for text in ("WPN", "PREV", "NEXT"):
+        w = len(text) * 6 - 1
+        x = cx - w // 2
+        assert left < x and x + w - 1 < right
+    assert 77 < 78 and 78 + 7 - 1 < 86
+    assert 86 + 7 - 1 < 94
+
 assert 16 <= 16 + 128 <= 155
 assert 42 + 53 - 1 < 100
 assert 'if (shift == helpSpaceShift &&' in actions
