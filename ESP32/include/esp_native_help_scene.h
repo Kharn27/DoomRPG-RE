@@ -7,10 +7,10 @@
 extern "C" {
 #endif
 
-/* Bounded illustrative first-person corridor built from ONE real PAK wall
+/* Map-dependent illustrative first-person corridor built from ONE real PAK wall
  * resource. No BSP, resident game state, ZIP, map-wide texels or framebuffer
  * duplication. The preview is not a screenshot of an actual map position. */
-int EspNativeHelpScene_load(uint32_t activationSeed);
+int EspNativeHelpScene_load(uint8_t cachedMapId, uint32_t activationSeed);
 void EspNativeHelpScene_reset(void);
 int EspNativeHelpScene_isReady(void);
 uint16_t EspNativeHelpScene_textureId(void);
