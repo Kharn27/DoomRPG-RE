@@ -22,7 +22,7 @@ body = owner[first:last]
 assert "render->halfScreenWidth" not in body
 assert "render->fracHalfScreenHeight" not in body
 assert "render->screenX" not in body and "render->screenY" not in body
-assert re.search(r"#ifndef DOOMRPG_ESP32\s+int screenX;\s+int screenY;\s+#endif", header)
+assert re.search(r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)\s+int screenX;\s+int screenY;\s+#endif", header)
 assert "windowRect->x, windowRect->y," in body
 assert "render->fracHalfScreenWidth = ((render->screenWidth / 2) << FRACBITS) - 0x8000;" in body
 normalized = body.replace("static void " + name + "(", "void Render_setup(").rstrip()
