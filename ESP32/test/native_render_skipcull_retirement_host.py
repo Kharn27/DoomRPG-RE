@@ -25,7 +25,7 @@ assert re.search(
     r"defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)\s+"
     r"boolean skipCull;\s+#endif", HEADER
 ), "desktop/oracle must preserve the original debug toggle"
-assert "sizeof(Render_t) == 140U" in BRIDGE
+assert "sizeof(Render_t) == 136U" in BRIDGE
 assert "render->skipCull" not in OWNER
 assert re.search(r"\bESP_NATIVE_BSP_CULL_STANDARD\s*=\s*0\b", GEOMETRY_H)
 assert "if (view->skipCull)" in GEOMETRY_C
