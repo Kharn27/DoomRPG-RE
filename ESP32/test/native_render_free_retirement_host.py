@@ -38,7 +38,7 @@ normalized = (body.replace("static void " + name + "(", "void Render_free(")
 hash_value = 2166136261
 for b in normalized.encode("utf-8"):
     hash_value = ((hash_value ^ b) * 16777619) & 0xffffffff
-assert hash_value == 0x6ebb123a, f"Render_free body drift {hash_value:08x}"
+assert hash_value == 0xb9c5fcf9, f"Render_free body drift {hash_value:08x}"
 assert "render->piDIB" not in body
 assert "SDL_DestroyTexture" not in body
 assert owner.count(name + "(") == 2
@@ -81,7 +81,7 @@ typedef struct Render_s {
     void *mediaTexels, *shapeData;
     void *mediaBitShapeOffsets, *mediaTexelOffsets, *mediaTexturesIds;
     void *mediaSpriteIds;
-    void *ceilingColor, *floorColor, *columnScale, *mediaPalettes;
+    void *columnScale, *mediaPalettes;
     byte *framebuffer;
 } Render_t;
 static byte platformFramebuffer[160 * 120 * 2];
@@ -118,8 +118,6 @@ static void populate(Render_t* render, int full, int shared) {
         ALLOC_SLOT(mediaTexelOffsets);
         ALLOC_SLOT(mediaTexturesIds);
         ALLOC_SLOT(mediaSpriteIds);
-        ALLOC_SLOT(ceilingColor);
-        ALLOC_SLOT(floorColor);
         ALLOC_SLOT(columnScale);
         ALLOC_SLOT(mediaPalettes);
     }

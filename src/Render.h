@@ -189,8 +189,10 @@ typedef struct Render_s
 	int paletteMemory;
 	int mappingMemory;
 #endif
+#ifndef DOOMRPG_ESP32
 	short* ceilingColor;
 	short* floorColor;
+#endif
 #ifndef DOOMRPG_ESP32
 	/* Original desktop map parser owns these BSP material IDs. */
 	byte floorTex;

@@ -26,7 +26,7 @@ normalized = body.replace("static Render_t* " + name + "(", "Render_t* Render_in
 h = 2166136261
 for byte in normalized.rstrip().encode("utf-8"):
     h = ((h ^ byte) * 16777619) & 0xffffffff
-assert h == 0x93715dad, f"Render ctor body drift {h:08x}"
+assert h == 0xd5805374, f"Render ctor body drift {h:08x}"
 for source in sorted((ROOT / "ESP32/src").rglob("*")):
     if source.suffix not in (".c", ".cpp"):
         continue
@@ -42,7 +42,7 @@ shim = r"""
 typedef struct DoomRPG_s { unsigned id; } DoomRPG_t;
 typedef struct Render_s {
     DoomRPG_t *doomRpg;
-    void *floorColor,*ceilingColor,*columnScale;
+    void *columnScale;
     unsigned char untouched[13];
 } Render_t;
 static int fail_alloc,allocs,zeros;
