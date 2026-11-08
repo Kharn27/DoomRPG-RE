@@ -311,7 +311,7 @@ assert "int nodeRasterCount;" in HEADER
 assert re.search(r"#ifndef DOOMRPG_ESP32\s+int spriteCount;\s+int spriteRasterCount;\s+#endif", HEADER)
 assert "byte spanMode;" in HEADER and "int numLines;" in HEADER
 assert "boolean skipCull;" in HEADER
-assert "sizeof(Render_t) == 184U" in startup
+assert "sizeof(Render_t) == 176U" in startup
 
 # Post-PR252: two desktop setup-only half-screen intermediates have no
 # native readers. Preserve halfScreenHeight / fracHalfScreenWidth used by
@@ -328,6 +328,30 @@ for field in ("halfScreenWidth", "fracHalfScreenHeight"):
             code = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"',
                           " ", code, flags=re.S)
             assert not re.search(r"(?:->|\.)\s*" + field + r"\b", code), (path, field)
+# Current milestone: Render_t::screenX/screenY are dead desktop-origin mirrors.
+# CYD obtains viewport origin from the owned SDL_Rect, not from Render.
+# Keep the original desktop ABI and the same diagnostic coordinate values.
+assert re.search(
+    r"#ifndef DOOMRPG_ESP32\s+int screenX;\s+int screenY;\s+#endif",
+    HEADER
+), "desktop-only Render viewport origin must be absent on CYD"
+for field in ("screenX", "screenY"):
+    assert re.search(r"\brender->" + field + r"\b", DESKTOP), field
+    for tree in (NATIVE / "src", NATIVE / "include"):
+        for path in sorted(tree.rglob("*")):
+            if path.suffix not in (".c", ".cpp", ".h"):
+                continue
+            code = path.read_text(encoding="latin-1")
+            # Remove comments, strings and inactive #if 0 debug stubs.
+            code = re.sub(r"#if 0\b[\s\S]*?#endif", " ", code)
+            code = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"',
+                          " ", code, flags=re.S)
+            assert not re.search(
+                r"\b(?:render|renderBase|rootRender|r)\s*(?:->|\.)\s*"
+                + field + r"\b", code
+            ), ("retired viewport-origin field accessed natively", path, field)
+assert "windowRect->x, windowRect->y," in (
+    NATIVE / "src/engine_stubs.c").read_text()
 assert "int halfScreenHeight;" in HEADER
 assert "int fracHalfScreenWidth;" in HEADER
 assert "((render->screenWidth / 2) << FRACBITS) - 0x8000" in (
@@ -456,7 +480,7 @@ for member in ("mapName", "mapNameID", "loadMapID", "introColor",
                 + member + r"\b", clean), (
                 "retired map-header Render field referenced by native", path, member)
 assert "render->mapCameraSpawnIndex = 0;" not in root
-assert "sizeof(Render_t) == 184U" in (
+assert "sizeof(Render_t) == 176U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 
 # Post-#245-B on the same PR: desktop BSP allocation/inventory counts
@@ -477,7 +501,7 @@ assert re.search(
 assert re.search(
     r"render->mapStringsIDs = NULL;\s+render->mapStringCount = 0;\s+#endif",
     startup)
-assert "sizeof(Render_t) == 184U" in startup
+assert "sizeof(Render_t) == 176U" in startup
 
 # The sprite renderer is the other owner of transactional frame scratch.
 # Its clipping/projection lines are function-local too. No CYD Render_t
@@ -486,7 +510,7 @@ sprite = (NATIVE / "src/esp_native_sprite_renderer.c").read_text()
 assert "Line_t tmpLine;" not in sprite
 assert "->tmpLine" not in sprite
 assert "_Static_assert(sizeof(Scratch) <= 740U" in sprite
-assert "sizeof(Render_t) == 184U" in (
+assert "sizeof(Render_t) == 176U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 assert re.search(
     r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
