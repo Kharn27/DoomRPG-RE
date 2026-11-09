@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""SDL-B5: remove never-linked desktop keyboard label and modal message facades.
+"""SDL-B5: remove caller-free keyboard label and simple message facade.
 
 Input is owned by native CYD touch. Keep actual native error status,
-Serial diagnostics for platform-present errors, indexed texture ownership
+the native fatal-error box adapter, Serial present diagnostics, indexed texture ownership
 and RWops file/memory lifecycle exactly as before.
 """
 from pathlib import Path
@@ -11,11 +11,10 @@ import re
 ROOT = Path(__file__).resolve().parents[2]
 RETIRED = (
     "SDL_GetScancodeName",
-    "SDL_ShowMessageBox",
     "SDL_ShowSimpleMessageBox",
 )
 LIVE = (
-    "SDL_GetError(", "SDL_RWFromMem(", "SDL_RWFromFile(",
+    "SDL_GetError(", "SDL_ShowMessageBox(", "SDL_RWFromMem(", "SDL_RWFromFile(",
     "SDL_RWclose(", "SDL_LoadBMP_RW(", "SDL_CreateTextureFromSurface(",
     "SDL_RenderCopy(", "SDL_RenderPresent(",
 )
@@ -40,12 +39,14 @@ def main():
         assert symbol in shim, f"SDL-B5 removed live implementation {symbol}"
         assert symbol in header, f"SDL-B5 removed live declaration {symbol}"
     assert "setError(" in shim
+    fatal = (ROOT / "ESP32/src/engine_stubs.c").read_text(encoding="utf-8")
+    assert "SDL_ShowMessageBox(&messageboxdata, NULL);" in fatal
     assert 'Serial.println("[SDL] Platform video present failed")' in shim
     assert "PlatformVideo_present()" in shim
     assert "texture->indexed = true;" in shim
     assert "surface->pixels = nullptr;" in shim
     print(
-        f"SDL-B5 PASS 3 dormant keyboard/message-box stubs absent in {files} "
+        f"SDL-B5 PASS 2 caller-free keyboard/message-box stubs absent in {files} "
         "native files, SDL errors and active video/texture paths preserved"
     )
 
