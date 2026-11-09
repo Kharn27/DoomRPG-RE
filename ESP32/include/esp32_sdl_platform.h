@@ -4,6 +4,5 @@
 class TFT_eSPI;
 
 void Esp32Sdl_attachDisplay(TFT_eSPI* display);
-void Esp32Sdl_showTestPattern();
 
 #endif

@@ -257,6 +257,9 @@ jobs:
       - name: Retire unlinked SDL window and controller stubs (host static ownership)
         run: python ESP32/test/sdl_dead_control_stubs_host.py
 
+      - name: Retire unused SDL test pattern and circle-only draw helpers
+        run: python ESP32/test/sdl_dead_demo_pattern_host.py
+
       - name: Test native presentation and clip pixel parity (host C)
         run: python ESP32/test/doomrpg_presentation_host.py
 
