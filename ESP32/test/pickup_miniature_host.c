@@ -64,6 +64,7 @@ static void entireBackground(uint16_t expected) {
 int main(void) {
     unsigned before;
     uint16_t selected = 0xeeeeU;
+    uint32_t drawW = 0U, drawH = 0U;
     /* The old 20px icon ended at y=95. The 24px version expands upward,
      * retaining the exact old bottom alignment and avoiding both HUD bands.
      * The cosmetic state stays bounded without an extra framebuffer. */
@@ -73,6 +74,21 @@ int main(void) {
     _Static_assert(MINI_X == 13U && MINI_Y == 72U, "same bottom anchor");
     _Static_assert(sizeof(state.colors) == 1152U, "bounded 24px colors");
     _Static_assert(sizeof(state.background) == 1152U, "bounded underlay");
+    /* Real PAK bitshapes can be much smaller than the icon canvas.
+     * The actual pixels must grow, not just transparent padding. */
+    assert(EspPickupMini_fitDimensions(12U, 12U, &drawW, &drawH));
+    assert(drawW == 24U && drawH == 24U); /* Small original UPSCALES. */
+    assert(EspPickupMini_fitDimensions(20U, 8U, &drawW, &drawH));
+    assert(drawW == 24U && drawH == 10U); /* Aspect ratio retained. */
+    assert(EspPickupMini_fitDimensions(64U, 32U, &drawW, &drawH));
+    assert(drawW == 24U && drawH == 12U); /* Large original DOWNSCALES. */
+    assert(EspPickupMini_fitDimensions(12U, 20U, &drawW, &drawH));
+    assert(drawW == 14U && drawH == 24U); /* Tall original. */
+    assert(EspPickupMini_fitDimensions(1U, 64U, &drawW, &drawH));
+    assert(drawW == 1U && drawH == 24U); /* Extremely narrow. */
+    assert(!EspPickupMini_fitDimensions(0U, 8U, &drawW, &drawH));
+    assert(!EspPickupMini_fitDimensions(12U, 65U, &drawW, &drawH));
+    assert(!EspPickupMini_fitDimensions(12U, 12U, NULL, &drawH));
     /* The immutable sprite of a smashed crate is still the CRATE.
      * The effective entity-def tile is the loot visual, just as in the
      * production crate-state/renderer overlay. Verify all three sources. */
@@ -190,6 +206,6 @@ int main(void) {
     assert(pixel(MINI_X, MINI_Y) == (uint16_t)(0x4000U | 101U));
     unchangedHudAndGuard(0x2222U);
 
-    puts("pickup_miniature_host: PASS 24x24 bottom-anchored, full HUD/world guards, 24x24 exact underlay restore, crate-loot, CROSS, RGB565, FIFO, 500ms, PAK lease, cosmetic-only");
+    puts("pickup_miniature_host: PASS 24px actual up/downscale, aspect-safe, bottom-anchored, full HUD/world guards, exact underlay restore, crate-loot, CROSS, RGB565, FIFO, 500ms, PAK lease, cosmetic-only");
     return 0;
 }
