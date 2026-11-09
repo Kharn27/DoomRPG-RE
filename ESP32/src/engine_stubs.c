@@ -324,7 +324,6 @@ static DoomCanvas_t* EspNativeEngineRoot_initCanvas(DoomCanvas_t* doomCanvas, Do
     doomCanvas->doomRpg = doomRpg;
     doomCanvas->imgFont.imgBitmap = NULL;
     doomCanvas->fontColor = 0xffffffff;
-    doomCanvas->renderFloorCeilingTextures = true;
 
     printf("[DOOMCANVASBRIDGE] INIT exports=0 nativeText=1 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u, retiredStateLayout=%u retiredGraphMirrors=%u retiredIntroState=%u retiredDeadShell=%u retiredInertControl=%u retiredLargeFont=%u retiredFixedGeometry=%u retiredViewShakeAlias=%u clip=%dx%d\n",
            (unsigned int)sizeof(DoomCanvas_t),
