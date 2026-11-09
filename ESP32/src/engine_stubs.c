@@ -82,7 +82,7 @@ int DoomRPG_freeMemory(void) { // 0x1EBFC
 }
 
 /* This is the generated ESP32-compatible root teardown contract. World owners
- * are released elsewhere; legacy large members stay NULL. Preserve the exact
+ * are released elsewhere; only live root pointers remain. Preserve the exact
  * disposal order of the last linked generated provider on fatal cleanup.
  * Normal HUB->EXIT releases only resident/session owners, not this root. */
 void DoomRPG_FreeAppData(DoomRPG_t* doomrpg)
@@ -519,7 +519,7 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
     /*
      * Player/monster attacks, retaliation, weapon presentation and damage math
      * are all owned by bounded native ESP32 subsystems. The inherited Combat_t
-     * object is retired and must remain NULL.
+     * object is absent from the native root ABI.
      */
     printf("[CORE] Combat retired object=NULL owners=native-combat+weapon+monster-turn\n");
 
@@ -640,7 +640,7 @@ int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report) {
     SDL_memset(&layoutReport, 0, sizeof(layoutReport));
 
     if (!coreInitReport.ready || doomRpg == NULL || doomRpg->doomCanvas == NULL ||
-        doomRpg->render == NULL ) {
+        doomRpg->render == NULL) {
         printf("[LAYOUT] Core graph is not ready; startup refused\n");
         if (report != NULL) *report = layoutReport;
         return 0;
@@ -722,7 +722,6 @@ int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report) {
             layoutReport.displayY + layoutReport.displayHeight ||
         layoutReport.renderWidth != layoutReport.screenWidth ||
         layoutReport.renderHeight != layoutReport.screenHeight ||
-        
         render->columnScale == NULL) {
         printf("[LAYOUT] FAILED geometry or Render_setup validation\n");
         layoutReport.ready = 0;

@@ -2,6 +2,15 @@
  * Clock, physical present, PAK/font, touch and level-up are host seams. */
 #include <assert.h>
 #include "../src/esp_native_gameplay_action_engine.c"
+/* This timing fixture tests the established RED damage-border owner only.
+ * The independent pickup miniature has its own host fixture. */
+void EspPickupMini_reset(void) {}
+void EspPickupMini_enqueue(uint16_t logical) { (void)logical; }
+void EspPickupMini_markFreshFrame(void) {}
+void EspPickupMini_beforePresent(uint32_t nowMs) { (void)nowMs; }
+void EspPickupMini_afterPresent(uint32_t nowMs) { (void)nowMs; }
+int EspPickupMini_due(uint32_t nowMs) { (void)nowMs; return 0; }
+
 
 static uint16_t pixels[160U * 120U + 2U];
 static uint32_t clockMs;

@@ -210,6 +210,14 @@ jobs:
             -Wl,--gc-sections -o /tmp/doomrpg-damage-cue-timing-test
           /tmp/doomrpg-damage-cue-timing-test
 
+      - name: Test nonblocking PAK pickup miniature FIFO and framebuffer lease (host C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror \
+            -IESP32/test/host_include -IESP32/include -IESP32/src -Isrc \
+            ESP32/test/pickup_miniature_host.c \
+            -o /tmp/doomrpg-pickup-miniature-test
+          /tmp/doomrpg-pickup-miniature-test
+
       - name: Test actual automap PASS_TURN including hazard, rollback and death (host C)
         run: |
           cc -O2 -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
@@ -265,6 +273,9 @@ jobs:
 
       - name: Retire dormant SDL memory hook facades
         run: python ESP32/test/sdl_dead_memory_hooks_host.py
+
+      - name: Retire dormant SDL keyboard and modal message facades
+        run: python ESP32/test/sdl_dead_ui_stub_host.py
 
       - name: Test native presentation and clip pixel parity (host C)
         run: python ESP32/test/doomrpg_presentation_host.py
