@@ -70,8 +70,8 @@ def main():
     # SDL-B3: only retire symbols that were already absent from actual ELFs.
     dormant_render_helpers = {"SDL_RenderDrawRect", "SDL_RenderSetIntegerScale"}
     dormant_memory_hooks = {"SDL_SetMemoryFunctions", "SDL_GetMemoryFunctions"}
-    dormant_ui_stubs = {"SDL_GetScancodeName", "SDL_ShowMessageBox",
-                        "SDL_ShowSimpleMessageBox"}
+    # SDL_ShowMessageBox has an explicit DoomRPG_Error caller and remains.
+    dormant_ui_stubs = {"SDL_GetScancodeName", "SDL_ShowSimpleMessageBox"}
     assert not dormant_ui_stubs.intersection(current), (
         f"{args.profile}: SDL-B5 obsolete UI facade linked in candidate: "
         f"{sorted(dormant_ui_stubs.intersection(current))}")
