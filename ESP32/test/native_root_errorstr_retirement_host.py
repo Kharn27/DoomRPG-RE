@@ -25,7 +25,7 @@ assert "char errMsg[256];" in CORE, "native fatal logging owns its local buffer"
 assert "vsnprintf(errMsg, sizeof(errMsg), fmt, ap);" in CORE
 assert "DoomRPG_Error(const char* fmt, ...)" in CORE
 assert "SDL_calloc(1, sizeof(DoomRPG_t))" in CORE
-assert "_Static_assert(sizeof(DoomRPG_t) == 200U," in CORE
+assert "_Static_assert(sizeof(DoomRPG_t) == 196U," in CORE
 assert "doomRpg->errorID = 0;" in CORE
 assert "doomRpg->graphSetCliping = false;" in CORE
 assert "doomRpg->graphSetCliping = false;" not in PRESENT
@@ -71,5 +71,5 @@ with tempfile.TemporaryDirectory(prefix="root-errorstr-abi-") as tmp:
         if not expected:
             assert "errorStr" in result.stderr, name
 
-print(f"PASS root errorStr=desktop/oracle only; native root=200B; "
+print(f"PASS root errorStr=desktop/oracle only; native root=196B; "
       f"{count} native source/header files guarded; fatal buffer=stack-local")

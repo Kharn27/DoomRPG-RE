@@ -16,6 +16,7 @@
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_hud_direction.h"
 #include "esp_native_gameplay_player_state.h"
+#include "esp_native_gameplay_pickup_miniature.h"
 #include "esp_native_gameplay_player_pain_visual.h"
 #include "esp_native_gameplay_present_gate.h"
 #include "esp_native_resident_gameplay.h"
@@ -508,6 +509,8 @@ static int renderComposed(
         }
         else {
             if (!preview) EspNativeGameplayActionEngine_markFreshFrame();
+            /* Both settled frames and movement previews replace icon pixels. */
+            EspPickupMini_markFreshFrame();
             if (!Esp32PlatformVideo_present()) {
                 printf("[TURNFRAME] DIAG fail=PRESENT\n");
                 goto done;
