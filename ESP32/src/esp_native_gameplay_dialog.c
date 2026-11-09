@@ -16,7 +16,7 @@
 #include "esp_map_strings.h"
 #include "esp_map_ui_intent.h"
 #include "esp_native_gameplay_dialog.h"
-#include "esp_native_gameplay_hub_touch_ui.h"
+#include "esp_main_menu_skin.h"
 #include "esp_native_gameplay_hub_theme.h"
 #include "esp_native_indexed_bmp.h"
 #include "esp_player_view_state.h"
@@ -46,6 +46,12 @@
 #define DIALOG_BORDER_BOTTOM 99
 #define DIALOG_TEXT_X 16
 #define DIALOG_TEXT_Y 48
+
+/* A non-interactive themed COMMS nameplate is separate from BACK. */
+#define DIALOG_COMMS_X 96
+#define DIALOG_COMMS_Y 22
+#define DIALOG_COMMS_RIGHT 144
+#define DIALOG_COMMS_BOTTOM 42
 
 /* Above the text box, inside the world viewport: no line capacity/HUD loss. */
 #define DIALOG_BACK_X 16
@@ -136,16 +142,55 @@ static void fillRect(uint16_t* framebuffer,
     }
 }
 
-static void drawBorder(uint16_t* framebuffer, uint16_t color) {
+/* Match the industrial BUTTON theme for the outer shell, but reserve the
+ * entire original 128px-wide, four-row typewriter corridor for legible text.
+ * The copper/ember/phosphor seams live at y=46 and y=98, safely outside
+ * glyph rows y=48..95. Everything remains within the original box 15..144,
+ * 45..99; the permanent HUD starts at y=100. No new framebuffer/owner. */
+static int paintIndustrialDialog(uint16_t* framebuffer) {
     int x;
-    int y;
-    for (x = DIALOG_BORDER_LEFT; x <= DIALOG_BORDER_RIGHT; ++x) {
-        putPixel(framebuffer, x, DIALOG_BORDER_TOP, color);
-        putPixel(framebuffer, x, DIALOG_BORDER_BOTTOM, color);
+    const uint16_t accent = EspMainMenuSkin_uiAccent();
+    const uint16_t accentDim = EspMainMenuSkin_uiAccentDim();
+    if (!EspMainMenuSkin_paintPlate(
+            framebuffer, DOOMRPG_LOGICAL_WIDTH,
+            DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
+            DIALOG_BORDER_LEFT, DIALOG_BORDER_TOP,
+            DIALOG_BORDER_RIGHT, DIALOG_BORDER_BOTTOM,
+            ESP_MAIN_MENU_SKIN_IDLE)) return 0;
+    /* The original font and first/last glyph still fit at x=16..144.
+     * Overpainting the plate interior prevents seams underneath glyphs. */
+    fillRect(framebuffer, DIALOG_FILL_X, DIALOG_FILL_Y + 1,
+             DIALOG_FILL_W, DIALOG_FILL_H - 3, ESP_HUB_COLOR_BG);
+    for (x = DIALOG_BORDER_LEFT + 10; x <= DIALOG_BORDER_RIGHT - 10; ++x) {
+        putPixel(framebuffer, x, DIALOG_BORDER_TOP + 1,
+                 x >= 71 && x <= 88 ? accent : accentDim);
+        putPixel(framebuffer, x, DIALOG_BORDER_BOTTOM - 1,
+                 x >= 71 && x <= 88 ? accent : accentDim);
     }
-    for (y = DIALOG_BORDER_TOP; y <= DIALOG_BORDER_BOTTOM; ++y) {
-        putPixel(framebuffer, DIALOG_BORDER_LEFT, y, color);
-        putPixel(framebuffer, DIALOG_BORDER_RIGHT, y, color);
+    return 1;
+}
+
+/* LABEL theme for the original a.bmp font: recolor ONLY this dialog-owned
+ * palette, once at open, not each typed glyph. Keep transparency and source
+ * shade/black outlines; the real indexed BMP blitter keeps exactly one PAK
+ * range read per glyph as before. No font pixels or other owners are changed. */
+static void tintDialogFontInk(void) {
+    const uint16_t ink = EspMainMenuSkin_uiInk();
+    uint16_t i;
+    for (i = 0U; i < dialog.font.paletteCount; ++i) {
+        const uint16_t source = dialog.font.paletteRgb565[i];
+        uint32_t level;
+        uint32_t r, g, b;
+        if (source == 0xf81fU) continue; /* transparent magenta */
+        r = ((uint32_t)(source >> 11U) & 31U) * 2U;
+        g = ((uint32_t)(source >> 5U) & 63U);
+        b = ((uint32_t)source & 31U) * 2U;
+        level = r > g ? r : g;
+        if (b > level) level = b;
+        r = ((((uint32_t)ink >> 11U) & 31U) * level + 31U) / 63U;
+        g = ((((uint32_t)ink >> 5U) & 63U) * level + 31U) / 63U;
+        b = (((uint32_t)ink & 31U) * level + 31U) / 63U;
+        dialog.font.paletteRgb565[i] = (uint16_t)((r << 11U) | (g << 5U) | b);
     }
 }
 
@@ -298,17 +343,36 @@ static int paintDialog(uint32_t now) {
     }
 
     memset(&stats, 0, sizeof(stats));
-    fillRect(framebuffer, DIALOG_FILL_X, DIALOG_FILL_Y,
-             DIALOG_FILL_W, DIALOG_FILL_H, 0x0000U);
-    drawBorder(framebuffer, 0xffffU);
+    if (!paintIndustrialDialog(framebuffer)) return 0;
+    /* Button skin and gradient label are the same production primitives
+     * used in MENU/HUB. COMMS carries no invented speaker identity or tap. */
+    if (!EspMainMenuSkin_paintPlate(
+            framebuffer, DOOMRPG_LOGICAL_WIDTH,
+            DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
+            DIALOG_COMMS_X, DIALOG_COMMS_Y,
+            DIALOG_COMMS_RIGHT, DIALOG_COMMS_BOTTOM,
+            ESP_MAIN_MENU_SKIN_IDLE) ||
+        !EspMainMenuSkin_paintText(
+            framebuffer, DOOMRPG_LOGICAL_WIDTH,
+            DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
+            DIALOG_COMMS_X, DIALOG_COMMS_Y,
+            DIALOG_COMMS_RIGHT, DIALOG_COMMS_BOTTOM,
+            "COMMS", 0, 1)) return 0;
     if (dialog.backAllowed) {
-        fillRect(framebuffer, DIALOG_BACK_X, DIALOG_BACK_Y,
-                 DIALOG_BACK_W, DIALOG_BACK_H, ESP_HUB_COLOR_STEEL_DARK);
-        fillRect(framebuffer, DIALOG_BACK_X + 1, DIALOG_BACK_Y + 1,
-                 DIALOG_BACK_W - 2, DIALOG_BACK_H - 2, ESP_HUB_COLOR_PANEL);
-        EspNativeGameplayHubTouchUi_drawCrispText(framebuffer, "BACK",
-            DIALOG_BACK_X + DIALOG_BACK_W / 2, DIALOG_BACK_Y + 7,
-            ESP_HUB_COLOR_IVORY);
+        if (!EspMainMenuSkin_paintPlate(
+                framebuffer, DOOMRPG_LOGICAL_WIDTH,
+                DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
+                DIALOG_BACK_X, DIALOG_BACK_Y,
+                DIALOG_BACK_X + DIALOG_BACK_W - 1,
+                DIALOG_BACK_Y + DIALOG_BACK_H - 1,
+                ESP_MAIN_MENU_SKIN_IDLE) ||
+            !EspMainMenuSkin_paintText(
+                framebuffer, DOOMRPG_LOGICAL_WIDTH,
+                DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
+                DIALOG_BACK_X, DIALOG_BACK_Y,
+                DIALOG_BACK_X + DIALOG_BACK_W - 1,
+                DIALOG_BACK_Y + DIALOG_BACK_H - 1,
+                "BACK", 0, 1)) return 0;
     }
 
     rows = pageLineCount();
@@ -564,6 +628,7 @@ EspNativeGameplayDialogBeginStatus EspNativeGameplayDialog_begin(
         EspNativeGameplayDialog_reset();
         return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_IO_FAILED;
     }
+    tintDialogFontInk();
     dialog.fontPackReads = fontStats.packReads;
     dialog.fontBytesRead = fontStats.bytesRead;
 
@@ -646,6 +711,7 @@ EspNativeGameplayDialogBeginStatus EspNativeGameplayDialog_beginStandalone(
         EspNativeGameplayDialog_reset();
         return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_IO_FAILED;
     }
+    tintDialogFontInk();
     dialog.fontPackReads = fontStats.packReads;
     dialog.fontBytesRead = fontStats.bytesRead;
 
