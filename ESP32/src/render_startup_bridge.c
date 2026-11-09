@@ -17,8 +17,8 @@
 #include <esp_heap_caps.h>
 #if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 /* Desktop/bringup retain the original legacy BSP flags; production does not. */
-_Static_assert(sizeof(Render_t) == 144U,
-               "Render_t must omit desktop BSP traversal/diagnostic mirrors, fractional half-width, raster state, world and allocation counts");
+_Static_assert(sizeof(Render_t) == 112U,
+               "Render_t must omit desktop plane-color arrays, clipRect/skipCull/half-height mirrors, BSP diagnostics, raster state, world and allocations");
 #endif
 
 
@@ -188,6 +188,17 @@ static int EspNativeRenderStartup_initialize(Render_t* render) {
         return 0;
     }
 
+    /* Production canvas is a fixed native 160x120 owner. The legacy
+     * Render_t::clipRect was only written here and compared to itself;
+     * check the actual attached renderer dimensions before any I/O. */
+    if (sdlVideo.rendererW != DOOMRPG_CANVAS_WIDTH ||
+        sdlVideo.rendererH != DOOMRPG_CANVAS_HEIGHT) {
+        printf("[RENDER] ERROR native canvas geometry %dx%d expected=%dx%d\n",
+               sdlVideo.rendererW, sdlVideo.rendererH,
+               DOOMRPG_CANVAS_WIDTH, DOOMRPG_CANVAS_HEIGHT);
+        return 0;
+    }
+
     printf("[RENDERSTART] OWNER api=Render_startup source=esp-native-render-startup direct=yes wrap=no\n");
 
     fData = DoomRPG_fileOpenRead(render->doomRpg, "/sintable.bin");
@@ -205,11 +216,6 @@ static int EspNativeRenderStartup_initialize(Render_t* render) {
     SDL_free(fData);
     printf("[RENDER] sintable loaded: %u bytes\n",
            (unsigned int)ESP_NATIVE_TRIG_BYTES);
-
-    render->clipRect.x = DOOMRPG_CANVAS_X;
-    render->clipRect.y = DOOMRPG_CANVAS_Y;
-    render->clipRect.w = DOOMRPG_CANVAS_WIDTH;
-    render->clipRect.h = DOOMRPG_CANVAS_HEIGHT;
 
     width = sdlVideo.rendererW;
     height = sdlVideo.rendererH;
@@ -312,14 +318,12 @@ int EspRenderStartupBridge_start(int preRenderReady) {
 
     if (!result || render->framebuffer != expectedFramebuffer ||
         render->pitch != expectedPitch ||
-        render->clipRect.w != DOOMRPG_CANVAS_WIDTH ||
-        render->clipRect.h != DOOMRPG_CANVAS_HEIGHT ||
         render->mediaPalettes == NULL || render->mediaPalettesLength <= 0) {
-        printf("[RENDERSTART] FAILED fb=%p expected=%p pitch=%d/%d clip=%dx%d palettes=%p len=%d\n",
+        printf("[RENDERSTART] FAILED fb=%p expected=%p pitch=%d/%d renderer=%dx%d palettes=%p len=%d\n",
                (void*)render->framebuffer,
                (void*)expectedFramebuffer,
                render->pitch, expectedPitch,
-               render->clipRect.w, render->clipRect.h,
+               sdlVideo.rendererW, sdlVideo.rendererH,
                (void*)render->mediaPalettes,
                render->mediaPalettesLength);
         return 0;

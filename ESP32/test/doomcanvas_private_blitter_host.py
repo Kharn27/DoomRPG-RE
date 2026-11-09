@@ -139,7 +139,7 @@ normalized = root_owner[first:last].replace(
 init_fnv = 2166136261
 for byte in normalized.encode("utf-8"):
     init_fnv = ((init_fnv ^ byte) * 16777619) & 0xFFFFFFFF
-assert init_fnv == 0xb621a796, f"Canvas root init body drift: {init_fnv:08x}"
+assert init_fnv == 0x4b3304a1, f"Canvas root init body drift: {init_fnv:08x}"
 
 for path in sorted(SRC.rglob("*")):
     if path.suffix not in (".c", ".cpp"):

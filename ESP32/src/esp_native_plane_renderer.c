@@ -11,6 +11,7 @@
 #include "doomrpg_log.h"
 #include "esp_map_runtime.h"
 #include "esp_native_plane_renderer.h"
+#include "esp_render_geometry_primitives.h"
 
 #define MAPPINGS_HEADER_BYTES 16U
 #define MAPPING_PAIR_BYTES 8U
@@ -469,7 +470,7 @@ int EspNativePlaneRenderer_render(struct Render_s* renderBase) {
     }
 
     work->stats.uniqueLogicalTextures = work->textureCount;
-    for (y = 0; y < render->halfScreenHeight; ++y) {
+    for (y = 0; y < EspNativeRenderGeometry_halfScreenHeight(render->screenHeight); ++y) {
         if (!drawPlaneRow(work, y,
                           work->runtime->planeMap + ESP_MAP_PLANE_CELL_COUNT)) {
             goto done;

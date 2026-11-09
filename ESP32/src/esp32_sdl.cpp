@@ -20,6 +20,11 @@ struct SDL_Texture {
     int height;
     int pitch;
     Uint16* pixels;
+    Uint8* indexedPixels;
+    SDL_Color* palette;
+    int paletteSize;
+    Uint8 indexedBitsPerPixel;
+    bool indexed;
     Uint8 red;
     Uint8 green;
     Uint8 blue;
@@ -436,39 +441,66 @@ SDL_Texture* SDL_CreateTexture(SDL_Renderer*, Uint32 format, int, int width, int
     return texture;
 }
 
-SDL_Texture* SDL_CreateTextureFromSurface(SDL_Renderer* renderer, SDL_Surface* surface) {
-    if (surface == nullptr || surface->format == nullptr || surface->format->palette == nullptr) {
+SDL_Texture* SDL_CreateTextureFromSurface(SDL_Renderer*, SDL_Surface* surface) {
+    if (surface == nullptr || surface->format == nullptr ||
+        surface->format->palette == nullptr ||
+        surface->format->palette->colors == nullptr || surface->pixels == nullptr) {
+        setError("unsupported indexed surface");
         return nullptr;
     }
-    SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGB565,
-                                             SDL_TEXTUREACCESS_STREAMING,
-                                             surface->w, surface->h);
-    if (texture == nullptr) return nullptr;
-    texture->hasColorKey = surface->hasColorKey;
-    const Uint8* source = static_cast<const Uint8*>(surface->pixels);
-    for (int y = 0; y < surface->h; ++y) {
-        for (int x = 0; x < surface->w; ++x) {
-            const SDL_Color& color = surface->format->palette->colors[source[y * surface->pitch + x]];
-            texture->pixels[y * surface->w + x] = rgb565(color.r, color.g, color.b);
-        }
+
+    const Uint8 bitsPerPixel = surface->format->BitsPerPixel;
+    if (bitsPerPixel != 1 && bitsPerPixel != 4 && bitsPerPixel != 8) {
+        setError("unsupported indexed surface depth");
+        return nullptr;
     }
+
+    SDL_Texture* texture = static_cast<SDL_Texture*>(calloc(1, sizeof(SDL_Texture)));
+    if (texture == nullptr) {
+        setError("out of memory creating indexed texture");
+        return nullptr;
+    }
+
+    texture->width = surface->w;
+    texture->height = surface->h;
+    texture->pitch = surface->pitch;
+    texture->indexedPixels = static_cast<Uint8*>(surface->pixels);
+    texture->palette = surface->format->palette->colors;
+    texture->paletteSize = surface->format->palette->ncolors;
+    texture->indexedBitsPerPixel = bitsPerPixel;
+    texture->indexed = true;
+    texture->red = texture->green = texture->blue = 255;
+    texture->hasColorKey = surface->hasColorKey;
     if (texture->hasColorKey) {
         texture->colorKey = rgb565((surface->colorKey >> 16) & 0xff,
                                    (surface->colorKey >> 8) & 0xff,
                                    surface->colorKey & 0xff);
     }
+
+    // Transfer ownership to the texture. DoomRPG_createImage() immediately
+    // frees the SDL_Surface after this call, so detaching keeps this zero-copy.
+    surface->pixels = nullptr;
+    surface->format->palette->colors = nullptr;
+
+    Serial.printf("[SDL] Adopt packed indexed texture %dx%d bpp=%u bytes=%u palette=%d\n",
+                  texture->width, texture->height,
+                  texture->indexedBitsPerPixel,
+                  static_cast<unsigned int>(texture->pitch * texture->height),
+                  texture->paletteSize);
     return texture;
 }
 
 void SDL_DestroyTexture(SDL_Texture* texture) {
     if (texture == nullptr) return;
     free(texture->pixels);
+    free(texture->indexedPixels);
+    free(texture->palette);
     free(texture);
 }
 
 int SDL_UpdateTexture(SDL_Texture* texture, const SDL_Rect* rect,
                       const void* pixels, int pitch) {
-    if (texture == nullptr || pixels == nullptr) return -1;
+    if (texture == nullptr || pixels == nullptr || texture->indexed) return -1;
     SDL_Rect area = rect == nullptr ? SDL_Rect{0, 0, texture->width, texture->height} : *rect;
     for (int y = 0; y < area.h; ++y) {
         memcpy(texture->pixels + (area.y + y) * texture->width + area.x,
@@ -507,7 +539,29 @@ int SDL_RenderCopy(SDL_Renderer*, SDL_Texture* texture, const SDL_Rect* source,
             if (!insideClip(x, y)) continue;
             const int sourceX = src.x + ((x - dst.x) * src.w) / dst.w;
             if (sourceX < 0 || sourceX >= texture->width) continue;
-            const Uint16 color = texture->pixels[sourceY * texture->width + sourceX];
+            Uint16 color;
+            if (texture->indexed) {
+                const Uint8* indexedRow =
+                    texture->indexedPixels + sourceY * texture->pitch;
+                Uint8 paletteIndex;
+                if (texture->indexedBitsPerPixel == 8) {
+                    paletteIndex = indexedRow[sourceX];
+                }
+                else if (texture->indexedBitsPerPixel == 4) {
+                    const Uint8 packed = indexedRow[sourceX >> 1];
+                    paletteIndex = (sourceX & 1) ? (packed & 0x0f) : (packed >> 4);
+                }
+                else {
+                    paletteIndex =
+                        (indexedRow[sourceX >> 3] >> (7 - (sourceX & 7))) & 0x01;
+                }
+                if (paletteIndex >= texture->paletteSize) continue;
+                const SDL_Color& paletteColor = texture->palette[paletteIndex];
+                color = rgb565(paletteColor.r, paletteColor.g, paletteColor.b);
+            }
+            else {
+                color = texture->pixels[sourceY * texture->width + sourceX];
+            }
             if (texture->hasColorKey && color == texture->colorKey) continue;
             rendererPixels[y * kLogicalWidth + x] = modulate565(color, texture);
         }
@@ -587,28 +641,7 @@ int SDL_RenderDrawLine(SDL_Renderer*, int x1, int y1, int x2, int y2) {
     return 0;
 }
 
-void SDL_RenderDrawCircle(SDL_Renderer*, int cx, int cy, int radius) {
-    const Uint16 color = rgb565(drawRed, drawGreen, drawBlue);
-    int x = radius;
-    int y = 0;
-    int error = 1 - radius;
-    while (x >= y) {
-        putPixel(cx + x, cy + y, color); putPixel(cx + y, cy + x, color);
-        putPixel(cx - y, cy + x, color); putPixel(cx - x, cy + y, color);
-        putPixel(cx - x, cy - y, color); putPixel(cx - y, cy - x, color);
-        putPixel(cx + y, cy - x, color); putPixel(cx + x, cy - y, color);
-        ++y;
-        if (error < 0) error += 2 * y + 1;
-        else { --x; error += 2 * (y - x + 1); }
-    }
-}
-
-void SDL_RenderDrawFillCircle(SDL_Renderer* renderer, int cx, int cy, int radius) {
-    for (int y = -radius; y <= radius; ++y) {
-        const int halfWidth = static_cast<int>(sqrtf(radius * radius - y * y));
-        SDL_RenderDrawLine(renderer, cx - halfWidth, cy + y, cx + halfWidth, cy + y);
-    }
-}
+// SDL-B2: circle-only diagnostic drawing is retired; live line/rect drawing stays.
 int SDL_RenderSetIntegerScale(SDL_Renderer*, SDL_bool) { return 0; }
 
 int SDL_ShowMessageBox(const SDL_MessageBoxData* data, int*) {
@@ -621,15 +654,8 @@ int SDL_ShowSimpleMessageBox(Uint32, const char* title, const char* message, SDL
     return 0;
 }
 
-int SDL_SetHint(const char*, const char*) { return SDL_TRUE; }
-int SDL_ShowCursor(int toggle) { return toggle; }
-int SDL_SetWindowFullscreen(SDL_Window*, Uint32) { return 0; }
-int SDL_NumJoysticks(void) { return 0; }
-SDL_bool SDL_IsGameController(int) { return SDL_FALSE; }
-int SDL_GameControllerRumble(SDL_GameController*, Uint16, Uint16, Uint32) { return 0; }
-int SDL_HapticRumblePlay(SDL_Haptic*, float, Uint32) { return 0; }
-int SDL_HapticRumbleStop(SDL_Haptic*) { return 0; }
-
+// SDL-B: legacy window, cursor, hint, joystick and haptic stubs were not
+// linked by any CYD profile. The active SDL image/presentation ABI stays here.
 }  // extern "C"
 
 void Esp32Sdl_attachDisplay(TFT_eSPI* display) {
@@ -637,45 +663,5 @@ void Esp32Sdl_attachDisplay(TFT_eSPI* display) {
     Serial.println("[SDL] CYD display attached; renderer will share platform video");
 }
 
-void Esp32Sdl_showTestPattern() {
-    SDL_SetRenderDrawBlendMode(nullptr, SDL_BLENDMODE_NONE);
-    SDL_SetRenderDrawColor(nullptr, 0, 0, 0, 255);
-    SDL_RenderClear(nullptr);
-
-    const Uint8 colors[4][3] = {
-        {255, 0, 0}, {0, 255, 0}, {0, 0, 255}, {255, 255, 255},
-    };
-    for (int index = 0; index < 4; ++index) {
-        SDL_SetRenderDrawColor(nullptr, colors[index][0], colors[index][1], colors[index][2], 255);
-        SDL_Rect bar{4 + index * 39, 4, 35, 18};
-        SDL_RenderFillRect(nullptr, &bar);
-    }
-
-    SDL_SetRenderDrawColor(nullptr, 255, 255, 255, 255);
-    SDL_RenderDrawLine(nullptr, 0, 0, kLogicalWidth - 1, kLogicalHeight - 1);
-    SDL_RenderDrawLine(nullptr, kLogicalWidth - 1, 0, 0, kLogicalHeight - 1);
-    SDL_RenderDrawCircle(nullptr, 40, 72, 22);
-    SDL_SetRenderDrawColor(nullptr, 255, 0, 255, 255);
-    SDL_RenderDrawFillCircle(nullptr, 80, 72, 18);
-
-    Uint16 checker[16 * 16];
-    for (int y = 0; y < 16; ++y) {
-        for (int x = 0; x < 16; ++x) {
-            checker[y * 16 + x] = ((x / 4 + y / 4) & 1)
-                ? rgb565(255, 255, 255) : rgb565(24, 24, 24);
-        }
-    }
-    SDL_Texture* texture = SDL_CreateTexture(nullptr, SDL_PIXELFORMAT_RGB565,
-                                             SDL_TEXTUREACCESS_STREAMING, 16, 16);
-    SDL_UpdateTexture(texture, nullptr, checker, 16 * sizeof(Uint16));
-    SDL_Rect target{108, 48, 44, 44};
-    SDL_RenderCopy(nullptr, texture, nullptr, &target);
-    SDL_DestroyTexture(texture);
-
-    SDL_SetRenderDrawBlendMode(nullptr, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(nullptr, 255, 255, 255, 96);
-    SDL_Rect translucent{12, 104, 136, 16};
-    SDL_RenderFillRect(nullptr, &translucent);
-    SDL_SetRenderDrawBlendMode(nullptr, SDL_BLENDMODE_NONE);
-    SDL_RenderPresent(nullptr);
-}
+// SDL-B2: the old full-screen diagnostic pattern is retired. The native
+// framebuffer is exclusively owned by platform video and current game/menu.

@@ -205,16 +205,9 @@ int SDL_RenderSetIntegerScale(SDL_Renderer* renderer, SDL_bool enabled);
 int SDL_ShowMessageBox(const SDL_MessageBoxData* data, int* buttonId);
 int SDL_ShowSimpleMessageBox(Uint32 flags, const char* title,
                              const char* message, SDL_Window* window);
-int SDL_SetHint(const char* name, const char* value);
-int SDL_ShowCursor(int toggle);
-int SDL_SetWindowFullscreen(SDL_Window* window, Uint32 flags);
-int SDL_NumJoysticks(void);
-SDL_bool SDL_IsGameController(int index);
-int SDL_GameControllerRumble(SDL_GameController* controller, Uint16 low,
-                             Uint16 high, Uint32 durationMs);
-int SDL_HapticRumblePlay(SDL_Haptic* haptic, float strength, Uint32 durationMs);
-int SDL_HapticRumbleStop(SDL_Haptic* haptic);
-
+/* SDL-B: unused window/cursor/hint/controller/haptic entry points retired.
+ * Active renderer, indexed texture, BMP stream and error APIs remain intact.
+ */
 #ifdef __cplusplus
 }
 #endif

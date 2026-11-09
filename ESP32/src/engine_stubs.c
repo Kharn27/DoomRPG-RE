@@ -61,8 +61,6 @@ static void EspNativeEngineRoot_releaseRender(Render_t* render, boolean freePtr)
            sharedFramebuffer, (int)freePtr);
 
     EspNativeRenderRuntime_releaseCompatibility(render);
-    SDL_free(render->ceilingColor);
-    SDL_free(render->floorColor);
     SDL_free(render->columnScale);
     SDL_free(render->mediaPalettes);
 
@@ -326,7 +324,6 @@ static DoomCanvas_t* EspNativeEngineRoot_initCanvas(DoomCanvas_t* doomCanvas, Do
     doomCanvas->doomRpg = doomRpg;
     doomCanvas->imgFont.imgBitmap = NULL;
     doomCanvas->fontColor = 0xffffffff;
-    doomCanvas->renderFloorCeilingTextures = true;
 
     printf("[DOOMCANVASBRIDGE] INIT exports=0 nativeText=1 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u, retiredStateLayout=%u retiredGraphMirrors=%u retiredIntroState=%u retiredDeadShell=%u retiredInertControl=%u retiredLargeFont=%u retiredFixedGeometry=%u retiredViewShakeAlias=%u clip=%dx%d\n",
            (unsigned int)sizeof(DoomCanvas_t),
@@ -347,7 +344,7 @@ static DoomCanvas_t* EspNativeEngineRoot_initCanvas(DoomCanvas_t* doomCanvas, Do
 }
 
 /* Native Render constructor owned by the process root; old initializer body
- * intentionally unmodified. Other Render owners remain unchanged. */
+ * is preserved apart from retiring the desktop developer skipCull toggle. */
 static Render_t* EspNativeEngineRoot_initRender(Render_t* render, DoomRPG_t* doomRpg)
 {
 	printf("Render_init\n");
@@ -363,9 +360,6 @@ static Render_t* EspNativeEngineRoot_initRender(Render_t* render, DoomRPG_t* doo
 
 	//resourceAsStream.Init(&renderClass->mapFile, doomRPGClass, 1);
 	render->doomRpg = doomRpg;
-	render->skipCull = 0;
-	render->floorColor = NULL;
-	render->ceilingColor = NULL;
 	render->columnScale = NULL;
 	/* Only explicit bringup retains the old map-string pointer array. */
 #if defined(DOOMRPG_ESP32_BRINGUP_PROBES)
@@ -668,8 +662,8 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
     return 1;
 }
 
-/* Private native layout Render setup; preserve validated array/free/geometry
- * and odd-height behavior from the retired desktop-named compatibility API. */
+/* Native layout retains only column occlusion scratch. Desktop plane-color
+ * arrays have no CYD reader; viewport and odd-height behavior are unchanged. */
 static void EspNativeEngineLayout_setupRender(Render_t* render, SDL_Rect* windowRect)
 {
 	boolean memError = false;
@@ -680,23 +674,13 @@ static void EspNativeEngineLayout_setupRender(Render_t* render, SDL_Rect* window
 	if ((windowRect->h & 1) != 0) {
 		render->screenHeight = windowRect->h - 1;
 	}
-	render->halfScreenHeight = render->screenHeight / 2;
 
 #if 0
 	printf("render->screenWidth %d\n", render->screenWidth);
 	printf("render->screenHeight %d\n", render->screenHeight);
 	printf("render->screenX %d\n", windowRect->x);
 	printf("render->screenY %d\n", windowRect->y);
-	printf("render->halfScreenHeight %d\n", render->halfScreenHeight);
 #endif
-
-	SDL_free(render->ceilingColor);
-	render->ceilingColor = SDL_malloc(render->screenWidth * sizeof(short));
-	if (render->ceilingColor == NULL) { memError = true; }
-
-	SDL_free(render->floorColor);
-	render->floorColor = SDL_malloc(render->screenWidth * sizeof(short));
-	if (render->floorColor == NULL) { memError = true; }
 
 	SDL_free(render->columnScale);
 	render->columnScale = SDL_malloc(render->screenWidth * sizeof(int));
@@ -709,7 +693,7 @@ static void EspNativeEngineLayout_setupRender(Render_t* render, SDL_Rect* window
 	printf("[RENDERCORE] SETUP owner=esp-native-bridge view=%dx%d@%d,%d arrays=%uB\n",
 	       render->screenWidth, render->screenHeight,
 	       windowRect->x, windowRect->y,
-	       (unsigned int)(render->screenWidth * (sizeof(short) * 2U + sizeof(int))));
+	       (unsigned int)(render->screenWidth * sizeof(int)));
 }
 
 /* Bounded CYD layout and font initialization, owned by the native process
@@ -798,7 +782,7 @@ int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report) {
     layoutReport.statusBarHeight = 20U;
     layoutReport.renderArrayPayloadBytes =
         (uint32_t)render->screenWidth *
-        (uint32_t)(sizeof(short) + sizeof(short) + sizeof(int));
+        (uint32_t)sizeof(int);
 
     printf("[LAYOUT] clip    x=%d y=%d w=%u h=%u\n",
            layoutReport.clipX, layoutReport.clipY,
@@ -833,7 +817,6 @@ int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report) {
         layoutReport.renderWidth != layoutReport.screenWidth ||
         layoutReport.renderHeight != layoutReport.screenHeight ||
         doomRpg->hud != NULL ||
-        render->floorColor == NULL || render->ceilingColor == NULL ||
         render->columnScale == NULL) {
         printf("[LAYOUT] FAILED geometry or Render_setup validation\n");
         layoutReport.ready = 0;

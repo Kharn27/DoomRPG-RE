@@ -158,16 +158,17 @@ assert "SDL_DestroyTexture(render->piDIB)" not in root
 assert "render->framebuffer = sharedFramebuffer;" in startup
 assert "render->framebuffer = NULL;" in root
 
-# The seven desktop raster gate flags are removed from the CYD layout.
-# Preserve skipCull: native BSP geometry still reads it. Never accidentally
-# delete active spanMode or the culling camera/column scratch.
+# The retired developer-menu skipCull toggle is desktop/oracle-only.
+# Both native BSP render passes use an explicit immutable culling policy.
 assert re.search(
     r"#ifndef DOOMRPG_ESP32\s+boolean skipStretch;\s+boolean unk4;\s+#endif"
-    r"\s+boolean skipCull;\s+#ifndef DOOMRPG_ESP32"
+    r"\s+/\* The desktop developer menu alone toggles skipCull;[\s\S]*?\*/\s+#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
+    r"\s+boolean skipCull;\s+#endif"
+    r"\s+#ifndef DOOMRPG_ESP32"
     r"\s+boolean skipBSP;\s+boolean skipLines;\s+boolean unk5;"
     r"\s+boolean skipSprites;\s+boolean skipViewNudge;\s+#endif", HEADER
-), "retired raster gates must be desktop-only; skipCull must remain native"
-assert "render->skipCull = 0;" in root
+), "retired raster gates and developer toggle must not persist on CYD"
+assert "render->skipCull" not in root
 
 # Desktop memory ledgers, including the obsolete palette byte counter, are
 # excluded from the native Render shell. Geometry and pixels remain owned.
@@ -258,7 +259,7 @@ for type_, field in (
                 + field + r"\b", code,
             ), ("retired opaque Render field accessed by native owner", path, field)
 assert "render->animFrameTime = 0;" not in root
-assert "render->skipCull = 0;" in root
+assert "render->skipCull" not in root
 assert "int lineRasterCount;" in HEADER and "int nodeRasterCount;" in HEADER
 assert re.search(r"#ifndef DOOMRPG_ESP32\s+int spriteCount;\s+int spriteRasterCount;\s+#endif", HEADER)
 
@@ -361,7 +362,7 @@ for field, type_ in (("viewAngle", "int"), ("spanMode", "byte")):
                     code
                 ), ("retired raster scratch mirror", path, field)
 assert "boolean skipCull;" in HEADER
-assert "sizeof(Render_t) == 144U" in startup
+assert "sizeof(Render_t) == 112U" in startup
 
 # PR266-B: native BSP traversal counters are owned by per-frame work or
 # EspNativeBspVisibilityState. Preserve desktop geometry oracle and the
@@ -417,8 +418,8 @@ for tree in (NATIVE / "src", NATIVE / "include"):
         ), ("Render_t numLines unexpectedly reinstated on ESP32", path)
 
 # Post-PR252: two desktop setup-only half-screen intermediates have no
-# Render_t readers. Preserve halfScreenHeight; retire the desktop
-# fracHalfScreenWidth *Render member* while keeping the explicit native
+# Render_t readers. The subsequent milestone also retires halfScreenHeight;
+# fracHalfScreenWidth *Render member* remains absent while the explicit native
 # EspNativeRenderProjection.fracHalfScreenWidth parameter for geometry parity.
 for field in ("halfScreenWidth", "fracHalfScreenHeight", "fracHalfScreenWidth"):
     decl = r"\bint\s+" + field + r";"
@@ -440,6 +441,23 @@ for field in ("halfScreenWidth", "fracHalfScreenHeight", "fracHalfScreenWidth"):
                                      + field + r"\b", code), (path, field)
             else:
                 assert not re.search(r"(?:->|\.)\s*" + field + r"\b", code), (path, field)
+# Derived viewport height has no permanent Render_t owner on CYD.
+# Native geometry reconstructs it from the already normalized screenHeight.
+assert "EspNativeRenderGeometry_halfScreenHeight" in native_header
+for owner in ("esp_native_first_frame.c", "esp_native_sprite_renderer.c",
+              "esp_native_plane_renderer.c"):
+    code = (NATIVE / "src" / owner).read_text()
+    assert "EspNativeRenderGeometry_halfScreenHeight(render->screenHeight)" in code
+for tree in (NATIVE / "src", NATIVE / "include"):
+    for path in sorted(tree.rglob("*")):
+        if path.suffix not in (".c", ".cpp", ".h"):
+            continue
+        code = re.sub(r"#if 0\b[\s\S]*?#endif", " ",
+                      path.read_text(encoding="latin-1"))
+        code = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"',
+                      " ", code, flags=re.S)
+        assert not re.search(r"\b(?:render|r|rootRender|renderBase)\s*->\s*halfScreenHeight\b", code), path
+
 # Current milestone: Render_t::screenX/screenY are dead desktop-origin mirrors.
 # CYD obtains viewport origin from the owned SDL_Rect, not from Render.
 # Keep the original desktop ABI and the same diagnostic coordinate values.
@@ -464,7 +482,10 @@ for field in ("screenX", "screenY"):
             ), ("retired viewport-origin field accessed natively", path, field)
 assert "windowRect->x, windowRect->y," in (
     NATIVE / "src/engine_stubs.c").read_text()
-assert "int halfScreenHeight;" in HEADER
+assert re.search(
+    r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
+    r"\s+int halfScreenHeight;\s+#endif", HEADER
+), "halfScreenHeight must remain desktop/oracle-only"
 assert re.search(r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)\s+int fracHalfScreenWidth;\s+#endif", HEADER)
 assert "render->fracHalfScreenWidth" not in (NATIVE / "src/engine_stubs.c").read_text()
 
@@ -591,7 +612,7 @@ for member in ("mapName", "mapNameID", "loadMapID", "introColor",
                 + member + r"\b", clean), (
                 "retired map-header Render field referenced by native", path, member)
 assert "render->mapCameraSpawnIndex = 0;" not in root
-assert "sizeof(Render_t) == 144U" in (
+assert "sizeof(Render_t) == 112U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 
 # Post-#245-B on the same PR: desktop BSP allocation/inventory counts
@@ -612,7 +633,7 @@ assert re.search(
 assert re.search(
     r"render->mapStringsIDs = NULL;\s+render->mapStringCount = 0;\s+#endif",
     startup)
-assert "sizeof(Render_t) == 144U" in startup
+assert "sizeof(Render_t) == 112U" in startup
 
 # The sprite renderer is the other owner of transactional frame scratch.
 # Its clipping/projection lines are function-local too. No CYD Render_t
@@ -621,7 +642,7 @@ sprite = (NATIVE / "src/esp_native_sprite_renderer.c").read_text()
 assert "Line_t tmpLine;" not in sprite
 assert "->tmpLine" not in sprite
 assert "_Static_assert(sizeof(Scratch) <= 740U" in sprite
-assert "sizeof(Render_t) == 144U" in (
+assert "sizeof(Render_t) == 112U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 assert re.search(
     r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
@@ -763,4 +784,4 @@ assert "spriteLeaf(runtime, &sprite, outLeaf)" in leaf_visibility
 assert "spriteLeafCache.leaf[spriteIndex] = (uint16_t)leaf;" in leaf_visibility
 assert "!cachedSpriteLeaf(runtime, mapSpriteIndex, &leaf)" in leaf_visibility
 
-print("PASS 23 retired Render ABIs; native Render_t 184B, desktop sprite and half-screen scratch excluded; BSP leaf cache retained")
+print("PASS 23 retired Render ABIs; native Render_t 112B, desktop sprite and half-screen scratch excluded; BSP leaf cache retained")

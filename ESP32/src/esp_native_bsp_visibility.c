@@ -465,7 +465,7 @@ int EspNativeBspVisibility_buildForView(struct Render_s* renderBase,
         cullView = (EspNativeRenderCullView){
         .viewX = render->viewX,
         .viewY = render->viewY,
-        .skipCull = render->skipCull,
+        .skipCull = ESP_NATIVE_BSP_CULL_STANDARD,
         .viewCosNeg = render->viewCos_,
         .viewSinNeg = render->viewSin_,
         .viewSin = render->viewSin,
