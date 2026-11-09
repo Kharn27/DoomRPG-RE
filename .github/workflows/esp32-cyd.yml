@@ -274,6 +274,9 @@ jobs:
       - name: Retire dormant SDL memory hook facades
         run: python ESP32/test/sdl_dead_memory_hooks_host.py
 
+      - name: Retire dormant SDL keyboard and modal message facades
+        run: python ESP32/test/sdl_dead_ui_stub_host.py
+
       - name: Test native presentation and clip pixel parity (host C)
         run: python ESP32/test/doomrpg_presentation_host.py
 
