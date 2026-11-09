@@ -26,7 +26,7 @@ assert re.search(
 ), "desktop/oracle midpoint remains available to original renderer"
 assert "render->halfScreenHeight = render->screenHeight / 2;" in DESKTOP
 assert "render->halfScreenHeight" not in ROOT_OWNER
-assert "sizeof(Render_t) == 120U" in BRIDGE
+assert "sizeof(Render_t) == 112U" in BRIDGE
 assert "static inline int EspNativeRenderGeometry_halfScreenHeight(int screenHeight)" in GEOMETRY
 
 owners = ("esp_native_first_frame.c", "esp_native_sprite_renderer.c",

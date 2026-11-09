@@ -28,18 +28,49 @@ live_code = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"',
 assert not re.search(r"\brender->(?:screenX|screenY)\b", live_code)
 assert re.search(r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)\s+int screenX;\s+int screenY;\s+#endif", header)
 assert "windowRect->x, windowRect->y," in body
+assert "render->ceilingColor" not in body and "render->floorColor" not in body
+assert "sizeof(short)" not in body
+assert "render->columnScale = SDL_malloc(render->screenWidth * sizeof(int));" in body
+assert "sizeof(Render_t) == 112U" in bridge
+assert re.search(r"#ifndef DOOMRPG_ESP32\s+short\* ceilingColor;\s+short\* floorColor;\s+#endif", header)
+for subtree in (ROOT / "ESP32/src", ROOT / "ESP32/include"):
+    for p in sorted(subtree.rglob("*")):
+        if p.suffix not in (".c", ".cpp", ".h"):
+            continue
+        code = re.sub(r"#if 0\b[\s\S]*?#endif", " ", p.read_text(encoding="latin-1"))
+        code = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ", code, flags=re.S)
+        assert not re.search(r"\b(?:render|r|rootRender|renderBase)\s*->\s*(?:ceilingColor|floorColor)\b", code), p
 assert "render->fracHalfScreenWidth" not in live_code
 normalized = body.replace("static void " + name + "(", "void Render_setup(").rstrip()
 h = 2166136261
 for b in normalized.encode("utf-8"):
     h = ((h ^ b) * 16777619) & 0xffffffff
-assert h == 0x9d11fa55, f"Render_setup source drift {h:08x}"
+assert h == 0x67b0fc80, f"Render_setup source drift {h:08x}"
 for p in sorted((ROOT / "ESP32/src").rglob("*")):
     if p.suffix not in (".c", ".cpp"):
         continue
     clean = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ",
                    p.read_text(encoding="latin-1"), flags=re.S)
     assert not re.search(r"\bRender_setup\s*\(", clean), p
+
+probe = ('#include <SDL.h>\n#include "DoomRPG.h"\n#include "Render.h"\n'
+         'int read_color(Render_t* r) { return (r->ceilingColor != 0) + (r->floorColor != 0); }\n')
+with tempfile.TemporaryDirectory(prefix="native-plane-color-abi-") as tmp:
+    p = Path(tmp) / "probe.c"
+    p.write_text(probe, encoding="utf-8")
+    cc = [shutil.which("cc") or "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+          "-fsyntax-only", "-IESP32/include", "-Isrc"]
+    for profile, defs, valid in (
+        ("normal", ["-DDOOMRPG_ESP32=1"], False),
+        ("bringup", ["-DDOOMRPG_ESP32=1", "-DDOOMRPG_ESP32_BRINGUP_PROBES=1"], False),
+        ("trace", ["-DDOOMRPG_ESP32=1", "-DDOOMRPG_LOG_LEVEL=4"], False),
+        ("oracle", ["-DDOOMRPG_ESP32=1", "-DDOOMRPG_ESP32_GEOMETRY_ORACLE=1"], False),
+        ("desktop", [], True),
+    ):
+        result = subprocess.run(cc + defs + [str(p)], cwd=ROOT, capture_output=True, text=True)
+        assert (result.returncode == 0) == valid, (profile, result.stderr)
+        if not valid:
+            assert "ceilingColor" in result.stderr or "floorColor" in result.stderr
 
 shim = r"""
 #include <assert.h>
@@ -53,7 +84,6 @@ typedef bool boolean;
 typedef struct SDL_Rect { int x,y,w,h; } SDL_Rect;
 typedef struct Render_s {
     int screenWidth,screenHeight;
-    short *ceilingColor,*floorColor;
     int *columnScale;
 } Render_t;
 static int mallocs,frees,errors,fail_at;
@@ -84,30 +114,26 @@ int main(void) {
         SDL_Rect window={5,20,160,80+(i&1)};
         mallocs=frees=errors=fail_at=0;
         EspNativeEngineLayout_setupRender(&r,&window);
-        assert(mallocs==3 && frees==0 && errors==0);
+        assert(mallocs==1 && frees==0 && errors==0);
         assert(r.screenWidth==160 && r.screenHeight==80);
         assert(strcmp(lastRenderLog,
-            "[RENDERCORE] SETUP owner=esp-native-bridge view=160x80@5,20 arrays=1280B\n")==0);
+            "[RENDERCORE] SETUP owner=esp-native-bridge view=160x80@5,20 arrays=640B\n")==0);
         assert(r.screenHeight/2==40 && r.screenHeight==(window.h & ~1));
-        assert(r.ceilingColor && r.floorColor && r.columnScale);
+        assert(r.columnScale);
         mallocs=frees=0;
         EspNativeEngineLayout_setupRender(&r,&window);
-        assert(mallocs==3 && frees==3 && errors==0);
-        tracked_free(r.ceilingColor);
-        tracked_free(r.floorColor);
+        assert(mallocs==1 && frees==1 && errors==0);
         tracked_free(r.columnScale);
     }
-    for(int bad=1;bad<=3;bad++) {
+    for(int bad=1;bad<=1;bad++) {
         Render_t r={0};
         SDL_Rect window={0,20,160,80};
         mallocs=frees=errors=0;fail_at=bad;
         EspNativeEngineLayout_setupRender(&r,&window);
-        assert(mallocs==3 && errors==1);
-        tracked_free(r.ceilingColor);
-        tracked_free(r.floorColor);
+        assert(mallocs==1 && errors==1);
         tracked_free(r.columnScale);
     }
-    puts("PASS Render setup 4096 normal/even-odd/reentry and 3 OOM cases");
+    puts("PASS Render setup 4096 normal/even-odd/reentry and 1 OOM case");
     return 0;
 }
 """
@@ -118,4 +144,4 @@ with tempfile.TemporaryDirectory(prefix="render-setup-retirement-") as d:
     subprocess.run([shutil.which("cc") or "cc", "-std=c11", "-O2", "-Wall",
                     "-Wextra", "-Werror", str(source), "-o", exe], check=True)
     subprocess.run([exe], check=True)
-print("PASS Render_setup=retired owner=layout FNV=9d11fa55 native-screen-origin=SDL_Rect owner; 4096 cycles, 3 OOM, unchanged Serial")
+print("PASS Render_setup=retired owner=layout FNV=67b0fc80 native-screen-origin=SDL_Rect owner; 4096 cycles, 1 OOM, arrays=640B")

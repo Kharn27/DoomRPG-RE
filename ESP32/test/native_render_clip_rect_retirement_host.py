@@ -25,7 +25,7 @@ assert re.search(
 ), "desktop/oracle keep original clipping member"
 assert "render->clipRect.x" in DESKTOP
 assert "render->clipRect.w" in DESKTOP
-assert "sizeof(Render_t) == 120U" in BRIDGE
+assert "sizeof(Render_t) == 112U" in BRIDGE
 assert "sdlVideo.rendererW != DOOMRPG_CANVAS_WIDTH" in BRIDGE
 assert "sdlVideo.rendererH != DOOMRPG_CANVAS_HEIGHT" in BRIDGE
 assert "Esp32PlatformVideo_framebufferSizeBytes() < framebufferBytes" in BRIDGE
@@ -78,4 +78,4 @@ with tempfile.TemporaryDirectory(prefix="doomrpg-render-clip-") as tmp:
             assert "clipRect" in result.stderr, (name, result.stderr)
 
 print("PASS Render_t clipRect absent from normal/bringup/trace, retained "
-      "desktop/oracle; real canvas dimensions guarded, size=120B")
+      "desktop/oracle; real canvas dimensions guarded, size=112B")

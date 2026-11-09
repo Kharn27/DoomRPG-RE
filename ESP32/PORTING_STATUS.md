@@ -6,6 +6,14 @@
 
 ---
 
+## PR #272 — Retrait des deux tableaux de couleur Render desktop : PASS CYD normal (9 novembre 2026)
+
+**SHA firmware matériellement validé : `4dd32d51466d4f7bb85690895d1fd6fef5f1d591`**, [PR #272](https://github.com/Kharn27/DoomRPG-RE/pull/272), base `main=c9dc7a289bd932492f9cfcf1d54241168c7e0849`. `Render_t` **120→112 B** (`Render=112 Game=0 Canvas=44 Total=916`), tableaux legacy `floorColor`/`ceilingColor` **2×320 B supprimés** au setup native ; seul `columnScale` reste : `arrays=640B`. Desktop/oracle conservés, source SDL-A et menu HELP intacts. CI [push #42537287617](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42537287617) et [PR #42537291171](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42537291171) **SUCCESS** : trois compilations normal/bringup/trace et tests hôte/ABI/ELF.
+
+**Log CYD vrai `device-monitor-261109-010129.log` (1 408 lignes)** : NEW GAME + Entrance + intro, collisions/animations/pickups/porte275/dialogues 8/26→19, premier EXIT ; LOAD V11 slot04, porte113, Malwrath (3 ripostes triples 204, impact184, mort/drop), exploration, second EXIT. **Deux `HEADROOM_OK`, deux `RESIDENTRESET empty=1`, deux `SYSEXIT MENU-READY`**, `largest8=86004` en jeu, `shapeData=mediaTexels=NULL`, aucune erreur/panic/WDT. Marge 8-bit 52 036 puis 51 224 o. **PASS ciblé** ; pas de revendication de FPS, pixel-perfect ou delta heap A/B. Code figé au SHA testé, seul commit de documentation après ce PASS ; utilisateur autorise fusion si conforme. [Rapport #272](MILESTONE_PR272_RENDER_PLANE_COLORS_CYD_PASS.md).
+
+---
+
 ## PR #270 — SDL-A, shim compact SDL permanent : PASS matériel normal (9 novembre 2026)
 
 **SHA réellement flashé et matériellement testé : `16c6a00dda69ac6db1de4c585361576d87e18e8d`**, [PR #270](https://github.com/Kharn27/DoomRPG-RE/pull/270), issue [#269](https://github.com/Kharn27/DoomRPG-RE/issues/269). Le shim compact 1/4/8 bpp est désormais un **source permanent** `ESP32/src/esp32_sdl.cpp`, identique aux 26 047 caractères effectifs de l'ancien généré ; `build_engine.py` ne patche plus et ne `BuildSources` plus SDL, efface ses vieux artefacts incrémentaux. Aucune migration d'ABI SDL/rendering et aucune nouvelle allocation voulue. Tests hôte du véritable shim, CI [#42533716705](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42533716705) **SUCCESS** (3 compilations, audit compiledb/ELF, 19 SDL liées / 1547 octets symboliques inchangés ; RAM statique suivie Δ=0, sections chargées normal Δ=0, bringup Δ=0, trace Δ=+4 o).

@@ -6,6 +6,14 @@ La [PR #271](https://github.com/Kharn27/DoomRPG-RE/pull/271) retire uniquement l
 
 ---
 
+## PR #272 — `Render_t` plane-color arrays : retrait natif, PASS CYD (9 novembre 2026)
+
+Le `Render_t` compact sur ESP32 ne conserve plus `floorColor` ni `ceilingColor` (deux pointeurs desktop sans lecteur raster natif) ; `Render_t=112 B`, au lieu de 120 B, et `EspNativeEngineLayout_setupRender()` ne réserve désormais que `columnScale=160×4=640 B`, contre 1 280 B précédemment. Contrats de caméra, culling, viewport, dessin des plans depuis le BSP/PAK, pitch et unique framebuffer 38 400 B inchangés. Les membres subsistent côté desktop ; les trois profils ESP32 doivent les rejeter. Les tests hôte réalisent 4 096 cycles setup/reentry, OOM fail-closed, destructor, guards ABI et audits des trois ELF. CI [push](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42537287617) + [PR](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42537291171) **SUCCESS**.
+
+Test réel : firmware normal `4dd32d51466d4f7bb85690895d1fd6fef5f1d591`, `device-monitor-261109-010129.log` (1 408 lignes). NEW GAME/Entrance, portes, animations, dialogues, pickups puis EXIT ; LOAD V11 slot04, combat Malwrath (3 triples salves), effets d'impact, mort/drop puis deuxième EXIT. `Render=112 Game=0 Canvas=44 Total=916`, `arrays=640B`, **2× HEADROOM_OK**, **2× RESIDENTRESET empty=1**, **2× SYSEXIT MENU-READY**, `largest8=86004` en jeu et `shapeData/mediaTexels=NULL`. **PASS ciblé** : allocations de payload 640 B évitées, sans attribuer un gain heap net ni un changement mesuré de fluidité. Le code testé ne change pas après ce PASS ; seules les docs de clôture changent. [Rapport complet](MILESTONE_PR272_RENDER_PLANE_COLORS_CYD_PASS.md).
+
+---
+
 ## SDL-A — Source compact SDL permanent : PASS CYD normal (9 novembre 2026)
 
 La [PR #270](https://github.com/Kharn27/DoomRPG-RE/pull/270), jalon A de l'issue [#269](https://github.com/Kharn27/DoomRPG-RE/issues/269), remplace l'ancienne génération textuelle de `esp32_sdl.cpp` par un **unique TU permanent** compilé directement par PlatformIO. Les cinq adaptations indexées sont transférées à l'identique (source effectif complet identique sur 26 047 caractères). Le builder garde les protections de désengagement desktop et nettoie tout reliquat généré. Les API SDL toujours liées, le framebuffer RGB565 `160×120` (38 400 B), le PAK, le rendu et le gameplay demeurent inchangés par SDL-A.
