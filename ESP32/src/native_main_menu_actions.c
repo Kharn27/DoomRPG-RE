@@ -561,11 +561,10 @@ static int helpPaintBottomHudIllustration(uint16_t* fb) {
                MAIN_HELP_HUD_BAR_X + x] =
                 helpBottomHudMini[y * MAIN_HELP_HUD_BAR_WIDTH + x];
 
-    /* The LOWER HUD is not the upper 3-way input splitter. Its actual
-     * virtual weapon button is x100..159 on a 160px logical canvas.
-     * Project THAT rectangle with the same 128/160 scale and x16 origin
-     * as the image: x96..143, y43..58. Only the two 1px edges breathe,
-     * in the same amber as the canonical gameplay touch corners. */
+    /* Scale the ACTUAL weapon hitbox x100..159 to x96..143 of this
+     * 128px miniature. Highlight the same four 3px touch corners as the
+     * canonical gameplay HUD (not arbitrary full-height blue dividers).
+     * x97/x142 and y44..46/y55..57; no framebuffer region is tinted. */
     {
         const int buttonLeft = MAIN_HELP_HUD_BAR_X +
             ESP_NATIVE_HUD_WEAPON_LEFT * MAIN_HELP_HUD_BAR_WIDTH /
@@ -576,16 +575,16 @@ static int helpPaintBottomHudIllustration(uint16_t* fb) {
         const uint16_t amber = (uint16_t)(
             (((31U * (uint32_t)power) / 255U) << 11) |
             (((40U * (uint32_t)power) / 255U) << 5));
-        int edge, buttonY;
+        int edge, corner, y;
         if (power > 0U) {
             for (edge = 0; edge < 2; ++edge) {
-                const int buttonX = edge == 0 ? buttonLeft : buttonRight;
-                for (buttonY = MAIN_HELP_HUD_BAR_Y + 1;
-                     buttonY <= MAIN_HELP_HUD_BAR_Y +
-                                MAIN_HELP_HUD_BAR_HEIGHT - 2; ++buttonY) {
-                    uint16_t* pixel =
-                        &fb[buttonY * DOOMRPG_LOGICAL_WIDTH + buttonX];
-                    *pixel = (uint16_t)((*pixel & 0x0000U) | amber);
+                const int buttonX = edge == 0
+                    ? buttonLeft + 1 : buttonRight - 1;
+                for (corner = 0; corner < 2; ++corner) {
+                    const int firstY = MAIN_HELP_HUD_BAR_Y +
+                        (corner == 0 ? 1 : MAIN_HELP_HUD_BAR_HEIGHT - 4);
+                    for (y = firstY; y < firstY + 3; ++y)
+                        fb[y * DOOMRPG_LOGICAL_WIDTH + buttonX] = amber;
                 }
             }
         }
