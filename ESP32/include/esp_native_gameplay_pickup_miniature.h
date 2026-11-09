@@ -29,6 +29,30 @@ static inline uint16_t EspPickupMini_brighten565(uint16_t source) {
     return (uint16_t)((r << 11) | (g << 5) | b);
 }
 
+/* Fit the actual PAK bitshape in the miniature, including upscaling
+ * source art smaller than the canvas. Keeping native dimensions would only
+ * increase invisible padding for e.g. a 12px pickup. Nearest-neighbor
+ * sampling occurs downstream, with source aspect ratio preserved. */
+static inline int EspPickupMini_fitDimensions(
+    uint32_t width, uint32_t height,
+    uint32_t* outWidth, uint32_t* outHeight) {
+    uint32_t maxDim;
+    uint32_t drawW, drawH;
+    if (outWidth == 0 || outHeight == 0 ||
+        width == 0U || height == 0U ||
+        width > 64U || height > 64U) return 0;
+    maxDim = width > height ? width : height;
+    drawW = (width * ESP_PICKUP_MINI_SIZE + maxDim / 2U) / maxDim;
+    drawH = (height * ESP_PICKUP_MINI_SIZE + maxDim / 2U) / maxDim;
+    if (drawW == 0U) drawW = 1U;
+    if (drawH == 0U) drawH = 1U;
+    if (drawW > ESP_PICKUP_MINI_SIZE ||
+        drawH > ESP_PICKUP_MINI_SIZE) return 0;
+    *outWidth = drawW;
+    *outHeight = drawH;
+    return 1;
+}
+
 /* Match the visual identity of the pickup, not the immutable container
  * record. Destroyed crates keep their original BSP sprite but the native
  * crate overlay substitutes a new effective entity-def tile in the renderer.
