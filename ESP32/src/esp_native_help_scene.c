@@ -3,73 +3,51 @@
 #include <string.h>
 
 #include "esp_asset_pack.h"
-#include "esp_bsp_reader.h"
-#include "esp_map_catalog.h"
 #include "esp_native_help_scene.h"
 #include "platform_video_config.h"
 
 #if DOOMRPG_LOGICAL_WIDTH != 160 || DOOMRPG_LOGICAL_HEIGHT != 120
-#error "Native HELP illustration requires classic CYD 160x120"
+#error "HELP viewport thumbnail requires a 160x120 logical CYD framebuffer"
 #endif
 
 #define PREVIEW_X 8
 #define PREVIEW_Y 29
 #define PREVIEW_W 144
 #define PREVIEW_H 68
+#define WALL_BYTES 2048U
+#define WALL_PALETTE 16U
+#define MAPPING_HEADER 16U
+#define PALETTE_HEADER 4U
+#define WALL_HEADER 4U
+#define MAX_CANDIDATES 24U
 
-#define HELP_TEXTURE_BYTES 2048U
-#define HELP_TEXTURE_COLORS 16U
-#define HELP_MATERIAL_COUNT 3U
-#define HELP_PLANE_MATERIALS 4U
-#define HELP_PLANE_MAP_BYTES (2U * HELP_MAP_CELLS)
-#define HELP_MAP_CELLS 1024U
-#define HELP_MAP_BYTES 256U
-#define HELP_MAPPING_HEADER 16U
-#define HELP_MAPPINGS_PAIR 8U
-
-/* One PAK-first, world-free, bounded illustration owner. Geometric structure
- * comes from the real 32x32 BSP blockmap and authentic spawn point. Three
- * wall materials come from that map's required resource IDs, excluding known
- * door indicator families. Unlike the retired wallpaper, this raster casts
- * spatial rays through the genuine map. It never loads an EspMapRuntime,
- * allocates a world, mutates the map, advances a turn or touches the zip. */
-typedef struct HelpWallMaterial_s {
-    uint8_t packed[HELP_TEXTURE_BYTES];
-    uint16_t palette[HELP_TEXTURE_COLORS];
+/* The same 64x64 4bpp indexed wall material as the actual native gameplay
+ * renderer, but only ONE resource. The screen and PAK are not retained. */
+typedef struct HelpMaterial_s {
+    uint8_t packed[WALL_BYTES];
+    uint16_t palette[WALL_PALETTE];
     uint16_t logicalId;
-} HelpWallMaterial;
-
-static struct {
-    HelpWallMaterial walls[HELP_MATERIAL_COUNT];
-    HelpWallMaterial planes[HELP_PLANE_MATERIALS];
-    uint8_t blockMap[HELP_MAP_BYTES];
-    uint8_t planeMap[HELP_PLANE_MAP_BYTES];
-    uint16_t spawnTile;
-    uint16_t ceilingRgb565;
-    uint16_t floorRgb565;
-    uint8_t spawnDirection;
-    uint8_t materialCount;
-    uint8_t planeMaterialCount;
-    uint8_t mapId;
-    uint8_t active;
     uint8_t ready;
-} scene;
+} HelpMaterial;
+static HelpMaterial material;
 
-static uint16_t readLe16(const uint8_t* p) {
+static uint16_t le16(const uint8_t* p) {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
 }
-static uint32_t readLe32(const uint8_t* p) {
+static uint32_t le32(const uint8_t* p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
            ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
-static uint16_t sourceBgrTo565(uint16_t c) {
-    return (uint16_t)(((c & 31U) << 11) |
-                      (c & 0x07e0U) | ((c >> 11) & 31U));
+static uint16_t sourceBgrToFramebuffer565(uint16_t c) {
+    return (uint16_t)(((c & 31U) << 11) | (c & 0x07e0U) |
+                      ((c >> 11) & 31U));
 }
-static uint16_t rgb565(const uint8_t rgb[3]) {
-    return (uint16_t)(((uint16_t)(rgb[0] & 0xf8U) << 8) |
-                      ((uint16_t)(rgb[1] & 0xfcU) << 3) |
-                      (uint16_t)(rgb[2] >> 3));
+static uint16_t sampleWall(int u, int v) {
+    /* 64 rows per source column: matches esp_native_first_frame.c
+     * packedIndex=position>>13, nibbleShift=(position>>10)&4. */
+    const unsigned int index = (unsigned int)((u & 63) * 64 + (v & 63));
+    const uint8_t raw = material.packed[index >> 1];
+    return material.palette[(index & 1U) ? (raw >> 4) : (raw & 15U)];
 }
 static uint16_t dim565(uint16_t c, unsigned int scale) {
     const unsigned int r = ((c >> 11) & 31U) * scale / 256U;
@@ -86,196 +64,119 @@ static uint16_t add565(uint16_t base, uint16_t gain) {
     if (b > 31U) b = 31U;
     return (uint16_t)((r << 11) | (g << 5) | b);
 }
-static uint16_t sampleMaterial(const HelpWallMaterial* wall,
-                                int u, int v) {
-    const uint32_t at = (uint32_t)((u & 63) * 64 + (v & 63));
-    const uint8_t packed = wall->packed[at >> 1];
-    return wall->palette[(at & 1U) ? (packed >> 4) : (packed & 15U)];
-}
-static int helpTileWall(int x, int y) {
-    uint32_t at;
-    if (x < 0 || y < 0 || x >= 32 || y >= 32) return 1;
-    at = (uint32_t)y * 32U + (uint32_t)x;
-    return (scene.blockMap[at >> 2] >> ((at & 3U) * 2U)) & 1U;
-}
-static int isDoorIndicator(uint16_t id) {
-    /* Map entrance, animated door and indicator texture families are NOT
-     * suitable for the continuous brick/concrete wall material. */
-    return id == 7U || id == 8U || id == 9U || id == 10U ||
-           id == 15U || id == 16U;
-}
-static int loadMaterial(const EspAssetPackEntry* mappings,
-                        const EspAssetPackEntry* palettes,
-                        const EspAssetPackEntry* textures,
-                        uint32_t pairCount, uint32_t paletteSize,
-                        uint32_t idBase, uint16_t logicalId,
-                        HelpWallMaterial* wall) {
-    uint8_t id[2], pair[8], colors[32];
-    uint8_t used[16] = {0U};
-    uint32_t actual, src, palette, i, distinct = 0U;
-    if (wall == NULL ||
-        !EspAssetPack_readRange(mappings, idBase + (uint32_t)logicalId * 2U,
-                                id, sizeof(id))) return 0;
-    actual = readLe16(id);
-    if (actual >= pairCount ||
-        !EspAssetPack_readRange(mappings,
-               HELP_MAPPING_HEADER + actual * HELP_MAPPINGS_PAIR,
-               pair, sizeof(pair))) return 0;
-    src = readLe32(pair);
-    palette = readLe32(pair + 4U);
-    if ((int32_t)src < 0 || (src & 1U) != 0U ||
-        (int32_t)palette < 0 || palette > paletteSize / 2U ||
-        HELP_TEXTURE_COLORS > paletteSize / 2U - palette ||
-        src / 2U > textures->size - 4U ||
-        HELP_TEXTURE_BYTES > textures->size - 4U - src / 2U ||
-        !EspAssetPack_readRange(
-            palettes, 4U + palette * 2U, colors, sizeof(colors)) ||
-        !EspAssetPack_readRange(
-            textures, 4U + src / 2U, wall->packed, HELP_TEXTURE_BYTES))
-        return 0;
-    for (i = 0U; i < HELP_TEXTURE_BYTES; i += 31U) {
-        used[wall->packed[i] & 15U] = 1U;
-        used[wall->packed[i] >> 4] = 1U;
-    }
-    for (i = 0U; i < 16U; ++i) distinct += used[i] != 0U;
-    if (distinct < 4U) return 0;
-    for (i = 0U; i < HELP_TEXTURE_COLORS; ++i)
-        wall->palette[i] = sourceBgrTo565(readLe16(&colors[i * 2U]));
-    wall->logicalId = logicalId;
-    return 1;
-}
+
 void EspNativeHelpScene_reset(void) {
-    /* A HELP close releases only its own tiny immutable lookup; the real
-     * gameplay map owner remains completely untouched. */
-    memset(&scene, 0, sizeof(scene));
+    memset(&material, 0, sizeof(material));
 }
-int EspNativeHelpScene_begin(uint8_t cachedMapId) {
-    const uint8_t mapId = EspMapCatalog_isValidId(cachedMapId)
-                              ? cachedMapId : 1U; /* Entrance at cold boot */
-    const char* const name = EspMapCatalog_nameForId(mapId);
-    EspBspInventory inventory;
-    EspAssetPackEntry entry, mappings, palettes, textures;
-    uint8_t mh[16], ph[4], wh[4];
-    uint32_t pairCount, shapeCount, logicalCount, spriteCount, paletteSize;
-    uint32_t idBase, id, pass, i;
-    uint8_t planeIds[HELP_PLANE_MATERIALS];
+int EspNativeHelpScene_isReady(void) {
+    return material.ready == 1U;
+}
+uint16_t EspNativeHelpScene_textureId(void) {
+    return EspNativeHelpScene_isReady() ? material.logicalId : 0U;
+}
+
+static int loadOriginalMaterial(uint8_t cachedMapId, uint32_t seed) {
+    EspAssetPackEntry mappings, palettes, walls;
+    uint8_t mh[16], ph[4], wh[4], id[2], pair[8], paletteBytesRaw[32];
+    uint32_t texelPairs, shapes, logicalCount, spriteCount;
+    uint32_t paletteBytes, idBase, cap, attempt;
+    uint64_t expectedSize;
     int ok = 0;
 
     EspNativeHelpScene_reset();
-    scene.active = 1U;
-    if (name == NULL || EspAssetPack_isOpen() ||
+    if (EspAssetPack_isOpen() ||
         !EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) return 0;
-    if (!EspBspReader_inventoryPackEntry(name, &inventory) ||
-        inventory.spawnIndex >= HELP_MAP_CELLS ||
-        inventory.sections.blockMapOffset > inventory.sourceBytes ||
-        HELP_MAP_BYTES > inventory.sourceBytes -
-                         inventory.sections.blockMapOffset ||
-        inventory.sections.planeTexturesOffset > inventory.sourceBytes ||
-        HELP_PLANE_MAP_BYTES > inventory.sourceBytes -
-                               inventory.sections.planeTexturesOffset ||
-        !EspAssetPack_findEntry(name, &entry) ||
-        !EspAssetPack_findEntry("mappings.bin", &mappings) ||
+
+    if (!EspAssetPack_findEntry("mappings.bin", &mappings) ||
         !EspAssetPack_findEntry("palettes.bin", &palettes) ||
-        !EspAssetPack_findEntry("wtexels.bin", &textures) ||
-        !EspAssetPack_readRange(
-            &entry, inventory.sections.blockMapOffset,
-            scene.blockMap, sizeof(scene.blockMap)) ||
-        !EspAssetPack_readRange(
-            &entry, inventory.sections.planeTexturesOffset,
-            scene.planeMap, sizeof(scene.planeMap)) ||
+        !EspAssetPack_findEntry("wtexels.bin", &walls) ||
+        mappings.size < MAPPING_HEADER ||
+        palettes.size < PALETTE_HEADER + WALL_PALETTE * 2U ||
+        walls.size < WALL_HEADER + WALL_BYTES ||
         !EspAssetPack_readRange(&mappings, 0U, mh, sizeof(mh)) ||
         !EspAssetPack_readRange(&palettes, 0U, ph, sizeof(ph)) ||
-        !EspAssetPack_readRange(&textures, 0U, wh, sizeof(wh)))
+        !EspAssetPack_readRange(&walls, 0U, wh, sizeof(wh)))
         goto done;
 
-    pairCount = readLe32(mh);
-    shapeCount = readLe32(mh + 4U);
-    logicalCount = readLe32(mh + 8U);
-    spriteCount = readLe32(mh + 12U);
-    paletteSize = readLe32(ph);
-    if (pairCount == 0U || pairCount > 4096U ||
-        shapeCount == 0U || shapeCount > 4096U ||
-        logicalCount == 0U || logicalCount > 4096U ||
+    texelPairs = le32(mh);
+    shapes = le32(mh + 4U);
+    logicalCount = le32(mh + 8U);
+    spriteCount = le32(mh + 12U);
+    paletteBytes = le32(ph);
+    expectedSize = MAPPING_HEADER +
+        ((uint64_t)texelPairs + (uint64_t)shapes) * 8U +
+        ((uint64_t)logicalCount + (uint64_t)spriteCount) * 2U;
+    if (texelPairs == 0U || texelPairs > 4096U ||
+        shapes == 0U || shapes > 4096U ||
+        logicalCount < 2U || logicalCount > 4096U ||
         spriteCount > 4096U ||
-        (uint64_t)HELP_MAPPING_HEADER +
-            (uint64_t)(pairCount + shapeCount) * 8U +
-            (uint64_t)(logicalCount + spriteCount) * 2U != mappings.size ||
-        paletteSize < 32U || paletteSize != palettes.size - 4U ||
-        readLe32(wh) != textures.size - 4U)
+        expectedSize != mappings.size ||
+        paletteBytes < WALL_PALETTE * 2U || (paletteBytes & 1U) ||
+        paletteBytes != palettes.size - PALETTE_HEADER ||
+        le32(wh) != walls.size - WALL_HEADER)
         goto done;
-    idBase = HELP_MAPPING_HEADER + (pairCount + shapeCount) * 8U;
 
-    /* Prefer only actual map-required wall materials; if there are fewer
-     * than three, the shared renderer can reuse those materials in different
-     * spatial views. Never pick a random unrelated door sprite. */
-    for (pass = 0U; pass < 2U &&
-          scene.materialCount < HELP_MATERIAL_COUNT; ++pass) {
-        for (id = 1U; id < logicalCount && id < 256U &&
-             scene.materialCount < HELP_MATERIAL_COUNT; ++id) {
-            HelpWallMaterial* target;
-            uint8_t j, duplicate = 0U;
-            if (isDoorIndicator((uint16_t)id)) continue;
-            if (pass == 0U &&
-                (inventory.lineTextureIdBits[id >> 5] &
-                 (1UL << (id & 31U))) == 0U) continue;
-            for (j = 0U; j < scene.materialCount; ++j)
-                if (scene.walls[j].logicalId == id) duplicate = 1U;
-            if (duplicate) continue;
-            target = &scene.walls[scene.materialCount];
-            if (loadMaterial(&mappings, &palettes, &textures,
-                             pairCount, paletteSize, idBase,
-                             (uint16_t)id, target))
-                ++scene.materialCount;
+    idBase = MAPPING_HEADER + (texelPairs + shapes) * 8U;
+    cap = logicalCount > 256U ? 256U : logicalCount;
+    for (attempt = 0U; attempt < MAX_CANDIDATES; ++attempt) {
+        uint32_t actual, source, paletteOffset, i;
+        int distinct = 0;
+        uint8_t used[16] = {0U};
+        /* The cached flash map id changes the material family. A small
+         * seed changes the choice across HELP openings without affecting
+         * the shared gameplay RNG. Only IDs from the native PAK are used. */
+        const uint32_t start = cachedMapId != 0U
+            ? ((uint32_t)cachedMapId * 57U + (seed / 13000U) % 7U)
+            : (seed / 137U);
+        const uint32_t logical = 1U +
+            ((start + attempt * 37U) % (cap - 1U));
+
+        if (!EspAssetPack_readRange(&mappings, idBase + logical * 2U,
+                                    id, sizeof(id))) goto done;
+        actual = le16(id);
+        if (actual >= texelPairs ||
+            !EspAssetPack_readRange(&mappings,
+                MAPPING_HEADER + actual * 8U, pair, sizeof(pair)))
+            continue;
+
+        source = le32(pair); /* original nibble address */
+        paletteOffset = le32(pair + 4U);
+        if ((int32_t)source < 0 || (source & 1U) ||
+            (int32_t)paletteOffset < 0 ||
+            paletteOffset > paletteBytes / 2U ||
+            WALL_PALETTE > paletteBytes / 2U - paletteOffset ||
+            source / 2U > walls.size - WALL_HEADER ||
+            WALL_BYTES > walls.size - WALL_HEADER - source / 2U)
+            continue;
+
+        if (!EspAssetPack_readRange(&palettes,
+                PALETTE_HEADER + paletteOffset * 2U,
+                paletteBytesRaw, sizeof(paletteBytesRaw)) ||
+            !EspAssetPack_readRange(&walls,
+                WALL_HEADER + source / 2U, material.packed, WALL_BYTES))
+            goto done;
+
+        /* Avoid invisible or featureless textures in the tutorial. */
+        for (i = 0U; i < WALL_BYTES; i += 31U) {
+            used[material.packed[i] & 15U] = 1U;
+            used[material.packed[i] >> 4] = 1U;
         }
-    }
-    if (scene.materialCount == 0U) goto done;
-
-    /* Plane map uses 32x32 floor cells followed by 32x32 ceiling cells,
-     * exactly as the native renderer. Preserve four nearby REAL material IDs.
-     * They share the same 64x64 indexed PAK decode (no map-wide texel buffer).
-     * Unknown/flat cells fall back to a real cached wall texture, never an
-     * empty solid-color strip or fabricated bitmap. */
-    for (pass = 0U; pass < 2U; ++pass) {
-        const uint32_t base = pass * HELP_MAP_CELLS;
-        const uint32_t spawn = inventory.spawnIndex;
-        for (i = 0U; i < HELP_MAP_CELLS &&
-             scene.planeMaterialCount < HELP_PLANE_MATERIALS; ++i) {
-            const uint32_t cell = i == 0U ? spawn : i - 1U;
-            const uint8_t logical = scene.planeMap[base + cell];
-            uint8_t j, duplicate = 0U;
-            if (logical >= logicalCount) continue;
-            for (j = 0U; j < scene.planeMaterialCount; ++j)
-                if (planeIds[j] == logical) duplicate = 1U;
-            if (duplicate) continue;
-            if (loadMaterial(&mappings, &palettes, &textures,
-                             pairCount, paletteSize, idBase,
-                             logical, &scene.planes[scene.planeMaterialCount])) {
-                planeIds[scene.planeMaterialCount] = logical;
-                ++scene.planeMaterialCount;
-            }
+        for (i = 0U; i < 16U; ++i) distinct += used[i] != 0U;
+        if (distinct < 3) continue;
+        for (i = 0U; i < WALL_PALETTE; ++i) {
+            material.palette[i] =
+                sourceBgrToFramebuffer565(le16(&paletteBytesRaw[i * 2U]));
         }
+        material.logicalId = (uint16_t)logical;
+        material.ready = 1U;
+        ok = 1;
+        break;
     }
 
-    scene.spawnTile = inventory.spawnIndex;
-    scene.spawnDirection = inventory.spawnDirection;
-    scene.floorRgb565 = rgb565(inventory.floorRgb);
-    scene.ceilingRgb565 = rgb565(inventory.ceilingRgb);
-    scene.mapId = mapId;
-    scene.ready = 1U;
-    ok = 1;
 done:
     EspAssetPack_close();
-    if (!ok) scene.ready = 0U;
+    if (!ok) EspNativeHelpScene_reset();
     return ok;
-}
-int EspNativeHelpScene_isReady(void) {
-    return scene.active != 0U && scene.ready != 0U;
-}
-uint8_t EspNativeHelpScene_previewMapId(void) {
-    return EspNativeHelpScene_isReady() ? scene.mapId : 0U;
-}
-uint8_t EspNativeHelpScene_materialCount(void) {
-    return EspNativeHelpScene_isReady() ? scene.materialCount : 0U;
 }
 
 /* One mathematically smooth 2.56s breath clock, shared by both HUD guides,
@@ -318,96 +219,22 @@ static void cameraFor(uint8_t variant, int* px, int* py, int* direction) {
         }
     }
 }
-/* Source-of-truth spatial samples: blockMap controls wall collisions;
- * planeMap controls the original texture IDs at their world tile.
- * The tiny renderer fills ALL pixels: textured wall, textured floor and
- * textured ceiling, not a narrow middle band on solid-color dead zones. */
-static const HelpWallMaterial* planeMaterial(int wx, int wy, int ceiling) {
-    uint8_t logical;
-    uint8_t i;
-    uint32_t cell;
-    if (wx < 0 || wx >= 32 || wy < 0 || wy >= 32)
-        return &scene.walls[0];
-    cell = (uint32_t)wy * 32U + (uint32_t)wx +
-           (ceiling ? HELP_MAP_CELLS : 0U);
-    logical = scene.planeMap[cell];
-    for (i = 0U; i < scene.planeMaterialCount; ++i)
-        if (scene.planes[i].logicalId == logical)
-            return &scene.planes[i];
-    return &scene.walls[0];
-}
 
-/* Raycast 1/16 tile per step; one ray per screen column, no per-pixel BSP
- * traversal, no heap or transient frame. The projection scale gives full
- * height to near walls and leaves textured plane surfaces only at distance. */
-static void paintWorld(uint16_t* fb, int top, int bottom,
-                       uint8_t variant) {
-    static const int8_t forwardX[4] = {1, 0, -1, 0};
-    static const int8_t forwardY[4] = {0, -1, 0, 1};
-    static const int8_t rightX[4] = {0, 1, 0, -1};
-    static const int8_t rightY[4] = {1, 0, -1, 0};
-    int cx, cy, dir;
-    int x, y;
-    const int height = bottom - top + 1;
-    cameraFor(variant, &cx, &cy, &dir);
-    for (x = 0; x < PREVIEW_W; ++x) {
-        int px = cx, py = cy, prevX = cx >> 10, prevY = cy >> 10;
-        const int side = (x * 2 - (PREVIEW_W - 1)) * 620 /
-                          (PREVIEW_W - 1);
-        const int dx = forwardX[dir] * 64 + rightX[dir] * side / 16;
-        const int dy = forwardY[dir] * 64 + rightY[dir] * side / 16;
-        int tileX = prevX, tileY = prevY, u;
-        int step, wallHeight, wallTop, wallBottom, shade;
-        const HelpWallMaterial* wall;
-        for (step = 1; step <= 160; ++step) {
-            px += dx;
-            py += dy;
-            tileX = px >> 10;
-            tileY = py >> 10;
-            if (helpTileWall(tileX, tileY)) break;
-            prevX = tileX;
-            prevY = tileY;
-        }
-        if (step > 160) step = 160;
-        wall = &scene.walls[
-            ((unsigned int)((tileX < 0 ? 0 : tileX) * 3 +
-                             (tileY < 0 ? 0 : tileY) * 5 + variant)) %
-            scene.materialCount];
-        u = (tileX != prevX ? py : px) & 1023;
-        u >>= 4;
-        wallHeight = height * 72 / (step + 20);
-        if (wallHeight < 1) wallHeight = 1;
-        if (wallHeight > height) wallHeight = height;
-        wallTop = (height - wallHeight) / 2;
-        wallBottom = wallTop + wallHeight;
-        shade = step * 2 > 120 ? 136 : 256 - step * 2;
-        for (y = 0; y < height; ++y) {
-            uint16_t ink;
-            if (y >= wallTop && y < wallBottom) {
-                ink = dim565(sampleMaterial(
-                      wall, u, (y - wallTop) * 64 / wallHeight),
-                      (unsigned int)shade);
-            }
-            else {
-                /* Plane projection from the same camera ray; 64 subtiles per
-                 * actual BSP tile. The nearest matching map texture is reused
-                 * without reading any asset during HELP repaint. */
-                const int delta = y < wallTop ?
-                      height / 2 - y : y - height / 2;
-                const int distance = height * 1600 / (delta * 2 + 24);
-                const int worldX = cx + dx * distance / 64;
-                const int worldY = cy + dy * distance / 64;
-                const int ceiling = y < wallTop;
-                const HelpWallMaterial* surface =
-                    planeMaterial(worldX >> 10, worldY >> 10, ceiling);
-                ink = dim565(sampleMaterial(surface,
-                         worldX >> 4, worldY >> 4),
-                         ceiling ? 190U : 168U);
-            }
-            fb[(top + y) * DOOMRPG_LOGICAL_WIDTH + PREVIEW_X + x] =
-                ink;
-        }
-    }
+/* The ORIGINAL 2026-11-08 HELP scene, selected directly from whichever
+ * native PAK is present. The map flash ID and current HELP epoch keep
+ * the visual tied to current contents but do not load an active game.
+ * No BSP mini-raycaster/plane arenas or extra framebuffer. */
+static uint8_t previewMapId;
+int EspNativeHelpScene_begin(uint8_t cachedMapId, uint32_t seed) {
+    const int ok = loadOriginalMaterial(cachedMapId, seed);
+    previewMapId = ok ? (cachedMapId != 0U ? cachedMapId : 1U) : 0U;
+    return ok;
+}
+uint8_t EspNativeHelpScene_previewMapId(void) {
+    return EspNativeHelpScene_isReady() ? previewMapId : 0U;
+}
+uint8_t EspNativeHelpScene_materialCount(void) {
+    return EspNativeHelpScene_isReady() ? 1U : 0U;
 }
 
 static void putGlow(uint16_t* framebuffer, int x, int y,
@@ -603,36 +430,70 @@ static void helpPaintTouchCell(uint16_t* fb, int row, int col,
     }
 }
 
+/* Restore the ORIGINAL PAK wall-perspective picture that preceded the
+ * BSP/plane raycaster experiments (and their wide flat dead bands).
+ * A single 4-bpp wall texture gives the recognisable repeating door-style
+ * illustration; wall texels/palette always come from the PRESENT PAK. */
+static void helpPaintOriginalBackground(uint16_t* fb) {
+    int lx, ly;
+    for (lx = 0; lx < PREVIEW_W; ++lx) {
+        const int flank = lx < 54 ? lx :
+                          lx >= 90 ? (PREVIEW_W - 1 - lx) : 54;
+        const int wallTop = 19 * flank / 54;
+        const int wallBottom = (PREVIEW_H - 1) - 17 * flank / 54;
+        for (ly = 0; ly < PREVIEW_H; ++ly) {
+            uint16_t ink;
+            if (ly < wallTop)
+                ink = (uint16_t)(0x0842U + ((uint16_t)ly << 5));
+            else if (ly > wallBottom)
+                ink = (uint16_t)(0x1042U +
+                                 ((uint16_t)(PREVIEW_H - 1 - ly) << 5));
+            else {
+                const int u = lx < 54 ? lx * 2 : lx >= 90
+                             ? (PREVIEW_W - 1 - lx) * 2 : (lx - 54) * 2;
+                const int v = (ly - wallTop) * 63 /
+                              (wallBottom - wallTop + 1);
+                ink = sampleWall(u, v);
+            }
+            fb[(PREVIEW_Y + ly) * DOOMRPG_LOGICAL_WIDTH +
+               PREVIEW_X + lx] = ink;
+        }
+    }
+}
 int EspNativeHelpScene_paint(uint16_t* fb, uint8_t level) {
     static const int xZone[4] = {0, 48, 96, PREVIEW_W};
     static const int yZone[4] = {0, 22, 45, PREVIEW_H};
     int row, col;
-    if (fb == NULL || !EspNativeHelpScene_isReady() || level > 16U)
-        return 0;
-    paintWorld(fb, PREVIEW_Y, PREVIEW_Y + PREVIEW_H - 1, 0U);
-    for (row = 0; row < 3; ++row) {
-        for (col = 0; col < 3; ++col) {
+    if (fb == NULL || !material.ready || level > 16U) return 0;
+    helpPaintOriginalBackground(fb);
+    for (row = 0; row < 3; ++row)
+        for (col = 0; col < 3; ++col)
             helpPaintTouchCell(fb, row, col,
                                PREVIEW_X + xZone[col],
                                PREVIEW_X + xZone[col + 1] - 1,
                                PREVIEW_Y + yZone[row],
-                               PREVIEW_Y + yZone[row + 1] - 1,
-                               level);
-        }
-    }
+                               PREVIEW_Y + yZone[row + 1] - 1, level);
     return 1;
 }
-
-/* Each control row uses a DISTINCT real BSP camera (three directions /
- * nearby walkable spawn cells), not one cropped copy of the main image. */
+/* The three teaching rows retain their original 64x64 PAK wall source but
+ * sample distinct, bounded texture windows, not a cached gameplay frame. */
 int EspNativeHelpScene_paintRow(uint16_t* fb, uint8_t sourceRow,
                                 uint8_t level) {
     static const int xZone[4] = {0, 48, 96, PREVIEW_W};
     const int top = 39, bottom = 61;
-    int col;
-    if (fb == NULL || !EspNativeHelpScene_isReady() ||
-        sourceRow > 2U || level > 16U) return 0;
-    paintWorld(fb, top, bottom, (uint8_t)(sourceRow + 1U));
+    int lx, ly, col;
+    if (fb == NULL || !material.ready || sourceRow > 2U ||
+        level > 16U) return 0;
+    for (ly = top; ly <= bottom; ++ly) {
+        for (lx = 0; lx < PREVIEW_W; ++lx) {
+            const int u = (lx * 63 / (PREVIEW_W - 1) +
+                           (int)sourceRow * 19) & 63;
+            const int v = ((ly - top) * 63 / (bottom - top) +
+                           (int)sourceRow * 23) & 63;
+            fb[ly * DOOMRPG_LOGICAL_WIDTH + PREVIEW_X + lx] =
+                sampleWall(u, v);
+        }
+    }
     for (col = 0; col < 3; ++col)
         helpPaintTouchCell(fb, sourceRow, col,
                            PREVIEW_X + xZone[col],
