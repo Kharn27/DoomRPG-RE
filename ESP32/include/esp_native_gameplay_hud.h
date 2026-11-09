@@ -71,6 +71,11 @@ typedef struct EspNativeGameplayHudStats_s {
     uint8_t resourcesValidated;
 } EspNativeGameplayHudStats;
 
+/* HELP-only read-only composition: paint the REAL k/m/l/o/a native HUD
+ * bottom band at y100..119 from validated sample stats. No HUD owner state
+ * or post-load dirty intent mutation; caller shrinks it before footer. */
+int EspNativeGameplayHud_paintHelpBottomBand(uint16_t* framebuffer);
+
 void EspNativeGameplayHud_reset(void);
 int EspNativeGameplayHud_isReady(void);
 const EspNativeGameplayHudState* EspNativeGameplayHud_view(void);

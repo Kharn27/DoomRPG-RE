@@ -67,6 +67,10 @@ def main():
     elf = candidate_sources(args.profile)
     assert elf.is_file()
     current = linked_sdl(elf)
+    # SDL-B3: only retire symbols that were already absent from actual ELFs.
+    dormant_render_helpers = {"SDL_RenderDrawRect", "SDL_RenderSetIntegerScale"}
+    assert not dormant_render_helpers.intersection(current), (
+        f"{args.profile}: SDL-B3 removed symbol was linked: {sorted(dormant_render_helpers.intersection(current))}")
     assert "SDL_RenderCopy" in current and "SDL_CreateTextureFromSurface" in current
     assert "SDL_DestroyTexture" in current and "SDL_FreeSurface" in current
     report = {"profile": args.profile, "linked_sdl": current,
@@ -76,6 +80,8 @@ def main():
         baseline_elf = args.baseline_dir / "ESP32/.pio/build" / args.profile / "firmware.elf"
         assert baseline_elf.is_file(), baseline_elf
         before = linked_sdl(baseline_elf)
+        assert not dormant_render_helpers.intersection(before), (
+            f"{args.profile}: SDL-B3 symbol was ALREADY linked in SDL-A baseline: {sorted(dormant_render_helpers.intersection(before))}")
         assert set(before) == set(current), (
             f"{args.profile}: changed SDL ABI/linkage "
             f"removed={sorted(set(before)-set(current))} "

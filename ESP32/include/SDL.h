@@ -197,10 +197,8 @@ int SDL_SetRenderDrawColor(SDL_Renderer* renderer, Uint8 r, Uint8 g, Uint8 b, Ui
 int SDL_SetRenderDrawBlendMode(SDL_Renderer* renderer, int blendMode);
 int SDL_RenderClear(SDL_Renderer* renderer);
 void SDL_RenderPresent(SDL_Renderer* renderer);
-int SDL_RenderDrawRect(SDL_Renderer* renderer, const SDL_Rect* rect);
 int SDL_RenderFillRect(SDL_Renderer* renderer, const SDL_Rect* rect);
 int SDL_RenderDrawLine(SDL_Renderer* renderer, int x1, int y1, int x2, int y2);
-int SDL_RenderSetIntegerScale(SDL_Renderer* renderer, SDL_bool enabled);
 
 int SDL_ShowMessageBox(const SDL_MessageBoxData* data, int* buttonId);
 int SDL_ShowSimpleMessageBox(Uint32 flags, const char* title,
