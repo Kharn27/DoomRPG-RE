@@ -35,8 +35,8 @@
 DoomRPG_t* doomRpg = NULL;
 
 /* The desktop errorStr[64] is not a native allocation or error owner. */
-_Static_assert(sizeof(DoomRPG_t) == 196U,
-               "native DoomRPG_t must omit desktop error string and memoryBeg");
+_Static_assert(sizeof(DoomRPG_t) == 192U,
+               "native DoomRPG_t must omit desktop errorStr, memoryBeg, closeApplet");
 
 /* Native process-root Canvas teardown. Preserve the desktop release order
  * and its sole CYD freePtr=true call; no Canvas lifecycle ABI survives. */
@@ -407,7 +407,6 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
     doomRpg->errorID = 0;
     doomRpg->upTimeMs = 0;
     doomRpg->graphSetCliping = false;
-    doomRpg->closeApplet = false;
 
     /*
      * The ESP32 core root is deliberately calloc'd, unlike the inherited

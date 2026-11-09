@@ -263,7 +263,11 @@ typedef struct DoomRPG_s
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	char			errorStr[64];
 #endif
+/* Legacy desktop applet-exit flag: native CYD uses native session/menu
+ * transitions, never this dormant process-root toggle. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	boolean			closeApplet;
+#endif
 	int				imageMemory;
 } DoomRPG_t;
 
