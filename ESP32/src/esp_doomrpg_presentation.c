@@ -18,7 +18,7 @@
 void DoomRPG_setClipFalse(DoomRPG_t* doomrpg)
 {
 	SDL_RenderSetClipRect(sdlVideo.renderer, NULL);
-	doomrpg->graphSetCliping = false;
+	(void)doomrpg;
 }
 
 void DoomRPG_setClipTrue(DoomRPG_t* doomrpg, int x, int y, int w, int h)
@@ -31,7 +31,7 @@ void DoomRPG_setClipTrue(DoomRPG_t* doomrpg, int x, int y, int w, int h)
 	clip.h = h;
 
 	SDL_RenderSetClipRect(sdlVideo.renderer, &clip);
-	doomrpg->graphSetCliping = true;
+	(void)doomrpg;
 }
 
 void DoomRPG_setColor(DoomRPG_t* doomrpg, int color)

@@ -34,6 +34,10 @@
  * Keep the one process root, never create an extra session-owned mirror. */
 DoomRPG_t* doomRpg = NULL;
 
+/* The write-only desktop clip mirror cannot occupy the native root. */
+_Static_assert(sizeof(DoomRPG_t) == 260U,
+               "ESP32 DoomRPG_t clip mirror layout must be 260 bytes");
+
 /* Native process-root Canvas teardown. Preserve the desktop release order
  * and its sole CYD freePtr=true call; no Canvas lifecycle ABI survives. */
 static void EspNativeEngineRoot_releaseCanvas(DoomCanvas_t* doomCanvas)
@@ -403,7 +407,6 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
     doomRpg->imageMemory = 0;
     doomRpg->errorID = 0;
     doomRpg->upTimeMs = 0;
-    doomRpg->graphSetCliping = false;
     doomRpg->closeApplet = false;
 
     /*

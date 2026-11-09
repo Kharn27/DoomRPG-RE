@@ -42,7 +42,9 @@ def extract(source, signature):
 
 def adapted(s):
     return (s.replace("doomrpg->doomCanvas->displayRect.x + ", "")
-             .replace("doomrpg->doomCanvas->displayRect.y + ", ""))
+             .replace("doomrpg->doomCanvas->displayRect.y + ", "")
+             .replace("\n\tdoomrpg->graphSetCliping = false;", "\n\t(void)doomrpg;")
+             .replace("\n\tdoomrpg->graphSetCliping = true;", "\n\t(void)doomrpg;"))
 
 
 HARNESS = r'''
@@ -145,7 +147,6 @@ static void check(const char* phase) {
         mocks[0].r!=mocks[1].r || mocks[0].g!=mocks[1].g ||
         mocks[0].b!=mocks[1].b || mocks[0].a!=mocks[1].a ||
         mocks[0].presents!=mocks[1].presents ||
-        cores[0].graphSetCliping!=cores[1].graphSetCliping ||
         canvases[0].fontColor!=canvases[1].fontColor) {
         fprintf(stderr,"presentation mismatch %s\n",phase);
         exit(1);
@@ -228,6 +229,8 @@ def main():
     legacy = (ROOT / "src/DoomRPG.c").read_text(encoding="latin-1")
     native = (ROOT / "ESP32/src/esp_doomrpg_presentation.c").read_text(encoding="latin-1")
     assert "SDL_Render" in native
+    assert "graphSetCliping" not in native
+    assert "graphSetCliping" in legacy
     assert "PlatformVideo_framebuffer" not in native
     names, bodies = [], []
     for signature, crc in METHODS:

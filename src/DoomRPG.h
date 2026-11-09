@@ -251,7 +251,11 @@ typedef struct DoomRPG_s
 	struct ParticleSystem_s* particleSystem;
 	struct Sound_s*			sound;
 
+/* Desktop SDL clipping mirror: production CYD relies on the live SDL clip.
+ * Geometry oracle keeps the legacy field for its differential fixture. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	boolean			graphSetCliping;
+#endif
 	int				memoryBeg;
 	int				errorID;
 	char			errorStr[64];
