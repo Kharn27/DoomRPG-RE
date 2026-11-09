@@ -5,6 +5,7 @@
 /* Native CYD's canonical 132-byte table moves to permanent BSS ownership.
  * Moving storage must not restart the original seed/refill generators or
  * change the pointer identity expected by EspNativeRngReplayGuard. */
+_Static_assert(sizeof(Random_t) == 132U, "native process RNG table ABI must match desktop");
 static Random_t nativeProcessRandom;
 
 Random_t* EspNativeProcessRng_live(void)

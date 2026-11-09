@@ -32,6 +32,9 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Test native process RNG owner and 132B root extraction (host C + ABI)
+        run: python ESP32/test/native_process_rng_owner_host.py
+
       - name: Inventory native process RNG root owners and replay guards
         run: python ESP32/test/native_root_rng_ownership_inventory.py
 

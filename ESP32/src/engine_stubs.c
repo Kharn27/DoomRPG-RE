@@ -36,7 +36,7 @@
 DoomRPG_t* doomRpg = NULL;
 
 /* The desktop errorStr[64] is not a native allocation or error owner. */
-_Static_assert(sizeof(DoomRPG_t) == 160U,
+_Static_assert(sizeof(DoomRPG_t) == 28U,
                "native DoomRPG_t must omit dormant desktop owner pointers and metrics");
 
 /* Native process-root Canvas teardown. Preserve the desktop release order
