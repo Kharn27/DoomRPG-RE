@@ -1932,6 +1932,24 @@ HUB/SAVE/LOAD et SHOW/HIDE (les types/formats de sauvegarde restent inchangés).
 
 ---
 
+## Root-D/B — six propriétaires et deux scalaires desktop retirés en une fois : PASS CYD (10 novembre 2026)
+
+**[PR #282](https://github.com/Kharn27/DoomRPG-RE/pull/282) : firmware validé `d1661f63bb062fbe721972032a9bfc39fd2d866c`; [CI #42716960340](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42716960340) 2 checks SUCCESS.** À la suite du premier PASS Root-D/A (champ `closeApplet` 4 B), Root-D/B retire d'un bloc sur CYD **24 B de pointeurs** (`entityDef`, `combat`, `hud`, `menu`, `particleSystem`, `sound`) et **8 B de scalaires inertes** (`errorID`, `upTimeMs`). Tous sont conservés dans le struct desktop/oracle, sans changer le comportement de référence ; `DoomRPG_t` **196→160 B**, total structures du boot **808 B**, root `SDL_calloc` mesuré **176 B**. Le destructeur libère uniquement les propriétaires restants `menuSystem`, `render`, `doomCanvas` et root. `player` et `game` restent des sentinelles NULL pour les gardes des autres composants, la RNG legacy reste vivante, `imageMemory` est modifié par les ressources natives et `graphSetCliping` garde l'intro.
+
+**Serial réel `device-monitor-261110-002822.log` : 2265 lignes, 283480 B.** Nouveau boot ROM après 2 lignes `ALIVE` de la session antérieure ; classic CYD 4MB/0PSRAM, PAK, `shapeData/mediaTexels=NULL` dans les étapes contrôlées. START/intro/Entrance, porte275, dialogs opcode26/8→resume19, caisse loot transformée et 20 miniatures non bloquantes ; HUB/EXIT, LOAD V11 slot04, porte113, 3 ripostes Malwrath à 3 projectiles, combats, drop, puis second HUB/EXIT. **2× HEADROOM_OK** marge8=28404/27592 B, **2× RESIDENTRESET released=18008 empty=1**, **2× SYSEXIT MENU-READY frame=3721ecf7**, `heap8=130872` au menu final. Zéro panic/WDT/fatal. **19× `NATIVEFRAME BOUNDARY-INLINE`** connus, à traiter séparément ; HELP et death/RETRY non testés.
+
+**Frontière** : ce PASS couvre seulement le SHA testé ; après le test, docs-only jusqu'au merge. L'ABI réelle Xtensa valide `sizeof(DoomRPG_t)==160`; le compilateur hôte LP64 valide la visibilité positive/négative des champs et la destruction 4096×, mais pas `sizeof` ESP32. Le runtime ne reprend ni la lecture ZIP directe ni les gros buffers desktop.
+
+---
+
+## Root-D/A — `closeApplet` desktop-only : PASS CYD, avant extension (9 novembre 2026)
+
+[PR #282](https://github.com/Kharn27/DoomRPG-RE/pull/282), firmware réellement flashé `7af835d58b7e6b00a33e70a559ade69337fe4a36`. Seul le flag `DoomRPG_t::closeApplet` et son init native (toujours `false`) sont retirés du CYD, tout en gardant la boucle originale desktop/oracle ; header ABI CYD négative et desktop/oracle positive testés sur tous les sources natifs. `DoomRPG_t` 196→192 B, boot total structures 840 B, root alloué 208 B versus 212 avant. [CI #42707539803](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42707539803) SUCCESS.
+
+Test normal sur classic CYD : `device-monitor-261109-234232.log` (1409 lignes / 171218 B), boot + START/intro/Entrance, porte, dialogues, caisse et pickups, Fire Ext, deux sorties menu, LOAD V11 slot04, Malwrath triple projectile trois ripostes et mort/drop. **2× `HEADROOM_OK` marge8 30796/29984, 2× `RESIDENTRESET empty=1`, 2× `SYSEXIT MENU-READY`**, `shapeData/mediaTexels=NULL` et aucune panne fatale. Dix diagnostics `NATIVEFRAME BOUNDARY-INLINE` connus, non expliqués par le retrait. HELP et death/RETRY non testés. **Ce PASS couvre uniquement le SHA testé**. Extension du retrait des vieux propriétaires root dans la même branche à la demande utilisateur : CI et nouveau PASS matériel obligatoires avant merge de la branche étendue.
+
+---
+
 ### Protocole général
 
 1. Lire le vrai SHA `main`, [`PORTING_STATUS.md`](PORTING_STATUS.md) et [`ARCHITECTURE.md`](ARCHITECTURE.md) ; examiner les fonctions legacy concernées dans le repo.
