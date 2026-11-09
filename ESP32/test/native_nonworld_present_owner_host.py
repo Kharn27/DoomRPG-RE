@@ -23,7 +23,10 @@ start = source.index("int __wrap_Esp32PlatformVideo_present(void) {")
 body = source[start:]
 guard = re.search(
     r"if \(!EspNativeResidentGameplay_ownsWorldPresent\(\)\) \{\s*"
-    r"return __real_Esp32PlatformVideo_present\(\);\s*\}", body)
+    r"(?:/\*.*?\*/\s*)?"
+    r"EspPickupMini_markFreshFrame\(\);\s*"
+    r"return __real_Esp32PlatformVideo_present\(\);\s*\}",
+    body, re.S)
 assert guard, "missing non-world bypass of the gameplay compositor"
 assert guard.start() < body.index("EspNativeGameplayControls_isActive()")
 assert guard.start() < body.index("actionState.feedbackPending")
@@ -63,6 +66,9 @@ static int __real_Esp32PlatformVideo_present(void) {
     ++presentCalls;
     return presentOk;
 }
+/* Never restore a stale 3D icon under an opaque menu/LOAD screen. This
+ * notification must be cosmetic and cannot paint the HUD or change a tap. */
+static void EspPickupMini_markFreshFrame(void) {}
 static int nativePresent(void) {
 """ + guard_c + r"""
     if (dirty) {

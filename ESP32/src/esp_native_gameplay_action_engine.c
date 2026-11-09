@@ -31,6 +31,7 @@
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_graphics_catalog.h"
 #include "esp_native_gameplay_player_state.h"
+#include "esp_native_gameplay_pickup_miniature.h"
 #include "esp_native_gameplay_player_pain_visual.h"
 #include "esp_native_gameplay_player_death.h"
 #include "esp_native_resident_gameplay.h"
@@ -1915,6 +1916,10 @@ int __wrap_Esp32PlatformVideo_present(void) {
      * touching HUD feedback or consuming facing.dirty.
      */
     if (!EspNativeResidentGameplay_ownsWorldPresent()) {
+        /* A standalone weapon help or another opaque modal may appear
+         * immediately after pickup COMMIT. Preserve the visual intent and
+         * its FIFO for when WORLD resumes, but invalidate screen pixels. */
+        EspPickupMini_markFreshFrame();
         return __real_Esp32PlatformVideo_present();
     }
 
@@ -1934,6 +1939,7 @@ int __wrap_Esp32PlatformVideo_present(void) {
      * lease is released.
      */
     if (EspNativeResidentGameplay_isAutomapActive()) {
+        EspPickupMini_markFreshFrame();
         muteAutomapVisuals();
         return __real_Esp32PlatformVideo_present();
     }
@@ -2020,11 +2026,15 @@ int __wrap_Esp32PlatformVideo_present(void) {
         }
     }
 
+    /* Icon is painted after the 2px damage border and BEFORE physical
+     * present. Only presentation owns its reversible 20x20 underlay. */
+    EspPickupMini_beforePresent(actionNowMs());
     ok = __real_Esp32PlatformVideo_present();
     if (!ok) return 0;
     /* One immutable timestamp for the single successful LCD present:
      * border + direction + face + source impact all share this anchor. */
     physicalPresentedAtMs = actionNowMs();
+    EspPickupMini_afterPresent(physicalPresentedAtMs);
     /* Start the source 500ms pain face / weapon / shake lease ONLY after
      * a successful PHYSICAL LCD present. Monster-turn visual work defers
      * the already-proven damage flash until endMonsterVisualWork(); its
@@ -2657,6 +2667,7 @@ void EspNativeGameplayActionEngine_reset(void) {
     EspNativeSpriteRenderer_clearTransient();
     EspNativeGameplayCrateState_reset();
     memset(&actionState, 0, sizeof(actionState));
+    EspPickupMini_reset();
 }
 
 static void logActionFrame(const ActionPending* pending,
@@ -2699,8 +2710,20 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
     const EspPlayerViewState* view = EspPlayerView_view();
     ActionPending pending;
 
-    if (EspNativeResidentGameplay_isAutomapActive()) muteAutomapVisuals();
+    if (EspNativeResidentGameplay_isAutomapActive()) {
+        EspPickupMini_markFreshFrame();
+        muteAutomapVisuals();
+    }
     if (!serviceFeedbackExpiry()) return 0;
+    /* The miniature never gates input or the resource transaction. At most
+     * one LCD present per elapsed ON/OFF transition, with a cached icon. */
+    if (EspPickupMini_due(actionNowMs()) &&
+        !EspNativeGameplayControls_isActive() &&
+        !EspNativeResidentGameplay_isAutomapActive() &&
+        !EspAssetPack_isOpen() &&
+        EspNativeResidentGameplay_ownsWorldPresent()) {
+        if (!__wrap_Esp32PlatformVideo_present()) return 0;
+    }
     /* PASS TURN and future non-SELECT actions may queue transient feedback
      * without owning an ActionPending transaction. If no gameplay redraw has
      * consumed it yet, present the existing framebuffer with the queued topbar.
