@@ -158,8 +158,6 @@ typedef struct SDL_MessageBoxData {
 } SDL_MessageBoxData;
 
 Uint32 SDL_GetTicks(void);
-Uint16 SDL_SwapLE16(Uint16 value);
-Uint32 SDL_SwapLE32(Uint32 value);
 const char* SDL_GetError(void);
 
 SDL_RWops* SDL_RWFromMem(void* memory, int size);
@@ -167,10 +165,8 @@ SDL_RWops* SDL_RWFromFile(const char* path, const char* mode);
 Sint32 SDL_RWsize(SDL_RWops* context);
 Sint64 SDL_RWseek(SDL_RWops* context, Sint64 offset, int whence);
 size_t SDL_RWread(SDL_RWops* context, void* ptr, size_t size, size_t count);
-size_t SDL_RWwrite(SDL_RWops* context, const void* ptr, size_t size, size_t count);
 int SDL_RWclose(SDL_RWops* context);
 
-SDL_Surface* SDL_LoadBMP(const char* path);
 SDL_Surface* SDL_LoadBMP_RW(SDL_RWops* source, int freeSource);
 void SDL_FreeSurface(SDL_Surface* surface);
 Uint32 SDL_MapRGB(const SDL_PixelFormat* format, Uint8 r, Uint8 g, Uint8 b);
@@ -188,8 +184,6 @@ int SDL_RenderCopy(SDL_Renderer* renderer, SDL_Texture* texture,
 
 int SDL_RenderSetClipRect(SDL_Renderer* renderer, const SDL_Rect* rect);
 int SDL_SetRenderDrawColor(SDL_Renderer* renderer, Uint8 r, Uint8 g, Uint8 b, Uint8 a);
-int SDL_SetRenderDrawBlendMode(SDL_Renderer* renderer, int blendMode);
-int SDL_RenderClear(SDL_Renderer* renderer);
 void SDL_RenderPresent(SDL_Renderer* renderer);
 int SDL_RenderFillRect(SDL_Renderer* renderer, const SDL_Rect* rect);
 int SDL_RenderDrawLine(SDL_Renderer* renderer, int x1, int y1, int x2, int y2);
