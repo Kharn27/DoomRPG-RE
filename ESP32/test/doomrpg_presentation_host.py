@@ -40,11 +40,17 @@ def extract(source, signature):
     raise AssertionError("unterminated " + signature)
 
 
-def adapted(s):
+def legacy_baseline(s):
+    """Original CYD coordinate adaptation, with immutable desktop CRCs."""
     return (s.replace("doomrpg->doomCanvas->displayRect.x + ", "")
-             .replace("doomrpg->doomCanvas->displayRect.y + ", "")
-             .replace("\n\tdoomrpg->graphSetCliping = false;", "\n\t(void)doomrpg;")
-             .replace("\n\tdoomrpg->graphSetCliping = true;", "\n\t(void)doomrpg;"))
+             .replace("doomrpg->doomCanvas->displayRect.y + ", ""))
+
+
+def adapted(s):
+    """Drop the write-only clip bool only AFTER validating desktop CRCs."""
+    return (legacy_baseline(s)
+            .replace("\n\tdoomrpg->graphSetCliping = false;", "\n\t(void)doomrpg;")
+            .replace("\n\tdoomrpg->graphSetCliping = true;", "\n\t(void)doomrpg;"))
 
 
 HARNESS = r'''
@@ -234,8 +240,10 @@ def main():
     assert "PlatformVideo_framebuffer" not in native
     names, bodies = [], []
     for signature, crc in METHODS:
-        real = adapted(extract(legacy, signature))
-        assert zlib.crc32(real.encode("latin-1")) == crc, signature + " drift"
+        original = extract(legacy, signature)
+        baseline = legacy_baseline(original)
+        assert zlib.crc32(baseline.encode("latin-1")) == crc, signature + " drift"
+        real = adapted(original)
         assert extract(native, signature) == real, signature + " native drift"
         bodies.append(real)
         names.append(re.search(r"(DoomRPG_\w+)\(", signature).group(1))
