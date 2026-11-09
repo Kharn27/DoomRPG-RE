@@ -29,6 +29,24 @@ static inline uint16_t EspPickupMini_brighten565(uint16_t source) {
     return (uint16_t)((r << 11) | (g << 5) | b);
 }
 
+/* Match the visual identity of the pickup, not the immutable container
+ * record. Destroyed crates keep their original BSP sprite but the native
+ * crate overlay substitutes a new effective entity-def tile in the renderer.
+ * Monster drops pass their def tile as sourceLogical with transformed=0.
+ * CROSS even IDs use the actual art frame at logical-1. Cosmetic fail-closed. */
+static inline int EspPickupMini_resolveVisualLogical(
+    uint16_t sourceLogical,
+    uint16_t effectiveDefTile,
+    int transformed,
+    uint16_t* outLogical) {
+    uint16_t logical = transformed ? effectiveDefTile : sourceLogical;
+    if (outLogical == 0 || logical >= 256U) return 0;
+    if (logical >= 82U && logical <= 90U && (logical & 1U) == 0U)
+        --logical;
+    *outLogical = logical;
+    return 1;
+}
+
 /* Cosmetic-only FIFO; all calls are on the native gameplay loop task. */
 void EspPickupMini_reset(void);
 void EspPickupMini_enqueue(uint16_t sourceLogical);
