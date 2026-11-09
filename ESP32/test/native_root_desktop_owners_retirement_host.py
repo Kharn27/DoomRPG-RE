@@ -81,13 +81,9 @@ with tempfile.TemporaryDirectory(prefix="native-root-group-") as tmp:
                     "-DDOOMRPG_ESP32_GEOMETRY_ORACLE=1"], True),
         ("desktop", [], True),
     ):
-        if not expected:
-            probe.write_text(
-                '#include <SDL.h>\n#include "DoomRPG.h"\n'
-                '_Static_assert(sizeof(DoomRPG_t) == 160, "bad root ABI");\n')
-            result = subprocess.run(cmd + flags + [str(probe)], cwd=ROOT,
-                                    capture_output=True, text=True)
-            assert result.returncode == 0, (name, result.stderr)
+        # The CI host may be LP64: the exact 160-byte native sizeof is
+        # verified by the production _Static_assert under PlatformIO Xtensa.
+        # Host C below checks actual shared-header field visibility instead.
         for field in RETIRED:
             probe.write_text(
                 '#include <SDL.h>\n#include "DoomRPG.h"\n'
