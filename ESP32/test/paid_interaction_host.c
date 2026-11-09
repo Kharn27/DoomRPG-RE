@@ -27,6 +27,10 @@
 #include "esp_native_gameplay_player_state.h"
 #include "esp_player_view_state.h"
 
+/* This host links the real frame compositor but not the independent
+ * pickup icon's cosmetic owner. Keep frame invalidation a no-op here. */
+void EspPickupMini_markFreshFrame(void) {}
+
 static EspMapRuntimeView runtime;
 static EspPlayerViewState view;
 static EspNativeGameplayPlayerState player;
