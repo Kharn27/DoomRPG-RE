@@ -930,12 +930,19 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
 
     if (rerender(doomRpg, afterView, "RESOURCE-PICKUP")) {
         /* Cosmetic FIFO is committed AFTER the required world redraw.
-         * Source IDs match the normal sprite renderer (including CROSS)
-         * and the dynamic-drop visual; no visual failure can roll back loot. */
+         * Raw BSP sprite info is only correct for unchanged world items:
+         * a smashed crate retains its immutable crate art, while the
+         * crate-state overlay changes the visual to its effective loot tile.
+         * Resolve the same overlay the world renderer uses; dynamic drops
+         * already carry their spawned loot tile. No visual failure rolls
+         * back a successful pickup. */
         for (i = 0U; i < appliedCount; ++i) {
-            uint16_t logical = applied[i].defTile;
-            EspMapSprite source;
+            uint16_t sourceLogical = applied[i].defTile;
+            uint16_t effectiveDefTile = 0U;
+            uint16_t logical = 0U;
+            int transformed = 0;
             if (applied[i].dynamicDrop == 0U) {
+                EspMapSprite source;
                 if (applied[i].spriteIndex == UINT16_MAX ||
                     !__real_EspMapRuntime_getMapSprite(
                         applied[i].spriteIndex, &source)) {
@@ -943,10 +950,29 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
                            (unsigned int)applied[i].spriteIndex);
                     continue;
                 }
-                logical = (uint16_t)(source.info & RESOURCE_DEF_MASK);
+                sourceLogical = (uint16_t)(source.info & RESOURCE_DEF_MASK);
+                transformed = EspNativeGameplayCrateState_effectiveDefTile(
+                    applied[i].spriteIndex, &effectiveDefTile);
+                if (transformed && effectiveDefTile != applied[i].defTile) {
+                    printf("[PICKUPMINI] SKIP sprite=%u reason=crate-overlay-mismatch cosmetic=yes\n",
+                           (unsigned int)applied[i].spriteIndex);
+                    continue;
+                }
             }
-            if (logical >= 82U && logical <= 90U && (logical & 1U) == 0U)
-                --logical;
+            if (!EspPickupMini_resolveVisualLogical(
+                    sourceLogical, applied[i].defTile, transformed, &logical)) {
+                printf("[PICKUPMINI] SKIP sprite=%u defTile=%u reason=unsupported-art cosmetic=yes\n",
+                       (unsigned int)applied[i].spriteIndex,
+                       (unsigned int)applied[i].defTile);
+                continue;
+            }
+            printf("[PICKUPMINI] SOURCE sprite=%u defTile=%u original=%u logical=%u origin=%s\n",
+                   (unsigned int)applied[i].spriteIndex,
+                   (unsigned int)applied[i].defTile,
+                   (unsigned int)sourceLogical,
+                   (unsigned int)logical,
+                   transformed ? "crate-loot" :
+                       (applied[i].dynamicDrop ? "dynamic-drop" : "map-item"));
             EspPickupMini_enqueue(logical);
         }
         if (firstWeaponDialog != NULL) {
