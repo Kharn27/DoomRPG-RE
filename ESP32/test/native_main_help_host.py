@@ -65,8 +65,7 @@ assert lines[9 * 7 : 10 * 7] == [
     "BOTTOM HUD BAR", "STATUS AT A GLANCE", "LEFT: HP + ARMOR",
     "CENTER: FACE / AMMO", "RIGHT: DIRECTION", "", ""]
 assert lines[10 * 7 : 11 * 7] == [
-    "WEAPON SELECT", "Tap gun icon", "", "", "",
-    "Tap owned to equip", ""]
+    "WEAPON SELECT", "Tap gun icon", "", "", "", "", ""]
 
 assert "DOWN: controls" not in lines
 assert max(map(len, lines)) <= 20  # source font=7px/char, x=12
@@ -313,8 +312,10 @@ assert all(f'openAsset("{x}.bmp", &bmp,' in hud_c
            for x in ('k','m','l','o','a'))
 assert 'static const int tones[3] = {1, 4, 7};' in actions
 
-# Scene is ready BEFORE launching gameplay: native bounded map-only ray
-# from the real BSP blockmap and 64x64 PAK wall materials. 3 unique cameras.
+# Return to the ACTUAL FIRST 2026-11-08 PAK-backed DOOR/WALL scene.
+# One 64x64 4bpp source texture selected from the pack's live logical IDs,
+# salted by staged flash-map and HELP opening epoch. No BSP/plane renderer,
+# no screenshot, no ZIP runtime, no startup gameplay world owner.
 pack = (SRC / "esp_asset_pack.cpp").read_text()
 pack_api = (INC / "esp_asset_pack.h").read_text()
 controls = (SRC / "esp_native_gameplay_controls.c").read_text()
@@ -322,12 +323,10 @@ assert '#define MAIN_HELP_SCENE_PAGE_SCROLL (5 * MAIN_HELP_VISIBLE_LINES)' in ac
 assert '#define MAIN_HELP_ROW_FIRST_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)' in actions
 assert '#define MAIN_HELP_ROW_LAST_SCROLL (8 * MAIN_HELP_VISIBLE_LINES)' in actions
 assert 'helpIsRowHelpPage(menuSystem->scrollIndex)' in actions
-assert 'helpIsAnimatedScenePage(' in actions
 assert 'EspNativeHelpScene_paintRow(' in actions
 assert '63 + (i - 2) * MAIN_HELP_LINE_HEIGHT' in actions
-assert 63 + 2 * 12 + 12 - 1 == 98
 assert 'EspNativeHelpScene_paintRow(uint16_t* framebuffer, uint8_t sourceRow,' in scene_api
-assert 'sourceRow > 2U || level > 16U' in scene
+assert 'sourceRow > 2U ||' in scene
 assert 'static void helpPaintTouchCell(' in scene
 assert 'static void helpPaintTouchDividers(' not in scene
 assert 'const int top = 39, bottom = 61;' in scene
@@ -339,38 +338,34 @@ assert 'EspNativeHelpScene_paint(' in actions
 assert 'helpSceneBreathStep == helpBreathStepAt(now)' in actions
 assert 'EspNativeHelpScene_reset();' in actions
 assert 'EspAssetPack_mapFlashCachedMapId()' in actions
-assert 'EspNativeHelpScene_begin(cachedMapId)' in actions
-assert 'int EspNativeHelpScene_begin(uint8_t flashCachedMapId)' in scene_api
-assert 'EspMapCatalog_isValidId(cachedMapId)' in scene
-assert 'EspMapCatalog_nameForId(mapId)' in scene
-assert 'EspBspReader_inventoryPackEntry(name, &inventory)' in scene
-assert 'inventory.sections.blockMapOffset' in scene
-assert 'inventory.spawnIndex' in scene
-assert 'inventory.lineTextureIdBits[id >> 5]' in scene
-assert 'EspAssetPack_findEntry("wtexels.bin", &textures)' in scene
+assert 'EspNativeHelpScene_begin(cachedMapId,' in actions
+assert 'helpSpaceEpoch);' in actions
+assert 'int EspNativeHelpScene_begin(uint8_t flashCachedMapId, uint32_t helpEpochMs);' in scene_api
+assert 'static int loadOriginalMaterial(uint8_t cachedMapId, uint32_t seed)' in scene
+assert '#define WALL_BYTES 2048U' in scene
+assert '#define MAX_CANDIDATES 24U' in scene
+assert 'cachedMapId * 57U' in scene and 'seed / 13000U' in scene
+assert 'attempt * 37U' in scene
+assert 'logicalCount > 256U ? 256U : logicalCount' in scene
+assert 'EspAssetPack_findEntry("wtexels.bin", &walls)' in scene
 assert 'EspAssetPack_findEntry("palettes.bin", &palettes)' in scene
 assert 'EspAssetPack_findEntry("mappings.bin", &mappings)' in scene
-assert 'HELP_TEXTURE_BYTES 2048U' in scene
-assert 'HELP_MAP_BYTES 256U' in scene
-assert 'static void cameraFor(uint8_t variant,' in scene
-assert '(uint8_t)(sourceRow + 1U)' in scene
-assert 'static void paintWorld(uint16_t* fb, int top, int bottom,' in scene
-assert 'helpTileWall(tileX, tileY)' in scene
-assert 'for (step = 1; step <= 160; ++step)' in scene
-assert 'helpPaintTouchDividers(fb' not in scene
-assert 'const uint16_t core = dim565(neon, accent);' in scene
-assert 'const uint32_t accent = 72U + ((uint32_t)power * 183U) / 255U;' in scene
-assert 'drawActionMark(fb, row, col, (left + right) / 2,' in scene
-assert 'helpPaintWeaponCaption(fb, (left + right) / 2, top,' in scene
-assert 'const uint16_t halo = dim565(neon, accent / 4U);' in scene
-assert 'scene.planeMap' in scene and 'planeMaterial(' in scene
-assert 'wallHeight = height * 72 / (step + 20);' in scene
-assert 'HELP_PLANE_MAP_BYTES (2U * HELP_MAP_CELLS)' in scene
-assert 'scene.ceilingRgb565;' not in scene
-assert 'scene.floorRgb565;' not in scene
-assert 'x = separators[divider];' in actions
-assert 'Gently bias the original textured pixels toward blue' not in actions
-assert 'tint = ' not in actions
+assert 'material.ready = 1U;' in scene
+assert 'material.logicalId = (uint16_t)logical;' in scene
+assert 'sourceBgrToFramebuffer565(' in scene
+assert 'static void helpPaintOriginalBackground(uint16_t* fb)' in scene
+assert 'const int wallTop = 19 * flank / 54;' in scene
+assert 'const int wallBottom = (PREVIEW_H - 1) - 17 * flank / 54;' in scene
+assert 'ink = sampleWall(u, v);' in scene
+assert '(int)sourceRow * 19' in scene and '(int)sourceRow * 23' in scene
+assert 'static uint16_t helpBottomHudMini[' in actions
+assert 'const int buttonLeft = MAIN_HELP_HUD_BAR_X +' in actions
+assert 'ESP_NATIVE_HUD_WEAPON_LEFT * MAIN_HELP_HUD_BAR_WIDTH /' in actions
+assert 'const int buttonRight = MAIN_HELP_HUD_BAR_X +' in actions
+assert 'ESP_NATIVE_HUD_WEAPON_RIGHT + 1' in actions
+assert 16 + 100 * 128 // 160 == 96
+assert 16 + (159 + 1) * 128 // 160 - 1 == 143
+assert 'separators[2] = {80, 115}' not in actions
 assert 'lastWorld' not in scene
 assert 'captureGameplayViewport' not in frame_c
 assert 'uint8_t EspAssetPack_mapFlashCachedMapId(void)' in pack
@@ -378,6 +373,8 @@ assert 'uint8_t EspAssetPack_mapFlashCachedMapId(void);' in pack_api
 assert 'EspAssetPack_mapFlashStage(' not in actions
 assert 'EspAssetPack_mapFlashPrepare(' not in actions
 assert 'EspMapRuntime_' not in scene
+assert 'EspBspReader_' not in scene
+assert 'scene.planeMap' not in scene
 assert 'ESP_NATIVE_GAMEPLAY_ACTION_' not in scene
 assert 'mediaTexels' not in scene
 assert 'malloc(' not in scene
@@ -402,12 +399,18 @@ assert 'static uint16_t helpWeaponMini[MAIN_HELP_WEAPON_MINI_W *' in actions
 assert 'helpBuildWeaponGridMini(framebuffer)' in actions
 assert 'helpDrawWeaponGridMini(framebuffer);' in actions
 assert 'helpDrawWeaponButtonCue(framebuffer);' in actions
-assert 'helpBottomHudMini[sy * MAIN_HELP_HUD_BAR_WIDTH + 80 + x]' in actions
+assert 'helpBottomHudMini[sy * MAIN_HELP_HUD_BAR_WIDTH + sx]' in actions
+assert 'const int dstX = 116, dstY = 14, dstW = 36, dstH = 12;' in actions
+assert 'sourceX + x * sourceWidth / dstW' in actions
+assert 116 > 12 + len("WEAPON SELECT") * 7  # no title/icon overlap
+assert 116 + 36 <= 154 and 14 + 12 < 27
 assert 'if (!helpBottomHudReady)' in actions
 assert 'EspEntityDefTypeCatalog_buildFromPackEntry(&entities)' in actions
 assert 'EspNativeGameplayHubWeaponGrid_paint(framebuffer, &demo, 2U)' in actions
 assert 'demo.active = 1U;' in actions
-assert 'demo.weapons = 0x0007U;' in actions
+assert 'demo.weapons = 0x0fffU;' in actions
+assert 'Tap owned to equip' not in lines
+assert 'EspNativeCanvas_drawText(canvas, detail, 12, 85, 0);' not in actions
 assert 'demo.weapon = 2U;' in actions
 assert 'helpWeaponMiniAttempted = 1U;' in actions
 assert 'helpWeaponMiniReady = 1U;' in actions
@@ -507,6 +510,6 @@ for scroll in range(len(lines)):
     page = (clamped + 6) // 7 + 1
     assert 1 <= page <= (len(lines) + 6) // 7
 
-print("PASS HELP: 16 pages; pre-game BSP map scene, 3 camera views,")
-print("           native 4x3 weapon grid, 5-BMP exact status HUD,")
-print("           green/red/yellow glyphs and contours breathe; full height textured")
+print("PASS HELP: 16 pages; original live-PAK wall/door illustration restored,")
+print("           bottom HUD button scaled to real hitbox, icon inline title,")
+print("           all 12 genuine weapon icons full color, no footer caption")
