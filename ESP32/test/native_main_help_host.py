@@ -270,6 +270,10 @@ assert 'EspNativeHelpScene_breathPower(level)' in scene
 assert 'EspNativeHelpScene_breathPower(' in actions
 assert '(48U - 2U * level) * 255U + 2048U' in scene
 assert 'const uint16_t neon = (uint16_t)(((uint32_t)power * 31U) / 255U);' in actions
+assert 'const unsigned int scale =' in actions
+assert '164U + (uint32_t)breathPower * 92U / 255U' in actions
+assert 'dstX] = white; /* readable white breath, never blinking */' in actions
+assert 'MAIN_HELP_HUD_BAR_Y + 4, power);' in actions
 assert ('MENU/PASS/MAP remain legible throughout the breath.' in actions
         or 'imaginary boundaries alone breathe:' in actions)
 assert actions.count('if (level == 0U) {') == 0  # no binary blackout
