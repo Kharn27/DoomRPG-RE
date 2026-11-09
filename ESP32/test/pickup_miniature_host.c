@@ -45,17 +45,34 @@ static void unchangedHudAndGuard(uint16_t expected) {
     unsigned x, y;
     assert(buffer[0] == 0xabcdU);
     assert(buffer[160U * 120U + 1U] == 0xdcbaU);
-    for (y = 0; y < 20U; ++y)
-        for (x = 0; x < 160U; ++x) assert(pixel(x,y) == expected);
-    for (y = 100U; y < 120U; ++y)
-        for (x = 0; x < 160U; ++x) assert(pixel(x,y) == expected);
-    assert(pixel(12,76) == expected);
-    assert(pixel(33,95) == expected);
+    /* Every pixel OUTSIDE the icon canvas must stay untouched:
+     * top HUD, bottom HUD, left damage cue inset and nearby 3D world. */
+    for (y = 0; y < 120U; ++y)
+        for (x = 0; x < 160U; ++x)
+            if (x < MINI_X || x >= MINI_X + ESP_PICKUP_MINI_SIZE ||
+                y < MINI_Y || y >= MINI_Y + ESP_PICKUP_MINI_SIZE)
+                assert(pixel(x, y) == expected);
+}
+static void entireBackground(uint16_t expected) {
+    unsigned x, y;
+    unchangedHudAndGuard(expected);
+    for (y = MINI_Y; y < MINI_Y + ESP_PICKUP_MINI_SIZE; ++y)
+        for (x = MINI_X; x < MINI_X + ESP_PICKUP_MINI_SIZE; ++x)
+            assert(pixel(x, y) == expected);
 }
 
 int main(void) {
     unsigned before;
     uint16_t selected = 0xeeeeU;
+    /* The old 20px icon ended at y=95. The 24px version expands upward,
+     * retaining the exact old bottom alignment and avoiding both HUD bands.
+     * The cosmetic state stays bounded without an extra framebuffer. */
+    _Static_assert(ESP_PICKUP_MINI_SIZE == 24U, "24px icon requested");
+    _Static_assert(ESP_PICKUP_MINI_PIXELS == 576U, "24px RGB565 count");
+    _Static_assert(ESP_PICKUP_MINI_MASK_BYTES == 72U, "24px opacity mask");
+    _Static_assert(MINI_X == 13U && MINI_Y == 72U, "same bottom anchor");
+    _Static_assert(sizeof(state.colors) == 1152U, "bounded 24px colors");
+    _Static_assert(sizeof(state.background) == 1152U, "bounded underlay");
     /* The immutable sprite of a smashed crate is still the CRATE.
      * The effective entity-def tile is the loot visual, just as in the
      * production crate-state/renderer overlay. Verify all three sources. */
@@ -101,7 +118,10 @@ int main(void) {
     assert(EspPickupMini_due(100U));
     EspPickupMini_beforePresent(100U);
     assert(state.active && state.count == 1U && state.first);
-    assert(pixel(13,76) == (uint16_t)(0x4000U | 80U));
+    assert(pixel(MINI_X, MINI_Y) == (uint16_t)(0x4000U | 80U));
+    assert(pixel(MINI_X + ESP_PICKUP_MINI_SIZE - 1U,
+                 MINI_Y + ESP_PICKUP_MINI_SIZE - 1U) ==
+           (uint16_t)(0x4000U | 80U));
     unchangedHudAndGuard(0x1234U);
     EspPickupMini_afterPresent(100U);
     assert(!state.first && state.shownMs == 100U);
@@ -111,35 +131,38 @@ int main(void) {
     assert(EspPickupMini_due(205U));
     EspPickupMini_beforePresent(205U);
     EspPickupMini_afterPresent(205U);
-    assert(!state.lit && pixel(13,76) == 0x1234U);
+    assert(!state.lit);
+    entireBackground(0x1234U);
     assert(decodeCount == 1U);
     assert(EspPickupMini_due(265U));
     EspPickupMini_beforePresent(265U);
     EspPickupMini_afterPresent(265U);
     assert(state.lit && decodeCount == 1U);
-    assert(pixel(13,76) == (uint16_t)(0x4000U | 80U));
+    assert(pixel(MINI_X, MINI_Y) == (uint16_t)(0x4000U | 80U));
 
     /* New camera frame during lit interval: its NEW underlay wins. */
     fill(0x5678U);
     EspPickupMini_markFreshFrame();
     EspPickupMini_beforePresent(275U);
     EspPickupMini_afterPresent(275U);
-    assert(state.lit && pixel(13,76) == (uint16_t)(0x4000U | 80U));
+    assert(state.lit && pixel(MINI_X, MINI_Y) == (uint16_t)(0x4000U | 80U));
     assert(decodeCount == 1U);
     assert(EspPickupMini_due(370U)); /* 270ms elapsed => OFF. */
     EspPickupMini_beforePresent(370U);
-    assert(!state.lit && pixel(13,76) == 0x5678U);
+    assert(!state.lit);
+    entireBackground(0x5678U);
     unchangedHudAndGuard(0x5678U);
 
     /* Elapsed 500ms: next visual begins without game/input gating. */
     assert(EspPickupMini_due(600U));
     EspPickupMini_beforePresent(600U);
     assert(state.active && state.first && !state.count);
-    assert(pixel(13,76) == (uint16_t)(0x4000U | 81U));
+    assert(pixel(MINI_X, MINI_Y) == (uint16_t)(0x4000U | 81U));
     assert(decodeCount == 2U);
     EspPickupMini_afterPresent(600U);
     EspPickupMini_beforePresent(1100U);
-    assert(!state.active && pixel(13,76) == 0x5678U);
+    assert(!state.active);
+    entireBackground(0x5678U);
     assert(!EspPickupMini_due(1100U));
     unchangedHudAndGuard(0x5678U);
 
@@ -154,7 +177,7 @@ int main(void) {
     EspPickupMini_beforePresent(1200U);
     EspPickupMini_afterPresent(1200U);
     assert(state.active && !state.count && decodeCount == before + 2U);
-    assert(pixel(13,76) == (uint16_t)(0x4000U | 83U));
+    assert(pixel(MINI_X, MINI_Y) == (uint16_t)(0x4000U | 83U));
 
     EspPickupMini_reset();
     fill(0x2222U);
@@ -164,9 +187,9 @@ int main(void) {
     assert(state.pending[state.head] == 101U); /* Drop only oldest waiting. */
     EspPickupMini_beforePresent(1400U);
     assert(state.active && state.count == ESP_PICKUP_MINI_FIFO_CAP - 1U);
-    assert(pixel(13,76) == (uint16_t)(0x4000U | 101U));
+    assert(pixel(MINI_X, MINI_Y) == (uint16_t)(0x4000U | 101U));
     unchangedHudAndGuard(0x2222U);
 
-    puts("pickup_miniature_host: PASS crate-loot vs source sprite, map and dynamic drops, CROSS, RGB565 lift, FIFO rapid pickups, 500ms blink, underlay restores, HUD guards, PAK busy, absent sprite, overflow cosmetic-only");
+    puts("pickup_miniature_host: PASS 24x24 bottom-anchored, full HUD/world guards, 24x24 exact underlay restore, crate-loot, CROSS, RGB565, FIFO, 500ms, PAK lease, cosmetic-only");
     return 0;
 }
