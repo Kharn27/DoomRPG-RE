@@ -55,6 +55,24 @@ static void unchangedHudAndGuard(uint16_t expected) {
 
 int main(void) {
     unsigned before;
+    uint16_t selected = 0xeeeeU;
+    /* The immutable sprite of a smashed crate is still the CRATE.
+     * The effective entity-def tile is the loot visual, just as in the
+     * production crate-state/renderer overlay. Verify all three sources. */
+    assert(EspPickupMini_resolveVisualLogical(140U, 79U, 1, &selected));
+    assert(selected == 79U); /* Transformed crate -> actual loot, not 140. */
+    assert(EspPickupMini_resolveVisualLogical(140U, 79U, 0, &selected));
+    assert(selected == 140U); /* Regular immutable world sprite. */
+    assert(EspPickupMini_resolveVisualLogical(83U, 83U, 0, &selected));
+    assert(selected == 83U); /* Dynamic monster drop. */
+    assert(EspPickupMini_resolveVisualLogical(82U, 82U, 0, &selected));
+    assert(selected == 81U); /* Original CROSS atlas resource. */
+    assert(EspPickupMini_resolveVisualLogical(140U, 82U, 1, &selected));
+    assert(selected == 81U); /* Crate loot with CROSS format. */
+    assert(!EspPickupMini_resolveVisualLogical(140U, 256U, 1, &selected));
+    assert(selected == 81U); /* Invalid art never queues or overwrites. */
+    assert(!EspPickupMini_resolveVisualLogical(400U, 77U, 0, &selected));
+    assert(!EspPickupMini_resolveVisualLogical(140U, 79U, 1, NULL));
     /* The actual sprite decoder calls this helper once per opaque texel.
      * Saturation, black shadow lines and source color hue are invariant.
      * The animation/underlay fixture below remains pixel-exact. */
@@ -149,6 +167,6 @@ int main(void) {
     assert(pixel(13,76) == (uint16_t)(0x4000U | 101U));
     unchangedHudAndGuard(0x2222U);
 
-    puts("pickup_miniature_host: PASS FIFO rapid pickups, 500ms blink, underlay restores, live frame refresh, HUD guards, PAK busy, absent sprite, overflow cosmetic-only");
+    puts("pickup_miniature_host: PASS crate-loot vs source sprite, map and dynamic drops, CROSS, RGB565 lift, FIFO rapid pickups, 500ms blink, underlay restores, HUD guards, PAK busy, absent sprite, overflow cosmetic-only");
     return 0;
 }
