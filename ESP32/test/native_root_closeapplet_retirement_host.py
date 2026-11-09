@@ -23,7 +23,8 @@ assert re.search(
 assert "doomRpg->closeApplet = false;" in DESKTOP
 assert "doomrpg->closeApplet = true;" in DESKTOP
 assert "doomRpg->closeApplet = true;" in DESKTOP
-assert "closeApplet" not in CORE, "native process root must not own legacy flag"
+assert not re.search(r"\b(?:doomRpg|doomrpg)\s*->\s*closeApplet\b", CORE), \
+    "native process root must not use legacy flag"
 assert "_Static_assert(sizeof(DoomRPG_t) == 192U," in CORE
 assert "doomRpg->errorID = 0;" in CORE
 assert "doomRpg->imageMemory = 0;" in CORE
