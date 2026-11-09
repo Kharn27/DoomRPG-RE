@@ -165,14 +165,6 @@ Uint32 SDL_GetTicks(void) {
     return millis();
 }
 
-Uint16 SDL_SwapLE16(Uint16 value) {
-    return value;
-}
-
-Uint32 SDL_SwapLE32(Uint32 value) {
-    return value;
-}
-
 const char* SDL_GetError(void) {
     return lastError;
 }
@@ -261,21 +253,6 @@ size_t SDL_RWread(SDL_RWops* context, void* ptr, size_t size, size_t count) {
     return copied / size;
 }
 
-size_t SDL_RWwrite(SDL_RWops* context, const void* ptr, size_t size, size_t count) {
-    if (context == nullptr || ptr == nullptr || size == 0) {
-        return 0;
-    }
-    if (context->kind == SDL_RWops::FILE_STREAM) {
-        return fwrite(ptr, size, count, context->file);
-    }
-    const size_t requested = size * count;
-    const size_t available = context->length - context->position;
-    const size_t copied = std::min(requested, available);
-    memcpy(context->memory + context->position, ptr, copied);
-    context->position += copied;
-    return copied / size;
-}
-
 int SDL_RWclose(SDL_RWops* context) {
     if (context == nullptr) {
         return 0;
@@ -286,11 +263,6 @@ int SDL_RWclose(SDL_RWops* context) {
     }
     free(context);
     return result;
-}
-
-SDL_Surface* SDL_LoadBMP(const char* path) {
-    SDL_RWops* stream = SDL_RWFromFile(path, "rb");
-    return stream == nullptr ? nullptr : SDL_LoadBMP_RW(stream, SDL_TRUE);
 }
 
 SDL_Surface* SDL_LoadBMP_RW(SDL_RWops* source, int freeSource) {
@@ -567,18 +539,6 @@ int SDL_SetRenderDrawColor(SDL_Renderer*, Uint8 r, Uint8 g, Uint8 b, Uint8 a) {
     drawGreen = g;
     drawBlue = b;
     drawAlpha = a;
-    return 0;
-}
-
-int SDL_SetRenderDrawBlendMode(SDL_Renderer*, int blendMode) {
-    rendererBlendMode = blendMode;
-    return 0;
-}
-
-int SDL_RenderClear(SDL_Renderer*) {
-    if (!ensureRendererPixels()) return -1;
-    std::fill(rendererPixels, rendererPixels + kLogicalWidth * kLogicalHeight,
-              rgb565(drawRed, drawGreen, drawBlue));
     return 0;
 }
 
