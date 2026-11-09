@@ -176,7 +176,7 @@ static const char* const helpLines[] = {
     "",
     "",
     "",
-    "Tap owned to equip",
+    "",
     "",
     "ACTION / CENTER",
     "",
