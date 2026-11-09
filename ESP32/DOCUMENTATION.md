@@ -1894,6 +1894,12 @@ HUB/SAVE/LOAD et SHOW/HIDE (les types/formats de sauvegarde restent inchangés).
 
 ---
 
+## Root-C — suppression de `memoryBeg` desktop du root CYD : PASS matériel (9 novembre 2026)
+
+[PR #279](https://github.com/Kharn27/DoomRPG-RE/pull/279), firmware normal SHA `86615771130812a7b92154eada6e712da3695490`. `DoomRPG_t::memoryBeg` (mémoire au démarrage du moteur desktop) n'avait aucun lecteur natif ; retrait de son unique initialisation et du champ uniquement sur ESP32 normal/bringup/trace, desktop/oracle inchangés. `DoomRPG_t` **200→196 B** ; boot `Render=112 Game=0 Canvas=40 Total=844`, `[CORE] DoomRPG used=212` contre 216 précédemment, sans prétendre à un gain net universel. `imageMemory` est réellement écrit par le chemin image natif et **doit rester** ; `graphSetCliping` reste nécessaire à la garde intro. CI [#42546383792](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42546383792) SUCCESS : trois builds et ABI desktop/oracle + scan source fail-closed. `device-monitor-261109-224309.log` (1617 lignes) : boot, START/intro/Entrance, porte, dialogues/ressources, EXIT, LOAD V11 slot04, combat Malwrath triple projectile (trois ripostes), mort/drop, secret, second EXIT ; **2× HEADROOM_OK, 2× RESIDENTRESET empty=1, 2× SYSEXIT MENU-READY**, PAK prêt, `shapeData/mediaTexels=NULL`, zéro panic/WDT. Huit diagnostics `NATIVEFRAME BOUNDARY-INLINE` observés sans lien démontré ; HELP et death/RETRY non exercés. Test CYD normal uniquement, bringup/trace vérifiés logiciellement. **Le firmware testé reste inchangé après PASS**.
+
+---
+
 ### Protocole général
 
 1. Lire le vrai SHA `main`, [`PORTING_STATUS.md`](PORTING_STATUS.md) et [`ARCHITECTURE.md`](ARCHITECTURE.md) ; examiner les fonctions legacy concernées dans le repo.
