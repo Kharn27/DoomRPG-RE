@@ -194,6 +194,8 @@ void SDL_RenderPresent(SDL_Renderer* renderer);
 int SDL_RenderFillRect(SDL_Renderer* renderer, const SDL_Rect* rect);
 int SDL_RenderDrawLine(SDL_Renderer* renderer, int x1, int y1, int x2, int y2);
 
+int SDL_ShowMessageBox(const SDL_MessageBoxData* data, int* buttonId);
+
 /* SDL-B: unused window/cursor/hint/controller/haptic entry points retired.
  * Active renderer, indexed texture, BMP stream and error APIs remain intact.
  */
