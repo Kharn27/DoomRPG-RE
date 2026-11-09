@@ -1916,7 +1916,10 @@ int __wrap_Esp32PlatformVideo_present(void) {
      * touching HUD feedback or consuming facing.dirty.
      */
     if (!EspNativeResidentGameplay_ownsWorldPresent()) {
-        EspPickupMini_reset();
+        /* A standalone weapon help or another opaque modal may appear
+         * immediately after pickup COMMIT. Preserve the visual intent and
+         * its FIFO for when WORLD resumes, but invalidate screen pixels. */
+        EspPickupMini_markFreshFrame();
         return __real_Esp32PlatformVideo_present();
     }
 
@@ -1936,7 +1939,7 @@ int __wrap_Esp32PlatformVideo_present(void) {
      * lease is released.
      */
     if (EspNativeResidentGameplay_isAutomapActive()) {
-        EspPickupMini_reset();
+        EspPickupMini_markFreshFrame();
         muteAutomapVisuals();
         return __real_Esp32PlatformVideo_present();
     }
@@ -2708,7 +2711,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
     ActionPending pending;
 
     if (EspNativeResidentGameplay_isAutomapActive()) {
-        EspPickupMini_reset();
+        EspPickupMini_markFreshFrame();
         muteAutomapVisuals();
     }
     if (!serviceFeedbackExpiry()) return 0;
