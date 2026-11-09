@@ -1900,6 +1900,14 @@ HUB/SAVE/LOAD et SHOW/HIDE (les types/formats de sauvegarde restent inchangés).
 
 ---
 
+## Root-D/A — `closeApplet` desktop-only : PASS CYD, avant extension (9 novembre 2026)
+
+[PR #282](https://github.com/Kharn27/DoomRPG-RE/pull/282), firmware réellement flashé `7af835d58b7e6b00a33e70a559ade69337fe4a36`. Seul le flag `DoomRPG_t::closeApplet` et son init native (toujours `false`) sont retirés du CYD, tout en gardant la boucle originale desktop/oracle ; header ABI CYD négative et desktop/oracle positive testés sur tous les sources natifs. `DoomRPG_t` 196→192 B, boot total structures 840 B, root alloué 208 B versus 212 avant. [CI #42707539803](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42707539803) SUCCESS.
+
+Test normal sur classic CYD : `device-monitor-261109-234232.log` (1409 lignes / 171218 B), boot + START/intro/Entrance, porte, dialogues, caisse et pickups, Fire Ext, deux sorties menu, LOAD V11 slot04, Malwrath triple projectile trois ripostes et mort/drop. **2× `HEADROOM_OK` marge8 30796/29984, 2× `RESIDENTRESET empty=1`, 2× `SYSEXIT MENU-READY`**, `shapeData/mediaTexels=NULL` et aucune panne fatale. Dix diagnostics `NATIVEFRAME BOUNDARY-INLINE` connus, non expliqués par le retrait. HELP et death/RETRY non testés. **Ce PASS couvre uniquement le SHA testé**. Extension du retrait des vieux propriétaires root dans la même branche à la demande utilisateur : CI et nouveau PASS matériel obligatoires avant merge de la branche étendue.
+
+---
+
 ### Protocole général
 
 1. Lire le vrai SHA `main`, [`PORTING_STATUS.md`](PORTING_STATUS.md) et [`ARCHITECTURE.md`](ARCHITECTURE.md) ; examiner les fonctions legacy concernées dans le repo.
