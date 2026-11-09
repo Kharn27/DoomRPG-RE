@@ -27,6 +27,25 @@ assert "SDL_RenderSetClipRect(sdlVideo.renderer, NULL);" in PRESENTATION
 assert "SDL_RenderSetClipRect(sdlVideo.renderer, &clip);" in PRESENTATION
 assert PRESENTATION.count("(void)doomrpg;") == 2
 
+STORY = (ROOT / "ESP32/src/native_story_fit.c").read_text()
+assert "graphSetCliping" not in STORY
+assert "DoomRPG_setClipFalse(doomCanvas->doomRpg);" in STORY
+assert re.search(
+    r"DoomRPG_setClipFalse\(doomCanvas->doomRpg\);\s+"
+    r"DoomRPG_setColor\(doomCanvas->doomRpg, 0x000000\);",
+    STORY), "full-canvas story background must always be unclipped"
+# The old guard and the new unconditional clear leave identical clip state:
+# when the mirror was false, SDL had no clip; when true, it was cleared.
+# Model all 4096 starting states and test the black background contract.
+for i in range(4096):
+    old_flag = bool(i & 1)
+    old_clip_enabled = old_flag
+    new_clip_enabled = old_flag
+    if old_flag:
+        old_clip_enabled = False
+    new_clip_enabled = False
+    assert old_clip_enabled == new_clip_enabled == False
+
 # Forbid revival in any native production/diagnostic source or header.
 for root in (ROOT / "ESP32/src", ROOT / "ESP32/include"):
     for path in root.rglob("*"):

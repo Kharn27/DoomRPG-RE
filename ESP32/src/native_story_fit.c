@@ -519,9 +519,9 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
     elapsedAnim = doomCanvas->time - introState->storyAnimTime;
     elapsedText = doomCanvas->time - introState->storyTextTime;
 
-    if (doomCanvas->doomRpg->graphSetCliping) {
-        DoomRPG_setClipFalse(doomCanvas->doomRpg);
-    }
+    /* The story begins with a full-screen clear: reset SDL clipping
+     * explicitly, without consulting the retired desktop clip mirror. */
+    DoomRPG_setClipFalse(doomCanvas->doomRpg);
 
     DoomRPG_setColor(doomCanvas->doomRpg, 0x000000);
     DoomRPG_fillRect(doomCanvas->doomRpg,
