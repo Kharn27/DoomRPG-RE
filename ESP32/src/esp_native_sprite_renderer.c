@@ -717,8 +717,10 @@ int EspNativeSpriteRenderer_decodePickupMini(
                 texelIndex / 2U >= frame->packedBytes) goto done;
             nibble = frame->texels[texelIndex / 2U];
             pixelIndex = (top + y) * ESP_PICKUP_MINI_SIZE + left + x;
-            colors[pixelIndex] =
-                frame->palette[(nibble >> ((texelIndex & 1U) * 4U)) & 15U];
+            /* Brighten the UI miniature only, not source textures or the
+             * full-size 3D sprite. Decoding stays once per queued pickup. */
+            colors[pixelIndex] = EspPickupMini_brighten565(
+                frame->palette[(nibble >> ((texelIndex & 1U) * 4U)) & 15U]);
             opaque[pixelIndex >> 3U] |= (uint8_t)(1U << (pixelIndex & 7U));
             ++painted;
         }
