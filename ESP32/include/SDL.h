@@ -163,10 +163,6 @@ Uint32 SDL_SwapLE32(Uint32 value);
 const char* SDL_GetError(void);
 const char* SDL_GetScancodeName(int scancode);
 
-int SDL_SetMemoryFunctions(SDL_malloc_func mallocFn, SDL_calloc_func callocFn,
-                           SDL_realloc_func reallocFn, SDL_free_func freeFn);
-void SDL_GetMemoryFunctions(SDL_malloc_func* mallocFn, SDL_calloc_func* callocFn,
-                            SDL_realloc_func* reallocFn, SDL_free_func* freeFn);
 
 SDL_RWops* SDL_RWFromMem(void* memory, int size);
 SDL_RWops* SDL_RWFromFile(const char* path, const char* mode);
