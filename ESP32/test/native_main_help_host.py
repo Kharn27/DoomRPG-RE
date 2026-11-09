@@ -390,11 +390,14 @@ for color in ('NEON_GREEN_CORE  0x07e0U',
     assert color in controls
 
 # Weapon selector: exact existing PAK bitshapes/mappings 4x3 painter,
-# local demonstration player only, reduced after 1 pass in BSS 128x42.
+# local demonstration player only, increased to the maximum space under
+# the subtitle and above the unchanged menu footer, bounded BSS 144x60.
 grid_c = (SRC / 'esp_native_gameplay_hub_weapon_grid.c').read_text()
 assert '#define MAIN_HELP_WEAPON_PAGE_SCROLL (10 * MAIN_HELP_VISIBLE_LINES)' in actions
-assert '#define MAIN_HELP_WEAPON_MINI_W 128' in actions
-assert '#define MAIN_HELP_WEAPON_MINI_H 42' in actions
+assert '#define MAIN_HELP_WEAPON_MINI_X 8' in actions
+assert '#define MAIN_HELP_WEAPON_MINI_Y 39' in actions
+assert '#define MAIN_HELP_WEAPON_MINI_W 144' in actions
+assert '#define MAIN_HELP_WEAPON_MINI_H 60' in actions
 assert 'static uint16_t helpWeaponMini[MAIN_HELP_WEAPON_MINI_W *' in actions
 assert 'helpBuildWeaponGridMini(framebuffer)' in actions
 assert 'helpDrawWeaponGridMini(framebuffer);' in actions
@@ -414,14 +417,23 @@ assert 'EspNativeCanvas_drawText(canvas, detail, 12, 85, 0);' not in actions
 assert 'demo.weapon = 2U;' in actions
 assert 'helpWeaponMiniAttempted = 1U;' in actions
 assert 'helpWeaponMiniReady = 1U;' in actions
-assert 'const int sy = 35 + y * 84 / MAIN_HELP_WEAPON_MINI_H;' in actions
-assert 'const int sx = 2 + x * 156 / MAIN_HELP_WEAPON_MINI_W;' in actions
+assert 'const int sy = 35 + y * 83 / (MAIN_HELP_WEAPON_MINI_H - 1);' in actions
+assert 'const int sx = 2 + x * 155 / (MAIN_HELP_WEAPON_MINI_W - 1);' in actions
 assert 'selectedWeapon >= ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COUNT' in grid_c
 assert 'EspAssetPack_findEntry("stexels.bin", &stexels)' in grid_c
 assert 'GRID_CELL_WIDTH 39' in grid_c and 'GRID_CELL_HEIGHT 28' in grid_c
-assert 16 + 128 - 1 <= 151 and 40 + 42 - 1 < 85
-assert 85 + 12 - 1 < 100
-assert 128 * 42 * 2 == 10752
+# Exact available space: caption at y27..38, grid at y39..98,
+# footer begins y100. Source pixels x2..157/y35..118 are ALL covered.
+assert 8 + 144 - 1 == 151
+assert 39 + 60 - 1 == 98 < 100
+assert 27 + 12 - 1 == 38 < 39
+assert 2 + (144 - 1) * 155 // (144 - 1) == 157
+assert 35 + (60 - 1) * 83 // (60 - 1) == 118
+assert all(2 <= 2 + x * 155 // 143 <= 157 for x in range(144))
+assert all(35 <= 35 + y * 83 // 59 <= 118 for y in range(60))
+assert 144 * 60 * 2 == 17280
+assert 17280 - 10752 == 6528  # increase over previous 128x42 cache
+assert 'mini=%ux%u bytes=%u' in actions
 
 # Hardware feedback on CYD TOUCH: turn symbols must curve, not be
 # three perpendicular line segments; weapon controls need explicit words.
@@ -512,4 +524,4 @@ for scroll in range(len(lines)):
 
 print("PASS HELP: 16 pages; original live-PAK wall/door illustration restored,")
 print("           bottom HUD button scaled to real hitbox, icon inline title,")
-print("           all 12 genuine weapon icons full color, no footer caption")
+print("           all 12 PAK weapon icons enlarged to 144x60, no footer caption")
