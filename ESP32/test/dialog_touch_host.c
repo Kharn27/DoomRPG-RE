@@ -41,6 +41,47 @@ static void seed(uint8_t back) {
 }
 int main(void) {
     EspNativeGameplayDialogClose close;
+    uint16_t lastAccent = 0U;
+    uint16_t lastInk = 0U;
+    for (uint8_t theme = ESP_MAIN_MENU_THEME_CLASSIC;
+         theme <= ESP_MAIN_MENU_THEME_PHOSPHORE; ++theme) {
+        assert(EspMainMenuSkin_setTheme(theme));
+        seed(1);
+        dialog.font.paletteCount = 4U;
+        dialog.font.paletteRgb565[0] = 0xf81fU; /* transparent magenta */
+        dialog.font.paletteRgb565[1] = 0xffffU; /* full white glyph */
+        dialog.font.paletteRgb565[2] = 0U;      /* dark outline */
+        dialog.font.paletteRgb565[3] = 0x7befU; /* half-bright glyph */
+        tintDialogFontInk();
+        assert(dialog.font.paletteRgb565[0] == 0xf81fU);
+        assert(dialog.font.paletteRgb565[1] == EspMainMenuSkin_uiInk());
+        assert(dialog.font.paletteRgb565[2] == 0U);
+        assert(dialog.font.paletteRgb565[3] != dialog.font.paletteRgb565[1]);
+        assert(paintDialog(1000U) && presents == 1);
+        /* The original text corridor, row count and permanent HUD survive. */
+        assert(pixels[1 + 47 * 160 + 16] == ESP_HUB_COLOR_BG);
+        assert(pixels[1 + 46 * 160 + 30] == EspMainMenuSkin_uiAccentDim());
+        assert(pixels[1 + 46 * 160 + 80] == EspMainMenuSkin_uiAccent());
+        assert(pixels[1 + 98 * 160 + 80] == EspMainMenuSkin_uiAccent());
+        /* Real industrial button and the 9-row themed gradient label. */
+        assert(pixels[1 + 25 * 160 + 27] ==
+               EspMainMenuSkin_accentTone(ESP_MAIN_MENU_SKIN_IDLE));
+        assert(pixels[1 + 25 * 160 + 107] ==
+               EspMainMenuSkin_accentTone(ESP_MAIN_MENU_SKIN_IDLE));
+        assert(pixels[1 + 28 * 160 + 108] ==
+               EspMainMenuSkin_letterTone(0, 9));
+        if (theme != ESP_MAIN_MENU_THEME_CLASSIC) {
+            assert(lastAccent != EspMainMenuSkin_uiAccent());
+            assert(lastInk != EspMainMenuSkin_uiInk());
+        }
+        lastAccent = EspMainMenuSkin_uiAccent();
+        lastInk = EspMainMenuSkin_uiInk();
+        for (unsigned y = 0; y < 120; ++y)
+            for (unsigned x = 0; x < 160; ++x)
+                if (y < 20 || y >= 100)
+                    assert(pixels[1 + y * 160 + x] == 0xbeef);
+    }
+    assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_CLASSIC));
     seed(1);
     assert(paintDialog(1000U) && presents == 1);
     for (int y = 0; y < 120; ++y) for (int x = 0; x < 160; ++x) {
@@ -49,7 +90,8 @@ int main(void) {
         assert(action == (isBack ? ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN :
                                   ESP_NATIVE_GAMEPLAY_ACTION_SELECT));
     }
-    assert(pixels[1 + 22 * 160 + 16] == ESP_HUB_COLOR_STEEL_DARK);
+    assert(pixels[1 + 25 * 160 + 27] ==
+           EspMainMenuSkin_accentTone(ESP_MAIN_MENU_SKIN_IDLE));
     assert(pixels[1 + 21 * 160 + 16] == 0xbeef);
     /* Test touch pixels and routing into the REAL recovered cancel handler. */
     assert(EspNativeGameplayDialog_handleAction(
@@ -83,6 +125,6 @@ int main(void) {
         if (y < 20 || y >= 100) assert(pixels[1 + y * 160 + x] == 0xbeef);
     assert(pixels[0] == 0xbeef && pixels[160 * 120 + 1] == 0xbeef);
     EspNativeGameplayDialog_reset();
-    puts("dialog_touch_host: PASS BACK paint/bounds/cancel, NOBACK SELECT-only, no HUD overwrite");
+    puts("dialog_touch_host: PASS three real button/label themes, palette-only font tint, COMMS, 4-line safe text corridor, BACK touch/cancel, NOBACK SELECT-only, no HUD overwrite");
     return 0;
 }
