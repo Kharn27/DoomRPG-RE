@@ -195,31 +195,6 @@ uint8_t EspNativeHelpScene_breathPower(uint8_t level) {
         (48U - 2U * level) * 255U + 2048U) / 4096U);
 }
 
-/* Bounded ray samples through the genuine 2-bit BSP blockmap; distance and
- * wall texture are map-derived. This is explicitly an instructional mini
- * raycast, not a second game world, live BSP compositor or synthetic corridor.
- * Distinct cameras face different directions from walkable nearby cells. */
-static void cameraFor(uint8_t variant, int* px, int* py, int* direction) {
-    static const int8_t offsetX[9] = {0, 1, 0, -1, 0, 2, -2, 1, -1};
-    static const int8_t offsetY[9] = {0, 0, 1, 0, -1, 0, 0, -1, 1};
-    const int sx = scene.spawnTile & 31U;
-    const int sy = scene.spawnTile >> 5;
-    int i;
-    *px = sx * 1024 + 512;
-    *py = sy * 1024 + 512;
-    *direction = ((int)(scene.spawnDirection + variant * 64U + 32U) >> 6) & 3;
-    if (variant == 0U) return;
-    for (i = 0; i < 9; ++i) {
-        const int k = (i + variant * 2) % 9;
-        const int x = sx + offsetX[k], y = sy + offsetY[k];
-        if (!helpTileWall(x, y)) {
-            *px = x * 1024 + 512;
-            *py = y * 1024 + 512;
-            return;
-        }
-    }
-}
-
 /* The ORIGINAL 2026-11-08 HELP scene, selected directly from whichever
  * native PAK is present. The map flash ID and current HELP epoch keep
  * the visual tied to current contents but do not load an active game.
