@@ -257,7 +257,7 @@ assert 27 + 12 - 1 < 43
 assert 88 + 12 - 1 < 100
 
 # One smoothstep breath source, 32 x 80ms = 2.56s.
-# Keep text/icon backing stable while only the neon accent eases in/out.
+# Keep backing intact; both 1-pixel colored borders and colored glyphs breathe.
 scene_api = (INC / "esp_native_help_scene.h").read_text()
 scene = (SRC / "esp_native_help_scene.c").read_text()
 hud_c = (SRC / "esp_native_gameplay_hud.c").read_text()
@@ -325,7 +325,7 @@ assert 63 + 2 * 12 + 12 - 1 == 98
 assert 'EspNativeHelpScene_paintRow(uint16_t* framebuffer, uint8_t sourceRow,' in scene_api
 assert 'sourceRow > 2U || level > 16U' in scene
 assert 'static void helpPaintTouchCell(' in scene
-assert 'static void helpPaintTouchDividers(' in scene
+assert 'static void helpPaintTouchDividers(' not in scene
 assert 'const int top = 39, bottom = 61;' in scene
 assert 'sourceRow, col,' in scene
 assert 'top, bottom, level);' in scene
@@ -353,8 +353,17 @@ assert '(uint8_t)(sourceRow + 1U)' in scene
 assert 'static void paintWorld(uint16_t* fb, int top, int bottom,' in scene
 assert 'helpTileWall(tileX, tileY)' in scene
 assert 'for (step = 1; step <= 160; ++step)' in scene
-assert 'helpPaintTouchDividers(fb' in scene
-assert 'const uint16_t glow = (uint16_t)(((uint32_t)power * 31U) / 255U);' in scene
+assert 'helpPaintTouchDividers(fb' not in scene
+assert 'const uint16_t core = dim565(neon, accent);' in scene
+assert 'const uint32_t accent = 72U + ((uint32_t)power * 183U) / 255U;' in scene
+assert 'drawActionMark(fb, row, col, (left + right) / 2,' in scene
+assert 'helpPaintWeaponCaption(fb, (left + right) / 2, top,' in scene
+assert 'const uint16_t halo = dim565(neon, accent / 4U);' in scene
+assert 'scene.planeMap' in scene and 'planeMaterial(' in scene
+assert 'wallHeight = height * 72 / (step + 20);' in scene
+assert 'HELP_PLANE_MAP_BYTES (2U * HELP_MAP_CELLS)' in scene
+assert 'scene.ceilingRgb565;' not in scene
+assert 'scene.floorRgb565;' not in scene
 assert 'x = separators[divider];' in actions
 assert 'Gently bias the original textured pixels toward blue' not in actions
 assert 'tint = ' not in actions
@@ -419,8 +428,9 @@ turn_points = [
     re.findall(r'\{\s*(-?\d+),\s*(-?\d+)\s*\}', curve_data)
 ]
 assert turn_points == [
-    (5, 4), (5, 1), (4, -2), (2, -4),
-    (0, -5), (-2, -4), (-4, -2), (-5, 0)]
+    (6, 5), (6, 3), (6, 0), (5, -3),
+    (3, -5), (1, -6), (-1, -6),
+    (-3, -6), (-5, -4), (-6, -2), (-6, 0)]
 assert all(abs(b[0] - a[0]) <= 3 and abs(b[1] - a[1]) <= 3
            for a, b in zip(turn_points, turn_points[1:]))
 # Turning symbols and their mirrored arrowheads fit their own green cell.
@@ -430,7 +440,7 @@ for left, right in ((8, 55), (104, 151)):
     mirror = 1 if left == 8 else -1
     outline = [(cx + mirror * x, cy + y) for x, y in turn_points]
     outline.extend((cx - mirror * dx, cy + dy)
-                   for dx, dy in ((3, -3), (6, 0), (3, 3)))
+                   for dx, dy in ((3, -4), (7, 0), (3, 4)))
     assert all(left < x < right and 51 < y < 73
                for x, y in outline)
 
@@ -442,8 +452,8 @@ assert 'helpPaintWeaponWord(fb, centerX, top + 1, "WPN", ink);' in scene
 assert 'helpPaintWeaponWord(fb, centerX, top + 9, secondLine, ink);' in scene
 assert 'if (row == 2 && col != 1)' in scene
 assert 'helpPaintWeaponCaption(fb, (left + right) / 2, top,' in scene
-assert 'col == 0 ? "PREV" : "NEXT", labelInk);' in scene
-assert 'static void helpPaintTouchDividers(' in scene
+assert 'col == 0 ? "PREV" : "NEXT", core);' in scene
+assert 'static void helpPaintTouchDividers(' not in scene
 assert 'dim565(*pixel, 160U)' in scene
 glyph_data = scene.split('static const HelpWeaponGlyph helpWeaponGlyphs[] = {', 1)[1].split('};', 1)[0]
 glyphs = re.findall(r"'([A-Z])',\s*\{([^}]+)\}", glyph_data)
@@ -495,4 +505,4 @@ for scroll in range(len(lines)):
 
 print("PASS HELP: 16 pages; pre-game BSP map scene, 3 camera views,")
 print("           native 4x3 weapon grid, 5-BMP exact status HUD,")
-print("           only imaginary separators breathe, bounded RAM + FNV")
+print("           green/red/yellow glyphs and contours breathe; full height textured")
