@@ -314,7 +314,13 @@ static const HelpHudGlyph helpHudGlyphs[] = {
 
 static void helpPaintMiniHudLabel(uint16_t* framebuffer,
                                   const char* label, int left, int right,
-                                  int y) {
+                                  int y, uint8_t breathPower) {
+    const unsigned int scale =
+        164U + (uint32_t)breathPower * 92U / 255U;
+    const uint16_t white = (uint16_t)(
+        ((31U * scale / 256U) << 11) |
+        ((63U * scale / 256U) << 5) |
+        (31U * scale / 256U));
     const int length = (int)SDL_strlen(label);
     const int pixels = length * 6 - 1;
     int pen = (left + right - pixels + 1) / 2;
@@ -330,7 +336,7 @@ static void helpPaintMiniHudLabel(uint16_t* framebuffer,
                     if (dstX > left && dstX < right &&
                         (helpHudGlyphs[j].rows[row] & (0x10U >> x)) != 0U) {
                         framebuffer[(y + row) * DOOMRPG_LOGICAL_WIDTH +
-                                    dstX] = 0xffffU; /* white, all themes */
+                                    dstX] = white; /* readable white breath, never blinking */
                     }
                 }
             }
@@ -404,8 +410,8 @@ static int helpPaintTopHudIllustration(uint16_t* framebuffer) {
     int zone, x, y;
 
     if (!helpPaintMiniHudBacking(framebuffer)) return 0;
-    /* MENU/PASS/MAP remain legible throughout the breath.
-     * Only the blue neon/texture gain follows a smoothstep. */
+    /* The thin HUD borders and the MENU/PASS/MAP letters breathe on the
+     * same clock, but their k.bmp background is never flooded blue. */
 
     /* The imaginary boundaries alone breathe: x42 and x119 of the
      * 128x16 real k.bmp miniature. Never blue-tint its interior or glyphs. */
@@ -424,7 +430,7 @@ static int helpPaintTopHudIllustration(uint16_t* framebuffer) {
     for (zone = 0; zone < 3; ++zone)
         helpPaintMiniHudLabel(framebuffer, labels[zone],
                               left[zone], right[zone],
-                              MAIN_HELP_HUD_BAR_Y + 4);
+                              MAIN_HELP_HUD_BAR_Y + 4, power);
     helpHudBreathStep = step;
     return 1;
 }
