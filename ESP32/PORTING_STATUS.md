@@ -2845,6 +2845,14 @@ Update this ledger whenever a legacy function is unlinked or a corresponding nat
 
 ---
 
+## PR #279 — Root-C, retrait du compteur desktop `memoryBeg` : PASS CYD (9 novembre 2026)
+
+**Code testé sur le vrai CYD normal** : `86615771130812a7b92154eada6e712da3695490` ([PR #279](https://github.com/Kharn27/DoomRPG-RE/pull/279)), base initiale `main=0926d0f51713cc39af860d0568957a1568e2c9ad`. `DoomRPG_t::memoryBeg` était écrit une seule fois au boot natif et non lu dans les 350 sources/headers ESP32 ; il reste dans les ABI desktop/oracle mais est retiré de normal/bringup/trace, ainsi que son unique initialisation native. **`DoomRPG_t=196 B` vs 200 B**, somme structures au boot `Render=112 Game=0 Canvas=40 Total=844`, coût enregistré du root `[CORE] DoomRPG used=212` vs 216 auparavant (inclut frais d'allocation). **Gain de 4 B de structure confirmé, pas d'extrapolation de delta de heap général**, de FPS ou de flash. `imageMemory` conserve ses mutations actives dans `esp_doomrpg_image_resources.c` et `graphSetCliping` sa garde de sécurité intro ; pas de changement de PAK, framebuffer, gameplay ni fatal. Nouveau test hôte `native_root_memorybeg_retirement_host.py` : scan fail-closed et vraie ABI négative CYD / positive desktop/oracle ; contrat Root-B 196 B ajusté. [CI du SHA code #42546383792](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42546383792) **SUCCESS** (trois profils et harnais hôte).
+
+**Log réel `device-monitor-261109-224309.log` : 1617 lignes / 207681 octets**, contient le boot ROM complet : SD/PAK OK, PSRAM=0, `[CORE] DoomRPG used=212`, `Engine structs Total=844`. START, intro complète, Entrance, mouvements/rotations, porte275, dialogues 26→19, caisses et prises de ressources, premier HUB/EXIT ; LOAD V11 slot04, porte113, Malwrath322 **trois ripostes à trois tirs** et mort avec drop récupéré, ennemis suivants, secret et second HUB/EXIT. **2× `HEADROOM_OK`** (marges8 30792/29980 B), **2× `RESIDENTRESET released=18008 empty=1`**, **2× `SYSEXIT MENU-READY`** (FNV `1945fafa`), `largest8=61428` en sessions une fois cache MAPFLASH activé (`86004` pendant startup) et `shapeData/mediaTexels=NULL`. Pas de panic, WDT ou erreur fatale. Huit `NATIVEFRAME BOUNDARY-INLINE` observés, connus et non imputables à Root-C ; HELP et death/RETRY non testés. **PASS matériel ciblé ; code du SHA flashé figé**, commits post-test de cette PR docs-only jusqu'à intégration contrôlée du nouveau main, puis CI de combinaison obligatoire avant merge.
+
+---
+
 ## Règles fondamentales
 
 - Cible : ESP32-2432S028R classic CYD, ESP32-D0WD-V3 à 240 MHz, flash 4 MB, **0 PSRAM** ; ILI9341 320×240, XPT2046, microSD.
