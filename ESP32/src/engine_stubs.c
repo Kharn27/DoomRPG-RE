@@ -34,6 +34,10 @@
  * Keep the one process root, never create an extra session-owned mirror. */
 DoomRPG_t* doomRpg = NULL;
 
+/* The desktop errorStr[64] is not a native allocation or error owner. */
+_Static_assert(sizeof(DoomRPG_t) == 200U,
+               "native DoomRPG_t must omit desktop root error string buffer");
+
 /* Native process-root Canvas teardown. Preserve the desktop release order
  * and its sole CYD freePtr=true call; no Canvas lifecycle ABI survives. */
 static void EspNativeEngineRoot_releaseCanvas(DoomCanvas_t* doomCanvas)
