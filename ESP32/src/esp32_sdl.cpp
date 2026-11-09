@@ -118,31 +118,6 @@ Uint16 modulate565(Uint16 color, const SDL_Texture* texture) {
     return static_cast<Uint16>((red << 11) | (green << 5) | blue);
 }
 
-bool rwSeek(SDL_RWops* source, size_t position) {
-    if (source == nullptr) {
-        return false;
-    }
-    if (source->kind == SDL_RWops::MEMORY) {
-        if (position > source->length) {
-            return false;
-        }
-        source->position = position;
-        return true;
-    }
-    return fseek(source->file, static_cast<long>(position), SEEK_SET) == 0;
-}
-
-Uint16 readLe16(const Uint8* bytes) {
-    return static_cast<Uint16>(bytes[0] | (bytes[1] << 8));
-}
-
-Uint32 readLe32(const Uint8* bytes) {
-    return static_cast<Uint32>(bytes[0]) |
-           (static_cast<Uint32>(bytes[1]) << 8) |
-           (static_cast<Uint32>(bytes[2]) << 16) |
-           (static_cast<Uint32>(bytes[3]) << 24);
-}
-
 void freeSurfaceParts(SDL_Surface* surface) {
     if (surface == nullptr) {
         return;
@@ -263,104 +238,6 @@ int SDL_RWclose(SDL_RWops* context) {
     }
     free(context);
     return result;
-}
-
-SDL_Surface* SDL_LoadBMP_RW(SDL_RWops* source, int freeSource) {
-    Uint8 header[54];
-    if (source == nullptr || SDL_RWread(source, header, sizeof(header), 1) != 1 ||
-        header[0] != 'B' || header[1] != 'M') {
-        if (freeSource) SDL_RWclose(source);
-        setError("unsupported BMP header");
-        return nullptr;
-    }
-
-    const Uint32 pixelOffset = readLe32(header + 10);
-    const Uint32 dibSize = readLe32(header + 14);
-    const Sint32 width = static_cast<Sint32>(readLe32(header + 18));
-    const Sint32 signedHeight = static_cast<Sint32>(readLe32(header + 22));
-    const Uint16 bitsPerPixel = readLe16(header + 28);
-    const Uint32 compression = readLe32(header + 30);
-    Uint32 colorCount = readLe32(header + 46);
-
-    if (dibSize < 40 || width <= 0 || signedHeight == 0 ||
-        bitsPerPixel != 8 || compression != 0) {
-        if (freeSource) SDL_RWclose(source);
-        setError("only uncompressed 8-bit BMP is supported");
-        return nullptr;
-    }
-    if (colorCount == 0) colorCount = 256;
-
-    SDL_Surface* surface = static_cast<SDL_Surface*>(calloc(1, sizeof(SDL_Surface)));
-    if (surface == nullptr) {
-        if (freeSource) SDL_RWclose(source);
-        setError("out of memory creating BMP surface");
-        return nullptr;
-    }
-    surface->format = static_cast<SDL_PixelFormat*>(calloc(1, sizeof(SDL_PixelFormat)));
-    surface->format->palette = static_cast<SDL_Palette*>(calloc(1, sizeof(SDL_Palette)));
-    surface->format->palette->colors = static_cast<SDL_Color*>(calloc(colorCount, sizeof(SDL_Color)));
-    surface->pixels = calloc(static_cast<size_t>(width), static_cast<size_t>(abs(signedHeight)));
-    if (surface->format == nullptr || surface->format->palette == nullptr ||
-        surface->format->palette->colors == nullptr || surface->pixels == nullptr) {
-        freeSurfaceParts(surface);
-        free(surface);
-        if (freeSource) SDL_RWclose(source);
-        setError("out of memory loading BMP");
-        return nullptr;
-    }
-
-    surface->w = width;
-    surface->h = abs(signedHeight);
-    surface->pitch = width;
-    surface->format->BitsPerPixel = 8;
-    surface->format->BytesPerPixel = 1;
-    surface->format->palette->ncolors = static_cast<int>(colorCount);
-
-    if (!rwSeek(source, 14 + dibSize)) {
-        SDL_FreeSurface(surface);
-        if (freeSource) SDL_RWclose(source);
-        setError("invalid BMP palette offset");
-        return nullptr;
-    }
-    for (Uint32 index = 0; index < colorCount; ++index) {
-        Uint8 bgra[4];
-        if (SDL_RWread(source, bgra, sizeof(bgra), 1) != 1) {
-            SDL_FreeSurface(surface);
-            if (freeSource) SDL_RWclose(source);
-            setError("truncated BMP palette");
-            return nullptr;
-        }
-        SDL_Color& color = surface->format->palette->colors[index];
-        color.r = bgra[2];
-        color.g = bgra[1];
-        color.b = bgra[0];
-        color.a = 255;
-    }
-
-    const size_t filePitch = (static_cast<size_t>(width) + 3U) & ~3U;
-    Uint8* row = static_cast<Uint8*>(malloc(filePitch));
-    if (row == nullptr || !rwSeek(source, pixelOffset)) {
-        free(row);
-        SDL_FreeSurface(surface);
-        if (freeSource) SDL_RWclose(source);
-        setError("invalid BMP pixel data");
-        return nullptr;
-    }
-    for (int fileY = 0; fileY < surface->h; ++fileY) {
-        if (SDL_RWread(source, row, filePitch, 1) != 1) {
-            free(row);
-            SDL_FreeSurface(surface);
-            if (freeSource) SDL_RWclose(source);
-            setError("truncated BMP pixel data");
-            return nullptr;
-        }
-        const int destinationY = signedHeight > 0 ? surface->h - 1 - fileY : fileY;
-        memcpy(static_cast<Uint8*>(surface->pixels) + destinationY * surface->pitch,
-               row, static_cast<size_t>(width));
-    }
-    free(row);
-    if (freeSource) SDL_RWclose(source);
-    return surface;
 }
 
 void SDL_FreeSurface(SDL_Surface* surface) {

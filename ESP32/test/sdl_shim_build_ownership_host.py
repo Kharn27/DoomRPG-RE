@@ -72,6 +72,9 @@ def main():
     dormant_memory_hooks = {"SDL_SetMemoryFunctions", "SDL_GetMemoryFunctions"}
     # SDL_ShowMessageBox has an explicit DoomRPG_Error caller and remains.
     dormant_ui_stubs = {"SDL_GetScancodeName", "SDL_ShowSimpleMessageBox"}
+    dormant_bmp_decoder = {"SDL_LoadBMP_RW"}
+    assert not dormant_bmp_decoder.intersection(current), (
+        f"{args.profile}: SDL-B7 duplicate BMP parser still linked in candidate: {sorted(dormant_bmp_decoder.intersection(current))}")
     dormant_utility_facades = {"SDL_SwapLE16", "SDL_SwapLE32", "SDL_RWwrite", "SDL_LoadBMP", "SDL_SetRenderDrawBlendMode", "SDL_RenderClear"}
     assert not dormant_utility_facades.intersection(current), (
         f"{args.profile}: SDL-B6 dormant facade linked in candidate: {sorted(dormant_utility_facades.intersection(current))}")
@@ -91,6 +94,8 @@ def main():
         baseline_elf = args.baseline_dir / "ESP32/.pio/build" / args.profile / "firmware.elf"
         assert baseline_elf.is_file(), baseline_elf
         before = linked_sdl(baseline_elf)
+        assert not dormant_bmp_decoder.intersection(before), (
+            f"{args.profile}: SDL-B7 duplicate BMP decoder already linked in SDL-A baseline: {sorted(dormant_bmp_decoder.intersection(before))}")
         assert not dormant_utility_facades.intersection(before), (
             f"{args.profile}: SDL-B6 facade ALREADY linked in historical SDL-A baseline: {sorted(dormant_utility_facades.intersection(before))}")
         assert not dormant_ui_stubs.intersection(before), (

@@ -167,7 +167,6 @@ Sint64 SDL_RWseek(SDL_RWops* context, Sint64 offset, int whence);
 size_t SDL_RWread(SDL_RWops* context, void* ptr, size_t size, size_t count);
 int SDL_RWclose(SDL_RWops* context);
 
-SDL_Surface* SDL_LoadBMP_RW(SDL_RWops* source, int freeSource);
 void SDL_FreeSurface(SDL_Surface* surface);
 Uint32 SDL_MapRGB(const SDL_PixelFormat* format, Uint8 r, Uint8 g, Uint8 b);
 int SDL_SetColorKey(SDL_Surface* surface, int flag, Uint32 key);
