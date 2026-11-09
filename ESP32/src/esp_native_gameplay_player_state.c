@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "DoomRPG.h"
+#include "esp_native_process_rng_owner.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_save_ui.h"
 
@@ -357,7 +358,7 @@ static uint8_t levelRoll(DoomRPG_t* doomRpg,
                          uint8_t span,
                          uint32_t* rngCalls) {
     uint32_t value;
-    value = (uint32_t)DoomRPG_randNextInt(&doomRpg->random) & 255U;
+    value = (uint32_t)DoomRPG_randNextInt(EspNativeProcessRng_live()) & 255U;
     ++(*rngCalls);
     return (uint8_t)(base + (value % span));
 }

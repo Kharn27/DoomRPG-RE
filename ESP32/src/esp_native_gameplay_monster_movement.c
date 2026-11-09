@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "DoomRPG.h"
+#include "esp_native_process_rng_owner.h"
 
 #include "doomrpg_log.h"
 #include "esp_entity_def_type_catalog.h"
@@ -1034,7 +1035,7 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
         return;
     }
 
-    liveRandomBefore = doomRpg->random;
+    liveRandomBefore = (*EspNativeProcessRng_live());
     memset(&probeRng, 0, sizeof(probeRng));
     probeRng.state = liveRandomBefore;
     i7 = (1 + (int)movementWeapons[candidate.weaponId].rangeMin) / 2;
@@ -1161,7 +1162,7 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
                     memcmp(positionFinal, &positionBefore,
                            sizeof(positionBefore)) == 0 &&
                     positionFNVAfter == positionFNVBefore;
-    randomExact = memcmp(&doomRpg->random, &liveRandomBefore,
+    randomExact = memcmp(EspNativeProcessRng_live(), &liveRandomBefore,
                          sizeof(liveRandomBefore)) == 0;
 
     ++movementView.plannedMoves;

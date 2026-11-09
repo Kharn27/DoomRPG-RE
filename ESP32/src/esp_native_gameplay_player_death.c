@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "DoomRPG.h"
+#include "esp_native_process_rng_owner.h"
 #include "Render.h"
 
 #include "doomrpg_log.h"
@@ -389,7 +390,7 @@ static int armDeath(struct DoomRPG_s* doomRpgBase,
     deathState.lastViewZ = 36;
     deathState.lastFade = 255U;
     deathState.deathRand = useReservedRand
-        ? reservedRand : DoomRPG_randNextByte(&doomRpg->random);
+        ? reservedRand : DoomRPG_randNextByte(EspNativeProcessRng_live());
     deathState.preDeathPlayer = playerBefore;
     deathState.preDeathCaptured = 1U;
     deathState.phase = ESP_NATIVE_GAMEPLAY_PLAYER_DEATH_FALL;
