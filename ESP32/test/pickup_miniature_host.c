@@ -55,6 +55,21 @@ static void unchangedHudAndGuard(uint16_t expected) {
 
 int main(void) {
     unsigned before;
+    /* The actual sprite decoder calls this helper once per opaque texel.
+     * Saturation, black shadow lines and source color hue are invariant.
+     * The animation/underlay fixture below remains pixel-exact. */
+    assert(EspPickupMini_brighten565(0x0000U) == 0x0000U);
+    assert(EspPickupMini_brighten565(0xffffU) == 0xffffU);
+    assert(EspPickupMini_brighten565(0xf800U) == 0xf800U);
+    assert(EspPickupMini_brighten565(0x07e0U) == 0x07e0U);
+    assert(EspPickupMini_brighten565(0x001fU) == 0x001fU);
+    assert(EspPickupMini_brighten565(0x2104U) == 0x3186U);
+    assert(EspPickupMini_brighten565(0x4208U) == 0x630cU);
+    for (unsigned n = 0U; n < 32U; ++n) {
+        uint16_t c = (uint16_t)(n << 11);
+        assert(EspPickupMini_brighten565(c) >= c);
+        assert((EspPickupMini_brighten565(c) & 0x07ffU) == 0U);
+    }
     fill(0x1234U);
     EspPickupMini_reset();
     assert(!EspPickupMini_due(100U));
