@@ -161,8 +161,6 @@ Uint32 SDL_GetTicks(void);
 Uint16 SDL_SwapLE16(Uint16 value);
 Uint32 SDL_SwapLE32(Uint32 value);
 const char* SDL_GetError(void);
-const char* SDL_GetScancodeName(int scancode);
-
 
 SDL_RWops* SDL_RWFromMem(void* memory, int size);
 SDL_RWops* SDL_RWFromFile(const char* path, const char* mode);
@@ -196,9 +194,6 @@ void SDL_RenderPresent(SDL_Renderer* renderer);
 int SDL_RenderFillRect(SDL_Renderer* renderer, const SDL_Rect* rect);
 int SDL_RenderDrawLine(SDL_Renderer* renderer, int x1, int y1, int x2, int y2);
 
-int SDL_ShowMessageBox(const SDL_MessageBoxData* data, int* buttonId);
-int SDL_ShowSimpleMessageBox(Uint32 flags, const char* title,
-                             const char* message, SDL_Window* window);
 /* SDL-B: unused window/cursor/hint/controller/haptic entry points retired.
  * Active renderer, indexed texture, BMP stream and error APIs remain intact.
  */
