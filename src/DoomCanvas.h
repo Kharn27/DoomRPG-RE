@@ -210,7 +210,11 @@ typedef struct DoomCanvas_s
 	boolean mouseYMove; // New
 	boolean sndPriority; // New
 #endif
+/* The original desktop renderer owns the optional plane-texture toggle.
+ * The ESP32-native plane rasterizer never consults this old canvas flag. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	boolean renderFloorCeilingTextures; // New
+#endif
 
 	struct DoomRPG_s* doomRpg;
 #ifndef DOOMRPG_ESP32

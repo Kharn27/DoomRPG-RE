@@ -275,6 +275,9 @@ jobs:
       - name: Test DoomCanvas private indexed glyph blitter contract (host Python)
         run: python ESP32/test/doomcanvas_private_blitter_host.py
 
+      - name: Test retirement of Canvas desktop plane texture gate (host C + ABI)
+        run: python ESP32/test/native_canvas_plane_gate_retirement_host.py
+
       - name: Test live PlayerState HUD weapon/ammo snapshot and strict close (host C + Python)
         run: |
           cc -O2 -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/include \

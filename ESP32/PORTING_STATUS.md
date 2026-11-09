@@ -6,6 +6,14 @@
 
 ---
 
+## PR #273 — Canvas-D, drapeau de texture des plans desktop retiré : PASS CYD (9 novembre 2026)
+
+**Code firmware candidat testé : `561be44c787ac28c770dc93e0b51429779cd29bf`**, [PR #273](https://github.com/Kharn27/DoomRPG-RE/pull/273), base `main=392173acc21878dfbbb45fa92100c4ae42d4c34d` (#271 SDL-B1 et #272 Render déjà fusionnées). `renderFloorCeilingTextures` n'avait qu'une écriture et zéro lecteur ESP32, mais restait lu deux fois dans le Render desktop : champ retiré des trois profils CYD, conservé desktop/oracle. `DoomCanvas_t` **44→40 B**, `Render_t=112 B`, total structure théorique **912 B** ; aucun changement raster/PAK/SDL, gain net heap non revendiqué. CI [push #42539767006](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42539767006) + [PR #42539808486](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42539808486) **SUCCESS** : normal/bringup/trace, ABI desktop/oracle et tests C/OOM 4 096 cycles.
+
+**Vrai CYD `esp32-cyd` normal, log `device-monitor-261109-012856.log` (1 734 lignes / 205 121 B)** : `DOOMCANVASBRIDGE bytes=40`, `RENDERCORE bytes=112`, `arrays=640B`; HELP 77 lignes, NEW/Entrance et intro, porte275, animations/loot/dialogues 8/26→19, HUB/EXIT ; LOAD V11 slot04 Entrance, porte113, Malwrath (trois attaques triples 204, mort/drop), second HUB/EXIT. **2× HEADROOM_OK** (marges 52 040/51 228 B), **2× RESIDENTRESET empty=1**, **2× SYSEXIT MENU-READY**, `largest8=86004` en jeu / 110 580 au menu, `shapeData=mediaTexels=NULL`, zéro panic/WDT/erreur. **PASS matériel ciblé** ; 11 BOUNDARY-INLINE connus, pas de prétention de delta RAM net/pixel-perfect. Après test uniquement documentation ; fusion de #273 autorisée. [Rapport détaillé](MILESTONE_PR273_CANVAS_PLANE_GATE_CYD_PASS.md).
+
+---
+
 ## PR #271 — SDL-B1, huit stubs SDL fenêtre/manettes retirés : PASS CYD (9 novembre 2026)
 
 **Code matériellement validé : `a77a31af57a401cdc7fa7005e21d82c0ee73ad26`**, [PR #271](https://github.com/Kharn27/DoomRPG-RE/pull/271), base `main=c9dc7a289bd932492f9cfcf1d54241168c7e0849` après #270. Retrait ciblé de 8 stubs SDL **déjà absents de l'ELF**, et de leurs déclarations ESP32 seulement ; les **19 fonctions SDL réellement liées / 1547 octets symboliques** restent intactes. Garde hôte `sdl_dead_control_stubs_host.py` : aucune référence dans **350** sources et headers ; CI [#42535863933](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42535863933) **SUCCESS** (normal plus builds diagnostiques en CI, aucun flash matériel diagnostique).
