@@ -260,6 +260,9 @@ jobs:
       - name: Retire unused SDL test pattern and circle-only draw helpers
         run: python ESP32/test/sdl_dead_demo_pattern_host.py
 
+      - name: Retire dormant SDL outline and integer-scale shims
+        run: python ESP32/test/sdl_dead_render_helpers_host.py
+
       - name: Test native presentation and clip pixel parity (host C)
         run: python ESP32/test/doomrpg_presentation_host.py
 
