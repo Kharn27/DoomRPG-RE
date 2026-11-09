@@ -603,17 +603,7 @@ void SDL_RenderPresent(SDL_Renderer*) {
     }
 }
 
-int SDL_RenderDrawRect(SDL_Renderer* renderer, const SDL_Rect* rect) {
-    if (rect == nullptr) return -1;
-    SDL_RenderDrawLine(renderer, rect->x, rect->y, rect->x + rect->w - 1, rect->y);
-    SDL_RenderDrawLine(renderer, rect->x, rect->y + rect->h - 1,
-                       rect->x + rect->w - 1, rect->y + rect->h - 1);
-    SDL_RenderDrawLine(renderer, rect->x, rect->y, rect->x, rect->y + rect->h - 1);
-    SDL_RenderDrawLine(renderer, rect->x + rect->w - 1, rect->y,
-                       rect->x + rect->w - 1, rect->y + rect->h - 1);
-    return 0;
-}
-
+// SDL-B3: unused outline-rectangle wrapper removed; live line/fill stay.
 int SDL_RenderFillRect(SDL_Renderer*, const SDL_Rect* rect) {
     const SDL_Rect area = rect == nullptr
         ? SDL_Rect{0, 0, kLogicalWidth, kLogicalHeight} : *rect;
@@ -642,7 +632,6 @@ int SDL_RenderDrawLine(SDL_Renderer*, int x1, int y1, int x2, int y2) {
 }
 
 // SDL-B2: circle-only diagnostic drawing is retired; live line/rect drawing stays.
-int SDL_RenderSetIntegerScale(SDL_Renderer*, SDL_bool) { return 0; }
 
 int SDL_ShowMessageBox(const SDL_MessageBoxData* data, int*) {
     if (data != nullptr) Serial.printf("[DOOM ERROR] %s: %s\n", data->title, data->message);
