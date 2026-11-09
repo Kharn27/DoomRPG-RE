@@ -214,7 +214,7 @@ assert 'const int sourceY = src.y + ((y - dst.y) * src.h) / dst.h;' in shim
 assert 'static const char* const labels[3] = {"MENU", "PASS TURN", "MAP"};' in actions
 assert 'static const HelpHudGlyph helpHudGlyphs[]' in actions
 assert 'framebuffer[(y + row) * DOOMRPG_LOGICAL_WIDTH +' in actions
-assert '0xffffU; /* white, all themes */' in actions
+assert 'dstX] = white; /* readable white breath, never blinking */' in actions
 # "3 VIRTUAL BUTTONS" is WHITE, as are the tiny ROM button glyphs;
 # LEFT/CENTER/RIGHT prefixes use the theme's first, second and third tones.
 assert "/* The control-identification caption stays white. The three" in actions
@@ -229,7 +229,7 @@ assert 'static const int tones[3] = {1, 4, 7};' in actions
 assert 'EspNativeCanvas_drawText(canvas, prefixes[zone], 12, y, 0);' in actions
 assert '12 + (int)n * 7, y, 0);' in actions
 assert 'DoomRPG_setFontColor(doomRpg, 0xffffffffU);' in hud_paint_section
-assert '0xffffU; /* white, all themes */' in actions
+assert 'dstX] = white; /* readable white breath, never blinking */' in actions
 
 # Preserve the logical input splitter 0..31/32..127/128..159,
 # scaled and centered with no overlap and two fixed blue dividers.
