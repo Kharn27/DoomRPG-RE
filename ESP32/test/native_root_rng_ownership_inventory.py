@@ -9,7 +9,8 @@ import re
 
 ROOT = Path(__file__).resolve().parents[2]
 PATTERNS = (
-    ("member", re.compile(r"(?:->|\.)\s*random\b")),
+    ("native-owner", re.compile(r"\bEspNativeProcessRng_live\s*\(")),
+    ("legacy-root", re.compile(r"\b(?:doomRpg|doomrpg|runtime)\s*->\s*random\b")),
     ("byte-api", re.compile(r"\bDoomRPG_randNextByte\s*\(")),
     ("int-api", re.compile(r"\bDoomRPG_randNextInt\s*\(")),
     ("seed", re.compile(r"\bDoomRPG_setRand\s*\(")),
@@ -36,4 +37,5 @@ for folder in ("ESP32/src", "ESP32/include"):
 print(f"ROOT_RNG_INVENTORY files={files} " +
       " ".join(f"{k}={v}" for k, v in counts.items()))
 assert files >= 300, "native inventory incomplete"
-assert counts["member"] > 0, "RNG must have native consumers"
+assert counts["native-owner"] >= 150, "native RNG consumer inventory incomplete"
+assert counts["legacy-root"] == 0, "legacy inline RNG root access forbidden"
