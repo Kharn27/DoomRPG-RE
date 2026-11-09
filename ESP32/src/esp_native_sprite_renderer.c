@@ -648,9 +648,10 @@ done:
 }
 
 
-/* Nearest-neighbor reduction from original PAK bitshape, mask and RGB565
- * palette. Reuses the proven loadFrame() reader; no ZIP, giant texel array
- * or per-tick asset reads. A bad texture returns 0 (cosmetic only). */
+/* Bounded nearest-neighbor fit (up OR down) of original PAK bitshape,
+ * mask and RGB565 palette into a 24px canvas, preserving aspect ratio.
+ * Reuses the proven loadFrame() reader; no ZIP, map-wide texels or per-tick
+ * asset reads. A bad texture returns 0 (cosmetic only). */
 int EspNativeSpriteRenderer_decodePickupMini(
     uint16_t logical,
     uint16_t colors[ESP_PICKUP_MINI_PIXELS],
@@ -660,7 +661,7 @@ int EspNativeSpriteRenderer_decodePickupMini(
     EspNativeSpriteStats stats;
     uint32_t seenLogical[8];
     EspNativeGraphicsCatalogStatus status;
-    uint32_t maxDim, drawW, drawH, left, top, x, y, painted = 0U;
+    uint32_t drawW, drawH, left, top, x, y, painted = 0U;
     int opened = 0, ok = 0;
 
     if (colors == NULL || opaque == NULL || logical >= 256U ||
@@ -683,20 +684,9 @@ int EspNativeSpriteRenderer_decodePickupMini(
         !loadFrame(&sources, logical, 0U, 0, frame, seenLogical, &stats))
         goto done;
 
-    maxDim = (uint32_t)(frame->width > frame->height
-                           ? frame->width : frame->height);
-    drawW = (uint32_t)frame->width;
-    drawH = (uint32_t)frame->height;
-    if (maxDim > ESP_PICKUP_MINI_SIZE) {
-        drawW = ((uint32_t)frame->width * ESP_PICKUP_MINI_SIZE +
-                 maxDim / 2U) / maxDim;
-        drawH = ((uint32_t)frame->height * ESP_PICKUP_MINI_SIZE +
-                 maxDim / 2U) / maxDim;
-    }
-    if (!drawW) drawW = 1U;
-    if (!drawH) drawH = 1U;
-    if (drawW > ESP_PICKUP_MINI_SIZE ||
-        drawH > ESP_PICKUP_MINI_SIZE) goto done;
+    if (!EspPickupMini_fitDimensions(
+            (uint32_t)frame->width, (uint32_t)frame->height,
+            &drawW, &drawH)) goto done;
     left = (ESP_PICKUP_MINI_SIZE - drawW) / 2U;
     top = (ESP_PICKUP_MINI_SIZE - drawH) / 2U;
     for (x = 0U; x < drawW; ++x) {
