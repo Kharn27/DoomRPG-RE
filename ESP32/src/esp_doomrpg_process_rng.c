@@ -1,5 +1,16 @@
 #include <SDL.h>
 #include "DoomRPG.h"
+#include "esp_native_process_rng_owner.h"
+
+/* Native CYD's canonical 132-byte table moves to permanent BSS ownership.
+ * Moving storage must not restart the original seed/refill generators or
+ * change the pointer identity expected by EspNativeRngReplayGuard. */
+static Random_t nativeProcessRandom;
+
+Random_t* EspNativeProcessRng_live(void)
+{
+    return &nativeProcessRandom;
+}
 
 /*
  * Permanent classic-CYD process-lifetime RNG provider.
