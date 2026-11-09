@@ -23,6 +23,7 @@
 #include "esp_native_gameplay_monster_drop.h"
 #include "esp_native_gameplay_interaction_inventory.h"
 #include "esp_native_gameplay_player_resources.h"
+#include "esp_native_gameplay_pickup_miniature.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_session.h"
 #include "esp_native_resident_gameplay.h"
@@ -905,25 +906,49 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
         }
         pickupMessagePtrs[i] = pickupMessages[i];
     }
-    if (pickupMessageCount == 0U ||
-        !EspNativeGameplayActionEngine_queuePickupFeedbackBatch(
-            pickupMessagePtrs, pickupMessageCount, 500U)) {
+    if (pickupMessageCount == 0U) {
         (void)EspNativeGameplayPlayerState_restore(&playerBefore);
         if (!rollbackAppliedWorld(applied, appliedCount)) {
             resources.view.fatal = 1U;
             return 0;
         }
         resources.view.playerFNV1a = EspNativeGameplayPlayerState_fingerprint();
-        printf("[PLAYERRES] DEFER tile=%u reason=pickup-feedback-not-ready playerRollback=yes worldRemove=yes mutation=no\n",
+        printf("[PLAYERRES] DEFER tile=%u reason=pickup-name-invalid playerRollback=yes worldRemove=yes mutation=no\n",
      (unsigned int)afterTile);
         return 1;
     }
-    feedbackQueued = 1;
+    /* A pending older top-bar message must not stall another pickup. */
+    feedbackQueued = EspNativeGameplayActionEngine_queuePickupFeedbackBatch(
+        pickupMessagePtrs, pickupMessageCount, 0U);
+    if (!feedbackQueued) {
+        printf("[PLAYERRES] FEEDBACK-SKIP tile=%u reason=topbar-busy gameplay=committed mini=independent\n",
+               (unsigned int)afterTile);
+    }
 
     playerFNVAfter = EspNativeGameplayPlayerState_fingerprint();
     resources.view.playerFNV1a = playerFNVAfter;
 
     if (rerender(doomRpg, afterView, "RESOURCE-PICKUP")) {
+        /* Cosmetic FIFO is committed AFTER the required world redraw.
+         * Source IDs match the normal sprite renderer (including CROSS)
+         * and the dynamic-drop visual; no visual failure can roll back loot. */
+        for (i = 0U; i < appliedCount; ++i) {
+            uint16_t logical = applied[i].defTile;
+            EspMapSprite source;
+            if (applied[i].dynamicDrop == 0U) {
+                if (applied[i].spriteIndex == UINT16_MAX ||
+                    !__real_EspMapRuntime_getMapSprite(
+                        applied[i].spriteIndex, &source)) {
+                    printf("[PICKUPMINI] SKIP sprite=%u reason=source-unavailable cosmetic=yes\n",
+                           (unsigned int)applied[i].spriteIndex);
+                    continue;
+                }
+                logical = (uint16_t)(source.info & RESOURCE_DEF_MASK);
+            }
+            if (logical >= 82U && logical <= 90U && (logical & 1U) == 0U)
+                --logical;
+            EspPickupMini_enqueue(logical);
+        }
         if (firstWeaponDialog != NULL) {
             EspNativeGameplayDialogBeginStatus dialogStatus =
                 ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_NOT_READY;
@@ -945,7 +970,7 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
                        EspNativeGameplayDialog_beginStatusName(dialogStatus));
             }
         }
-        printf("[PLAYERRES] COMMIT tile=%u candidates=%u consumed=%u totalConsumed=%u playerFNV=%08x->%08x hp=%u/%u armor=%u/%u weapon=%u weapons=%04x ammo0=%u ammo1=%u ammo2=%u ammo3=%u ammo4=%u keys=%08x credits=%u sound=deferred message=pickup-live flash=white-500ms gotFace=deferred rollback=closed\n",
+        printf("[PLAYERRES] COMMIT tile=%u candidates=%u consumed=%u totalConsumed=%u playerFNV=%08x->%08x hp=%u/%u armor=%u/%u weapon=%u weapons=%04x ammo0=%u ammo1=%u ammo2=%u ammo3=%u ammo4=%u keys=%08x credits=%u sound=deferred message=%s visual=pak-mini-500ms nonblocking=yes gotFace=deferred rollback=closed\n",
                (unsigned int)afterTile,
                (unsigned int)candidateCount,
                (unsigned int)appliedCount,
@@ -964,8 +989,9 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
                (unsigned int)EspNativeGameplayPlayerState_ammo(3U),
                (unsigned int)EspNativeGameplayPlayerState_ammo(4U),
                (unsigned int)EspNativeGameplayPlayerState_view()->keys,
-               (unsigned int)EspNativeGameplayPlayerState_view()->credits);
-        printf("[PLAYERRES] FEEDBACK tile=%u message=\"%s\" sourceDefTile=%u flash=white-border/500ms viewport=160x80 border=2px gotFace=deferred weaponHelp=%s messages=%u additionalMessages=%u-queued legacyCap=%u shifted=%u\n",
+               (unsigned int)EspNativeGameplayPlayerState_view()->credits,
+               feedbackQueued ? "pickup-live" : "skipped-busy");
+        printf("[PLAYERRES] FEEDBACK tile=%u message=\"%s\" sourceDefTile=%u flash=none miniature=PAK-20x20/500ms position=13,76 gotFace=deferred weaponHelp=%s messages=%u additionalMessages=%u-queued legacyCap=%u shifted=%u\n",
                (unsigned int)afterTile,
                pickupMessages[0],
                (unsigned int)applied[pickupMessageStart].defTile,
