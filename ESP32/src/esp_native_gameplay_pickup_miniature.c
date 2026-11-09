@@ -13,10 +13,17 @@
 #error "Pickup miniature expects the 160x120 native framebuffer"
 #endif
 
-/* HUD bottom starts at y=100. The 13px inset avoids the directional
- * player-damage cue at the left edge; no HUD pixels are touched. */
+/* HUD bottom starts at y=100. Retain the exact former bottom edge y=95:
+ * growing the icon from 20 to 24 pixels expands UP, never into the HUD.
+ * The 13px left inset avoids the directional player-damage cue. */
 #define MINI_X 13U
-#define MINI_Y 76U
+#define MINI_BOTTOM_EXCLUSIVE 96U
+#define MINI_Y (MINI_BOTTOM_EXCLUSIVE - ESP_PICKUP_MINI_SIZE)
+
+_Static_assert(MINI_Y >= 20U && MINI_BOTTOM_EXCLUSIVE <= 100U,
+               "Pickup miniature must stay inside the 3D viewport");
+_Static_assert(MINI_X >= 13U && MINI_X + ESP_PICKUP_MINI_SIZE <= 160U,
+               "Pickup miniature must stay clear of the left cue and framebuffer edge");
 #define MINI_DURATION 500U
 #define MINI_ON 105U
 #define MINI_PERIOD 165U
@@ -128,8 +135,10 @@ static void startNext(void) {
         state.shownMs = 0U;
         state.captured = 0U;
         state.lit = 0U;
-        printf("[PICKUPMINI] START logical=%u at=13,76 size=20x20 blink=3x105ms/500ms fifo=%u input=unblocked\n",
-               (unsigned)logical, (unsigned)state.count);
+        printf("[PICKUPMINI] START logical=%u at=%u,%u size=%ux%u blink=3x105ms/500ms fifo=%u input=unblocked\n",
+               (unsigned)logical, (unsigned)MINI_X, (unsigned)MINI_Y,
+               (unsigned)ESP_PICKUP_MINI_SIZE, (unsigned)ESP_PICKUP_MINI_SIZE,
+               (unsigned)state.count);
     }
 }
 
