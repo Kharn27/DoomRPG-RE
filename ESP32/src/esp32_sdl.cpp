@@ -177,9 +177,7 @@ const char* SDL_GetError(void) {
     return lastError;
 }
 
-const char* SDL_GetScancodeName(int) {
-    return "CYD input";
-}
+// SDL-B5: obsolete keyboard name fallback retired; native touch owns input.
 
 // SDL-B4: retired dormant SDL allocation hook facades; RWops keep libc ownership.
 
@@ -622,15 +620,8 @@ int SDL_RenderDrawLine(SDL_Renderer*, int x1, int y1, int x2, int y2) {
 
 // SDL-B2: circle-only diagnostic drawing is retired; live line/rect drawing stays.
 
-int SDL_ShowMessageBox(const SDL_MessageBoxData* data, int*) {
-    if (data != nullptr) Serial.printf("[DOOM ERROR] %s: %s\n", data->title, data->message);
-    return 0;
-}
-
-int SDL_ShowSimpleMessageBox(Uint32, const char* title, const char* message, SDL_Window*) {
-    Serial.printf("[DOOM ERROR] %s: %s\n", title, message);
-    return 0;
-}
+// SDL-B5: dormant desktop modal message facades retired; SDL_GetError and
+// native Serial runtime diagnostics remain available.
 
 // SDL-B: legacy window, cursor, hint, joystick and haptic stubs were not
 // linked by any CYD profile. The active SDL image/presentation ABI stays here.
