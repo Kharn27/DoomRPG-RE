@@ -641,28 +641,7 @@ int SDL_RenderDrawLine(SDL_Renderer*, int x1, int y1, int x2, int y2) {
     return 0;
 }
 
-void SDL_RenderDrawCircle(SDL_Renderer*, int cx, int cy, int radius) {
-    const Uint16 color = rgb565(drawRed, drawGreen, drawBlue);
-    int x = radius;
-    int y = 0;
-    int error = 1 - radius;
-    while (x >= y) {
-        putPixel(cx + x, cy + y, color); putPixel(cx + y, cy + x, color);
-        putPixel(cx - y, cy + x, color); putPixel(cx - x, cy + y, color);
-        putPixel(cx - x, cy - y, color); putPixel(cx - y, cy - x, color);
-        putPixel(cx + y, cy - x, color); putPixel(cx + x, cy - y, color);
-        ++y;
-        if (error < 0) error += 2 * y + 1;
-        else { --x; error += 2 * (y - x + 1); }
-    }
-}
-
-void SDL_RenderDrawFillCircle(SDL_Renderer* renderer, int cx, int cy, int radius) {
-    for (int y = -radius; y <= radius; ++y) {
-        const int halfWidth = static_cast<int>(sqrtf(radius * radius - y * y));
-        SDL_RenderDrawLine(renderer, cx - halfWidth, cy + y, cx + halfWidth, cy + y);
-    }
-}
+// SDL-B2: circle-only diagnostic drawing is retired; live line/rect drawing stays.
 int SDL_RenderSetIntegerScale(SDL_Renderer*, SDL_bool) { return 0; }
 
 int SDL_ShowMessageBox(const SDL_MessageBoxData* data, int*) {
@@ -684,45 +663,5 @@ void Esp32Sdl_attachDisplay(TFT_eSPI* display) {
     Serial.println("[SDL] CYD display attached; renderer will share platform video");
 }
 
-void Esp32Sdl_showTestPattern() {
-    SDL_SetRenderDrawBlendMode(nullptr, SDL_BLENDMODE_NONE);
-    SDL_SetRenderDrawColor(nullptr, 0, 0, 0, 255);
-    SDL_RenderClear(nullptr);
-
-    const Uint8 colors[4][3] = {
-        {255, 0, 0}, {0, 255, 0}, {0, 0, 255}, {255, 255, 255},
-    };
-    for (int index = 0; index < 4; ++index) {
-        SDL_SetRenderDrawColor(nullptr, colors[index][0], colors[index][1], colors[index][2], 255);
-        SDL_Rect bar{4 + index * 39, 4, 35, 18};
-        SDL_RenderFillRect(nullptr, &bar);
-    }
-
-    SDL_SetRenderDrawColor(nullptr, 255, 255, 255, 255);
-    SDL_RenderDrawLine(nullptr, 0, 0, kLogicalWidth - 1, kLogicalHeight - 1);
-    SDL_RenderDrawLine(nullptr, kLogicalWidth - 1, 0, 0, kLogicalHeight - 1);
-    SDL_RenderDrawCircle(nullptr, 40, 72, 22);
-    SDL_SetRenderDrawColor(nullptr, 255, 0, 255, 255);
-    SDL_RenderDrawFillCircle(nullptr, 80, 72, 18);
-
-    Uint16 checker[16 * 16];
-    for (int y = 0; y < 16; ++y) {
-        for (int x = 0; x < 16; ++x) {
-            checker[y * 16 + x] = ((x / 4 + y / 4) & 1)
-                ? rgb565(255, 255, 255) : rgb565(24, 24, 24);
-        }
-    }
-    SDL_Texture* texture = SDL_CreateTexture(nullptr, SDL_PIXELFORMAT_RGB565,
-                                             SDL_TEXTUREACCESS_STREAMING, 16, 16);
-    SDL_UpdateTexture(texture, nullptr, checker, 16 * sizeof(Uint16));
-    SDL_Rect target{108, 48, 44, 44};
-    SDL_RenderCopy(nullptr, texture, nullptr, &target);
-    SDL_DestroyTexture(texture);
-
-    SDL_SetRenderDrawBlendMode(nullptr, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(nullptr, 255, 255, 255, 96);
-    SDL_Rect translucent{12, 104, 136, 16};
-    SDL_RenderFillRect(nullptr, &translucent);
-    SDL_SetRenderDrawBlendMode(nullptr, SDL_BLENDMODE_NONE);
-    SDL_RenderPresent(nullptr);
-}
+// SDL-B2: the old full-screen diagnostic pattern is retired. The native
+// framebuffer is exclusively owned by platform video and current game/menu.
