@@ -70,6 +70,11 @@ def main():
     # SDL-B3: only retire symbols that were already absent from actual ELFs.
     dormant_render_helpers = {"SDL_RenderDrawRect", "SDL_RenderSetIntegerScale"}
     dormant_memory_hooks = {"SDL_SetMemoryFunctions", "SDL_GetMemoryFunctions"}
+    dormant_ui_stubs = {"SDL_GetScancodeName", "SDL_ShowMessageBox",
+                        "SDL_ShowSimpleMessageBox"}
+    assert not dormant_ui_stubs.intersection(current), (
+        f"{args.profile}: SDL-B5 obsolete UI facade linked in candidate: "
+        f"{sorted(dormant_ui_stubs.intersection(current))}")
     assert not dormant_memory_hooks.intersection(current), (
         f"{args.profile}: SDL-B4 hook is linked in candidate: {sorted(dormant_memory_hooks.intersection(current))}")
     assert not dormant_render_helpers.intersection(current), (
@@ -83,6 +88,9 @@ def main():
         baseline_elf = args.baseline_dir / "ESP32/.pio/build" / args.profile / "firmware.elf"
         assert baseline_elf.is_file(), baseline_elf
         before = linked_sdl(baseline_elf)
+        assert not dormant_ui_stubs.intersection(before), (
+            f"{args.profile}: SDL-B5 obsolete UI facade linked in SDL-A baseline: "
+            f"{sorted(dormant_ui_stubs.intersection(before))}")
         assert not dormant_memory_hooks.intersection(before), (
             f"{args.profile}: SDL-B4 hook was linked in SDL-A baseline: {sorted(dormant_memory_hooks.intersection(before))}")
         assert not dormant_render_helpers.intersection(before), (
