@@ -1017,7 +1017,7 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
                (unsigned int)EspNativeGameplayPlayerState_view()->keys,
                (unsigned int)EspNativeGameplayPlayerState_view()->credits,
                feedbackQueued ? "pickup-live" : "skipped-busy");
-        printf("[PLAYERRES] FEEDBACK tile=%u message=\"%s\" sourceDefTile=%u flash=none miniature=PAK-20x20/500ms position=13,76 gotFace=deferred weaponHelp=%s messages=%u additionalMessages=%u-queued legacyCap=%u shifted=%u\n",
+        printf("[PLAYERRES] FEEDBACK tile=%u message=\"%s\" sourceDefTile=%u flash=none miniature=PAK-24x24/500ms position=13,72 gotFace=deferred weaponHelp=%s messages=%u additionalMessages=%u-queued legacyCap=%u shifted=%u\n",
                (unsigned int)afterTile,
                pickupMessages[0],
                (unsigned int)applied[pickupMessageStart].defTile,
