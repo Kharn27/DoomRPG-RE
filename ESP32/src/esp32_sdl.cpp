@@ -620,8 +620,12 @@ int SDL_RenderDrawLine(SDL_Renderer*, int x1, int y1, int x2, int y2) {
 
 // SDL-B2: circle-only diagnostic drawing is retired; live line/rect drawing stays.
 
-// SDL-B5: dormant desktop modal message facades retired; SDL_GetError and
-// native Serial runtime diagnostics remain available.
+// SDL-B5: preserve the fatal desktop-error adapter called from engine_stubs.c.
+// Only the independent simple message-box facade has no native caller.
+int SDL_ShowMessageBox(const SDL_MessageBoxData* data, int*) {
+    if (data != nullptr) Serial.printf("[DOOM ERROR] %s: %s\n", data->title, data->message);
+    return 0;
+}
 
 // SDL-B: legacy window, cursor, hint, joystick and haptic stubs were not
 // linked by any CYD profile. The active SDL image/presentation ABI stays here.
