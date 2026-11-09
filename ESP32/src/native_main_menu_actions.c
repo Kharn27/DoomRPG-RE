@@ -14,6 +14,7 @@
 #include "esp_asset_pack.h"
 #include "esp_native_help_scene.h"
 #include "esp_native_gameplay_hud.h"
+#include "esp_native_gameplay_hud_weapon_button.h"
 #include "esp_native_gameplay_hub_weapon_grid.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_entity_def_type_catalog.h"
@@ -152,12 +153,15 @@ static int helpStart(DoomRPG_t* doomRpg) {
      * the last COMMITTED raw-flash map header. It never stages/loads a map. */
     {
         const uint8_t cachedMapId = EspAssetPack_mapFlashCachedMapId();
-        const int ready = EspNativeHelpScene_begin(cachedMapId);
-        printf("[MAINHELP] PREVIEW source=PAK/BSP ready=%u flashMap=%u previewMap=%u wallMaterials=%u coldBoot=entrance-if-unset geometry=blockmap/32x32 world-owner=no\n",
+        const int ready = EspNativeHelpScene_begin(cachedMapId,
+                                                     helpSpaceEpoch);
+        printf("[MAINHELP] PREVIEW source=original-PAK-wall ready=%u flashMap=%u previewMap=%u textureId=%u wallMaterials=%u bytes=2080 epoch=%u geometry=classic-perspective world-owner=no\n",
                ready ? 1U : 0U,
                (unsigned int)cachedMapId,
                (unsigned int)EspNativeHelpScene_previewMapId(),
-               (unsigned int)EspNativeHelpScene_materialCount());
+               (unsigned int)EspNativeHelpScene_textureId(),
+               (unsigned int)EspNativeHelpScene_materialCount(),
+               (unsigned int)helpSpaceEpoch);
     }
     helpSpaceActive = 1;
     printf("[MAINHELP] BACKGROUND asset=c.bmp source=pak scroll=intro-157ms/192virtual owner=help hud=k.bmp/20x20\n");
@@ -534,7 +538,6 @@ static int helpPaintBottomHudIllustration(uint16_t* fb) {
     const int step = helpBreathStepAt(DoomRPG_GetUpTimeMS());
     const uint8_t power = EspNativeHelpScene_breathPower(
         helpBreathLevel(step));
-    const uint16_t blue = (uint16_t)(((uint32_t)power * 31U) / 255U);
     int x, y;
     if (fb == NULL) return 0;
     if (!helpBottomHudReady) {
@@ -558,17 +561,32 @@ static int helpPaintBottomHudIllustration(uint16_t* fb) {
                MAIN_HELP_HUD_BAR_X + x] =
                 helpBottomHudMini[y * MAIN_HELP_HUD_BAR_WIDTH + x];
 
-    /* Only the two imaginary 3-area separators breathe, at x80/x115.
-     * Real PAK face, numbers and their entire surrounding zone stay pristine. */
-    if (blue != 0U) {
-        static const int separators[2] = {80, 115};
-        int divider;
-        for (divider = 0; divider < 2; ++divider) {
-            x = separators[divider];
-            for (y = MAIN_HELP_HUD_BAR_Y;
-                 y < MAIN_HELP_HUD_BAR_Y + MAIN_HELP_HUD_BAR_HEIGHT; ++y) {
-                uint16_t* ink = &fb[y * DOOMRPG_LOGICAL_WIDTH + x];
-                *ink = (uint16_t)((*ink & 0xffe0U) | blue);
+    /* The LOWER HUD is not the upper 3-way input splitter. Its actual
+     * virtual weapon button is x100..159 on a 160px logical canvas.
+     * Project THAT rectangle with the same 128/160 scale and x16 origin
+     * as the image: x96..143, y43..58. Only the two 1px edges breathe,
+     * in the same amber as the canonical gameplay touch corners. */
+    {
+        const int buttonLeft = MAIN_HELP_HUD_BAR_X +
+            ESP_NATIVE_HUD_WEAPON_LEFT * MAIN_HELP_HUD_BAR_WIDTH /
+            DOOMRPG_LOGICAL_WIDTH;
+        const int buttonRight = MAIN_HELP_HUD_BAR_X +
+            (ESP_NATIVE_HUD_WEAPON_RIGHT + 1) *
+            MAIN_HELP_HUD_BAR_WIDTH / DOOMRPG_LOGICAL_WIDTH - 1;
+        const uint16_t amber = (uint16_t)(
+            (((31U * (uint32_t)power) / 255U) << 11) |
+            (((40U * (uint32_t)power) / 255U) << 5));
+        int edge, buttonY;
+        if (power > 0U) {
+            for (edge = 0; edge < 2; ++edge) {
+                const int buttonX = edge == 0 ? buttonLeft : buttonRight;
+                for (buttonY = MAIN_HELP_HUD_BAR_Y + 1;
+                     buttonY <= MAIN_HELP_HUD_BAR_Y +
+                                MAIN_HELP_HUD_BAR_HEIGHT - 2; ++buttonY) {
+                    uint16_t* pixel =
+                        &fb[buttonY * DOOMRPG_LOGICAL_WIDTH + buttonX];
+                    *pixel = (uint16_t)((*pixel & 0x0000U) | amber);
+                }
             }
         }
     }
@@ -598,7 +616,7 @@ static int helpBuildWeaponGridMini(uint16_t* framebuffer) {
     memset(&demo, 0, sizeof(demo));
     demo.active = 1U;
     demo.weapon = 2U;   /* Pistol equipped: sample only, never applied. */
-    demo.weapons = 0x0007U; /* Axe, Fire Extinguisher and Pistol. */
+    demo.weapons = 0x0fffU; /* HELP demonstration: all 12 PAK-native weapons owned, 4x3 full-color grid. */
     if (!EspNativeGameplayHubWeaponGrid_paint(framebuffer, &demo, 2U))
         goto done;
     /* Source grid has EXACT native bounds 2..157/y35..118. Downsample
@@ -630,18 +648,25 @@ static void helpDrawWeaponGridMini(uint16_t* fb) {
                 helpWeaponMini[y * MAIN_HELP_WEAPON_MINI_W + x];
 }
 
-/* The actual bottom-HUD touch target x100..159 is also illustrated,
- * using the same five native PAK BMPs as the status-bar help page. */
+/* On the WEAPON SELECT help page: crop the REAL weapon touch target
+ * [100..159] from the canonical HUD thumbnail. Downsample to 36x12 so
+ * its miniature sits on the SAME BASELINE as the themed title at y14.
+ * No recreated weapon icon, no cropped face/compass neighbours. */
 static void helpDrawWeaponButtonCue(uint16_t* fb) {
+    const int sourceX = ESP_NATIVE_HUD_WEAPON_LEFT *
+                        MAIN_HELP_HUD_BAR_WIDTH / DOOMRPG_LOGICAL_WIDTH;
+    const int sourceWidth = (ESP_NATIVE_HUD_WEAPON_RIGHT + 1 -
+                             ESP_NATIVE_HUD_WEAPON_LEFT) *
+                            MAIN_HELP_HUD_BAR_WIDTH / DOOMRPG_LOGICAL_WIDTH;
+    const int dstX = 116, dstY = 14, dstW = 36, dstH = 12;
     int x, y;
     if (!helpBottomHudReady || fb == NULL) return;
-    /* 160x20 -> 128x16 bottom HUD: source x100 corresponds to x80
-     * within the cached miniature. Show it at x99..146, y27..38. */
-    for (y = 0; y < 12; ++y) {
-        const int sy = y * MAIN_HELP_HUD_BAR_HEIGHT / 12;
-        for (x = 0; x < 48; ++x) {
-            fb[(27 + y) * DOOMRPG_LOGICAL_WIDTH + 99 + x] =
-                helpBottomHudMini[sy * MAIN_HELP_HUD_BAR_WIDTH + 80 + x];
+    for (y = 0; y < dstH; ++y) {
+        const int sy = y * MAIN_HELP_HUD_BAR_HEIGHT / dstH;
+        for (x = 0; x < dstW; ++x) {
+            const int sx = sourceX + x * sourceWidth / dstW;
+            fb[(dstY + y) * DOOMRPG_LOGICAL_WIDTH + dstX + x] =
+                helpBottomHudMini[sy * MAIN_HELP_HUD_BAR_WIDTH + sx];
         }
     }
 }
@@ -745,9 +770,7 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
             MAIN_HELP_WEAPON_PAGE_SCROLL);
         const char* caption = DoomRPG_esp32MainMenuHelpLine(
             MAIN_HELP_WEAPON_PAGE_SCROLL + 1);
-        const char* detail = DoomRPG_esp32MainMenuHelpLine(
-            MAIN_HELP_WEAPON_PAGE_SCROLL + 5);
-        if (title == NULL || caption == NULL || detail == NULL ||
+        if (title == NULL || caption == NULL ||
             visible != MAIN_HELP_VISIBLE_LINES) return 0;
         helpDrawThemedPageTitle(doomRpg, canvas, title, 12, 14);
         DoomRPG_setFontColor(doomRpg, 0xffffffffU);
@@ -755,7 +778,6 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
         helpDrawWeaponButtonCue(framebuffer);
         if (helpWeaponMiniReady) {
             helpDrawWeaponGridMini(framebuffer);
-            EspNativeCanvas_drawText(canvas, detail, 12, 85, 0);
         }
         else {
             /* Corrupt/missing PAK fails closed, never a fabricated weapon. */
