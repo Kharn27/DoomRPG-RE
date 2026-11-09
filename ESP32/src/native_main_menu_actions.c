@@ -575,7 +575,7 @@ static int helpPaintBottomHudIllustration(uint16_t* fb) {
         const uint16_t amber = (uint16_t)(
             (((31U * (uint32_t)power) / 255U) << 11) |
             (((40U * (uint32_t)power) / 255U) << 5));
-        int edge, corner, y;
+        int edge, corner;
         if (power > 0U) {
             for (edge = 0; edge < 2; ++edge) {
                 const int buttonX = edge == 0
