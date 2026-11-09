@@ -233,23 +233,31 @@ struct Sound_s;
 
 typedef struct DoomRPG_s
 {
+/* Desktop clock snapshot. CYD timing is native-owned. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	int				upTimeMs;
+#endif
 	struct Random_s	random;
 	struct DoomCanvas_s*	doomCanvas;
 	struct Render_s*		render;
 	struct Player_s*		player;
 	struct Game_s*			game;
+/* Desktop-only subsystems: native CYD owns compact gameplay and HUD. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	struct EntityDefManager_s*		entityDef;
 	struct Combat_s*		combat;
 	struct Hud_s*			hud;
 	struct Menu_s*			menu;
+#endif
 #ifdef DOOMRPG_ESP32
 	struct EspNativeMenuState_s*	menuSystem;
 #else
 	struct MenuSystem_s*	menuSystem;
 #endif
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	struct ParticleSystem_s* particleSystem;
 	struct Sound_s*			sound;
+#endif
 
 	boolean			graphSetCliping;
 /* Legacy desktop heap-at-start metric; native CYD RAM accounting is
@@ -257,7 +265,10 @@ typedef struct DoomRPG_s
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	int				memoryBeg;
 #endif
+/* Desktop error-dispatch counter; CYD fatal logging is stack-local. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	int				errorID;
+#endif
 /* Desktop DoomRPG_setErrorID error message buffer. CYD fatal errors use
  * a bounded stack-local errMsg[256], never this dormant root allocation. */
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
