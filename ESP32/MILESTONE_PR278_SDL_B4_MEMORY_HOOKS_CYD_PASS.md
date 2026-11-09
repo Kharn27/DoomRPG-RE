@@ -1,5 +1,7 @@
 # SDL-B4 — Retrait des deux hooks mémoire SDL dormants : PASS matériel classic CYD
 
+**Addendum CI post-intégration :** merge de `main` incluant HELP #267 sur la branche B4 au commit `b848954d073597e36b1ad635ce6132ed6d2209d5`, préservant les huit fichiers B4 attendus et le garde HELP dans CI. [Push CI #42545789410](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42545789410) et [PR CI #42545793940](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42545793940) **SUCCESS** : SDL-B4 host PASS, ELF normaux / diagnostics PASS, **19 fonctions SDL liées, 1547 B**, comme baseline SDL-A. Le firmware **combiné** affiche pour `esp32-cyd` **+2384 B en sections chargées** et **+21384 B en RAM statique nommée** par rapport au baseline **SDL-A historique** : ces deltas reflètent le `main` concurrent et ne peuvent pas être attribués au nettoyage B4 seul. Aucun test matériel du build combiné ; uniquement du code SDL-B4 déjà testé matériellement et une CI combinée validée.
+
 **9 novembre 2026.** [Issue #269](https://github.com/Kharn27/DoomRPG-RE/issues/269), [PR #278](https://github.com/Kharn27/DoomRPG-RE/pull/278). Base initiale exacte : **`main=ca1aa9aaef8fd7fe04763be0d9e0b15baaf8cff0`** (SDL-B3 fusionnée). **SHA de code fourni pour le flash : `8b09ea6515cb0efca8b2a3e375cef161aed3f4e1`**. Le Serial ne contient pas d'empreinte de firmware ; l'attribution repose sur le parcours de flash utilisateur.
 
 ## Frontière B4
