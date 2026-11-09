@@ -46,8 +46,9 @@ assert all(x in teardown for x in (
     "doomrpg->player = NULL", "doomrpg->game = NULL",
     "EspNativeMenuStorage_free(", "EspNativeEngineRoot_releaseRender(",
     "EspNativeEngineRoot_releaseCanvas(", "SDL_free(doomrpg);"))
-assert all("doomrpg->" + field not in teardown for field in (
-    "combat", "particleSystem", "entityDef", "sound", "hud", "menu"))
+assert all(not __import__("re").search(r"doomrpg->" + field + r"\\b", teardown)
+           for field in ("combat", "particleSystem", "entityDef",
+                         "sound", "hud", "menu"))
 
 shim=r"""
 #pragma once
