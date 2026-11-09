@@ -271,6 +271,9 @@ jobs:
       - name: Retire dormant SDL outline and integer-scale shims
         run: python ESP32/test/sdl_dead_render_helpers_host.py
 
+      - name: Retire dormant SDL memory hook facades
+        run: python ESP32/test/sdl_dead_memory_hooks_host.py
+
       - name: Test native presentation and clip pixel parity (host C)
         run: python ESP32/test/doomrpg_presentation_host.py
 
@@ -339,6 +342,12 @@ jobs:
 
       - name: Test permanent DoomRPG root and fatal cleanup ownership (host C)
         run: python ESP32/test/doomrpg_root_owner_host.py
+
+      - name: Test native DoomRPG error string mirror retirement (host C + ABI)
+        run: python ESP32/test/native_root_errorstr_retirement_host.py
+
+      - name: Test native DoomRPG memoryBeg metric retirement (host C + ABI)
+        run: python ESP32/test/native_root_memorybeg_retirement_host.py
 
       - name: Test Render constructor retirement (host C)
         run: python ESP32/test/native_render_init_retirement_host.py

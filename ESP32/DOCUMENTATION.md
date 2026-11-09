@@ -10,6 +10,18 @@ Pour un objet immuable de carte, la source visuelle vient de `sprite.info & 511`
 
 ---
 
+## SDL-B4 — Retrait des hooks mémoire SDL inutilisés : PASS CYD (9 novembre 2026)
+
+**Après fusion contrôlée avec le `main` HELP #267**, les CI [push #42545789410](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42545789410) et [PR #42545793940](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42545793940) sont SUCCESS. `esp32-cyd` conserve 19 symboles SDL / 1547 octets symboliques. Comparé à **l'ancien baseline SDL-A** et non à la seule PR B4 : sections chargées **+2384 B**, RAM statique nommée **+21384 B**, correspondant à la combinaison d'un `main` HELP plus récent avec B4, **non attribuables à ce retrait SDL**. Pas de PASS matériel spécifique pour cette combinaison ; le log B4 couvre l'état antérieur de HELP.
+
+[PR #278](https://github.com/Kharn27/DoomRPG-RE/pull/278), [issue #269](https://github.com/Kharn27/DoomRPG-RE/issues/269). Retrait strict des façades `SDL_SetMemoryFunctions` (no-op) et `SDL_GetMemoryFunctions` (retour des pointeurs malloc/calloc/realloc/free), avec leurs seuls prototypes ESP32 ; ownership réel `SDL_RWFromMem`, `SDL_RWFromFile`, `SDL_RWclose`, BMP PAK, textures indexées 1/4/8 bpp, framebuffer partagé et `PlatformVideo_present` inchangés. Garde `ESP32/test/sdl_dead_memory_hooks_host.py` sur **350** fichiers et audit `sdl_shim_build_ownership_host.py` attestant l'absence des deux symboles dans les ELF candidats **et** les ELF SDL-A historiques. CI [push](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42544410670)/[PR](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42544454521) SUCCESS pour SHA code `8b09ea6515cb0efca8b2a3e375cef161aed3f4e1`, **19 fonctions SDL liées / 1547 B symboliques**, RAM statique delta 0, pas de gain isolé B4 prétendu.
+
+**Test réel normal CYD** : `device-monitor-261109-022159.log`, 1414 lignes (171405 B), commence en PRERENDER, pas au boot ROM. HELP (7 page-down), OPTIONS/VIDEO, START+intro+Entrance, caisse/ressources/porte275/dialogue26→opcode19, retour menu, LOAD V11 slot04, Malwrath 3 ripostes triples, tué d'une hache critique 11→0, gib et medkit drop ramassé, porte secrète, second EXIT. **2× HEADROOM_OK**, **2× RESIDENTRESET empty=1**, **2× SYSEXIT MENU-READY**, largest8=86004 jeu, `shapeData/mediaTexels=NULL`, pas de panne fatale. **6 diagnostics BOUNDARY-INLINE** à suivre séparément. [Rapport complet](MILESTONE_PR278_SDL_B4_MEMORY_HOOKS_CYD_PASS.md).
+
+La PR HELP #267 s'est fusionnée sur `main` entre le code test B4 et la doc ; garder sa nouvelle étape CI et comparer après fusion contrôlée. Le log matériel concerne le code B4 **avant** la combinaison. Aucun chemin SDL actif n'est altéré par B4.
+
+---
+
 ## SDL-B3 — Retrait de SDL_RenderDrawRect et SDL_RenderSetIntegerScale inutilisés : PASS CYD (9 novembre 2026)
 
 La [PR #276](https://github.com/Kharn27/DoomRPG-RE/pull/276) de l'[issue SDL #269](https://github.com/Kharn27/DoomRPG-RE/issues/269) supprime uniquement le wrapper de contours `SDL_RenderDrawRect`, le no-op `SDL_RenderSetIntegerScale`, et leurs prototypes du shim ESP32. Les chemins **vivants** `SDL_RenderDrawLine`, `SDL_RenderFillRect`, `SDL_RenderCopy`, `SDL_RenderSetClipRect`, `SDL_RenderPresent`, BMP/palette/indexed 1/4/8 bpp, `PlatformVideo_present`, PAK, gameplay et moteur desktop restent inchangés. Le garde `ESP32/test/sdl_dead_render_helpers_host.py` vérifie 350 sources/headers et l'audit `sdl_shim_build_ownership_host.py` exige l'absence des symboles retirés dans **les ELF candidat et baseline SDL-A**. CI [push #42542096950](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42542096950) et [PR #42542138823](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42542138823) **SUCCESS**, 19 symboles SDL liés, RAM statique suivie delta 0 ; aucun gain flash ou vitesse revendiqué.
@@ -1887,6 +1899,18 @@ Les logs doivent montrer `SCRIPTWAIT PRESENT` puis `SCRIPTSTAT COMPLETE` ;
 Le timer, le son silencieux et les mocks hôte ne prouvent pas une parité visuelle
 ou RNG exhaustive avec le desktop. Ajouter un smoke-test dialogue ordinaire,
 HUB/SAVE/LOAD et SHOW/HIDE (les types/formats de sauvegarde restent inchangés).
+
+## Root-B — `errorStr[64]` desktop supprimé du root ESP32 : PASS matériel (9 novembre 2026)
+
+[PR #277](https://github.com/Kharn27/DoomRPG-RE/pull/277) : le buffer `DoomRPG_t::errorStr[64]` est conservé pour le desktop/oracle mais absent de l'ABI CYD normal/bringup/trace. Le fatal natif continue d'utiliser `errMsg[256]` sur la pile ; `graphSetCliping` et le garde intro restent inchangés. Assertions ABI + garde du dépôt et builds CI valident la frontière logicielle. `DoomRPG_t` **264→200 B**, autres structs `Render=112, Game=0, Canvas=40` ; total structurel **848 B**, sans gain net de heap déduit. Firmware normal au SHA `cecab8f6d123e0330860398b8d676a823b09a79a`, `device-monitor-261109-021812.log` : boot complet, OPTIONS/VIDEO, START/intro/Entrance, portes/dialogues/loot, EXIT, LOAD V11 slot04, combat Malwrath avec trois ripostes triples, mort/drop et second EXIT. **2× HEADROOM_OK**, **2× RESIDENTRESET empty=1**, **2× SYSEXIT MENU-READY** ; `largest8=86004`, `shapeData/mediaTexels=NULL`, aucune panic/WDT. Quatre diagnostics `BOUNDARY-INLINE` préexistants restent à surveiller. HELP et death/RETRY non testés dans ce log. Ce PASS ne garantit ni parité visuelle intégrale ni performance/gain heap mesurés.
+
+---
+
+## Root-C — suppression de `memoryBeg` desktop du root CYD : PASS matériel (9 novembre 2026)
+
+[PR #279](https://github.com/Kharn27/DoomRPG-RE/pull/279), firmware normal SHA `86615771130812a7b92154eada6e712da3695490`. `DoomRPG_t::memoryBeg` (mémoire au démarrage du moteur desktop) n'avait aucun lecteur natif ; retrait de son unique initialisation et du champ uniquement sur ESP32 normal/bringup/trace, desktop/oracle inchangés. `DoomRPG_t` **200→196 B** ; boot `Render=112 Game=0 Canvas=40 Total=844`, `[CORE] DoomRPG used=212` contre 216 précédemment, sans prétendre à un gain net universel. `imageMemory` est réellement écrit par le chemin image natif et **doit rester** ; `graphSetCliping` reste nécessaire à la garde intro. CI [#42546383792](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42546383792) SUCCESS : trois builds et ABI desktop/oracle + scan source fail-closed. `device-monitor-261109-224309.log` (1617 lignes) : boot, START/intro/Entrance, porte, dialogues/ressources, EXIT, LOAD V11 slot04, combat Malwrath triple projectile (trois ripostes), mort/drop, secret, second EXIT ; **2× HEADROOM_OK, 2× RESIDENTRESET empty=1, 2× SYSEXIT MENU-READY**, PAK prêt, `shapeData/mediaTexels=NULL`, zéro panic/WDT. Huit diagnostics `NATIVEFRAME BOUNDARY-INLINE` observés sans lien démontré ; HELP et death/RETRY non exercés. Test CYD normal uniquement, bringup/trace vérifiés logiciellement. **Le firmware testé reste inchangé après PASS**.
+
+---
 
 ### Protocole général
 
