@@ -362,7 +362,7 @@ for field, type_ in (("viewAngle", "int"), ("spanMode", "byte")):
                     code
                 ), ("retired raster scratch mirror", path, field)
 assert "boolean skipCull;" in HEADER
-assert "sizeof(Render_t) == 120U" in startup
+assert "sizeof(Render_t) == 112U" in startup
 
 # PR266-B: native BSP traversal counters are owned by per-frame work or
 # EspNativeBspVisibilityState. Preserve desktop geometry oracle and the
@@ -612,7 +612,7 @@ for member in ("mapName", "mapNameID", "loadMapID", "introColor",
                 + member + r"\b", clean), (
                 "retired map-header Render field referenced by native", path, member)
 assert "render->mapCameraSpawnIndex = 0;" not in root
-assert "sizeof(Render_t) == 120U" in (
+assert "sizeof(Render_t) == 112U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 
 # Post-#245-B on the same PR: desktop BSP allocation/inventory counts
@@ -633,7 +633,7 @@ assert re.search(
 assert re.search(
     r"render->mapStringsIDs = NULL;\s+render->mapStringCount = 0;\s+#endif",
     startup)
-assert "sizeof(Render_t) == 120U" in startup
+assert "sizeof(Render_t) == 112U" in startup
 
 # The sprite renderer is the other owner of transactional frame scratch.
 # Its clipping/projection lines are function-local too. No CYD Render_t
@@ -642,7 +642,7 @@ sprite = (NATIVE / "src/esp_native_sprite_renderer.c").read_text()
 assert "Line_t tmpLine;" not in sprite
 assert "->tmpLine" not in sprite
 assert "_Static_assert(sizeof(Scratch) <= 740U" in sprite
-assert "sizeof(Render_t) == 120U" in (
+assert "sizeof(Render_t) == 112U" in (
     NATIVE / "src/render_startup_bridge.c").read_text()
 assert re.search(
     r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
@@ -784,4 +784,4 @@ assert "spriteLeaf(runtime, &sprite, outLeaf)" in leaf_visibility
 assert "spriteLeafCache.leaf[spriteIndex] = (uint16_t)leaf;" in leaf_visibility
 assert "!cachedSpriteLeaf(runtime, mapSpriteIndex, &leaf)" in leaf_visibility
 
-print("PASS 23 retired Render ABIs; native Render_t 184B, desktop sprite and half-screen scratch excluded; BSP leaf cache retained")
+print("PASS 23 retired Render ABIs; native Render_t 112B, desktop sprite and half-screen scratch excluded; BSP leaf cache retained")

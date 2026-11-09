@@ -59,7 +59,7 @@ typedef struct Render_s {
     void *mediaTexels, *shapeData;
     void *mediaBitShapeOffsets, *mediaTexelOffsets, *mediaTexturesIds;
     void *mediaSpriteIds;
-    void *ceilingColor, *floorColor, *columnScale, *mediaPalettes;
+    void *columnScale, *mediaPalettes;
     byte *framebuffer;
     void *piDIB;
 } Render_t;
