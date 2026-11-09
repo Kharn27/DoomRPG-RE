@@ -2865,6 +2865,14 @@ Update this ledger whenever a legacy function is unlinked or a corresponding nat
 
 ---
 
+## PR #282 — Root-D/A : retrait `closeApplet` desktop — PASS CYD, extension groupée en cours (9 novembre 2026)
+
+**SHA code matériel vérifié** : `7af835d58b7e6b00a33e70a559ade69337fe4a36`, [PR #282](https://github.com/Kharn27/DoomRPG-RE/pull/282), issue native root. `DoomRPG_t::closeApplet` conservé sur desktop et oracle géométrique, retiré uniquement de l'ABI CYD normal/bringup/trace ainsi que sa seule écriture native. **Structure DoomRPG 196→192 B** ; boot `Engine structs Render=112 Game=0 Canvas=40 Total=840` ; allocation Root `[CORE] DoomRPG used=208` contre 212. `imageMemory`, `graphSetCliping`, `errorID`, RNG, PAK, rendu, gameplay, SDL, fatal restent inchangés. Gardes ABI desktop+oracle/CYD et scan sources strict ; [CI #42707539803](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42707539803) SUCCESS, premier run rouge seulement à cause d'une assertion du nouveau test matchant la chaîne de commentaire de la `_Static_assert`, corrigée sans retouche du moteur.
+
+**Log matériel `device-monitor-261109-234232.log` : 1409 lignes / 171218 octets** ; boot ROM complet, classic ESP32-D0WD-V3 4MB flash, PSRAM=0, `[CORE] DoomRPG used=208`. START→ST_INTRO→Entrance, déplacements, tirs sur caisse transformée, objets, porte 275, dialogue 26→19, dialogue 8, arme Fire Ext, HUB→EXIT ; LOAD V11 slot04 (5604 B), porte 113, Malwrath sprite322 : **trois ripostes à trois tirs**, trois attaques joueur, monstre mort 11→0, drop medkit, deuxième HUB→EXIT. **2× HEADROOM_OK (marge8 30796/29984 B), 2× RESIDENTRESET released=18008 empty=1, 2× SYSEXIT MENU-READY FNV=1945fafa**, largest8=61428 dans gameplay et 86004 au menu, `shapeData/mediaTexels=NULL`, aucun panic/WDT/fatal. **10× NATIVEFRAME BOUNDARY-INLINE**, préexistants et non attribuables à Root-D. HELP/death/RETRY non exercés. **PASS seulement pour Root-D/A et le SHA testé**. L'utilisateur demande d'**étendre le retrait sur la même PR/branche #282**, sans multiplier les PR de 4 B : toute modification code ultérieure nécessite un nouveau test du firmware normal avant fusion. Aucun merge Root-D demandé.
+
+---
+
 ## Règles fondamentales
 
 - Cible : ESP32-2432S028R classic CYD, ESP32-D0WD-V3 à 240 MHz, flash 4 MB, **0 PSRAM** ; ILI9341 320×240, XPT2046, microSD.
