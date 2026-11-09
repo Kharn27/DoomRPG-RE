@@ -35,8 +35,8 @@
 DoomRPG_t* doomRpg = NULL;
 
 /* The desktop errorStr[64] is not a native allocation or error owner. */
-_Static_assert(sizeof(DoomRPG_t) == 196U,
-               "native DoomRPG_t must omit desktop error string and memoryBeg");
+_Static_assert(sizeof(DoomRPG_t) == 160U,
+               "native DoomRPG_t must omit dormant desktop owner pointers and metrics");
 
 /* Native process-root Canvas teardown. Preserve the desktop release order
  * and its sole CYD freePtr=true call; no Canvas lifecycle ABI survives. */
@@ -82,7 +82,7 @@ int DoomRPG_freeMemory(void) { // 0x1EBFC
 }
 
 /* This is the generated ESP32-compatible root teardown contract. World owners
- * are released elsewhere; legacy large members stay NULL. Preserve the exact
+ * are released elsewhere; only live root pointers remain. Preserve the exact
  * disposal order of the last linked generated provider on fatal cleanup.
  * Normal HUB->EXIT releases only resident/session owners, not this root. */
 void DoomRPG_FreeAppData(DoomRPG_t* doomrpg)
@@ -90,24 +90,15 @@ void DoomRPG_FreeAppData(DoomRPG_t* doomrpg)
     if (doomRpg == NULL)
         return;
 
-    /* Legacy Combat/Particle/Player/EntityDef/Sound/Hud are retired on CYD. */
-    doomrpg->combat = NULL;
-    doomrpg->particleSystem = NULL;
+    /* Legacy desktop owners omitted from CYD root; only live owners remain. */
     doomrpg->player = NULL;
     /* No Game allocation/teardown exists on CYD; native resident and
      * session owners are released by their own lifecycle. */
     doomrpg->game = NULL;
-    doomrpg->entityDef = NULL;
-    doomrpg->sound = NULL;
-    doomrpg->hud = NULL;
     if (doomrpg->menuSystem) {
         EspNativeMenuStorage_free(doomrpg->menuSystem, doomrpg, true);
     }
     doomrpg->menuSystem = NULL;
-    if (doomrpg->menu) {
-        SDL_free(doomrpg->menu);
-    }
-    doomrpg->menu = NULL;
     if (doomrpg->render) {
         EspNativeEngineRoot_releaseRender(doomrpg->render, true);
     }
@@ -404,10 +395,7 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
     }
 
     doomRpg->imageMemory = 0;
-    doomRpg->errorID = 0;
-    doomRpg->upTimeMs = 0;
     doomRpg->graphSetCliping = false;
-    doomRpg->closeApplet = false;
 
     /*
      * The ESP32 core root is deliberately calloc'd, unlike the inherited
@@ -487,7 +475,7 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
 
     /*
      * Player state is owned by the compact 52-byte native gameplay owner.
-     * The inherited Player_t is not constructed and must remain NULL.
+     * The inherited Player_t is not constructed and remains NULL.
      */
     if (doomRpg->player != NULL) {
         coreInitReport.failedStage = DOOMRPG_CORE_ROOT;
@@ -511,127 +499,42 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
      * Sound_t owner is retired. Compatibility Sound_playSound/stopSounds calls
      * are NULL-safe no-ops until a dedicated native audio milestone.
      */
-    if (doomRpg->sound != NULL) {
-        coreInitReport.failedStage = DOOMRPG_CORE_ROOT;
-        coreInitReport.heapAfter = coreFreeHeap();
-        coreInitReport.largestBlockAfter = coreLargestBlock();
-        coreInitReport.bytesUsed =
-            coreInitReport.heapBefore >= coreInitReport.heapAfter
-                ? coreInitReport.heapBefore - coreInitReport.heapAfter
-                : 0;
-        coreInitReport.ready = 0;
-        printf("[CORE] FAILED retired Sound pointer=%p expected=NULL\n",
-               (void*)doomRpg->sound);
-        if (report != NULL) *report = coreInitReport;
-        return 0;
-    }
     printf("[CORE] Sound retired object=NULL owner=native-audio-intent playback=deferred\n");
 
     /*
      * Visible gameplay HUD composition, top-bar feedback, hub restoration and
      * status repainting are all native ESP32 owners. The inherited Hud_t
-     * object is retired and must remain NULL.
+     * object is absent from the CYD root ABI.
      */
-    if (doomRpg->hud != NULL) {
-        coreInitReport.failedStage = DOOMRPG_CORE_ROOT;
-        coreInitReport.heapAfter = coreFreeHeap();
-        coreInitReport.largestBlockAfter = coreLargestBlock();
-        coreInitReport.bytesUsed =
-            coreInitReport.heapBefore >= coreInitReport.heapAfter
-                ? coreInitReport.heapBefore - coreInitReport.heapAfter
-                : 0;
-        coreInitReport.ready = 0;
-        printf("[CORE] FAILED retired Hud pointer=%p expected=NULL\n",
-               (void*)doomRpg->hud);
-        if (report != NULL) *report = coreInitReport;
-        return 0;
-    }
     printf("[CORE] Hud retired object=NULL owner=native-gameplay-hud+status-feedback\n");
 
     /*
      * Native map/gameplay resolves entity definition metadata through the
      * compact EspEntityDefTypeCatalog built from /entities.db when a resident
      * map is loaded. The inherited EntityDefManager_t pointer is therefore a
-     * retired desktop owner and must remain NULL.
+     * retired desktop owner absent from the CYD root ABI.
      */
-    if (doomRpg->entityDef != NULL) {
-        coreInitReport.failedStage = DOOMRPG_CORE_ROOT;
-        coreInitReport.heapAfter = coreFreeHeap();
-        coreInitReport.largestBlockAfter = coreLargestBlock();
-        coreInitReport.bytesUsed =
-            coreInitReport.heapBefore >= coreInitReport.heapAfter
-                ? coreInitReport.heapBefore - coreInitReport.heapAfter
-                : 0;
-        coreInitReport.ready = 0;
-        printf("[CORE] FAILED retired EntityDef pointer=%p expected=NULL\n",
-               (void*)doomRpg->entityDef);
-        if (report != NULL) *report = coreInitReport;
-        return 0;
-    }
     printf("[CORE] EntityDef retired object=NULL owner=native-entitydef-catalog\n");
 
     /*
      * Player/monster attacks, retaliation, weapon presentation and damage math
      * are all owned by bounded native ESP32 subsystems. The inherited Combat_t
-     * object is retired and must remain NULL.
+     * object is absent from the native root ABI.
      */
-    if (doomRpg->combat != NULL) {
-        coreInitReport.failedStage = DOOMRPG_CORE_ROOT;
-        coreInitReport.heapAfter = coreFreeHeap();
-        coreInitReport.largestBlockAfter = coreLargestBlock();
-        coreInitReport.bytesUsed =
-            coreInitReport.heapBefore >= coreInitReport.heapAfter
-                ? coreInitReport.heapBefore - coreInitReport.heapAfter
-                : 0;
-        coreInitReport.ready = 0;
-        printf("[CORE] FAILED retired Combat pointer=%p expected=NULL\n",
-               (void*)doomRpg->combat);
-        if (report != NULL) *report = coreInitReport;
-        return 0;
-    }
     printf("[CORE] Combat retired object=NULL owners=native-combat+weapon+monster-turn\n");
 
     /*
      * Native gameplay owns its bounded gib overlay in EspNativeGameplayGibFx.
      * The inherited ParticleSystem object is no longer a production owner.
-     * DoomRPG_t is calloc'd, so the legacy pointer must remain NULL forever on
-     * ESP32 unless a future milestone explicitly introduces a native owner.
+     * Its desktop pointer is absent from the native root ABI.
      */
-    if (doomRpg->particleSystem != NULL) {
-        coreInitReport.failedStage = DOOMRPG_CORE_ROOT;
-        coreInitReport.heapAfter = coreFreeHeap();
-        coreInitReport.largestBlockAfter = coreLargestBlock();
-        coreInitReport.bytesUsed =
-            coreInitReport.heapBefore >= coreInitReport.heapAfter
-                ? coreInitReport.heapBefore - coreInitReport.heapAfter
-                : 0;
-        coreInitReport.ready = 0;
-        printf("[CORE] FAILED retired ParticleSystem pointer=%p expected=NULL\n",
-               (void*)doomRpg->particleSystem);
-        if (report != NULL) *report = coreInitReport;
-        return 0;
-    }
     printf("[CORE] ParticleSystem retired object=NULL owner=native-gibfx\n");
 
     /*
      * Pre-game and in-game menu presentation is owned by bounded ESP32
      * models/services. The inherited Menu_t command/factory object is no
-     * longer a production owner. Keep the legacy root field NULL.
+     * longer a production owner. Its root field is absent on CYD.
      */
-    if (doomRpg->menu != NULL) {
-        coreInitReport.failedStage = DOOMRPG_CORE_ROOT;
-        coreInitReport.heapAfter = coreFreeHeap();
-        coreInitReport.largestBlockAfter = coreLargestBlock();
-        coreInitReport.bytesUsed =
-            coreInitReport.heapBefore >= coreInitReport.heapAfter
-                ? coreInitReport.heapBefore - coreInitReport.heapAfter
-                : 0;
-        coreInitReport.ready = 0;
-        printf("[CORE] FAILED retired Menu pointer=%p expected=NULL\n",
-               (void*)doomRpg->menu);
-        if (report != NULL) *report = coreInitReport;
-        return 0;
-    }
     printf("[CORE] Menu root retired object=NULL owner=native-menu-models\n");
 
     coreInitReport.clipWidth = (uint16_t)DOOMRPG_CANVAS_WIDTH;
@@ -737,7 +640,7 @@ int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report) {
     SDL_memset(&layoutReport, 0, sizeof(layoutReport));
 
     if (!coreInitReport.ready || doomRpg == NULL || doomRpg->doomCanvas == NULL ||
-        doomRpg->render == NULL || doomRpg->hud != NULL) {
+        doomRpg->render == NULL) {
         printf("[LAYOUT] Core graph is not ready; startup refused\n");
         if (report != NULL) *report = layoutReport;
         return 0;
@@ -757,7 +660,7 @@ int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report) {
     EspNativeEngineLayout_startupCanvas(canvas);
 
     printf("[LAYOUT] HUD owner=native-gameplay-hud legacyObject=%p top=20 bottom=20\n",
-           (void*)doomRpg->hud);
+           (void*)NULL);
 
     layoutReport.heap8After = coreFreeHeap();
     layoutReport.largest8After = coreLargestBlock();
@@ -819,7 +722,6 @@ int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report) {
             layoutReport.displayY + layoutReport.displayHeight ||
         layoutReport.renderWidth != layoutReport.screenWidth ||
         layoutReport.renderHeight != layoutReport.screenHeight ||
-        doomRpg->hud != NULL ||
         render->columnScale == NULL) {
         printf("[LAYOUT] FAILED geometry or Render_setup validation\n");
         layoutReport.ready = 0;
