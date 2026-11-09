@@ -68,10 +68,12 @@
 #define MAIN_HELP_ROW_LAST_SCROLL (8 * MAIN_HELP_VISIBLE_LINES)
 #define MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL (9 * MAIN_HELP_VISIBLE_LINES)
 #define MAIN_HELP_WEAPON_PAGE_SCROLL (10 * MAIN_HELP_VISIBLE_LINES)
-#define MAIN_HELP_WEAPON_MINI_X 16
-#define MAIN_HELP_WEAPON_MINI_Y 40
-#define MAIN_HELP_WEAPON_MINI_W 128
-#define MAIN_HELP_WEAPON_MINI_H 42
+/* Full available HELP viewport under the caption (y27..38) and above
+ * the navigation footer (y100..119): 144x60, x8..151/y39..98. */
+#define MAIN_HELP_WEAPON_MINI_X 8
+#define MAIN_HELP_WEAPON_MINI_Y 39
+#define MAIN_HELP_WEAPON_MINI_W 144
+#define MAIN_HELP_WEAPON_MINI_H 60
 
 static DoomRPG_t* helpDoomRpg;
 static uint32_t helpExpectedFrameFNV;
@@ -91,8 +93,9 @@ static uint16_t helpBottomHudMini[MAIN_HELP_HUD_BAR_WIDTH *
                                   MAIN_HELP_HUD_BAR_HEIGHT];
 static uint8_t helpBottomHudReady;
 /* The exact 4x3 native weapon-selector grid is sampled once from its PAK
- * icons, before repainting the HELP background. 128x42x2=10752 B BSS.
- * No second framebuffer or active PlayerState is created. */
+ * icons, before repainting the HELP background. 144x60x2=17280 B BSS.
+ * Enlarged into the former bottom-caption space, not a second framebuffer.
+ * No active PlayerState is created. */
 static uint16_t helpWeaponMini[MAIN_HELP_WEAPON_MINI_W *
                                MAIN_HELP_WEAPON_MINI_H];
 static uint8_t helpWeaponMiniReady;
@@ -618,12 +621,14 @@ static int helpBuildWeaponGridMini(uint16_t* framebuffer) {
     demo.weapons = 0x0fffU; /* HELP demonstration: all 12 PAK-native weapons owned, 4x3 full-color grid. */
     if (!EspNativeGameplayHubWeaponGrid_paint(framebuffer, &demo, 2U))
         goto done;
-    /* Source grid has EXACT native bounds 2..157/y35..118. Downsample
-     * nearest-neighbour to 128x42 in static BSS, no full-screen buffer. */
+    /* Source grid has EXACT native bounds x2..157 / y35..118.
+     * Downsample nearest-neighbour over the FULL closed source rectangle
+     * (including right and bottom borders) to x8..151 / y39..98.
+     * Retain just one bounded static RGB565 miniature (17,280 B). */
     for (y = 0; y < MAIN_HELP_WEAPON_MINI_H; ++y) {
-        const int sy = 35 + y * 84 / MAIN_HELP_WEAPON_MINI_H;
+        const int sy = 35 + y * 83 / (MAIN_HELP_WEAPON_MINI_H - 1);
         for (x = 0; x < MAIN_HELP_WEAPON_MINI_W; ++x) {
-            const int sx = 2 + x * 156 / MAIN_HELP_WEAPON_MINI_W;
+            const int sx = 2 + x * 155 / (MAIN_HELP_WEAPON_MINI_W - 1);
             helpWeaponMini[y * MAIN_HELP_WEAPON_MINI_W + x] =
                 framebuffer[sy * DOOMRPG_LOGICAL_WIDTH + sx];
         }
@@ -632,8 +637,11 @@ static int helpBuildWeaponGridMini(uint16_t* framebuffer) {
     ok = 1;
 done:
     EspAssetPack_close();
-    printf("[MAINHELP] WEAPON-PREVIEW ready=%u source=real-native-grid/PAK icons=12 layout=4x3 mini=128x42 bytes=%u world=no playerMutation=no packClosed=%u\n",
-           ok ? 1U : 0U, (unsigned int)sizeof(helpWeaponMini),
+    printf("[MAINHELP] WEAPON-PREVIEW ready=%u source=real-native-grid/PAK icons=12 layout=4x3 mini=%ux%u bytes=%u world=no playerMutation=no packClosed=%u\n",
+           ok ? 1U : 0U,
+           (unsigned int)MAIN_HELP_WEAPON_MINI_W,
+           (unsigned int)MAIN_HELP_WEAPON_MINI_H,
+           (unsigned int)sizeof(helpWeaponMini),
            EspAssetPack_isOpen() ? 0U : 1U);
     return ok;
 }
