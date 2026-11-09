@@ -413,9 +413,9 @@ namespace
                       point.rawY, point.pressure, point.x, point.y);
 
 #if DOOMRPG_ESP32_SCREEN_DIAGNOSTICS
-        Esp32Sdl_showTestPattern();
-        Serial.println("[SDL] Diagnostic touch test pattern is on screen");
-
+        // SDL-B2: the old full-screen SDL test pattern is retired.
+        // Retain the bounded direct-TFT touch coordinates overlay when
+        // explicit screen diagnostics are enabled (normal profile = 0).
         char status[48];
         snprintf(status, sizeof(status), "%u,%u -> %d,%d", point.rawX, point.rawY,
                  point.x, point.y);
