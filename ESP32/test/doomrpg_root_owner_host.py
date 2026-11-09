@@ -38,15 +38,16 @@ assert '"+<DoomRPG.c>"' not in build
 assert "compiledPatchedC=0" in build
 # Fatal callback deliberately stays off the positive-path test harness.
 # Capture every teardown side effect in the *real* native production body.
-assert teardown.count("SDL_free(")==2
+assert teardown.count("SDL_free(")==1
 assert teardown.count("EspNativeMenuStorage_free(")==1
 assert teardown.count("EspNativeEngineRoot_releaseRender(")==1
 assert teardown.count("EspNativeEngineRoot_releaseCanvas(")==1
 assert all(x in teardown for x in (
-    "doomrpg->combat = NULL", "doomrpg->particleSystem = NULL",
-    "doomrpg->player = NULL", "doomrpg->entityDef = NULL",
-    "doomrpg->sound = NULL", "doomrpg->hud = NULL",
-    "doomrpg->menu = NULL", "doomrpg->game = NULL"))
+    "doomrpg->player = NULL", "doomrpg->game = NULL",
+    "EspNativeMenuStorage_free(", "EspNativeEngineRoot_releaseRender(",
+    "EspNativeEngineRoot_releaseCanvas(", "SDL_free(doomrpg);"))
+assert all("doomrpg->" + field not in teardown for field in (
+    "combat", "particleSystem", "entityDef", "sound", "hud", "menu"))
 
 shim=r"""
 #pragma once
@@ -57,8 +58,8 @@ shim=r"""
 typedef int boolean;
 #define true 1
 typedef struct DoomRPG_s {
-    void *combat,*particleSystem,*player,*game,*entityDef,*sound,*hud;
-    void *menuSystem,*menu,*render,*doomCanvas;
+    void *player,*game;
+    void *menuSystem,*render,*doomCanvas;
 } DoomRPG_t;
 extern DoomRPG_t* doomRpg;
 void traced_free(void*);
@@ -99,18 +100,18 @@ int main(void) {
         int full=(i%3)==0, core=(i%3)==1;
         if(full||core) {
             p->menuSystem=malloc(1);
-            p->menu=malloc(1);p->render=malloc(1);p->doomCanvas=malloc(1);
-            assert(p->game==NULL&&p->menuSystem&&p->menu&&p->render&&p->doomCanvas);
+            p->render=malloc(1);p->doomCanvas=malloc(1);
+            assert(p->game==NULL&&p->menuSystem&&p->render&&p->doomCanvas);
         }
         DoomRPG_FreeAppData(p);
-        assert(sdlfrees==(full||core ? 2 : 1));
+        assert(sdlfrees==1);
         assert(menuCalls==(full||core ? 1 : 0));
         assert(renderCalls==(full||core ? 1 : 0));
         assert(canvasCalls==(full||core ? 1 : 0));
         if(full||core) {
-            /* Native MenuStorage, Menu, Render, Canvas, root; NO Game object. */
-            int expected[]={2,1,3,4,1};
-            assert(n==5 && memcmp(trace,expected,sizeof(expected))==0);
+            /* Native MenuStorage, Render, Canvas, root; NO legacy Menu or Game. */
+            int expected[]={2,3,4,1};
+            assert(n==4 && memcmp(trace,expected,sizeof(expected))==0);
         } else assert(n==1 && trace[0]==1);
         doomRpg=0;
     }

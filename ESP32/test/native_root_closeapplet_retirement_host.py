@@ -25,8 +25,8 @@ assert "doomrpg->closeApplet = true;" in DESKTOP
 assert "doomRpg->closeApplet = true;" in DESKTOP
 assert not re.search(r"\b(?:doomRpg|doomrpg)\s*->\s*closeApplet\b", CORE), \
     "native process root must not use legacy flag"
-assert "_Static_assert(sizeof(DoomRPG_t) == 192U," in CORE
-assert "doomRpg->errorID = 0;" in CORE
+assert "_Static_assert(sizeof(DoomRPG_t) == 160U," in CORE
+assert not re.search(r"\bdoomRpg\s*->\s*errorID\b", CORE)
 assert "doomRpg->imageMemory = 0;" in CORE
 assert "doomrpg->imageMemory +=" in IMAGES
 assert "doomrpg->imageMemory -=" in IMAGES
@@ -73,4 +73,4 @@ with tempfile.TemporaryDirectory(prefix="root-closeapplet-abi-") as tmp:
             assert "closeApplet" in result.stderr, name
 
 print(f"PASS Root-D closeApplet desktop/oracle only; "
-      f"{count} native files guarded; root expected 192B")
+      f"{count} native files guarded; root expected 160B")

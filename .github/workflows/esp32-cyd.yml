@@ -344,6 +344,9 @@ jobs:
       - name: Inventory retired DoomRPG desktop owners (native C/C++)
         run: python ESP32/test/native_root_legacy_pointer_inventory.py
 
+      - name: Test grouped native root desktop-owner retirement (actual ABI + source)
+        run: python ESP32/test/native_root_desktop_owners_retirement_host.py
+
       - name: Test native DoomRPG closeApplet retirement (host C + ABI)
         run: python ESP32/test/native_root_closeapplet_retirement_host.py
 
