@@ -33,8 +33,11 @@ def main():
                 continue
             files += 1
             data = path.read_text(encoding="utf-8", errors="replace")
+            # Only executable code counts; old commented references are not callers.
+            # Preserve exact owner source body under its independent host oracle.
+            code = re.sub(r"/\*[\s\S]*?\*/|//[^\n]*", "", data)
             for symbol in RETIRED:
-                assert re.search(r"\b" + re.escape(symbol) + r"\s*\(", data) is None, (
+                assert re.search(r"\b" + re.escape(symbol) + r"\s*\(", code) is None, (
                     f"SDL-B6 retired function still declared or called: {symbol} in {path}"
                 )
     shim = (ROOT / "ESP32/src/esp32_sdl.cpp").read_text(encoding="utf-8")
