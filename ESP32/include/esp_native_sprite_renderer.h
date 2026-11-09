@@ -72,6 +72,14 @@ void EspNativeSpriteRenderer_resetAmbient(void);
 int EspNativeSpriteRenderer_render(struct Render_s* render,
                                    EspNativeSpriteStats* outStats);
 
+/* The 20x20 collectible icon uses the same PAK bitshape decoder as
+ * normal world sprites, without a persistent texture atlas. */
+#include "esp_native_gameplay_pickup_miniature.h"
+int EspNativeSpriteRenderer_decodePickupMini(
+    uint16_t logical,
+    uint16_t colors[ESP_PICKUP_MINI_PIXELS],
+    uint8_t opaque[ESP_PICKUP_MINI_MASK_BYTES]);
+
 /* One optional source bitshape impact at the center of the 160x80
  * first-person world. Render from original PAK logical 180..190 + frame 0..2,
  * without keeping decoded source pixels across frames; backed by the same
