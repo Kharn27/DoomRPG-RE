@@ -32,7 +32,6 @@ void DoomRPG_createImage(DoomRPG_t* doomrpg, const char* resourceName, boolean i
 	mem = DoomRPG_freeMemory();
 
 	// Load image file
-	//loadedSurface = SDL_LoadBMP(fileName);
 
 	snprintf(fileName, sizeof(fileName), "%s", resourceName);
 
