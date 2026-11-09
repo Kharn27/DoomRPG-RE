@@ -55,9 +55,12 @@ for base in (ROOT / "ESP32/src", ROOT / "ESP32/include"):
         for field in RETIRED:
             # Native menu model still uses menuSystem->menu; only the
             # DoomRPG_t::menu legacy pointer is retired in this milestone.
-            if field == "menu":
+            if field in ("menu", "combat"):
+                # menuSystem->menu and CoreMetrics->combat are live fields
+                # unrelated to the retired DoomRPG_t root pointers.
                 access = re.search(
-                    r"\b(?:doomRpg|doomrpg)\s*->\s*menu\b", source)
+                    r"\b(?:doomRpg|doomrpg)\s*->\s*" + field + r"\b",
+                    source)
             else:
                 access = re.search(r"->\s*" + field + r"\b", source)
             assert access is None, (path.relative_to(ROOT), field)
