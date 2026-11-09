@@ -180,8 +180,8 @@ int main(void) {
     assert(!EspNativeHelpScene_paint(rowFrame, 17U));
 
     /* Selecting a different flash-staged level changes the source family. */
-    assert(EspNativeHelpScene_begin(2U, 13700U));
-    assert(EspNativeHelpScene_previewMapId() == 2U);
+    assert(EspNativeHelpScene_begin(3U, 13700U));
+    assert(EspNativeHelpScene_previewMapId() == 3U);
     assert(EspNativeHelpScene_textureId() != textureId);
     memset(brightFrame, 0, sizeof(brightFrame));
     assert(EspNativeHelpScene_paint(brightFrame, 16U));
@@ -191,7 +191,7 @@ int main(void) {
     /* Replacing assets on the installed PAK changes pixels with same map. */
     for (i = 0; i < (int)(NUM_TEXTURES * WALL_LEN); ++i)
         wallData[4 + i] ^= 0x11U;
-    assert(EspNativeHelpScene_begin(2U, 13700U));
+    assert(EspNativeHelpScene_begin(3U, 13700U));
     memset(brightFrame, 0, sizeof(brightFrame));
     assert(EspNativeHelpScene_paint(brightFrame, 16U));
     newPack = hashArea(brightFrame, 8, 29, 144, 68);
