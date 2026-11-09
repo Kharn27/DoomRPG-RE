@@ -2849,6 +2849,14 @@ Status vocabulary: **native-validated** = original behavior reproduced and exerc
 
 Update this ledger whenever a legacy function is unlinked or a corresponding native behavior becomes hardware-validated; historic milestones live in Git, not in 123 separate files.
 
+## PR #277 — Root-B, `DoomRPG_t::errorStr[64]` retiré côté CYD : PASS matériel (9 novembre 2026)
+
+**Code réellement soumis au test** : `cecab8f6d123e0330860398b8d676a823b09a79a`, [PR #277](https://github.com/Kharn27/DoomRPG-RE/pull/277), base de développement `main=99179777b227c3738f3bc6f72359f81e621ec511`. Le buffer d'erreur `errorStr[64]` n'a aucun lecteur natif ; `DoomRPG_Error` possède déjà `char errMsg[256]` local et `vsnprintf`. Retrait du seul `DoomRPG_t` ESP32 normal/bringup/trace ; desktop et oracle géométrique conservent le membre. `DoomRPG_t` **264→200 B** (−64 B structurels), `Render=112`, `Game=0`, `Canvas=40`, total structures affiché **848 B** ; aucune revendication de gain net heap. `graphSetCliping` et sa garde de sécurité intro, fatal/logging, rendu, SDL et PAK intacts. Test hôte `native_root_errorstr_retirement_host.py` : vraies ABI positives desktop/oracle, négatives trois CYD, scan natif fail-closed ; [CI push #42543097197](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42543097197) et [CI PR #42543136956](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42543136956) **SUCCESS**, trois firmwares compilés.
+
+**Vrai CYD `esp32-cyd`, log `device-monitor-261109-021812.log` : 1385 lignes / 164150 octets**, boot inclus (`Engine structs: Render=112 Game=0 Canvas=40 Total=848`, `CORE DoomRPG used=216` avec coût allocation). OPTIONS/VIDEO/LUMINOSITÉ 100→50 persistée ; START, prologue, Entrance `c3882516`, portes/dialogue 26→19, ressources et caisse, premier EXIT ; LOAD V11 slot04, Malwrath sprite322 **3 ripostes triples projectile204 terminées**, mort par attaque hache, drop et pickup, second EXIT. **2× `HEADROOM_OK`** (marges heap8 51904/51092 B), `largest8=86004` en session ; **2× `RESIDENTRESET empty=1`** (`released=18008`), **2× `SYSEXIT MENU-READY`** (frame `1945fafa`) ; `shapeData=mediaTexels=NULL`, zéro panic/WDT observé. **Quatre diagnostics `NATIVEFRAME BOUNDARY-INLINE`** restent présents, non liés de manière démontrée à Root-B. HELP, death/RETRY, SAVE neuf et endurance ne sont pas couverts. **PASS ciblé, code testé figé, suite documentaire uniquement sur cette PR** ; aucun test matériel des profils bringup/trace.
+
+---
+
 ## Règles fondamentales
 
 - Cible : ESP32-2432S028R classic CYD, ESP32-D0WD-V3 à 240 MHz, flash 4 MB, **0 PSRAM** ; ILI9341 320×240, XPT2046, microSD.

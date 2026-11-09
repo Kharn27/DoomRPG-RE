@@ -1888,6 +1888,12 @@ Le timer, le son silencieux et les mocks hôte ne prouvent pas une parité visue
 ou RNG exhaustive avec le desktop. Ajouter un smoke-test dialogue ordinaire,
 HUB/SAVE/LOAD et SHOW/HIDE (les types/formats de sauvegarde restent inchangés).
 
+## Root-B — `errorStr[64]` desktop supprimé du root ESP32 : PASS matériel (9 novembre 2026)
+
+[PR #277](https://github.com/Kharn27/DoomRPG-RE/pull/277) : le buffer `DoomRPG_t::errorStr[64]` est conservé pour le desktop/oracle mais absent de l'ABI CYD normal/bringup/trace. Le fatal natif continue d'utiliser `errMsg[256]` sur la pile ; `graphSetCliping` et le garde intro restent inchangés. Assertions ABI + garde du dépôt et builds CI valident la frontière logicielle. `DoomRPG_t` **264→200 B**, autres structs `Render=112, Game=0, Canvas=40` ; total structurel **848 B**, sans gain net de heap déduit. Firmware normal au SHA `cecab8f6d123e0330860398b8d676a823b09a79a`, `device-monitor-261109-021812.log` : boot complet, OPTIONS/VIDEO, START/intro/Entrance, portes/dialogues/loot, EXIT, LOAD V11 slot04, combat Malwrath avec trois ripostes triples, mort/drop et second EXIT. **2× HEADROOM_OK**, **2× RESIDENTRESET empty=1**, **2× SYSEXIT MENU-READY** ; `largest8=86004`, `shapeData/mediaTexels=NULL`, aucune panic/WDT. Quatre diagnostics `BOUNDARY-INLINE` préexistants restent à surveiller. HELP et death/RETRY non testés dans ce log. Ce PASS ne garantit ni parité visuelle intégrale ni performance/gain heap mesurés.
+
+---
+
 ### Protocole général
 
 1. Lire le vrai SHA `main`, [`PORTING_STATUS.md`](PORTING_STATUS.md) et [`ARCHITECTURE.md`](ARCHITECTURE.md) ; examiner les fonctions legacy concernées dans le repo.

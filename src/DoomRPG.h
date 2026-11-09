@@ -254,7 +254,11 @@ typedef struct DoomRPG_s
 	boolean			graphSetCliping;
 	int				memoryBeg;
 	int				errorID;
+/* Desktop DoomRPG_setErrorID error message buffer. CYD fatal errors use
+ * a bounded stack-local errMsg[256], never this dormant root allocation. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	char			errorStr[64];
+#endif
 	boolean			closeApplet;
 	int				imageMemory;
 } DoomRPG_t;
