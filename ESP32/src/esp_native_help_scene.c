@@ -10,10 +10,10 @@
 #error "HELP viewport thumbnail requires a 160x120 logical CYD framebuffer"
 #endif
 
-#define PREVIEW_X 16
-#define PREVIEW_Y 42
-#define PREVIEW_W 128
-#define PREVIEW_H 53
+#define PREVIEW_X 8
+#define PREVIEW_Y 29
+#define PREVIEW_W 144
+#define PREVIEW_H 68
 #define WALL_BYTES 2048U
 #define WALL_PALETTE 16U
 #define MAPPING_HEADER 16U
@@ -75,7 +75,7 @@ uint16_t EspNativeHelpScene_textureId(void) {
     return EspNativeHelpScene_isReady() ? material.logicalId : 0U;
 }
 
-int EspNativeHelpScene_load(uint8_t cachedMapId, uint32_t seed) {
+static int loadOriginalMaterial(uint8_t cachedMapId, uint32_t seed) {
     EspAssetPackEntry mappings, palettes, walls;
     uint8_t mh[16], ph[4], wh[4], id[2], pair[8], paletteBytesRaw[32];
     uint32_t texelPairs, shapes, logicalCount, spriteCount;
@@ -179,12 +179,48 @@ done:
     return ok;
 }
 
+/* One mathematically smooth 2.56s breath clock, shared by both HUD guides,
+ * main gameplay grid and its three row-by-row previews. */
+uint8_t EspNativeHelpScene_breathStep(uint32_t elapsedMs) {
+    return (uint8_t)((elapsedMs / ESP_NATIVE_HELP_BREATH_STEP_MS) %
+                     ESP_NATIVE_HELP_BREATH_STEPS);
+}
+uint8_t EspNativeHelpScene_breathLevel(uint8_t step) {
+    if (step >= ESP_NATIVE_HELP_BREATH_STEPS) return 0U;
+    return step <= 16U ? step : (uint8_t)(32U - step);
+}
+uint8_t EspNativeHelpScene_breathPower(uint8_t level) {
+    if (level > 16U) return 0U;
+    return (uint8_t)(((uint32_t)level * level *
+        (48U - 2U * level) * 255U + 2048U) / 4096U);
+}
+
+/* The ORIGINAL 2026-11-08 HELP scene, selected directly from whichever
+ * native PAK is present. The map flash ID and current HELP epoch keep
+ * the visual tied to current contents but do not load an active game.
+ * No BSP mini-raycaster/plane arenas or extra framebuffer. */
+static uint8_t previewMapId;
+int EspNativeHelpScene_begin(uint8_t cachedMapId, uint32_t seed) {
+    const int ok = loadOriginalMaterial(cachedMapId, seed);
+    previewMapId = ok ? (cachedMapId != 0U ? cachedMapId : 1U) : 0U;
+    return ok;
+}
+uint8_t EspNativeHelpScene_previewMapId(void) {
+    return EspNativeHelpScene_isReady() ? previewMapId : 0U;
+}
+uint8_t EspNativeHelpScene_materialCount(void) {
+    return EspNativeHelpScene_isReady() ? 1U : 0U;
+}
+
 static void putGlow(uint16_t* framebuffer, int x, int y,
                     uint16_t color) {
     if (x < PREVIEW_X || x >= PREVIEW_X + PREVIEW_W ||
         y < PREVIEW_Y || y >= PREVIEW_Y + PREVIEW_H) return;
     const uint32_t index = (uint32_t)y * DOOMRPG_LOGICAL_WIDTH + (uint32_t)x;
-    framebuffer[index] = add565(framebuffer[index], color);
+    /* Darken ONLY this one-pixel stroke so saturated backgrounds cannot
+     * wash green/yellow/red indicators into white; no rectangular tint. */
+    framebuffer[index] =
+        add565(dim565(framebuffer[index], 116U), color);
 }
 
 static void segment(uint16_t* framebuffer, int x0, int y0, int x1, int y1,
@@ -205,29 +241,38 @@ static void segment(uint16_t* framebuffer, int x0, int y0, int x1, int y1,
     }
 }
 
-/* A rounded return-arrow arc instead of the previous three right-angle
- * segments. These connected 1px strokes are mirrored for TURN L / TURN R,
- * stay within a 43x18 miniature touch cell and retain the live green pulse. */
+/* Smooth, directional J-shaped 180-degree turn glyph, mirrored for
+ * TURN LEFT/RIGHT. A gently arched ten-segment head is more legible at the
+ * 48x23 touch scale than the old square or cramped arc. 2-tone strokes
+ * provide a soft green highlight while retaining strict per-cell bounds. */
 static void helpPaintTurnArc(uint16_t* fb, int cx, int cy,
                              int col, uint16_t core) {
     static const int8_t turnCurve[][2] = {
-        { 5,  4}, { 5,  1}, { 4, -2}, { 2, -4},
-        { 0, -5}, {-2, -4}, {-4, -2}, {-5,  0}
+        { 6,  5}, { 6,  3}, { 6,  0}, { 5, -3},
+        { 3, -5}, { 1, -6}, {-1, -6},
+        {-3, -6}, {-5, -4}, {-6, -2}, {-6, 0}
     };
     const int mirror = col == 0 ? 1 : -1;
+    const uint16_t glow = dim565(core, 100U);
     unsigned int i;
     for (i = 1U; i < sizeof(turnCurve) / sizeof(turnCurve[0]); ++i) {
+        /* One extra soft row below, then a crisp, colored main curve. */
+        segment(fb,
+                cx + mirror * turnCurve[i - 1U][0],
+                cy + turnCurve[i - 1U][1] + 1,
+                cx + mirror * turnCurve[i][0],
+                cy + turnCurve[i][1] + 1, glow);
         segment(fb,
                 cx + mirror * turnCurve[i - 1U][0],
                 cy + turnCurve[i - 1U][1],
                 cx + mirror * turnCurve[i][0],
                 cy + turnCurve[i][1], core);
     }
-    /* Pointing left on the left-hand button, right on the right-hand one. */
-    segment(fb, cx - mirror * 3, cy - 3,
-            cx - mirror * 6, cy, core);
-    segment(fb, cx - mirror * 6, cy,
-            cx - mirror * 3, cy + 3, core);
+    /* Arrowhead faces the turn, never a mirrored forward/backward chevron. */
+    segment(fb, cx - mirror * 3, cy - 4,
+            cx - mirror * 7, cy, core);
+    segment(fb, cx - mirror * 7, cy,
+            cx - mirror * 3, cy + 4, core);
 }
 
 /* Only the eight glyphs used by WPN/PREV/NEXT. 5x7 ROM masks cost 56B,
@@ -315,81 +360,119 @@ static void drawActionMark(uint16_t* framebuffer, int row, int col,
     }
 }
 
-int EspNativeHelpScene_paint(uint16_t* fb, uint8_t level) {
-    static const int xZone[4] = {0, 42, 85, PREVIEW_W};
-    static const int yZone[4] = {0, 17, 35, PREVIEW_H};
-    int lx, ly, row, col;
-    if (fb == NULL || !material.ready || level > 6U) return 0;
+/* LIVE vocabulary, identical RGB565 cores to the gameplay feedback:
+ * movement/turn green, attack/use red, weapon prev/next yellow.
+ * Breath affects ONLY drawn neon strokes and glyphs. Never flood a zone.
+ * 32-step smoothstep shares the same phase with all other HELP pages. */
+static void helpPaintTouchCell(uint16_t* fb, int row, int col,
+                               int left, int right, int top, int bottom,
+                               uint8_t level) {
+    const uint16_t neon = row == 1 && col == 1 ? 0xf800U :
+                          row == 2 && col != 1 ? 0xffe0U :
+                          0x07e0U;
+    const uint8_t power = EspNativeHelpScene_breathPower(level);
+    const uint32_t accent = 72U + ((uint32_t)power * 183U) / 255U;
+    const uint16_t core = dim565(neon, accent);
+    const uint16_t halo = dim565(neon, accent / 4U);
+    int x, y;
 
-    /* A small deterministic perspective illustration with an actual native
-     * wall texture; NOT a screenshot and no map/BSP world state. */
+    /* One precise pixel at the cell perimeter; 1px inner softer halo.
+     * Colors follow the actual finger action, no global blue separators. */
+    for (x = left; x <= right; ++x) {
+        putGlow(fb, x, top, core);
+        putGlow(fb, x, bottom, core);
+        if (bottom - top >= 4) {
+            putGlow(fb, x, top + 1, halo);
+            putGlow(fb, x, bottom - 1, halo);
+        }
+    }
+    for (y = top + 1; y < bottom; ++y) {
+        putGlow(fb, left, y, core);
+        putGlow(fb, right, y, core);
+        putGlow(fb, left + 1, y, halo);
+        putGlow(fb, right - 1, y, halo);
+    }
+    if (row == 2 && col != 1) {
+        /* WPN/PREV/NEXT letters breathe yellow; black glyph reading pad
+         * is stable so there is no flashing or solid-colour wash. */
+        helpPaintWeaponCaption(fb, (left + right) / 2, top,
+                               col == 0 ? "PREV" : "NEXT", core);
+    }
+    else {
+        /* Every turn/move/select symbol now breathes in its ORIGINAL hue. */
+        drawActionMark(fb, row, col, (left + right) / 2,
+                       (top + bottom) / 2, core);
+    }
+}
+
+/* Restore the ORIGINAL PAK wall-perspective picture that preceded the
+ * BSP/plane raycaster experiments (and their wide flat dead bands).
+ * A single 4-bpp wall texture gives the recognisable repeating door-style
+ * illustration; wall texels/palette always come from the PRESENT PAK. */
+static void helpPaintOriginalBackground(uint16_t* fb) {
+    int lx, ly;
     for (lx = 0; lx < PREVIEW_W; ++lx) {
-        const int flank = lx < 48 ? lx :
-                          lx >= 80 ? (127 - lx) : 48;
-        const int wallTop = 15 * flank / 48;
-        const int wallBottom = 52 - 13 * flank / 48;
+        const int flank = lx < 54 ? lx :
+                          lx >= 90 ? (PREVIEW_W - 1 - lx) : 54;
+        const int wallTop = 19 * flank / 54;
+        const int wallBottom = (PREVIEW_H - 1) - 17 * flank / 54;
         for (ly = 0; ly < PREVIEW_H; ++ly) {
             uint16_t ink;
-            if (ly < wallTop) {
+            if (ly < wallTop)
                 ink = (uint16_t)(0x0842U + ((uint16_t)ly << 5));
-            }
-            else if (ly > wallBottom) {
-                ink = (uint16_t)(0x1042U + ((uint16_t)(52 - ly) << 5));
-            }
+            else if (ly > wallBottom)
+                ink = (uint16_t)(0x1042U +
+                                 ((uint16_t)(PREVIEW_H - 1 - ly) << 5));
             else {
-                int u = lx < 48 ? lx * 2 : lx >= 80 ? (127 - lx) * 2 :
-                        (lx - 48) * 2;
-                int v = (ly - wallTop) * 63 / (wallBottom - wallTop + 1);
-                const unsigned int light = (unsigned int)(155 + flank);
-                ink = dim565(sampleWall(u, v), light);
+                const int u = lx < 54 ? lx * 2 : lx >= 90
+                             ? (PREVIEW_W - 1 - lx) * 2 : (lx - 54) * 2;
+                const int v = (ly - wallTop) * 63 /
+                              (wallBottom - wallTop + 1);
+                ink = sampleWall(u, v);
             }
             fb[(PREVIEW_Y + ly) * DOOMRPG_LOGICAL_WIDTH +
                PREVIEW_X + lx] = ink;
         }
     }
-
-    /* Exact grid proportions from gameplay input 0..52/53..105/106..159
-     * and y20..45/46..72/73..99, reduced into one x128/y53 thumbnail.
-     * Every region has the same semantic feedback color as gameplay. */
-    for (row = 0; row < 3; ++row) {
-        for (col = 0; col < 3; ++col) {
-            const uint16_t neon = row == 1 && col == 1 ? 0xf800U :
-                                  row == 2 && col != 1 ? 0xffe0U :
-                                  0x07e0U;
-            const uint16_t core = dim565(neon, 85U + (uint32_t)level * 27U);
-            const uint16_t halo = dim565(neon, 26U + (uint32_t)level * 9U);
-            const int left = PREVIEW_X + xZone[col];
-            const int right = PREVIEW_X + xZone[col + 1] - 1;
-            const int top = PREVIEW_Y + yZone[row];
-            const int bottom = PREVIEW_Y + yZone[row + 1] - 1;
-            int x, y;
-            for (x = left + 1; x < right; ++x) {
-                putGlow(fb, x, top, core);
-                putGlow(fb, x, bottom, core);
-                putGlow(fb, x, top + 1, halo);
-                putGlow(fb, x, bottom - 1, halo);
-            }
-            for (y = top + 1; y < bottom; ++y) {
-                putGlow(fb, left, y, core);
-                putGlow(fb, right, y, core);
-                putGlow(fb, left + 1, y, halo);
-                putGlow(fb, right - 1, y, halo);
-            }
-            if (row == 2 && col != 1) {
-                /* WPN/PREV and WPN/NEXT replace the ambiguous yellow arrows.
-                 * Two 7px lines plus a 1px gap fit the 18px-high cells. */
-                const uint16_t textInk = dim565(
-                    neon, 170U + (uint32_t)level * 13U);
-                helpPaintWeaponCaption(fb, (left + right) / 2, top,
-                                       col == 0 ? "PREV" : "NEXT",
-                                       textInk);
-            }
-            else {
-                drawActionMark(fb, row, col,
-                               (left + right) / 2,
-                               (top + bottom) / 2, core);
-            }
+}
+int EspNativeHelpScene_paint(uint16_t* fb, uint8_t level) {
+    static const int xZone[4] = {0, 48, 96, PREVIEW_W};
+    static const int yZone[4] = {0, 22, 45, PREVIEW_H};
+    int row, col;
+    if (fb == NULL || !material.ready || level > 16U) return 0;
+    helpPaintOriginalBackground(fb);
+    for (row = 0; row < 3; ++row)
+        for (col = 0; col < 3; ++col)
+            helpPaintTouchCell(fb, row, col,
+                               PREVIEW_X + xZone[col],
+                               PREVIEW_X + xZone[col + 1] - 1,
+                               PREVIEW_Y + yZone[row],
+                               PREVIEW_Y + yZone[row + 1] - 1, level);
+    return 1;
+}
+/* The three teaching rows retain their original 64x64 PAK wall source but
+ * sample distinct, bounded texture windows, not a cached gameplay frame. */
+int EspNativeHelpScene_paintRow(uint16_t* fb, uint8_t sourceRow,
+                                uint8_t level) {
+    static const int xZone[4] = {0, 48, 96, PREVIEW_W};
+    const int top = 39, bottom = 61;
+    int lx, ly, col;
+    if (fb == NULL || !material.ready || sourceRow > 2U ||
+        level > 16U) return 0;
+    for (ly = top; ly <= bottom; ++ly) {
+        for (lx = 0; lx < PREVIEW_W; ++lx) {
+            const int u = (lx * 63 / (PREVIEW_W - 1) +
+                           (int)sourceRow * 19) & 63;
+            const int v = ((ly - top) * 63 / (bottom - top) +
+                           (int)sourceRow * 23) & 63;
+            fb[ly * DOOMRPG_LOGICAL_WIDTH + PREVIEW_X + lx] =
+                sampleWall(u, v);
         }
     }
+    for (col = 0; col < 3; ++col)
+        helpPaintTouchCell(fb, sourceRow, col,
+                           PREVIEW_X + xZone[col],
+                           PREVIEW_X + xZone[col + 1] - 1,
+                           top, bottom, level);
     return 1;
 }

@@ -279,7 +279,8 @@ static EspNativeGameplayHudStatus drawSmallText(
 static EspNativeGameplayHudStatus paintPrepared(
     const EspNativeGameplayHudState* prepared,
     uint16_t* framebuffer,
-    EspNativeGameplayHudStats* stats) {
+    EspNativeGameplayHudStats* stats,
+    int bottomOnly) {
     EspNativeIndexedBmp bmp;
     EspNativeIndexedBmpStats local;
     EspNativeGameplayHudStatus status;
@@ -302,6 +303,7 @@ static EspNativeGameplayHudStatus paintPrepared(
         stats->statusBarWidth = bmp.width;
         stats->statusBarHeight = bmp.height;
     }
+    if (!bottomOnly) {
     memset(&local, 0, sizeof(local));
     if (EspNativeIndexedBmp_tile(&bmp, framebuffer,
                                  DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
@@ -311,6 +313,7 @@ static EspNativeGameplayHudStatus paintPrepared(
         return ESP_NATIVE_GAMEPLAY_HUD_RESOURCE_FAILED;
     }
     mergeBmpStats(stats, &local);
+    }
     memset(&local, 0, sizeof(local));
     if (EspNativeIndexedBmp_tile(&bmp, framebuffer,
                                  DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
@@ -324,7 +327,7 @@ static EspNativeGameplayHudStatus paintPrepared(
 
     /* Minimal permanent locator chrome at the two semantic split points.
      * The hit boxes remain exactly 0..31 | 32..127 | 128..159. */
-    drawTopTouchNotches(framebuffer, stats);
+    if (!bottomOnly) drawTopTouchNotches(framebuffer, stats);
 
     drawVerticalLine(framebuffer, HUD_LINE1_X + cx, HUD_BOTTOM_Y,
                      DOOMRPG_LOGICAL_HEIGHT - 1, rgb565(0x313131U), stats);
@@ -424,6 +427,40 @@ static EspNativeGameplayHudStatus paintPrepared(
         drawWeaponTouchCorners(framebuffer, stats);
     }
     return status;
+}
+
+/* Read-only HELP preview: the same canonical k/m/l/o/a BMP painter,
+ * not an approximation. Only its y100..119 band is written to the live
+ * framebuffer; the caller immediately shrinks it before drawing the footer.
+ * No global HUD state, dirty intent, or gameplay owner is touched. */
+int EspNativeGameplayHud_paintHelpBottomBand(uint16_t* framebuffer) {
+    EspNativeGameplayHudModel demo;
+    EspNativeGameplayHudState prepared;
+    EspNativeGameplayHudStatus status;
+    if (framebuffer == NULL ||
+        framebuffer != (uint16_t*)Esp32PlatformVideo_framebuffer() ||
+        EspAssetPack_isOpen() || EspNativeGameplayHud_isReady())
+        return 0;
+    memset(&demo, 0, sizeof(demo));
+    demo.targetMapId = 1U;
+    demo.gameplayLoadMapId = 1U;
+    demo.health = 30U;
+    demo.maxHealth = 30U;
+    demo.armor = 20U;
+    demo.maxArmor = 20U;
+    demo.ammo = 12U;
+    demo.weapon = 1U;
+    demo.ammoType = 0U;
+    demo.weaponsPresent = 1U;
+    demo.destAngle = 64U;
+    if (EspNativeGameplayHud_prepareInitial(&demo, &prepared) !=
+        ESP_NATIVE_GAMEPLAY_HUD_OK ||
+        !EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) return 0;
+    status = preflightResources(NULL);
+    if (status == ESP_NATIVE_GAMEPLAY_HUD_OK)
+        status = paintPrepared(&prepared, framebuffer, NULL, 1);
+    EspAssetPack_close();
+    return status == ESP_NATIVE_GAMEPLAY_HUD_OK;
 }
 
 void EspNativeGameplayHud_reset(void) {
@@ -529,7 +566,7 @@ EspNativeGameplayHudStatus EspNativeGameplayHud_routeInitial(
 
     status = preflightResources(outStats);
     if (status == ESP_NATIVE_GAMEPLAY_HUD_OK) {
-        status = paintPrepared(&prepared, framebuffer, outStats);
+        status = paintPrepared(&prepared, framebuffer, outStats, 0);
     }
     EspAssetPack_close();
     if (status != ESP_NATIVE_GAMEPLAY_HUD_OK) return status;
@@ -630,7 +667,7 @@ EspNativeGameplayHudStatus EspNativeGameplayHud_repaint(
 
     status = preflightResources(outStats);
     if (status == ESP_NATIVE_GAMEPLAY_HUD_OK) {
-        status = paintPrepared(&prepared, framebuffer, outStats);
+        status = paintPrepared(&prepared, framebuffer, outStats, 0);
     }
     EspAssetPack_close();
     if (status != ESP_NATIVE_GAMEPLAY_HUD_OK) return status;
