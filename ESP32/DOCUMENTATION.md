@@ -1,3 +1,11 @@
+## SDL-B1 — Retrait de huit stubs SDL dormants, PASS CYD normal (9 novembre 2026)
+
+La [PR #271](https://github.com/Kharn27/DoomRPG-RE/pull/271) retire uniquement les déclarations et implémentations ESP32 de `SDL_SetHint`, `SDL_ShowCursor`, `SDL_SetWindowFullscreen`, `SDL_NumJoysticks`, `SDL_IsGameController`, `SDL_GameControllerRumble`, `SDL_HapticRumblePlay`, `SDL_HapticRumbleStop`. Ces stubs n'étaient pas liés dans l'ELF : aucun gain mémoire/flash promis. Les opérations BMP/texture 1/4/8 bpp, SDL de dessin toujours lié, PAK, native video, gameplay et desktop/oracle ne sont pas modifiés. Un nouveau test fail-closed recense **350** sources et headers ESP32 et interdit la réintroduction de ces huit points d'entrée. CI [#42535863933](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42535863933) **SUCCESS** ; 19 fonctions SDL liées/1547 octets, inchangés.
+
+**Vrai matériel `esp32-cyd` au SHA `a77a31af57a401cdc7fa7005e21d82c0ee73ad26`** : `device-monitor-261109-010645.log`, 1787 lignes ; HELP, intro, Entrance, dialogues/portes/loot, premier EXIT, LOAD V11 slot04, quatre ripostes triple projectile Malwrath, mort du joueur→RETRY→nouvelle session, second EXIT. 3× `HEADROOM_OK`, 3× `RESIDENTRESET empty=1`, 2× `SYSEXIT MENU-READY`, `largest8=86004`, `shapeData/mediaTexels=NULL`, aucune panic/WDT. Code gelé ; clôture docs-only, fusion autorisée. **SDL-B1 seulement**, pas tout SDL-B ; aucun test hardware bringup/trace requis. [Rapport](MILESTONE_PR271_SDL_B1_DEAD_CONTROL_STUBS_CYD_PASS.md).
+
+---
+
 ## SDL-A — Source compact SDL permanent : PASS CYD normal (9 novembre 2026)
 
 La [PR #270](https://github.com/Kharn27/DoomRPG-RE/pull/270), jalon A de l'issue [#269](https://github.com/Kharn27/DoomRPG-RE/issues/269), remplace l'ancienne génération textuelle de `esp32_sdl.cpp` par un **unique TU permanent** compilé directement par PlatformIO. Les cinq adaptations indexées sont transférées à l'identique (source effectif complet identique sur 26 047 caractères). Le builder garde les protections de désengagement desktop et nettoie tout reliquat généré. Les API SDL toujours liées, le framebuffer RGB565 `160×120` (38 400 B), le PAK, le rendu et le gameplay demeurent inchangés par SDL-A.
