@@ -181,18 +181,7 @@ const char* SDL_GetScancodeName(int) {
     return "CYD input";
 }
 
-int SDL_SetMemoryFunctions(SDL_malloc_func, SDL_calloc_func,
-                           SDL_realloc_func, SDL_free_func) {
-    return 0;
-}
-
-void SDL_GetMemoryFunctions(SDL_malloc_func* mallocFn, SDL_calloc_func* callocFn,
-                            SDL_realloc_func* reallocFn, SDL_free_func* freeFn) {
-    if (mallocFn) *mallocFn = malloc;
-    if (callocFn) *callocFn = calloc;
-    if (reallocFn) *reallocFn = realloc;
-    if (freeFn) *freeFn = free;
-}
+// SDL-B4: retired dormant SDL allocation hook facades; RWops keep libc ownership.
 
 SDL_RWops* SDL_RWFromMem(void* memory, int size) {
     if (memory == nullptr || size < 0) {
