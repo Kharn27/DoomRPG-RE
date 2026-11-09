@@ -647,6 +647,89 @@ done:
     return painted;
 }
 
+
+/* Nearest-neighbor reduction from original PAK bitshape, mask and RGB565
+ * palette. Reuses the proven loadFrame() reader; no ZIP, giant texel array
+ * or per-tick asset reads. A bad texture returns 0 (cosmetic only). */
+int EspNativeSpriteRenderer_decodePickupMini(
+    uint16_t logical,
+    uint16_t colors[ESP_PICKUP_MINI_PIXELS],
+    uint8_t opaque[ESP_PICKUP_MINI_MASK_BYTES]) {
+    Frame* frame = NULL;
+    Sources sources;
+    EspNativeSpriteStats stats;
+    uint32_t seenLogical[8];
+    EspNativeGraphicsCatalogStatus status;
+    uint32_t maxDim, drawW, drawH, left, top, x, y, painted = 0U;
+    int opened = 0, ok = 0;
+
+    if (colors == NULL || opaque == NULL || logical >= 256U ||
+        !EspNativeGraphicsCatalog_isReady() || EspAssetPack_isOpen()) return 0;
+    memset(colors, 0, ESP_PICKUP_MINI_PIXELS * sizeof(uint16_t));
+    memset(opaque, 0, ESP_PICKUP_MINI_MASK_BYTES);
+    if (EspNativeGraphicsCatalog_findSprite(logical) == NULL) {
+        status = EspNativeGraphicsCatalog_ensureSprite(logical);
+        if (status != ESP_NATIVE_GRAPHICS_CATALOG_OK &&
+            status != ESP_NATIVE_GRAPHICS_CATALOG_ALREADY_ACTIVE) return 0;
+    }
+    frame = (Frame*)malloc(sizeof(*frame));
+    if (frame == NULL) return 0;
+    memset(&sources, 0, sizeof(sources));
+    memset(&stats, 0, sizeof(stats));
+    memset(seenLogical, 0, sizeof(seenLogical));
+    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) goto done;
+    opened = 1;
+    if (!initSources(&sources, &stats) ||
+        !loadFrame(&sources, logical, 0U, 0, frame, seenLogical, &stats))
+        goto done;
+
+    maxDim = (uint32_t)(frame->width > frame->height
+                           ? frame->width : frame->height);
+    drawW = (uint32_t)frame->width;
+    drawH = (uint32_t)frame->height;
+    if (maxDim > ESP_PICKUP_MINI_SIZE) {
+        drawW = ((uint32_t)frame->width * ESP_PICKUP_MINI_SIZE +
+                 maxDim / 2U) / maxDim;
+        drawH = ((uint32_t)frame->height * ESP_PICKUP_MINI_SIZE +
+                 maxDim / 2U) / maxDim;
+    }
+    if (!drawW) drawW = 1U;
+    if (!drawH) drawH = 1U;
+    if (drawW > ESP_PICKUP_MINI_SIZE ||
+        drawH > ESP_PICKUP_MINI_SIZE) goto done;
+    left = (ESP_PICKUP_MINI_SIZE - drawW) / 2U;
+    top = (ESP_PICKUP_MINI_SIZE - drawH) / 2U;
+    for (x = 0U; x < drawW; ++x) {
+        uint32_t sx = (x * (uint32_t)frame->width + drawW / 2U) / drawW;
+        if (sx >= (uint32_t)frame->width) sx = (uint32_t)frame->width - 1U;
+        for (y = 0U; y < drawH; ++y) {
+            uint32_t sy = (y * (uint32_t)frame->height + drawH / 2U) / drawH;
+            uint32_t row, texelIndex, pixelIndex;
+            uint8_t nibble;
+            if (sy >= (uint32_t)frame->height) sy = (uint32_t)frame->height - 1U;
+            if ((frame->mask[sx * (uint32_t)frame->pitch + sy / 8U] &
+                 (1U << (sy & 7U))) == 0U) continue;
+            texelIndex = frame->prefix[sx];
+            for (row = 0U; row < sy; ++row)
+                if (frame->mask[sx * (uint32_t)frame->pitch + row / 8U] &
+                    (1U << (row & 7U))) ++texelIndex;
+            if (texelIndex >= frame->active ||
+                texelIndex / 2U >= frame->packedBytes) goto done;
+            nibble = frame->texels[texelIndex / 2U];
+            pixelIndex = (top + y) * ESP_PICKUP_MINI_SIZE + left + x;
+            colors[pixelIndex] =
+                frame->palette[(nibble >> ((texelIndex & 1U) * 4U)) & 15U];
+            opaque[pixelIndex >> 3U] |= (uint8_t)(1U << (pixelIndex & 7U));
+            ++painted;
+        }
+    }
+    ok = painted != 0U;
+done:
+    if (opened) EspAssetPack_close();
+    free(frame);
+    return ok;
+}
+
 static int buildOrder(Render_t* render,
                       const EspMapRuntimeView* runtime,
                       const EspNativeBspVisibilityState* visibility,
