@@ -160,6 +160,19 @@ static int paintIndustrialDialog(uint16_t* framebuffer) {
         putPixel(framebuffer, x, DIALOG_BORDER_BOTTOM - 1,
                  x >= 71 && x <= 88 ? accent : accentDim);
     }
+    /* Mirror the themed signal on the LEFT and RIGHT metal edges.
+     * Keep the lines on the outermost border pixels (x=15/144), NOT
+     * x=16/143: the original 9x12 glyphs can touch those columns.
+     * The highlighted 18px centre matches the top/bottom signal. */
+    {
+        int y;
+        for (y = DIALOG_BORDER_TOP + 10;
+             y <= DIALOG_BORDER_BOTTOM - 10; ++y) {
+            const uint16_t tone = y >= 64 && y <= 81 ? accent : accentDim;
+            putPixel(framebuffer, DIALOG_BORDER_LEFT, y, tone);
+            putPixel(framebuffer, DIALOG_BORDER_RIGHT, y, tone);
+        }
+    }
     return 1;
 }
 
