@@ -114,7 +114,6 @@ int SDL_RenderDrawLine(SDL_Renderer* r,int x1,int y1,int x2,int y2) {
         if(doubled>=dy) {err+=dy;x1+=sx;}
         if(doubled<=dx) {err+=dx;y1+=sy;}
     }
-    nativeOwners.doomCanvas = &canvases[1];
     return 0;
 }
 void SDL_RenderPresent(SDL_Renderer* r) { ++target(r)->presents; }
@@ -182,6 +181,7 @@ int main(void) {
         cores[i].doomCanvas=&canvases[i];
         for(int j=0;j<GUARD+PIXELS+GUARD;j++) mocks[i].pixels[j]=0xBEEFu;
     }
+    nativeOwners.doomCanvas = &canvases[1];
     /* Baseline, actual RGB565 values, inclusivity, exact clipping and reset. */
     select_renderer(0); Reference_DoomRPG_setClipFalse(&cores[0]);
     select_renderer(1); DoomRPG_setClipFalse(&cores[1]); check("reset");
