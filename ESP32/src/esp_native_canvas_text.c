@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "esp_native_texture.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -91,7 +92,7 @@ static void EspDoomCanvas_drawImageSpecial(DoomCanvas_t* doomCanvas,
                     renderQuad.h = (renderQuad.h * 3) / 2;
                 }
 
-                SDL_RenderCopy(sdlVideo.renderer, img->imgBitmap, &clip, &renderQuad);
+                EspNativeTexture_blit(img->imgBitmap, &clip, &renderQuad);
 
                 remainingWidth -= img->width;
                 drawX += img->width;
@@ -133,7 +134,7 @@ void EspNativeCanvas_drawText(DoomCanvas_t* doomCanvas,
         byte r = (byte)((doomCanvas->fontColor & 0x00ff0000) >> 16);
         byte g = (byte)((doomCanvas->fontColor & 0x0000ff00) >> 8);
         byte b = (byte)(doomCanvas->fontColor & 0x000000ff);
-        SDL_SetTextureColorMod(imgFont->imgBitmap, r, g, b);
+        EspNativeTexture_setColorMod(imgFont->imgBitmap, r, g, b);
     }
 
     len = (int)SDL_strlen(text);
