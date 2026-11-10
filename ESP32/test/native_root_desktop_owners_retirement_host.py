@@ -21,7 +21,7 @@ RETIRED = ("entityDef", "combat", "hud", "menu", "particleSystem",
 LIVE = ("doomCanvas", "render", "menuSystem")
 GUARD = r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
 
-assert "_Static_assert(sizeof(DoomRPG_t) == 28U," in CORE
+assert "_Static_assert(sizeof(DoomRPG_t) == 12U," in CORE
 assert "SDL_calloc(1, sizeof(DoomRPG_t))" in CORE
 assert "DoomRPG_FreeAppData(DoomRPG_t* doomrpg)" in CORE
 assert "char errMsg[256];" in CORE
