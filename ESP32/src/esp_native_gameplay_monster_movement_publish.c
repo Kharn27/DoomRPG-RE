@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "DoomRPG.h"
+#include "esp_native_process_rng_owner.h"
 
 #include "doomrpg_log.h"
 #include "esp_map_runtime.h"
@@ -329,7 +330,7 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
         return 0;
     }
 
-    replayStart = doomRpg->random;
+    replayStart = (*EspNativeProcessRng_live());
     if (replayStart.nextRand < 0 ||
         replayStart.nextRand + (int)rngCalls >= RANDTABLESIZE) {
         printf("[MONSTERMOVELIVE] DEFER sprite=%u cause=rng-replay-would-cross-boundary next=%d calls=%u mutation=no\n",
@@ -354,12 +355,12 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
     outResult->topologyFNVBefore = topology->stateFNV1a;
 
     for (i = 0U; i < rngCalls; ++i) {
-        (void)DoomRPG_randNextByte(&doomRpg->random);
+        (void)DoomRPG_randNextByte(EspNativeProcessRng_live());
     }
-    if (memcmp(doomRpg->random.randTable, replayStart.randTable,
+    if (memcmp(EspNativeProcessRng_live()->randTable, replayStart.randTable,
                RANDTABLESIZE) != 0 ||
-        doomRpg->random.nextRand != replayStart.nextRand + (int)rngCalls) {
-        doomRpg->random = replayStart;
+        EspNativeProcessRng_live()->nextRand != replayStart.nextRand + (int)rngCalls) {
+        (*EspNativeProcessRng_live()) = replayStart;
         printf("[MONSTERMOVELIVE] DEFER sprite=%u cause=rng-replay-not-exact calls=%u mutation=no\n",
                (unsigned int)publishCapture.before.spriteIndex,
                (unsigned int)rngCalls);
@@ -368,7 +369,7 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
 
     if (!EspNativeGameplayMonsterPosition_commitPrepared(
             &publishCapture.before, &publishCapture.after)) {
-        doomRpg->random = replayStart;
+        (*EspNativeProcessRng_live()) = replayStart;
         printf("[MONSTERMOVELIVE] DEFER sprite=%u cause=position-commit mutation=no\n",
                (unsigned int)publishCapture.before.spriteIndex);
         return 0;
@@ -376,7 +377,7 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
     if (!EspMapSpriteTopology_commitPreparedRelink(&relink)) {
         (void)EspNativeGameplayMonsterPosition_rollbackPrepared(
             &publishCapture.after, &publishCapture.before);
-        doomRpg->random = replayStart;
+        (*EspNativeProcessRng_live()) = replayStart;
         printf("[MONSTERMOVELIVE] DEFER sprite=%u cause=topology-commit rollback=position mutation=no\n",
                (unsigned int)publishCapture.before.spriteIndex);
         return 0;
@@ -390,7 +391,7 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
         int ownersExact = restorePublishedOwners(&relink, &publishCapture.before,
                                                  &publishCapture.after,
                                                  projectedBefore);
-        doomRpg->random = replayStart;
+        (*EspNativeProcessRng_live()) = replayStart;
         recoveryRendered = recoveryRedraw(doomRpg, player, &recoveryFrame);
         outResult->recoveryRendered = (uint8_t)(recoveryRendered != 0);
         printf("[MONSTERMOVELIVE] ROLLBACK sprite=%u tile=%u->%u ownersExact=%s randomExact=yes projectionExact=yes recoveryRender=%s interpolation=deferred mutation=no\n",
@@ -419,7 +420,7 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
         int ownersExact = restorePublishedOwners(&relink, &publishCapture.before,
                                                  &publishCapture.after,
                                                  projectedBefore);
-        doomRpg->random = replayStart;
+        (*EspNativeProcessRng_live()) = replayStart;
         recoveryRendered = recoveryRedraw(doomRpg, player, &recoveryFrame);
         outResult->recoveryRendered = (uint8_t)(recoveryRendered != 0);
         printf("[MONSTERMOVELIVE] ROLLBACK sprite=%u cause=post-render-owner-mismatch ownersExact=%s recoveryRender=%s mutation=no\n",
@@ -432,12 +433,12 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
     if (boundaryPrepared != 0U) {
         if (boundarySaved == NULL ||
             !EspNativeRngReplayGuard_commitProbeBoundary(
-                &doomRpg->random, boundarySaved, boundaryPrepared, rngCalls)) {
+                EspNativeProcessRng_live(), boundarySaved, boundaryPrepared, rngCalls)) {
             int ownersExact = restorePublishedOwners(&relink,
                                                      &publishCapture.before,
                                                      &publishCapture.after,
                                                      projectedBefore);
-            doomRpg->random = replayStart;
+            (*EspNativeProcessRng_live()) = replayStart;
             recoveryRendered = recoveryRedraw(doomRpg, player, &recoveryFrame);
             outResult->recoveryRendered = (uint8_t)(recoveryRendered != 0);
             printf("[MONSTERMOVELIVE] ROLLBACK sprite=%u cause=rng-boundary-close ownersExact=%s recoveryRender=%s mutation=no\n",

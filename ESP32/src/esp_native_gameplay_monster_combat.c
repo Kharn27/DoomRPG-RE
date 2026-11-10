@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "DoomRPG.h"
+#include "esp_native_process_rng_owner.h"
 #include "Render.h"
 
 #include "esp_map_sprite_topology.h"
@@ -396,7 +397,7 @@ static uint16_t consumePainSound(DoomRPG_t* runtime,
     }
     /* Legacy EntityMonster_getSoundRnd() still consumes one RNG byte even when
      * there is exactly one non-zero pain sound candidate. */
-    (void)DoomRPG_randNextByte(&runtime->random);
+    (void)DoomRPG_randNextByte(EspNativeProcessRng_live());
     ++(*ioRngCalls);
     return painSounds[subtype];
 }
@@ -411,7 +412,7 @@ static uint16_t consumeDeathSound(DoomRPG_t* runtime,
     }
     while (count < 3U && deathSounds[subtype][count] != 0U) ++count;
     if (count == 0U) return 0U;
-    pick = DoomRPG_randNextByte(&runtime->random);
+    pick = DoomRPG_randNextByte(EspNativeProcessRng_live());
     ++(*ioRngCalls);
     return deathSounds[subtype][pick % count];
 }
@@ -514,7 +515,7 @@ static int servicePending(DoomRPG_t* runtime) {
 
     targetBefore = *target;
     combatRollbackOwner = combatOwner;
-    randomBefore = runtime->random;
+    randomBefore = (*EspNativeProcessRng_live());
     if (!EspNativeGameplayPlayerState_snapshot(&playerBefore)) return 0;
     monsterFNVBefore = currentMonsterFNV();
     playerFNVBefore = EspNativeGameplayPlayerState_fingerprint();
@@ -548,7 +549,7 @@ static int servicePending(DoomRPG_t* runtime) {
                                                       target,
                                                       pending.worldDistance,
                                                       &roll)) {
-        runtime->random = randomBefore;
+        (*EspNativeProcessRng_live()) = randomBefore;
         (void)EspNativeGameplayPlayerState_restore(&playerBefore);
         EspNativeGameplayWeapon_cancelAttack();
         combatOwner = combatRollbackOwner;
@@ -567,7 +568,7 @@ static int servicePending(DoomRPG_t* runtime) {
 
         if (lethal && specialDeath(target->subtype)) {
             *target = targetBefore;
-            runtime->random = randomBefore;
+            (*EspNativeProcessRng_live()) = randomBefore;
             (void)EspNativeGameplayPlayerState_restore(&playerBefore);
             EspNativeGameplayWeapon_cancelAttack();
             combatOwner = combatRollbackOwner;
@@ -622,7 +623,7 @@ static int servicePending(DoomRPG_t* runtime) {
             xp = EspNativeGameplayCombatMath_monsterExp(&targetBefore);
             if (!EspNativeGameplayPlayerState_applyXp(runtime, xp, &xpResult)) {
                 *target = targetBefore;
-                runtime->random = randomBefore;
+                (*EspNativeProcessRng_live()) = randomBefore;
                 (void)EspNativeGameplayPlayerState_restore(&playerBefore);
                 combatOwner = combatRollbackOwner;
                 combatOwner.pending.active = 0U;
@@ -643,12 +644,12 @@ static int servicePending(DoomRPG_t* runtime) {
                                                       target->subtype,
                                                       &rngCalls);
             }
-            dropRoll = (uint32_t)DoomRPG_randNextInt(&runtime->random);
+            dropRoll = (uint32_t)DoomRPG_randNextInt(EspNativeProcessRng_live());
             ++rngCalls;
             if (!EspNativeGameplayMonsterDrop_prepare(
                     dropRoll, &targetBefore, &dropPlan)) {
                 *target = targetBefore;
-                runtime->random = randomBefore;
+                (*EspNativeProcessRng_live()) = randomBefore;
                 (void)EspNativeGameplayPlayerState_restore(&playerBefore);
                 combatOwner = combatRollbackOwner;
                 combatOwner.pending.active = 0U;
@@ -723,7 +724,7 @@ static int servicePending(DoomRPG_t* runtime) {
                                            (uint8_t)view->viewAngle,
                                            &frame)) {
         *target = targetBefore;
-        runtime->random = randomBefore;
+        (*EspNativeProcessRng_live()) = randomBefore;
         (void)EspNativeGameplayPlayerState_restore(&playerBefore);
         combatOwner = combatRollbackOwner;
         combatOwner.pending.active = 0U;
@@ -911,7 +912,7 @@ static int restoreSplashSnapshot(DoomRPG_t* runtime) {
             &splashRollback.monsters)) exact = 0;
     if (!EspNativeGameplayPlayerState_restore(&splashRollback.player))
         exact = 0;
-    runtime->random = splashRollback.random;
+    (*EspNativeProcessRng_live()) = splashRollback.random;
     combatOwner = splashRollback.combat;
     splashSequenceActive = 0U;
     splashSequenceNumber = 0U;
@@ -930,7 +931,7 @@ int EspNativeGameplayMonsterCombat_beginSplashSequence(
         !EspNativeGameplayPlayerState_snapshot(&splashRollback.player))
         return 0;
     splashRollback.combat = combatOwner;
-    splashRollback.random = runtime->random;
+    splashRollback.random = (*EspNativeProcessRng_live());
     splashSequenceActive = 1U;
     splashSequenceNumber = sequence;
     printf("[MONSTERRADIUS] SEQUENCE-BEGIN seq=%u snapshot=monster+drop+player+rng+visual owner=bounded-BSS rollback=armed\n",
@@ -990,7 +991,7 @@ int EspNativeGameplayMonsterCombat_applySplash(
             !EspNativeGameplayPlayerState_snapshot(
                 &splashRollback.player)) return 0;
         splashRollback.combat = combatOwner;
-        splashRollback.random = runtime->random;
+        splashRollback.random = (*EspNativeProcessRng_live());
     }
     memset(&popup, 0, sizeof(popup));
 
@@ -1031,7 +1032,7 @@ int EspNativeGameplayMonsterCombat_applySplash(
                 needsPopup = 1;
             }
             sound = consumeDeathSound(runtime, before.subtype, &rngCalls);
-            dropRoll = (uint32_t)DoomRPG_randNextInt(&runtime->random);
+            dropRoll = (uint32_t)DoomRPG_randNextInt(EspNativeProcessRng_live());
             ++rngCalls;
             memset(&drop, 0, sizeof(drop));
             if (!EspNativeGameplayMonsterDrop_prepare(

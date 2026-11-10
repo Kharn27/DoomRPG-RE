@@ -5,6 +5,7 @@
 
 #include <SDL.h>
 #include "DoomRPG.h"
+#include "esp_native_process_rng_owner.h"
 #include <esp_heap_caps.h>
 
 #include "esp_asset_pack.h"
@@ -323,7 +324,7 @@ static int32_t scaledRandomValue(DoomRPG_t* doomRpg,
 
     i2 = (int32_t)(((int64_t)parm * 256LL) / 1024LL);
     i3 = (int32_t)(((int64_t)i2 * 512LL) >> 8);
-    randomByte = DoomRPG_randNextInt(&doomRpg->random) & 255;
+    randomByte = DoomRPG_randNextInt(EspNativeProcessRng_live()) & 255;
     ++(*rngCalls);
     return parm + (int32_t)(((int64_t)i3 * randomByte) >> 8) - i2;
 }
@@ -368,7 +369,7 @@ static void setupEnemyRecord(DoomRPG_t* doomRpg,
     record->param1 = packParam1(health, health, armor, armor);
     record->param2 = packParam2(defense, strength, agility, accuracy);
     record->alternateAttack =
-        (uint8_t)(DoomRPG_randNextByte(&doomRpg->random) & 1U);
+        (uint8_t)(DoomRPG_randNextByte(EspNativeProcessRng_live()) & 1U);
     ++(*rngCalls);
 }
 
@@ -457,7 +458,7 @@ int EspNativeGameplayMonsterState_ensure(DoomRPG_t* doomRpg) {
     }
 
     expectedEnemies = topology->enemyCount;
-    randomBefore = doomRpg->random;
+    randomBefore = (*EspNativeProcessRng_live());
 
     if (pendingRestore != NULL) {
         uint16_t previousSprite = 0U;
@@ -515,7 +516,7 @@ int EspNativeGameplayMonsterState_ensure(DoomRPG_t* doomRpg) {
         monsterView.ownerBytes =
             expectedEnemies * sizeof(EspNativeGameplayMonsterRecord);
         monsterView.sourceArenaFNV1a = runtime->arenaFNV1a;
-        monsterView.rngFNVBefore = randomFNV(&doomRpg->random);
+        monsterView.rngFNVBefore = randomFNV(EspNativeProcessRng_live());
         monsterView.rngFNVAfter = monsterView.rngFNVBefore;
         monsterView.rngCalls = 0U;
         monsterView.witnessSpriteIndex =
@@ -621,7 +622,7 @@ int EspNativeGameplayMonsterState_ensure(DoomRPG_t* doomRpg) {
     monsterView.ownerBytes = built * sizeof(EspNativeGameplayMonsterRecord);
     monsterView.sourceArenaFNV1a = runtime->arenaFNV1a;
     monsterView.rngFNVBefore = randomFNV(&randomBefore);
-    monsterView.rngFNVAfter = randomFNV(&doomRpg->random);
+    monsterView.rngFNVAfter = randomFNV(EspNativeProcessRng_live());
     monsterView.rngCalls = rngCalls;
     monsterView.witnessSpriteIndex =
         EspNativeGameplayMonsterState_find(DOG_WITNESS_SPRITE) != NULL
@@ -646,7 +647,7 @@ int EspNativeGameplayMonsterState_ensure(DoomRPG_t* doomRpg) {
 fail:
     if (openedHere) EspAssetPack_close();
     if (defs != NULL) heap_caps_free(defs);
-    doomRpg->random = randomBefore;
+    (*EspNativeProcessRng_live()) = randomBefore;
     EspNativeGameplayMonsterState_reset();
     printf("[MONSTERSTATE] FAILED rollbackRng=yes packOpen=%u\n",
            (unsigned int)EspAssetPack_isOpen());

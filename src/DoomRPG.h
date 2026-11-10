@@ -237,7 +237,11 @@ typedef struct DoomRPG_s
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	int				upTimeMs;
 #endif
+/* The 132-byte process RNG table belongs to the permanent CYD native
+ * provider; retain the original inline desktop/oracle field verbatim. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	struct Random_s	random;
+#endif
 	struct DoomCanvas_s*	doomCanvas;
 	struct Render_s*		render;
 	struct Player_s*		player;

@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "DoomRPG.h"
+#include "esp_native_process_rng_owner.h"
 
 #include "doomrpg_log.h"
 #include "esp_native_gameplay_monster_active_sequence.h"
@@ -80,12 +81,12 @@ int EspNativeGameplayMonsterMovementProbe_serviceMember(
     EspNativeGameplayMonsterMovementPublish_beginCycle();
     memset(&publish, 0, sizeof(publish));
 
-    if (atByteBoundary(&doomRpg->random)) {
+    if (atByteBoundary(EspNativeProcessRng_live())) {
         Random_t saved;
         uint8_t prepared = 0U;
         int restoredExact = 0;
 
-        if (EspNativeRngReplayGuard_beginProbeBoundary(&doomRpg->random,
+        if (EspNativeRngReplayGuard_beginProbeBoundary(EspNativeProcessRng_live(),
                                                        &saved,
                                                        &prepared)) {
             printf("[MONSTERMOVERNG] ARM trigger=%s next=127->0 prepared=%u liveRandom=temporary-post-refill reservation=persistent\n",
@@ -96,7 +97,7 @@ int EspNativeGameplayMonsterMovementProbe_serviceMember(
 
             if (prepared != 0U && publish.boundaryClosed == 0U) {
                 restoredExact = EspNativeRngReplayGuard_endProbeBoundary(
-                    &doomRpg->random, &saved, prepared);
+                    EspNativeProcessRng_live(), &saved, prepared);
                 printf("[MONSTERMOVERNG] RESTORE trigger=%s randomLiveExact=%s reservation=pending-until-real-byte-draw\n",
                        trigger, restoredExact ? "yes" : "NO");
             }

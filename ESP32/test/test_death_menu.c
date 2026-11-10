@@ -25,6 +25,9 @@ static int selectorActive, selectorReady, selectorBegins, selectorFinishes;
 static int selectorBeginOk = 1, selectorTapResult, selectorTaps;
 static int loadOk = 1;
 static unsigned int deathRngCalls;
+/* Death-session RNG is now a separate permanent process owner. */
+static Random_t hostProcessRng;
+Random_t* EspNativeProcessRng_live(void) { return &hostProcessRng; }
 static int automapOwnsScreen, liveHudRepaints, failLiveHud;
 static int deathRoutes, exitRequests, routeAllowed = 1;
 static uint8_t lastRouteMap;
@@ -48,7 +51,7 @@ size_t Esp32PlatformVideo_framebufferSizeBytes(void) {
 int Esp32PlatformVideo_present(void) { ++presents; return presentOk; }
 unsigned int DoomRPG_GetUpTimeMS(void) { return clockMs; }
 byte DoomRPG_randNextByte(Random_t* rng) {
-    (void)rng;
+    assert(rng == EspNativeProcessRng_live());
     ++deathRngCalls;
     return 1;
 }
