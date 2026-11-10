@@ -122,10 +122,10 @@ def main():
                  "EspNativeTexture_setColorMod", "EspNativeTexture_setClipRect"}
     e1_native = {"EspNativeTexture_setDrawColor", "EspNativeTexture_fillRect",
                  "EspNativeTexture_drawLine"}
-    c1_native |= d1_native | e1_native
-    assert c1_native.issubset(actual_names), (
-        f"{args.profile}: missing production image owners "
-        f"{sorted(c1_native - actual_names)}")
+    native_providers = c1_native | d1_native | e1_native
+    assert native_providers.issubset(actual_names), (
+        f"{args.profile}: missing production image/raster owners "
+        f"{sorted(native_providers - actual_names)}")
     assert "Esp32Bmp_LoadRW" not in actual_names, (
         f"{args.profile}: old RWops BMP decoder is unexpectedly still linked")
     report = {"profile": args.profile, "linked_sdl": current,
@@ -158,7 +158,7 @@ def main():
         report["d1_removed_sdl"] = sorted(d1_retired)
         report["e1_removed_sdl"] = sorted(e1_retired)
         report["e1_native_providers"] = sorted(e1_native)
-        report["c1_native_providers"] = sorted(c1_native - d1_native)
+        report["c1_native_providers"] = sorted(c1_native)
         report["d1_native_providers"] = sorted(d1_native)
         report["baseline_linked_sdl"] = before
         report["baseline_sdl_count"] = len(before)
