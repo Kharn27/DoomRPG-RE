@@ -15,7 +15,7 @@ RETIRED = (
 )
 LIVE = (
     "SDL_GetError(", "SDL_ShowMessageBox(", "SDL_RWFromMem(", "SDL_RWFromFile(",
-    "SDL_RWclose(", "SDL_LoadBMP_RW(", "SDL_CreateTextureFromSurface(",
+    "SDL_RWclose(", "SDL_CreateTextureFromSurface(",
     "SDL_RenderCopy(", "SDL_RenderPresent(",
 )
 
