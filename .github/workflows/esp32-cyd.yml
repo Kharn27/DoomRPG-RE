@@ -273,6 +273,9 @@ jobs:
       - name: Test native DoomRPG image and PAK resource lifetime (host C)
         run: python ESP32/test/doomrpg_image_resources_host.py
 
+      - name: SDL-D1 native texture/clip/blit ownership gate
+        run: python ESP32/test/sdl_d1_native_texture_owner_host.py
+
       - name: Exercise real permanent indexed SDL shim (host C++)
         run: python ESP32/test/sdl_shim_permanent_host.py
 
