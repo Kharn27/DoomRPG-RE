@@ -13,7 +13,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "ESP32/src/esp_native_process_services.cpp"
-HEADER = ROOT / "ESP32/include/esp_native_process_services.h"
+HEADER = (ROOT / "ESP32/include/esp_native_process_services.h").read_text()
 CORE = (ROOT / "ESP32/src/engine_stubs.c").read_text()
 CLOCK = (ROOT / "ESP32/src/esp_doomrpg_process_clock.c").read_text()
 
