@@ -280,6 +280,9 @@ jobs:
       - name: Retire six dormant SDL utilities without touching live paths
         run: python ESP32/test/sdl_dead_utility_facades_host.py
 
+      - name: Retire duplicated SDL 8-bit BMP decoder, retain native packed 1/4/8-bpp loader
+        run: python ESP32/test/sdl_dead_duplicate_bmp_host.py
+
       - name: Test native presentation and clip pixel parity (host C)
         run: python ESP32/test/doomrpg_presentation_host.py
 
