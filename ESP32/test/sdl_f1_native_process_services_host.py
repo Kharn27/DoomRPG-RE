@@ -7,6 +7,7 @@ checked against desktop in doomrpg_process_clock_host.py.
 """
 from pathlib import Path
 import os
+import re
 import shlex
 import subprocess
 import tempfile
@@ -26,6 +27,21 @@ assert CLOCK.count("EspNativeProcess_ticksMs()") == 2
 assert "SDL_GetTicks()" not in CLOCK
 assert "uint32_t EspNativeProcess_ticksMs(void);" in HEADER
 assert "void EspNativeProcess_fatalMessage(" in HEADER
+
+# A new consumer of the old SDL process clock/modal is a regression even if
+# linker garbage collection happens to drop its translation unit.
+for folder in ("src", "include"):
+    for path in (ROOT / "ESP32" / folder).rglob("*"):
+        if path.suffix not in (".c", ".cpp", ".h", ".hpp"):
+            continue
+        if path.name in ("esp32_sdl.cpp", "SDL.h"):
+            continue  # Historical source/ABI kept only as host parity oracle.
+        code = path.read_text(encoding="utf-8", errors="replace")
+        code = re.sub(r"/\\*[\\s\\S]*?\\*/|//[^\\n]*", "", code)
+        for old in ("SDL_GetTicks", "SDL_ShowMessageBox"):
+            assert re.search(r"\\b" + old + r"\\s*\\(", code) is None, (
+                f"SDL-F1 old process service call/definition in {path}: {old}"
+            )
 
 ARDUINO = r"""
 #pragma once
