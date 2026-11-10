@@ -182,10 +182,13 @@ def main():
         assert forbidden not in create, forbidden
     for signature, crc_before, crc_after in METHODS:
         raw = extract(desktop, signature)
-        patched = raw.replace("readZipFileEntry(fileName, &zipFile, &fSize)",
-                              "EspLegacyAssetSource_readAlloc(fileName, &fSize)")
+        historical = raw.replace("readZipFileEntry(fileName, &zipFile, &fSize)",
+                                 "EspLegacyAssetSource_readAlloc(fileName, &fSize)")
         assert zlib.crc32(raw.encode("latin-1")) == crc_before
-        assert zlib.crc32(patched.encode("latin-1")) == crc_after
+        assert zlib.crc32(historical.encode("latin-1")) == crc_after
+        # SDL-D1 changes only which owner frees the identical texture payload.
+        patched = historical.replace("SDL_DestroyTexture(image->imgBitmap)",
+                                     "EspNativeTexture_destroy(image->imgBitmap)")
         assert extract(native, signature) == patched
     with tempfile.TemporaryDirectory(prefix="doomrpg-image-resource-") as tmp:
         test_file = Path(tmp) / "image_resources_host.c"
