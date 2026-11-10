@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "DoomRPG.h"
+#include "esp_native_process_rng_owner.h"
 #include "Render.h"
 
 #include "esp_native_gameplay_controls.h"
@@ -135,11 +136,11 @@ static int guardedRender(DoomRPG_t* runtime,
         return 0;
     }
 
-    before = runtime->random;
+    before = (*EspNativeProcessRng_live());
     rendered = EspNativeGameplayFrame_renderTurn(
         runtime->render, (uint8_t)view->viewAngle, outFrame);
-    exact = memcmp(&runtime->random, &before, sizeof(before)) == 0;
-    if (!exact) runtime->random = before;
+    exact = memcmp(EspNativeProcessRng_live(), &before, sizeof(before)) == 0;
+    if (!exact) (*EspNativeProcessRng_live()) = before;
     if (outRngExact != NULL) *outRngExact = exact;
     return rendered && exact;
 }

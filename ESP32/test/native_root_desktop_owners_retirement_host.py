@@ -17,11 +17,11 @@ IMAGES = (ROOT / "ESP32/src/esp_doomrpg_image_resources.c").read_text()
 INTRO = (ROOT / "ESP32/src/native_intro_dispose.c").read_text()
 RETIRED = ("entityDef", "combat", "hud", "menu", "particleSystem",
            "sound", "errorID", "upTimeMs")
-LIVE = ("random", "doomCanvas", "render", "player", "game",
+LIVE = ("doomCanvas", "render", "player", "game",
         "menuSystem", "graphSetCliping", "imageMemory")
 GUARD = r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
 
-assert "_Static_assert(sizeof(DoomRPG_t) == 160U," in CORE
+assert "_Static_assert(sizeof(DoomRPG_t) == 28U," in CORE
 assert "SDL_calloc(1, sizeof(DoomRPG_t))" in CORE
 assert "DoomRPG_FreeAppData(DoomRPG_t* doomrpg)" in CORE
 assert "char errMsg[256];" in CORE
@@ -105,5 +105,5 @@ with tempfile.TemporaryDirectory(prefix="native-root-group-") as tmp:
             assert result.returncode == 0, (name, field, result.stderr)
 
 print(f"PASS Root-D/B retired={','.join(RETIRED)} freed=32B "
-      f"nativeRoot=160B nativeFiles={file_count} "
+      f"nativeRoot=28B nativeFiles={file_count} "
       "desktop/oracle=unchanged liveRoots=protected")

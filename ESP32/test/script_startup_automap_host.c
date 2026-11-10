@@ -9,6 +9,9 @@ static EspPlayerViewState testView;
 static EspNativeGameplayHudState testHud;
 static EspNativeGameplayPlayerState testPlayer;
 static DoomRPG_t testGame;
+/* Real resident source now addresses a process-lifetime native RNG table. */
+static Random_t hostProcessRng;
+Random_t* EspNativeProcessRng_live(void) { return &hostProcessRng; }
 static Render_t testRender;
 static EspNativeGameplayInputState testIntent;
 static EspNativeGameplayDialogResumeStatus startupStatus;

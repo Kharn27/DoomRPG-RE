@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "DoomRPG.h"
+#include "esp_native_process_rng_owner.h"
 #include "DoomCanvas.h"
 #include "Menu.h"
 #include "Render.h"
@@ -1253,14 +1254,14 @@ static void serviceSelect(DoomRPG_t* doomRpg,
                 return;
             }
             playerCaptured = 1U;
-            randomBefore = doomRpg->random;
+            randomBefore = (*EspNativeProcessRng_live());
 
             if (!EspNativeGameplayPlayerState_applyXp(
                     doomRpg, LEGACY_SECRET_XP, &secretXp) ||
                 !EspNativeGameplayActionEngine_queueTextFeedback(
                     ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PLAYER_HIT,
                     "Found Secret!", 0U)) {
-                doomRpg->random = randomBefore;
+                (*EspNativeProcessRng_live()) = randomBefore;
                 if (!EspNativeGameplayPlayerState_restore(&playerBefore) ||
                     !EspNativeGameplayAction_rollbackSelect(&result)) {
                     disableGameplay("select-door-secret-reward-rollback");
@@ -1288,7 +1289,7 @@ static void serviceSelect(DoomRPG_t* doomRpg,
                         ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PLAYER_HIT);
             }
             if (playerCaptured != 0U) {
-                doomRpg->random = randomBefore;
+                (*EspNativeProcessRng_live()) = randomBefore;
                 playerRestored =
                     EspNativeGameplayPlayerState_restore(&playerBefore);
             }
@@ -2497,13 +2498,13 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
                 v->viewX==v->destX && v->viewY==v->destY &&
                 v->viewAngle==v->destAngle) {
                 EspNativeGameplayFrameStats frame;
-                const Random_t rngBefore=doomRpg->random;
+                const Random_t rngBefore=(*EspNativeProcessRng_live());
                 int painted=EspNativeGameplayFrame_renderAmbient(
                     doomRpg->render,&frame);
-                int rngExact=memcmp(&rngBefore,&doomRpg->random,
+                int rngExact=memcmp(&rngBefore,EspNativeProcessRng_live(),
                                     sizeof(rngBefore))==0;
                 if (!painted || !frame.finalPresented || !rngExact) {
-                    if (!rngExact) doomRpg->random=rngBefore;
+                    if (!rngExact) (*EspNativeProcessRng_live())=rngBefore;
                     EspNativeSpriteRenderer_suspendAmbient();
                     printf("[AMBIENT] FAIL painted=%d presented=%u rngExact=%d suspended=yes\n",
                            painted,(unsigned int)frame.finalPresented,rngExact);

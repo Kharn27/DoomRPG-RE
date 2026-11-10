@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "DoomRPG.h"
+#include "esp_native_process_rng_owner.h"
 
 #include "esp_entity_def_type_catalog.h"
 #include "esp_map_line_state.h"
@@ -677,7 +678,7 @@ static int probeContinuationGoal(DoomRPG_t* doomRpg,
         return -1;
     }
 
-    randomBefore = doomRpg->random;
+    randomBefore = (*EspNativeProcessRng_live());
     memset(&probeRng, 0, sizeof(probeRng));
     probeRng.state = randomBefore;
     memset(&plan, 0, sizeof(plan));
@@ -747,7 +748,7 @@ static int probeContinuationGoal(DoomRPG_t* doomRpg,
     positionExact = position != NULL &&
                     memcmp(position, &positionBefore, sizeof(positionBefore)) == 0 &&
                     positionFNVAfter == positionFNVBefore;
-    randomExact = memcmp(&doomRpg->random, &randomBefore, sizeof(randomBefore)) == 0;
+    randomExact = memcmp(EspNativeProcessRng_live(), &randomBefore, sizeof(randomBefore)) == 0;
     if (!positionExact || !randomExact) {
         printf("[MONSTER3GOAL] DEFER sprite=%u subtype=%u goal=%u/3 cause=probe-rollback-not-exact positionExact=%s randomExact=%s mutation=no\n",
                (unsigned int)spriteIndex, (unsigned int)monster->subtype,
@@ -812,12 +813,12 @@ static int publishContinuationGoal(DoomRPG_t* doomRpg,
     plannedBefore = realMovement->plannedMoves;
     EspNativeGameplayMonsterMovementPublish_beginCycle();
 
-    if (atByteBoundary(&doomRpg->random)) {
+    if (atByteBoundary(EspNativeProcessRng_live())) {
         Random_t saved;
         uint8_t prepared = 0U;
         int restoredExact = 0;
 
-        if (!EspNativeRngReplayGuard_beginProbeBoundary(&doomRpg->random,
+        if (!EspNativeRngReplayGuard_beginProbeBoundary(EspNativeProcessRng_live(),
                                                         &saved, &prepared)) {
             printf("[MONSTER3GOALRNG] DEFER sprite=%u goal=%u/3 cause=rng-reservation-conflict mutation=no\n",
                    (unsigned int)spriteIndex, (unsigned int)goalStep);
@@ -839,7 +840,7 @@ static int publishContinuationGoal(DoomRPG_t* doomRpg,
 
         if (prepared != 0U && outPublish->boundaryClosed == 0U) {
             restoredExact = EspNativeRngReplayGuard_endProbeBoundary(
-                &doomRpg->random, &saved, prepared);
+                EspNativeProcessRng_live(), &saved, prepared);
             printf("[MONSTER3GOALRNG] RESTORE sprite=%u goal=%u/3 randomLiveExact=%s reservation=pending-until-real-byte-draw\n",
                    (unsigned int)spriteIndex, (unsigned int)goalStep,
                    restoredExact ? "yes" : "NO");
