@@ -20,7 +20,7 @@ REPLAY = (ROOT / "ESP32/src/esp_native_rng_replay_guard.c").read_text()
 assert re.search(
     r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
     r"\s+struct Random_s\s+random;\s+#endif", HEADER)
-assert "_Static_assert(sizeof(DoomRPG_t) == 12U," in CORE
+assert "_Static_assert(sizeof(DoomRPG_t) == 1U," in CORE
 assert "_Static_assert(sizeof(Random_t) == 132U," in PROVIDER
 assert "static Random_t nativeProcessRandom;" in PROVIDER
 assert "return &nativeProcessRandom;" in PROVIDER
@@ -103,5 +103,5 @@ int main(void) {
                     "ESP32/src/esp_doomrpg_process_rng.c", str(path),
                     "-o", str(exe)], cwd=ROOT, check=True)
     subprocess.run([str(exe)], check=True)
-print(f"PASS Root-E process RNG 132B stable native BSS; root=12B; "
+print(f"PASS Root-E process RNG 132B stable native BSS; root=1B; "
       f"{count} native C/C++ headers scanned; desktop/oracle retained")

@@ -21,8 +21,9 @@ RETIRED = ("entityDef", "combat", "hud", "menu", "particleSystem",
 LIVE = ("doomCanvas", "render", "menuSystem")
 GUARD = r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
 
-assert "_Static_assert(sizeof(DoomRPG_t) == 12U," in CORE
-assert "SDL_calloc(1, sizeof(DoomRPG_t))" in CORE
+assert "_Static_assert(sizeof(DoomRPG_t) == 1U," in CORE
+assert "SDL_calloc(1, sizeof(DoomRPG_t))" not in CORE
+assert "doomRpg = &nativeRootIdentity;" in CORE
 assert "DoomRPG_FreeAppData(DoomRPG_t* doomrpg)" in CORE
 assert "char errMsg[256];" in CORE
 assert "EspNativePresentation_resetClipState();" in CORE
@@ -32,9 +33,9 @@ assert "nativeImageMemory +=" in IMAGES
 assert "nativeImageMemory -=" in IMAGES
 assert "doomRpg->player != NULL" not in CORE
 assert "doomRpg->game != NULL" not in CORE
-assert "EspNativeMenuStorage_free(doomrpg->menuSystem" in CORE
-assert "EspNativeEngineRoot_releaseRender(doomrpg->render" in CORE
-assert "EspNativeEngineRoot_releaseCanvas(doomrpg->doomCanvas" in CORE
+assert "EspNativeMenuStorage_free(EspNativeRootOwners_live()->menuSystem" in CORE
+assert "EspNativeEngineRoot_releaseRender(EspNativeRootOwners_live()->render" in CORE
+assert "EspNativeEngineRoot_releaseCanvas(EspNativeRootOwners_live()->doomCanvas" in CORE
 for field in RETIRED:
     assert re.search(
         GUARD + r"(?:(?!#endif).)*\b" + field +
@@ -103,8 +104,8 @@ with tempfile.TemporaryDirectory(prefix="native-root-group-") as tmp:
                 + field + '); }\n')
             result = subprocess.run(cmd + flags + [str(probe)], cwd=ROOT,
                                     capture_output=True, text=True)
-            assert result.returncode == 0, (name, field, result.stderr)
+            assert (result.returncode == 0) == (name in ("oracle", "desktop")), (name, field, result.stderr)
 
 print(f"PASS Root-D/B retired={','.join(RETIRED)} freed=32B "
-      f"nativeRoot=12B nativeFiles={file_count} "
-      "desktop/oracle=unchanged liveRoots=protected")
+      f"nativeRoot=1B nativeFiles={file_count} "
+      "desktop/oracle=unchanged nativeOwnerPointers=relocated")
