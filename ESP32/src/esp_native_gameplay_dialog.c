@@ -17,6 +17,7 @@
 #include "esp_map_ui_intent.h"
 #include "esp_native_gameplay_dialog.h"
 #include "esp_main_menu_skin.h"
+#include "esp_native_gameplay_hub_touch_ui.h"
 #include "esp_native_gameplay_hub_theme.h"
 #include "esp_native_indexed_bmp.h"
 #include "esp_player_view_state.h"
@@ -28,28 +29,25 @@
 #define DIALOG_FONT_NAME "a.bmp"
 #define DIALOG_FONT_WIDTH 9U
 #define DIALOG_FONT_HEIGHT 12U
-/* Keep the original PAK glyph but resample from 9x12 to a modest 8x10.
- * One 9x12 RGB565 tile (216 B) lives only on the painter's stack. */
-#define DIALOG_GLYPH_WIDTH 8U
-#define DIALOG_GLYPH_HEIGHT 10U
-#define DIALOG_FONT_ADVANCE 6
+#define DIALOG_FONT_ADVANCE 7
 #define DIALOG_FONT_SOURCE_WIDTH 144U
 #define DIALOG_FONT_SOURCE_HEIGHT 72U
-#define DIALOG_TRANSPARENT_RGB565 0xf81fU
+#define DIALOG_TRANSPARENT 1U
 
-/* Native compact dialog: four 8x10 lines, smaller industrial chassis in the
- * original gameplay viewport. The bottom HUD at y=100 remains untouched.
- * BACK keeps its historical cancel action but shrinks with the content. */
-#define DIALOG_FILL_X 19
-#define DIALOG_FILL_Y 52
-#define DIALOG_FILL_W 122
-#define DIALOG_FILL_H 46
-#define DIALOG_BORDER_LEFT 18
-#define DIALOG_BORDER_RIGHT 141
-#define DIALOG_BORDER_TOP 51
-#define DIALOG_BORDER_BOTTOM 98
-#define DIALOG_TEXT_X 20
-#define DIALOG_TEXT_Y 54
+/* Native dialog: preserve the original readable 9x12 PAK glyphs and their
+ * exact 4-row, 7px-advance corridor. A 48px-tall box cannot contain four
+ * 12px glyph rows plus its industrial rim, so restore the proven 130x55
+ * bounds. Its frame is styled, not the typography or layout squeezed. */
+#define DIALOG_FILL_X 16
+#define DIALOG_FILL_Y 46
+#define DIALOG_FILL_W 128
+#define DIALOG_FILL_H 54
+#define DIALOG_BORDER_LEFT 15
+#define DIALOG_BORDER_RIGHT 144
+#define DIALOG_BORDER_TOP 45
+#define DIALOG_BORDER_BOTTOM 99
+#define DIALOG_TEXT_X 16
+#define DIALOG_TEXT_Y 48
 
 /* Above the text box: original BACK semantics, smaller touch target. */
 #define DIALOG_BACK_X 20
@@ -140,9 +138,9 @@ static void fillRect(uint16_t* framebuffer,
     }
 }
 
-/* Match the industrial BUTTON theme for the compact shell while keeping
- * all four 8x10 typewriter rows inside the fill, away from decorative seams.
- * No full-screen clear, additional framebuffer or retained art. */
+/* Industrial BUTTON shell, original native 4x9x12 typewriter corridor.
+ * Its tinted LABEL characters never collide with y=46/98 accent seams.
+ * No extra framebuffer, retained art or PAK reads. */
 static int paintIndustrialDialog(uint16_t* framebuffer) {
     int x;
     const uint16_t accent = EspMainMenuSkin_uiAccent();
@@ -176,7 +174,7 @@ static void tintDialogFontInk(void) {
         const uint16_t source = dialog.font.paletteRgb565[i];
         uint32_t level;
         uint32_t r, g, b;
-        if (source == DIALOG_TRANSPARENT_RGB565) continue;
+        if (source == 0xf81fU) continue; /* keep transparent magenta */
         r = ((uint32_t)(source >> 11U) & 31U) * 2U;
         g = ((uint32_t)(source >> 5U) & 63U);
         b = ((uint32_t)source & 31U) * 2U;
@@ -219,7 +217,7 @@ static int lineSpan(uint16_t lineIndex,
 
 static void wrapStandaloneLines(void) {
     const uint16_t maxChars =
-        (uint16_t)(((DIALOG_FILL_W - DIALOG_GLYPH_WIDTH - 2) /
+        (uint16_t)(((DIALOG_FILL_W - DIALOG_FONT_WIDTH) /
                     DIALOG_FONT_ADVANCE) + 1);
     uint16_t lineStart = 0U;
     uint16_t i = 0U;
@@ -288,49 +286,36 @@ static int drawFontSlice(uint16_t* framebuffer,
                          int x,
                          int y,
                          EspNativeIndexedBmpStats* stats) {
-    uint16_t glyphPixels[DIALOG_FONT_WIDTH * DIALOG_FONT_HEIGHT];
     uint16_t i;
     for (i = 0U; i < count; ++i) {
-        const uint8_t c = (uint8_t)dialog.text[start + i];
+        uint8_t c = (uint8_t)dialog.text[start + i];
         if (c == ' ') {
             x += DIALOG_FONT_ADVANCE;
             continue;
         }
         if (c < 33U || c > 127U) return 0;
         {
-            const uint8_t glyph = (uint8_t)(c - 33U);
-            const uint16_t sourceX =
+            uint8_t glyph = (uint8_t)(c - 33U);
+            uint16_t sourceX =
                 (uint16_t)(DIALOG_FONT_WIDTH * (glyph & 0x0fU));
-            const uint16_t sourceY =
+            uint16_t sourceY =
                 (uint16_t)(DIALOG_FONT_HEIGHT * (glyph >> 4));
-            uint32_t px, py;
-            /* Decode the full original glyph exactly once into bounded
-             * 216-byte scratch, including magenta pixels, then do nearest-
-             * neighbour 8x10 on the shared framebuffer. No added PAK I/O. */
-            if (EspNativeIndexedBmp_blit(
-                    &dialog.font, glyphPixels,
-                    DIALOG_FONT_WIDTH, DIALOG_FONT_HEIGHT,
-                    sourceX, sourceY,
-                    DIALOG_FONT_WIDTH, DIALOG_FONT_HEIGHT,
-                    0, 0, 0U, stats) != ESP_NATIVE_INDEXED_BMP_OK) return 0;
-            for (py = 0U; py < DIALOG_GLYPH_HEIGHT; ++py) {
-                const uint32_t srcY = py * DIALOG_FONT_HEIGHT /
-                                      DIALOG_GLYPH_HEIGHT;
-                const int dy = y + (int)py;
-                if (dy < DIALOG_TEXT_Y || dy >= DIALOG_BORDER_BOTTOM - 2)
-                    continue;
-                for (px = 0U; px < DIALOG_GLYPH_WIDTH; ++px) {
-                    const uint32_t srcX = px * DIALOG_FONT_WIDTH /
-                                          DIALOG_GLYPH_WIDTH;
-                    const uint16_t color =
-                        glyphPixels[srcY * DIALOG_FONT_WIDTH + srcX];
-                    const int dx = x + (int)px;
-                    if (dx < DIALOG_TEXT_X ||
-                        dx > DIALOG_BORDER_RIGHT - 2 ||
-                        color == DIALOG_TRANSPARENT_RGB565) continue;
-                    putPixel(framebuffer, dx, dy, color);
-                }
-            }
+            /* Full-size source PAK font, one indexed blit per character.
+             * Theme tint lives in this dialogue's already-owned palette. */
+            EspNativeIndexedBmpStatus status = EspNativeIndexedBmp_blit(
+                &dialog.font,
+                framebuffer,
+                DOOMRPG_LOGICAL_WIDTH,
+                DOOMRPG_LOGICAL_HEIGHT,
+                sourceX,
+                sourceY,
+                DIALOG_FONT_WIDTH,
+                DIALOG_FONT_HEIGHT,
+                (int16_t)x,
+                (int16_t)y,
+                DIALOG_TRANSPARENT,
+                stats);
+            if (status != ESP_NATIVE_INDEXED_BMP_OK) return 0;
         }
         x += DIALOG_FONT_ADVANCE;
     }
@@ -354,8 +339,10 @@ static int paintDialog(uint32_t now) {
 
     memset(&stats, 0, sizeof(stats));
     if (!paintIndustrialDialog(framebuffer)) return 0;
-    /* No decorative COMMS button: it was visually confusing and inert.
-     * Only BACK is interactive; keep its shared button + label skin. */
+    /* Only BACK is interactive. Keep the small metal button, but shrink
+     * the actual lettering separately: the original 9-row 5x9 label
+     * dominated this 38x18 card. The shared 3x5 HUB text is theme-ink
+     * colored and remains centered without altering the touch rectangle. */
     if (dialog.backAllowed) {
         if (!EspMainMenuSkin_paintPlate(
                 framebuffer, DOOMRPG_LOGICAL_WIDTH,
@@ -363,14 +350,12 @@ static int paintDialog(uint32_t now) {
                 DIALOG_BACK_X, DIALOG_BACK_Y,
                 DIALOG_BACK_X + DIALOG_BACK_W - 1,
                 DIALOG_BACK_Y + DIALOG_BACK_H - 1,
-                ESP_MAIN_MENU_SKIN_IDLE) ||
-            !EspMainMenuSkin_paintText(
-                framebuffer, DOOMRPG_LOGICAL_WIDTH,
-                DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
-                DIALOG_BACK_X, DIALOG_BACK_Y,
-                DIALOG_BACK_X + DIALOG_BACK_W - 1,
-                DIALOG_BACK_Y + DIALOG_BACK_H - 1,
-                "BACK", 0, 1)) return 0;
+                ESP_MAIN_MENU_SKIN_IDLE)) return 0;
+        EspNativeGameplayHubTouchUi_drawMiniText(
+            framebuffer, "BACK",
+            DIALOG_BACK_X + DIALOG_BACK_W / 2,
+            DIALOG_BACK_Y + (DIALOG_BACK_H - 5) / 2,
+            EspMainMenuSkin_uiInk());
     }
 
     rows = pageLineCount();
@@ -391,7 +376,7 @@ static int paintDialog(uint32_t now) {
         if (visible != 0U &&
             !drawFontSlice(framebuffer, start, visible,
                            DIALOG_TEXT_X,
-                           DIALOG_TEXT_Y + (int)row * DIALOG_GLYPH_HEIGHT,
+                           DIALOG_TEXT_Y + (int)row * DIALOG_FONT_HEIGHT,
                            &stats)) {
             return 0;
         }
