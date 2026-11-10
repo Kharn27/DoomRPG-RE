@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "esp_native_root_state.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -344,7 +345,7 @@ static int armDeath(struct DoomRPG_s* doomRpgBase,
     uint32_t fnvAfter;
 
     if (deathState.active != 0U || doomRpg == NULL ||
-        doomRpg->render == NULL || view == NULL || view->active != 1U ||
+        EspNativeRootOwners_live()->render == NULL || view == NULL || view->active != 1U ||
         view->viewX != view->destX || view->viewY != view->destY ||
         view->viewAngle != view->destAngle || (view->viewAngle & 63) != 0 ||
         view->viewZ != 36 ||
@@ -427,7 +428,7 @@ int EspNativeGameplayPlayerDeath_service(struct DoomRPG_s* doomRpgBase) {
     uint32_t elapsed;
 
     if (deathState.active == 0U) return 1;
-    if (doomRpg == NULL || doomRpg->render == NULL) return 0;
+    if (doomRpg == NULL || EspNativeRootOwners_live()->render == NULL) return 0;
     if (deathState.phase == ESP_NATIVE_GAMEPLAY_PLAYER_DEATH_MENU_READY) {
         uint8_t action = deathState.pendingAction;
         if (action == 0U) return 1;
@@ -542,7 +543,7 @@ int EspNativeGameplayPlayerDeath_service(struct DoomRPG_s* doomRpgBase) {
                                             targetViewZ)) return 0;
         memset(&frame, 0, sizeof(frame));
         if (!EspNativeGameplayFrame_renderTurn(
-                doomRpg->render, (uint8_t)view->viewAngle, &frame)) return 0;
+                EspNativeRootOwners_live()->render, (uint8_t)view->viewAngle, &frame)) return 0;
         deathState.lastViewZ = (int16_t)targetViewZ;
         ++deathState.framesPresented;
         DRPG_LOGD("[PLAYERDEATH] FALL seq=%u elapsedMs=%u viewZ=%d frame=%08x presented=%u\n",

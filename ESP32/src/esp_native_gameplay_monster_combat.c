@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "DoomRPG.h"
+#include "esp_native_root_state.h"
 #include "esp_native_process_rng_owner.h"
 #include "Render.h"
 
@@ -441,12 +442,12 @@ static int serviceVisualRedraw(DoomRPG_t* runtime) {
     EspNativeGameplayFrameStats frame;
 
     if (combatOwner.visualRedrawPending == 0U) return 1;
-    if (runtime == NULL || runtime->render == NULL || view == NULL ||
+    if (runtime == NULL || EspNativeRootOwners_live()->render == NULL || view == NULL ||
         view->active != 1U || view->viewAngle != view->destAngle) {
         return 0;
     }
     memset(&frame, 0, sizeof(frame));
-    if (!EspNativeGameplayFrame_renderTurn(runtime->render,
+    if (!EspNativeGameplayFrame_renderTurn(EspNativeRootOwners_live()->render,
                                            (uint8_t)view->viewAngle,
                                            &frame)) {
         printf("[MONSTERCOMBAT] DEATH-REDRAW-FAILED recovery=next-service\n");
@@ -494,7 +495,7 @@ static int servicePending(DoomRPG_t* runtime) {
     int lethal = 0;
     int gib = 0;
 
-    if (runtime == NULL || runtime->render == NULL || view == NULL ||
+    if (runtime == NULL || EspNativeRootOwners_live()->render == NULL || view == NULL ||
         view->active != 1U || view->viewAngle != view->destAngle ||
         combatOwner.pending.active == 0U || !syncOwner()) {
         return 0;
@@ -720,7 +721,7 @@ static int servicePending(DoomRPG_t* runtime) {
     }
 
     memset(&frame, 0, sizeof(frame));
-    if (!EspNativeGameplayFrame_renderTurn(runtime->render,
+    if (!EspNativeGameplayFrame_renderTurn(EspNativeRootOwners_live()->render,
                                            (uint8_t)view->viewAngle,
                                            &frame)) {
         *target = targetBefore;
@@ -734,7 +735,7 @@ static int servicePending(DoomRPG_t* runtime) {
             hitFxArmed = 0;
         }
         memset(&frame, 0, sizeof(frame));
-        if (!EspNativeGameplayFrame_renderTurn(runtime->render,
+        if (!EspNativeGameplayFrame_renderTurn(EspNativeRootOwners_live()->render,
                                                (uint8_t)view->viewAngle,
                                                &frame)) {
             printf("[MONSTERCOMBAT] FAILED seq=%u sprite=%u reason=render+rollback-render rngRollback=yes playerRollback=yes monsterRollback=yes\n",
@@ -844,7 +845,7 @@ static int servicePending(DoomRPG_t* runtime) {
                : "unused");
 
     memset(&frame, 0, sizeof(frame));
-    if (EspNativeGameplayFrame_renderTurn(runtime->render,
+    if (EspNativeGameplayFrame_renderTurn(EspNativeRootOwners_live()->render,
                                           (uint8_t)view->viewAngle,
                                           &frame)) {
         logFrame(&pending, "settle-idle", &frame);

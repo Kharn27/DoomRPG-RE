@@ -5,6 +5,7 @@
 #include <string.h>
 #include "SDL.h"
 #include "DoomRPG.h"
+#include "esp_native_root_state.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_hub_theme.h"
@@ -14,6 +15,9 @@
 #include "esp_native_startup.h"
 #include "esp_map_catalog.h"
 #include "esp_player_view_state.h"
+
+static EspNativeRootOwners_t hostRootOwners;
+EspNativeRootOwners_t* EspNativeRootOwners_live(void) { return &hostRootOwners; }
 
 static uint16_t pixels[160 * 120 + 2];
 static EspPlayerViewState view;
@@ -181,7 +185,7 @@ static void preview(const char* path) {
     assert(fclose(f) == 0);
 }
 int main(int argc, char** argv) {
-    DoomRPG_t doom = {0}; doom.render = (void*)1;
+    DoomRPG_t doom = {0}; hostRootOwners.render = (void*)1;
     start(&doom, 1, ESP_MAP_ID_INTRO);
     assert(pixel(3, 3) == ESP_HUB_COLOR_STEEL_DARK);
     /* The passive warning stencil must NOT resemble a fifth button:

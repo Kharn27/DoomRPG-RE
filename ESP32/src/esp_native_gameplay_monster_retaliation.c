@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "esp_native_root_state.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -366,7 +367,7 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
     retaliationView.observedAttackProbes = turn->attackProbes;
     retaliationView.lastAttackerSpriteIndex = turn->lastAttackerSpriteIndex;
 
-    if (doomRpg == NULL || doomRpg->render == NULL ||
+    if (doomRpg == NULL || EspNativeRootOwners_live()->render == NULL ||
         turn->lastAttackerSpriteIndex == RETALIATION_NO_SPRITE ||
         !EspNativeGameplayPlayerState_snapshot(&playerBefore)) {
         printf("[MONSTERRETAL] DEFER probe=%u reason=%s cause=not-ready mutation=no rngConsumed=0\n",
@@ -640,7 +641,7 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
         if (dodgeQueued) {
             memset(&frame, 0, sizeof(frame));
             dodgeRendered = EspNativeGameplayFrame_renderTurn(
-                doomRpg->render, (uint8_t)playerView->viewAngle, &frame);
+                EspNativeRootOwners_live()->render, (uint8_t)playerView->viewAngle, &frame);
             if (memcmp(EspNativeProcessRng_live(),
                        &randomAfterRoll, sizeof(randomAfterRoll)) != 0) {
                 (*EspNativeProcessRng_live()) = randomAfterRoll;
@@ -780,7 +781,7 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
     if (dogDied != 0U) dogCorpseCommitted = 1U;
     EspNativeGameplayActionEngine_stageNonlethalMonsterFlash();
     memset(&frame, 0, sizeof(frame));
-    if (!EspNativeGameplayFrame_renderTurn(doomRpg->render,
+    if (!EspNativeGameplayFrame_renderTurn(EspNativeRootOwners_live()->render,
                                            (uint8_t)playerView->viewAngle,
                                            &frame) ||
         memcmp(EspNativeProcessRng_live(), &randomAfterRoll, sizeof(randomAfterRoll)) != 0) {
@@ -810,7 +811,7 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
         }
         memset(&rollbackFrame, 0, sizeof(rollbackFrame));
         rollbackRendered = EspNativeGameplayFrame_renderTurn(
-            doomRpg->render, (uint8_t)playerView->viewAngle, &rollbackFrame);
+            EspNativeRootOwners_live()->render, (uint8_t)playerView->viewAngle, &rollbackFrame);
         ++retaliationView.renderRollbacks;
         printf("[MONSTERRETAL] ROLLBACK probe=%u reason=%s sprite=%u cause=%s playerExact=%s rngExact=%s feedbackRollback=%s rollbackRender=%s frame=%08x mutation=no\n",
                (unsigned int)turn->attackProbes,

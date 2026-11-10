@@ -24,8 +24,9 @@ assert "doomrpg->errorStr" in DESKTOP, "desktop error lifetime must be intact"
 assert "char errMsg[256];" in CORE, "native fatal logging owns its local buffer"
 assert "vsnprintf(errMsg, sizeof(errMsg), fmt, ap);" in CORE
 assert "DoomRPG_Error(const char* fmt, ...)" in CORE
-assert "SDL_calloc(1, sizeof(DoomRPG_t))" in CORE
-assert "_Static_assert(sizeof(DoomRPG_t) == 12U," in CORE
+assert "SDL_calloc(1, sizeof(DoomRPG_t))" not in CORE
+assert "doomRpg = &nativeRootIdentity;" in CORE
+assert "_Static_assert(sizeof(DoomRPG_t) == 1U," in CORE
 assert not re.search(r"\bdoomRpg\s*->\s*errorID\b", CORE)
 assert "EspNativePresentation_resetClipState();" in CORE
 assert "EspNativePresentation_clipEnabled(void)" in PRESENT
@@ -71,5 +72,5 @@ with tempfile.TemporaryDirectory(prefix="root-errorstr-abi-") as tmp:
         if not expected:
             assert "errorStr" in result.stderr, name
 
-print(f"PASS root errorStr=desktop/oracle only; native root=12B; "
+print(f"PASS root errorStr=desktop/oracle only; native root=1B; "
       f"{count} native source/header files guarded; fatal buffer=stack-local")

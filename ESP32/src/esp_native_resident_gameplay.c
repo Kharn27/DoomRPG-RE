@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "esp_native_root_state.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -1999,9 +2000,9 @@ void EspNativeResidentGameplay_serviceMenuExit(struct DoomRPG_s* doomRpgBase) {
      * have returned before their map/HUD/cache references are invalidated.
      * Legacy Hud/Combat objects are retired: native owners service those roles
      * and neither object belongs to the main-menu cleanup contract. */
-    if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
-        doomRpg->render == NULL ||
-        doomRpg->menuSystem == NULL ||
+    if (doomRpg == NULL || EspNativeRootOwners_live()->doomCanvas == NULL ||
+        EspNativeRootOwners_live()->render == NULL ||
+        EspNativeRootOwners_live()->menuSystem == NULL ||
         !EspNativeResidentGameplay_isActive() || EspAssetPack_isOpen()) {
         printf("[SYSEXIT] REFUSED reason=core-or-session-boundary teardown=no saveWrite=no\n");
         return;
@@ -2046,7 +2047,7 @@ void EspNativeResidentGameplay_serviceMenuExit(struct DoomRPG_s* doomRpgBase) {
         return;
     }
     printf("[SYSEXIT] MENU-READY frame=%08x session=off resident=empty saveWrite=no checkpoint=unchanged\n",
-           (unsigned int)DoomRPG_esp32MainMenuFramebufferHash(doomRpg->render));
+           (unsigned int)DoomRPG_esp32MainMenuFramebufferHash(EspNativeRootOwners_live()->render));
 }
 
 int EspNativeResidentGameplay_redrawAutomap(
@@ -2096,7 +2097,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
     if (!gameplayState.active) {
         const int checkpointResume =
             gameplayState.checkpointResumeArmed != 0U;
-        if (doomRpg == NULL || doomRpg->render == NULL ||
+        if (doomRpg == NULL || EspNativeRootOwners_live()->render == NULL ||
             !EspNativeGameplayHud_isReady() ||
             (!EspNativeFirstFrame_isReady() && !checkpointResume) ||
             (checkpointResume &&
@@ -2171,7 +2172,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
         return;
     }
 
-    if (doomRpg == NULL || doomRpg->render == NULL) {
+    if (doomRpg == NULL || EspNativeRootOwners_live()->render == NULL) {
         disableGameplay("missing-render");
         return;
     }
@@ -2186,7 +2187,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
     if (EspNativeGameplayStore_closePending()) {
         const EspPlayerViewState* storeView=EspPlayerView_view();
         if (storeView==NULL || storeView->active!=1U ||
-            !renderCurrent(doomRpg->render,(uint8_t)storeView->viewAngle,
+            !renderCurrent(EspNativeRootOwners_live()->render,(uint8_t)storeView->viewAngle,
                            "STORE-CLOSE")) {
             disableGameplay("store-close-world-render");
             return;
@@ -2208,7 +2209,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
                 repaintLiveHudAtView(levelView, &levelHudStats) !=
                     ESP_NATIVE_GAMEPLAY_HUD_OK ||
                 !EspNativeGameplayLevelUp_armDismissPresent() ||
-                !renderCurrent(doomRpg->render,
+                !renderCurrent(EspNativeRootOwners_live()->render,
                                (uint8_t)levelView->viewAngle,
                                "LEVELUP-CLOSE")) {
                 disableGameplay("levelup-close-render");
@@ -2256,7 +2257,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
                 return;
             }
         }
-        if (!EspNativeGameplayEventChain_serviceWait(doomRpg->render))
+        if (!EspNativeGameplayEventChain_serviceWait(EspNativeRootOwners_live()->render))
             disableGameplay("script-wait-continuation");
         return;
     }
@@ -2303,7 +2304,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
             disableGameplay("password-completion-consume");
             return;
         }
-        servicePasswordCompletion(doomRpg->render, &completion);
+        servicePasswordCompletion(EspNativeRootOwners_live()->render, &completion);
         return;
     }
     if (EspNativeGameplayPassword_isActive()) {
@@ -2337,7 +2338,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
                        (unsigned int)intent.sequence);
                 return;
             }
-            serviceDialogAction(doomRpg->render, &intent);
+            serviceDialogAction(EspNativeRootOwners_live()->render, &intent);
             return;
         }
         if (!EspNativeGameplayDialog_tick()) {
@@ -2375,25 +2376,25 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
 
         switch (intent.action) {
         case ESP_NATIVE_GAMEPLAY_ACTION_AUTOMAP:
-            if (!closeAutomap(doomRpg->render, "AUTOMAP-CLOSE")) {
+            if (!closeAutomap(EspNativeRootOwners_live()->render, "AUTOMAP-CLOSE")) {
                 disableGameplay("automap-close-render");
             }
             return;
 
         case ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT:
         case ESP_NATIVE_GAMEPLAY_ACTION_TURN_RIGHT:
-            serviceTurn(doomRpg->render, &intent);
+            serviceTurn(EspNativeRootOwners_live()->render, &intent);
             return;
 
         case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD:
         case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK:
         case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_LEFT:
         case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_RIGHT:
-            serviceMove(doomRpg->render, &intent);
+            serviceMove(EspNativeRootOwners_live()->render, &intent);
             return;
 
         case ESP_NATIVE_GAMEPLAY_ACTION_SELECT:
-            serviceSelect(doomRpg, doomRpg->render, &intent);
+            serviceSelect(doomRpg, EspNativeRootOwners_live()->render, &intent);
             return;
 
         case ESP_NATIVE_GAMEPLAY_ACTION_PASS_TURN: {
@@ -2441,7 +2442,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
              * the HUD. The original Player_useItem advances exactly one turn. */
             const int turnRequested =
                 EspNativeGameplayMonsterTurn_requestPassTurn(intent.sequence);
-            if (!restoreWorldAfterHub(doomRpg->render, "HUB-ITEM")) {
+            if (!restoreWorldAfterHub(EspNativeRootOwners_live()->render, "HUB-ITEM")) {
                 disableGameplay("hub-item-world-render");
                 return;
             }
@@ -2454,7 +2455,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
             return;
         }
         if (hubStatus == ESP_NATIVE_GAMEPLAY_HUB_CLOSED) {
-            if (!restoreWorldAfterHub(doomRpg->render, "HUB-CLOSE")) {
+            if (!restoreWorldAfterHub(EspNativeRootOwners_live()->render, "HUB-CLOSE")) {
                 disableGameplay("hub-close-world-render");
                 return;
             }
@@ -2475,7 +2476,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
 
         ++gameplayState.deferred;
         EspNativeGameplayHub_reset();
-        if (!restoreWorldAfterHub(doomRpg->render, "HUB-RECOVER")) {
+        if (!restoreWorldAfterHub(EspNativeRootOwners_live()->render, "HUB-RECOVER")) {
             disableGameplay("hub-error-world-render");
             return;
         }
@@ -2500,7 +2501,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
                 EspNativeGameplayFrameStats frame;
                 const Random_t rngBefore=(*EspNativeProcessRng_live());
                 int painted=EspNativeGameplayFrame_renderAmbient(
-                    doomRpg->render,&frame);
+                    EspNativeRootOwners_live()->render,&frame);
                 int rngExact=memcmp(&rngBefore,EspNativeProcessRng_live(),
                                     sizeof(rngBefore))==0;
                 if (!painted || !frame.finalPresented || !rngExact) {
@@ -2530,18 +2531,18 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
     switch (intent.action) {
     case ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT:
     case ESP_NATIVE_GAMEPLAY_ACTION_TURN_RIGHT:
-        serviceTurn(doomRpg->render, &intent);
+        serviceTurn(EspNativeRootOwners_live()->render, &intent);
         break;
 
     case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD:
     case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK:
     case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_LEFT:
     case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_RIGHT:
-        serviceMove(doomRpg->render, &intent);
+        serviceMove(EspNativeRootOwners_live()->render, &intent);
         break;
 
     case ESP_NATIVE_GAMEPLAY_ACTION_SELECT:
-        serviceSelect(doomRpg, doomRpg->render, &intent);
+        serviceSelect(doomRpg, EspNativeRootOwners_live()->render, &intent);
         break;
 
     case ESP_NATIVE_GAMEPLAY_ACTION_PASS_TURN:
@@ -2550,14 +2551,14 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
 
     case ESP_NATIVE_GAMEPLAY_ACTION_NEXT_WEAPON:
     case ESP_NATIVE_GAMEPLAY_ACTION_PREV_WEAPON:
-        serviceWeaponControl(doomRpg->render, &intent);
+        serviceWeaponControl(EspNativeRootOwners_live()->render, &intent);
         break;
 
     case ESP_NATIVE_GAMEPLAY_ACTION_AUTOMAP:
         EspNativeGameplayAutomap_cancelDamage();
         gameplayState.modeFlags =
             (uint8_t)(gameplayState.modeFlags | RESIDENT_MODE_AUTOMAP);
-        if (!renderAutomapCurrent(doomRpg->render, "OPEN")) {
+        if (!renderAutomapCurrent(EspNativeRootOwners_live()->render, "OPEN")) {
             gameplayState.modeFlags =
                 (uint8_t)(gameplayState.modeFlags &
                           (uint8_t)~RESIDENT_MODE_AUTOMAP);

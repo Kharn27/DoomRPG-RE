@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "DoomRPG.h"
+#include "esp_native_root_state.h"
 #include "Render.h"
 
 #include "esp_map_sprite_topology.h"
@@ -954,7 +955,7 @@ static void serviceHitExpiry(struct DoomRPG_s* doomRpg) {
         EspNativeGameplayEventChain_isWaiting()) return;
 
     playerView = EspPlayerView_view();
-    if (runtime == NULL || runtime->render == NULL || playerView == NULL ||
+    if (runtime == NULL || EspNativeRootOwners_live()->render == NULL || playerView == NULL ||
         playerView->active != 1U ||
         playerView->viewX != playerView->destX ||
         playerView->viewY != playerView->destY ||
@@ -964,7 +965,7 @@ static void serviceHitExpiry(struct DoomRPG_s* doomRpg) {
 
     spriteIndex = hitFxOwner.spriteIndex;
     memset(&frame, 0, sizeof(frame));
-    if (!EspNativeGameplayFrame_renderTurn(runtime->render,
+    if (!EspNativeGameplayFrame_renderTurn(EspNativeRootOwners_live()->render,
                                            (uint8_t)playerView->viewAngle,
                                            &frame)) {
         printf("[HITFX] EXPIRE-REDRAW-FAILED sprite=%u recovery=next-service gameplayRng=untouched\n",
@@ -996,7 +997,7 @@ static void servicePlayerPainShake(struct DoomRPG_s* doomRpgBase) {
         EspNativeGameplayEventChain_isWaiting() ||
         EspNativeResidentGameplay_isAutomapActive()) return;
     view = EspPlayerView_view();
-    if (runtime == NULL || runtime->render == NULL ||
+    if (runtime == NULL || EspNativeRootOwners_live()->render == NULL ||
         view == NULL || view->active != 1U ||
         view->viewX != view->destX || view->viewY != view->destY ||
         view->viewAngle != view->destAngle) return;
@@ -1005,7 +1006,7 @@ static void servicePlayerPainShake(struct DoomRPG_s* doomRpgBase) {
      * ensures a skipped frame never blocks input or burns gameplay RNG. */
     memset(&frame, 0, sizeof(frame));
     if (!EspNativeGameplayFrame_renderTurn(
-            runtime->render, (uint8_t)view->viewAngle, &frame)) {
+            EspNativeRootOwners_live()->render, (uint8_t)view->viewAngle, &frame)) {
         printf("[PLAYERPAINSHAKE] RETRY cause=redraw-failed\n");
     }
 }
@@ -1022,7 +1023,7 @@ static void servicePlayerPainExpiry(struct DoomRPG_s* doomRpgBase) {
         EspNativeGameplayEventChain_isWaiting() ||
         EspNativeResidentGameplay_isAutomapActive()) return;
     playerView = EspPlayerView_view();
-    if (runtime == NULL || runtime->render == NULL || playerView == NULL ||
+    if (runtime == NULL || EspNativeRootOwners_live()->render == NULL || playerView == NULL ||
         playerView->active != 1U ||
         playerView->viewX != playerView->destX ||
         playerView->viewY != playerView->destY ||
@@ -1031,7 +1032,7 @@ static void servicePlayerPainExpiry(struct DoomRPG_s* doomRpgBase) {
      * and the weapon palette tint. No second framebuffer or input cooldown. */
     memset(&frame, 0, sizeof(frame));
     if (!EspNativeGameplayFrame_renderTurn(
-            runtime->render, (uint8_t)playerView->viewAngle, &frame)) {
+            EspNativeRootOwners_live()->render, (uint8_t)playerView->viewAngle, &frame)) {
         printf("[PLAYERPAINFX] EXPIRE-REDRAW-FAILED recovery=next-service\n");
         return;
     }
@@ -1063,13 +1064,13 @@ static void serviceGibAnimation(struct DoomRPG_s* doomRpgBase) {
     if (ageMs < ESP_NATIVE_GIB_FRAME_MS || ageMs >= GIBFX_DISPLAY_MS)
         return;
     view=EspPlayerView_view();
-    if (runtime==NULL || runtime->render==NULL || view==NULL ||
+    if (runtime==NULL || EspNativeRootOwners_live()->render==NULL || view==NULL ||
         view->active!=1U || view->viewX!=view->destX ||
         view->viewY!=view->destY ||
         view->viewAngle!=view->destAngle) return;
     memset(&frame,0,sizeof frame);
     if (!EspNativeGameplayFrame_renderTurn(
-            runtime->render,(uint8_t)view->viewAngle,&frame)) {
+            EspNativeRootOwners_live()->render,(uint8_t)view->viewAngle,&frame)) {
         printf("[GIBFX] ANIM-RETRY sprite=%u frame=first->second cause=redraw-failed\n",
                (unsigned int)gibFxOwner.activeSpriteIndex);
         return;
@@ -1101,7 +1102,7 @@ static void serviceExpiry(struct DoomRPG_s* doomRpg) {
         EspNativeGameplayEventChain_isWaiting()) return;
 
     playerView = EspPlayerView_view();
-    if (runtime == NULL || runtime->render == NULL || playerView == NULL ||
+    if (runtime == NULL || EspNativeRootOwners_live()->render == NULL || playerView == NULL ||
         playerView->active != 1U ||
         playerView->viewX != playerView->destX ||
         playerView->viewY != playerView->destY ||
@@ -1111,7 +1112,7 @@ static void serviceExpiry(struct DoomRPG_s* doomRpg) {
 
     spriteIndex = gibFxOwner.activeSpriteIndex;
     memset(&frame, 0, sizeof(frame));
-    if (!EspNativeGameplayFrame_renderTurn(runtime->render,
+    if (!EspNativeGameplayFrame_renderTurn(EspNativeRootOwners_live()->render,
                                            (uint8_t)playerView->viewAngle,
                                            &frame)) {
         printf("[GIBFX] EXPIRE-REDRAW-FAILED sprite=%u recovery=next-service gameplayRng=untouched\n",

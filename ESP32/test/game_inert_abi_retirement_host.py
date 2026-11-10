@@ -66,7 +66,7 @@ for name in guards:
     content = (SRC / name).read_text(encoding="latin-1")
     assert "doomRpg->game == NULL ||" not in content, name
     assert "doomRpg->game != NULL" not in content, name
-    assert "doomRpg->render" in content, name
+    assert "EspNativeRootOwners_live()->render" in content, name
 
 cleanup = (SRC / "native_main_menu_start_action.c").read_text(encoding="latin-1")
 assert "EspNativeRenderRuntime_releaseCompatibility(render);" in cleanup

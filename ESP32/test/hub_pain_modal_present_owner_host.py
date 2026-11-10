@@ -43,7 +43,8 @@ body = r'''
 #include <assert.h>
 
 typedef struct Render_s { int dummy; } Render_t;
-typedef struct DoomRPG_s { Render_t* render; } DoomRPG_t;
+typedef struct DoomRPG_s { uint8_t processIdentity; } DoomRPG_t;
+typedef struct EspNativeRootOwners_s { Render_t* render; } EspNativeRootOwners_t;
 typedef struct EspPlayerViewState_s {
     int viewX, destX, viewY, destY, viewAngle, destAngle;
     unsigned char active;
@@ -56,7 +57,9 @@ static int hubActive, expiredDue, shakeDue, renders, acknowledges;
 static int renderSucceeds = 1, worldOwner = 1;
 static EspPlayerViewState pose = {1, 1, 2, 2, 64, 64, 1};
 static Render_t renderer;
-static DoomRPG_t doom = {&renderer};
+static DoomRPG_t doom = {1};
+static EspNativeRootOwners_t nativeOwners = {&renderer};
+static EspNativeRootOwners_t* EspNativeRootOwners_live(void) { return &nativeOwners; }
 
 uint32_t DoomRPG_GetUpTimeMS(void) { return 550; }
 int EspNativePlayerPainVisual_expiryDue(uint32_t now) {

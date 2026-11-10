@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "esp_native_root_state.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -75,8 +76,8 @@ int DoomRPG_esp32MainMenuTouchPrepare(struct DoomRPG_s* doomRpgBase) {
     memset(selectionHashes, 0, sizeof(selectionHashes));
 
     if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
-        doomRpg->menuSystem->menu != MENU_MAIN ||
-        doomRpg->menuSystem->numItems != DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT ||
+        EspNativeRootOwners_live()->menuSystem->menu != MENU_MAIN ||
+        EspNativeRootOwners_live()->menuSystem->numItems != DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT ||
         DOOMRPG_CANVAS_WIDTH != DOOMRPG_LOGICAL_WIDTH ||
         DOOMRPG_CANVAS_HEIGHT != DOOMRPG_LOGICAL_HEIGHT) {
         printf("[MENUTOUCH] FAILED prepare dashboard/model boundary\n");
@@ -99,7 +100,7 @@ int DoomRPG_esp32MainMenuTouchPrepare(struct DoomRPG_s* doomRpgBase) {
                ((right + 1) * DOOMRPG_INTEGER_SCALE) - 1,
                top * DOOMRPG_INTEGER_SCALE,
                ((bottom + 1) * DOOMRPG_INTEGER_SCALE) - 1,
-               doomRpg->menuSystem->items[i].textField);
+               EspNativeRootOwners_live()->menuSystem->items[i].textField);
     }
 
     touchDoomRpg = doomRpg;
@@ -127,15 +128,15 @@ int DoomRPG_esp32MainMenuTouchActivate(struct DoomRPG_s* doomRpgBase,
         return 0;
     }
 
-    if (doomRpg->menuSystem->menu != MENU_MAIN ||
-        doomRpg->menuSystem->selectedIndex != 0) {
+    if (EspNativeRootOwners_live()->menuSystem->menu != MENU_MAIN ||
+        EspNativeRootOwners_live()->menuSystem->selectedIndex != 0) {
         printf("[MENUTOUCH] FAILED activate menu=%d selected=%d\n",
-               doomRpg->menuSystem->menu,
-               doomRpg->menuSystem->selectedIndex);
+               EspNativeRootOwners_live()->menuSystem->menu,
+               EspNativeRootOwners_live()->menuSystem->selectedIndex);
         return 0;
     }
 
-    currentHash = DoomRPG_esp32MainMenuFramebufferHash(doomRpg->render);
+    currentHash = DoomRPG_esp32MainMenuFramebufferHash(EspNativeRootOwners_live()->render);
     if (currentHash == 0U || currentHash != initialFramebufferFNV) {
         printf("[MENUTOUCH] FAILED activate framebuffer=%08x supplied=%08x\n",
                (unsigned int)currentHash,
@@ -172,15 +173,15 @@ int DoomRPG_esp32MainMenuTouchArmSelected(int itemIndex) {
 
     if (!touchActive || touchDoomRpg == NULL ||
         !DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(touchDoomRpg) ||
-        touchDoomRpg->menuSystem->menu != MENU_MAIN ||
-        touchDoomRpg->menuSystem->selectedIndex != itemIndex ||
+        EspNativeRootOwners_live()->menuSystem->menu != MENU_MAIN ||
+        EspNativeRootOwners_live()->menuSystem->selectedIndex != itemIndex ||
         itemIndex < 0 ||
         itemIndex >= DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT) {
         printf("[MENUTOUCH] FAILED arm item=%d active=%d selected=%d\n",
                itemIndex,
                touchActive,
-               touchDoomRpg != NULL && touchDoomRpg->menuSystem != NULL
-                   ? touchDoomRpg->menuSystem->selectedIndex : -999);
+               touchDoomRpg != NULL && EspNativeRootOwners_live()->menuSystem != NULL
+                   ? EspNativeRootOwners_live()->menuSystem->selectedIndex : -999);
         return 0;
     }
 
@@ -252,8 +253,8 @@ void DoomRPG_esp32MainMenuTouchOnTap(int16_t screenX,
 
     if (!touchActive || touchDoomRpg == NULL) return;
 
-    menuSystem = touchDoomRpg->menuSystem;
-    render = touchDoomRpg->render;
+    menuSystem = EspNativeRootOwners_live()->menuSystem;
+    render = EspNativeRootOwners_live()->render;
 
     if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(touchDoomRpg) ||
         menuSystem->menu != MENU_MAIN ||
@@ -458,10 +459,10 @@ static void executeConfirmedAction(int item) {
         if (!DoomRPG_esp32MainMenuRecover(doomRpg, "dispatch-failed")) {
             printf("[MAINACTION] FAILED recovery item=%d state=%d menu=%d\n",
                    item,
-                   doomRpg->doomCanvas != NULL
-                       ? doomRpg->doomCanvas->state : -999,
-                   doomRpg->menuSystem != NULL
-                       ? doomRpg->menuSystem->menu : -999);
+                   EspNativeRootOwners_live()->doomCanvas != NULL
+                       ? EspNativeRootOwners_live()->doomCanvas->state : -999,
+                   EspNativeRootOwners_live()->menuSystem != NULL
+                       ? EspNativeRootOwners_live()->menuSystem->menu : -999);
         }
     }
     else if (result == DOOMRPG_ESP32_MAIN_MENU_DISPATCH_STAY_MAIN) {
@@ -555,13 +556,13 @@ void __wrap_PlatformInput_setTapCallback(PlatformTapCallback callback) {
          * here at the exact point where our native MENU_MAIN becomes interactive.
          * This also covers the full bring-up path; Options -> Back already arrives
          * here in ST_MENU and therefore remains a no-op. */
-        if (doomRpg != NULL && doomRpg->doomCanvas != NULL &&
-            doomRpg->doomCanvas->state != ST_MENU) {
-            const int priorState = doomRpg->doomCanvas->state;
-            EspNativeMainMenu_transitionCanvasState(doomRpg->doomCanvas, ST_MENU);
+        if (doomRpg != NULL && EspNativeRootOwners_live()->doomCanvas != NULL &&
+            EspNativeRootOwners_live()->doomCanvas->state != ST_MENU) {
+            const int priorState = EspNativeRootOwners_live()->doomCanvas->state;
+            EspNativeMainMenu_transitionCanvasState(EspNativeRootOwners_live()->doomCanvas, ST_MENU);
             printf("[MENUTOUCH] STATE SYNC canvas=%d->%d source=native-MENU_MAIN activation\n",
                    priorState,
-                   doomRpg->doomCanvas->state);
+                   EspNativeRootOwners_live()->doomCanvas->state);
         }
 
         downstreamTapCallback = callback;

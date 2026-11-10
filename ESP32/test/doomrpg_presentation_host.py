@@ -114,6 +114,7 @@ int SDL_RenderDrawLine(SDL_Renderer* r,int x1,int y1,int x2,int y2) {
         if(doubled>=dy) {err+=dy;x1+=sx;}
         if(doubled<=dx) {err+=dx;y1+=sy;}
     }
+    nativeOwners.doomCanvas = &canvases[1];
     return 0;
 }
 void SDL_RenderPresent(SDL_Renderer* r) { ++target(r)->presents; }
@@ -144,6 +145,8 @@ void Reference_DoomRPG_flushGraphics(DoomRPG_t*);
 
 static DoomCanvas_t canvases[2];
 static DoomRPG_t cores[2];
+static EspNativeRootOwners_t nativeOwners;
+EspNativeRootOwners_t* EspNativeRootOwners_live(void) { return &nativeOwners; }
 static uint32_t seed=0x24c0ffeeU;
 static uint32_t next(void) { seed=seed*1664525u+1013904223u;return seed; }
 static int coord(void) {return (int)(next()%231u)-35;}
@@ -265,6 +268,8 @@ def main():
                                  "EspNativeTexture_fillRect(&rect);")
                         .replace("SDL_RenderDrawLine(sdlVideo.renderer, sx, sy, ex, ey);",
                                  "EspNativeTexture_drawLine(sx, sy, ex, ey);"))
+        expected = expected.replace("doomrpg->doomCanvas->fontColor",
+                                    "EspNativeRootOwners_live()->doomCanvas->fontColor")
         assert extract(native, signature) == expected, signature + " native drift"
         bodies.append(real)
         names.append(re.search(r"(DoomRPG_\w+)\(", signature).group(1))
