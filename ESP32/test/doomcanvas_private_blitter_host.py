@@ -27,7 +27,7 @@ assert "void EspNativeCanvas_drawText(" in bridge
 assert 'INIT exports=0 nativeText=1 desktopTU=no' in (SRC / "engine_stubs.c").read_text(encoding="utf-8")
 assert 'INIT exports=6 desktopTU=no' not in bridge
 assert 'doomCanvas, "Loading...", DOOMRPG_CANVAS_CENTER_X' in (SRC / "native_main_menu_model.c").read_text(encoding="utf-8")
-assert "SDL_RenderCopy(sdlVideo.renderer, img->imgBitmap, &clip, &renderQuad);" in bridge
+assert "EspNativeTexture_blit(img->imgBitmap, &clip, &renderQuad);" in bridge
 
 # Extract identical actual source body, after the renamed function signature.
 a = bridge.index("static void " + internal + "(")
@@ -36,6 +36,11 @@ b = bridge.index("\nvoid EspNativeCanvas_drawText(", a)
 body = bridge[a:b]
 assert body.startswith("\n{\n") and body.endswith("}\n")
 h = 2166136261
+# SDL-D1 changes only the texture-owner call signature; normalize this
+# deliberate backend migration before comparing legacy glyph geometry/clip FNV.
+assert body.count("EspNativeTexture_blit(img->imgBitmap, &clip, &renderQuad);") == 1
+body = body.replace("EspNativeTexture_blit(img->imgBitmap, &clip, &renderQuad);",
+                    "SDL_RenderCopy(sdlVideo.renderer, img->imgBitmap, &clip, &renderQuad);")
 for byte in body.encode("utf-8"):
     h = ((h ^ byte) * 16777619) & 0xFFFFFFFF
 assert h == 0x4C4A9A93, "private blitter draw/clipping logic changed"
