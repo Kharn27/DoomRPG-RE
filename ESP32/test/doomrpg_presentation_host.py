@@ -237,7 +237,7 @@ def main():
         expected = (real.replace("doomrpg->graphSetCliping = false;",
                                  "(void)doomrpg;\n\tnativeGraphClipSet = false;")
                         .replace("doomrpg->graphSetCliping = true;",
-                                 "(void)doomrpg;\\n\\tnativeGraphClipSet = true;"))
+                                 "(void)doomrpg;\n\tnativeGraphClipSet = true;"))
         assert extract(native, signature) == expected, signature + " native drift"
         bodies.append(real)
         names.append(re.search(r"(DoomRPG_\w+)\(", signature).group(1))
