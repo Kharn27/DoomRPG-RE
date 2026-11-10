@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Check actual classic-CYD clock provider against the pinned desktop bodies.
 
-Only SDL_GetTicks is mocked. The two implementations run side by side with
+Only the external tick sources are mocked: SDL for legacy and native for CYD.
+The two implementations run side by side with
 independent basetime state, including boot tick=0, uptime order and wraparound.
 This does not time the physical CYD or establish SDL's underlying clock source.
 """
@@ -41,7 +42,10 @@ bodies = []
 for sig, crc in SIGNATURES:
     expected = extract(legacy, sig)
     assert zlib.crc32(expected.encode("latin-1")) == crc, "reference drift " + sig
-    assert extract(native, sig) == expected, "effective clock behavior changed " + sig
+    # SDL-F1 changes only the source of ticks; all epoch/wrap arithmetic
+    # remains source-identical to desktop, and both sources receive one tick.
+    native_expected = expected.replace("SDL_GetTicks()", "EspNativeProcess_ticksMs()")
+    assert extract(native, sig) == native_expected, "effective clock behavior changed " + sig
     bodies.append(expected.replace("DoomRPG_Get", "Legacy_Get"))
 
 HARNESS = r"""
@@ -53,6 +57,7 @@ HARNESS = r"""
 _Static_assert(sizeof(Uint32) == 4, "SDL ticks must be exactly 32-bit");
 static Uint32 fake_ticks = 0;
 Uint32 SDL_GetTicks(void) { return fake_ticks; }
+uint32_t EspNativeProcess_ticksMs(void) { return fake_ticks; }
 extern unsigned int Legacy_GetTimeMS(void);
 extern unsigned int Legacy_GetUpTimeMS(void);
 
@@ -86,7 +91,7 @@ int main(void) {
         if ((i % 7) == 0) check_uptime(tick);
         if ((i % 11) == 0) check_time(tick);
     }
-    puts("PASS DoomRPG process clock parity: 32-bit tick, zero sentinel, wrap, mixed-order 10000 steps");
+    puts("SDL-F1 PASS DoomRPG process clock parity: 32-bit tick, zero sentinel, wrap, mixed-order 10000 steps");
     return 0;
 }
 """
@@ -95,6 +100,10 @@ with tempfile.TemporaryDirectory(prefix="doomrpg-clock-") as tmp:
     (out / "SDL.h").write_text(
         "#pragma once\n#include <stdint.h>\ntypedef uint32_t Uint32;\n"
         "Uint32 SDL_GetTicks(void);\n"
+    )
+    (out / "esp_native_process_services.h").write_text(
+        "#pragma once\n#include <stdint.h>\n"
+        "uint32_t EspNativeProcess_ticksMs(void);\n"
     )
     (out / "DoomRPG.h").write_text(
         "#pragma once\nunsigned int DoomRPG_GetTimeMS(void);\n"
