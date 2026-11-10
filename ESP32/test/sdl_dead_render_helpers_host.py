@@ -11,9 +11,9 @@ import re
 ROOT = Path(__file__).resolve().parents[2]
 RETIRED = ("SDL_RenderDrawRect", "SDL_RenderSetIntegerScale")
 ACTIVE = (
-    "SDL_RenderCopy(", "SDL_RenderDrawLine(", "SDL_RenderFillRect(",
+     "SDL_RenderDrawLine(", "SDL_RenderFillRect(",
     "SDL_RenderPresent(", "SDL_RenderSetClipRect(",
-    "SDL_CreateTextureFromSurface(", "SDL_DestroyTexture(",
+    "SDL_CreateTextureFromSurface(", 
     "SDL_UpdateTexture(",
 )
 
@@ -35,6 +35,11 @@ def main():
     hdr = (ROOT / "ESP32/include/SDL.h").read_text(encoding="utf-8")
     for symbol in ACTIVE:
         assert symbol in shim, f"SDL-B3 lost live renderer: {symbol}"
+    native = (ROOT / "ESP32/src/esp_native_texture.cpp").read_text(encoding="utf-8")
+    nativeHeader = (ROOT / "ESP32/include/esp_native_texture.h").read_text(encoding="utf-8")
+    for api in ("EspNativeTexture_blit(", "EspNativeTexture_destroy(",
+                "EspNativeTexture_setColorMod(", "EspNativeTexture_adoptIndexed("):
+        assert api in native and api in nativeHeader, f"SDL-D1 native texture owner missing {api}"
     assert "PlatformVideo_present()" in shim
     assert "SDL_RenderDrawLine(" in hdr
     assert "SDL_RenderFillRect(" in hdr
