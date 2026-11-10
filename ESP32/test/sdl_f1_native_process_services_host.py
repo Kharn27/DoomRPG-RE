@@ -37,9 +37,9 @@ for folder in ("src", "include"):
         if path.name in ("esp32_sdl.cpp", "SDL.h"):
             continue  # Historical source/ABI kept only as host parity oracle.
         code = path.read_text(encoding="utf-8", errors="replace")
-        code = re.sub(r"/\\*[\\s\\S]*?\\*/|//[^\\n]*", "", code)
+        code = re.sub(r"/\*[\s\S]*?\*/|//[^\n]*", "", code)
         for old in ("SDL_GetTicks", "SDL_ShowMessageBox"):
-            assert re.search(r"\\b" + old + r"\\s*\\(", code) is None, (
+            assert re.search(r"\b" + old + r"\s*\(", code) is None, (
                 f"SDL-F1 old process service call/definition in {path}: {old}"
             )
 
