@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include "esp_native_indexed_image.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,9 +44,9 @@ typedef struct SDL_Point {
     int x, y;
 } SDL_Point;
 
-typedef struct SDL_Color {
-    Uint8 r, g, b, a;
-} SDL_Color;
+/* Same record as the permanent indexed-image palette owner: adoption may
+ * transfer the palette allocation without copying or aliasing violations. */
+typedef EspNativeImageColor SDL_Color;
 
 typedef struct SDL_Palette {
     int ncolors;
