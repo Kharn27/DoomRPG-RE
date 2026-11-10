@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "esp_native_texture.h"
 #include <stdint.h>
 #include <stdio.h>
 
@@ -225,10 +226,7 @@ static void drawImageSpecialMapped(DoomCanvas_t* doomCanvas,
     destination.w = right - left;
     destination.h = bottom - top;
 
-    SDL_RenderCopy(sdlVideo.renderer,
-                   img->imgBitmap,
-                   &source,
-                   &destination);
+    EspNativeTexture_blit(img->imgBitmap, &source, &destination);
 }
 
 static void drawImageSpecial(DoomCanvas_t* doomCanvas,
@@ -298,7 +296,7 @@ static void drawTextGlyph(DoomCanvas_t* doomCanvas,
     destination.y = DOOMRPG_CANVAS_Y + top;
     destination.w = right - left;
     destination.h = bottom - top;
-    SDL_RenderCopy(sdlVideo.renderer, img->imgBitmap, &source, &destination);
+    EspNativeTexture_blit(img->imgBitmap, &source, &destination);
 }
 
 static void drawFont(DoomCanvas_t* doomCanvas,
@@ -323,7 +321,7 @@ static void drawFont(DoomCanvas_t* doomCanvas,
     r = (byte)((doomCanvas->fontColor & 0x00ff0000) >> 16);
     g = (byte)((doomCanvas->fontColor & 0x0000ff00) >> 8);
     b = (byte)(doomCanvas->fontColor & 0x000000ff);
-    SDL_SetTextureColorMod(imgFont->imgBitmap, r, g, b);
+    EspNativeTexture_setColorMod(imgFont->imgBitmap, r, g, b);
 
     len = (int)SDL_strlen(text) - strBeg;
     if (len < 0) {
