@@ -973,7 +973,14 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
                    (unsigned int)logical,
                    transformed ? "crate-loot" :
                        (applied[i].dynamicDrop ? "dynamic-drop" : "map-item"));
-            EspPickupMini_enqueue(logical);
+            /* Subtype 3 is the normal Shotgun; all other pickups retain
+             * their already hardware-proven 24px presentation unchanged. */
+            if (applied[i].type == RESOURCE_TYPE_WEAPON &&
+                applied[i].subtype == 3U) {
+                EspPickupMini_enqueueShotgun(logical);
+            } else {
+                EspPickupMini_enqueue(logical);
+            }
         }
         if (firstWeaponDialog != NULL) {
             EspNativeGameplayDialogBeginStatus dialogStatus =

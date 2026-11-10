@@ -74,6 +74,8 @@ static inline int EspPickupMini_resolveVisualLogical(
 /* Cosmetic-only FIFO; all calls are on the native gameplay loop task. */
 void EspPickupMini_reset(void);
 void EspPickupMini_enqueue(uint16_t sourceLogical);
+/* Only the normal shotgun (weapon subtype 3) gets a legibility boost. */
+void EspPickupMini_enqueueShotgun(uint16_t sourceLogical);
 void EspPickupMini_markFreshFrame(void);
 void EspPickupMini_beforePresent(uint32_t nowMs);
 void EspPickupMini_afterPresent(uint32_t nowMs);

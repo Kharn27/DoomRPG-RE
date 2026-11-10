@@ -28,6 +28,9 @@ _Static_assert(MINI_X >= 13U && MINI_X + ESP_PICKUP_MINI_SIZE <= 160U,
 #define MINI_ON 105U
 #define MINI_PERIOD 165U
 #define MINI_PULSES 3U
+#define MINI_SHOTGUN_FLAG 0x0100U
+#define MINI_LOGICAL_MASK 0x00ffU
+#define MINI_SHOTGUN_MIN_SPAN 12U
 
 typedef struct PickupMini_s {
     uint16_t pending[ESP_PICKUP_MINI_FIFO_CAP];
@@ -63,7 +66,65 @@ void EspPickupMini_reset(void) {
     memset(&state, 0, sizeof(state));
 }
 
-void EspPickupMini_enqueue(uint16_t logical) {
+/* Most pickups deliberately retain the original aspect-safe 24px fitting.
+ * The upright shotgun can have a very narrow opaque silhouette in the PAK
+ * bitshape. Only its pickup overlay receives a small opaque-span floor:
+ * nearest-neighbor resampling stays inside the SAME 24x24 canvas. The
+ * background array is safe as temporary scratch here: the real underlay
+ * is captured only on the first paint, after this operation completes. */
+static void boostShotgun(void) {
+    uint8_t originalMask[ESP_PICKUP_MINI_MASK_BYTES];
+    uint32_t x, y;
+    uint32_t minX = ESP_PICKUP_MINI_SIZE, minY = ESP_PICKUP_MINI_SIZE;
+    uint32_t maxX = 0U, maxY = 0U;
+    uint32_t sourceW, sourceH, drawW, drawH, left, top;
+
+    for (y = 0U; y < ESP_PICKUP_MINI_SIZE; ++y) {
+        for (x = 0U; x < ESP_PICKUP_MINI_SIZE; ++x) {
+            const uint32_t i = y * ESP_PICKUP_MINI_SIZE + x;
+            if ((state.mask[i >> 3U] & (1U << (i & 7U))) == 0U) continue;
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+        }
+    }
+    if (minX == ESP_PICKUP_MINI_SIZE) return;
+    sourceW = maxX - minX + 1U;
+    sourceH = maxY - minY + 1U;
+    drawW = sourceW < MINI_SHOTGUN_MIN_SPAN
+                ? MINI_SHOTGUN_MIN_SPAN : sourceW;
+    drawH = sourceH < MINI_SHOTGUN_MIN_SPAN
+                ? MINI_SHOTGUN_MIN_SPAN : sourceH;
+    if (drawW == sourceW && drawH == sourceH) return;
+
+    memcpy(originalMask, state.mask, sizeof(originalMask));
+    memcpy(state.background, state.colors, sizeof(state.colors));
+    memset(state.colors, 0, sizeof(state.colors));
+    memset(state.mask, 0, sizeof(state.mask));
+    left = (ESP_PICKUP_MINI_SIZE - drawW) / 2U;
+    top = (ESP_PICKUP_MINI_SIZE - drawH) / 2U;
+    for (y = 0U; y < drawH; ++y) {
+        const uint32_t sy =
+            minY + ((2U * y + 1U) * sourceH) / (2U * drawH);
+        for (x = 0U; x < drawW; ++x) {
+            const uint32_t sx =
+                minX + ((2U * x + 1U) * sourceW) / (2U * drawW);
+            const uint32_t source = sy * ESP_PICKUP_MINI_SIZE + sx;
+            const uint32_t target =
+                (top + y) * ESP_PICKUP_MINI_SIZE + left + x;
+            if ((originalMask[source >> 3U] & (1U << (source & 7U))) == 0U)
+                continue;
+            state.colors[target] = state.background[source];
+            state.mask[target >> 3U] |= (uint8_t)(1U << (target & 7U));
+        }
+    }
+    printf("[PICKUPMINI] SHOTGUN-FIT opaque=%ux%u fitted=%ux%u canvas=24x24 cosmetic-only\n",
+           (unsigned)sourceW, (unsigned)sourceH,
+           (unsigned)drawW, (unsigned)drawH);
+}
+
+static void enqueueWithFlags(uint16_t logical, uint16_t flags) {
     uint8_t tail;
     if (logical >= 256U) {
         printf("[PICKUPMINI] SKIP logical=%u reason=unsupported visual-only\n",
@@ -77,10 +138,18 @@ void EspPickupMini_enqueue(uint16_t logical) {
         printf("[PICKUPMINI] OVERFLOW oldest-queued-dropped gameplay=unchanged\n");
     }
     tail = (uint8_t)((state.head + state.count) % ESP_PICKUP_MINI_FIFO_CAP);
-    state.pending[tail] = logical;
+    state.pending[tail] = (uint16_t)(logical | flags);
     ++state.count;
     printf("[PICKUPMINI] QUEUE logical=%u pending=%u active=%u input=unblocked\n",
            (unsigned)logical, (unsigned)state.count, (unsigned)state.active);
+}
+
+void EspPickupMini_enqueue(uint16_t logical) {
+    enqueueWithFlags(logical, 0U);
+}
+
+void EspPickupMini_enqueueShotgun(uint16_t logical) {
+    enqueueWithFlags(logical, MINI_SHOTGUN_FLAG);
 }
 
 void EspPickupMini_markFreshFrame(void) { state.fresh = 1U; }
@@ -121,7 +190,8 @@ static void paint(void) {
 static void startNext(void) {
     /* Do not steal the map/dialog PAK lease, or block input on bad art. */
     while (!state.active && state.count && !EspAssetPack_isOpen()) {
-        const uint16_t logical = state.pending[state.head];
+        const uint16_t queued = state.pending[state.head];
+        const uint16_t logical = queued & MINI_LOGICAL_MASK;
         state.head = (uint8_t)((state.head + 1U) % ESP_PICKUP_MINI_FIFO_CAP);
         --state.count;
         if (!EspNativeSpriteRenderer_decodePickupMini(
@@ -130,6 +200,7 @@ static void startNext(void) {
                    (unsigned)logical);
             continue;
         }
+        if ((queued & MINI_SHOTGUN_FLAG) != 0U) boostShotgun();
         state.active = 1U;
         state.first = 1U;
         state.shownMs = 0U;

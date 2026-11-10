@@ -29,6 +29,16 @@ int EspNativeSpriteRenderer_decodePickupMini(
     for (i = 0; i < ESP_PICKUP_MINI_PIXELS; ++i)
         colors[i] = (uint16_t)(0x4000U | logical);
     memset(opaque, 0xff, ESP_PICKUP_MINI_MASK_BYTES);
+    if (logical == 77U) {
+        unsigned x, y;
+        /* A deliberately thin shotgun fixture with a 2x20 opaque body. */
+        memset(opaque, 0, ESP_PICKUP_MINI_MASK_BYTES);
+        for (y = 2U; y < 22U; ++y)
+            for (x = 11U; x < 13U; ++x) {
+                const unsigned i = y * ESP_PICKUP_MINI_SIZE + x;
+                opaque[i >> 3U] |= (uint8_t)(1U << (i & 7U));
+            }
+    }
     return 1;
 }
 
@@ -206,6 +216,29 @@ int main(void) {
     assert(pixel(MINI_X, MINI_Y) == (uint16_t)(0x4000U | 101U));
     unchangedHudAndGuard(0x2222U);
 
-    puts("pickup_miniature_host: PASS 24px actual up/downscale, aspect-safe, bottom-anchored, full HUD/world guards, exact underlay restore, crate-loot, CROSS, RGB565, FIFO, 500ms, PAK lease, cosmetic-only");
+    /* The same narrow PAK image remains unchanged for ordinary pickup.
+     * Only the subtype-3 shotgun request widens the drawn opaque silhouette
+     * within the EXISTING 24px canvas; it must still restore the background. */
+    EspPickupMini_reset();
+    fill(0x3333U);
+    EspPickupMini_enqueue(77U);
+    EspPickupMini_beforePresent(1500U);
+    assert(pixel(MINI_X + 11U, MINI_Y + 2U) == (uint16_t)(0x4000U | 77U));
+    assert(pixel(MINI_X + 6U, MINI_Y + 2U) == 0x3333U);
+    EspPickupMini_reset();
+    fill(0x3333U);
+    EspPickupMini_enqueueShotgun(77U);
+    assert(state.pending[state.head] == (uint16_t)(77U | MINI_SHOTGUN_FLAG));
+    EspPickupMini_beforePresent(1600U);
+    assert(pixel(MINI_X + 6U, MINI_Y + 2U) == (uint16_t)(0x4000U | 77U));
+    assert(pixel(MINI_X + 17U, MINI_Y + 21U) == (uint16_t)(0x4000U | 77U));
+    assert(pixel(MINI_X + 5U, MINI_Y + 2U) == 0x3333U);
+    unchangedHudAndGuard(0x3333U);
+    EspPickupMini_afterPresent(1600U);
+    EspPickupMini_beforePresent(2100U);
+    assert(!state.active);
+    entireBackground(0x3333U);
+
+    puts("pickup_miniature_host: PASS 24px actual up/downscale, aspect-safe, shotgun-only opaque boost, bottom-anchored, full HUD/world guards, exact underlay restore, crate-loot, CROSS, RGB565, FIFO, 500ms, PAK lease, cosmetic-only");
     return 0;
 }
