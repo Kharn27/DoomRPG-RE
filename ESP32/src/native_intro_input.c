@@ -124,7 +124,7 @@ static void onTap(int16_t screenX,
         return;
     }
 
-    canvas = inputState.EspNativeRootOwners_live()->doomCanvas;
+    canvas = EspNativeRootOwners_live()->doomCanvas;
     introState = EspNativeIntroState_get(inputState.doomRpg);
     if (introState == NULL) {
         printf("[INTROIN] FAILED native intro state unavailable\n");
@@ -312,11 +312,11 @@ void Esp32IntroInput_notifyFramePresented(void) {
     EspNativeIntroState_t* introState;
 
     if (!inputState.active || inputState.doomRpg == NULL ||
-        inputState.EspNativeRootOwners_live()->doomCanvas == NULL) {
+        EspNativeRootOwners_live()->doomCanvas == NULL) {
         return;
     }
 
-    canvas = inputState.EspNativeRootOwners_live()->doomCanvas;
+    canvas = EspNativeRootOwners_live()->doomCanvas;
     introState = EspNativeIntroState_get(inputState.doomRpg);
     if (introState == NULL) {
         return;
