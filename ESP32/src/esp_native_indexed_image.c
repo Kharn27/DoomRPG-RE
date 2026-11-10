@@ -36,7 +36,7 @@ EspNativeImageStatus EspNativeImage_decode(const EspNativeImageInput* input,
                                            int transparentMask,
                                            EspNativeIndexedImage* output) {
     uint8_t header[54];
-    uint8_t bgra[4];
+    uint8_t paletteBgra[256U * 4U]; /* bounded 1 KiB on stack, one PAK read */
     uint32_t dibSize, pixelOffset, paletteCount, bits, compression;
     uint64_t paletteStart, paletteEnd, pitch, filePitch, rowBits, dataBytes;
     int32_t width, signedHeight;
@@ -98,19 +98,18 @@ EspNativeImageStatus EspNativeImage_decode(const EspNativeImageInput* input,
         goto fail;
     }
 
-    /* Exactly the pre-existing RGB565 -> RGB888 roundtrip. The magenta
-     * color key is tested against RGB565 after palette lookup. */
+    /* One bounded palette read, not 256 tiny SD/flash transactions.
+     * Exactly the old RGB565 -> RGB888 roundtrip. */
+    if (!input->readRange(input->context, (uint32_t)paletteStart,
+                          paletteBgra, paletteCount * 4U)) {
+        status = ESP_NATIVE_IMAGE_TRUNCATED;
+        goto fail;
+    }
     for (i = 0; i < paletteCount; ++i) {
-        uint8_t r, g, b;
-        if (!input->readRange(input->context,
-                              (uint32_t)(paletteStart + 4ULL * i),
-                              bgra, sizeof(bgra))) {
-            status = ESP_NATIVE_IMAGE_TRUNCATED;
-            goto fail;
-        }
-        r = (uint8_t)(bgra[2] >> 3);
-        g = (uint8_t)(bgra[1] >> 2);
-        b = (uint8_t)(bgra[0] >> 3);
+        const uint8_t* bgra = paletteBgra + 4U * i;
+        uint8_t r = (uint8_t)(bgra[2] >> 3);
+        uint8_t g = (uint8_t)(bgra[1] >> 2);
+        uint8_t b = (uint8_t)(bgra[0] >> 3);
         image.palette[i].r = (uint8_t)((r << 3) | (r >> 2));
         image.palette[i].g = (uint8_t)((g << 2) | (g >> 4));
         image.palette[i].b = (uint8_t)((b << 3) | (b >> 2));
