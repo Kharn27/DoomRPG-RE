@@ -67,7 +67,6 @@ typedef struct DoomCanvas_s { int alive; } DoomCanvas_t;
 typedef struct DoomRPG_s {
     DoomCanvas_t *doomCanvas;
     Render_t *render;
-    void *game;
 } DoomRPG_t;
 static int allocations, runtimeCalls, wallActive, spriteActive;
 static uint8_t sharedFB[38400];
@@ -110,7 +109,7 @@ static void testCleanup(void) {
     DoomCanvas_t canvas={1};
     for (int i=0;i<4096;++i) {
         Render_t render={0};
-        DoomRPG_t root={&canvas,&render,NULL};
+        DoomRPG_t root={&canvas,&render};
         populate(&render,i%3);
         assert(DoomRPG_esp32ReleaseMainMenuMemory(&root)==1);
         assert(runtimeCalls==i+1);
@@ -121,17 +120,15 @@ static void testCleanup(void) {
         assert(render.mediaTexelOffsets==NULL && render.mediaBitShapeOffsets==NULL);
     }
     Render_t render={0};
-    DoomRPG_t root={&canvas,&render,NULL};
+    DoomRPG_t root={&canvas,&render};
     int before=runtimeCalls;
     assert(DoomRPG_esp32ReleaseMainMenuMemory(NULL)==0);
     root.render=NULL;
     assert(DoomRPG_esp32ReleaseMainMenuMemory(&root)==0);
     root.render=&render;root.doomCanvas=NULL;
     assert(DoomRPG_esp32ReleaseMainMenuMemory(&root)==0);
-    root.doomCanvas=&canvas;root.game=(void*)1;
-    assert(DoomRPG_esp32ReleaseMainMenuMemory(&root)==0);
+    root.doomCanvas=&canvas;
     assert(runtimeCalls==before);
-    root.game=NULL;
     wallActive=1;
     assert(DoomRPG_esp32ReleaseMainMenuMemory(&root)==0);
     wallActive=0;

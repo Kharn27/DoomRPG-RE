@@ -111,7 +111,7 @@ static int startupBoundaryIsSafe(const DoomRPG_t* doomRpg) {
     const DoomCanvas_t* canvas;
 
     if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
-        doomRpg->render == NULL || doomRpg->game != NULL ||
+        doomRpg->render == NULL ||
         doomRpg->menuSystem == NULL) {
         return 0;
     }
@@ -205,8 +205,7 @@ static int loadStartupResident(DoomRPG_t* doomRpg) {
         snapshot.byteCodeCount != inventory.byteCodes ||
         snapshot.stringCount != inventory.strings ||
         EspAssetPack_isOpen() ||
-        !legacyRuntimeIsClear(doomRpg->render) ||
-        doomRpg->game != NULL) {
+        !legacyRuntimeIsClear(doomRpg->render)) {
         failStartup("generic resident load");
         return -1;
     }
@@ -255,7 +254,7 @@ static int routeInitialSpawn(DoomRPG_t* doomRpg) {
     uint8_t deferredCode = 0U;
     uint8_t deferredOffset = 0U;
 
-    if (doomRpg == NULL || doomRpg->render == NULL || doomRpg->game != NULL ||
+    if (doomRpg == NULL || doomRpg->render == NULL ||
         startupState.stage != ESP_NATIVE_STARTUP_RESIDENT_READY ||
         !EspMapCatalog_isValidId(startupState.targetMapId) ||
         !EspMapResidentLifecycle_capture(&resident) ||
@@ -481,7 +480,6 @@ void EspNativeStartup_serviceDeathRoute(struct DoomRPG_s* doomRpgBase) {
     target = deathRoute.targetMapId;
     name = EspMapCatalog_nameForId(target);
     if (doomRpg == NULL || doomRpg->render == NULL ||
-        doomRpg->player != NULL || doomRpg->game != NULL ||
         !EspNativeGameplaySession_isActive() ||
         !EspNativeGameplayPlayerDeath_isMenuReady() ||
         !EspMapResidentLifecycle_isReady() || EspAssetPack_isOpen() ||

@@ -95,7 +95,7 @@ int DoomRPG_esp32ReleaseMainMenuMemory(struct DoomRPG_s* doomRpgBase) {
     uint32_t largestBefore;
 
     if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
-        doomRpg->render == NULL || doomRpg->game != NULL) {
+        doomRpg->render == NULL) {
         return 0;
     }
 
@@ -151,10 +151,9 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
 
     printf("\n=== Doom RPG ESP32 real MENU_MAIN -> Start Game entry ===\n");
 
-    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
-        doomRpg->player != NULL) {
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg)) {
         printf("[MAINSTART] FAILED core/graphics boundary unavailable legacyPlayer=%p expected=NULL\n",
-               doomRpg != NULL ? (void*)doomRpg->player : NULL);
+               NULL);
         return 0;
     }
 
@@ -204,7 +203,7 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
 
     printf("[MAINSTART] Native player before stateFNV=%08x legacyPlayer=%p owner=native-gameplay-player-state\n",
            (unsigned int)EspNativeGameplayPlayerState_fingerprint(),
-           (void*)doomRpg->player);
+           (void*)NULL);
 
     printIntroAssetPlan();
     /*
@@ -290,7 +289,7 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
            (unsigned int)EspNativeGameplayPlayerState_armor(),
            (unsigned int)EspNativeGameplayPlayerState_maxArmor(),
            (unsigned int)EspNativeGameplayPlayerState_fingerprint(),
-           (void*)doomRpg->player);
+           (void*)NULL);
     printf("[MAINSTART] Intro story pointers page0=%p page1=%p story2=%p storyPage=%d storyTextPage=%d owner=native-transient\n",
            (void*)introState->storyText1[0],
            (void*)introState->storyText1[1],
@@ -300,7 +299,6 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
 
     if (menuSystem->menu != MENU_NONE ||
         doomCanvas->state != ST_INTRO ||
-        doomRpg->player != NULL ||
         !playerHasFreshResetContract(&playerState)) {
         printf("[MAINSTART] FAILED fresh-game transition expected menu=%d state=%d nativeReset=yes legacyPlayer=NULL, got menu=%d state=%d resetContract=%s legacyPlayer=%p\n",
                MENU_NONE,
@@ -308,7 +306,7 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
                menuSystem->menu,
                doomCanvas->state,
                playerHasFreshResetContract(&playerState) ? "yes" : "NO",
-               (void*)doomRpg->player);
+               (void*)NULL);
         return 0;
     }
 

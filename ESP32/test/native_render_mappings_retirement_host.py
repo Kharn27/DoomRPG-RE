@@ -64,7 +64,6 @@ typedef struct Render_s {
     void *mediaTexturesIds, *mediaSpriteIds;
 } Render_t;
 typedef struct DoomRPG_s {
-    void *game;
     Render_t *render;
 } DoomRPG_t;
 typedef struct MappingPlan_s {
@@ -110,7 +109,7 @@ static void fresh(void) {
 }
 int main(void) {
     Render_t render={0};
-    DoomRPG_t root={NULL,&render};
+    DoomRPG_t root={&render};
     doomRpg=&root;
     for (int i=0;i<4096;++i) {
         fresh();
@@ -133,10 +132,8 @@ int main(void) {
     fresh();doomRpg=NULL;
     assert(EspLegacyConfigMappingsStartup_start(1)==0);
     assert(mapperCalls==previous);
-    fresh();doomRpg=&root;root.game=&render;
-    assert(EspLegacyConfigMappingsStartup_start(1)==0);
-    assert(mapperCalls==previous);
-    fresh();root.game=NULL;root.render=NULL;
+    /* Game_t is ABI-retired: the native root cannot carry a Game pointer. */
+    fresh();doomRpg=&root;root.render=NULL;
     assert(EspLegacyConfigMappingsStartup_start(1)==0);
     assert(mapperCalls==previous);
     fresh();root.render=&render;statValid=0;

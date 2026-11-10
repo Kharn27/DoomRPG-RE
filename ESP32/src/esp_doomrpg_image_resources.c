@@ -3,6 +3,7 @@
 
 #include "DoomRPG.h"
 #include "SDL_Video.h"
+#include "esp_native_root_state.h"
 #include "esp_native_indexed_image.h"
 #include "esp_native_texture_bridge.h"
 #include "esp_legacy_asset_source.h"
@@ -12,8 +13,13 @@
  * the native PAK into its final packed pixels and quantized palette. The
  * short-lived adapter transfers both allocations to the existing texture
  * renderer without copying. Legacy DoomRPG Image_t ABI and imageMemory
- * accounting remain unchanged; ZIP is not a runtime dependency.
+ * metric behavior remain unchanged; Root-F moves its state out of the root; ZIP is not a runtime dependency.
  */
+
+static int nativeImageMemory;
+
+void EspNativeImageResources_resetAccounting(void) { nativeImageMemory = 0; }
+int EspNativeImageResources_accountedBytes(void) { return nativeImageMemory; }
 
 void DoomRPG_createImage(DoomRPG_t* doomrpg, const char* resourceName, boolean isTransparentMask, Image_t* img)
 {
@@ -52,7 +58,7 @@ void DoomRPG_createImage(DoomRPG_t* doomrpg, const char* resourceName, boolean i
     img->imgBitmap = texture;
     /* The adapter nulled owned pointers; this is an empty, safe disposal. */
     EspNativeImage_dispose(&decoded);
-    doomrpg->imageMemory += (DoomRPG_freeMemory() - mem);
+    nativeImageMemory += (DoomRPG_freeMemory() - mem);
 }
 
 void DoomRPG_freeImage(DoomRPG_t* doomrpg, Image_t* image)
@@ -62,7 +68,7 @@ void DoomRPG_freeImage(DoomRPG_t* doomrpg, Image_t* image)
 		SDL_DestroyTexture(image->imgBitmap);
 		image->imgBitmap = NULL;
 	}
-	doomrpg->imageMemory -= (mem - DoomRPG_freeMemory());
+	nativeImageMemory -= (mem - DoomRPG_freeMemory());
 }
 
 byte *DoomRPG_fileOpenRead(DoomRPG_t* doomrpg, const char* resourceName)
