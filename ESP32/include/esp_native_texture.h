@@ -1,7 +1,6 @@
 #ifndef DOOMRPG_ESP32_NATIVE_TEXTURE_H
 #define DOOMRPG_ESP32_NATIVE_TEXTURE_H
 
-#include <stdbool.h>
 #include <stdint.h>
 #include "esp_native_indexed_image.h"
 
@@ -25,9 +24,9 @@ typedef struct EspNativeTexture_s {
     EspNativeImageColor* palette;
     int paletteSize;
     uint8_t indexedBitsPerPixel;
-    bool indexed;
+    uint8_t indexed;
     uint8_t red, green, blue;
-    bool hasColorKey;
+    uint8_t hasColorKey;
     uint16_t colorKey;
 } EspNativeTexture;
 
