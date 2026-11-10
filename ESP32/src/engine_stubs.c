@@ -5,6 +5,7 @@
 
 #include "DoomRPG.h"
 #include "esp_native_process_rng_owner.h"
+#include "esp_native_process_services.h"
 #include "esp_native_root_state.h"
 #include "DoomCanvas.h"
 #include "Game.h"
@@ -123,20 +124,9 @@ void DoomRPG_Error(const char* fmt, ...)
 
     printf("%s", errMsg);
 
-    const SDL_MessageBoxButtonData buttons[] = {
-        {0, 0, "Ok"},
-    };
-    const SDL_MessageBoxColorScheme colorScheme = {
-        {
-            {255, 0, 0}, {0, 255, 0}, {255, 255, 0},
-            {0, 0, 255}, {255, 0, 255}
-        }
-    };
-    const SDL_MessageBoxData messageboxdata = {
-        SDL_MESSAGEBOX_ERROR, NULL, "DoomRPG Error", errMsg,
-        SDL_arraysize(buttons), buttons, &colorScheme
-    };
-    SDL_ShowMessageBox(&messageboxdata, NULL);
+    /* Fatal errors are Serial-only on classic CYD. Keep the exact
+     * historical title/message, followed by the same teardown and exit. */
+    EspNativeProcess_fatalMessage("DoomRPG Error", errMsg);
     /* Native PAK backing store is not a desktop ZIP and is not closed here. */
     DoomRPG_FreeAppData(doomRpg);
     SDL_CloseAudio();
