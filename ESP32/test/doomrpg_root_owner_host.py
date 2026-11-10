@@ -32,7 +32,7 @@ assert "DoomRPG_t* doomRpg = NULL;" in native
 assert "DoomRPG_t* doomRpg = NULL;" in legacy
 assert "Z_FreeMemory()" in metric
 assert "closeZipFile" not in fatal and "DoomRPG_FreeAppData(doomRpg)" in fatal
-assert "SDL_ShowMessageBox" in fatal and "exit(0)" in fatal
+assert 'EspNativeProcess_fatalMessage("DoomRPG Error", errMsg);' in fatal and "exit(0)" in fatal
 assert '"doomrpg_engine_patched"' not in build[build.index("Desktop original source registration retired;"):]
 assert '"+<DoomRPG.c>"' not in build
 assert "compiledPatchedC=0" in build
