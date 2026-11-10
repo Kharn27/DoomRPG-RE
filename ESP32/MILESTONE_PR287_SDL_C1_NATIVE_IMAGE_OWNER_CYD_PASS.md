@@ -1,0 +1,28 @@
+# SDL-C1 — lecteur BMP indexé natif et adoption compacte : PASS matériel ciblé classic CYD
+
+**10 novembre 2026** · [PR #287](https://github.com/Kharn27/DoomRPG-RE/pull/287) · [issue #269](https://github.com/Kharn27/DoomRPG-RE/issues/269)
+
+## Frontière du code validé
+
+- Base initiale vérifiée : `main=34949c182a445f50e2e075891bc997a77597e738` (SDL-B7 #284). Durant le développement, Root-E #286 et chatbox #285 ont avancé le main ; ils ont été intégrés à la branche via un commit de fusion à deux parents, **`8f6c210fa973eaf2c35245134e665060e3d8ae4f`**, avec `main=76d6bfbaa231a6bd725072d98e769c5e21635723`. Ce SHA est le **candidat matériel présumé** d'après le parcours de flash utilisateur ; **le log Serial ne contient pas de SHA firmware et ne prouve pas indépendamment cette identité**.
+- Migration concrète de la production `DoomRPG_createImage` : `EspAssetPack_open/findEntry/readRange/close` → `EspNativeImage_loadPack/decode` → indices compactés 1/4/8 bpp + palette quantifiée (RGB565→RGB888) → `EspNativeTexture_adoptIndexed`. **Zéro copie** des pixels/palette à l'adoption. Le chemin de production n'alloue plus le BMP entier, ne crée plus RWops/Surface/format/palette SDL intermédiaires et n'emploie plus `SDL_CreateTextureFromSurface`. Les données persistantes restent bornées à l'image proprement dite. BMP top-down/bottom-up, pitch compact, palette, padding, magenta colorkey, modulation dans le renderer inchangé.
+- Garde `imageMemory` hérité, `Image_t`, `DoomRPG_freeImage`, `SDL_RenderCopy`, `PlatformVideo_present`, framebuffer partagé 160×120 RGB565 **38 400 B**, `shapeData/mediaTexels=NULL`; **pas de ZIP runtime**, nouvelle surface RGB565, grosse allocation map-wide ni modification du desktop oracle. L'ancien `Esp32Bmp_LoadRW` reste source de référence, mais **n'est plus lié dans l'ELF**.
+- Contrats OOM/rollback : le lecteur décode un payload indépendant, ferme la lease PAK sur chaque chemin ; sur échec d'adoption, allocations conservées puis explicitement libérées ; sur succès, transfert unique vers la texture et libération exacte par `SDL_DestroyTexture`. Les tests hôte inspectent ces frontières. Le décodeur fait une lecture bornée de palette ≤1 KiB, puis une lecture directe par ligne compacte sans tampon BMP complet.
+
+## Preuves logicielles et audit avant flash
+
+- CI du code final intégré [GitHub Actions #42729427684](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42729427684) : **SUCCESS**, tests hôte du vrai décodeur, palette, BMP 1/4/8 bpp, pack/padding/orientation, color key, pixels, OOM/rollback/adoption/libération, trois builds `esp32-cyd`, `esp32-cyd-bringup`, `esp32-cyd-trace`, compilation DB, carte ELF, audit des symboles et sections.
+- **19→11 fonctions SDL liées** sur chacun des trois profils, **8 réellement absentes** : `SDL_RWFromMem`, `SDL_RWread`, `SDL_RWseek`, `SDL_RWclose`, `SDL_CreateTextureFromSurface`, `SDL_FreeSurface`, `SDL_MapRGB`, `SDL_SetColorKey`. Corps SDL symboliques 1608→1027 B (−581 B symboliques, **pas** un delta flash équivalent).
+- Comparaison binaire PlatformIO contre le **main sans C1 `76d6bfbaa231a6bd725072d98e769c5e21635723`**, CI main [#42728028185](https://github.com/Kharn27/DoomRPG-RE/actions/runs/42728028185), à conditions de build comparables : normal **859633→859085 B (−548 B)**, bringup **882173→881621 B (−552 B)**, trace **877709→877189 B (−520 B)**. RAM statique PlatformIO identique : normal **80768 B**, bringup **80920 B**, trace **80816 B** avant/après. Ces mesures sont **binaires**, pas preuve d'économie heap8 ni FPS.
+
+## Preuve Serial sur le vrai classic CYD : deux extraits fournis
+
+**Boot après reset (POWERON_RESET)** : ESP32-D0WD-V3 rev.3, 240MHz, flash 4Mo, **PSRAM=0**, 241 entrées PAK, écran 320×240 présenté depuis **un framebuffer logique 160×120 RGB565 / 38400 B**. `[NATIVEIMAGE] DECODE 144x72 4-bpp packed colors=3 bytes=5184 key=1` immédiatement suivi de `[NATIVEIMAGE] ADOPT 144x72 bpp=4 bytes=5184 palette=3` ; deuxième paire **108×74 / 4-bpp / 3996 B / palette 16 / key=1**. Pas d'erreur de lecture/adoption. `[MAINBOOT] READY`, `[ALIVE] uptime=5004 ms heap8=126028 largest8=86004`, panneau menu et démarrage native validés.
+
+**Extrait gameplay antérieur de la même campagne** : actions MOVE/TURN et portes animées, SELECT, HUD, nombreux pickups avec `PICKUPMINI START/END`, combats réels (attaques ennemies, ripostes, mort de monstres, effets de sang/gibs), HUB, EXIT ; `[RESIDENTRESET] heap8=112864->130872 released=18008 ... empty=1`, `[SYSEXIT] MENU-READY frame=1945fafa session=off resident=empty` ; `[ALIVE]` final sur ~185 s, heap8 130872, largest8 86004 au menu, et pendant session ~84856/61428. `[MAINMENU] ... shapeData=0x0 mediaTexels=0x0`. Pas de panic/WDT dans les extraits. Les messages `[NATIVEFRAME] BOUNDARY-INLINE logical=15...` déjà connus restent à suivre **hors périmètre SDL-C1**.
+
+## Limites et décision
+
+**PASS matériel ciblé SDL-C1** : les deux adoptions natives **4-bpp** sur vrai CYD, la stabilité du gameplay observé et la restitution de menu sont cohérents avec la CI. Le log n'exerce **pas** physiquement les BMP 1/8 bpp, ni tous les cas d'erreur et OOM : **tests hôte uniquement**. Pas de mesure A/B de pic heap8/largest8 en phase de décodage, de FPS ni de comparaison visuelle exhaustive, et pas de preuve de SHA embarqué. Les logs matériels sont des extraits fournis dans la conversation, pas un fichier Serial intégral archivé ; ne pas leur inventer nom, nombre de lignes ou taille.
+
+**Après PASS** : documenter uniquement, figer le code métier testé, vérifier CI finale sur commit docs-only, puis fusion **uniquement sur demande explicite de l'utilisateur**. Toute modification de code après ce PASS nécessiterait une nouvelle gate matérielle.
