@@ -144,7 +144,7 @@ static void exerciseIndexed(int bpp) {
     SDL_Rect dst{20, 20, 8, 4};
     SDL_RenderSetClipRect(nullptr, nullptr);
     std::fill(std::begin(framebuffer), std::end(framebuffer), pixel);
-    assert(SDL_RenderCopy(nullptr, t, &src, &dst) == 0);
+    assert(EspNativeTexture_blit(t, &src, &dst) == 0);
     for (int y = 19; y < 25; ++y) {
         for (int x = 19; x < 29; ++x) {
             const bool inside = x >= 20 && x < 28 && y >= 20 && y < 24;
@@ -154,11 +154,11 @@ static void exerciseIndexed(int bpp) {
         }
     }
 
-    assert(SDL_SetTextureColorMod(t, 128, 255, 64) == 0);
+    assert(EspNativeTexture_setColorMod(t, 128, 255, 64) == 0);
     SDL_Rect clip{22, 21, 3, 2};
     SDL_RenderSetClipRect(nullptr, &clip);
     std::fill(std::begin(framebuffer), std::end(framebuffer), pixel);
-    assert(SDL_RenderCopy(nullptr, t, &src, &dst) == 0);
+    assert(EspNativeTexture_blit(t, &src, &dst) == 0);
     for (int y = 19; y < 25; ++y) {
         for (int x = 19; x < 29; ++x) {
             const bool inside = x >= 22 && x < 25 && y >= 21 && y < 23;
@@ -172,8 +172,8 @@ static void exerciseIndexed(int bpp) {
     const Uint16 rgb[2] = {0xf800, 0x07e0};
     assert(SDL_UpdateTexture(t, nullptr, rgb, sizeof rgb) == -1);
     SDL_Rect bad{0, 0, 0, 2};
-    assert(SDL_RenderCopy(nullptr, t, &bad, &dst) == -1);
-    SDL_DestroyTexture(t);
+    assert(EspNativeTexture_blit(t, &bad, &dst) == -1);
+    EspNativeTexture_destroy(t);
     assert(pixelsFreed == 1 && paletteFreed == 1);
     trackedPixels = trackedPalette = nullptr;
 }
@@ -216,12 +216,12 @@ static void exerciseNativeAdoption() {
     std::fill(std::begin(framebuffer), std::end(framebuffer),
               static_cast<Uint16>(0x1234));
     SDL_Rect dest{10, 10, 4, 2};
-    assert(SDL_RenderCopy(nullptr, t, nullptr, &dest) == 0);
+    assert(EspNativeTexture_blit(t, nullptr, &dest) == 0);
     assert(framebuffer[10 * 160 + 10] == 0x1234); // magenta colorkey
     assert(framebuffer[10 * 160 + 11] == 0xf800);
     assert(framebuffer[10 * 160 + 12] == 0x07e0);
     assert(framebuffer[10 * 160 + 13] == 0x001f);
-    SDL_DestroyTexture(t);
+    EspNativeTexture_destroy(t);
     assert(pixelsFreed == 1 && paletteFreed == 1);
     trackedPixels = trackedPalette = nullptr;
 }
@@ -233,10 +233,10 @@ static void exerciseRgb565() {
     assert(SDL_UpdateTexture(t, nullptr, colors, sizeof colors) == 0);
     SDL_Rect dest{40, 10, 4, 2};
     std::fill(std::begin(framebuffer), std::end(framebuffer), static_cast<Uint16>(0));
-    assert(SDL_RenderCopy(nullptr, t, nullptr, &dest) == 0);
+    assert(EspNativeTexture_blit(t, nullptr, &dest) == 0);
     for (int y = 10; y < 12; ++y) for (int x = 40; x < 44; ++x)
         assert(framebuffer[y * 160 + x] == colors[(x - 40) / 2]);
-    SDL_DestroyTexture(t);
+    EspNativeTexture_destroy(t);
 }
 
 static void exerciseFailures() {
@@ -282,7 +282,7 @@ int main() {
 
 def main():
     sdl = ROOT / "ESP32/src/esp32_sdl.cpp"
-    assert "Uint8* indexedPixels;" in sdl.read_text()
+    assert "uint8_t* indexedPixels;" in (ROOT / "ESP32/include/esp_native_texture.h").read_text()
     with tempfile.TemporaryDirectory(prefix="doomrpg-sdl-permanent-") as temp:
         tmp = Path(temp)
         (tmp / "Arduino.h").write_text(ARDUINO)
@@ -296,7 +296,7 @@ def main():
                      "-I", str(tmp), "-I", str(ROOT),
                      "-I", str(ROOT / "ESP32/include"),
                      "-I", str(ROOT / "ESP32/src"),
-                     str(test), "-o", str(output)]
+                     str(test), str(ROOT / "ESP32/src/esp_native_texture.cpp"), "-o", str(output)]
         subprocess.run(cmd, check=True, cwd=ROOT)
         subprocess.run([str(output)], check=True, cwd=ROOT)
 
