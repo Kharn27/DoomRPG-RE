@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "esp_native_root_state.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -716,12 +717,12 @@ static int rerender(DoomRPG_t* doomRpg,
                     const EspPlayerViewState* view,
                     const char* reason) {
     EspNativeGameplayFrameStats frame;
-    if (doomRpg == NULL || doomRpg->render == NULL || view == NULL ||
+    if (doomRpg == NULL || EspNativeRootOwners_live()->render == NULL || view == NULL ||
         view->viewAngle < 0 || view->viewAngle > 255) return 0;
 
     if (EspNativeResidentGameplay_isAutomapActive()) {
         if (!EspNativeResidentGameplay_redrawAutomap(
-                doomRpg->render, reason)) {
+                EspNativeRootOwners_live()->render, reason)) {
             printf("[PLAYERRES] AUTOMAP-RENDER-FAILED reason=%s angle=%d\n",
                    reason != NULL ? reason : "pickup",
                    (int)view->viewAngle);
@@ -734,7 +735,7 @@ static int rerender(DoomRPG_t* doomRpg,
     }
 
     memset(&frame, 0, sizeof(frame));
-    if (!EspNativeGameplayFrame_renderTurn(doomRpg->render,
+    if (!EspNativeGameplayFrame_renderTurn(EspNativeRootOwners_live()->render,
                                            (uint8_t)view->viewAngle,
                                            &frame)) {
         printf("[PLAYERRES] RENDER-FAILED reason=%s angle=%d\n",
@@ -979,7 +980,7 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
             EspNativeGameplayDialogBeginStatus dialogStatus =
                 ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_NOT_READY;
             if (EspNativeResidentGameplay_exitAutomapForModal(
-                    doomRpg != NULL ? doomRpg->render : NULL,
+                    doomRpg != NULL ? EspNativeRootOwners_live()->render : NULL,
                     "WEAPON-PICKUP-DIALOG")) {
                 dialogStatus =
                     EspNativeGameplayDialog_beginStandalone(firstWeaponDialog);

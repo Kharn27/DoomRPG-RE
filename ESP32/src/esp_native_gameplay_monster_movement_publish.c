@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "esp_native_root_state.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -252,7 +253,7 @@ static int recoveryRedraw(DoomRPG_t* doomRpg,
     if (outFrame != NULL) memset(outFrame, 0, sizeof(*outFrame));
     return doomRpg != NULL && player != NULL && outFrame != NULL &&
            EspNativeGameplayFrame_renderTurn(
-               doomRpg->render, (uint8_t)player->viewAngle, outFrame);
+               EspNativeRootOwners_live()->render, (uint8_t)player->viewAngle, outFrame);
 }
 
 int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
@@ -385,7 +386,7 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
     setProjected(publishCapture.after.spriteIndex, 1);
 
     memset(&frame, 0, sizeof(frame));
-    if (!EspNativeGameplayFrame_renderTurn(doomRpg->render,
+    if (!EspNativeGameplayFrame_renderTurn(EspNativeRootOwners_live()->render,
                                            (uint8_t)player->viewAngle,
                                            &frame)) {
         int ownersExact = restorePublishedOwners(&relink, &publishCapture.before,
