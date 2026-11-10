@@ -20,8 +20,8 @@ LIVE = (
     "SDL_RWFromMem(", "SDL_RWFromFile(", "SDL_RWread(", "SDL_RWseek(",
     "SDL_RWclose(", "SDL_FreeSurface(",
     "SDL_CreateTexture(", "SDL_UpdateTexture(",
-    "SDL_CreateTextureFromSurface(", "SDL_DestroyTexture(",
-    "SDL_RenderCopy(", "SDL_RenderPresent(", "SDL_RenderFillRect(",
+    "SDL_CreateTextureFromSurface(", 
+     "SDL_RenderPresent(", "SDL_RenderFillRect(",
     "SDL_RenderDrawLine(", "SDL_RenderSetClipRect(",
 )
 
@@ -45,6 +45,11 @@ def main():
     for symbol in LIVE:
         assert symbol in shim, f"SDL-B6 unexpectedly removed live implementation {symbol}"
         assert symbol in header, f"SDL-B6 unexpectedly removed live declaration {symbol}"
+    native = (ROOT / "ESP32/src/esp_native_texture.cpp").read_text(encoding="utf-8")
+    nativeHeader = (ROOT / "ESP32/include/esp_native_texture.h").read_text(encoding="utf-8")
+    for api in ("EspNativeTexture_blit(", "EspNativeTexture_destroy(",
+                "EspNativeTexture_setColorMod(", "EspNativeTexture_adoptIndexed("):
+        assert api in native and api in nativeHeader, f"SDL-D1 native texture owner missing {api}"
     assert "PlatformVideo_present()" in shim
     assert "texture->indexed = true;" in shim
     assert "surface->pixels = nullptr;" in shim
