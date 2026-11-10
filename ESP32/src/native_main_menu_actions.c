@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "esp_native_texture.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -194,9 +195,8 @@ static int helpDrawStarfield(DoomRPG_t* doomRpg) {
         return 0;
 
     if (doomRpg->graphSetCliping) DoomRPG_setClipFalse(doomRpg);
-    if (SDL_RenderCopy(NULL, helpSpaceBG.imgBitmap, NULL, &primary) != 0 ||
-        (shift > 0 && SDL_RenderCopy(NULL, helpSpaceBG.imgBitmap,
-                                     NULL, &wrap) != 0))
+    if (EspNativeTexture_blit(helpSpaceBG.imgBitmap, NULL, &primary) != 0 ||
+        (shift > 0 && EspNativeTexture_blit(helpSpaceBG.imgBitmap, NULL, &wrap) != 0))
         return 0;
 
     /* Translucent dark reading window: edit the ONE shared RGB565 frame,
@@ -392,7 +392,7 @@ static int helpPaintMiniHudBacking(uint16_t* fb) {
         SDL_Rect dst = {MAIN_HELP_HUD_BAR_X + tileX,
                         MAIN_HELP_HUD_BAR_Y, MAIN_HELP_HUD_MINI_TILE,
                         MAIN_HELP_HUD_BAR_HEIGHT};
-        if (SDL_RenderCopy(NULL, helpHudBarBG.imgBitmap, NULL, &dst) != 0)
+        if (EspNativeTexture_blit(helpHudBarBG.imgBitmap, NULL, &dst) != 0)
             return 0;
     }
     return 1;
