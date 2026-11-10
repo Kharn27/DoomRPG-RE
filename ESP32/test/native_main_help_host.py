@@ -513,7 +513,7 @@ assert "helpExpectedFrameFNV = finalFNV;" in actions
 assert "before != helpExpectedFrameFNV" in actions
 assert "helpStop();" in actions
 assert "DoomRPG_esp32MainMenuReturnToMain(" in actions
-assert "graphSetCliping" in actions
+assert "EspNativePresentation_clipEnabled()" in actions
 assert "EspMainMenuSkin_paintPlate" in skin
 
 for scroll in range(len(lines)):

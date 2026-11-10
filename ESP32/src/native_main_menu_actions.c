@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "DoomRPG.h"
+#include "esp_native_root_state.h"
 #include "DoomCanvas.h"
 #include "Menu.h"
 #include "esp_native_menu_state.h"
@@ -194,7 +195,7 @@ static int helpDrawStarfield(DoomRPG_t* doomRpg) {
                      DOOMRPG_LOGICAL_HEIGHT * sizeof(uint16_t))
         return 0;
 
-    if (doomRpg->graphSetCliping) DoomRPG_setClipFalse(doomRpg);
+    if (EspNativePresentation_clipEnabled()) DoomRPG_setClipFalse(doomRpg);
     if (EspNativeTexture_blit(helpSpaceBG.imgBitmap, NULL, &primary) != 0 ||
         (shift > 0 && EspNativeTexture_blit(helpSpaceBG.imgBitmap, NULL, &wrap) != 0))
         return 0;

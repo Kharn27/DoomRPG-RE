@@ -4,6 +4,7 @@
 #include <stdio.h>
 
 #include "DoomRPG.h"
+#include "esp_native_root_state.h"
 #include "DoomCanvas.h"
 #include "MenuSystem.h"
 #include "SDL_Video.h"
@@ -517,7 +518,7 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
     elapsedAnim = doomCanvas->time - introState->storyAnimTime;
     elapsedText = doomCanvas->time - introState->storyTextTime;
 
-    if (doomCanvas->doomRpg->graphSetCliping) {
+    if (EspNativePresentation_clipEnabled()) {
         DoomRPG_setClipFalse(doomCanvas->doomRpg);
     }
 

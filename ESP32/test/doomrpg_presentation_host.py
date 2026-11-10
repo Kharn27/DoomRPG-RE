@@ -55,6 +55,7 @@ HARNESS = r'''
 #include "DoomRPG.h"
 #include "DoomCanvas.h"
 #include "SDL_Video.h"
+#include "esp_native_root_state.h"
 
 enum { W=160, H=120, PIXELS=W*H, GUARD=12 };
 struct SDL_Renderer { int slot; };
@@ -145,7 +146,7 @@ static void check(const char* phase) {
         mocks[0].r!=mocks[1].r || mocks[0].g!=mocks[1].g ||
         mocks[0].b!=mocks[1].b || mocks[0].a!=mocks[1].a ||
         mocks[0].presents!=mocks[1].presents ||
-        cores[0].graphSetCliping!=cores[1].graphSetCliping ||
+        cores[0].graphSetCliping!=EspNativePresentation_clipEnabled() ||
         canvases[0].fontColor!=canvases[1].fontColor) {
         fprintf(stderr,"presentation mismatch %s\n",phase);
         exit(1);
@@ -233,7 +234,11 @@ def main():
     for signature, crc in METHODS:
         real = adapted(extract(legacy, signature))
         assert zlib.crc32(real.encode("latin-1")) == crc, signature + " drift"
-        assert extract(native, signature) == real, signature + " native drift"
+        expected = (real.replace("doomrpg->graphSetCliping = false;",
+                                 "(void)doomrpg;\n\tnativeGraphClipSet = false;")
+                        .replace("doomrpg->graphSetCliping = true;",
+                                 "(void)doomrpg;\n\tnativeGraphClipSet = true;"))
+        assert extract(native, signature) == expected, signature + " native drift"
         bodies.append(real)
         names.append(re.search(r"(DoomRPG_\w+)\(", signature).group(1))
     renamed = "\n".join("#define %s Reference_%s" % (n, n) for n in names)
@@ -247,6 +252,7 @@ def main():
         cmd = shlex.split(os.environ.get("CC", "cc")) + [
             "-O2", "-std=c11", "-Wall", "-Wextra", "-Werror",
             "-Wno-unused-parameter", "-DDOOMRPG_ESP32=1",
+            "-DDOOMRPG_ESP32_GEOMETRY_ORACLE=1",
             "-IESP32/include", "-Isrc",
             "ESP32/src/esp_doomrpg_presentation.c", str(temp/"reference.c"),
             str(temp/"test.c"), "-o", str(temp/"test")]

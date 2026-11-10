@@ -47,6 +47,7 @@ HARNESS = r"""
 #include <string.h>
 #include <SDL.h>
 #include "DoomRPG.h"
+#include "esp_native_root_state.h"
 #include "esp_native_indexed_image.h"
 #include "esp_native_texture_bridge.h"
 #include "esp_legacy_asset_source.h"
@@ -125,39 +126,40 @@ void EspNativeTexture_destroy(EspNativeTexture* t) {
 int main(void) {
     DoomRPG_t core = {0};
     Image_t logo = {0}, font = {0}, failed = {0};
-    core.imageMemory = 5;
+    EspNativeImageResources_resetAccounting();
+    assert(EspNativeImageResources_accountedBytes() == 0);
     DoomRPG_createImage(&core, "j.bmp", true, &logo);
     assert(loads == 1 && adoptions == 1 && failures == 0);
     assert(strcmp(lastRequested, "j.bmp") == 0);
     assert(logo.imgBitmap != NULL && logo.width == 108 &&
            logo.height == 74 && logo.isTransparentMask);
     assert(((SDL_Texture*)logo.imgBitmap)->hasColorKey == 1);
-    assert(core.imageMemory == -59);
+    assert(EspNativeImageResources_accountedBytes() == -64);
     DoomRPG_createImage(&core, "font.bmp", false, &font);
     assert(loads == 2 && adoptions == 2);
     assert(((SDL_Texture*)font.imgBitmap)->hasColorKey == 0);
-    assert(core.imageMemory == -123);
+    assert(EspNativeImageResources_accountedBytes() == -128);
 
     failLoad = 1;
     DoomRPG_createImage(&core, "broken.bmp", false, &failed);
     assert(failures == 1 && loads == 3 && adoptions == 2);
-    assert(failed.imgBitmap == NULL && core.imageMemory == -123);
+    assert(failed.imgBitmap == NULL && EspNativeImageResources_accountedBytes() == -128);
     failLoad = 0;
     failAdopt = 1;
     DoomRPG_createImage(&core, "oom.bmp", false, &failed);
     assert(failures == 2 && loads == 4 && adoptions == 3);
     assert(freedBuffers == 2 && failed.imgBitmap == NULL);
-    assert(core.imageMemory == -123);
+    assert(EspNativeImageResources_accountedBytes() == -128);
     failAdopt = 0;
 
     DoomRPG_freeImage(&core, &font);
     assert(font.imgBitmap == NULL && activeTextures == 1);
-    assert(core.imageMemory == -59);
+    assert(EspNativeImageResources_accountedBytes() == -64);
     DoomRPG_freeImage(&core, &logo);
     assert(logo.imgBitmap == NULL && activeTextures == 0);
-    assert(core.imageMemory == 5 && freedBuffers == 6);
+    assert(EspNativeImageResources_accountedBytes() == 0 && freedBuffers == 6);
     DoomRPG_freeImage(&core, &logo);
-    assert(core.imageMemory == 5);
+    assert(EspNativeImageResources_accountedBytes() == 0);
     uint8_t* raw = DoomRPG_fileOpenRead(&core, "/data.bin");
     assert(raw && raw[0] == 0xA7);
     assert(strcmp(lastRequested, "data.bin") == 0 && readCalls == 1);
@@ -189,7 +191,7 @@ def main():
         # SDL-D1 changes only which owner frees the identical texture payload.
         patched = historical.replace("SDL_DestroyTexture(image->imgBitmap)",
                                      "EspNativeTexture_destroy(image->imgBitmap)")
-        assert extract(native, signature) == patched
+        assert extract(native, signature) == patched.replace("doomrpg->imageMemory", "nativeImageMemory")
     with tempfile.TemporaryDirectory(prefix="doomrpg-image-resource-") as tmp:
         test_file = Path(tmp) / "image_resources_host.c"
         binary = str(Path(tmp) / "image_resources_host")
