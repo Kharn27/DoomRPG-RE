@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "esp_native_root_state.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -125,7 +126,7 @@ int DoomRPG_esp32PaintMainMenuOptionsDashboardSelection(
     uint8_t mask = OPTIONS_ENABLED_MASK;
 
     if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
-        !validateOptionsModel(doomRpg->menuSystem) ||
+        !validateOptionsModel(EspNativeRootOwners_live()->menuSystem) ||
         selectedItem < OPTIONS_BACK_ITEM || selectedItem > OPTIONS_VIDEO_ITEM) {
         return 0;
     }
@@ -149,7 +150,7 @@ int DoomRPG_esp32PaintMainMenuVideoDashboardSelection(
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     uint8_t enabledMask = (uint8_t)((1U << 0) | (1U << 3));
     if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
-        !validateOptionsModel(doomRpg->menuSystem) ||
+        !validateOptionsModel(EspNativeRootOwners_live()->menuSystem) ||
         selectedItem < 0 || selectedItem >= DOOMRPG_ESP32_VIDEO_CARD_COUNT)
         return 0;
     if (Esp32Backlight_isReady()) enabledMask |= (uint8_t)(1U << 1);
@@ -163,7 +164,7 @@ int DoomRPG_esp32PaintMainMenuBrightnessDashboard(
     uint32_t* framebufferFNV) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
-        !validateOptionsModel(doomRpg->menuSystem) ||
+        !validateOptionsModel(EspNativeRootOwners_live()->menuSystem) ||
         !Esp32Backlight_isReady()) return 0;
 
     return DoomRPG_esp32PaintBrightnessPresetCards(
@@ -175,7 +176,7 @@ int DoomRPG_esp32PaintMainMenuOrientationDashboard(
     uint32_t* framebufferFNV) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
-        !validateOptionsModel(doomRpg->menuSystem) ||
+        !validateOptionsModel(EspNativeRootOwners_live()->menuSystem) ||
         !Esp32Orientation_isReady()) return 0;
     return DoomRPG_esp32PaintOrientationPresetCards(
         doomRpg, Esp32Orientation_get(), framebufferFNV);
@@ -185,7 +186,7 @@ int DoomRPG_esp32PaintMainMenuThemeDashboard(
     struct DoomRPG_s* doomRpgBase, uint32_t* framebufferFNV) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
-        !validateOptionsModel(doomRpg->menuSystem)) return 0;
+        !validateOptionsModel(EspNativeRootOwners_live()->menuSystem)) return 0;
     return DoomRPG_esp32PaintThemePresetCards(
         doomRpg, EspMainMenuSkin_getTheme(), framebufferFNV);
 }
@@ -193,8 +194,8 @@ int DoomRPG_esp32PaintMainMenuThemeDashboard(
 static int paintOptionsBounded(DoomRPG_t* doomRpg,
                                uint32_t* logoHashOut,
                                uint32_t* finalHashOut) {
-    DoomCanvas_t* doomCanvas = doomRpg->doomCanvas;
-    EspNativeMenuState_t* menuSystem = doomRpg->menuSystem;
+    DoomCanvas_t* doomCanvas = EspNativeRootOwners_live()->doomCanvas;
+    EspNativeMenuState_t* menuSystem = EspNativeRootOwners_live()->menuSystem;
     SDL_Rect logoDst;
     uint32_t logoHash;
     uint32_t finalHash;
@@ -217,7 +218,7 @@ static int paintOptionsBounded(DoomRPG_t* doomRpg,
     if (SDL_RenderCopy(NULL, menuSystem->imgLogo.imgBitmap, NULL, &logoDst) != 0) {
         return 0;
     }
-    logoHash = DoomRPG_esp32MainMenuFramebufferHash(doomRpg->render);
+    logoHash = DoomRPG_esp32MainMenuFramebufferHash(EspNativeRootOwners_live()->render);
     if (logoHash == 0U ||
         !DoomRPG_esp32PaintMainMenuOptionsDashboard(
             doomRpg, 0, &finalHash) ||
@@ -255,8 +256,8 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase,
         return 0;
     }
 
-    menuSystem = doomRpg->menuSystem;
-    render = doomRpg->render;
+    menuSystem = EspNativeRootOwners_live()->menuSystem;
+    render = EspNativeRootOwners_live()->render;
     inputHash = DoomRPG_esp32MainMenuFramebufferHash(render);
     expectedInputHash =
         DoomRPG_esp32MainMenuSelectionFramebufferFNV(2);
@@ -305,7 +306,7 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase,
                menuSystem->selectedIndex,
                menuSystem->scrollIndex,
                menuSystem->numItems,
-               doomRpg->doomCanvas->state,
+               EspNativeRootOwners_live()->doomCanvas->state,
                (void*)render->shapeData,
                (void*)render->mediaTexels);
         return 0;
@@ -319,7 +320,7 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase,
            menuSystem->selectedIndex,
            menuSystem->scrollIndex,
            menuSystem->numItems,
-           doomRpg->doomCanvas->state,
+           EspNativeRootOwners_live()->doomCanvas->state,
            (unsigned int)optionsModelHash);
 
     for (i = 0; i < OPTIONS_ITEM_COUNT; ++i) {

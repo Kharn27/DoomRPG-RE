@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "esp_native_root_state.h"
 #include <stdio.h>
 
 #include "DoomRPG.h"
@@ -245,7 +246,7 @@ static void setFixedItem(MenuItem_t* item, const char* text, int flags) {
 
 
 static void resetFixedModel(DoomRPG_t* doomRpg) {
-    EspNativeMenuState_t* menuSystem = doomRpg->menuSystem;
+    EspNativeMenuState_t* menuSystem = EspNativeRootOwners_live()->menuSystem;
 
     menuSystem->scrollIndex = 0;
     menuSystem->selectedIndex = 0;
@@ -256,12 +257,12 @@ int DoomRPG_esp32MainMenuModelBuildMain(struct DoomRPG_s* doomRpgBase) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     EspNativeMenuState_t* menuSystem;
 
-    if (doomRpg == NULL || doomRpg->menuSystem == NULL) {
+    if (doomRpg == NULL || EspNativeRootOwners_live()->menuSystem == NULL) {
         printf("[MAINMODEL] FAILED build-main objectGraph\n");
         return 0;
     }
 
-    menuSystem = doomRpg->menuSystem;
+    menuSystem = EspNativeRootOwners_live()->menuSystem;
     resetFixedModel(doomRpg);
     menuSystem->menu = MENU_MAIN;
     menuSystem->type = 4;
@@ -280,7 +281,7 @@ int DoomRPG_esp32MainMenuModelBuildMain(struct DoomRPG_s* doomRpgBase) {
 }
 
 static int buildFixedContinueModel(DoomRPG_t* doomRpg) {
-    EspNativeMenuState_t* menuSystem = doomRpg->menuSystem;
+    EspNativeMenuState_t* menuSystem = EspNativeRootOwners_live()->menuSystem;
 
     resetFixedModel(doomRpg);
     menuSystem->menu = MENU_MAIN_CONTINUE;
@@ -295,7 +296,7 @@ static int buildFixedContinueModel(DoomRPG_t* doomRpg) {
 }
 
 static int buildFixedOptionsModel(DoomRPG_t* doomRpg) {
-    EspNativeMenuState_t* menuSystem = doomRpg->menuSystem;
+    EspNativeMenuState_t* menuSystem = EspNativeRootOwners_live()->menuSystem;
 
     resetFixedModel(doomRpg);
     menuSystem->menu = MENU_MAIN_OPTIONS;
@@ -311,10 +312,10 @@ static int buildFixedOptionsModel(DoomRPG_t* doomRpg) {
 
 static int buildBoundedHelpModel(DoomRPG_t* doomRpg) {
     EspNativeMenuState_t* menuSystem;
-    if (doomRpg == NULL || doomRpg->menuSystem == NULL ||
+    if (doomRpg == NULL || EspNativeRootOwners_live()->menuSystem == NULL ||
         MAIN_HELP_LINE_COUNT <= 0 || MAIN_HELP_LINE_COUNT > MAIN_HELP_MAX_LINES)
         return 0;
-    menuSystem = doomRpg->menuSystem;
+    menuSystem = EspNativeRootOwners_live()->menuSystem;
     menuSystem->scrollIndex = 0;
     menuSystem->selectedIndex = 0;
     menuSystem->numItems = MAIN_HELP_LINE_COUNT;
@@ -333,16 +334,16 @@ int DoomRPG_esp32MainMenuModelEnter(struct DoomRPG_s* doomRpgBase,
     DoomCanvas_t* canvas;
     const char* builder = "Menu_initMenu-transitional";
 
-    if (doomRpg == NULL || doomRpg->menuSystem == NULL ||
-        doomRpg->doomCanvas == NULL || !supportedModel(menuId)) {
+    if (doomRpg == NULL || EspNativeRootOwners_live()->menuSystem == NULL ||
+        EspNativeRootOwners_live()->doomCanvas == NULL || !supportedModel(menuId)) {
         printf("[MAINMODEL] FAILED enter target=%d objectGraph=%s\n",
                menuId,
                doomRpg != NULL ? "partial" : "null");
         return 0;
     }
 
-    menuSystem = doomRpg->menuSystem;
-    canvas = doomRpg->doomCanvas;
+    menuSystem = EspNativeRootOwners_live()->menuSystem;
+    canvas = EspNativeRootOwners_live()->doomCanvas;
 
 
     if (menuId == MENU_MAIN) {
@@ -418,14 +419,14 @@ int DoomRPG_esp32MainMenuModelLeave(struct DoomRPG_s* doomRpgBase) {
     EspNativeMenuState_t* menuSystem;
     DoomCanvas_t* canvas;
 
-    if (doomRpg == NULL || doomRpg->menuSystem == NULL ||
-        doomRpg->doomCanvas == NULL) {
+    if (doomRpg == NULL || EspNativeRootOwners_live()->menuSystem == NULL ||
+        EspNativeRootOwners_live()->doomCanvas == NULL) {
         printf("[MAINMODEL] FAILED leave objectGraph\n");
         return 0;
     }
 
-    menuSystem = doomRpg->menuSystem;
-    canvas = doomRpg->doomCanvas;
+    menuSystem = EspNativeRootOwners_live()->menuSystem;
+    canvas = EspNativeRootOwners_live()->doomCanvas;
 
     menuSystem->menu = MENU_NONE;
     menuSystem->numItems = 0;
