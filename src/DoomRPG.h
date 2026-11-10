@@ -242,8 +242,10 @@ typedef struct DoomRPG_s
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	struct Random_s	random;
 #endif
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	struct DoomCanvas_s*	doomCanvas;
 	struct Render_s*		render;
+#endif
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	struct Player_s*		player;
 	struct Game_s*			game;
@@ -255,10 +257,13 @@ typedef struct DoomRPG_s
 	struct Hud_s*			hud;
 	struct Menu_s*			menu;
 #endif
-#ifdef DOOMRPG_ESP32
-	struct EspNativeMenuState_s*	menuSystem;
+#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
+	/* No process-owner pointers remain on the native CYD root. */
+	byte nativeProcessIdentity;
+#elif defined(DOOMRPG_ESP32)
+	struct EspNativeMenuState_s* menuSystem;
 #else
-	struct MenuSystem_s*	menuSystem;
+	struct MenuSystem_s* menuSystem;
 #endif
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	struct ParticleSystem_s* particleSystem;
