@@ -8,6 +8,11 @@
 
 #include "../src/esp_native_gameplay_monster_attack_visual.c"
 
+/* The production code now draws from a stable process RNG pointer rather
+ * than the desktop root inline table. Host exercises that owner directly. */
+static Random_t hostProcessRng;
+Random_t* EspNativeProcessRng_live(void) { return &hostProcessRng; }
+
 static DoomRPG_t game;
 static Render_t render;
 static EspPlayerViewState playerView;
@@ -48,6 +53,7 @@ EspNativeGraphicsCatalog_findSprite(uint16_t logical) {
 
 static void prime(uint32_t probe, uint8_t total, uint8_t completed) {
     memset(&game, 0, sizeof(game));
+    memset(&hostProcessRng, 0, sizeof(hostProcessRng));
     memset(&playerView, 0, sizeof(playerView));
     EspNativeGameplayMonsterAttackVisual_reset();
     game.render = &render;
@@ -83,12 +89,12 @@ int main(void) {
     /* Failed final-idle presentation does not resolve or mutate the RNG.
      * The presentation retry can close the probe on its first success. */
     prime(18U, 1U, 1U);
-    const Random_t randomBefore = game.random;
+    const Random_t randomBefore = *EspNativeProcessRng_live();
     failFrame = 1;
     advance();
     assert(attackVisual.completedProbe == 0U && activeSequence == 1U &&
            attackVisual.poseActive == 1U && attackVisual.clearAtMs == 1001U);
-    assert(memcmp(&game.random, &randomBefore, sizeof(randomBefore)) == 0);
+    assert(memcmp(EspNativeProcessRng_live(), &randomBefore, sizeof(randomBefore)) == 0);
     failFrame = 0;
     fakeMs = 1001U;
     advance();

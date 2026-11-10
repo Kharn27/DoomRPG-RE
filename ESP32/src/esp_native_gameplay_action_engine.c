@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "DoomRPG.h"
+#include "esp_native_process_rng_owner.h"
 #include "Render.h"
 
 #include "doomrpg_log.h"
@@ -2878,11 +2879,11 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
 
         if (isJammedDoor) {
             EspNativeGameplayDestructibleStatus destructibleStatus;
-            randomBefore = doomRpg->random;
+            randomBefore = (*EspNativeProcessRng_live());
             randomCaptured = 1U;
-            randHit = DoomRPG_randNextByte(&doomRpg->random);
+            randHit = DoomRPG_randNextByte(EspNativeProcessRng_live());
             if ((uint32_t)randHit >= ACTION_JAMMED_DOOR_CALC_HIT) {
-                doomRpg->random = randomBefore;
+                (*EspNativeProcessRng_live()) = randomBefore;
                 EspNativeGameplayWeapon_cancelAttack();
                 memset(&actionState.pending, 0, sizeof(actionState.pending));
                 printf("[DESTRUCTIBLE] FAILED seq=%u reason=impossible-base-hit rand=%u calc=%u mutation=no rngRollback=yes\n",
@@ -2897,7 +2898,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 pending.tileIndex, pending.lineIndex,
                 &actionState.destructibleUndo);
             if (destructibleStatus != ESP_NATIVE_GAMEPLAY_DESTRUCTIBLE_OK) {
-                doomRpg->random = randomBefore;
+                (*EspNativeProcessRng_live()) = randomBefore;
                 EspNativeGameplayWeapon_cancelAttack();
                 memset(&actionState.pending, 0, sizeof(actionState.pending));
                 printf("[DESTRUCTIBLE] FAILED seq=%u line=%u reason=death-event-%s rand=%u rngRollback=yes mutation=no\n",
@@ -2957,7 +2958,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
 
             playerCaptured = 1U;
             randomCaptured = 1U;
-            randomBefore = doomRpg->random;
+            randomBefore = (*EspNativeProcessRng_live());
             playerFNVBefore = EspNativeGameplayPlayerState_fingerprint();
             ammoBefore = EspNativeGameplayPlayerState_ammo(crateWeapon->ammoType);
             ammoAfter = ammoBefore;
@@ -2966,7 +2967,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     crateWeapon->ammoType, crateWeapon->ammoUsage,
                     &ammoBefore, &ammoAfter)) {
                 (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                doomRpg->random = randomBefore;
+                (*EspNativeProcessRng_live()) = randomBefore;
                 EspNativeGameplayWeapon_cancelAttack();
                 memset(&actionState.pending, 0, sizeof(actionState.pending));
                 printf("[BARREL] FAILED seq=%u sprite=%u reason=ammo-preflight-race playerRollback=yes rngRollback=yes mutation=no\n",
@@ -2982,7 +2983,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     doomRpg, pending.weapon, player,
                     crateWorldDistance, &crateRoll)) {
                 (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                doomRpg->random = randomBefore;
+                (*EspNativeProcessRng_live()) = randomBefore;
                 EspNativeGameplayWeapon_cancelAttack();
                 memset(&actionState.pending, 0, sizeof(actionState.pending));
                 printf("[BARREL] FAILED seq=%u sprite=%u reason=combat-roll playerRollback=yes rngRollback=yes mutation=no\n",
@@ -3028,7 +3029,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                                           &barrelPreflightMonsters,
                                           &unsupported)) {
                     (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                    doomRpg->random = randomBefore;
+                    (*EspNativeProcessRng_live()) = randomBefore;
                     EspNativeGameplayWeapon_cancelAttack();
                     memset(&actionState.pending, 0, sizeof(actionState.pending));
                     printf("[BARRELRADIUS] DEFER seq=%u sprite=%u reason=unsupported-radius-family targetSprite=%u line=%u tile=%u type=%u subtype=%u chainCap=%u playerSentinel=%u playerRollback=yes rngRollback=yes mutation=no\n",
@@ -3052,16 +3053,16 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                         barrelExpectedChainCount, barrelPreflightMonsters);
                 if (barrelExpectedChainCount == 0U ||
                     barrelExpectedChainCount > ACTION_BARREL_CHAIN_MAX ||
-                    doomRpg->random.nextRand < 0 ||
-                    doomRpg->random.nextRand >= RANDTABLESIZE) {
+                    EspNativeProcessRng_live()->nextRand < 0 ||
+                    EspNativeProcessRng_live()->nextRand >= RANDTABLESIZE) {
                     (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                    doomRpg->random = randomBefore;
+                    (*EspNativeProcessRng_live()) = randomBefore;
                     EspNativeGameplayWeapon_cancelAttack();
                     memset(&actionState.pending, 0, sizeof(actionState.pending));
                     printf("[BARRELRADIUS] DEFER seq=%u sprite=%u reason=invalid-rng-or-chain nextRand=%d explosions=%u mutation=no\n",
                            (unsigned int)pending.sequence,
                            (unsigned int)pending.spriteIndex,
-                           doomRpg->random.nextRand,
+                           EspNativeProcessRng_live()->nextRand,
                            (unsigned int)barrelExpectedChainCount);
                     return 1;
                 }
@@ -3071,7 +3072,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 if (graphicsStatus != ESP_NATIVE_GRAPHICS_CATALOG_OK &&
                     graphicsStatus != ESP_NATIVE_GRAPHICS_CATALOG_ALREADY_ACTIVE) {
                     (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                    doomRpg->random = randomBefore;
+                    (*EspNativeProcessRng_live()) = randomBefore;
                     EspNativeGameplayWeapon_cancelAttack();
                     memset(&actionState.pending, 0, sizeof(actionState.pending));
                     printf("[BARREL] DEFER seq=%u sprite=%u reason=explosion-resource logical=%u catalogStatus=%u playerRollback=yes rngRollback=yes mutation=no\n",
@@ -3090,11 +3091,11 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                  * actual RNG pointer for exact hidden-refill reservations,
                  * and restore its Random_t bytes after this probe.
                  */
-                barrelRandomAfterCombat = doomRpg->random;
+                barrelRandomAfterCombat = (*EspNativeProcessRng_live());
                 if (!EspNativeRngReplayGuard_beginAttackProbe(
-                        &doomRpg->random)) {
+                        EspNativeProcessRng_live())) {
                     (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                    doomRpg->random = randomBefore;
+                    (*EspNativeProcessRng_live()) = randomBefore;
                     EspNativeGameplayWeapon_cancelAttack();
                     memset(&actionState.pending, 0, sizeof(actionState.pending));
                     printf("[BARRELRADIUS] DEFER seq=%u sprite=%u reason=rng-probe-owner-busy rollback=player+rng mutation=no\n",
@@ -3106,19 +3107,19 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                      previewOrdinal < barrelPreviewWords;
                      ++previewOrdinal) {
                     barrelBlastPreview[previewOrdinal] = (uint8_t)
-                        DoomRPG_randNextInt(&doomRpg->random);
+                        DoomRPG_randNextInt(EspNativeProcessRng_live());
                 }
-                barrelRandomAfterPreview = doomRpg->random;
-                doomRpg->random = barrelRandomAfterCombat;
+                barrelRandomAfterPreview = (*EspNativeProcessRng_live());
+                (*EspNativeProcessRng_live()) = barrelRandomAfterCombat;
                 previewExact = EspNativeRngReplayGuard_endAttackProbe(
-                    &doomRpg->random, &barrelRandomAfterCombat);
+                    EspNativeProcessRng_live(), &barrelRandomAfterCombat);
                 if (!previewExact) {
                     DRPG_LOGE("[RNGGUARD] BARREL-PREVIEW-FAILED seq=%u sprite=%u chain=%u stateExact=NO action=fail-closed\n",
                               (unsigned int)pending.sequence,
                               (unsigned int)pending.spriteIndex,
                               (unsigned int)barrelExpectedChainCount);
                     (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                    doomRpg->random = randomBefore;
+                    (*EspNativeProcessRng_live()) = randomBefore;
                     EspNativeGameplayWeapon_cancelAttack();
                     memset(&actionState.pending, 0, sizeof(actionState.pending));
                     printf("[BARRELRADIUS] DEFER seq=%u sprite=%u reason=rng-preview-not-exact rollback=player+rng mutation=no\n",
@@ -3143,7 +3144,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     !EspNativeGameplayMonsterCombat_beginSplashSequence(
                         doomRpg, pending.sequence)) {
                     (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                    doomRpg->random = randomBefore;
+                    (*EspNativeProcessRng_live()) = randomBefore;
                     EspNativeGameplayWeapon_cancelAttack();
                     memset(&actionState.pending, 0, sizeof(actionState.pending));
                     printf("[BARRELRADIUS] DEFER seq=%u sprite=%u reason=monster-sequence-snapshot-not-ready mutation=no rollback=player+rng\n",
@@ -3196,7 +3197,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                                            barrelChainCount)) rollbackOk = 0;
                 if (!EspNativeGameplayPlayerState_restore(&playerBefore))
                     rollbackOk = 0;
-                doomRpg->random = randomBefore;
+                (*EspNativeProcessRng_live()) = randomBefore;
                 EspNativeGameplayWeapon_cancelAttack();
                 memset(&actionState.pending, 0, sizeof(actionState.pending));
                 printf("[BARREL] FAILED seq=%u sprite=%u reason=monster-turn-request-busy rollback=%s player=yes rng=yes world=yes\n",
@@ -3240,7 +3241,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
 
             playerCaptured = 1U;
             randomCaptured = 1U;
-            randomBefore = doomRpg->random;
+            randomBefore = (*EspNativeProcessRng_live());
             playerFNVBefore = EspNativeGameplayPlayerState_fingerprint();
             ammoBefore = EspNativeGameplayPlayerState_ammo(crateWeapon->ammoType);
             ammoAfter = ammoBefore;
@@ -3249,7 +3250,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     crateWeapon->ammoType, crateWeapon->ammoUsage,
                     &ammoBefore, &ammoAfter)) {
                 (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                doomRpg->random = randomBefore;
+                (*EspNativeProcessRng_live()) = randomBefore;
                 EspNativeGameplayWeapon_cancelAttack();
                 memset(&actionState.pending, 0, sizeof(actionState.pending));
                 printf("[CRATE] FAILED seq=%u sprite=%u reason=ammo-preflight-race playerRollback=yes rngRollback=yes mutation=no\n",
@@ -3263,7 +3264,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     doomRpg, pending.weapon, player,
                     crateWorldDistance, &crateRoll)) {
                 (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                doomRpg->random = randomBefore;
+                (*EspNativeProcessRng_live()) = randomBefore;
                 EspNativeGameplayWeapon_cancelAttack();
                 memset(&actionState.pending, 0, sizeof(actionState.pending));
                 printf("[CRATE] FAILED seq=%u sprite=%u reason=combat-roll playerRollback=yes rngRollback=yes mutation=no\n",
@@ -3293,10 +3294,10 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                        (unsigned int)ammoAfter);
             }
             else {
-                crateRandFirst = DoomRPG_randNextByte(&doomRpg->random);
+                crateRandFirst = DoomRPG_randNextByte(EspNativeProcessRng_live());
                 if (EspNativeGameplayCrateState_requiresSecondRng(
                         crateRandFirst)) {
-                    crateRandSecond = DoomRPG_randNextByte(&doomRpg->random);
+                    crateRandSecond = DoomRPG_randNextByte(EspNativeProcessRng_live());
                     crateRandSecondValid = 1U;
                 }
                 if (!EspNativeGameplayCrateState_resolveOutcome(
@@ -3304,7 +3305,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                         crateRandSecondValid, &crateOutcome,
                         &crateEffectiveDefTile)) {
                     (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                    doomRpg->random = randomBefore;
+                    (*EspNativeProcessRng_live()) = randomBefore;
                     EspNativeGameplayWeapon_cancelAttack();
                     memset(&actionState.pending, 0, sizeof(actionState.pending));
                     printf("[CRATE] FAILED seq=%u sprite=%u reason=outcome-resolve first=%u second=%u secondValid=%u playerRollback=yes rngRollback=yes mutation=no\n",
@@ -3329,7 +3330,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                         graphicsStatus !=
                             ESP_NATIVE_GRAPHICS_CATALOG_ALREADY_ACTIVE) {
                         (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                        doomRpg->random = randomBefore;
+                        (*EspNativeProcessRng_live()) = randomBefore;
                         EspNativeGameplayWeapon_cancelAttack();
                         memset(&actionState.pending, 0, sizeof(actionState.pending));
                         printf("[CRATETRAP] DEFER seq=%u sprite=%u reason=explosion-resource logical=%u catalogStatus=%u playerRollback=yes rngRollback=yes mutation=no\n",
@@ -3341,10 +3342,10 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     }
 
                     if (!explosionPeekWordLowByte(
-                            &doomRpg->random, &crateTrapPreviewByte)) {
-                        int nextRand = doomRpg->random.nextRand;
+                            EspNativeProcessRng_live(), &crateTrapPreviewByte)) {
+                        int nextRand = EspNativeProcessRng_live()->nextRand;
                         (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                        doomRpg->random = randomBefore;
+                        (*EspNativeProcessRng_live()) = randomBefore;
                         EspNativeGameplayWeapon_cancelAttack();
                         memset(&actionState.pending, 0, sizeof(actionState.pending));
                         printf("[CRATETRAP] DEFER seq=%u sprite=%u reason=rng-word-refill-boundary nextRand=%d wordBytes=%u playerRollback=yes rngRollback=yes mutation=no\n",
@@ -3359,7 +3360,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     trapPlayer = EspNativeGameplayPlayerState_view();
                     if (trapPlayer == NULL) {
                         (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                        doomRpg->random = randomBefore;
+                        (*EspNativeProcessRng_live()) = randomBefore;
                         EspNativeGameplayWeapon_cancelAttack();
                         memset(&actionState.pending, 0, sizeof(actionState.pending));
                         printf("[CRATETRAP] DEFER seq=%u sprite=%u reason=player-view playerRollback=yes rngRollback=yes mutation=no\n",
@@ -3377,7 +3378,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                             previewHealthDamage <=
                         0) {
                         (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                        doomRpg->random = randomBefore;
+                        (*EspNativeProcessRng_live()) = randomBefore;
                         EspNativeGameplayWeapon_cancelAttack();
                         memset(&actionState.pending, 0, sizeof(actionState.pending));
                         printf("[CRATETRAP] LETHAL-DEFER seq=%u sprite=%u previewByte=%u blast=%u hp=%u armor=%u playerDeathState=not-owned playerRollback=yes rngRollback=yes worldMutation=no\n",
@@ -3417,7 +3418,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                         graphicsStatus !=
                             ESP_NATIVE_GRAPHICS_CATALOG_ALREADY_ACTIVE) {
                         (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                        doomRpg->random = randomBefore;
+                        (*EspNativeProcessRng_live()) = randomBefore;
                         EspNativeGameplayWeapon_cancelAttack();
                         memset(&actionState.pending, 0, sizeof(actionState.pending));
                         printf("[CRATE] FAILED seq=%u sprite=%u reason=graphics-preflight defTile=%u catalogStatus=%u playerRollback=yes rngRollback=yes mutation=no\n",
@@ -3440,7 +3441,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     if (!EspNativeGameplayCrateState_transform(
                             pending.spriteIndex, crateEffectiveDefTile)) {
                         (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                        doomRpg->random = randomBefore;
+                        (*EspNativeProcessRng_live()) = randomBefore;
                         EspNativeGameplayWeapon_cancelAttack();
                         memset(&actionState.pending, 0, sizeof(actionState.pending));
                         printf("[CRATE] FAILED seq=%u sprite=%u reason=transform-commit defTile=%u playerRollback=yes rngRollback=yes mutation=no\n",
@@ -3491,7 +3492,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 if (!EspNativeGameplayPlayerState_restore(&playerBefore)) {
                     rollbackOk = 0;
                 }
-                doomRpg->random = randomBefore;
+                (*EspNativeProcessRng_live()) = randomBefore;
                 EspNativeGameplayWeapon_cancelAttack();
                 memset(&actionState.pending, 0, sizeof(actionState.pending));
                 printf("[CRATE] FAILED seq=%u sprite=%u reason=monster-turn-request-busy rollback=%s player=yes rng=yes world=yes\n",
@@ -3559,7 +3560,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
             else if (isJammedDoor && destructibleMutated != 0U) {
                 rollbackOk = EspNativeGameplayDestructible_rollbackLineDeath(
                     &actionState.destructibleUndo);
-                if (randomCaptured != 0U) doomRpg->random = randomBefore;
+                if (randomCaptured != 0U) (*EspNativeProcessRng_live()) = randomBefore;
                 memset(&actionState.destructibleUndo, 0,
                        sizeof(actionState.destructibleUndo));
             }
@@ -3576,7 +3577,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     !EspNativeGameplayPlayerState_restore(&playerBefore)) {
                     rollbackOk = 0;
                 }
-                if (randomCaptured != 0U) doomRpg->random = randomBefore;
+                if (randomCaptured != 0U) (*EspNativeProcessRng_live()) = randomBefore;
             }
             else if (isCrate) {
                 if (crateTurnRequested != 0U &&
@@ -3594,7 +3595,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     !EspNativeGameplayPlayerState_restore(&playerBefore)) {
                     rollbackOk = 0;
                 }
-                if (randomCaptured != 0U) doomRpg->random = randomBefore;
+                if (randomCaptured != 0U) (*EspNativeProcessRng_live()) = randomBefore;
             }
             memset(&frame, 0, sizeof(frame));
             if (rollbackOk &&
@@ -3661,7 +3662,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                                 &playerBefore)) {
                             rollbackOk = 0;
                         }
-                        doomRpg->random = randomBefore;
+                        (*EspNativeProcessRng_live()) = randomBefore;
                         EspNativeGameplayWeapon_cancelAttack();
                         memset(&actionState.pending, 0,
                                sizeof(actionState.pending));
@@ -3706,7 +3707,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                                 &playerBefore)) {
                             rollbackOk = 0;
                         }
-                        doomRpg->random = randomBefore;
+                        (*EspNativeProcessRng_live()) = randomBefore;
                         actionState.feedbackPending = 0U;
                         actionState.feedbackKind =
                             ACTION_FEEDBACK_NONE;
@@ -3769,7 +3770,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     uint16_t playerMessageDamageThisBlast = 0U;
 
                     blastByte = (uint8_t)
-                        DoomRPG_randNextInt(&doomRpg->random);
+                        DoomRPG_randNextInt(EspNativeProcessRng_live());
                     if (blastCursor < barrelPreviewWords &&
                         blastByte != barrelBlastPreview[blastCursor]) {
                         int rollbackOk = 1;
@@ -3784,7 +3785,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                                 &playerBefore)) {
                             rollbackOk = 0;
                         }
-                        doomRpg->random = randomBefore;
+                        (*EspNativeProcessRng_live()) = randomBefore;
                         EspNativeGameplayWeapon_cancelAttack();
                         memset(&actionState.pending, 0,
                                sizeof(actionState.pending));
@@ -3827,7 +3828,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                                 &playerBefore)) {
                             rollbackOk = 0;
                         }
-                        doomRpg->random = randomBefore;
+                        (*EspNativeProcessRng_live()) = randomBefore;
                         EspNativeGameplayWeapon_cancelAttack();
                         memset(&actionState.pending, 0,
                                sizeof(actionState.pending));
@@ -3846,15 +3847,15 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                      * exact byte here. A rollback restores randomBefore. */
                     if (barrelPlayerLethal != 0U &&
                         barrelReservedDeathRandValid == 0U) {
-                        barrelRandomBeforeDeathByte = doomRpg->random;
+                        barrelRandomBeforeDeathByte = (*EspNativeProcessRng_live());
                         barrelReservedDeathRand =
-                            DoomRPG_randNextByte(&doomRpg->random);
+                            DoomRPG_randNextByte(EspNativeProcessRng_live());
                         barrelReservedDeathRandValid = 1U;
                         printf("[BARRELRADIUS] DEATH-RNG-RESERVE seq=%u source=%u nextBefore=%d nextAfter=%d value=%u ordering=blast-death-before-monster-effects transaction=pending\n",
                                (unsigned int)pending.sequence,
                                (unsigned int)barrelChain[blastCursor],
                                barrelRandomBeforeDeathByte.nextRand,
-                               doomRpg->random.nextRand,
+                               EspNativeProcessRng_live()->nextRand,
                                (unsigned int)barrelReservedDeathRand);
                     }
                     if (barrelInterleaved != 0U &&
@@ -3872,7 +3873,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                                 rollbackOk = 0;
                             if (!EspNativeGameplayPlayerState_restore(
                                     &playerBefore)) rollbackOk = 0;
-                            doomRpg->random = randomBefore;
+                            (*EspNativeProcessRng_live()) = randomBefore;
                             EspNativeGameplayWeapon_cancelAttack();
                             memset(&actionState.pending, 0,
                                    sizeof(actionState.pending));
@@ -3939,7 +3940,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                             &playerBefore)) {
                         rollbackOk = 0;
                     }
-                    doomRpg->random = randomBefore;
+                    (*EspNativeProcessRng_live()) = randomBefore;
                     actionState.feedbackPending = 0U;
                     actionState.feedbackKind = ACTION_FEEDBACK_NONE;
                     actionState.feedbackText[0] = '\0';
@@ -3978,7 +3979,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 barrelBlastRngCalls != barrelExpectedChainCount ||
                 (barrelInterleaved == 0U &&
                  memcmp(barrelReservedDeathRandValid != 0U
-                            ? &barrelRandomBeforeDeathByte : &doomRpg->random,
+                            ? &barrelRandomBeforeDeathByte : EspNativeProcessRng_live(),
                         &barrelRandomAfterPreview,
                         sizeof(barrelRandomAfterPreview)) != 0)) {
                 int rollbackOk = 1;
@@ -3987,7 +3988,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     (barrelInterleaved != 0U ||
                      memcmp(barrelReservedDeathRandValid != 0U
                                 ? &barrelRandomBeforeDeathByte
-                                : &doomRpg->random,
+                                : EspNativeProcessRng_live(),
                             &barrelRandomAfterPreview,
                             sizeof(barrelRandomAfterPreview)) == 0);
                 if (barrelTurnRequested != 0U &&
@@ -4001,7 +4002,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                         &playerBefore)) {
                     rollbackOk = 0;
                 }
-                doomRpg->random = randomBefore;
+                (*EspNativeProcessRng_live()) = randomBefore;
                 EspNativeGameplayWeapon_cancelAttack();
                 memset(&actionState.pending, 0,
                        sizeof(actionState.pending));
@@ -4038,7 +4039,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 if (!EspNativeGameplayPlayerState_restore(&playerBefore)) {
                     rollbackOk = 0;
                 }
-                doomRpg->random = randomBefore;
+                (*EspNativeProcessRng_live()) = randomBefore;
                 EspNativeGameplayWeapon_cancelAttack();
                 memset(&actionState.pending, 0, sizeof(actionState.pending));
                 printf("[BARRELRADIUS] ROLLBACK seq=%u reason=monster-splash-transaction hitCount=%u expected=%u rollback=%s player=yes rng=yes world=yes monster=helper-exact\n",
@@ -4088,7 +4089,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     if (!EspNativeGameplayPlayerState_restore(&playerBefore)) {
                         rollbackOk = 0;
                     }
-                    doomRpg->random = randomBefore;
+                    (*EspNativeProcessRng_live()) = randomBefore;
                     actionState.feedbackPending = 0U;
                     actionState.feedbackKind = ACTION_FEEDBACK_NONE;
                     actionState.viewportFlashPending = 0U;
@@ -4126,7 +4127,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
             }
             EspNativeSpriteRenderer_clearTransient();
 
-            if (!explosionConsumeWordLowByte(&doomRpg->random, &blastByte)) {
+            if (!explosionConsumeWordLowByte(EspNativeProcessRng_live(), &blastByte)) {
                 int rollbackOk = 1;
                 if (crateTurnRequested != 0U &&
                     !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
@@ -4137,7 +4138,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 if (!EspNativeGameplayPlayerState_restore(&playerBefore)) {
                     rollbackOk = 0;
                 }
-                doomRpg->random = randomBefore;
+                (*EspNativeProcessRng_live()) = randomBefore;
                 actionState.feedbackPending = 0U;
                 actionState.feedbackKind = ACTION_FEEDBACK_NONE;
                 actionState.viewportFlashPending = 0U;
@@ -4175,7 +4176,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 if (!EspNativeGameplayPlayerState_restore(&playerBefore)) {
                     rollbackOk = 0;
                 }
-                doomRpg->random = randomBefore;
+                (*EspNativeProcessRng_live()) = randomBefore;
                 actionState.feedbackPending = 0U;
                 actionState.feedbackKind = ACTION_FEEDBACK_NONE;
                 actionState.viewportFlashPending = 0U;
@@ -4232,7 +4233,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 if (!EspNativeGameplayPlayerState_restore(&playerBefore)) {
                     rollbackOk = 0;
                 }
-                doomRpg->random = randomBefore;
+                (*EspNativeProcessRng_live()) = randomBefore;
                 actionState.feedbackPending = 0U;
                 actionState.feedbackKind = ACTION_FEEDBACK_NONE;
                 actionState.feedbackText[0] = '\0';
@@ -4304,7 +4305,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
              * CombatEntity_calcDamage(), which draws exactly one byte.
              * Read it only AFTER successful redraw and turn preflight so an
              * aborted render has no hidden RNG-refill state to roll back. */
-            uint8_t ignoredDamageRoll = DoomRPG_randNextByte(&doomRpg->random);
+            uint8_t ignoredDamageRoll = DoomRPG_randNextByte(EspNativeProcessRng_live());
             printf("[FIREMISS] COMMIT seq=%u sprite=%u weapon=1 distance=%u ammo=%u->%u playerFNV=%08x->%08x hitRng=0 damageRng=1 damageByte=%u worldMutation=no feedback=\"No effect!\" turnAdvance=PLAYER_ATTACK-requested rollback=closed\n",
                    (unsigned int)pending.sequence,
                    (unsigned int)pending.spriteIndex,
@@ -4437,7 +4438,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                                            barrelChainCount)) rollbackOk = 0;
                 if (!EspNativeGameplayPlayerState_restore(
                         &playerBefore)) rollbackOk = 0;
-                doomRpg->random = randomBefore;
+                (*EspNativeProcessRng_live()) = randomBefore;
                 actionState.feedbackPending = 0U;
                 actionState.feedbackKind = ACTION_FEEDBACK_NONE;
                 actionState.feedbackText[0] = '\0';

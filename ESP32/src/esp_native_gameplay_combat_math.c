@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "DoomRPG.h"
+#include "esp_native_process_rng_owner.h"
 #include "esp_native_gameplay_combat_math.h"
 
 #define HIT_MISS 0U
@@ -88,7 +89,7 @@ static int calcHit(DoomRPG_t* doomRpg,
 
     *outCalcHit = calcHit;
     *outCritLimit = (calcHit << 8) / 5120;
-    randHit = DoomRPG_randNextByte(&doomRpg->random);
+    randHit = DoomRPG_randNextByte(EspNativeProcessRng_live());
     ++(*ioRngCalls);
     *outRandHit = randHit;
     if ((int)randHit >= calcHit) return HIT_MISS;
@@ -189,7 +190,7 @@ static int calcDamage(DoomRPG_t* doomRpg,
 
     defense = (int)p2Defense(target->param2) << 8;
     if (defense <= 0) return 0;
-    randStr = DoomRPG_randNextByte(&doomRpg->random);
+    randStr = DoomRPG_randNextByte(EspNativeProcessRng_live());
     ++(*ioRngCalls);
     *outRandDamage = (uint8_t)randStr;
     strength = (int)playerStrength << 16;
@@ -305,7 +306,7 @@ static int calcDestructibleDamage(
         outRandDamage == NULL || outDamage == NULL ||
         outArmorDamage == NULL || ioRngCalls == NULL) return 0;
 
-    randStr = DoomRPG_randNextByte(&doomRpg->random);
+    randStr = DoomRPG_randNextByte(EspNativeProcessRng_live());
     ++(*ioRngCalls);
     *outRandDamage = (uint8_t)randStr;
     strength = (int)playerStrength << 16;
