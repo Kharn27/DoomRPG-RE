@@ -3,94 +3,56 @@
 
 #include "DoomRPG.h"
 #include "SDL_Video.h"
-#include "esp32_bmp.h"
+#include "esp_native_indexed_image.h"
+#include "esp_native_texture_bridge.h"
 #include "esp_legacy_asset_source.h"
 
 /*
- * Permanent ESP32 image/resource compatibility owner. The bodies below
- * preserve the already hardware-validated generated DoomRPG.c behavior:
- * bounded per-asset PAK lease -> allocated bytes -> packed indexed BMP ->
- * palette quantization -> zero-copy SDL texture, with the same teardown.
- *
- * No ZIP is accessed by this runtime owner. The source-reference/patch-body
- * equality guards are in build_engine.py and the host regression.
- * Future refactors of the imageMemory metric, failure semantics, and pixel
- * ownership need their own hardware-tested milestone.
+ * SDL-C1: production image creation reads indexed BMP ranges directly from
+ * the native PAK into its final packed pixels and quantized palette. The
+ * short-lived adapter transfers both allocations to the existing texture
+ * renderer without copying. Legacy DoomRPG Image_t ABI and imageMemory
+ * accounting remain unchanged; ZIP is not a runtime dependency.
  */
 
 void DoomRPG_createImage(DoomRPG_t* doomrpg, const char* resourceName, boolean isTransparentMask, Image_t* img)
 {
-	SDL_RWops* rw;
-	SDL_Texture* newTexture = NULL;
-	SDL_Surface* loadedSurface = NULL;
-	char fileName[64];
-	int mem;
-	int r, g, b;
+    EspNativeIndexedImage decoded = {0};
+    EspNativeImageStatus status;
+    SDL_Texture* texture;
+    char fileName[64];
+    int mem;
 
-	//sprintf_s(fileName, 64, "BarData/%s", resourceName);
+    if (doomrpg == NULL || resourceName == NULL || img == NULL) {
+        DoomRPG_Error("Invalid native image arguments");
+        return;
+    }
+    mem = DoomRPG_freeMemory();
+    snprintf(fileName, sizeof(fileName), "%s", resourceName);
 
-	mem = DoomRPG_freeMemory();
+    status = EspNativeImage_loadPack(fileName, isTransparentMask, &decoded);
+    if (status != ESP_NATIVE_IMAGE_OK) {
+        DoomRPG_Error("Unable to load native indexed image %s (status %d)\n",
+                      fileName, (int)status);
+        return;
+    }
 
-	// Load image file
-	//loadedSurface = SDL_LoadBMP(fileName);
+    texture = EspNativeTexture_adoptIndexed(&decoded);
+    if (texture == NULL) {
+        /* Adoption failed: both allocations still belong to decoded. */
+        EspNativeImage_dispose(&decoded);
+        DoomRPG_Error("Unable to adopt native indexed image %s! SDL Error: %s\n",
+                      fileName, SDL_GetError());
+        return;
+    }
 
-	snprintf(fileName, sizeof(fileName), "%s", resourceName);
-
-	byte* fdata;
-	int fSize;
-	fdata = EspLegacyAssetSource_readAlloc(fileName, &fSize);
-
-	rw = SDL_RWFromMem(fdata, fSize);
-	if (!rw) {
-		DoomRPG_Error("Error with SDL_RWFromMem: %s\n", SDL_GetError());
-	}
-
-	loadedSurface = Esp32Bmp_LoadRW(rw, SDL_TRUE);
-
-	if (loadedSurface == NULL) {
-		DoomRPG_Error("Unable to load image %s! SDL Error: %s\n", fileName, SDL_GetError());
-	}
-
-	img->isTransparentMask = isTransparentMask;
-	if (isTransparentMask) {
-		//Color key image
-		Uint32 colorKey = SDL_MapRGB(loadedSurface->format, 255, 0, 255);
-		SDL_SetColorKey(loadedSurface, SDL_TRUE, colorKey);
-	}
-
-	SDL_PixelFormat* fmt = loadedSurface->format;
-
-	// Convierte a RGB565 y de nuevo a RGB888
-	for (int i = 0; i < fmt->palette->ncolors; i++) {
-
-		int color = ((fmt->palette->colors[i].r >> 3) << 11) | ((fmt->palette->colors[i].g >> 2) << 5) | (fmt->palette->colors[i].b >> 3);
-
-		r = (color >> 11) & 0x1f;
-		g = (color >> 5) & 0x3f;
-		b = (color & 0x1f);
-
-		fmt->palette->colors[i].r = (r << 3) | (r >> 2);
-		fmt->palette->colors[i].g = (g << 2) | (g >> 4);
-		fmt->palette->colors[i].b = (b << 3) | (b >> 2);
-	}
-
-	//Create texture from surface pixels
-	newTexture = SDL_CreateTextureFromSurface(sdlVideo.renderer, loadedSurface);
-	if (newTexture == NULL) {
-		DoomRPG_Error("Unable to create texture from %s! SDL Error: %s\n", fileName, SDL_GetError());
-	}
-
-	// Get image dimensions
-	img->width = loadedSurface->w;
-	img->height = loadedSurface->h;
-	img->imgBitmap = newTexture;
-
-	//Get rid of old loaded surface
-	SDL_FreeSurface(loadedSurface);
-
-	SDL_free(fdata);
-
-	doomrpg->imageMemory += (DoomRPG_freeMemory() - mem);
+    img->isTransparentMask = isTransparentMask;
+    img->width = decoded.width;
+    img->height = decoded.height;
+    img->imgBitmap = texture;
+    /* The adapter nulled owned pointers; this is an empty, safe disposal. */
+    EspNativeImage_dispose(&decoded);
+    doomrpg->imageMemory += (DoomRPG_freeMemory() - mem);
 }
 
 void DoomRPG_freeImage(DoomRPG_t* doomrpg, Image_t* image)
