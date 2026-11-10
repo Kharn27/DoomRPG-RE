@@ -7,6 +7,7 @@
 #include "DoomCanvas.h"
 #include "esp_native_text_format.h"
 #include "native_story_fit.h"
+#include "esp_native_process_services.h"
 
 /* Lifecycle is now process-root-owned. This stack-Canvas harness exercises
  * the transient story/intro release owners directly, never a desktop free ABI. */
@@ -15,7 +16,7 @@ static unsigned imageLive, imageCreated, imageFreed, introReleases;
 static int failImage;
 static DoomRPG_t* lastFreedOwner;
 
-Uint32 SDL_GetTicks(void) { return 0U; }
+uint32_t EspNativeProcess_ticksMs(void) { return 0U; }
 void EspNativeIntroState_release(struct DoomRPG_s* owner) {
     assert(owner != NULL);
     ++introReleases;
