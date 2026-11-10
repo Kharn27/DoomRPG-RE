@@ -306,6 +306,9 @@ jobs:
       - name: Test native process-lifetime DoomRPG clock parity (host C)
         run: python ESP32/test/doomrpg_process_clock_host.py
 
+      - name: Test native process clock and fatal Serial owners (real host C++)
+        run: python ESP32/test/sdl_f1_native_process_services_host.py
+
       - name: Test native CYD config codec and first-run defaults (host C)
         run: python ESP32/test/native_config_host.py
 
