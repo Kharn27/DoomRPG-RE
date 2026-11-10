@@ -12,7 +12,7 @@ import re
 ROOT = Path(__file__).resolve().parents[2]
 OLD = ("SDL_LoadBMP_RW", "rwSeek", "readLe16", "readLe32")
 ACTIVE = ("SDL_RWFromMem(", "SDL_RWread(", "SDL_RWseek(", "SDL_RWclose(",
-          "SDL_FreeSurface(", "SDL_CreateTextureFromSurface(", "SDL_RenderCopy(",
+          "SDL_FreeSurface(", "SDL_CreateTextureFromSurface(", 
           "SDL_RenderPresent(", "SDL_GetError(", "SDL_ShowMessageBox(")
 
 
@@ -50,6 +50,11 @@ def main():
     assert "SDL_RWFromMem(" not in owner
     assert "SDL_CreateTextureFromSurface(" not in owner
     assert "SDL_FreeSurface(" not in owner
+    native = (ROOT / "ESP32/src/esp_native_texture.cpp").read_text(encoding="utf-8")
+    nativeHeader = (ROOT / "ESP32/include/esp_native_texture.h").read_text(encoding="utf-8")
+    for api in ("EspNativeTexture_blit(", "EspNativeTexture_destroy(",
+                "EspNativeTexture_setColorMod(", "EspNativeTexture_adoptIndexed("):
+        assert api in native and api in nativeHeader, f"SDL-D1 native texture owner missing {api}"
     assert "PlatformVideo_present()" in shim
     assert "SDL_ShowMessageBox(&messageboxdata, NULL);" in (
         ROOT / "ESP32/src/engine_stubs.c").read_text(encoding="utf-8")
