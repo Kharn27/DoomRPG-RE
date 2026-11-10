@@ -35,14 +35,19 @@ def main():
     src = (ROOT / "ESP32/src/esp32_sdl.cpp").read_text()
     hdr = (ROOT / "ESP32/include/SDL.h").read_text()
     for live in (
-        "SDL_CreateTextureFromSurface(", "SDL_DestroyTexture(",
-        "SDL_UpdateTexture(", "SDL_RenderCopy(", "SDL_RenderPresent(",
+        "SDL_CreateTextureFromSurface(", 
+        "SDL_UpdateTexture(",  "SDL_RenderPresent(",
         "SDL_RenderSetClipRect(", "SDL_RenderFillRect(",
     ):
         assert live in src and live in hdr, f"SDL-B removed live API: {live}"
+    native = (ROOT / "ESP32/src/esp_native_texture.cpp").read_text(encoding="utf-8")
+    nativeHeader = (ROOT / "ESP32/include/esp_native_texture.h").read_text(encoding="utf-8")
+    for api in ("EspNativeTexture_blit(", "EspNativeTexture_destroy(",
+                "EspNativeTexture_setColorMod(", "EspNativeTexture_adoptIndexed("):
+        assert api in native and api in nativeHeader, f"SDL-D1 native texture owner missing {api}"
     assert "texture->indexed = true;" in src
     assert "surface->pixels = nullptr;" in src
-    assert "free(texture->indexedPixels);" in src
+    assert "free(texture->indexedPixels);" in native
     assert "PlatformVideo_present()" in src
     print(f"SDL-B PASS retired {len(RETIRED)} never-linked control/window/haptic stubs, "
           f"no users across {scanned} native C/C++/headers, active indexed SDL unchanged")
