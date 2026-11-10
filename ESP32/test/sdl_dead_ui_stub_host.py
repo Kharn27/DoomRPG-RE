@@ -45,7 +45,11 @@ def main():
         assert api in native and api in nativeHeader, f"SDL-D1 native texture owner missing {api}"
     assert "setError(" in shim
     fatal = (ROOT / "ESP32/src/engine_stubs.c").read_text(encoding="utf-8")
-    assert "SDL_ShowMessageBox(&messageboxdata, NULL);" in fatal
+    # SDL-F1: the implementation stays for host compatibility, but the
+    # production DoomRPG fatal path now owns its Serial output directly.
+    assert "SDL_ShowMessageBox(&messageboxdata, NULL);" not in fatal
+    assert 'EspNativeProcess_fatalMessage("DoomRPG Error", errMsg);' in fatal
+    assert '#include "esp_native_process_services.h"' in fatal
     assert 'Serial.println("[SDL] Platform video present failed")' in shim
     assert "PlatformVideo_present()" in shim
     assert "texture->indexed = true;" in shim
