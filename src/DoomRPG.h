@@ -244,8 +244,10 @@ typedef struct DoomRPG_s
 #endif
 	struct DoomCanvas_s*	doomCanvas;
 	struct Render_s*		render;
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	struct Player_s*		player;
 	struct Game_s*			game;
+#endif
 /* Desktop-only subsystems: native CYD owns compact gameplay and HUD. */
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	struct EntityDefManager_s*		entityDef;
@@ -263,7 +265,9 @@ typedef struct DoomRPG_s
 	struct Sound_s*			sound;
 #endif
 
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	boolean			graphSetCliping;
+#endif
 /* Legacy desktop heap-at-start metric; native CYD RAM accounting is
  * owned by bounded core/heap probes rather than this dormant root field. */
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
@@ -283,7 +287,9 @@ typedef struct DoomRPG_s
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	boolean			closeApplet;
 #endif
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	int				imageMemory;
+#endif
 } DoomRPG_t;
 
 typedef struct Image_s

@@ -5,6 +5,7 @@
 
 #include "DoomRPG.h"
 #include "esp_native_process_rng_owner.h"
+#include "esp_native_root_state.h"
 #include "DoomCanvas.h"
 #include "Game.h"
 #include "esp_native_menu_state.h"
@@ -36,7 +37,7 @@
 DoomRPG_t* doomRpg = NULL;
 
 /* The desktop errorStr[64] is not a native allocation or error owner. */
-_Static_assert(sizeof(DoomRPG_t) == 28U,
+_Static_assert(sizeof(DoomRPG_t) == 12U,
                "native DoomRPG_t must omit dormant desktop owner pointers and metrics");
 
 /* Native process-root Canvas teardown. Preserve the desktop release order
@@ -92,10 +93,8 @@ void DoomRPG_FreeAppData(DoomRPG_t* doomrpg)
         return;
 
     /* Legacy desktop owners omitted from CYD root; only live owners remain. */
-    doomrpg->player = NULL;
     /* No Game allocation/teardown exists on CYD; native resident and
      * session owners are released by their own lifecycle. */
-    doomrpg->game = NULL;
     if (doomrpg->menuSystem) {
         EspNativeMenuStorage_free(doomrpg->menuSystem, doomrpg, true);
     }
@@ -395,8 +394,8 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
         return 0;
     }
 
-    doomRpg->imageMemory = 0;
-    doomRpg->graphSetCliping = false;
+    EspNativeImageResources_resetAccounting();
+    EspNativePresentation_resetClipState();
 
     /*
      * The CYD process RNG is BSS-owned, not part of the malloc'd desktop
@@ -460,11 +459,7 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
      * Game_init call. Reject an unexpected Game shell, even when malloc'd by
      * an accidental new compatibility provider. */
     before = coreFreeHeap();
-    if (doomRpg->game != NULL) {
-        failCoreStage(DOOMRPG_CORE_GAME);
-        if (report != NULL) *report = coreInitReport;
-        return 0;
-    }
+    /* Legacy Game_t has no CYD allocation or native root field: ABI forbids re-entry. */
     recordCoreStage(DOOMRPG_CORE_GAME, before, coreFreeHeap());
 
 #undef INIT_CORE_OBJECT
@@ -477,20 +472,7 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
      * Player state is owned by the compact 52-byte native gameplay owner.
      * The inherited Player_t is not constructed and remains NULL.
      */
-    if (doomRpg->player != NULL) {
-        coreInitReport.failedStage = DOOMRPG_CORE_ROOT;
-        coreInitReport.heapAfter = coreFreeHeap();
-        coreInitReport.largestBlockAfter = coreLargestBlock();
-        coreInitReport.bytesUsed =
-            coreInitReport.heapBefore >= coreInitReport.heapAfter
-                ? coreInitReport.heapBefore - coreInitReport.heapAfter
-                : 0;
-        coreInitReport.ready = 0;
-        printf("[CORE] FAILED retired Player pointer=%p expected=NULL\n",
-               (void*)doomRpg->player);
-        if (report != NULL) *report = coreInitReport;
-        return 0;
-    }
+    /* Player_t has no CYD root slot; native gameplay owns player state. */
     printf("[CORE] Player retired object=NULL owner=native-gameplay-player-state bytes=52\n");
 
     /*

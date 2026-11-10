@@ -2,6 +2,7 @@
 #include <stdio.h>
 
 #include "DoomRPG.h"
+#include "esp_native_root_state.h"
 #include "SDL_Video.h"
 #include "esp32_bmp.h"
 #include "esp_legacy_asset_source.h"
@@ -17,6 +18,11 @@
  * Future refactors of the imageMemory metric, failure semantics, and pixel
  * ownership need their own hardware-tested milestone.
  */
+
+static int nativeImageMemory;
+
+void EspNativeImageResources_resetAccounting(void) { nativeImageMemory = 0; }
+int EspNativeImageResources_accountedBytes(void) { return nativeImageMemory; }
 
 void DoomRPG_createImage(DoomRPG_t* doomrpg, const char* resourceName, boolean isTransparentMask, Image_t* img)
 {
@@ -90,17 +96,18 @@ void DoomRPG_createImage(DoomRPG_t* doomrpg, const char* resourceName, boolean i
 
 	SDL_free(fdata);
 
-	doomrpg->imageMemory += (DoomRPG_freeMemory() - mem);
+	nativeImageMemory += (DoomRPG_freeMemory() - mem);
 }
 
 void DoomRPG_freeImage(DoomRPG_t* doomrpg, Image_t* image)
 {
+	(void)doomrpg;
 	int mem = DoomRPG_freeMemory();
 	if (image->imgBitmap) {
 		SDL_DestroyTexture(image->imgBitmap);
 		image->imgBitmap = NULL;
 	}
-	doomrpg->imageMemory -= (mem - DoomRPG_freeMemory());
+	nativeImageMemory -= (mem - DoomRPG_freeMemory());
 }
 
 byte *DoomRPG_fileOpenRead(DoomRPG_t* doomrpg, const char* resourceName)

@@ -1,5 +1,6 @@
 #include <SDL.h>
 #include "DoomRPG.h"
+#include "esp_native_root_state.h"
 #include "DoomCanvas.h"
 #include "SDL_Video.h"
 
@@ -15,10 +16,16 @@
  * Compare both implementations in ESP32/test/doomrpg_presentation_host.py.
  */
 
+static boolean nativeGraphClipSet;
+
+void EspNativePresentation_resetClipState(void) { nativeGraphClipSet = false; }
+boolean EspNativePresentation_clipEnabled(void) { return nativeGraphClipSet; }
+
 void DoomRPG_setClipFalse(DoomRPG_t* doomrpg)
 {
 	SDL_RenderSetClipRect(sdlVideo.renderer, NULL);
-	doomrpg->graphSetCliping = false;
+	(void)doomrpg;
+	nativeGraphClipSet = false;
 }
 
 void DoomRPG_setClipTrue(DoomRPG_t* doomrpg, int x, int y, int w, int h)
@@ -31,7 +38,8 @@ void DoomRPG_setClipTrue(DoomRPG_t* doomrpg, int x, int y, int w, int h)
 	clip.h = h;
 
 	SDL_RenderSetClipRect(sdlVideo.renderer, &clip);
-	doomrpg->graphSetCliping = true;
+	(void)doomrpg;
+	nativeGraphClipSet = true;
 }
 
 void DoomRPG_setColor(DoomRPG_t* doomrpg, int color)
