@@ -26,7 +26,8 @@ assert "bridge=absent Game_init=retired" in builder
 assert "DoomRPG_t* doomRpg = NULL;" in core
 assert "Game_init(NULL, doomRpg)" not in core
 assert "INIT_CORE_OBJECT(DOOMRPG_CORE_GAME" not in core
-assert "doomRpg->game != NULL" in core
+assert "doomRpg->game != NULL" not in core
+assert "Legacy Game_t has no CYD allocation or native root field" in core
 assert "recordCoreStage(DOOMRPG_CORE_GAME, before, coreFreeHeap());" in core
 assert "metrics->game = 0U;" in core
 assert "Game object retired gameBytes=0" in core
@@ -50,8 +51,9 @@ for path in sorted(SRC.rglob("*")):
         assert not re.search(r"\b" + name + r"\s*\(", source), (
             name + " revived in " + str(path.relative_to(ROOT)))
 
-# All real runtime gates must refuse an unexpected Game pointer, rather than
-# accepting the absence of the previous 4B allocation as an error.
+# All native boundaries retain their renderer/session fail-closed checks.
+# The desktop Game field is now absent by ABI, so a Game_t pointer cannot
+# be installed or queried through the native root.
 guards = (
     "esp_legacy_config_mappings_startup.c",
     "esp_native_resident_gameplay.c",
@@ -63,7 +65,7 @@ guards = (
 for name in guards:
     content = (SRC / name).read_text(encoding="latin-1")
     assert "doomRpg->game == NULL ||" not in content, name
-    assert "doomRpg->game != NULL" in content, name
+    assert "doomRpg->game != NULL" not in content, name
     assert "doomRpg->render" in content, name
 
 cleanup = (SRC / "native_main_menu_start_action.c").read_text(encoding="latin-1")
