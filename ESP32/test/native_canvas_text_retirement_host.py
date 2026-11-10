@@ -34,6 +34,11 @@ a = bridge.index("void EspNativeCanvas_drawText(")
 a = bridge.index("\n{", a)
 b = bridge.index("\n#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)", a)
 body = bridge[a:b]
+# SDL-D1: the only intentional difference is the native owner of font tint.
+# Normalize that call before retaining the legacy glyph-loop FNV gate.
+assert body.count("EspNativeTexture_setColorMod(imgFont->imgBitmap, r, g, b);") == 1
+body = body.replace("EspNativeTexture_setColorMod(imgFont->imgBitmap, r, g, b);",
+                    "SDL_SetTextureColorMod(imgFont->imgBitmap, r, g, b);")
 h = 2166136261
 for byte in body.encode("utf-8"):
     h = ((h ^ byte) * 16777619) & 0xFFFFFFFF
