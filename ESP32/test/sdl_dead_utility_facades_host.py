@@ -56,7 +56,9 @@ def main():
     assert "setError(" in shim
     assert 'Serial.println("[SDL] Platform video present failed")' in shim
     fatal = (ROOT / "ESP32/src/engine_stubs.c").read_text(encoding="utf-8")
-    assert "SDL_ShowMessageBox(&messageboxdata, NULL);" in fatal
+    # F1 replaces the *runtime* caller; old shim API stays for parity mocks.
+    assert "SDL_ShowMessageBox(&messageboxdata, NULL);" not in fatal
+    assert 'EspNativeProcess_fatalMessage("DoomRPG Error", errMsg);' in fatal
     assert "SDL_BLENDMODE_NONE" in shim
     print(f"SDL-B6 PASS 6 dormant SDL facades absent from {files} native files, active paths retained")
 
