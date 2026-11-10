@@ -37,6 +37,14 @@ void EspNativeTexture_destroy(EspNativeTexture* texture);
 int EspNativeTexture_setColorMod(EspNativeTexture* texture,
                                   uint8_t red, uint8_t green, uint8_t blue);
 
+/* SDL-E1: native draw color and framebuffer-bound vector primitives.
+ * Same clip as indexed blits; no allocation or extra framebuffer.
+ * Alpha retained in API; the live historical renderer used NONE blending. */
+void EspNativeTexture_setDrawColor(uint8_t red, uint8_t green,
+                                   uint8_t blue, uint8_t alpha);
+int EspNativeTexture_fillRect(const EspNativeRect* rect);
+int EspNativeTexture_drawLine(int x1, int y1, int x2, int y2);
+
 /* Draw into the existing single PlatformVideo RGB565 framebuffer. Source
  * and destination are measured in logical pixels, nearest neighbor.
  * Palette, magenta key, modulation and clipping match the old SDL-A shim. */
