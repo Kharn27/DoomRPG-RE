@@ -85,6 +85,22 @@ int main(void) {
         assert(pixels[1 + 46 * 160 + 30] == EspMainMenuSkin_uiAccentDim());
         assert(pixels[1 + 46 * 160 + 80] == EspMainMenuSkin_uiAccent());
         assert(pixels[1 + 98 * 160 + 80] == EspMainMenuSkin_uiAccent());
+        /* Both side rails mirror the top/bottom dim + bright theme signal.
+         * Their x=15/144 border pixels never overlap the original font
+         * whose draw origin is x=16 (and may extend to x=143). */
+        for (int y = DIALOG_BORDER_TOP + 10;
+             y <= DIALOG_BORDER_BOTTOM - 10; ++y) {
+            const uint16_t tone = (y >= 64 && y <= 81)
+                ? EspMainMenuSkin_uiAccent()
+                : EspMainMenuSkin_uiAccentDim();
+            assert(pixels[1 + y * 160 + DIALOG_BORDER_LEFT] == tone);
+            assert(pixels[1 + y * 160 + DIALOG_BORDER_RIGHT] == tone);
+        }
+        /* No rail overrun onto the top/bottom metal or neighbouring world. */
+        assert(pixels[1 + 54 * 160 + DIALOG_BORDER_LEFT] !=
+               EspMainMenuSkin_uiAccentDim());
+        assert(pixels[1 + 90 * 160 + DIALOG_BORDER_RIGHT] !=
+               EspMainMenuSkin_uiAccentDim());
         /* Smaller 3x5 BACK lettering, NOT the former 9-row plate font.
          * The chassis and actual touch box remain the same 38x18. */
         assert(DIALOG_BACK_W == 38 && DIALOG_BACK_H == 18);
@@ -183,6 +199,6 @@ int main(void) {
         if (y < 20 || y >= 100) assert(pixels[1 + y * 160 + x] == 0xbeef);
     assert(pixels[0] == 0xbeef && pixels[160 * 120 + 1] == 0xbeef);
     EspNativeGameplayDialog_reset();
-    puts("dialog_touch_host: PASS original full-size 9x12 PAK dialog text, 130x55 themed industrial frame, 3x5 BACK lettering in 38x18 hitbox, no COMMS, 3 themes, 4 lines, alpha, touch/cancel, HUD guards");
+    puts("dialog_touch_host: PASS original full-size 9x12 PAK dialog text, four mirrored theme rails, 130x55 industrial frame, 3x5 BACK lettering in 38x18 hitbox, no COMMS, 3 themes, 4 lines, alpha, touch/cancel, HUD guards");
     return 0;
 }
