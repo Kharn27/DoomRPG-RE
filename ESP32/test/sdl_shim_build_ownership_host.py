@@ -85,8 +85,32 @@ def main():
         f"{args.profile}: SDL-B4 hook is linked in candidate: {sorted(dormant_memory_hooks.intersection(current))}")
     assert not dormant_render_helpers.intersection(current), (
         f"{args.profile}: SDL-B3 removed symbol was linked: {sorted(dormant_render_helpers.intersection(current))}")
-    assert "SDL_RenderCopy" in current and "SDL_CreateTextureFromSurface" in current
-    assert "SDL_DestroyTexture" in current and "SDL_FreeSurface" in current
+    # SDL-C1 has a real production migration: the native image owner replaces
+    # the now-orphaned RWops/Surface/colorkey stages, not the shared blitter.
+    c1_retired = {"SDL_RWFromMem", "SDL_RWread", "SDL_RWseek", "SDL_RWclose",
+                  "SDL_CreateTextureFromSurface", "SDL_FreeSurface",
+                  "SDL_MapRGB", "SDL_SetColorKey"}
+    assert not c1_retired.intersection(current), (
+        f"{args.profile}: old SDL image pipeline still linked "
+        f"{sorted(c1_retired.intersection(current))}")
+    assert {"SDL_RenderCopy", "SDL_RenderPresent", "SDL_DestroyTexture",
+            "SDL_SetTextureColorMod"}.issubset(current), (
+        f"{args.profile}: SDL-C1 inadvertently changed live render/texture ABI")
+    nm_tool = (shutil.which("xtensa-esp32-elf-nm") or
+               str(Path.home() / ".platformio/packages/toolchain-xtensa-esp32/bin/xtensa-esp32-elf-nm"))
+    actual_names = set()
+    for line in subprocess.check_output(
+            [nm_tool, "--defined-only", str(elf)], text=True).splitlines():
+        parts = line.split()
+        if len(parts) >= 3:
+            actual_names.add(parts[-1])
+    c1_native = {"EspNativeImage_decode", "EspNativeImage_loadPack",
+                 "EspNativeImage_dispose", "EspNativeTexture_adoptIndexed"}
+    assert c1_native.issubset(actual_names), (
+        f"{args.profile}: missing production image owners "
+        f"{sorted(c1_native - actual_names)}")
+    assert "Esp32Bmp_LoadRW" not in actual_names, (
+        f"{args.profile}: old RWops BMP decoder is unexpectedly still linked")
     report = {"profile": args.profile, "linked_sdl": current,
               "linked_sdl_count": len(current), "linked_sdl_body_bytes": sum(current.values()),
               "elf": allocated(elf), "source": "ESP32/src/esp32_sdl.cpp"}
@@ -105,10 +129,14 @@ def main():
             f"{args.profile}: SDL-B4 hook was linked in SDL-A baseline: {sorted(dormant_memory_hooks.intersection(before))}")
         assert not dormant_render_helpers.intersection(before), (
             f"{args.profile}: SDL-B3 symbol was ALREADY linked in SDL-A baseline: {sorted(dormant_render_helpers.intersection(before))}")
-        assert set(before) == set(current), (
-            f"{args.profile}: changed SDL ABI/linkage "
-            f"removed={sorted(set(before)-set(current))} "
+        assert set(current).issubset(before), (
+            f"{args.profile}: unexpected SDL exports after native migration "
             f"added={sorted(set(current)-set(before))}")
+        assert c1_retired.issubset(before - current.keys()), (
+            f"{args.profile}: expected SDL-C1 image pipeline removal missing "
+            f"{sorted(c1_retired - (before.keys() - current.keys()))}")
+        report["c1_removed_sdl"] = sorted(set(before) - set(current))
+        report["c1_native_providers"] = sorted(c1_native)
         report["baseline_linked_sdl"] = before
         report["baseline_sdl_count"] = len(before)
         report["baseline_sdl_body_bytes"] = sum(before.values())
@@ -125,7 +153,7 @@ def main():
     print("SDL-A " + json.dumps({k: v for k, v in report.items()
                                  if k not in ("elf", "baseline_elf", "linked_sdl",
                                               "baseline_linked_sdl")}, sort_keys=True))
-    print(f"SDL-A PASS {args.profile}: exactly one native shim TU, no generated source/obj, "
+    print(f"SDL-C1 PASS {args.profile}: exactly one native shim TU, native image providers, no generated source/obj, "
           f"{len(current)} linked SDL functions / {sum(current.values())} symbolic bytes")
 
 
