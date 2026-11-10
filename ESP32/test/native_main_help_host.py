@@ -208,8 +208,9 @@ assert macro("MAIN_HELP_HUD_PASS_RIGHT") == 102
 assert macro("MAIN_HELP_HUD_MAP_LEFT") == 103
 assert 'tileX += MAIN_HELP_HUD_MINI_TILE' in actions
 assert 'EspNativeTexture_blit(helpHudBarBG.imgBitmap, NULL, &dst)' in actions
-assert 'const int sourceX = src.x + ((x - dst.x) * src.w) / dst.w;' in shim
-assert 'const int sourceY = src.y + ((y - dst.y) * src.h) / dst.h;' in shim
+nativeTexture = (ROOT / "ESP32/src/esp_native_texture.cpp").read_text(encoding="utf-8")
+assert 'const int sourceX = src.x + ((x - dst.x) * src.w) / dst.w;' in nativeTexture
+assert 'const int sourceY = src.y + ((y - dst.y) * src.h) / dst.h;' in nativeTexture
 assert 'static const char* const labels[3] = {"MENU", "PASS TURN", "MAP"};' in actions
 assert 'static const HelpHudGlyph helpHudGlyphs[]' in actions
 assert 'framebuffer[(y + row) * DOOMRPG_LOGICAL_WIDTH +' in actions
