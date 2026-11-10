@@ -81,17 +81,17 @@ static int preDisposeBoundaryIsSafe(const DoomRPG_t* doomRpg) {
     const DoomCanvas_t* canvas;
     const EspNativeIntroState_t* introState;
 
-    if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
-        doomRpg->render == NULL || doomRpg->menuSystem == NULL) {
+    if (doomRpg == NULL || EspNativeRootOwners_live()->doomCanvas == NULL ||
+        EspNativeRootOwners_live()->render == NULL || EspNativeRootOwners_live()->menuSystem == NULL) {
         return 0;
     }
 
-    canvas = doomRpg->doomCanvas;
+    canvas = EspNativeRootOwners_live()->doomCanvas;
     introState = EspNativeIntroState_view(doomRpg);
 
     return !Esp32IntroClock_isActive() &&
            !Esp32IntroInput_isActive() &&
-           doomRpg->menuSystem->menu == MENU_NONE &&
+           EspNativeRootOwners_live()->menuSystem->menu == MENU_NONE &&
            canvas->state == ST_INTRO &&
            introState != NULL &&
            introState->storyPage == 2 &&
@@ -104,27 +104,27 @@ static int preDisposeBoundaryIsSafe(const DoomRPG_t* doomRpg) {
            introState->imgLinesLayer.imgBitmap != NULL &&
            introState->imgPlanetLayer.imgBitmap != NULL &&
            introState->imgSpaceship.imgBitmap != NULL &&
-           runtimePoolsAreReleased(doomRpg->render);
+           runtimePoolsAreReleased(EspNativeRootOwners_live()->render);
 }
 
 static int postDisposeBoundaryIsSafe(const DoomRPG_t* doomRpg) {
     const DoomCanvas_t* canvas;
 
-    if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
-        doomRpg->render == NULL || doomRpg->menuSystem == NULL) {
+    if (doomRpg == NULL || EspNativeRootOwners_live()->doomCanvas == NULL ||
+        EspNativeRootOwners_live()->render == NULL || EspNativeRootOwners_live()->menuSystem == NULL) {
         return 0;
     }
 
-    canvas = doomRpg->doomCanvas;
+    canvas = EspNativeRootOwners_live()->doomCanvas;
 
     return !Esp32IntroClock_isActive() &&
            !Esp32IntroInput_isActive() &&
-           doomRpg->menuSystem->menu == MENU_NONE &&
+           EspNativeRootOwners_live()->menuSystem->menu == MENU_NONE &&
            canvas->state == ST_INTRO &&
            EspNativeIntroState_view(doomRpg) == NULL &&
            !Esp32StoryFit_hasHand() &&
            !EspNativePresentation_clipEnabled() &&
-           runtimePoolsAreReleased(doomRpg->render);
+           runtimePoolsAreReleased(EspNativeRootOwners_live()->render);
 }
 
 static void freeImageMeasured(DoomRPG_t* doomRpg,
@@ -186,14 +186,14 @@ void Esp32IntroDispose_service(struct DoomRPG_s* doomRpgBase) {
     }
 
     if (!preDisposeBoundaryIsSafe(doomRpg)) {
-        canvas = doomRpg->doomCanvas;
+        canvas = EspNativeRootOwners_live()->doomCanvas;
         introState = EspNativeIntroState_get(doomRpg);
-        render = doomRpg->render;
+        render = EspNativeRootOwners_live()->render;
         disposeState.attempted = 1;
         printf("[INTRODISP] FAILED precondition clock=%d input=%d menu=%d state=%d page=%d textPage=%d textDone=%d heap8=%u largest8=%u shapeData=%p mediaTexels=%p\n",
                Esp32IntroClock_isActive(),
                Esp32IntroInput_isActive(),
-               doomRpg->menuSystem != NULL ? doomRpg->menuSystem->menu : -1,
+               EspNativeRootOwners_live()->menuSystem != NULL ? EspNativeRootOwners_live()->menuSystem->menu : -1,
                canvas != NULL ? canvas->state : -1,
                introState != NULL ? introState->storyPage : -1,
                introState != NULL ? introState->storyTextPage : -1,
@@ -206,7 +206,7 @@ void Esp32IntroDispose_service(struct DoomRPG_s* doomRpgBase) {
     }
 
     disposeState.attempted = 1;
-    canvas = doomRpg->doomCanvas;
+    canvas = EspNativeRootOwners_live()->doomCanvas;
     introState = EspNativeIntroState_get(doomRpg);
     if (introState == NULL) {
         disposeState.attempted = 1;
@@ -271,8 +271,8 @@ void Esp32IntroDispose_service(struct DoomRPG_s* doomRpgBase) {
                (unsigned int)heapAfter,
                (unsigned int)largestBefore,
                (unsigned int)largestAfter,
-               (void*)doomRpg->render->shapeData,
-               (void*)doomRpg->render->mediaTexels);
+               (void*)EspNativeRootOwners_live()->render->shapeData,
+               (void*)EspNativeRootOwners_live()->render->mediaTexels);
         return;
     }
 
@@ -289,8 +289,8 @@ void Esp32IntroDispose_service(struct DoomRPG_s* doomRpgBase) {
     printf("[INTRODISP] PARK state=%d startupMap=%d shapeData=%p mediaTexels=%p legacyWorld=retired; next milestone owns map loading\n",
            canvas->state,
            canvas->startupMap,
-           (void*)doomRpg->render->shapeData,
-           (void*)doomRpg->render->mediaTexels);
+           (void*)EspNativeRootOwners_live()->render->shapeData,
+           (void*)EspNativeRootOwners_live()->render->mediaTexels);
 }
 
 int Esp32IntroDispose_isDone(void) {

@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "esp_native_root_state.h"
 #include <stdint.h>
 #include <stdio.h>
 
@@ -98,18 +99,18 @@ static int boundaryIsSafe(const DoomRPG_t* doomRpg) {
     const EspNativeIntroState_t* introState;
     const Render_t* render;
 
-    if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
-        doomRpg->render == NULL ||
-        doomRpg->menuSystem == NULL) {
+    if (doomRpg == NULL || EspNativeRootOwners_live()->doomCanvas == NULL ||
+        EspNativeRootOwners_live()->render == NULL ||
+        EspNativeRootOwners_live()->menuSystem == NULL) {
         return 0;
     }
 
-    canvas = doomRpg->doomCanvas;
+    canvas = EspNativeRootOwners_live()->doomCanvas;
     introState = EspNativeIntroState_view(doomRpg);
-    render = doomRpg->render;
+    render = EspNativeRootOwners_live()->render;
 
     return canvas->state == ST_INTRO &&
-           doomRpg->menuSystem->menu == MENU_NONE &&
+           EspNativeRootOwners_live()->menuSystem->menu == MENU_NONE &&
            storyPositionIsSafe(introState) &&
            introState->storyText1[0] != NULL &&
            introState->storyText1[1] != NULL &&
@@ -133,7 +134,7 @@ static int boundaryIsSafe(const DoomRPG_t* doomRpg) {
 
 static void parkClock(const char* reason) {
     DoomCanvas_t* canvas = clockState.doomRpg != NULL
-                               ? clockState.doomRpg->doomCanvas
+                               ? clockState.EspNativeRootOwners_live()->doomCanvas
                                : NULL;
     EspNativeIntroState_t* introState =
         clockState.doomRpg != NULL
@@ -159,11 +160,11 @@ static int rebaseTextEpochInternal(void) {
     EspNativeIntroState_t* introState;
 
     if (!clockState.active || clockState.doomRpg == NULL ||
-        clockState.doomRpg->doomCanvas == NULL) {
+        clockState.EspNativeRootOwners_live()->doomCanvas == NULL) {
         return 0;
     }
 
-    canvas = clockState.doomRpg->doomCanvas;
+    canvas = clockState.EspNativeRootOwners_live()->doomCanvas;
     introState = EspNativeIntroState_get(clockState.doomRpg);
     if (introState == NULL) {
         return 0;
@@ -181,7 +182,7 @@ static int rebasePageEpochsInternal(void) {
         return 0;
     }
 
-    canvas = clockState.doomRpg->doomCanvas;
+    canvas = clockState.EspNativeRootOwners_live()->doomCanvas;
     introState = EspNativeIntroState_get(clockState.doomRpg);
     if (introState == NULL) {
         return 0;
@@ -272,7 +273,7 @@ void Esp32IntroClock_service(void) {
     }
     clockState.lastTick = targetTick;
 
-    canvas = clockState.doomRpg->doomCanvas;
+    canvas = clockState.EspNativeRootOwners_live()->doomCanvas;
     introState = EspNativeIntroState_get(clockState.doomRpg);
     if (introState == NULL) {
         parkClock("native-intro-state-missing");

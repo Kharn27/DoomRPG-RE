@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "esp_native_root_state.h"
 #include <stdint.h>
 #include <stdio.h>
 
@@ -59,17 +60,17 @@ static int boundaryIsSafe(const DoomRPG_t* doomRpg) {
     const EspNativeIntroState_t* introState;
     const Render_t* render;
 
-    if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
-        doomRpg->render == NULL || doomRpg->menuSystem == NULL) {
+    if (doomRpg == NULL || EspNativeRootOwners_live()->doomCanvas == NULL ||
+        EspNativeRootOwners_live()->render == NULL || EspNativeRootOwners_live()->menuSystem == NULL) {
         return 0;
     }
 
-    canvas = doomRpg->doomCanvas;
+    canvas = EspNativeRootOwners_live()->doomCanvas;
     introState = EspNativeIntroState_view(doomRpg);
-    render = doomRpg->render;
+    render = EspNativeRootOwners_live()->render;
 
     return canvas->state == ST_INTRO &&
-           doomRpg->menuSystem->menu == MENU_NONE &&
+           EspNativeRootOwners_live()->menuSystem->menu == MENU_NONE &&
            storyPositionIsSafe(introState) &&
            introState->storyText1[0] != NULL &&
            introState->storyText1[1] != NULL &&
@@ -123,7 +124,7 @@ static void onTap(int16_t screenX,
         return;
     }
 
-    canvas = inputState.doomRpg->doomCanvas;
+    canvas = inputState.EspNativeRootOwners_live()->doomCanvas;
     introState = EspNativeIntroState_get(inputState.doomRpg);
     if (introState == NULL) {
         printf("[INTROIN] FAILED native intro state unavailable\n");
@@ -311,11 +312,11 @@ void Esp32IntroInput_notifyFramePresented(void) {
     EspNativeIntroState_t* introState;
 
     if (!inputState.active || inputState.doomRpg == NULL ||
-        inputState.doomRpg->doomCanvas == NULL) {
+        inputState.EspNativeRootOwners_live()->doomCanvas == NULL) {
         return;
     }
 
-    canvas = inputState.doomRpg->doomCanvas;
+    canvas = inputState.EspNativeRootOwners_live()->doomCanvas;
     introState = EspNativeIntroState_get(inputState.doomRpg);
     if (introState == NULL) {
         return;
