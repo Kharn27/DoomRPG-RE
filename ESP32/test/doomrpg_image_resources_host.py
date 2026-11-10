@@ -52,6 +52,7 @@ HARNESS = r'''
 #include <string.h>
 #include <SDL.h>
 #include "DoomRPG.h"
+#include "esp_native_root_state.h"
 #include "SDL_Video.h"
 #include "esp32_bmp.h"
 #include "esp_legacy_asset_source.h"
@@ -171,27 +172,27 @@ int main(void) {
     DoomRPG_t core = {0};
     Image_t logo = {0}, font = {0};
     sdlVideo.renderer = (SDL_Renderer*)(uintptr_t)0x1234;
-    core.imageMemory = 5;
+    EspNativeImageResources_resetAccounting();
     DoomRPG_createImage(&core, "j.bmp", true, &logo);
     assert(readCalls == 1 && strcmp(lastRequested, "j.bmp") == 0);
     assert(loads == 1 && rwCloses == 1 && freedSurfaces == 1);
     assert(createCalls == 1 && maskCalls == 1 && logo.imgBitmap != NULL);
     assert(logo.width == 108 && logo.height == 74 && logo.isTransparentMask);
     assert(((struct SDL_Texture*)logo.imgBitmap)->mask == 1);
-    assert(core.imageMemory == -59); /* old 5 + (9936 - 10000) */
+    assert(EspNativeImageResources_accountedBytes() == -64); /* zero + (9936 - 10000) */
     DoomRPG_createImage(&core, "font.bmp", false, &font);
     assert(readCalls == 2 && strcmp(lastRequested, "font.bmp") == 0);
     assert(maskCalls == 1 && createCalls == 2 && rwCloses == 2);
     assert(((struct SDL_Texture*)font.imgBitmap)->mask == 0);
-    assert(core.imageMemory == -123);
+    assert(EspNativeImageResources_accountedBytes() == -128);
     DoomRPG_freeImage(&core, &font);
     assert(font.imgBitmap == NULL && activeTextures == 1);
-    assert(core.imageMemory == -59);
+    assert(EspNativeImageResources_accountedBytes() == -64);
     DoomRPG_freeImage(&core, &logo);
     assert(logo.imgBitmap == NULL && activeTextures == 0);
-    assert(core.imageMemory == 5 && destroyCalls == 2);
+    assert(EspNativeImageResources_accountedBytes() == 0 && destroyCalls == 2);
     DoomRPG_freeImage(&core, &logo);
-    assert(core.imageMemory == 5 && destroyCalls == 2);
+    assert(EspNativeImageResources_accountedBytes() == 0 && destroyCalls == 2);
     uint8_t* raw = DoomRPG_fileOpenRead(&core, "/data.bin");
     assert(raw != NULL && raw[0] == 0xA7);
     assert(strcmp(lastRequested, "data.bin") == 0 && readCalls == 3);
@@ -213,13 +214,17 @@ def main():
         patched = effective(raw)
         assert zlib.crc32(raw.encode("latin-1")) == crc_before, "desktop drift: " + signature
         assert zlib.crc32(patched.encode("latin-1")) == crc_after, "patch drift: " + signature
-        assert extract(native, signature) == patched, "ESP32 owner drift: " + signature
+        expected = (patched.replace("doomrpg->imageMemory", "nativeImageMemory")
+                     .replace("void DoomRPG_freeImage(DoomRPG_t* doomrpg, Image_t* image)\n{\n",
+                              "void DoomRPG_freeImage(DoomRPG_t* doomrpg, Image_t* image)\n{\n\t(void)doomrpg;\n"))
+        assert extract(native, signature) == expected, "ESP32 owner drift: " + signature
     with tempfile.TemporaryDirectory(prefix="doomrpg-image-resource-") as tmp:
         test_file = Path(tmp) / "image_resources_host.c"
         binary = str(Path(tmp) / "image_resources_host")
         test_file.write_text(HARNESS)
         flags = ["-std=c11", "-Wall", "-Wextra", "-Werror",
-                 "-Wno-unused-parameter", "-IESP32/include", "-Isrc"]
+                 "-Wno-unused-parameter", "-DDOOMRPG_ESP32=1",
+                  "-IESP32/include", "-Isrc"]
         flags += shlex.split(os.environ.get("IMAGE_SANITIZE_FLAGS", ""))
         subprocess.run(CC + flags + ["ESP32/src/esp_doomrpg_image_resources.c",
                                     str(test_file), "-o", binary], cwd=ROOT, check=True)
