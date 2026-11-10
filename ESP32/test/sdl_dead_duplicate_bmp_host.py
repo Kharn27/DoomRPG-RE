@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """SDL-B7: retire unused SDL 8-bit BMP decoder, preserve native indexed reader.
 
-ESP32/src/esp32_bmp.cpp owns packed 1/4/8-bpp parsing and PAK-backed image
-resources call Esp32Bmp_LoadRW. The duplicate SDL_LoadBMP_RW decoder and its
+SDL-B7's 1/4/8-bpp reader stays as unlinked oracle; SDL-C1 now routes the
+production image owner directly through the packed native PAK range reader. The duplicate SDL_LoadBMP_RW decoder and its
 three private helper functions were not linked in historical/current firmwares.
 Do not touch SDL_Surface, RWops read/seek/close, texture adoption or blitting.
 """
@@ -45,13 +45,15 @@ def main():
     assert 'bitsPerPixel != 1 && bitsPerPixel != 4 && bitsPerPixel != 8' in native
     assert "surface->pitch = static_cast<int>(packedPitch)" in native
     assert "SDL_RWseek(source, 14 + dibSize, SEEK_SET)" in native
-    assert "loadedSurface = Esp32Bmp_LoadRW(rw, SDL_TRUE);" in owner
-    assert "SDL_CreateTextureFromSurface(sdlVideo.renderer, loadedSurface)" in owner
-    assert "SDL_FreeSurface(loadedSurface)" in owner
+    assert "EspNativeImage_loadPack(fileName, isTransparentMask, &decoded)" in owner
+    assert "EspNativeTexture_adoptIndexed(&decoded)" in owner
+    assert "SDL_RWFromMem(" not in owner
+    assert "SDL_CreateTextureFromSurface(" not in owner
+    assert "SDL_FreeSurface(" not in owner
     assert "PlatformVideo_present()" in shim
     assert "SDL_ShowMessageBox(&messageboxdata, NULL);" in (
         ROOT / "ESP32/src/engine_stubs.c").read_text(encoding="utf-8")
-    print(f"SDL-B7 PASS duplicate 8-bit BMP reader absent from {count} native files; active packed 1/4/8-bpp owner preserved")
+    print(f"SDL-C1 PASS B7 decoder absent from {count} native files; production image loads via native pack-range owner")
 
 
 if __name__ == "__main__":

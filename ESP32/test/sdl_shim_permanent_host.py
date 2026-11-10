@@ -178,6 +178,54 @@ static void exerciseIndexed(int bpp) {
     trackedPixels = trackedPalette = nullptr;
 }
 
+static void exerciseNativeAdoption() {
+    EspNativeIndexedImage image{};
+    image.width = 4;
+    image.height = 2;
+    image.pitch = 2;
+    image.bitsPerPixel = 4;
+    image.paletteSize = 4;
+    image.hasColorKey = 1;
+    image.pixels = static_cast<Uint8*>(__real_calloc(4, 1));
+    image.palette = static_cast<EspNativeImageColor*>(
+        __real_calloc(4, sizeof(EspNativeImageColor)));
+    assert(image.pixels && image.palette);
+    image.palette[0] = {255, 0, 255, 255};
+    image.palette[1] = {255, 0, 0, 255};
+    image.palette[2] = {0, 255, 0, 255};
+    image.palette[3] = {0, 0, 255, 255};
+    image.pixels[0] = 0x01;
+    image.pixels[1] = 0x23;
+    image.pixels[2] = 0x32;
+    image.pixels[3] = 0x10;
+    trackedPixels = image.pixels;
+    trackedPalette = image.palette;
+    pixelsFreed = paletteFreed = 0;
+
+    failNextCalloc = true;
+    assert(EspNativeTexture_adoptIndexed(&image) == nullptr);
+    assert(image.pixels == trackedPixels && image.palette == trackedPalette);
+    assert(pixelsFreed == 0 && paletteFreed == 0);
+
+    SDL_Texture* t = EspNativeTexture_adoptIndexed(&image);
+    assert(t && t->indexed && t->indexedBitsPerPixel == 4);
+    assert(t->indexedPixels == trackedPixels && t->palette == trackedPalette);
+    assert(t->pitch == 2 && t->hasColorKey && t->colorKey == 0xf81f);
+    assert(image.pixels == nullptr && image.palette == nullptr);
+    SDL_RenderSetClipRect(nullptr, nullptr);
+    std::fill(std::begin(framebuffer), std::end(framebuffer),
+              static_cast<Uint16>(0x1234));
+    SDL_Rect dest{10, 10, 4, 2};
+    assert(SDL_RenderCopy(nullptr, t, nullptr, &dest) == 0);
+    assert(framebuffer[10 * 160 + 10] == 0x1234); // magenta colorkey
+    assert(framebuffer[10 * 160 + 11] == 0xf800);
+    assert(framebuffer[10 * 160 + 12] == 0x07e0);
+    assert(framebuffer[10 * 160 + 13] == 0x001f);
+    SDL_DestroyTexture(t);
+    assert(pixelsFreed == 1 && paletteFreed == 1);
+    trackedPixels = trackedPalette = nullptr;
+}
+
 static void exerciseRgb565() {
     SDL_Texture* t = SDL_CreateTexture(nullptr, SDL_PIXELFORMAT_RGB565, SDL_TEXTUREACCESS_STREAMING, 2, 1);
     assert(t != nullptr && !t->indexed && t->indexedPixels == nullptr);
@@ -222,11 +270,12 @@ int main() {
     assert(PlatformVideo_framebufferSizeBytes() == 38400);
     Esp32Sdl_attachDisplay(reinterpret_cast<TFT_eSPI*>(1));
     for (int bpp : {1, 4, 8}) exerciseIndexed(bpp);
+    exerciseNativeAdoption();
     exerciseRgb565();
     exerciseFailures();
     SDL_RenderPresent(nullptr);
     assert(presents == 1);
-    std::puts("SDL-A PASS real permanent shim: indexed 1/4/8 bpp, zero-copy, palette, "
+    std::puts("SDL-A PASS real permanent shim: indexed 1/4/8 bpp, native adoption and legacy surface parity, palette, "
               "magenta key, RGB565/mod, scale, clip, UpdateTexture refusal, OOM and frees");
 }
 """

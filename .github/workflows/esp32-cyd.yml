@@ -262,6 +262,14 @@ jobs:
       - name: Test stateless DoomRPG primitive ownership and reference ABI (host C)
         run: python ESP32/test/doomrpg_pure_primitives_host.py
 
+      - name: SDL-C1 native indexed image decoder, PAK lease and failure rollback
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+            ESP32/src/esp_native_indexed_image.c \
+            ESP32/test/native_image_owner_host.c \
+            -o /tmp/doomrpg-native-indexed-image
+          /tmp/doomrpg-native-indexed-image
+
       - name: Test native DoomRPG image and PAK resource lifetime (host C)
         run: python ESP32/test/doomrpg_image_resources_host.py
 
