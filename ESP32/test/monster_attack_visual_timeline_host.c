@@ -13,6 +13,9 @@
 static Random_t hostProcessRng;
 Random_t* EspNativeProcessRng_live(void) { return &hostProcessRng; }
 
+static EspNativeRootOwners_t hostRootOwners;
+EspNativeRootOwners_t* EspNativeRootOwners_live(void) { return &hostRootOwners; }
+
 static DoomRPG_t game;
 static Render_t render;
 static EspPlayerViewState playerView;
@@ -56,7 +59,7 @@ static void prime(uint32_t probe, uint8_t total, uint8_t completed) {
     memset(&hostProcessRng, 0, sizeof(hostProcessRng));
     memset(&playerView, 0, sizeof(playerView));
     EspNativeGameplayMonsterAttackVisual_reset();
-    game.render = &render;
+    hostRootOwners.render = &render;
     playerView.active = 1U;
     playerView.viewAngle = playerView.destAngle = 0;
     playerView.viewX = playerView.destX = 672;
