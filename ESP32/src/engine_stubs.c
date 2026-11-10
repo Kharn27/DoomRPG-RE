@@ -440,10 +440,10 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
 #define INIT_CORE_OBJECT(stage, member, expression) \
     do { \
         before = coreFreeHeap(); \
-        doomRpg->member = (expression); \
+        EspNativeRootOwners_live()->member = (expression); \
         after = coreFreeHeap(); \
         recordCoreStage((stage), before, after); \
-        if (doomRpg->member == NULL) { \
+        if (EspNativeRootOwners_live()->member == NULL) { \
             failCoreStage((stage)); \
             if (report != NULL) *report = coreInitReport; \
             return 0; \
