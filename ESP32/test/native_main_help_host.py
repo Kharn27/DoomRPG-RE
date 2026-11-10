@@ -109,7 +109,7 @@ assert macro("MAIN_HELP_STAR_PERIOD_MS") == 157
 assert macro("MAIN_HELP_STAR_VIRTUAL_WIDTH") == 192
 assert "DoomRPG_freeImage(helpSpaceOwner, &helpSpaceBG);" in actions
 assert "Esp32PlatformVideo_framebuffer()" in actions
-assert "SDL_RenderCopy(NULL, helpSpaceBG.imgBitmap" in actions
+assert "EspNativeTexture_blit(helpSpaceBG.imgBitmap" in actions
 assert "MAIN_HELP_STAR_VIRTUAL_WIDTH" in actions
 assert "if (shift == helpSpaceShift &&" in actions  # breath can repaint without star shift
 assert "DoomRPG_esp32MainMenuHelpService();" in loop
@@ -207,7 +207,7 @@ assert macro("MAIN_HELP_HUD_PASS_LEFT") == 26
 assert macro("MAIN_HELP_HUD_PASS_RIGHT") == 102
 assert macro("MAIN_HELP_HUD_MAP_LEFT") == 103
 assert 'tileX += MAIN_HELP_HUD_MINI_TILE' in actions
-assert 'SDL_RenderCopy(NULL, helpHudBarBG.imgBitmap, NULL, &dst)' in actions
+assert 'EspNativeTexture_blit(helpHudBarBG.imgBitmap, NULL, &dst)' in actions
 assert 'const int sourceX = src.x + ((x - dst.x) * src.w) / dst.w;' in shim
 assert 'const int sourceY = src.y + ((y - dst.y) * src.h) / dst.h;' in shim
 assert 'static const char* const labels[3] = {"MENU", "PASS TURN", "MAP"};' in actions
