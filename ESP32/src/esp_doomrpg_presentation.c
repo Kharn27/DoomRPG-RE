@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "esp_native_texture.h"
 #include "DoomRPG.h"
 #include "esp_native_root_state.h"
 #include "DoomCanvas.h"
@@ -6,9 +7,9 @@
 
 /*
  * Permanent classic-CYD presentation compatibility boundary.
- * The existing ESP32 SDL software renderer owns RGB565 pixels and clip/color.
- * This module only routes the seven still-linked DoomRPG drawing ABI entries
- * into that renderer (or the compact canvas font-color field).
+ * Native EspNativeTexture owns RGB565 pixels, clip and draw color.
+ * This module routes DoomRPG drawing ABI calls
+ * to native pixel primitives (or the compact canvas font-color field).
  *
  * Source-equivalent to the generated ESP32 behavior: displayRect offsets
  * were already removed because CYD coordinates are logical 160x120.
@@ -23,7 +24,7 @@ boolean EspNativePresentation_clipEnabled(void) { return nativeGraphClipSet; }
 
 void DoomRPG_setClipFalse(DoomRPG_t* doomrpg)
 {
-	SDL_RenderSetClipRect(sdlVideo.renderer, NULL);
+	EspNativeTexture_setClipRect(NULL);
 	(void)doomrpg;
 	nativeGraphClipSet = false;
 }
@@ -37,7 +38,7 @@ void DoomRPG_setClipTrue(DoomRPG_t* doomrpg, int x, int y, int w, int h)
 	clip.w = w;
 	clip.h = h;
 
-	SDL_RenderSetClipRect(sdlVideo.renderer, &clip);
+	EspNativeTexture_setClipRect(&clip);
 	(void)doomrpg;
 	nativeGraphClipSet = true;
 }
@@ -51,7 +52,7 @@ void DoomRPG_setColor(DoomRPG_t* doomrpg, int color)
 	g = (color & 0x0000FF00) >> 8;
 	b = (color & 0x000000FF);
 
-	SDL_SetRenderDrawColor(sdlVideo.renderer, r, g, b, a);
+	EspNativeTexture_setDrawColor(r, g, b, a);
 }
 
 void DoomRPG_setFontColor(DoomRPG_t* doomrpg, int color)
@@ -67,7 +68,7 @@ void DoomRPG_fillRect(DoomRPG_t* doomrpg, int x, int y, int w, int h)
 	rect.y = y;
 	rect.w = w;
 	rect.h = h;
-	SDL_RenderFillRect(sdlVideo.renderer, &rect);
+	EspNativeTexture_fillRect(&rect);
 }
 
 void DoomRPG_drawLine(DoomRPG_t* doomrpg, int x1, int y1, int x2, int y2)
@@ -77,7 +78,7 @@ void DoomRPG_drawLine(DoomRPG_t* doomrpg, int x1, int y1, int x2, int y2)
 	int ex = x2;
 	int ey = y2;
 
-	SDL_RenderDrawLine(sdlVideo.renderer, sx, sy, ex, ey);
+	EspNativeTexture_drawLine(sx, sy, ex, ey);
 }
 
 void DoomRPG_flushGraphics(DoomRPG_t* doomrpg)

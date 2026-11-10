@@ -264,6 +264,52 @@ static void exerciseFailures() {
     assert(SDL_UpdateTexture(nullptr, nullptr, nullptr, 0) == -1);
 }
 
+static void exerciseNativePrimitiveParity() {
+    // Execute both *real* owners over the same single framebuffer; no
+    // mock implementations of SDL or of the new native rasterization.
+    static Uint16 golden[DOOMRPG_LOGICAL_WIDTH * DOOMRPG_LOGICAL_HEIGHT];
+    uint32_t seed = 0x5a17d19bu;
+    auto next = [&]() -> uint32_t {
+        seed = seed * 1664525u + 1013904223u;
+        return seed;
+    };
+    for (int t = 0; t < 320; ++t) {
+        const SDL_Rect clip{static_cast<int>(next() % 188u) - 18,
+                            static_cast<int>(next() % 150u) - 15,
+                            static_cast<int>(next() % 66u) - 3,
+                            static_cast<int>(next() % 54u) - 3};
+        const SDL_Rect rect{static_cast<int>(next() % 214u) - 35,
+                            static_cast<int>(next() % 172u) - 28,
+                            static_cast<int>(next() % 84u) - 4,
+                            static_cast<int>(next() % 58u) - 4};
+        const int x1 = static_cast<int>(next() % 210u) - 25;
+        const int y1 = static_cast<int>(next() % 166u) - 23;
+        const int x2 = static_cast<int>(next() % 210u) - 25;
+        const int y2 = static_cast<int>(next() % 166u) - 23;
+        const Uint8 r = static_cast<Uint8>(next());
+        const Uint8 g = static_cast<Uint8>(next());
+        const Uint8 b = static_cast<Uint8>(next());
+        const Uint8 a = static_cast<Uint8>(next());
+        const bool clipped = (t % 3) != 0;
+        std::fill(std::begin(framebuffer), std::end(framebuffer),
+                  static_cast<Uint16>(0xbeefu));
+        assert(SDL_RenderSetClipRect(nullptr, clipped ? &clip : nullptr) == 0);
+        assert(SDL_SetRenderDrawColor(nullptr, r, g, b, a) == 0);
+        assert(SDL_RenderFillRect(nullptr, &rect) == 0);
+        assert(SDL_RenderDrawLine(nullptr, x1, y1, x2, y2) == 0);
+        std::copy(std::begin(framebuffer), std::end(framebuffer), golden);
+        std::fill(std::begin(framebuffer), std::end(framebuffer),
+                  static_cast<Uint16>(0xbeefu));
+        EspNativeTexture_setClipRect(clipped ? &clip : nullptr);
+        EspNativeTexture_setDrawColor(r, g, b, a);
+        assert(EspNativeTexture_fillRect(&rect) == 0);
+        assert(EspNativeTexture_drawLine(x1, y1, x2, y2) == 0);
+        assert(std::equal(std::begin(framebuffer), std::end(framebuffer), golden));
+    }
+    SDL_RenderSetClipRect(nullptr, nullptr);
+    std::puts("SDL-E1 PASS: 320 seeded exact RGB565 fill/line/color/clip parity cases");
+}
+
 int main() {
     static_assert(sizeof framebuffer == 38400, "single logical RGB565 host fixture");
     assert(SDL_GetTicks() == 123456U);
@@ -273,6 +319,7 @@ int main() {
     exerciseNativeAdoption();
     exerciseRgb565();
     exerciseFailures();
+    exerciseNativePrimitiveParity();
     SDL_RenderPresent(nullptr);
     assert(presents == 1);
     std::puts("SDL-A PASS real permanent shim: indexed 1/4/8 bpp, native adoption and legacy surface parity, palette, "

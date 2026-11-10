@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare real DoomRPG presentation bodies after CYD coordinate adaptation.
+"""Compare real DoomRPG presentation bodies after CYD coordinate adaptation\nand SDL-E1 native raster owner replacement.
 
 Both original and permanent native functions execute against the same modeled
 ESP32 SDL pixel/clip operations in separate guarded RGB565 host buffers.
@@ -118,6 +118,22 @@ int SDL_RenderDrawLine(SDL_Renderer* r,int x1,int y1,int x2,int y2) {
 }
 void SDL_RenderPresent(SDL_Renderer* r) { ++target(r)->presents; }
 
+// SDL-E1 host compatibility: the native presentation calls these APIs.
+// Pixel equivalence of the real native rasterizer is separately executed
+// against the real historical shim in sdl_shim_permanent_host.py.
+void EspNativeTexture_setClipRect(const EspNativeRect* r) {
+    (void)SDL_RenderSetClipRect(sdlVideo.renderer, r);
+}
+void EspNativeTexture_setDrawColor(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    (void)SDL_SetRenderDrawColor(sdlVideo.renderer, r, g, b, a);
+}
+int EspNativeTexture_fillRect(const EspNativeRect* r) {
+    return SDL_RenderFillRect(sdlVideo.renderer, r);
+}
+int EspNativeTexture_drawLine(int a,int b,int c,int d) {
+    return SDL_RenderDrawLine(sdlVideo.renderer, a,b,c,d);
+}
+
 void Reference_DoomRPG_setClipFalse(DoomRPG_t*);
 void Reference_DoomRPG_setClipTrue(DoomRPG_t*,int,int,int,int);
 void Reference_DoomRPG_setColor(DoomRPG_t*,int);
@@ -228,7 +244,8 @@ int main(void) {
 def main():
     legacy = (ROOT / "src/DoomRPG.c").read_text(encoding="latin-1")
     native = (ROOT / "ESP32/src/esp_doomrpg_presentation.c").read_text(encoding="latin-1")
-    assert "SDL_Render" in native
+    assert "SDL_RenderPresent(sdlVideo.renderer)" in native
+    assert "SDL_RenderFillRect(" not in native and "SDL_RenderDrawLine(" not in native
     assert "PlatformVideo_framebuffer" not in native
     names, bodies = [], []
     for signature, crc in METHODS:
@@ -237,7 +254,17 @@ def main():
         expected = (real.replace("doomrpg->graphSetCliping = false;",
                                  "(void)doomrpg;\n\tnativeGraphClipSet = false;")
                         .replace("doomrpg->graphSetCliping = true;",
-                                 "(void)doomrpg;\n\tnativeGraphClipSet = true;"))
+                                 "(void)doomrpg;\n\tnativeGraphClipSet = true;")
+                        .replace("SDL_RenderSetClipRect(sdlVideo.renderer, NULL);",
+                                 "EspNativeTexture_setClipRect(NULL);")
+                        .replace("SDL_RenderSetClipRect(sdlVideo.renderer, &clip);",
+                                 "EspNativeTexture_setClipRect(&clip);")
+                        .replace("SDL_SetRenderDrawColor(sdlVideo.renderer, r, g, b, a);",
+                                 "EspNativeTexture_setDrawColor(r, g, b, a);")
+                        .replace("SDL_RenderFillRect(sdlVideo.renderer, &rect);",
+                                 "EspNativeTexture_fillRect(&rect);")
+                        .replace("SDL_RenderDrawLine(sdlVideo.renderer, sx, sy, ex, ey);",
+                                 "EspNativeTexture_drawLine(sx, sy, ex, ey);"))
         assert extract(native, signature) == expected, signature + " native drift"
         bodies.append(real)
         names.append(re.search(r"(DoomRPG_\w+)\(", signature).group(1))
