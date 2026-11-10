@@ -340,7 +340,8 @@ SDL_Texture* EspNativeTexture_adoptIndexed(EspNativeIndexedImage* image) {
         (image->bitsPerPixel != 1 && image->bitsPerPixel != 4 &&
          image->bitsPerPixel != 8) ||
         image->paletteSize == 0 || image->paletteSize > 256 ||
-        image->pitch != (image->width * image->bitsPerPixel + 7) / 8) {
+        static_cast<size_t>(image->pitch) !=
+            (static_cast<size_t>(image->width) * image->bitsPerPixel + 7U) / 8U) {
         setError("invalid native indexed image");
         return nullptr;
     }
