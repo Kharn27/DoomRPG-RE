@@ -4,6 +4,7 @@
 #include <stdio.h>
 
 #include "DoomRPG.h"
+#include "esp_native_root_state.h"
 #include "DoomCanvas.h"
 #include "Menu.h"
 #include "MenuSystem.h"
@@ -122,7 +123,7 @@ static int postDisposeBoundaryIsSafe(const DoomRPG_t* doomRpg) {
            canvas->state == ST_INTRO &&
            EspNativeIntroState_view(doomRpg) == NULL &&
            !Esp32StoryFit_hasHand() &&
-           !doomRpg->graphSetCliping &&
+           !EspNativePresentation_clipEnabled() &&
            runtimePoolsAreReleased(doomRpg->render);
 }
 
@@ -225,7 +226,7 @@ void Esp32IntroDispose_service(struct DoomRPG_s* doomRpgBase) {
            (unsigned int)frameBefore,
            (unsigned int)heapBefore,
            (unsigned int)largestBefore,
-           doomRpg->graphSetCliping ? 1 : 0);
+           EspNativePresentation_clipEnabled() ? 1 : 0);
     printf("[INTRODISP] CONTRACT mirror DoomCanvas_disposeIntro resources only; DoomCanvas_loadMap is forbidden\n");
 
     /* DoomCanvas_changeStoryPage() increments to 3 before calling the original
