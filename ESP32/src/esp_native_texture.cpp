@@ -96,6 +96,59 @@ extern "C" void EspNativeTexture_setClipRect(const EspNativeRect* clip) {
         ? EspNativeRect{0, 0, kLogicalWidth, kLogicalHeight} : *clip;
 }
 
+// SDL-E1: the live SDL software renderer always used NONE blending.
+namespace {
+uint8_t drawRed = 255;
+uint8_t drawGreen = 255;
+uint8_t drawBlue = 255;
+}
+
+extern "C" void EspNativeTexture_setDrawColor(uint8_t red, uint8_t green,
+                                               uint8_t blue, uint8_t alpha) {
+    drawRed = red;
+    drawGreen = green;
+    drawBlue = blue;
+    (void)alpha;
+}
+
+extern "C" int EspNativeTexture_fillRect(const EspNativeRect* rect) {
+    uint16_t* framebuffer = PlatformVideo_framebuffer();
+    if (framebuffer == nullptr) return -1;
+    const EspNativeRect area = rect == nullptr
+        ? EspNativeRect{0, 0, kLogicalWidth, kLogicalHeight} : *rect;
+    if (area.w <= 0 || area.h <= 0) return 0;
+    const int x0 = std::max(0, area.x);
+    const int y0 = std::max(0, area.y);
+    const int x1 = static_cast<int>(std::min<int64_t>(
+        kLogicalWidth, static_cast<int64_t>(area.x) + area.w));
+    const int y1 = static_cast<int>(std::min<int64_t>(
+        kLogicalHeight, static_cast<int64_t>(area.y) + area.h));
+    const uint16_t color = rgb565(drawRed, drawGreen, drawBlue);
+    for (int y = y0; y < y1; ++y)
+        for (int x = x0; x < x1; ++x)
+            if (inClip(x, y)) framebuffer[y * kLogicalWidth + x] = color;
+    return 0;
+}
+
+extern "C" int EspNativeTexture_drawLine(int x1, int y1, int x2, int y2) {
+    uint16_t* framebuffer = PlatformVideo_framebuffer();
+    if (framebuffer == nullptr) return -1;
+    const uint16_t color = rgb565(drawRed, drawGreen, drawBlue);
+    const int dx = std::abs(x2 - x1);
+    const int sx = x1 < x2 ? 1 : -1;
+    const int dy = -std::abs(y2 - y1);
+    const int sy = y1 < y2 ? 1 : -1;
+    int error = dx + dy;
+    while (true) {
+        if (inClip(x1, y1)) framebuffer[y1 * kLogicalWidth + x1] = color;
+        if (x1 == x2 && y1 == y2) break;
+        const int doubled = error * 2;
+        if (doubled >= dy) { error += dy; x1 += sx; }
+        if (doubled <= dx) { error += dx; y1 += sy; }
+    }
+    return 0;
+}
+
 extern "C" int EspNativeTexture_blit(const EspNativeTexture* texture,
                                      const EspNativeRect* source,
                                      const EspNativeRect* destination) {
