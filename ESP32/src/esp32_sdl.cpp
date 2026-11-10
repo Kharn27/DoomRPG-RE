@@ -6,6 +6,7 @@
 #include <algorithm>
 
 #include "esp32_sdl_platform.h"
+#include "esp_native_texture_bridge.h"
 #include "platform_video.h"
 #include "platform_video_config.h"
 
@@ -322,6 +323,50 @@ SDL_Texture* SDL_CreateTextureFromSurface(SDL_Renderer*, SDL_Surface* surface) {
                   texture->width, texture->height,
                   texture->indexedBitsPerPixel,
                   static_cast<unsigned int>(texture->pitch * texture->height),
+                  texture->paletteSize);
+    return texture;
+}
+
+/* SDL-C1: native packed payload crosses this temporary SDL_Texture ABI only
+ * at the ownership boundary. No Surface, RWops, palette/pixel memcpy or
+ * renderer allocation is involved. The existing blitter remains unchanged. */
+SDL_Texture* EspNativeTexture_adoptIndexed(EspNativeIndexedImage* image) {
+    static_assert(sizeof(SDL_Color) == sizeof(EspNativeImageColor),
+                  "native and shim palette records must be layout-compatible");
+    static_assert(alignof(SDL_Color) == alignof(EspNativeImageColor),
+                  "native palette alignment drift");
+    if (image == nullptr || image->pixels == nullptr || image->palette == nullptr ||
+        image->width <= 0 || image->height <= 0 ||
+        (image->bitsPerPixel != 1 && image->bitsPerPixel != 4 &&
+         image->bitsPerPixel != 8) ||
+        image->paletteSize == 0 || image->paletteSize > 256 ||
+        image->pitch != (image->width * image->bitsPerPixel + 7) / 8) {
+        setError("invalid native indexed image");
+        return nullptr;
+    }
+
+    SDL_Texture* texture = static_cast<SDL_Texture*>(calloc(1, sizeof(SDL_Texture)));
+    if (texture == nullptr) {
+        setError("out of memory adopting native indexed image");
+        return nullptr;
+    }
+    texture->width = image->width;
+    texture->height = image->height;
+    texture->pitch = image->pitch;
+    texture->indexedPixels = image->pixels;
+    texture->palette = reinterpret_cast<SDL_Color*>(image->palette);
+    texture->paletteSize = image->paletteSize;
+    texture->indexedBitsPerPixel = image->bitsPerPixel;
+    texture->indexed = true;
+    texture->red = texture->green = texture->blue = 255;
+    texture->hasColorKey = image->hasColorKey != 0;
+    texture->colorKey = 0xf81fU; /* quantized magenta */
+
+    image->pixels = nullptr;
+    image->palette = nullptr;
+    Serial.printf("[NATIVEIMAGE] ADOPT %dx%d bpp=%u bytes=%u palette=%d\n",
+                  texture->width, texture->height, texture->indexedBitsPerPixel,
+                  static_cast<unsigned>(texture->pitch * texture->height),
                   texture->paletteSize);
     return texture;
 }
