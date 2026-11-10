@@ -56,7 +56,7 @@ void DoomRPG_setColor(DoomRPG_t* doomrpg, int color)
 
 void DoomRPG_setFontColor(DoomRPG_t* doomrpg, int color)
 {
-	doomrpg->doomCanvas->fontColor = color;
+	EspNativeRootOwners_live()->doomCanvas->fontColor = color;
 }
 
 void DoomRPG_fillRect(DoomRPG_t* doomrpg, int x, int y, int w, int h)
