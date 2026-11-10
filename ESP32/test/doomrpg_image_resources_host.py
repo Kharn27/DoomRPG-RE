@@ -51,12 +51,6 @@ HARNESS = r"""
 #include "esp_native_texture_bridge.h"
 #include "esp_legacy_asset_source.h"
 
-struct SDL_Texture {
-    int w, h, mask;
-    uint8_t *pixels;
-    EspNativeImageColor *palette;
-};
-
 static int activeTextures, loads, adoptions, failures, freedBuffers;
 static int failLoad, failAdopt, readCalls;
 static char lastRequested[64];
@@ -108,10 +102,10 @@ SDL_Texture* EspNativeTexture_adoptIndexed(EspNativeIndexedImage* image) {
     if (failAdopt) return NULL;
     SDL_Texture* t = calloc(1, sizeof(*t));
     assert(t);
-    t->w = image->width;
-    t->h = image->height;
-    t->mask = image->hasColorKey;
-    t->pixels = image->pixels;
+    t->width = image->width;
+    t->height = image->height;
+    t->hasColorKey = image->hasColorKey;
+    t->indexedPixels = image->pixels;
     t->palette = image->palette;
     assert(t->palette[0].r == 255 && t->palette[0].g == 0 &&
            t->palette[0].b == 255);
@@ -120,9 +114,9 @@ SDL_Texture* EspNativeTexture_adoptIndexed(EspNativeIndexedImage* image) {
     ++activeTextures;
     return t;
 }
-void SDL_DestroyTexture(SDL_Texture* t) {
+void EspNativeTexture_destroy(EspNativeTexture* t) {
     assert(t && activeTextures > 0);
-    free(t->pixels); free(t->palette);
+    free(t->indexedPixels); free(t->palette);
     freedBuffers += 2;
     --activeTextures;
     free(t);
@@ -137,11 +131,11 @@ int main(void) {
     assert(strcmp(lastRequested, "j.bmp") == 0);
     assert(logo.imgBitmap != NULL && logo.width == 108 &&
            logo.height == 74 && logo.isTransparentMask);
-    assert(((SDL_Texture*)logo.imgBitmap)->mask == 1);
+    assert(((SDL_Texture*)logo.imgBitmap)->hasColorKey == 1);
     assert(core.imageMemory == -59);
     DoomRPG_createImage(&core, "font.bmp", false, &font);
     assert(loads == 2 && adoptions == 2);
-    assert(((SDL_Texture*)font.imgBitmap)->mask == 0);
+    assert(((SDL_Texture*)font.imgBitmap)->hasColorKey == 0);
     assert(core.imageMemory == -123);
 
     failLoad = 1;
