@@ -134,7 +134,7 @@ static int boundaryIsSafe(const DoomRPG_t* doomRpg) {
 
 static void parkClock(const char* reason) {
     DoomCanvas_t* canvas = clockState.doomRpg != NULL
-                               ? clockState.EspNativeRootOwners_live()->doomCanvas
+                               ? EspNativeRootOwners_live()->doomCanvas
                                : NULL;
     EspNativeIntroState_t* introState =
         clockState.doomRpg != NULL
@@ -160,11 +160,11 @@ static int rebaseTextEpochInternal(void) {
     EspNativeIntroState_t* introState;
 
     if (!clockState.active || clockState.doomRpg == NULL ||
-        clockState.EspNativeRootOwners_live()->doomCanvas == NULL) {
+        EspNativeRootOwners_live()->doomCanvas == NULL) {
         return 0;
     }
 
-    canvas = clockState.EspNativeRootOwners_live()->doomCanvas;
+    canvas = EspNativeRootOwners_live()->doomCanvas;
     introState = EspNativeIntroState_get(clockState.doomRpg);
     if (introState == NULL) {
         return 0;
@@ -182,7 +182,7 @@ static int rebasePageEpochsInternal(void) {
         return 0;
     }
 
-    canvas = clockState.EspNativeRootOwners_live()->doomCanvas;
+    canvas = EspNativeRootOwners_live()->doomCanvas;
     introState = EspNativeIntroState_get(clockState.doomRpg);
     if (introState == NULL) {
         return 0;
@@ -273,7 +273,7 @@ void Esp32IntroClock_service(void) {
     }
     clockState.lastTick = targetTick;
 
-    canvas = clockState.EspNativeRootOwners_live()->doomCanvas;
+    canvas = EspNativeRootOwners_live()->doomCanvas;
     introState = EspNativeIntroState_get(clockState.doomRpg);
     if (introState == NULL) {
         parkClock("native-intro-state-missing");
