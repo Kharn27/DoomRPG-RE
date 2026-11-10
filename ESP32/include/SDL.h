@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
-#include "esp_native_indexed_image.h"
+#include "esp_native_texture.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,15 +30,13 @@ typedef int SDL_bool;
 
 typedef struct SDL_Window SDL_Window;
 typedef struct SDL_Renderer SDL_Renderer;
-typedef struct SDL_Texture SDL_Texture;
+typedef EspNativeTexture SDL_Texture; /* transitional name, native owner */
 typedef struct SDL_GameController SDL_GameController;
 typedef struct SDL_Joystick SDL_Joystick;
 typedef struct SDL_Haptic SDL_Haptic;
 typedef struct SDL_RWops SDL_RWops;
 
-typedef struct SDL_Rect {
-    int x, y, w, h;
-} SDL_Rect;
+typedef EspNativeRect SDL_Rect; /* same 4-int layout */
 
 typedef struct SDL_Point {
     int x, y;
@@ -175,12 +173,8 @@ int SDL_SetColorKey(SDL_Surface* surface, int flag, Uint32 key);
 SDL_Texture* SDL_CreateTexture(SDL_Renderer* renderer, Uint32 format,
                                int access, int width, int height);
 SDL_Texture* SDL_CreateTextureFromSurface(SDL_Renderer* renderer, SDL_Surface* surface);
-void SDL_DestroyTexture(SDL_Texture* texture);
 int SDL_UpdateTexture(SDL_Texture* texture, const SDL_Rect* rect,
                       const void* pixels, int pitch);
-int SDL_SetTextureColorMod(SDL_Texture* texture, Uint8 r, Uint8 g, Uint8 b);
-int SDL_RenderCopy(SDL_Renderer* renderer, SDL_Texture* texture,
-                   const SDL_Rect* source, const SDL_Rect* destination);
 
 int SDL_RenderSetClipRect(SDL_Renderer* renderer, const SDL_Rect* rect);
 int SDL_SetRenderDrawColor(SDL_Renderer* renderer, Uint8 r, Uint8 g, Uint8 b, Uint8 a);

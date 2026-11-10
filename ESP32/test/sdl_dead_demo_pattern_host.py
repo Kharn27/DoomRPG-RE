@@ -32,16 +32,21 @@ def main():
     src = (ROOT / "ESP32/src/esp32_sdl.cpp").read_text()
     hdr = (ROOT / "ESP32/include/esp32_sdl_platform.h").read_text()
     for live in (
-        "void Esp32Sdl_attachDisplay(", "SDL_RenderCopy(", "SDL_RenderDrawLine(",
+        "void Esp32Sdl_attachDisplay(",  "SDL_RenderDrawLine(",
         "SDL_RenderFillRect(", "SDL_RenderPresent(", "SDL_RenderSetClipRect(",
-        "SDL_CreateTextureFromSurface(", "SDL_UpdateTexture(", "SDL_DestroyTexture(",
+        "SDL_CreateTextureFromSurface(", "SDL_UpdateTexture(", 
     ):
         assert live in src, f"Lost live SDL rendering/texture owner: {live}"
+    native = (ROOT / "ESP32/src/esp_native_texture.cpp").read_text(encoding="utf-8")
+    nativeHeader = (ROOT / "ESP32/include/esp_native_texture.h").read_text(encoding="utf-8")
+    for api in ("EspNativeTexture_blit(", "EspNativeTexture_destroy(",
+                "EspNativeTexture_setColorMod(", "EspNativeTexture_adoptIndexed("):
+        assert api in native and api in nativeHeader, f"SDL-D1 native texture owner missing {api}"
     assert "void Esp32Sdl_attachDisplay(" in hdr
     assert "PlatformVideo_present()" in src
     assert "surface->pixels = nullptr;" in src
     assert "texture->indexed = true;" in src
-    assert "free(texture->indexedPixels);" in src
+    assert "free(texture->indexedPixels);" in native
     print(
         f"SDL-B2 PASS demo-only pattern + circle helpers retired; "
         f"{count} native files verified, live blitter/framebuffer ABI preserved"

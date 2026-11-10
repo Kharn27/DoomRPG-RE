@@ -96,13 +96,18 @@ def main():
         permanent = native / "esp32_sdl.cpp"
         snapshot = permanent.read_bytes()
         shim = snapshot.decode("utf-8")
-        assert "Uint8* indexedPixels;" in shim
+        # SDL-D1: generated shim still absent, but live texture ownership
+        # and packed sampling now reside in a permanent independent TU.
+        native_header = (ROOT / "ESP32/include/esp_native_texture.h").read_text()
+        native_owner = (ROOT / "ESP32/src/esp_native_texture.cpp").read_text()
+        assert "uint8_t* indexedPixels;" in native_header
         assert "texture->indexed = true;" in shim
         assert "surface->pixels = nullptr;" in shim
         assert "surface->format->palette->colors = nullptr;" in shim
-        assert "if (texture->indexedBitsPerPixel == 8)" in shim
-        assert "else if (texture->indexedBitsPerPixel == 4)" in shim
-        assert "free(texture->indexedPixels);" in shim
+        assert "texture->indexedBitsPerPixel == 8" in native_owner
+        assert "texture->indexedBitsPerPixel == 4" in native_owner
+        assert "free(texture->indexedPixels);" in native_owner
+        assert "SDL_RenderCopy(" not in shim
         assert env.sources == [], "generated sources unexpectedly registered"
         assert not stale_shim.exists() and not stale_objects.exists()
         assert len(env.includes) == 3

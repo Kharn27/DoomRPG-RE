@@ -6,7 +6,7 @@
 #include <algorithm>
 
 #include "esp32_sdl_platform.h"
-#include "esp_native_texture_bridge.h"
+#include "esp_native_texture.h"
 #include "platform_video.h"
 #include "platform_video_config.h"
 
@@ -16,22 +16,7 @@ struct SDL_GameController {};
 struct SDL_Joystick {};
 struct SDL_Haptic {};
 
-struct SDL_Texture {
-    int width;
-    int height;
-    int pitch;
-    Uint16* pixels;
-    Uint8* indexedPixels;
-    SDL_Color* palette;
-    int paletteSize;
-    Uint8 indexedBitsPerPixel;
-    bool indexed;
-    Uint8 red;
-    Uint8 green;
-    Uint8 blue;
-    bool hasColorKey;
-    Uint16 colorKey;
-};
+
 
 struct SDL_RWops {
     enum Kind { MEMORY, FILE_STREAM } kind;
@@ -112,12 +97,7 @@ void putPixel(int x, int y, Uint16 color) {
                       : color;
 }
 
-Uint16 modulate565(Uint16 color, const SDL_Texture* texture) {
-    const int red = ((color >> 11) & 0x1f) * texture->red / 255;
-    const int green = ((color >> 5) & 0x3f) * texture->green / 255;
-    const int blue = (color & 0x1f) * texture->blue / 255;
-    return static_cast<Uint16>((red << 11) | (green << 5) | blue);
-}
+
 
 void freeSurfaceParts(SDL_Surface* surface) {
     if (surface == nullptr) {
@@ -330,55 +310,9 @@ SDL_Texture* SDL_CreateTextureFromSurface(SDL_Renderer*, SDL_Surface* surface) {
 /* SDL-C1: native packed payload crosses this temporary SDL_Texture ABI only
  * at the ownership boundary. No Surface, RWops, palette/pixel memcpy or
  * renderer allocation is involved. The existing blitter remains unchanged. */
-SDL_Texture* EspNativeTexture_adoptIndexed(EspNativeIndexedImage* image) {
-    static_assert(sizeof(SDL_Color) == sizeof(EspNativeImageColor),
-                  "native and shim palette records must be layout-compatible");
-    static_assert(alignof(SDL_Color) == alignof(EspNativeImageColor),
-                  "native palette alignment drift");
-    if (image == nullptr || image->pixels == nullptr || image->palette == nullptr ||
-        image->width <= 0 || image->height <= 0 ||
-        (image->bitsPerPixel != 1 && image->bitsPerPixel != 4 &&
-         image->bitsPerPixel != 8) ||
-        image->paletteSize == 0 || image->paletteSize > 256 ||
-        static_cast<size_t>(image->pitch) !=
-            (static_cast<size_t>(image->width) * image->bitsPerPixel + 7U) / 8U) {
-        setError("invalid native indexed image");
-        return nullptr;
-    }
 
-    SDL_Texture* texture = static_cast<SDL_Texture*>(calloc(1, sizeof(SDL_Texture)));
-    if (texture == nullptr) {
-        setError("out of memory adopting native indexed image");
-        return nullptr;
-    }
-    texture->width = image->width;
-    texture->height = image->height;
-    texture->pitch = image->pitch;
-    texture->indexedPixels = image->pixels;
-    texture->palette = reinterpret_cast<SDL_Color*>(image->palette);
-    texture->paletteSize = image->paletteSize;
-    texture->indexedBitsPerPixel = image->bitsPerPixel;
-    texture->indexed = true;
-    texture->red = texture->green = texture->blue = 255;
-    texture->hasColorKey = image->hasColorKey != 0;
-    texture->colorKey = 0xf81fU; /* quantized magenta */
 
-    image->pixels = nullptr;
-    image->palette = nullptr;
-    Serial.printf("[NATIVEIMAGE] ADOPT %dx%d bpp=%u bytes=%u palette=%d\n",
-                  texture->width, texture->height, texture->indexedBitsPerPixel,
-                  static_cast<unsigned>(texture->pitch * texture->height),
-                  texture->paletteSize);
-    return texture;
-}
 
-void SDL_DestroyTexture(SDL_Texture* texture) {
-    if (texture == nullptr) return;
-    free(texture->pixels);
-    free(texture->indexedPixels);
-    free(texture->palette);
-    free(texture);
-}
 
 int SDL_UpdateTexture(SDL_Texture* texture, const SDL_Rect* rect,
                       const void* pixels, int pitch) {
@@ -392,68 +326,14 @@ int SDL_UpdateTexture(SDL_Texture* texture, const SDL_Rect* rect,
     return 0;
 }
 
-int SDL_SetTextureColorMod(SDL_Texture* texture, Uint8 r, Uint8 g, Uint8 b) {
-    if (texture == nullptr) return -1;
-    texture->red = r;
-    texture->green = g;
-    texture->blue = b;
-    return 0;
-}
 
-int SDL_RenderCopy(SDL_Renderer*, SDL_Texture* texture, const SDL_Rect* source,
-                   const SDL_Rect* destination) {
-    if (texture == nullptr || !ensureRendererPixels()) return -1;
-    const SDL_Rect src = source == nullptr
-        ? SDL_Rect{0, 0, texture->width, texture->height} : *source;
-    const SDL_Rect dst = destination == nullptr
-        ? SDL_Rect{0, 0, src.w, src.h} : *destination;
-    if (src.w <= 0 || src.h <= 0 || dst.w <= 0 || dst.h <= 0) return -1;
 
-    const int startX = std::max(0, dst.x);
-    const int startY = std::max(0, dst.y);
-    const int endX = std::min(kLogicalWidth, dst.x + dst.w);
-    const int endY = std::min(kLogicalHeight, dst.y + dst.h);
-    for (int y = startY; y < endY; ++y) {
-        if (clipEnabled && (y < rendererClip.y || y >= rendererClip.y + rendererClip.h)) continue;
-        const int sourceY = src.y + ((y - dst.y) * src.h) / dst.h;
-        if (sourceY < 0 || sourceY >= texture->height) continue;
-        for (int x = startX; x < endX; ++x) {
-            if (!insideClip(x, y)) continue;
-            const int sourceX = src.x + ((x - dst.x) * src.w) / dst.w;
-            if (sourceX < 0 || sourceX >= texture->width) continue;
-            Uint16 color;
-            if (texture->indexed) {
-                const Uint8* indexedRow =
-                    texture->indexedPixels + sourceY * texture->pitch;
-                Uint8 paletteIndex;
-                if (texture->indexedBitsPerPixel == 8) {
-                    paletteIndex = indexedRow[sourceX];
-                }
-                else if (texture->indexedBitsPerPixel == 4) {
-                    const Uint8 packed = indexedRow[sourceX >> 1];
-                    paletteIndex = (sourceX & 1) ? (packed & 0x0f) : (packed >> 4);
-                }
-                else {
-                    paletteIndex =
-                        (indexedRow[sourceX >> 3] >> (7 - (sourceX & 7))) & 0x01;
-                }
-                if (paletteIndex >= texture->paletteSize) continue;
-                const SDL_Color& paletteColor = texture->palette[paletteIndex];
-                color = rgb565(paletteColor.r, paletteColor.g, paletteColor.b);
-            }
-            else {
-                color = texture->pixels[sourceY * texture->width + sourceX];
-            }
-            if (texture->hasColorKey && color == texture->colorKey) continue;
-            rendererPixels[y * kLogicalWidth + x] = modulate565(color, texture);
-        }
-    }
-    return 0;
-}
+
 
 int SDL_RenderSetClipRect(SDL_Renderer*, const SDL_Rect* rect) {
     clipEnabled = rect != nullptr;
     rendererClip = rect == nullptr ? SDL_Rect{0, 0, kLogicalWidth, kLogicalHeight} : *rect;
+    EspNativeTexture_setClipRect(rect);
     return 0;
 }
 

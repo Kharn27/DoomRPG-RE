@@ -16,7 +16,7 @@ RETIRED = (
 LIVE = (
     "SDL_GetError(", "SDL_ShowMessageBox(", "SDL_RWFromMem(", "SDL_RWFromFile(",
     "SDL_RWclose(", "SDL_CreateTextureFromSurface(",
-    "SDL_RenderCopy(", "SDL_RenderPresent(",
+     "SDL_RenderPresent(",
 )
 
 
@@ -38,6 +38,11 @@ def main():
     for symbol in LIVE:
         assert symbol in shim, f"SDL-B5 removed live implementation {symbol}"
         assert symbol in header, f"SDL-B5 removed live declaration {symbol}"
+    native = (ROOT / "ESP32/src/esp_native_texture.cpp").read_text(encoding="utf-8")
+    nativeHeader = (ROOT / "ESP32/include/esp_native_texture.h").read_text(encoding="utf-8")
+    for api in ("EspNativeTexture_blit(", "EspNativeTexture_destroy(",
+                "EspNativeTexture_setColorMod(", "EspNativeTexture_adoptIndexed("):
+        assert api in native and api in nativeHeader, f"SDL-D1 native texture owner missing {api}"
     assert "setError(" in shim
     fatal = (ROOT / "ESP32/src/engine_stubs.c").read_text(encoding="utf-8")
     assert "SDL_ShowMessageBox(&messageboxdata, NULL);" in fatal

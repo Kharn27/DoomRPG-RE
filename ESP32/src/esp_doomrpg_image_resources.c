@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "esp_native_texture.h"
 #include <stdio.h>
 
 #include "DoomRPG.h"
@@ -65,7 +66,7 @@ void DoomRPG_freeImage(DoomRPG_t* doomrpg, Image_t* image)
 {
 	int mem = DoomRPG_freeMemory();
 	if (image->imgBitmap) {
-		SDL_DestroyTexture(image->imgBitmap);
+		EspNativeTexture_destroy(image->imgBitmap);
 		image->imgBitmap = NULL;
 	}
 	nativeImageMemory -= (mem - DoomRPG_freeMemory());

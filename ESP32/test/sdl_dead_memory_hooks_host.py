@@ -13,7 +13,7 @@ RETIRED = ("SDL_SetMemoryFunctions", "SDL_GetMemoryFunctions")
 LIVE = (
     "SDL_RWFromMem(", "SDL_RWFromFile(", "SDL_RWread(",
     "SDL_RWclose(", "SDL_CreateTextureFromSurface(",
-    "SDL_FreeSurface(", "SDL_RenderCopy(", "SDL_RenderPresent(",
+    "SDL_FreeSurface(",  "SDL_RenderPresent(",
 )
 
 
@@ -35,6 +35,11 @@ def main():
     for symbol in LIVE:
         assert symbol in shim, f"SDL-B4 lost live SDL owner: {symbol}"
         assert symbol in hdr, f"SDL-B4 lost live SDL declaration: {symbol}"
+    native = (ROOT / "ESP32/src/esp_native_texture.cpp").read_text(encoding="utf-8")
+    nativeHeader = (ROOT / "ESP32/include/esp_native_texture.h").read_text(encoding="utf-8")
+    for api in ("EspNativeTexture_blit(", "EspNativeTexture_destroy(",
+                "EspNativeTexture_setColorMod(", "EspNativeTexture_adoptIndexed("):
+        assert api in native and api in nativeHeader, f"SDL-D1 native texture owner missing {api}"
     assert shim.count("static_cast<SDL_RWops*>(calloc(1, sizeof(SDL_RWops)))") == 2
     assert "free(context);" in shim
     assert "result = fclose(context->file);" in shim

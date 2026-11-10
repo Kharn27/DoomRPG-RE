@@ -188,7 +188,7 @@ assert "DoomRPG_esp32VideoCardRect(" in menu
 assert "themeOpen = 1U;" in options
 assert "EspNativeConfig_saveTheme(after)" in options
 assert "DoomRPG_esp32PaintThemePresetCards(" in menu
-assert "logoDst.x" in paintOptions and "SDL_RenderCopy(" in paintOptions
+assert "logoDst.x" in paintOptions and "EspNativeTexture_blit(" in paintOptions
 
 assert 'static char noSaveLabel[] = "NO SAVE";' in load
 loadFeedback = function(load, "static void showNoSaveFeedback(")

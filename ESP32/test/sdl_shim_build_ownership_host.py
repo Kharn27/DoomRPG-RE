@@ -93,9 +93,14 @@ def main():
     assert not c1_retired.intersection(current), (
         f"{args.profile}: old SDL image pipeline still linked "
         f"{sorted(c1_retired.intersection(current))}")
-    assert {"SDL_RenderCopy", "SDL_RenderPresent", "SDL_DestroyTexture",
-            "SDL_SetTextureColorMod"}.issubset(current), (
-        f"{args.profile}: SDL-C1 inadvertently changed live render/texture ABI")
+    d1_retired = {"SDL_RenderCopy", "SDL_DestroyTexture",
+                  "SDL_SetTextureColorMod"}
+    assert not d1_retired.intersection(current), (
+        f"{args.profile}: SDL-D1 legacy texture ABI still linked "
+        f"{sorted(d1_retired.intersection(current))}")
+    assert {"SDL_RenderPresent", "SDL_RenderSetClipRect",
+            "SDL_RenderFillRect", "SDL_RenderDrawLine"}.issubset(current), (
+        f"{args.profile}: SDL-D1 inadvertently changed live primitive/present ABI")
     nm_tool = (shutil.which("xtensa-esp32-elf-nm") or
                str(Path.home() / ".platformio/packages/toolchain-xtensa-esp32/bin/xtensa-esp32-elf-nm"))
     actual_names = set()
@@ -106,6 +111,9 @@ def main():
             actual_names.add(parts[-1])
     c1_native = {"EspNativeImage_decode", "EspNativeImage_loadPack",
                  "EspNativeImage_dispose", "EspNativeTexture_adoptIndexed"}
+    d1_native = {"EspNativeTexture_blit", "EspNativeTexture_destroy",
+                 "EspNativeTexture_setColorMod", "EspNativeTexture_setClipRect"}
+    c1_native |= d1_native
     assert c1_native.issubset(actual_names), (
         f"{args.profile}: missing production image owners "
         f"{sorted(c1_native - actual_names)}")
@@ -132,11 +140,14 @@ def main():
         assert set(current).issubset(before), (
             f"{args.profile}: unexpected SDL exports after native migration "
             f"added={sorted(set(current)-set(before))}")
-        assert c1_retired.issubset(set(before) - set(current)), (
-            f"{args.profile}: expected SDL-C1 image pipeline removal missing "
-            f"{sorted(c1_retired - (set(before) - set(current)))}")
-        report["c1_removed_sdl"] = sorted(set(before) - set(current))
-        report["c1_native_providers"] = sorted(c1_native)
+        removed = set(before) - set(current)
+        assert (c1_retired | d1_retired).issubset(removed), (
+            f"{args.profile}: missing C1/D1 linked SDL image retirement "
+            f"{sorted((c1_retired | d1_retired) - removed)}")
+        report["c1_removed_sdl"] = sorted(c1_retired)
+        report["d1_removed_sdl"] = sorted(d1_retired)
+        report["c1_native_providers"] = sorted(c1_native - d1_native)
+        report["d1_native_providers"] = sorted(d1_native)
         report["baseline_linked_sdl"] = before
         report["baseline_sdl_count"] = len(before)
         report["baseline_sdl_body_bytes"] = sum(before.values())
@@ -153,7 +164,7 @@ def main():
     print("SDL-A " + json.dumps({k: v for k, v in report.items()
                                  if k not in ("elf", "baseline_elf", "linked_sdl",
                                               "baseline_linked_sdl")}, sort_keys=True))
-    print(f"SDL-C1 PASS {args.profile}: exactly one native shim TU, native image providers, no generated source/obj, "
+    print(f"SDL-D1 PASS {args.profile}: exactly one native shim TU, native image providers, no generated source/obj, "
           f"{len(current)} linked SDL functions / {sum(current.values())} symbolic bytes")
 
 
