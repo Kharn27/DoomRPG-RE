@@ -52,6 +52,7 @@ HARNESS = r"""
 #include <cstdint>
 #include <cstdio>
 #include <string>
+#include <initializer_list>
 uint32_t mockTicks = 0;
 std::string serialCapture;
 HostSerial Serial;
@@ -62,13 +63,13 @@ int main() {
         assert(EspNativeProcess_ticksMs() == now);
     }
     EspNativeProcess_fatalMessage("DoomRPG Error", "file: no PAK");
-    assert(serialCapture == "[DOOM ERROR] DoomRPG Error: file: no PAK\\n");
+    assert(serialCapture == "[DOOM ERROR] DoomRPG Error: file: no PAK\n");
     serialCapture.clear();
     EspNativeProcess_fatalMessage("DoomRPG Error", "");
-    assert(serialCapture == "[DOOM ERROR] DoomRPG Error: \\n");
+    assert(serialCapture == "[DOOM ERROR] DoomRPG Error: \n");
     serialCapture.clear();
     EspNativeProcess_fatalMessage(nullptr, nullptr);
-    assert(serialCapture == "[DOOM ERROR] : \\n");
+    assert(serialCapture == "[DOOM ERROR] : \n");
     std::puts("SDL-F1 PASS: real native millis and fatal Serial owner, no allocation");
 }
 """
