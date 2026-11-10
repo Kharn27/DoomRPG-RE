@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "esp_native_root_state.h"
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
@@ -183,7 +184,7 @@ static int EspNativeRenderStartup_initialize(Render_t* render) {
     byte* sharedFramebuffer;
 
     if (render == NULL || render->doomRpg == NULL ||
-        render->doomRpg->doomCanvas == NULL) {
+        EspNativeRootOwners_live()->doomCanvas == NULL) {
         printf("[RENDER] ERROR invalid Render_startup object graph\n");
         return 0;
     }
@@ -281,8 +282,8 @@ int EspRenderStartupBridge_start(int preRenderReady) {
         return 0;
     }
 
-    if (doomRpg == NULL || doomRpg->render == NULL ||
-        doomRpg->doomCanvas == NULL) {
+    if (doomRpg == NULL || EspNativeRootOwners_live()->render == NULL ||
+        EspNativeRootOwners_live()->doomCanvas == NULL) {
         printf("[RENDERSTART] Core object graph incomplete; probe refused\n");
         return 0;
     }
@@ -291,7 +292,7 @@ int EspRenderStartupBridge_start(int preRenderReady) {
         return 0;
     }
 
-    render = doomRpg->render;
+    render = EspNativeRootOwners_live()->render;
     expectedFramebuffer = (byte*)Esp32PlatformVideo_framebuffer();
     heapBefore = heap8Free();
     largestBefore = largest8Block();
