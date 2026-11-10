@@ -21,12 +21,12 @@ assert re.search(
     r"\s+int\s+memoryBeg;\s+#endif", HEADER), "desktop-only ABI guard"
 assert "doomRpg->memoryBeg = DoomRPG_freeMemory();" in DESKTOP
 assert "doomRpg->memoryBeg" not in CORE
-assert "_Static_assert(sizeof(DoomRPG_t) == 28U," in CORE
-assert "doomRpg->imageMemory = 0;" in CORE
-assert "doomrpg->imageMemory +=" in IMAGES
-assert "doomrpg->imageMemory -=" in IMAGES
+assert "_Static_assert(sizeof(DoomRPG_t) == 12U," in CORE
+assert "EspNativeImageResources_resetAccounting();" in CORE
+assert "nativeImageMemory +=" in IMAGES
+assert "nativeImageMemory -=" in IMAGES
 assert not re.search(r"\bdoomRpg\s*->\s*errorID\b", CORE)
-assert "doomRpg->graphSetCliping = false;" in CORE
+assert "EspNativePresentation_resetClipState();" in CORE
 assert "char errMsg[256];" in CORE
 assert "SDL_calloc(1, sizeof(DoomRPG_t))" in CORE
 
@@ -70,4 +70,4 @@ with tempfile.TemporaryDirectory(prefix="root-memorybeg-abi-") as tmp:
 
 print(f"PASS Root-C memoryBeg desktop/oracle only; "
       f"{count} native sources/headers guarded; imageMemory remains live; "
-      "root expected 28B")
+      "root expected 12B")

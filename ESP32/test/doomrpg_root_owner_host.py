@@ -43,7 +43,6 @@ assert teardown.count("EspNativeMenuStorage_free(")==1
 assert teardown.count("EspNativeEngineRoot_releaseRender(")==1
 assert teardown.count("EspNativeEngineRoot_releaseCanvas(")==1
 assert all(x in teardown for x in (
-    "doomrpg->player = NULL", "doomrpg->game = NULL",
     "EspNativeMenuStorage_free(", "EspNativeEngineRoot_releaseRender(",
     "EspNativeEngineRoot_releaseCanvas(", "SDL_free(doomrpg);"))
 assert all(not __import__("re").search(r"doomrpg->" + field + r"\b", teardown)
@@ -59,7 +58,6 @@ shim=r"""
 typedef int boolean;
 #define true 1
 typedef struct DoomRPG_s {
-    void *player,*game;
     void *menuSystem,*render,*doomCanvas;
 } DoomRPG_t;
 extern DoomRPG_t* doomRpg;
@@ -102,7 +100,7 @@ int main(void) {
         if(full||core) {
             p->menuSystem=malloc(1);
             p->render=malloc(1);p->doomCanvas=malloc(1);
-            assert(p->game==NULL&&p->menuSystem&&p->render&&p->doomCanvas);
+            assert(p->menuSystem&&p->render&&p->doomCanvas);
         }
         DoomRPG_FreeAppData(p);
         assert(sdlfrees==1);

@@ -16,22 +16,22 @@ CORE = (ROOT / "ESP32/src/engine_stubs.c").read_text()
 IMAGES = (ROOT / "ESP32/src/esp_doomrpg_image_resources.c").read_text()
 INTRO = (ROOT / "ESP32/src/native_intro_dispose.c").read_text()
 RETIRED = ("entityDef", "combat", "hud", "menu", "particleSystem",
-           "sound", "errorID", "upTimeMs")
-LIVE = ("doomCanvas", "render", "player", "game",
-        "menuSystem", "graphSetCliping", "imageMemory")
+           "sound", "errorID", "upTimeMs", "player", "game",
+           "graphSetCliping", "imageMemory")
+LIVE = ("doomCanvas", "render", "menuSystem")
 GUARD = r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEOMETRY_ORACLE\)"
 
 assert "_Static_assert(sizeof(DoomRPG_t) == 28U," in CORE
 assert "SDL_calloc(1, sizeof(DoomRPG_t))" in CORE
 assert "DoomRPG_FreeAppData(DoomRPG_t* doomrpg)" in CORE
 assert "char errMsg[256];" in CORE
-assert "doomRpg->graphSetCliping = false;" in CORE
-assert "!doomRpg->graphSetCliping" in INTRO
-assert "doomRpg->imageMemory = 0;" in CORE
-assert "doomrpg->imageMemory +=" in IMAGES
-assert "doomrpg->imageMemory -=" in IMAGES
-assert "doomRpg->player != NULL" in CORE
-assert "doomRpg->game != NULL" in CORE
+assert "EspNativePresentation_resetClipState();" in CORE
+assert "EspNativePresentation_clipEnabled()" in INTRO
+assert "EspNativeImageResources_resetAccounting();" in CORE
+assert "nativeImageMemory +=" in IMAGES
+assert "nativeImageMemory -=" in IMAGES
+assert "doomRpg->player != NULL" not in CORE
+assert "doomRpg->game != NULL" not in CORE
 assert "EspNativeMenuStorage_free(doomrpg->menuSystem" in CORE
 assert "EspNativeEngineRoot_releaseRender(doomrpg->render" in CORE
 assert "EspNativeEngineRoot_releaseCanvas(doomrpg->doomCanvas" in CORE
@@ -55,7 +55,8 @@ for base in (ROOT / "ESP32/src", ROOT / "ESP32/include"):
         for field in RETIRED:
             # Native menu model still uses menuSystem->menu; only the
             # DoomRPG_t::menu legacy pointer is retired in this milestone.
-            if field in ("menu", "combat"):
+            if field in ("menu", "combat", "game", "player",
+                             "graphSetCliping", "imageMemory"):
                 # menuSystem->menu and CoreMetrics->combat are live fields
                 # unrelated to the retired DoomRPG_t root pointers.
                 access = re.search(
@@ -105,5 +106,5 @@ with tempfile.TemporaryDirectory(prefix="native-root-group-") as tmp:
             assert result.returncode == 0, (name, field, result.stderr)
 
 print(f"PASS Root-D/B retired={','.join(RETIRED)} freed=32B "
-      f"nativeRoot=28B nativeFiles={file_count} "
+      f"nativeRoot=12B nativeFiles={file_count} "
       "desktop/oracle=unchanged liveRoots=protected")

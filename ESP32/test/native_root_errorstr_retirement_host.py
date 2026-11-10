@@ -25,12 +25,12 @@ assert "char errMsg[256];" in CORE, "native fatal logging owns its local buffer"
 assert "vsnprintf(errMsg, sizeof(errMsg), fmt, ap);" in CORE
 assert "DoomRPG_Error(const char* fmt, ...)" in CORE
 assert "SDL_calloc(1, sizeof(DoomRPG_t))" in CORE
-assert "_Static_assert(sizeof(DoomRPG_t) == 28U," in CORE
+assert "_Static_assert(sizeof(DoomRPG_t) == 12U," in CORE
 assert not re.search(r"\bdoomRpg\s*->\s*errorID\b", CORE)
-assert "doomRpg->graphSetCliping = false;" in CORE
-assert "doomRpg->graphSetCliping = false;" not in PRESENT
-assert "doomrpg->graphSetCliping = false;" in PRESENT
-assert "!doomRpg->graphSetCliping" in INTRO, "intro fail-closed guard stays active"
+assert "EspNativePresentation_resetClipState();" in CORE
+assert "EspNativePresentation_clipEnabled(void)" in PRESENT
+assert "nativeGraphClipSet = false;" in PRESENT
+assert "EspNativePresentation_clipEnabled()" in INTRO, "intro fail-closed guard stays active"
 
 # Ban any native owner references, including source currently unlinked by the
 # PlatformIO build script. Ignore comments/diagnostics but not executable code.
@@ -71,5 +71,5 @@ with tempfile.TemporaryDirectory(prefix="root-errorstr-abi-") as tmp:
         if not expected:
             assert "errorStr" in result.stderr, name
 
-print(f"PASS root errorStr=desktop/oracle only; native root=28B; "
+print(f"PASS root errorStr=desktop/oracle only; native root=12B; "
       f"{count} native source/header files guarded; fatal buffer=stack-local")
