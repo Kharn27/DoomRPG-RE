@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "esp_native_texture.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -633,7 +634,7 @@ static int drawTouchReadyMainMenuOpaque(DoomRPG_t* doomRpg,
     logoDst.w = DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH;
     logoDst.h = DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_HEIGHT;
 
-    if (SDL_RenderCopy(NULL, menuSystem->imgLogo.imgBitmap, NULL, &logoDst) != 0) {
+    if (EspNativeTexture_blit(menuSystem->imgLogo.imgBitmap, NULL, &logoDst) != 0) {
         return 0;
     }
 
