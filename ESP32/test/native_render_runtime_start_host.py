@@ -64,10 +64,13 @@ typedef struct Render_s {
     void *piDIB;
 } Render_t;
 typedef struct DoomCanvas_s { int alive; } DoomCanvas_t;
-typedef struct DoomRPG_s {
+typedef struct DoomRPG_s { uint8_t nativeProcessIdentity; } DoomRPG_t;
+typedef struct EspNativeRootOwners_s {
     DoomCanvas_t *doomCanvas;
     Render_t *render;
-} DoomRPG_t;
+} EspNativeRootOwners_t;
+static EspNativeRootOwners_t nativeRootOwners;
+static EspNativeRootOwners_t* EspNativeRootOwners_live(void) { return &nativeRootOwners; }
 static int allocations, runtimeCalls, wallActive, spriteActive;
 static uint8_t sharedFB[38400];
 static uint8_t sharedPalette[8];
@@ -109,25 +112,29 @@ static void testCleanup(void) {
     DoomCanvas_t canvas={1};
     for (int i=0;i<4096;++i) {
         Render_t render={0};
-        DoomRPG_t root={&canvas,&render};
+        DoomRPG_t root={.nativeProcessIdentity=1};
+        nativeRootOwners.doomCanvas=&canvas;
+        nativeRootOwners.render=&render;
         populate(&render,i%3);
         assert(DoomRPG_esp32ReleaseMainMenuMemory(&root)==1);
         assert(runtimeCalls==i+1);
         assert(allocations==0);
-        assert(root.render==&render && root.doomCanvas==&canvas);
+        assert(nativeRootOwners.render==&render && nativeRootOwners.doomCanvas==&canvas);
         assert(render.framebuffer==sharedFB && render.mediaPalettes==sharedPalette);
         assert(render.mediaTexels==NULL && render.shapeData==NULL);
         assert(render.mediaTexelOffsets==NULL && render.mediaBitShapeOffsets==NULL);
     }
     Render_t render={0};
-    DoomRPG_t root={&canvas,&render};
+    DoomRPG_t root={.nativeProcessIdentity=1};
+        nativeRootOwners.doomCanvas=&canvas;
+        nativeRootOwners.render=&render;
     int before=runtimeCalls;
     assert(DoomRPG_esp32ReleaseMainMenuMemory(NULL)==0);
-    root.render=NULL;
+    nativeRootOwners.render=NULL;
     assert(DoomRPG_esp32ReleaseMainMenuMemory(&root)==0);
-    root.render=&render;root.doomCanvas=NULL;
+    nativeRootOwners.render=&render;nativeRootOwners.doomCanvas=NULL;
     assert(DoomRPG_esp32ReleaseMainMenuMemory(&root)==0);
-    root.doomCanvas=&canvas;
+    nativeRootOwners.doomCanvas=&canvas;
     assert(runtimeCalls==before);
     wallActive=1;
     assert(DoomRPG_esp32ReleaseMainMenuMemory(&root)==0);
