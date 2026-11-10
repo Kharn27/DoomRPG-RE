@@ -104,8 +104,8 @@ layout = layout.replace("static void EspNativeEngineLayout_startupCanvas(", "voi
 # The Render setup symbol was made private without changing any geometry or
 # initialization behavior. Normalize only this internal call for the old
 # independently hardware-proven Canvas layout source fingerprint.
-assert "EspNativeEngineLayout_setupRender(doomRpg->render, &screenRect);" in layout
-layout = layout.replace("EspNativeEngineLayout_setupRender(doomRpg->render, &screenRect);",
+assert "EspNativeEngineLayout_setupRender(EspNativeRootOwners_live()->render, &screenRect);" in layout
+layout = layout.replace("EspNativeEngineLayout_setupRender(EspNativeRootOwners_live()->render, &screenRect);",
                         "Render_setup(doomRpg->render, &screenRect);")
 layout_fnv = 2166136261
 for byte in layout.encode("utf-8"):
