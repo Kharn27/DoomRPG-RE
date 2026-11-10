@@ -19,18 +19,21 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_blit(
     uint16_t width, uint16_t height, int16_t dx, int16_t dy,
     uint8_t transparent, EspNativeIndexedBmpStats* stats) {
     (void)sx; (void)sy; (void)stats;
-    /* The production blitter now decodes 9x12 into one 216-byte stack tile;
-     * its single IO/read per glyph is unchanged. Mock source palette and
-     * transparency instead of drawing into the final 160x120 buffer. */
+    /* Full original 9x12 PAK glyph goes directly into the shared 160x120
+     * framebuffer again, not a miniaturized intermediate tile. Verify
+     * transparency and the number of font reads by simulating opaque and
+     * transparent texels without real PAK access. */
     assert(source != NULL && source->paletteCount >= 2U);
-    assert(fbWidth == DIALOG_FONT_WIDTH && fbHeight == DIALOG_FONT_HEIGHT);
+    assert(fbWidth == 160U && fbHeight == 120U);
     assert(width == DIALOG_FONT_WIDTH && height == DIALOG_FONT_HEIGHT);
-    assert(dx == 0 && dy == 0 && transparent == 0U);
+    assert(dx >= DIALOG_TEXT_X && dy >= DIALOG_TEXT_Y);
+    assert((int)dx + (int)width <= 160 && (int)dy + (int)height <= 100);
+    assert(transparent == DIALOG_TRANSPARENT);
     for (unsigned y = 0; y < height; ++y)
         for (unsigned x = 0; x < width; ++x)
-            framebuffer[y * fbWidth + x] =
-                (x == 0U && y == 0U) ? source->paletteRgb565[1] :
-                                      source->paletteRgb565[0];
+            if (!(x == 1U && y == 0U))
+                framebuffer[((unsigned)dy + y) * fbWidth +
+                            (unsigned)dx + x] = source->paletteRgb565[1];
     ++glyphBlits;
     return ESP_NATIVE_INDEXED_BMP_OK;
 }
@@ -71,19 +74,23 @@ int main(void) {
         assert(dialog.font.paletteRgb565[2] == 0U);
         assert(dialog.font.paletteRgb565[3] != dialog.font.paletteRgb565[1]);
         assert(paintDialog(1000U) && presents == 1);
-        /* Compact inner panel and lower seam share theme button colors. */
-        assert(DIALOG_BORDER_LEFT == 18 && DIALOG_BORDER_RIGHT == 141);
-        assert(DIALOG_BORDER_TOP == 51 && DIALOG_BORDER_BOTTOM == 98);
-        assert(DIALOG_GLYPH_WIDTH == 8U && DIALOG_GLYPH_HEIGHT == 10U);
-        assert(pixels[1 + 53 * 160 + 19] == ESP_HUB_COLOR_BG);
-        assert(pixels[1 + 52 * 160 + 30] == EspMainMenuSkin_uiAccentDim());
-        assert(pixels[1 + 52 * 160 + 80] == EspMainMenuSkin_uiAccent());
-        assert(pixels[1 + 97 * 160 + 80] == EspMainMenuSkin_uiAccent());
-        /* Smaller real BACK plate with 9-row themed gradient label. */
+        /* Readable original 9x12 source and four 12px rows are back.
+         * The industrial box expands enough to protect bottom row 84..95
+         * and never touches the permanent bottom HUD at y=100. */
+        assert(DIALOG_BORDER_LEFT == 15 && DIALOG_BORDER_RIGHT == 144);
+        assert(DIALOG_BORDER_TOP == 45 && DIALOG_BORDER_BOTTOM == 99);
+        assert(DIALOG_FONT_WIDTH == 9U && DIALOG_FONT_HEIGHT == 12U);
+        assert(DIALOG_FONT_ADVANCE == 7);
+        assert(pixels[1 + 47 * 160 + 16] == ESP_HUB_COLOR_BG);
+        assert(pixels[1 + 46 * 160 + 30] == EspMainMenuSkin_uiAccentDim());
+        assert(pixels[1 + 46 * 160 + 80] == EspMainMenuSkin_uiAccent());
+        assert(pixels[1 + 98 * 160 + 80] == EspMainMenuSkin_uiAccent());
+        /* Smaller 3x5 BACK lettering, NOT the former 9-row plate font.
+         * The chassis and actual touch box remain the same 38x18. */
+        assert(DIALOG_BACK_W == 38 && DIALOG_BACK_H == 18);
         assert(pixels[1 + 30 * 160 + 30] ==
                EspMainMenuSkin_accentTone(ESP_MAIN_MENU_SKIN_IDLE));
-        assert(pixels[1 + 31 * 160 + 27] ==
-               EspMainMenuSkin_letterTone(0, 9));
+        assert(pixels[1 + 33 * 160 + 32] == EspMainMenuSkin_uiInk());
         /* COMMS was a decorative dead button. Nothing paints that region. */
         assert(pixels[1 + 30 * 160 + 100] == 0xbeef);
         assert(pixels[1 + 42 * 160 + 140] == 0xbeef);
@@ -93,7 +100,7 @@ int main(void) {
         assert(pixels[1 + DIALOG_TEXT_Y * 160 + DIALOG_TEXT_X] ==
                EspMainMenuSkin_uiInk());
         assert(pixels[1 + DIALOG_TEXT_Y * 160 + DIALOG_TEXT_X + 1] ==
-               ESP_HUB_COLOR_BG); /* transparent source remains transparent */
+               ESP_HUB_COLOR_BG); /* source alpha still honored */
         if (theme != ESP_MAIN_MENU_THEME_CLASSIC) {
             assert(lastAccent != EspMainMenuSkin_uiAccent());
             assert(lastInk != EspMainMenuSkin_uiInk());
@@ -148,7 +155,7 @@ int main(void) {
         EspNativeGameplayDialog_tapAction(38, 32), &close) ==
             ESP_NATIVE_GAMEPLAY_DIALOG_INPUT_CLOSE_RESUME);
     assert(close.resumeRequested == 1 && !close.backAllowed && !pack);
-    /* Four compact lines use y=54..93, not the HUD or chassis seams. */
+    /* Four full-size original PAK rows use y=48..95, not the HUD. */
     seed(1);
     strcpy(dialog.text, "A|B|C|D");
     dialog.textLength = (uint16_t)strlen(dialog.text);
@@ -156,10 +163,15 @@ int main(void) {
     dialog.dialogTypeLineIdx = ESP_NATIVE_GAMEPLAY_DIALOG_PAGE_LINES;
     assert(paintDialog(1000U));
     assert(glyphBlits == 4);
-    for (unsigned row = 0; row < ESP_NATIVE_GAMEPLAY_DIALOG_PAGE_LINES; ++row)
-        assert(pixels[1 + (DIALOG_TEXT_Y + row * DIALOG_GLYPH_HEIGHT) * 160 +
+    for (unsigned row = 0; row < ESP_NATIVE_GAMEPLAY_DIALOG_PAGE_LINES; ++row) {
+        assert(pixels[1 + (DIALOG_TEXT_Y + row * DIALOG_FONT_HEIGHT) * 160 +
                       DIALOG_TEXT_X] == EspMainMenuSkin_uiInk());
-    assert(pixels[1 + 99 * 160 + DIALOG_TEXT_X] == 0xbeef);
+        assert(pixels[1 + (DIALOG_TEXT_Y + row * DIALOG_FONT_HEIGHT +
+                           DIALOG_FONT_HEIGHT - 1U) * 160 + DIALOG_TEXT_X] ==
+               EspMainMenuSkin_uiInk());
+    }
+    assert(pixels[1 + 99 * 160 + DIALOG_TEXT_X] != 0xbeef);
+    assert(pixels[1 + 100 * 160 + DIALOG_TEXT_X] == 0xbeef);
 
     seed(1);
     assert(EspNativeGameplayDialog_tapAction(-1, 32) == ESP_NATIVE_GAMEPLAY_ACTION_NONE);
@@ -171,6 +183,6 @@ int main(void) {
         if (y < 20 || y >= 100) assert(pixels[1 + y * 160 + x] == 0xbeef);
     assert(pixels[0] == 0xbeef && pixels[160 * 120 + 1] == 0xbeef);
     EspNativeGameplayDialog_reset();
-    puts("dialog_touch_host: PASS compact 124x48 industrial dialog, 38x18 BACK, no COMMS, scaled 8x10 PAK font, 3 button/label themes, 4 lines, original touch/cancel, no HUD/world overwrite");
+    puts("dialog_touch_host: PASS original full-size 9x12 PAK dialog text, 130x55 themed industrial frame, 3x5 BACK lettering in 38x18 hitbox, no COMMS, 3 themes, 4 lines, alpha, touch/cancel, HUD guards");
     return 0;
 }
