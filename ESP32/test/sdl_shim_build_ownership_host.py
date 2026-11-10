@@ -132,9 +132,9 @@ def main():
         assert set(current).issubset(before), (
             f"{args.profile}: unexpected SDL exports after native migration "
             f"added={sorted(set(current)-set(before))}")
-        assert c1_retired.issubset(before - current.keys()), (
+        assert c1_retired.issubset(set(before) - set(current)), (
             f"{args.profile}: expected SDL-C1 image pipeline removal missing "
-            f"{sorted(c1_retired - (before.keys() - current.keys()))}")
+            f"{sorted(c1_retired - (set(before) - set(current)))}")
         report["c1_removed_sdl"] = sorted(set(before) - set(current))
         report["c1_native_providers"] = sorted(c1_native)
         report["baseline_linked_sdl"] = before
