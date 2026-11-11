@@ -9,6 +9,7 @@ rollback route, PAK owner or shared framebuffer lifetime may change in F12.
 from pathlib import Path
 from sdl_f13_dead_input_mode_host import restore_pre_f13
 from sdl_f14_video_mirror_host import restore_pre_f14
+from sdl_f16_fatal_close_facade_host import restore_pre_f16
 import hashlib
 import re
 
@@ -70,7 +71,8 @@ if __name__ == "__main__":
                          shim, re.M), (alias, native)
     owner = OWNER.read_text(encoding="utf-8")
     assert owner.startswith("#include <SDL.h>\n")
-    assert '#include "SDL_Video.h"' in owner
+    assert '#include "SDL_Video.h"' not in owner  # SDL-F16 removed native desktop header
+    assert '#include "SDL_Video.h"' in restore_pre_f16(owner)  # F12 historical ABI
     for abi in ("SDLVideo_t sdlVideo = {", "SDLVideo_t* SDL_GetVideo(void)",
                 "SDL_Rect* windowRect", "SDL_Rect screenRect;",
                 "SDL_CloseAudio();", "SDL_Close();",
