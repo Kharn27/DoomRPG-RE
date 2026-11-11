@@ -271,6 +271,8 @@ def main():
                                  "EspNativeTexture_fillRect(&rect);")
                         .replace("SDL_RenderDrawLine(sdlVideo.renderer, sx, sy, ex, ey);",
                                  "EspNativeTexture_drawLine(sx, sy, ex, ey);"))
+        expected = expected.replace("SDL_Rect clip;", "EspNativeRect clip;")
+        expected = expected.replace("SDL_Rect rect;", "EspNativeRect rect;")
         expected = expected.replace("SDL_RenderPresent(sdlVideo.renderer);",
                                     "(void)Esp32PlatformVideo_present();")
         expected = expected.replace("doomrpg->doomCanvas->fontColor",
