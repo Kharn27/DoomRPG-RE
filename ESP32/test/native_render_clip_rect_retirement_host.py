@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Prevent Render_t::clipRect from re-entering any CYD firmware ABI.
 
-The legacy Render_startup wrote a full-screen SDL_Rect and checked that
-the same cached rectangle still held the constants it had just written.
-Native startup checks the *actual* SDL renderer dimensions instead.
+The legacy Render_startup wrote and rechecked a full-screen SDL_Rect.
+On classic CYD startup now takes fixed native canvas dimensions and validates
+the actual PlatformVideo framebuffer pointer/capacity without SDLVideo_t.
 """
 from pathlib import Path
 import re
@@ -26,11 +26,15 @@ assert re.search(
 assert "render->clipRect.x" in DESKTOP
 assert "render->clipRect.w" in DESKTOP
 assert "sizeof(Render_t) == 108U" in BRIDGE
-assert "sdlVideo.rendererW != DOOMRPG_CANVAS_WIDTH" in BRIDGE
-assert "sdlVideo.rendererH != DOOMRPG_CANVAS_HEIGHT" in BRIDGE
+assert "sdlVideo." not in BRIDGE
+assert "#include <SDL.h>" not in BRIDGE
+assert '#include "SDL_Video.h"' not in BRIDGE
+assert "width = DOOMRPG_CANVAS_WIDTH;" in BRIDGE
+assert "height = DOOMRPG_CANVAS_HEIGHT;" in BRIDGE
+assert "DOOMRPG_CANVAS_WIDTH == DOOMRPG_LOGICAL_WIDTH" in BRIDGE
 assert "Esp32PlatformVideo_framebufferSizeBytes() < framebufferBytes" in BRIDGE
-assert "sdlVideo.rendererW=159" in STARTUP
-assert "sdlVideo.rendererH=119" in STARTUP
+assert "fbBytes=sizeof(framebuffer)-1" in STARTUP
+assert "fbReady=0" in STARTUP
 
 # Forbid direct field access from the entire native firmware, not only from
 # the startup bridge. Strip comments and strings but keep active code.
@@ -78,4 +82,4 @@ with tempfile.TemporaryDirectory(prefix="doomrpg-render-clip-") as tmp:
             assert "clipRect" in result.stderr, (name, result.stderr)
 
 print("PASS Render_t clipRect absent from normal/bringup/trace, retained "
-      "desktop/oracle; real canvas dimensions guarded, size=112B")
+      "desktop/oracle; fixed native geometry and real framebuffer capacity guarded, size=108B")

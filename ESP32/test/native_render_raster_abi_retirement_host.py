@@ -630,7 +630,7 @@ assert re.search(
     r"render->mapStringCount = 0;\s+#endif", root)
 assert re.search(
     r"render->lines = NULL;\s+render->numMapSprites = 0;\s+"
-    r"render->linesLength = 0;\s+SDL_free\(render->tileEvents\);",
+    r"render->linesLength = 0;\s+free\(render->tileEvents\);",
     startup)
 assert re.search(
     r"render->mapStringsIDs = NULL;\s+render->mapStringCount = 0;\s+#endif",

@@ -6,6 +6,7 @@ ownership paths, both freePtr paths and partially populated native-owned
 objects. This is a host C test, not a physical CYD fatal-teardown claim.
 """
 from pathlib import Path
+from sdl_f9_render_startup_no_sdl_host import restore_pre_f9
 import re
 import shutil
 import subprocess
@@ -53,7 +54,7 @@ assert "EspNativeRenderRuntime_releaseCompatibility(render);" in (ROOT / "ESP32/
 native_header = (ROOT / "ESP32/include/esp_render_startup_bridge.h").read_text(encoding="utf-8")
 assert "EspNativeRenderRuntime_releaseCompatibility(struct Render_s* render);" in native_header
 assert re.search(r"#ifndef DOOMRPG_ESP32\s+void Render_freeRuntime\(", header)
-runtime_original = runtime.replace("void EspNativeRenderRuntime_releaseCompatibility(",
+runtime_original = extract(restore_pre_f9(bridge), "void EspNativeRenderRuntime_releaseCompatibility(Render_t* render)").replace("void EspNativeRenderRuntime_releaseCompatibility(",
                                    "void Render_freeRuntime(")
 runtime_fingerprint = 2166136261
 for b in runtime_original.encode("utf-8"):
@@ -105,6 +106,7 @@ static byte* Esp32PlatformVideo_framebuffer(void) {
     return platformFramebuffer;
 }
 #define SDL_free trackedFree
+#define free trackedFree
 #define printf(...) ((void)0)
 """
 # A macro keeps every legacy compatibility slot populated on full cycles.

@@ -1,13 +1,12 @@
-#include <SDL.h>
 #include "esp_native_root_state.h"
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "DoomRPG.h"
 #include "DoomCanvas.h"
 #include "Render.h"
-#include "SDL_Video.h"
 #include "esp_legacy_asset_source.h"
 #include "platform_video_c_bridge.h"
 #include "esp_render_startup_bridge.h"
@@ -16,6 +15,9 @@
 
 /* Include ESP-IDF bool macros only after DoomRPG's legacy boolean enum. */
 #include <esp_heap_caps.h>
+_Static_assert(DOOMRPG_CANVAS_WIDTH == DOOMRPG_LOGICAL_WIDTH &&
+               DOOMRPG_CANVAS_HEIGHT == DOOMRPG_LOGICAL_HEIGHT,
+               "render startup must use the native fixed-size CYD canvas");
 #if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 /* Desktop/bringup retain the original legacy BSP flags; production does not. */
 _Static_assert(sizeof(Render_t) == 108U,
@@ -33,39 +35,39 @@ void EspNativeRenderRuntime_releaseCompatibility(Render_t* render)
     int i;
 #endif
 
-    SDL_free(render->mediaTexels);
+    free(render->mediaTexels);
     render->mediaTexels = NULL;
-    SDL_free(render->shapeData);
+    free(render->shapeData);
     render->shapeData = NULL;
     /* Desktop BSP/sprite/event/string pointer lists no longer exist in
      * production Render_t. Keep their original release on probe builds. */
 #if defined(DOOMRPG_ESP32_BRINGUP_PROBES)
-    SDL_free(render->mapSprites);
+    free(render->mapSprites);
     render->mapSprites = NULL;
-    SDL_free(render->nodes);
+    free(render->nodes);
     render->nodes = NULL;
-    SDL_free(render->lines);
+    free(render->lines);
     render->lines = NULL;
     render->numMapSprites = 0;
     render->linesLength = 0;
-    SDL_free(render->tileEvents);
+    free(render->tileEvents);
     render->tileEvents = NULL;
-    SDL_free(render->mapByteCode);
+    free(render->mapByteCode);
     render->mapByteCode = NULL;
     for (i = 0; i < render->mapStringCount; i++) {
-        SDL_free(render->mapStringsIDs[i]);
+        free(render->mapStringsIDs[i]);
     }
-    SDL_free(render->mapStringsIDs);
+    free(render->mapStringsIDs);
     render->mapStringsIDs = NULL;
     render->mapStringCount = 0;
 #endif
-    SDL_free(render->mediaBitShapeOffsets);
+    free(render->mediaBitShapeOffsets);
     render->mediaBitShapeOffsets = NULL;
-    SDL_free(render->mediaTexelOffsets);
+    free(render->mediaTexelOffsets);
     render->mediaTexelOffsets = NULL;
-    SDL_free(render->mediaTexturesIds);
+    free(render->mediaTexturesIds);
     render->mediaTexturesIds = NULL;
-    SDL_free(render->mediaSpriteIds);
+    free(render->mediaSpriteIds);
     render->mediaSpriteIds = NULL;
 }
 
@@ -86,10 +88,10 @@ static void EspNativeRenderStartup_loadPalettes(Render_t* render)
 
 	fData = EspLegacyAssetSource_readAlloc("palettes.bin", NULL);
 
-	SDL_free(render->mediaPalettes);
+	free(render->mediaPalettes);
 
 	render->mediaPalettesLength = DoomRPG_intAtNext(fData, &dataPos) / 2;
-	render->mediaPalettes = (short*)SDL_malloc(render->mediaPalettesLength * sizeof(short));
+	render->mediaPalettes = (short*)malloc(render->mediaPalettesLength * sizeof(short));
 	if (render->mediaPalettes == NULL) {
 		DoomRPG_Error("Render_loadPalettes: Insufficient memory for allocation");
 	}
@@ -111,7 +113,7 @@ static void EspNativeRenderStartup_loadPalettes(Render_t* render)
 		render->mediaPalettes[i] = (short)Render_make565RGB(render, blue, green, red);
 	}
 
-	SDL_free(fData);
+	free(fData);
 
 }
 
@@ -186,16 +188,9 @@ static int EspNativeRenderStartup_initialize(Render_t* render) {
         return 0;
     }
 
-    /* Production canvas is a fixed native 160x120 owner. The legacy
-     * Render_t::clipRect was only written here and compared to itself;
-     * check the actual attached renderer dimensions before any I/O. */
-    if (sdlVideo.rendererW != DOOMRPG_CANVAS_WIDTH ||
-        sdlVideo.rendererH != DOOMRPG_CANVAS_HEIGHT) {
-        printf("[RENDER] ERROR native canvas geometry %dx%d expected=%dx%d\n",
-               sdlVideo.rendererW, sdlVideo.rendererH,
-               DOOMRPG_CANVAS_WIDTH, DOOMRPG_CANVAS_HEIGHT);
-        return 0;
-    }
+    /* Classic CYD geometry is platform-owned and constant, not a mutable
+     * SDLVideo_t mirror. The shared framebuffer capacity and pitch remain
+     * validated below before writing any pixel. */
 
     printf("[RENDERSTART] OWNER api=Render_startup source=esp-native-render-startup direct=yes wrap=no\n");
 
@@ -207,16 +202,16 @@ static int EspNativeRenderStartup_initialize(Render_t* render) {
 
     /* Preserve the exact native sine values loaded from PAK. */
     if (!EspNativeTrig_installLe(fData, ESP_NATIVE_TRIG_BYTES)) {
-        SDL_free(fData);
+        free(fData);
         printf("[RENDER] ERROR native sine table install failed\n");
         return 0;
     }
-    SDL_free(fData);
+    free(fData);
     printf("[RENDER] sintable loaded: %u bytes\n",
            (unsigned int)ESP_NATIVE_TRIG_BYTES);
 
-    width = sdlVideo.rendererW;
-    height = sdlVideo.rendererH;
+    width = DOOMRPG_CANVAS_WIDTH;
+    height = DOOMRPG_CANVAS_HEIGHT;
     render->pitch = ((width * (int)sizeof(uint16_t)) + 3) & ~3;
     framebufferBytes = (size_t)render->pitch * (size_t)height;
     sharedFramebuffer = (byte*)Esp32PlatformVideo_framebuffer();
@@ -312,7 +307,7 @@ int EspRenderStartupBridge_start(DoomRPG_t* root, int preRenderReady) {
            (unsigned int)heapAfter,
            (unsigned int)largestAfter);
 
-    expectedPitch = ((sdlVideo.rendererW * (int)sizeof(uint16_t)) + 3) & ~3;
+    expectedPitch = ((DOOMRPG_CANVAS_WIDTH * (int)sizeof(uint16_t)) + 3) & ~3;
 
     if (!result || render->framebuffer != expectedFramebuffer ||
         render->pitch != expectedPitch ||
@@ -321,7 +316,7 @@ int EspRenderStartupBridge_start(DoomRPG_t* root, int preRenderReady) {
                (void*)render->framebuffer,
                (void*)expectedFramebuffer,
                render->pitch, expectedPitch,
-               sdlVideo.rendererW, sdlVideo.rendererH,
+               DOOMRPG_CANVAS_WIDTH, DOOMRPG_CANVAS_HEIGHT,
                (void*)render->mediaPalettes,
                render->mediaPalettesLength);
         return 0;
