@@ -159,7 +159,7 @@ def main():
         try:
             execute_build_script(FakeEnv(project, build))
         except RuntimeError as exc:
-            assert "Missing permanent SDL shim source" in str(exc)
+            assert "Missing host-only SDL shim oracle source" in str(exc)
         else:
             raise AssertionError("missing permanent SDL source accepted")
 
