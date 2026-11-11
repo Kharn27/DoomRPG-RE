@@ -72,10 +72,28 @@ void DoomRPG_freeImage(DoomRPG_t* doomrpg, Image_t* image)
 
 byte *DoomRPG_fileOpenRead(DoomRPG_t* doomrpg, const char* resourceName)
 {
+	//SDL_RWops* rw;
 	byte *fdata;
 	int fSize;
 	char fileName[64];
 
+	/*sprintf_s(fileName, sizeof(fileName), "BarData%s", resourceName);
+
+	rw = SDL_RWFromFile(fileName, "r");
+	if (rw == NULL) {
+		DoomRPG_Error("DoomRPG_fileOpenRead: cannot open file %s", fileName);
+	}
+
+	fSize = (int)SDL_RWsize(rw);
+
+	fdata = (byte*)SDL_malloc(fSize);
+	if (fdata == NULL) {
+		DoomRPG_Error("DoomRPG_fileOpenRead: Insufficient memory for allocation");
+	}
+
+	SDL_RWread(rw, fdata, fSize, 1);
+
+	SDL_RWclose(rw);*/
 
 	snprintf(fileName, sizeof(fileName), "%s", resourceName+1);
 
