@@ -637,7 +637,9 @@ jobs:
           assert marker in normal, "BT-0 boot hook not linked into normal firmware"
           for env in ("esp32-cyd-bringup", "esp32-cyd-trace"):
               assert marker not in (root / env / "firmware.elf").read_bytes(), env
-          nm = subprocess.check_output(["xtensa-esp32-elf-nm", str(root / "esp32-cyd/firmware.elf")], text=True)
+          tool = Path.home() / ".platformio/packages/toolchain-xtensa-esp32/bin/xtensa-esp32-elf-nm"
+          assert tool.is_file(), f"toolchain nm not found: {tool}"
+          nm = subprocess.check_output([str(tool), str(root / "esp32-cyd/firmware.elf")], text=True)
           assert any(line.endswith(" T btInUse") for line in nm.splitlines()), "btInUse not strong in final ELF"
           assert any(line.endswith(" T initVariant") for line in nm.splitlines()), "initVariant not strong in final ELF"
           print("BT0 ELF: strong btInUse/initVariant in normal; diagnostic ELF inert")
