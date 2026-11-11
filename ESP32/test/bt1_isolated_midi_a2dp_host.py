@@ -21,8 +21,15 @@ assert "#define setup DoomRPG_ProductionSetup_Inert" in source
 assert "#define loop DoomRPG_ProductionLoop_Inert" in source
 assert "initializeMainMenu();" in source
 assert "PlatformVideo_present()" in source
-assert "EspNativeRenderRuntime_releaseCompatibility(render);" in source
-assert "render->framebuffer = nullptr;" in source
+assert "EspBtTest_detachRenderForFreeze()" in source
+assert '#include "esp_native_root_state.h"' not in source
+assert '#include "Render.h"' not in source
+bridge=(root/"src/esp_bt_test_freeze_bridge.c").read_text()
+assert "EspNativeRenderRuntime_releaseCompatibility(render);" in bridge
+assert "render->framebuffer = NULL;" in bridge
+assert "(void *)render->framebuffer != platformFramebuffer" in bridge
+assert "Esp32PlatformVideo_framebuffer()" in bridge
+assert "DOOMRPG_ESP32_BT_TEST_PROFILE" in bridge
 assert "PlatformVideo_btTestReleaseFrozenFramebuffer()" in source
 assert source.index("PlatformVideo_btTestReleaseFrozenFramebuffer()") < source.index("EspBtTestMidi_begin();")
 videoPath="ESP32/src/platform_video.cpp"

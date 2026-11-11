@@ -11,9 +11,9 @@
 #include "esp_bt_test_midi.h"
 #include "esp_bt_test_a2dp.h"
 #include "esp_heap_caps.h"
-#include "Render.h"
-#include "esp_native_root_state.h"
-#include "esp_render_startup_bridge.h"
+/* The legacy DoomRPG.h declares enum {false,true}, which is C-only.
+ * Keep all legacy Render/root ownership inspection in a small C bridge. */
+extern "C" int EspBtTest_detachRenderForFreeze(void);
 extern bool PlatformVideo_btTestReleaseFrozenFramebuffer();
 
 
@@ -53,23 +53,20 @@ void setup() {
         Serial.println("[BTTEST] FAIL-CLOSED final-menu-present");
         return;
     }
-    Render_t *render = EspNativeRootOwners_live()->render;
-    if (render == nullptr ||
-        render->framebuffer != (uint8_t*)PlatformVideo_framebuffer()) {
+    const uint32_t beforeFreeze = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    /* The C-only bridge verifies the exact Render/PlatformVideo alias, then
+     * releases mapping compatibility slots and detaches the Render pointer.
+     * No native frame, gameplay or input is serviced after this boundary. */
+    if (!EspBtTest_detachRenderForFreeze()) {
         Serial.println("[BTTEST] FAIL-CLOSED render-framebuffer-alias-mismatch");
         return;
     }
-    const uint32_t beforeFreeze = heap_caps_get_free_size(MALLOC_CAP_8BIT);
-    /* Mapping compatibility release touches NO immutable maps or framebuffer.
-     * No render/game/menu code is ever serviced after this point. */
-    EspNativeRenderRuntime_releaseCompatibility(render);
-    render->framebuffer = nullptr;
     if (!PlatformVideo_btTestReleaseFrozenFramebuffer()) {
         Serial.println("[BTTEST] FAIL-CLOSED framebuffer-release");
         return;
     }
     const uint32_t afterFreeze = heap_caps_get_free_size(MALLOC_CAP_8BIT);
-    Serial.printf("[BTTEST] FROZEN_RELEASE before=%lu after=%lu gained=%lu largest8=%lu dma=%lu display=latched gameplay=off\\n",
+    Serial.printf("[BTTEST] FROZEN_RELEASE before=%lu after=%lu gained=%lu largest8=%lu dma=%lu display=latched gameplay=off\n",
                   (unsigned long)beforeFreeze, (unsigned long)afterFreeze,
                   (unsigned long)(afterFreeze - beforeFreeze),
                   (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
