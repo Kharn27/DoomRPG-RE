@@ -17,8 +17,6 @@
  * legacy engine header above this include, as done by render_startup_bridge.c. */
 #include <esp_heap_caps.h>
 
-extern DoomRPG_t* doomRpg;
-
 /* Desktop keyboard/controller mapping storage is retired.
  * This translation unit retains only the independent native mappings.bin
  * loader and its fixed memory plan. Touch routing owns input on classic CYD. */
@@ -231,7 +229,7 @@ int EspLegacyMappings_load(struct Render_s* renderBase) {
     return 1;
 }
 
-int EspLegacyConfigMappingsStartup_start(int renderStartupReady) {
+int EspLegacyConfigMappingsStartup_start(DoomRPG_t* root, int renderStartupReady) {
     uint32_t mappingBytes = 0U;
     MappingPlan_t plan;
     Render_t* render;
@@ -252,7 +250,7 @@ int EspLegacyConfigMappingsStartup_start(int renderStartupReady) {
         return 0;
     }
 
-    if (doomRpg == NULL || EspNativeRootOwners_live()->render == NULL) {
+    if (root == NULL || EspNativeRootOwners_live()->render == NULL) {
         printf("[CONFIGMAP] Core object graph incomplete; probe refused\n");
         return 0;
     }

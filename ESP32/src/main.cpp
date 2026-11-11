@@ -299,7 +299,7 @@ namespace
     void initializeConfigMappings()
     {
         engineConfigMappingsReady =
-            EspLegacyConfigMappingsStartup_start(engineRenderStartupReady ? 1 : 0) != 0;
+            EspLegacyConfigMappingsStartup_start(doomRpg, engineRenderStartupReady ? 1 : 0) != 0;
 
         if (engineConfigMappingsReady)
         {
