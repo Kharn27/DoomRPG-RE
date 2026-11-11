@@ -202,8 +202,13 @@ def main():
         test_file = Path(tmp) / "image_resources_host.c"
         binary = str(Path(tmp) / "image_resources_host")
         test_file.write_text(HARNESS)
+        # This exercises the actual ESP32-native Image_t ABI. The legacy
+        # host used the desktop ABI accidentally through the obsolete SDL.h
+        # include in the production adapter; SDL-F10 removes that include.
+        # Desktop/oracle layout remains checked by SDL-F5/F6 independently.
         flags = ["-std=c11", "-Wall", "-Wextra", "-Werror",
-                 "-Wno-unused-parameter", "-IESP32/include", "-Isrc"]
+                 "-Wno-unused-parameter", "-DDOOMRPG_ESP32=1",
+                 "-IESP32/include", "-Isrc"]
         flags += shlex.split(os.environ.get("IMAGE_SANITIZE_FLAGS", ""))
         subprocess.run(CC + flags + ["ESP32/src/esp_doomrpg_image_resources.c",
                                     str(test_file), "-o", binary], cwd=ROOT, check=True)

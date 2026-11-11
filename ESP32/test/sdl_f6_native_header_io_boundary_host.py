@@ -12,8 +12,9 @@ clock = (ROOT / "ESP32/src/esp_doomrpg_process_clock.c").read_text()
 guard = "#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)"
 assert header.count(guard) >= 2
 assert "#include <SDL.h>" not in clock
-# Image resource source is frozen by the SDL-C1 byte-exact source oracle;
-# its unrelated transitional include is deliberately retained in F6.
+assert "#include <SDL.h>" not in image
+# SDL-F10 has retired the image adapter's unused SDL include while
+# preserving the production SDL-C1 function bodies and source oracle.
 assert "EspNativeTexture* imgBitmap;" in header
 assert "SDL_Texture* imgBitmap;" in header
 assert image.count("EspNativeTexture_adoptIndexed(&decoded)") == 1
