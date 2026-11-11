@@ -168,14 +168,15 @@ if os.path.isdir(stale_sdl_objects):
 print("[ESP32] DoomRPG C oracle generation retired; reference=src/DoomRPG.c "
       "compiledPatchedC=0 nativeProviders=yes")
 
-# SDL-A: the compact, indexed shim is a permanent ESP32/src translation unit.
-# No Python textual patch, generated source or BuildSources registration.
+# SDL-F3: no SDL shim is built into the firmware (platformio build_src_filter
+# excludes it). Keep the original source as a host-only pixel/ownership oracle.
+# Do not generate or register it through SCons either.
 if not os.path.isfile(join(project_src_dir, "esp32_sdl.cpp")):
-    raise RuntimeError("Missing permanent SDL shim source")
-print("[ESP32] SDL shim permanent; source=ESP32/src/esp32_sdl.cpp generated=no")
+    raise RuntimeError("Missing host-only SDL shim oracle source")
+print("[ESP32] SDL shim host-only; compiledFirmware=no oracle=ESP32/src/esp32_sdl.cpp")
 
-# The original desktop C is only a test reference: all firmware providers live
-# in ESP32/src. The one generated source is the native packed SDL shim.
+# The original desktop C and uncompiled SDL shim are host-only references;
+# all firmware owners live in ESP32/src; no generated SDL source remains.
 # The desktop original C source tree is not registered with SCons.
 # All 21 original TUs were already excluded by the old '+<*.c>' source
 # filter, so that registration compiled exactly zero objects. Make the

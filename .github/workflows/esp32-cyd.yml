@@ -303,6 +303,9 @@ jobs:
       - name: SDL-F2 reject production SDL present calls and audit native bridge (host Python)
         run: python ESP32/test/sdl_f2_native_present_owner_host.py
 
+      - name: SDL-F3 keep SDL shim host-only, exclude TU from firmware (host Python)
+        run: python ESP32/test/sdl_f3_uncompiled_shim_host.py
+
       - name: Test native presentation and clip pixel parity (host C)
         run: python ESP32/test/doomrpg_presentation_host.py
 
