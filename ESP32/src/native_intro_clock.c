@@ -286,7 +286,7 @@ void Esp32IntroClock_service(void) {
     wasTextDone = introState->showTextDone != 0;
     pageBefore = introState->storyPage;
 
-    Esp32StoryFit_draw(canvas);
+    Esp32StoryFit_draw(canvas, clockState.doomRpg);
 
     if (introState->storyPage != pageBefore) {
         if (pageBefore == 1 && introState->storyPage == 2 &&

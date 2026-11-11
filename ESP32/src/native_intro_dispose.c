@@ -236,7 +236,7 @@ void Esp32IntroDispose_service(struct DoomRPG_s* doomRpgBase) {
 
     {
         const uint32_t before = heap8Free();
-        Esp32StoryFit_release(canvas);
+        Esp32StoryFit_release(canvas, doomRpg);
         printf("[INTRODISP] FREE image=p.bmp/storyHand heap8=%u->%u gain=%d owner=native-story\n",
                (unsigned int)before,
                (unsigned int)heap8Free(),
