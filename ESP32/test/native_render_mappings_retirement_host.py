@@ -36,6 +36,8 @@ for b in mapper.encode("utf-8"):
 assert fnv==0x4ab5b50f, f"Native PAK mapper drift: {fnv:08x}"
 entry=extract("int EspLegacyConfigMappingsStartup_start(int renderStartupReady)")
 assert "mappingsResult = EspLegacyMappings_load(render) ? true : false;" in entry
+assert "EspNativeRootOwners_live()->render" in entry
+assert "doomRpg->render" not in entry
 assert "Render_loadMappings(render)" not in entry
 assert "boolean Render_loadMappings(Render_t* render)" not in source
 assert re.search(r"#ifndef DOOMRPG_ESP32\s+boolean Render_loadMappings\(Render_t\* render\);\s+#endif",header)
@@ -63,9 +65,10 @@ typedef struct Render_s {
     void *mediaTexelOffsets, *mediaBitShapeOffsets;
     void *mediaTexturesIds, *mediaSpriteIds;
 } Render_t;
-typedef struct DoomRPG_s {
-    Render_t *render;
-} DoomRPG_t;
+typedef struct DoomRPG_s { uint8_t nativeProcessIdentity; } DoomRPG_t;
+typedef struct EspNativeRootOwners_s { Render_t *render; } EspNativeRootOwners_t;
+static EspNativeRootOwners_t nativeRootOwners;
+static EspNativeRootOwners_t* EspNativeRootOwners_live(void) { return &nativeRootOwners; }
 typedef struct MappingPlan_s {
     int texelsCnt, bitShapeCnt, textureCnt, spriteCnt;
     uint32_t texelOffsetBytes, bitShapeOffsetBytes;
@@ -109,7 +112,8 @@ static void fresh(void) {
 }
 int main(void) {
     Render_t render={0};
-    DoomRPG_t root={&render};
+    DoomRPG_t root={.nativeProcessIdentity=1};
+    nativeRootOwners.render=&render;
     doomRpg=&root;
     for (int i=0;i<4096;++i) {
         fresh();
@@ -133,10 +137,10 @@ int main(void) {
     assert(EspLegacyConfigMappingsStartup_start(1)==0);
     assert(mapperCalls==previous);
     /* Game_t is ABI-retired: the native root cannot carry a Game pointer. */
-    fresh();doomRpg=&root;root.render=NULL;
+    fresh();doomRpg=&root;nativeRootOwners.render=NULL;
     assert(EspLegacyConfigMappingsStartup_start(1)==0);
     assert(mapperCalls==previous);
-    fresh();root.render=&render;statValid=0;
+    fresh();nativeRootOwners.render=&render;statValid=0;
     assert(EspLegacyConfigMappingsStartup_start(1)==0);
     assert(mapperCalls==previous);
     fresh();mapValid=0;

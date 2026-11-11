@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "esp_native_root_state.h"
 #include "esp_native_texture.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -172,8 +173,8 @@ static int validatePresentationContract(DoomRPG_t* doomRpg,
     uint32_t layoutHash;
 
     if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg)) return 0;
-    canvas = doomRpg->doomCanvas;
-    menuSystem = doomRpg->menuSystem;
+    canvas = EspNativeRootOwners_live()->doomCanvas;
+    menuSystem = EspNativeRootOwners_live()->menuSystem;
 
     if (DOOMRPG_CANVAS_WIDTH != DOOMRPG_LOGICAL_WIDTH ||
         DOOMRPG_CANVAS_HEIGHT != DOOMRPG_LOGICAL_HEIGHT ||
@@ -299,7 +300,7 @@ static void drawRect565(Render_t* render,
 static int drawDashboardCard(DoomRPG_t* doomRpg,
                               int item, const char* label,
                               int selected, int armed, int enabled) {
-    Render_t* render = doomRpg->render;
+    Render_t* render = EspNativeRootOwners_live()->render;
     int left, top, right, bottom;
     const int focused = selected && armed && enabled;
     DoomRPG_esp32OptionsCardRect(item, &left, &top, &right, &bottom);
@@ -343,7 +344,7 @@ int DoomRPG_esp32PaintMenuDashboardCards(
         if (labels[item] == NULL) return 0;
     }
 
-    render = doomRpg->render;
+    render = EspNativeRootOwners_live()->render;
     if (industrialMain) startUs = esp_timer_get_time();
 
     /* Bound every selection repaint to the right rail only. The original
@@ -425,7 +426,7 @@ int DoomRPG_esp32PaintMenuDashboardCards(
 /* Every nested child stays inside x104..157.
  * OPTIONS+ORIENTATION: 3x32; VIDEO+THEME: 4x26; BRIGHTNESS: 5x21. */
 static int paintChildRail(DoomRPG_t* doomRpg) {
-    Render_t* render = doomRpg->render;
+    Render_t* render = EspNativeRootOwners_live()->render;
     fillRect565(render, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT,
                 DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP,
                 DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT,
@@ -442,7 +443,7 @@ static int paintChildRail(DoomRPG_t* doomRpg) {
 static int paintChildCard(DoomRPG_t* doomRpg, int item, const char* label,
                           int selected, int enabled, int layer) {
     int l, t, r, b;
-    Render_t* render = doomRpg->render;
+    Render_t* render = EspNativeRootOwners_live()->render;
     if (layer == 1)
         DoomRPG_esp32VideoCardRect(item, &l, &t, &r, &b);
     else if (layer == 2)
@@ -465,7 +466,7 @@ static int paintChildCard(DoomRPG_t* doomRpg, int item, const char* label,
 }
 
 static int finishChildCards(DoomRPG_t* doomRpg, uint32_t* outFNV) {
-    uint32_t hash = DoomRPG_esp32MainMenuFramebufferHash(doomRpg->render);
+    uint32_t hash = DoomRPG_esp32MainMenuFramebufferHash(EspNativeRootOwners_live()->render);
     if (!hash) return 0;
     if (outFNV != NULL) *outFNV = hash;
     return 1;
@@ -612,8 +613,8 @@ int DoomRPG_esp32MainMenuPaintDashboardSelection(
 static int drawTouchReadyMainMenuOpaque(DoomRPG_t* doomRpg,
                                          uint32_t* logoHashOut,
                                          uint32_t* finalHashOut) {
-    DoomCanvas_t* canvas = doomRpg->doomCanvas;
-    EspNativeMenuState_t* menuSystem = doomRpg->menuSystem;
+    DoomCanvas_t* canvas = EspNativeRootOwners_live()->doomCanvas;
+    EspNativeMenuState_t* menuSystem = EspNativeRootOwners_live()->menuSystem;
     SDL_Rect logoDst;
     uint32_t logoHash;
     uint32_t finalHash;
@@ -638,7 +639,7 @@ static int drawTouchReadyMainMenuOpaque(DoomRPG_t* doomRpg,
         return 0;
     }
 
-    logoHash = DoomRPG_esp32MainMenuFramebufferHash(doomRpg->render);
+    logoHash = DoomRPG_esp32MainMenuFramebufferHash(EspNativeRootOwners_live()->render);
     if (logoHash == 0U) return 0;
 
     if (!DoomRPG_esp32MainMenuTouchPrepare(doomRpg)) return 0;
@@ -675,17 +676,17 @@ int DoomRPG_esp32RepaintOpaqueMainMenu(struct DoomRPG_s* doomRpgBase,
     uint32_t composeUs;
 
     if (doomRpg == NULL ||
-        !adaptMainMenuForEsp32(doomRpg->menuSystem) ||
+        !adaptMainMenuForEsp32(EspNativeRootOwners_live()->menuSystem) ||
         !validatePresentationContract(doomRpg, &modelHash, &layoutHash)) {
         printf("[MAINOPAQUE] FAILED dashboard presentation contract menu=%d selected=%d\n",
-               doomRpg != NULL && doomRpg->menuSystem != NULL
-                   ? doomRpg->menuSystem->menu : -999,
-               doomRpg != NULL && doomRpg->menuSystem != NULL
-                   ? doomRpg->menuSystem->selectedIndex : -999);
+               doomRpg != NULL && EspNativeRootOwners_live()->menuSystem != NULL
+                   ? EspNativeRootOwners_live()->menuSystem->menu : -999,
+               doomRpg != NULL && EspNativeRootOwners_live()->menuSystem != NULL
+                   ? EspNativeRootOwners_live()->menuSystem->selectedIndex : -999);
         return 0;
     }
 
-    render = doomRpg->render;
+    render = EspNativeRootOwners_live()->render;
     heapBefore = heap8Free();
     largestBefore = largest8Block();
     composeStart = (uint32_t)DoomRPG_GetTimeMS();
@@ -767,9 +768,9 @@ int __wrap_DoomRPG_probeNativeMainMenuOverlay(struct DoomRPG_s* doomRpgBase) {
         return 0;
     }
 
-    canvas = doomRpg->doomCanvas;
-    menuSystem = doomRpg->menuSystem;
-    render = doomRpg->render;
+    canvas = EspNativeRootOwners_live()->doomCanvas;
+    menuSystem = EspNativeRootOwners_live()->menuSystem;
+    render = EspNativeRootOwners_live()->render;
     sceneHash = DoomRPG_esp32MainMenuFramebufferHash(render);
 
     printf("[MAINTOUCHLAYOUT] Begin sceneFNV=%08x expected=%08x heap8=%u largest8=%u background=black-with-split-rail\n",
@@ -881,12 +882,12 @@ int DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(
     const DoomRPG_t* doomRpg = (const DoomRPG_t*)doomRpgBase;
     const Render_t* render;
 
-    if (doomRpg == NULL || doomRpg->render == NULL ||
-        doomRpg->doomCanvas == NULL || doomRpg->menuSystem == NULL) {
+    if (doomRpg == NULL || EspNativeRootOwners_live()->render == NULL ||
+        EspNativeRootOwners_live()->doomCanvas == NULL || EspNativeRootOwners_live()->menuSystem == NULL) {
         return 0;
     }
 
-    render = doomRpg->render;
+    render = EspNativeRootOwners_live()->render;
     return render->framebuffer != NULL &&
            render->shapeData == NULL &&
            render->mediaTexels == NULL &&
@@ -899,18 +900,18 @@ int DoomRPG_esp32MainMenuRecover(struct DoomRPG_s* doomRpgBase,
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     uint32_t frameFNV = 0U;
 
-    if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
-        doomRpg->menuSystem == NULL) {
+    if (doomRpg == NULL || EspNativeRootOwners_live()->doomCanvas == NULL ||
+        EspNativeRootOwners_live()->menuSystem == NULL) {
         printf("[MAINRECOVER] FAILED reason=%s objectGraph\n",
                reason != NULL ? reason : "unknown");
         return 0;
     }
 
-    if (doomRpg->doomCanvas->state != ST_MENU) {
+    if (EspNativeRootOwners_live()->doomCanvas->state != ST_MENU) {
         printf("[MAINRECOVER] REFUSE reason=%s state=%d menu=%d transitionAlreadyLeftMenu=yes\n",
                reason != NULL ? reason : "unknown",
-               doomRpg->doomCanvas->state,
-               doomRpg->menuSystem->menu);
+               EspNativeRootOwners_live()->doomCanvas->state,
+               EspNativeRootOwners_live()->menuSystem->menu);
         return 0;
     }
 
@@ -926,15 +927,15 @@ int DoomRPG_esp32MainMenuRecover(struct DoomRPG_s* doomRpgBase,
         !DoomRPG_esp32RepaintOpaqueMainMenu(doomRpg, &frameFNV)) {
         printf("[MAINRECOVER] FAILED reason=%s rebuild/repaint menu=%d state=%d\n",
                reason != NULL ? reason : "unknown",
-               doomRpg->menuSystem->menu,
-               doomRpg->doomCanvas->state);
+               EspNativeRootOwners_live()->menuSystem->menu,
+               EspNativeRootOwners_live()->doomCanvas->state);
         return 0;
     }
 
     printf("[MAINRECOVER] READY reason=%s menu=%d selected=%d frame=%08x touch=rearmed\n",
            reason != NULL ? reason : "unknown",
-           doomRpg->menuSystem->menu,
-           doomRpg->menuSystem->selectedIndex,
+           EspNativeRootOwners_live()->menuSystem->menu,
+           EspNativeRootOwners_live()->menuSystem->selectedIndex,
            (unsigned int)frameFNV);
     return 1;
 }

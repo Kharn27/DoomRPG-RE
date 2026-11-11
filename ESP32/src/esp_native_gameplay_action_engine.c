@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "esp_native_root_state.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -2740,7 +2741,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
         if (!__wrap_Esp32PlatformVideo_present()) return 0;
     }
     if (actionState.pending.active == 0U) return 1;
-    if (doomRpg == NULL || doomRpg->render == NULL || view == NULL ||
+    if (doomRpg == NULL || EspNativeRootOwners_live()->render == NULL || view == NULL ||
         view->active != 1U || !ensureOwner()) {
         return 0;
     }
@@ -3540,7 +3541,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
             printf("[FACINGLABEL] DEFER reason=ACTION-WORLD-COMMIT worldRender=continue\n");
         }
         if (!EspNativeGameplayFrame_renderTurn(
-                doomRpg->render, (uint8_t)view->viewAngle, &frame)) {
+                EspNativeRootOwners_live()->render, (uint8_t)view->viewAngle, &frame)) {
             int rollbackOk = 1;
             EspNativeGameplayWeapon_cancelAttack();
             actionState.feedbackPending = 0U;
@@ -3603,7 +3604,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 printf("[FACINGLABEL] DEFER reason=ACTION-WORLD-ROLLBACK worldRender=continue\n");
             }
             if (!rollbackOk || !EspNativeGameplayFrame_renderTurn(
-                    doomRpg->render, (uint8_t)view->viewAngle, &frame)) {
+                    EspNativeRootOwners_live()->render, (uint8_t)view->viewAngle, &frame)) {
                 printf("[ACTIONENGINE] FAILED seq=%u reason=render+rollback-render sprite=%u line=%u rollback=%s\n",
                        (unsigned int)pending.sequence,
                        (unsigned int)pending.spriteIndex,
@@ -3691,7 +3692,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                             barrelWaveItems,
                             waveCount) ||
                         !EspNativeGameplayFrame_renderTurn(
-                            doomRpg->render,
+                            EspNativeRootOwners_live()->render,
                             (uint8_t)view->viewAngle,
                             &frame)) {
                         int rollbackOk = 1;
@@ -3720,7 +3721,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                                 "BARREL-ROLLBACK")) {
                             rollbackOk =
                                 EspNativeGameplayFrame_renderTurn(
-                                    doomRpg->render,
+                                    EspNativeRootOwners_live()->render,
                                     (uint8_t)view->viewAngle,
                                     &frame);
                         }
@@ -4077,7 +4078,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                         crateTrapWorldX,
                         crateTrapWorldY) ||
                     !EspNativeGameplayFrame_renderTurn(
-                        doomRpg->render, (uint8_t)view->viewAngle, &frame)) {
+                        EspNativeRootOwners_live()->render, (uint8_t)view->viewAngle, &frame)) {
                     int rollbackOk = 1;
                     EspNativeSpriteRenderer_clearTransient();
                     if (crateTurnRequested != 0U &&
@@ -4099,7 +4100,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                         EspNativeGameplayFacingLabel_refresh(
                             "CRATETRAP-ROLLBACK")) {
                         rollbackOk = EspNativeGameplayFrame_renderTurn(
-                            doomRpg->render,
+                            EspNativeRootOwners_live()->render,
                             (uint8_t)view->viewAngle,
                             &frame);
                     }
@@ -4148,7 +4149,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     EspNativeGameplayFacingLabel_refresh(
                         "CRATETRAP-RNG-ROLLBACK")) {
                     rollbackOk = EspNativeGameplayFrame_renderTurn(
-                        doomRpg->render,
+                        EspNativeRootOwners_live()->render,
                         (uint8_t)view->viewAngle,
                         &frame);
                 }
@@ -4186,7 +4187,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     EspNativeGameplayFacingLabel_refresh(
                         "CRATETRAP-BLAST-ROLLBACK")) {
                     rollbackOk = EspNativeGameplayFrame_renderTurn(
-                        doomRpg->render,
+                        EspNativeRootOwners_live()->render,
                         (uint8_t)view->viewAngle,
                         &frame);
                 }
@@ -4244,7 +4245,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     EspNativeGameplayFacingLabel_refresh(
                         "CRATETRAP-FEEDBACK-ROLLBACK")) {
                     rollbackOk = EspNativeGameplayFrame_renderTurn(
-                        doomRpg->render,
+                        EspNativeRootOwners_live()->render,
                         (uint8_t)view->viewAngle,
                         &frame);
                 }
@@ -4381,7 +4382,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 actionState.feedbackKind = pending.feedback;
             }
             if (EspNativeGameplayFrame_renderTurn(
-                    doomRpg->render, (uint8_t)view->viewAngle, &settle)) {
+                    EspNativeRootOwners_live()->render, (uint8_t)view->viewAngle, &settle)) {
                 logActionFrame(&pending, "settle-idle", &settle);
                 printf("[ACTIONENGINE] ATTACK seq=%u weapon=%u frame=1->0 generic=yes worldCommitted=%s\n",
                        (unsigned int)pending.sequence,
@@ -4449,7 +4450,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     EspNativeGameplayFacingLabel_refresh(
                         "BARREL-DEATH-ROLLBACK")) {
                     rollbackOk = EspNativeGameplayFrame_renderTurn(
-                        doomRpg->render, (uint8_t)view->viewAngle, &frame);
+                        EspNativeRootOwners_live()->render, (uint8_t)view->viewAngle, &frame);
                 }
                 printf("[BARRELRADIUS] LETHAL-ROLLBACK seq=%u root=%u cause=%s rollback=%s rng=yes player=yes world=yes death=not-armed\n",
                        (unsigned int)pending.sequence,

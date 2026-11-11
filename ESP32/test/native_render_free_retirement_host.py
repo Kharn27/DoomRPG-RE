@@ -59,7 +59,8 @@ runtime_fingerprint = 2166136261
 for b in runtime_original.encode("utf-8"):
     runtime_fingerprint = ((runtime_fingerprint ^ b) * 16777619) & 0xffffffff
 assert runtime_fingerprint == 0x90894947, f"Render_freeRuntime body drift {runtime_fingerprint:08x}"
-assert "EspNativeEngineRoot_releaseRender(doomrpg->render, true);" in owner
+assert "EspNativeEngineRoot_releaseRender(EspNativeRootOwners_live()->render, true);" in owner
+assert "EspNativeEngineRoot_releaseRender(doomrpg->render, true);" not in owner
 # No linked ESP32 C/C++ caller or implementation may resurrect this ABI.
 for p in sorted((ROOT / "ESP32/src").rglob("*")):
     if p.suffix not in (".c", ".cpp"):

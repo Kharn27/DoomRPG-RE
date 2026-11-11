@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "esp_native_root_state.h"
 #include <stdint.h>
 #include <stdio.h>
 
@@ -94,13 +95,13 @@ int DoomRPG_esp32ReleaseMainMenuMemory(struct DoomRPG_s* doomRpgBase) {
     uint32_t heapBefore;
     uint32_t largestBefore;
 
-    if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
-        doomRpg->render == NULL) {
+    if (doomRpg == NULL || EspNativeRootOwners_live()->doomCanvas == NULL ||
+        EspNativeRootOwners_live()->render == NULL) {
         return 0;
     }
 
-    doomCanvas = doomRpg->doomCanvas;
-    render = doomRpg->render;
+    doomCanvas = EspNativeRootOwners_live()->doomCanvas;
+    render = EspNativeRootOwners_live()->render;
     heapBefore = heap8Free();
     largestBefore = largest8Block();
 
@@ -157,9 +158,9 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
         return 0;
     }
 
-    doomCanvas = doomRpg->doomCanvas;
-    menuSystem = doomRpg->menuSystem;
-    render = doomRpg->render;
+    doomCanvas = EspNativeRootOwners_live()->doomCanvas;
+    menuSystem = EspNativeRootOwners_live()->menuSystem;
+    render = EspNativeRootOwners_live()->render;
     inputHash = DoomRPG_esp32MainMenuFramebufferHash(render);
     expectedInputHash =
         DoomRPG_esp32MainMenuSelectionFramebufferFNV(0);

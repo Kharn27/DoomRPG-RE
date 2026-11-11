@@ -40,7 +40,7 @@ with open(native_layout_source, "r", encoding="utf-8") as owner_file:
 if ("static DoomCanvas_t* EspNativeEngineRoot_initCanvas(" not in native_layout_owner or
         "EspNativeEngineRoot_initCanvas(NULL, doomRpg));" not in native_layout_owner or
         "static void EspNativeEngineRoot_releaseCanvas(" not in native_layout_owner or
-        "EspNativeEngineRoot_releaseCanvas(doomrpg->doomCanvas);" not in native_layout_owner or
+        "EspNativeEngineRoot_releaseCanvas(EspNativeRootOwners_live()->doomCanvas);" not in native_layout_owner or
         "DoomCanvas_free(" in native_layout_owner or
         "DoomCanvas_init(" in native_canvas_text):
     raise RuntimeError("Retired Canvas lifecycle ABI revived or native root owner absent")
@@ -81,7 +81,7 @@ with open(join(project_src_dir, "render_startup_bridge.c"), "r", encoding="utf-8
     native_render_startup = f.read()
 if ("void Render_setup(" in native_render_startup or
         "static void EspNativeEngineLayout_setupRender(" not in native_layout_owner or
-        "EspNativeEngineLayout_setupRender(doomRpg->render, &screenRect);" not in native_layout_owner or
+        "EspNativeEngineLayout_setupRender(EspNativeRootOwners_live()->render, &screenRect);" not in native_layout_owner or
         "Render_setup(doomRpg->render" in native_layout_owner):
     raise RuntimeError("Retired Render_setup ABI revived or private native layout absent")
 print("[ESP32] Render_setup retired nativeLayout=private")
@@ -99,7 +99,7 @@ print("[ESP32] Render_startup retired nativeRenderStartup=private")
 # cleanup slots now have a separate native-named two-caller API.
 if ("void Render_free(Render_t* render, boolean freePtr)" in native_render_startup or
         "static void EspNativeEngineRoot_releaseRender(Render_t* render, boolean freePtr)" not in native_layout_owner or
-        "EspNativeEngineRoot_releaseRender(doomrpg->render, true);" not in native_layout_owner or
+        "EspNativeEngineRoot_releaseRender(EspNativeRootOwners_live()->render, true);" not in native_layout_owner or
         "Render_free(doomrpg->render" in native_layout_owner):
     raise RuntimeError("Retired Render_free ABI revived or private root teardown absent")
 print("[ESP32] Render_free retired nativeRenderTeardown=private runtimeSlots=separate")

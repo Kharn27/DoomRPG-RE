@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "esp_native_root_state.h"
 #include <stdio.h>
 
 #include "DoomRPG.h"
@@ -82,7 +83,7 @@ int EspLegacyPrerenderStartup_start(int layoutReady) {
         return 0;
     }
 
-    if (doomRpg == NULL || doomRpg->menuSystem == NULL) {
+    if (doomRpg == NULL || EspNativeRootOwners_live()->menuSystem == NULL) {
         printf("[PRERENDER] Core object graph incomplete; probe refused\n");
         return 0;
     }
@@ -99,7 +100,7 @@ int EspLegacyPrerenderStartup_start(int layoutReady) {
 
     before = heap8Free();
     printf("[PRERENDER] -> EspNativeMenuStorage_startup()\n");
-    menuResult = EspNativeMenuStorage_startup(doomRpg->menuSystem, doomRpg);
+    menuResult = EspNativeMenuStorage_startup(EspNativeRootOwners_live()->menuSystem, doomRpg);
     after = heap8Free();
     printStageResult("EspNativeMenuStorage_startup", before, after);
     if (!menuResult) {

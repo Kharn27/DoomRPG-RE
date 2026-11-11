@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "esp_native_root_state.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -183,7 +184,7 @@ static int renderCacheWitness(struct DoomRPG_s* doomRpgBase,
                               EspNativeGameplayFrameStats* outFrame,
                               EspAssetPackResidentStats* outPack) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
-    if (doomRpg == NULL || doomRpg->render == NULL || !settledView(view) ||
+    if (doomRpg == NULL || EspNativeRootOwners_live()->render == NULL || !settledView(view) ||
         label == NULL || outFrame == NULL || outPack == NULL) {
         return 0;
     }
@@ -191,7 +192,7 @@ static int renderCacheWitness(struct DoomRPG_s* doomRpgBase,
     memset(outPack, 0, sizeof(*outPack));
     EspAssetPack_residentResetStats();
     if (!EspNativeGameplayFrame_renderTurn(
-            doomRpg->render, (uint8_t)view->viewAngle, outFrame)) {
+            EspNativeRootOwners_live()->render, (uint8_t)view->viewAngle, outFrame)) {
         return 0;
     }
     EspAssetPack_residentGetStats(outPack);
@@ -302,7 +303,7 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
     const EspPlayerViewState* view;
 
     if (!sessionState.configured || sessionState.failed) return;
-    if (doomRpg == NULL || doomRpg->render == NULL) {
+    if (doomRpg == NULL || EspNativeRootOwners_live()->render == NULL) {
         failSession("missing DoomRPG/render owner");
         return;
     }
@@ -415,7 +416,7 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                 continue;
             }
 
-            frameStatus = EspNativeFirstFrame_route(doomRpg->render, view);
+            frameStatus = EspNativeFirstFrame_route(EspNativeRootOwners_live()->render, view);
             if (frameStatus != ESP_NATIVE_FIRST_FRAME_OK) {
                 failSession("first resident frame");
                 return;
@@ -809,10 +810,10 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                 printf("[ENGINESESSION] READY map=%u angle=%u residentCache=yes largeCache=yes touch=invisible-120ms TURN+MOVE=armed shapeData=%p mediaTexels=%p\n",
                        (unsigned int)view->targetMapId,
                        (unsigned int)view->viewAngle,
-                       doomRpg->render != NULL ?
-                           (void*)doomRpg->render->shapeData : NULL,
-                       doomRpg->render != NULL ?
-                           (void*)doomRpg->render->mediaTexels : NULL);
+                       EspNativeRootOwners_live()->render != NULL ?
+                           (void*)EspNativeRootOwners_live()->render->shapeData : NULL,
+                       EspNativeRootOwners_live()->render != NULL ?
+                           (void*)EspNativeRootOwners_live()->render->mediaTexels : NULL);
 #if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_DEBUG
                 /* Historical read-only Junction exit census. Keep it available
                  * in DEBUG/TRACE bringup, but never execute it in normal INFO

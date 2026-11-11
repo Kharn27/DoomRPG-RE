@@ -144,6 +144,8 @@ void Reference_DoomRPG_flushGraphics(DoomRPG_t*);
 
 static DoomCanvas_t canvases[2];
 static DoomRPG_t cores[2];
+static EspNativeRootOwners_t nativeOwners;
+EspNativeRootOwners_t* EspNativeRootOwners_live(void) { return &nativeOwners; }
 static uint32_t seed=0x24c0ffeeU;
 static uint32_t next(void) { seed=seed*1664525u+1013904223u;return seed; }
 static int coord(void) {return (int)(next()%231u)-35;}
@@ -179,6 +181,7 @@ int main(void) {
         cores[i].doomCanvas=&canvases[i];
         for(int j=0;j<GUARD+PIXELS+GUARD;j++) mocks[i].pixels[j]=0xBEEFu;
     }
+    nativeOwners.doomCanvas = &canvases[1];
     /* Baseline, actual RGB565 values, inclusivity, exact clipping and reset. */
     select_renderer(0); Reference_DoomRPG_setClipFalse(&cores[0]);
     select_renderer(1); DoomRPG_setClipFalse(&cores[1]); check("reset");
@@ -265,6 +268,8 @@ def main():
                                  "EspNativeTexture_fillRect(&rect);")
                         .replace("SDL_RenderDrawLine(sdlVideo.renderer, sx, sy, ex, ey);",
                                  "EspNativeTexture_drawLine(sx, sy, ex, ey);"))
+        expected = expected.replace("doomrpg->doomCanvas->fontColor",
+                                    "EspNativeRootOwners_live()->doomCanvas->fontColor")
         assert extract(native, signature) == expected, signature + " native drift"
         bodies.append(real)
         names.append(re.search(r"(DoomRPG_\w+)\(", signature).group(1))

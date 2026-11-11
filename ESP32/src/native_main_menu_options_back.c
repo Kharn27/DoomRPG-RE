@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "esp_native_root_state.h"
 #include <stdint.h>
 #include <stdio.h>
 
@@ -251,8 +252,8 @@ static int paintArmedPreference(int layer, int selectedItem) {
 }
 
 static int returnToMainMenu(DoomRPG_t* doomRpg) {
-    EspNativeMenuState_t* menuSystem = doomRpg->menuSystem;
-    Render_t* render = doomRpg->render;
+    EspNativeMenuState_t* menuSystem = EspNativeRootOwners_live()->menuSystem;
+    Render_t* render = EspNativeRootOwners_live()->render;
     uint32_t finalHash = 0U;
 
     printf("\n=== Doom RPG ESP32 fast Options -> MENU_MAIN Back ===\n");
@@ -327,13 +328,13 @@ static void optionsBackTap(int16_t screenX,
            item, armedItem);
 
     if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(optionsDoomRpg) ||
-        optionsDoomRpg->menuSystem->menu != MENU_MAIN_OPTIONS ||
+        EspNativeRootOwners_live()->menuSystem->menu != MENU_MAIN_OPTIONS ||
         optionsExpectedFrameFNV == 0U ||
-        DoomRPG_esp32MainMenuFramebufferHash(optionsDoomRpg->render) !=
+        DoomRPG_esp32MainMenuFramebufferHash(EspNativeRootOwners_live()->render) !=
             optionsExpectedFrameFNV) {
         printf("[OPTIONBACK] FAILED runtime boundary menu=%d framebuffer=%08x expected=%08x\n",
-               optionsDoomRpg->menuSystem->menu,
-               (unsigned int)DoomRPG_esp32MainMenuFramebufferHash(optionsDoomRpg->render),
+               EspNativeRootOwners_live()->menuSystem->menu,
+               (unsigned int)DoomRPG_esp32MainMenuFramebufferHash(EspNativeRootOwners_live()->render),
                (unsigned int)optionsExpectedFrameFNV);
         optionsBackActive = 0;
         PlatformInput_setTapCallback(NULL);
@@ -729,19 +730,19 @@ int DoomRPG_esp32OptionsBackActivate(struct DoomRPG_s* doomRpgBase,
     optionsExpectedFrameFNV = 0U;
 
     if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
-        doomRpg->menuSystem->menu != MENU_MAIN_OPTIONS ||
-        doomRpg->menuSystem->selectedIndex != 0 ||
+        EspNativeRootOwners_live()->menuSystem->menu != MENU_MAIN_OPTIONS ||
+        EspNativeRootOwners_live()->menuSystem->selectedIndex != 0 ||
         optionsFramebufferFNV == 0U ||
-        DoomRPG_esp32MainMenuFramebufferHash(doomRpg->render) != optionsFramebufferFNV) {
+        DoomRPG_esp32MainMenuFramebufferHash(EspNativeRootOwners_live()->render) != optionsFramebufferFNV) {
         printf("[OPTIONBACK] FAILED activate safe=%d menu=%d selected=%d supplied=%08x framebuffer=%08x\n",
                DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg),
-               doomRpg != NULL && doomRpg->menuSystem != NULL
-                   ? doomRpg->menuSystem->menu : -999,
-               doomRpg != NULL && doomRpg->menuSystem != NULL
-                   ? doomRpg->menuSystem->selectedIndex : -999,
+               doomRpg != NULL && EspNativeRootOwners_live()->menuSystem != NULL
+                   ? EspNativeRootOwners_live()->menuSystem->menu : -999,
+               doomRpg != NULL && EspNativeRootOwners_live()->menuSystem != NULL
+                   ? EspNativeRootOwners_live()->menuSystem->selectedIndex : -999,
                (unsigned int)optionsFramebufferFNV,
-               doomRpg != NULL && doomRpg->render != NULL
-                   ? (unsigned int)DoomRPG_esp32MainMenuFramebufferHash(doomRpg->render) : 0U);
+               doomRpg != NULL && EspNativeRootOwners_live()->render != NULL
+                   ? (unsigned int)DoomRPG_esp32MainMenuFramebufferHash(EspNativeRootOwners_live()->render) : 0U);
         return 0;
     }
 

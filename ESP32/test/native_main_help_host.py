@@ -284,7 +284,7 @@ assert power[0] == 0 and power[16] == 255 and power[-1] > 0
 assert all(a <= b for a, b in zip(power[:16], power[1:17]))
 assert max(abs(a - b) for a, b in zip(power, power[1:])) < 26
 assert 'helpHudBreathStep == helpBreathStepAt(now)' in actions
-assert '!helpIsAnimatedHudPage(helpDoomRpg->menuSystem->scrollIndex)' in actions
+assert '!helpIsAnimatedHudPage(EspNativeRootOwners_live()->menuSystem->scrollIndex)' in actions
 assert 'helpHudBreathStep = step;' in actions
 assert actions.count('helpHudBreathStep = -1;') == 3
 assert 'helpExpectedFrameFNV = finalFNV;' in actions

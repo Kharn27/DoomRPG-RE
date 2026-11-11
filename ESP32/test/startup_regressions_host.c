@@ -24,7 +24,7 @@ void DoomRPG_createImage(DoomRPG_t* owner, const char* name,
                         boolean transparent, Image_t* image) {
     assert(owner != NULL && strcmp(name, "p.bmp") == 0 && transparent);
     if (failImage) { image->imgBitmap = NULL; return; }
-    image->imgBitmap = calloc(1, sizeof(*image->imgBitmap)); /* Opaque mock, full native type size. */
+    image->imgBitmap = calloc(1, sizeof(*image->imgBitmap)); /* Host-only mock, full native texture size. */
     assert(image->imgBitmap != NULL);
     image->width = image->height = 16;
     ++imageCreated;

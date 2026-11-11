@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "DoomRPG.h"
+#include "esp_native_root_state.h"
 #include "esp_native_process_rng_owner.h"
 #include "Render.h"
 
@@ -131,14 +132,14 @@ static int guardedRender(DoomRPG_t* runtime,
 
     if (outFrame != NULL) memset(outFrame, 0, sizeof(*outFrame));
     if (outRngExact != NULL) *outRngExact = 0;
-    if (runtime == NULL || runtime->render == NULL ||
+    if (runtime == NULL || EspNativeRootOwners_live()->render == NULL ||
         !settledPlayerView(view) || outFrame == NULL) {
         return 0;
     }
 
     before = (*EspNativeProcessRng_live());
     rendered = EspNativeGameplayFrame_renderTurn(
-        runtime->render, (uint8_t)view->viewAngle, outFrame);
+        EspNativeRootOwners_live()->render, (uint8_t)view->viewAngle, outFrame);
     exact = memcmp(EspNativeProcessRng_live(), &before, sizeof(before)) == 0;
     if (!exact) (*EspNativeProcessRng_live()) = before;
     if (outRngExact != NULL) *outRngExact = exact;
@@ -301,7 +302,7 @@ static void serviceTimeline(DoomRPG_t* runtime) {
     if (EspNativeGameplayControls_isActive()) return;
 
     view = EspPlayerView_view();
-    if (runtime == NULL || runtime->render == NULL || !settledPlayerView(view)) {
+    if (runtime == NULL || EspNativeRootOwners_live()->render == NULL || !settledPlayerView(view)) {
         return;
     }
 
@@ -547,7 +548,7 @@ void EspNativeGameplayMonsterAttackVisual_service(struct DoomRPG_s* doomRpgBase)
         clearSequence();
     }
 
-    if (runtime == NULL || runtime->render == NULL ||
+    if (runtime == NULL || EspNativeRootOwners_live()->render == NULL ||
         turn->lastAttackerSpriteIndex == ATTACK_VISUAL_NO_SPRITE) {
         printf("[MONSTERATKVIS] DEFER probe=%u reason=%s cause=not-ready presentation=no gameplayMutation=no\n",
                (unsigned int)turn->attackProbes,
