@@ -17,7 +17,10 @@ native = (ROOT / "ESP32/include/esp_native_texture.h").read_text()
 ini = (ROOT / "ESP32/platformio.ini").read_text()
 
 guard = "#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)"
-assert header.count(guard) == 2
+# The root owner already had an identical guard before SDL-F5.
+assert header.count(guard) >= 3
+assert header.index(guard) < header.index("typedef struct Image_s")
+assert header.index(guard, header.index("typedef struct Image_s")) > 0
 assert "EspNativeTexture* imgBitmap;" in header
 assert "SDL_Texture* imgBitmap;" in header
 assert '#include "esp_native_texture.h"' in header
