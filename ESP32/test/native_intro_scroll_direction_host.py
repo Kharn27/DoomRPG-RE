@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Exercise the real CYD intro starfield scroll helper as host C.
 
-The Mars scene must scroll the opaque starfield AND its transparent line layer
-rightward like both text story pages, without changing the ship trajectory.
+The Mars scene scrolls only the opaque starfield rightward like the text pages.
+The transparent grid must stay fixed, without changing the ship trajectory.
 The opaque layer must cover the 128-wide virtual view for every scroll phase.
 """
 from pathlib import Path
@@ -28,11 +28,15 @@ assert """drawRightwardAnimationBackground(doomCanvas,
                                           bgOffset);""" in scene
 assert """drawAnimationImage(doomCanvas,
                            &introState->imgLinesLayer,
-                           left + linesOffset,""" in scene
-assert "left - linesOffset" not in scene and "left - bgOffset" not in scene
+                           left,
+                           top,
+                           0);""" in scene
+assert "left + linesOffset" not in scene and "left - linesOffset" not in scene
+assert "left - bgOffset" not in scene
 assert "const int shipX = left + (elapsedAnim / 142);" in scene
 assert "const int shipY = (DOOMRPG_CANVAS_CENTER_Y + 22) + (elapsedAnim / -333);" in scene
-assert "const int linesOffset = elapsedAnim / 157;" in scene
+assert "const int linesOffset = elapsedAnim / 157;" not in scene
+assert "The transparent grid stays fixed while the stars move behind it." in scene
 
 prefix = r"""
 #include <assert.h>
@@ -106,5 +110,5 @@ with tempfile.TemporaryDirectory(prefix="doom-intro-scroll-") as folder:
     )
     subprocess.run([str(exe_path)], check=True)
 
-print("INTRO-SCROLL PASS real C helper: rightward stars + lines; "
+print("INTRO-SCROLL PASS real C helper: rightward stars + stationary grid; "
       "seamless 128-wide cover; original ship/text pacing retained")
