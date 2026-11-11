@@ -1,4 +1,3 @@
-#include <SDL.h>
 #include "DoomRPG.h"
 #include <esp_timer.h>
 #include "esp_native_process_clock.h"
