@@ -14,6 +14,14 @@
 
 ---
 
+## SDL-F6 — en-tête DoomRPG native sans prototypes SDL clavier/RWops (PASS CYD)
+
+[PR #304](https://github.com/Kharn27/DoomRPG-RE/pull/304) retire de l'API source ESP32 les signatures historiques `Uint8*` de clavier et `SDL_RWops*` de fichier en les gardant exactement pour desktop/oracle. `DoomRPG.h` natif est inclus sans SDL pour cette famille, mais d'autres sources transitoires utilisent toujours SDL.h ; les headers desktop/oracle restent inchangés. `esp_doomrpg_process_clock.c` n'importe plus SDL.h ; le lecteur d'images reste entièrement gelé à cause de son oracle SDL-C1 octet-exact. Aucune modification de timing, d'allocations, de rendu ou de sauvegarde, aucun gain runtime annoncé. CI push/PR **SUCCESS** [#43044492017](https://github.com/Kharn27/DoomRPG-RE/actions/runs/43044492017) / [#43044479877](https://github.com/Kharn27/DoomRPG-RE/actions/runs/43044479877), trois profils compilés et tests hôte C du header en trois modes.
+
+**Test physique normal** `device-monitor-261111-162601.log` (1603 lignes, 186272 octets, SHA firmware absent) : vrai ESP32 sans PSRAM, Canvas=36, SD/PAK 241, OPTIONS/VIDEO, HELP→28/112, START/intro/Entrance, 9 images, 5 dialogues, 13 miniatures START/END, 4 portes, 2 ripostes Malwrath avec projectiles CLEAR, deux retours MENU encadrant LOAD V11 slot04 5604 B. **2× HEADROOM_OK** (marges heap8 28436/27624 B), **2× RESIDENTRESET empty=1**, **2× SYSEXIT MENU-READY** frame `e687f0c7`, 13 frontières `shapeData/mediaTexels=NULL`, aucun panic/WDT ; 7 `BOUNDARY-INLINE` préexistants non fatals. Le test ne valide pas les chemins SDL legacy désactivés, OOM, ni la combinaison future avec Root-J1 #303. Après PASS, modifications SDL-F6 docs-only.
+
+---
+
 ## SDL-F5 — `Image_t` sans nom SDL en firmware, PASS CYD (11 novembre 2026)
 
 [PR #300](https://github.com/Kharn27/DoomRPG-RE/pull/300) sur base SDL-F4 : `Image_t::imgBitmap` est `EspNativeTexture*` dans les 3 profils ESP32, `SDL_Texture*` seulement sur desktop/oracle ; `esp_native_texture_bridge.h` est sans include SDL et renvoie la texture native. Pointeur unique, offsets/taille inchangés, ownership indexed/erreurs inchangés. CI push/PR **SUCCESS** ([#43021707258](https://github.com/Kharn27/DoomRPG-RE/actions/runs/43021707258), [#43021716978](https://github.com/Kharn27/DoomRPG-RE/actions/runs/43021716978)), 3 builds, vrai contrat C, 0 SDL dans l'ELF, flash/RAM statique normal 859361/80768 B identiques à F4.
