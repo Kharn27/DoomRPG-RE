@@ -10,8 +10,6 @@
 /* Keep ESP-IDF's C99 bool macros after DoomRPG's legacy boolean typedefs. */
 #include <esp_heap_caps.h>
 
-extern DoomRPG_t* doomRpg;
-
 static int preRenderAttempted = 0;
 static int preRenderReady = 0;
 
@@ -63,7 +61,7 @@ static void printStageResult(const char* name, uint32_t before, uint32_t after) 
            (unsigned int)largest8Block());
 }
 
-int EspLegacyPrerenderStartup_start(int layoutReady) {
+int EspLegacyPrerenderStartup_start(DoomRPG_t* root, int layoutReady) {
     uint32_t heapBefore;
     uint32_t before;
     uint32_t after;
@@ -83,7 +81,7 @@ int EspLegacyPrerenderStartup_start(int layoutReady) {
         return 0;
     }
 
-    if (doomRpg == NULL || EspNativeRootOwners_live()->menuSystem == NULL) {
+    if (root == NULL || EspNativeRootOwners_live()->menuSystem == NULL) {
         printf("[PRERENDER] Core object graph incomplete; probe refused\n");
         return 0;
     }
@@ -100,7 +98,7 @@ int EspLegacyPrerenderStartup_start(int layoutReady) {
 
     before = heap8Free();
     printf("[PRERENDER] -> EspNativeMenuStorage_startup()\n");
-    menuResult = EspNativeMenuStorage_startup(EspNativeRootOwners_live()->menuSystem, doomRpg);
+    menuResult = EspNativeMenuStorage_startup(EspNativeRootOwners_live()->menuSystem, root);
     after = heap8Free();
     printStageResult("EspNativeMenuStorage_startup", before, after);
     if (!menuResult) {
