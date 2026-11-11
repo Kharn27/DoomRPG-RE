@@ -6,6 +6,7 @@ calls SDL_CloseAudio and SDL_Close in historical Root-J6 order. No BT/audio
 backend implementation, renderer, input or PAK asset lifecycle is modified.
 """
 from pathlib import Path
+from sdl_f16_fatal_close_facade_host import restore_pre_f16
 import hashlib
 import re
 import shutil
@@ -20,6 +21,7 @@ INIT = "void SDL_InitAudio(void) {}\n"
 RETIRED = ("fluidSynth", "SDL_InitAudio")
 
 def restore_pre_f15(current: str) -> str:
+    current = restore_pre_f16(current)  # reconstruct source before subsequent F16
     close = "void SDL_Close(void) {}\n"
     assert current.count(close) == 1
     restored = current.replace(close, FLUID + close, 1)
@@ -33,6 +35,7 @@ def git_blob(text: str) -> str:
 
 def check_sources() -> None:
     native = OWNER.read_text(encoding="utf-8")
+    pre_f16 = restore_pre_f16(native)
     old = restore_pre_f15(native)
     sha = git_blob(old)
     assert sha == PRE_F15_BLOB, (sha, PRE_F15_BLOB)
@@ -46,9 +49,7 @@ def check_sources() -> None:
     ):
         if contract == "FluidSynth_t":
             assert contract not in native, "FluidSynth_t source-global should be absent"
-        else:
-            assert contract in native, contract
-    legacy = (ROOT / "src/SDL_Video.h").read_text(encoding="latin-1")
+        elif contract in ("SDL_CloseAudio();", "SDL_Close();",\n                          "void SDL_Close(void) {}", "void SDL_CloseAudio(void) {}"):\n            assert contract in pre_f16, contract  # F15 historic contract before F16\n        else:\n            assert contract in native, contract\n    legacy = (ROOT / "src/SDL_Video.h").read_text(encoding="latin-1")
     for contract in ("FluidSynth_t", "extern FluidSynth_t fluidSynth;",
                      "void SDL_InitAudio(void);", "void SDL_CloseAudio(void);",
                      "void SDL_Close(void);"):
