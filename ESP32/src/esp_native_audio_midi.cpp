@@ -37,6 +37,18 @@ constexpr uint8_t kEventQueueCapacity = 96U;
 constexpr uint8_t kMaxEventsPerService = 24U;
 constexpr uint8_t kVoices = 12U;
 constexpr uint16_t kReleaseSamples = 1200U;
+/* One-time non-musical hardware differential: stream a bounded 2-second
+ * midpoint with DAC disabled, then two seconds of midpoint with GPIO26
+ * enabled, then start authentic MIDI at sample zero. No tones are injected.
+ * Core0 never acquires the SD/PAK lease. */
+constexpr uint32_t kAudioDiagStageSamples = 2U * kSampleRate;
+enum : uint32_t {
+    kAudioDiagAwaitClock = 0U,
+    kAudioDiagDacOff = 1U,
+    kAudioDiagDacMidpoint = 2U,
+    kAudioDiagMidi = 3U,
+    kAudioDiagFailed = 4U
+};
 
 struct NoteMessage {
     uint32_t atSample;
@@ -108,6 +120,10 @@ static uint32_t pcmLimitedSamples;
 static uint32_t pcmClippedSamples;
 static uint32_t pcmQuietSamples;
 static uint32_t pcmPeak8;
+static uint32_t audioDiagStage; // atomic publication by audio core
+static uint32_t audioDiagFrames; // audio task only
+static uint32_t audioDiagMidiEpochMs; // atomic wall-clock point, MIDI t=0
+static uint32_t audioDiagReported; // loop thread only
 /* I2S's i2s_get_clk() reports the requested rate; the DAC clock can
  * physically run much faster if the 160 MHz clock divider saturates.
  * Measure DMA backpressure on the real CYD before playing any notes. */
@@ -242,13 +258,11 @@ static void verifyDacClock(uint16_t pcm[kBufferSamples * kDacSlotsPerFrame]) {
              1000000ULL) / us) : 0U;
     uint32_t accepted = ok && measured == kClockMeasuredWrites &&
         hz >= kClockMinAcceptHz && hz <= kClockMaxAcceptHz ? 1U : 2U;
-    /* A continuous 8-bit DAC output during the silent clock probe can
-     * whistle through the SC8002B amplifier. Keep BOTH DAC pins disabled
-     * while DMA settles; enable only the GPIO26/left DAC once its FIFO
-     * contains midscale silence and the measured clock passed. */
-    if (accepted == 1U &&
-        i2s_set_dac_mode(I2S_DAC_CHANNEL_LEFT_EN) != ESP_OK)
-        accepted = 2U;
+    /* Calibration is digital-only: GPIO26 remains disabled. The two
+     * isolated silent stages below start only after rate verification. */
+    __atomic_store_n(&audioDiagStage,
+                     accepted == 1U ? kAudioDiagDacOff : kAudioDiagFailed,
+                     __ATOMIC_RELEASE);
     __atomic_store_n(&clockProbeUs, us, __ATOMIC_RELEASE);
     __atomic_store_n(&clockProbeHz, hz, __ATOMIC_RELEASE);
     __atomic_store_n(&clockProbeState, accepted, __ATOMIC_RELEASE);
@@ -294,6 +308,52 @@ static void taskBody(void*) {
         }
         if (probe != 1U) {
             vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
+        }
+        const uint32_t diag = __atomic_load_n(
+            &audioDiagStage, __ATOMIC_ACQUIRE);
+        if (diag == kAudioDiagDacOff || diag == kAudioDiagDacMidpoint) {
+            /* Stage 1: DAC OFF while the I2S FIFO streams digital
+             * silence. Stage 2: only GPIO26 DAC ON, exact same PCM. */
+            for (unsigned i = 0; i < kBufferSamples * kDacSlotsPerFrame; ++i)
+                pcm[i] = (uint16_t)(128U << 8);
+            size_t written = 0U;
+            const esp_err_t err = i2s_write(
+                I2S_NUM_0, pcm, sizeof(pcm), &written, portMAX_DELAY);
+            if (err != ESP_OK || written != sizeof(pcm)) {
+                __atomic_add_fetch(&audioErrors, 1U, __ATOMIC_RELAXED);
+                (void)i2s_set_dac_mode(I2S_DAC_CHANNEL_DISABLE);
+                __atomic_store_n(&enabled, 0U, __ATOMIC_RELEASE);
+                __atomic_store_n(&audioDiagStage, kAudioDiagFailed,
+                                 __ATOMIC_RELEASE);
+                __atomic_store_n(&clockProbeState, 2U, __ATOMIC_RELEASE);
+                continue;
+            }
+            __atomic_add_fetch(&audioWrites, 1U, __ATOMIC_RELAXED);
+            audioDiagFrames += kBufferSamples;
+            if (audioDiagFrames >= kAudioDiagStageSamples) {
+                audioDiagFrames = 0U;
+                if (diag == kAudioDiagDacOff) {
+                    /* The FIFO is already full of 0x8000 PCM. */
+                    if (i2s_set_dac_mode(I2S_DAC_CHANNEL_LEFT_EN) != ESP_OK) {
+                        (void)i2s_set_dac_mode(I2S_DAC_CHANNEL_DISABLE);
+                        __atomic_store_n(&enabled, 0U, __ATOMIC_RELEASE);
+                        __atomic_store_n(&audioDiagStage, kAudioDiagFailed,
+                                         __ATOMIC_RELEASE);
+                        __atomic_store_n(&clockProbeState, 2U, __ATOMIC_RELEASE);
+                    } else {
+                        __atomic_store_n(&audioDiagStage,
+                                         kAudioDiagDacMidpoint,
+                                         __ATOMIC_RELEASE);
+                    }
+                } else {
+                    /* MIDI time begins strictly after BOTH silent probes. */
+                    __atomic_store_n(&audioDiagMidiEpochMs, millis(),
+                                     __ATOMIC_RELEASE);
+                    __atomic_store_n(&audioDiagStage, kAudioDiagMidi,
+                                     __ATOMIC_RELEASE);
+                }
+            }
             continue;
         }
         const uint32_t master = __atomic_load_n(
@@ -660,13 +720,33 @@ extern "C" void EspNativeAudioMidi_service(void) {
                (unsigned)measured, (unsigned)us,
                (unsigned)kClockMeasuredWrites * kBufferSamples,
                state == 1U ? "PASS" : "FAIL-CLOSED",
-               state == 1U ? "gpio26-only-enabled" : "both-disabled");
+               state == 1U ? "both-disabled-during-probe" : "both-disabled");
         if (state != 1U && music.active)
             stopMusic("dac-clock-probe-invalid");
         else if (state == 1U && music.active) {
-            /* PCM clock starts only after the short core-0 silence probe. */
+            /* No MIDI clock is started by the first silent DAC probe. */
             music.wallStartMs = millis();
             previousReport = music.wallStartMs;
+        }
+    }
+    if (driverReady) {
+        const uint32_t diag = __atomic_load_n(
+            &audioDiagStage, __ATOMIC_ACQUIRE);
+        if (diag != 0U && diag != audioDiagReported) {
+            audioDiagReported = diag;
+            printf("[AUDIODIAG] stage=%s gpio26=%s pcm=0x8000 durationMs=2000 "
+                   "speakerOhms=8 userReported=noMidiTimer=%s\n",
+                   diag == kAudioDiagDacOff ? "DAC-OFF" :
+                   diag == kAudioDiagDacMidpoint ? "DAC-MIDPOINT" :
+                   diag == kAudioDiagMidi ? "MIDI" : "FAIL-CLOSED",
+                   diag == kAudioDiagDacMidpoint || diag == kAudioDiagMidi ?
+                       "enabled" : "disabled",
+                   diag == kAudioDiagMidi ? "ended" : "held");
+            if (diag == kAudioDiagMidi && music.active) {
+                music.wallStartMs = __atomic_load_n(
+                    &audioDiagMidiEpochMs, __ATOMIC_ACQUIRE);
+                previousReport = music.wallStartMs;
+            }
         }
     }
 
