@@ -4,6 +4,29 @@
 La piste `5039.mid` du PAK natif est l'unique source de données musicales.
 Le test réel du classic CYD reste nécessaire avant de fusionner.
 
+## Dernier essai sans soudure : réduction extrême du PCM, test diagnostique (candidat NON PASS)
+
+Le propriétaire du classic CYD, haut-parleur **8 Ω**, n'a pas l'équipement nécessaire pour remplacer les résistances CMS R7/R8/R9 dont les codes visuels `0/0/683` correspondent au réseau de gain problématique. Il demande explicitement **un dernier test purement logiciel** avant de remettre l'audio matériel à plus tard.
+
+**Une seule version firmware, toujours la musique MIDI authentique du PAK, cadence APLL 16 kHz et GPIO26 uniquement**, sans modification du synthétiseur, du PAK, du MIDI, de la fréquence, des sauvegardes ni du format I2S. Les phases de silence (2 s DAC-OFF puis 2 s DAC-MIDPOINT) et leurs logs `[AUDIODIAG]` restent présents.
+
+À partir de `[AUDIODIAG] stage=MIDI` et `[AUDIOGAIN]`, trois paliers numériques automatiques, bornés par **l'ancien volume utilisateur sans l'écrire sur SD** :
+
+| Temps depuis MIDI | Signal numérique maximal de production | Écoute attendue |
+|---|---:|---|
+| 0–8 s | 2 % (environ 1 code DAC au pic observé à 25 %) | faible signal : peut devenir granuleux / presque inaudible |
+| 8–16 s | 5 % (environ 3 codes) | musique reconnaissable ou toujours bruitée ? |
+| 16–24 s | 10 % (environ 6 codes) | amélioration relative / retour de distorsion ? |
+| 24 s et plus | **2 %** (fail-safe) | ne laisse pas volontairement l'ampli au niveau élevé |
+
+Le volume utilisateur enregistré (25/50/75/100 %) constitue un plafond indépendant ; les paliers sont des **pourcentages absolus du mixeur**, pas un multiplicateur de la valeur enregistrée. Le chronomètre est le compteur réel des échantillons MIDI : aucun ralentissement, aucune pause entre paliers, aucune modification du parseur ou de l'horloge. Deux secondes de DAC silencieux sont également toujours utilisées comme témoin d'entrée-ampli. Les logs nouveaux doivent contenir `[AUDIOGAIN] step=1/4` jusqu'à `step=4/4`, avec `effectivePct=2/5/10/2`, puis `[AUDIO] PULSE speedPct≈100 dmaErrors=0`.
+
+**Interprétation stricte :** si 2 % reste un overdrive bruyant, aucune preuve qu'un simple gain logiciel résolve ce CYD ; un réseau analogique R7/R8 défectueux ne peut pas être corrigé dans le DSP. Si la musique est plus propre à un palier, c'est **un contournement audio très limité**, avec perte de dynamique et résolution effective du DAC 8 bits, et nécessitant un autre milestone pour devenir une vraie option. Ce test est volontairement temporaire, **pas une valeur de volume persistante**.
+
+Volume SD initialement 25 % recommandé, HP éloigné de l'oreille ; si le son reste agressif arrêter le test, ne pas insister. Collecter l'impression auditive pour chaque `AUDIOGAIN` et les logs. **Ne pas merger la PR #301 avant nouveau verdict matériel**.
+
+---
+
 ## Contrôle visuel du PCB fourni par l'utilisateur — défaut audio confirmé (11 novembre 2026)
 
 Photo réelle du dos de la carte classique double-USB `ESP32-2432S028` : sérigraphie du réseau **U5 (amplificateur)** lisible et codes CMS observés directement :
