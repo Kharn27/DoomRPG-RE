@@ -20,6 +20,7 @@
 #include "platform_touch_events.h"
 #include "esp_native_gameplay_save_ui.h"
 #include "platform_video_config.h"
+#include "platform_video_c_bridge.h"
 
 /* Keep ESP-IDF's stdbool macros after DoomRPG's legacy boolean enum. */
 #include <esp_heap_caps.h>
@@ -209,7 +210,7 @@ int DoomRPG_esp32MainMenuTouchArmSelected(int itemIndex) {
 
     memset(selectionHashes, 0, sizeof(selectionHashes));
     selectionHashes[itemIndex] = frameHash;
-    SDL_RenderPresent(NULL);
+    (void)Esp32PlatformVideo_present();
     printf("[MENUTOUCH] ARM-VISUAL item=%d framebufferFNV=%08x style=doom-red-single-border allocation=no\n",
            itemIndex,
            (unsigned int)frameHash);
@@ -351,7 +352,7 @@ void DoomRPG_esp32MainMenuTouchOnTap(int16_t screenX,
     }
 
     selectionCount++;
-    SDL_RenderPresent(NULL);
+    (void)Esp32PlatformVideo_present();
     printf("[MENUTOUCH] READY selection=%d selections=%u confirms=%u misses=%u noSceneRerender=yes noSDRead=yes\n",
            hit,
            (unsigned int)selectionCount,
@@ -375,6 +376,7 @@ void DoomRPG_esp32MainMenuTouchOnTap(int16_t screenX,
 #include "native_main_menu_touch.h"
 #include "platform_touch_events.h"
 #include "platform_video_config.h"
+#include "platform_video_c_bridge.h"
 
 #ifndef DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
 #define DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY 0

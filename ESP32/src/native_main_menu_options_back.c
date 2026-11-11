@@ -159,7 +159,7 @@ static int paintOptionsState(int selectedItem, int armed) {
     }
 
     optionsExpectedFrameFNV = nextHash;
-    SDL_RenderPresent(NULL);
+    (void)Esp32PlatformVideo_present();
     printf("[OPTIONBACK] VISUAL item=%d armed=%d brightness=%u framebufferFNV=%08x\n",
            selectedItem, armed, (unsigned int)Esp32Backlight_percent(),
            (unsigned int)nextHash);
@@ -175,7 +175,7 @@ static int paintVideoState(int selectedItem, int armed) {
         return 0;
     }
     optionsExpectedFrameFNV = nextHash;
-    SDL_RenderPresent(NULL);
+    (void)Esp32PlatformVideo_present();
     printf("[OPTIONSVIDEO] VISUAL item=%d armed=%d framebufferFNV=%08x\n",
            selectedItem, armed, (unsigned int)nextHash);
     return 1;
@@ -190,7 +190,7 @@ static int paintLuminositeState(void) {
         return 0;
     }
     optionsExpectedFrameFNV = nextHash;
-    SDL_RenderPresent(NULL);
+    (void)Esp32PlatformVideo_present();
     printf("[OPTIONSBRIGHTNESS] VISUAL percent=%u framebufferFNV=%08x\n",
            (unsigned int)Esp32Backlight_percent(), (unsigned int)nextHash);
     return 1;
@@ -204,7 +204,7 @@ static int paintOrientationState(void) {
         return 0;
     }
     optionsExpectedFrameFNV = nextHash;
-    SDL_RenderPresent(NULL);
+    (void)Esp32PlatformVideo_present();
     printf("[OPTIONSORIENTATION] VISUAL mode=%s framebufferFNV=%08x\n",
            Esp32Orientation_get() ? "INVERSE" : "NORMAL",
            (unsigned int)nextHash);
@@ -219,7 +219,7 @@ static int paintThemeState(void) {
         return 0;
     }
     optionsExpectedFrameFNV = nextHash;
-    SDL_RenderPresent(NULL);
+    (void)Esp32PlatformVideo_present();
     printf("[OPTIONSTHEME] VISUAL theme=%u framebufferFNV=%08x\n",
            (unsigned int)EspMainMenuSkin_getTheme(), (unsigned int)nextHash);
     return 1;
@@ -245,7 +245,7 @@ static int paintArmedPreference(int layer, int selectedItem) {
             optionsDoomRpg, EspMainMenuSkin_getTheme(), selectedItem, &hash);
     if (!ok || !hash) return 0;
     optionsExpectedFrameFNV = hash;
-    SDL_RenderPresent(NULL);
+    (void)Esp32PlatformVideo_present();
     printf("[OPTIONCHOICE] ARM layer=%d item=%d confirm=second-released-tap frame=%08x\n",
            layer, selectedItem, (unsigned)hash);
     return 1;

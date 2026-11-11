@@ -22,6 +22,7 @@
 #include "native_sprite_lru_cache.h"
 #include "native_wall_lru_cache.h"
 #include "platform_video_config.h"
+#include "platform_video_c_bridge.h"
 
 /* Keep ESP-IDF's stdbool macros after DoomRPG's legacy boolean enum. */
 #include <esp_heap_caps.h>
@@ -738,7 +739,7 @@ int DoomRPG_esp32RepaintOpaqueMainMenu(struct DoomRPG_s* doomRpgBase,
 
     printf("[MENUSKIN] COMPOSE us=%u state=IDLE wholeMenu=yes framebuffer=single\n",
            (unsigned int)composeUs);
-    SDL_RenderPresent(NULL);
+    (void)Esp32PlatformVideo_present();
 
     if (finalFramebufferFNV != NULL) *finalFramebufferFNV = finalHash;
 
@@ -855,6 +856,7 @@ int __wrap_DoomRPG_probeNativeMainMenuOverlay(struct DoomRPG_s* doomRpgBase) {
 #include "native_wall_lru_cache.h"
 #include "platform_touch_events.h"
 #include "platform_video_config.h"
+#include "platform_video_c_bridge.h"
 
 static uint32_t fnv1a32(const uint8_t* data, uint32_t length) {
     uint32_t hash = 2166136261U;

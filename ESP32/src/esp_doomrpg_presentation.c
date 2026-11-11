@@ -4,6 +4,7 @@
 #include "esp_native_root_state.h"
 #include "DoomCanvas.h"
 #include "SDL_Video.h"
+#include "platform_video_c_bridge.h"
 
 /*
  * Permanent classic-CYD presentation compatibility boundary.
@@ -83,5 +84,5 @@ void DoomRPG_drawLine(DoomRPG_t* doomrpg, int x1, int y1, int x2, int y2)
 
 void DoomRPG_flushGraphics(DoomRPG_t* doomrpg)
 {
-	SDL_RenderPresent(sdlVideo.renderer);
+	(void)Esp32PlatformVideo_present();
 }

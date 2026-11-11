@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Compare real DoomRPG presentation bodies after CYD coordinate adaptation\nand SDL-E1 native raster owner replacement.
+"""Compare real DoomRPG presentation bodies after CYD coordinate adaptation\nand SDL-E1 raster plus SDL-F2 direct native presentation replacements.
 
 Both original and permanent native functions execute against the same modeled
 ESP32 SDL pixel/clip operations in separate guarded RGB565 host buffers.
-Mocks represent the SDL call boundary, not the physical TFT/SPI controller.
+Mocks represent the historical SDL and native platform-video C call boundaries,
+not the physical TFT/SPI controller.
 """
 import os
 from pathlib import Path
@@ -117,6 +118,7 @@ int SDL_RenderDrawLine(SDL_Renderer* r,int x1,int y1,int x2,int y2) {
     return 0;
 }
 void SDL_RenderPresent(SDL_Renderer* r) { ++target(r)->presents; }
+int Esp32PlatformVideo_present(void) { ++target(sdlVideo.renderer)->presents; return 1; }
 
 // SDL-E1 host compatibility: the native presentation calls these APIs.
 // Pixel equivalence of the real native rasterizer is separately executed
@@ -247,7 +249,8 @@ int main(void) {
 def main():
     legacy = (ROOT / "src/DoomRPG.c").read_text(encoding="latin-1")
     native = (ROOT / "ESP32/src/esp_doomrpg_presentation.c").read_text(encoding="latin-1")
-    assert "SDL_RenderPresent(sdlVideo.renderer)" in native
+    assert "SDL_RenderPresent(" not in native
+    assert "(void)Esp32PlatformVideo_present();" in native
     assert "SDL_RenderFillRect(" not in native and "SDL_RenderDrawLine(" not in native
     assert "PlatformVideo_framebuffer" not in native
     names, bodies = [], []
@@ -268,6 +271,8 @@ def main():
                                  "EspNativeTexture_fillRect(&rect);")
                         .replace("SDL_RenderDrawLine(sdlVideo.renderer, sx, sy, ex, ey);",
                                  "EspNativeTexture_drawLine(sx, sy, ex, ey);"))
+        expected = expected.replace("SDL_RenderPresent(sdlVideo.renderer);",
+                                    "(void)Esp32PlatformVideo_present();")
         expected = expected.replace("doomrpg->doomCanvas->fontColor",
                                     "EspNativeRootOwners_live()->doomCanvas->fontColor")
         assert extract(native, signature) == expected, signature + " native drift"
