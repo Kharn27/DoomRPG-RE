@@ -632,13 +632,12 @@ jobs:
           assert b"[BTTEST] ISOLATED env=esp32-cyd-bt-test" in test
           assert b"5039.mid" in test
           assert b"MEDIA_START_REQUEST" in test
-          assert b"ESP_ERR_INVALID_STATE" not in [] # contract lives in compiled code
           tool=Path.home()/".platformio/packages/toolchain-xtensa-esp32/bin/xtensa-esp32-elf-nm"
           symbols=subprocess.check_output([str(tool),str(builds/"esp32-cyd-bt-test/firmware.elf")],text=True)
           assert any(line.endswith(" T btInUse") for line in symbols.splitlines())
           assert any(line.endswith(" T initVariant") for line in symbols.splitlines())
-          assert any(line.endswith(" T setup") for line in symbols.splitlines())
-          assert any(line.endswith(" T loop") for line in symbols.splitlines())
+          assert any(line.endswith(" T _Z5setupv") for line in symbols.splitlines())
+          assert any(line.endswith(" T _Z4loopv") for line in symbols.splitlines())
           for env in ("esp32-cyd", "esp32-cyd-bringup", "esp32-cyd-trace"):
               binary=(builds/env/"firmware.elf").read_bytes()
               assert b"[BTTEST] ISOLATED env=esp32-cyd-bt-test" not in binary, env
