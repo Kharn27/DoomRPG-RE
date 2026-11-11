@@ -140,11 +140,8 @@ void DoomRPG_Error(const char* fmt, ...)
 }
 
 
-FluidSynth_t fluidSynth = {NULL, NULL, NULL};
-
 void SDL_Close(void) {}
 
-void SDL_InitAudio(void) {}
 void SDL_CloseAudio(void) {}
 
 void Sound_stopSounds(Sound_t* sound) { (void)sound; }

@@ -6,6 +6,7 @@ Root fatal still owns SDL_Close and SDL_CloseAudio separately; neither changes.
 This is a whole-source Git inverse, not a heap or speed optimization claim.
 """
 from pathlib import Path
+from sdl_f15_inert_audio_boot_host import restore_pre_f15
 import hashlib
 import re
 import shutil
@@ -21,6 +22,7 @@ GET = "SDLVideo_t* SDL_GetVideo(void) { return &sdlVideo; }\n"
 RETIRED = ("sdlVideo", "SDL_GetVideo", "SDL_InitVideo")
 
 def restore_pre_f14(current: str) -> str:
+    current = restore_pre_f15(current)  # reconstruct source before subsequent F15
     fluid = "FluidSynth_t fluidSynth = {NULL, NULL, NULL};\n"
     assert current.count(fluid) == 1
     restored = current.replace(fluid, VIDEO + fluid, 1)
@@ -34,6 +36,7 @@ def git_blob(text: str) -> str:
 
 def check_sources():
     native = OWNER.read_text(encoding="utf-8")
+    pre_f15 = restore_pre_f15(native)
     inverse = restore_pre_f14(native)
     sha = git_blob(inverse)
     assert sha == PRE_F14_BLOB, (sha, PRE_F14_BLOB)
@@ -45,7 +48,7 @@ def check_sources():
         "Esp32PlatformVideo_framebuffer()",
         "SDL_Rect screenRect;", "SDL_Rect* windowRect",
     ):
-        assert literal in native, literal
+        assert literal in pre_f15, literal  # F14 historical contract before F15
     old = (ROOT / "src/SDL_Video.h").read_text(encoding="latin-1")
     for symbol in RETIRED:
         assert re.search(r"\b" + symbol + r"\b", old), symbol
