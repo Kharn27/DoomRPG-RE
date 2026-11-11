@@ -734,8 +734,8 @@ extern "C" void EspNativeAudioMidi_service(void) {
             &audioDiagStage, __ATOMIC_ACQUIRE);
         if (diag != 0U && diag != audioDiagReported) {
             audioDiagReported = diag;
-            printf("[AUDIODIAG] stage=%s gpio26=%s pcm=0x8000 durationMs=2000 "
-                   "speakerOhms=8 userReported=noMidiTimer=%s\n",
+            printf("[AUDIODIAG] stage=%s gpio26=%s "
+                   "silencePcm=0x8000 silenceStageMs=2000 midiTimer=%s\n",
                    diag == kAudioDiagDacOff ? "DAC-OFF" :
                    diag == kAudioDiagDacMidpoint ? "DAC-MIDPOINT" :
                    diag == kAudioDiagMidi ? "MIDI" : "FAIL-CLOSED",
