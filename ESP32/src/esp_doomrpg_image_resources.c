@@ -1,9 +1,8 @@
-#include <SDL.h>
+#include <SDL.h> /* transitional DoomRPG.h type ABI; not a runtime SDL call */
 #include "esp_native_texture.h"
 #include <stdio.h>
 
 #include "DoomRPG.h"
-#include "SDL_Video.h"
 #include "esp_native_root_state.h"
 #include "esp_native_indexed_image.h"
 #include "esp_native_texture_bridge.h"
@@ -26,7 +25,7 @@ void DoomRPG_createImage(DoomRPG_t* doomrpg, const char* resourceName, boolean i
 {
     EspNativeIndexedImage decoded = {0};
     EspNativeImageStatus status;
-    SDL_Texture* texture;
+    EspNativeTexture* texture;
     char fileName[64];
     int mem;
 

@@ -1,9 +1,8 @@
-#include <SDL.h>
+#include <SDL.h> /* transitional DoomRPG.h type ABI; not a runtime SDL call */
 #include "esp_native_texture.h"
 #include "DoomRPG.h"
 #include "esp_native_root_state.h"
 #include "DoomCanvas.h"
-#include "SDL_Video.h"
 #include "platform_video_c_bridge.h"
 
 /*
@@ -32,7 +31,7 @@ void DoomRPG_setClipFalse(DoomRPG_t* doomrpg)
 
 void DoomRPG_setClipTrue(DoomRPG_t* doomrpg, int x, int y, int w, int h)
 {
-	SDL_Rect clip;
+	EspNativeRect clip;
 
 	clip.x = x;
 	clip.y = y;
@@ -63,7 +62,7 @@ void DoomRPG_setFontColor(DoomRPG_t* doomrpg, int color)
 
 void DoomRPG_fillRect(DoomRPG_t* doomrpg, int x, int y, int w, int h)
 {
-	SDL_Rect rect;
+	EspNativeRect rect;
 
 	rect.x = x;
 	rect.y = y;
