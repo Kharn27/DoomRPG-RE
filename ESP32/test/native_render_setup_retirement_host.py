@@ -30,7 +30,7 @@ assert re.search(r"#if !defined\(DOOMRPG_ESP32\) \|\| defined\(DOOMRPG_ESP32_GEO
 assert "windowRect->x, windowRect->y," in body
 assert "render->ceilingColor" not in body and "render->floorColor" not in body
 assert "sizeof(short)" not in body
-assert "render->columnScale = SDL_malloc(render->screenWidth * sizeof(int));" in body
+assert "render->columnScale = malloc(render->screenWidth * sizeof(int));" in body
 assert "sizeof(Render_t) == 108U" in bridge
 assert re.search(r"#ifndef DOOMRPG_ESP32\s+short\* ceilingColor;\s+short\* floorColor;\s+#endif", header)
 for subtree in (ROOT / "ESP32/src", ROOT / "ESP32/include"):
@@ -42,6 +42,9 @@ for subtree in (ROOT / "ESP32/src", ROOT / "ESP32/include"):
         assert not re.search(r"\b(?:render|r|rootRender|renderBase)\s*->\s*(?:ceilingColor|floorColor)\b", code), p
 assert "render->fracHalfScreenWidth" not in live_code
 normalized = (body.replace("static void " + name + "(", "void Render_setup(")
+              .replace("free(render->columnScale);", "SDL_free(render->columnScale);")
+              .replace("malloc(render->screenWidth * sizeof(int));",
+                       "SDL_malloc(render->screenWidth * sizeof(int));")
               .replace("/* Desktop errorID is not part of the native renderer. */",
                        "//DoomRPG_setErrorID(render->doomRpg, 2);")).rstrip()
 h = 2166136261
@@ -98,8 +101,8 @@ void DoomRPG_Error(const char* str) {
     assert(strcmp(str,"Render: Insufficient memory for allocation")==0);
     ++errors;
 }
-#define SDL_malloc tracked_malloc
-#define SDL_free tracked_free
+#define malloc tracked_malloc
+#define free tracked_free
 static char lastRenderLog[160];
 static void capture_log(const char* fmt, ...) {
     va_list args;

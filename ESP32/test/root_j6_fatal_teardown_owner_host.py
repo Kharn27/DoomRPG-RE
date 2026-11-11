@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Root-J6: exact whole-file inverse parity and 4096 compiled real C teardown cases."""
 from pathlib import Path
+from sdl_f12_engine_stubs_libc_host import restore_pre_f12
 import hashlib
 import subprocess
 import tempfile
@@ -15,7 +16,7 @@ OLD_CANVAS = "EspNativeEngineRoot_releaseCanvas(EspNativeRootOwners_live()->doom
 NEW_CANVAS = "EspNativeEngineRoot_releaseCanvas(EspNativeRootOwners_live()->doomCanvas, doomrpg);"
 assert SRC.count(NEW_GUARD) == 1
 assert SRC.count(NEW_CANVAS) == 1
-restored = SRC.replace(NEW_GUARD, OLD_GUARD, 1).replace(NEW_CANVAS, OLD_CANVAS, 1)
+restored = restore_pre_f12(SRC).replace(NEW_GUARD, OLD_GUARD, 1).replace(NEW_CANVAS, OLD_CANVAS, 1)
 payload = restored.encode("utf-8")
 sha = hashlib.sha1(b"blob " + str(len(payload)).encode() + b"\0" + payload).hexdigest()
 assert sha == BASE_SHA, (sha, BASE_SHA)
@@ -37,7 +38,7 @@ assert end is not None
 function = SRC[start:end]
 assert "doomrpg == NULL || doomrpg != doomRpg" in function
 assert "releaseCanvas(EspNativeRootOwners_live()->doomCanvas, doomrpg)" in function
-assert "SDL_memset(&nativeRootIdentity, 0, sizeof(nativeRootIdentity))" in function
+assert "memset(&nativeRootIdentity, 0, sizeof(nativeRootIdentity))" in function
 assert "doomRpg = NULL;" in function
 
 fixture = r"""

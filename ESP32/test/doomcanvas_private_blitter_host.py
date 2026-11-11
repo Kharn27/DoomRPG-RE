@@ -179,7 +179,9 @@ normalized = (root_owner[first:last]
     .replace("    doomCanvas->imgFont.imgBitmap = NULL;",
              "    doomCanvas->doomRpg = doomRpg;\n    doomCanvas->imgFont.imgBitmap = NULL;")
     .replace("static DoomCanvas_t* EspNativeEngineRoot_initCanvas(", "DoomCanvas_t* DoomCanvas_init(")
-    .replace("[DOOMCANVASBRIDGE] INIT exports=0", "[DOOMCANVASBRIDGE] INIT exports=2"))
+    .replace("[DOOMCANVASBRIDGE] INIT exports=0", "[DOOMCANVASBRIDGE] INIT exports=2")
+    .replace("doomCanvas = malloc(", "doomCanvas = SDL_malloc(")
+    .replace("memset(doomCanvas,", "SDL_memset(doomCanvas,"))
 init_fnv = 2166136261
 for byte in normalized.encode("utf-8"):
     init_fnv = ((init_fnv ^ byte) * 16777619) & 0xFFFFFFFF

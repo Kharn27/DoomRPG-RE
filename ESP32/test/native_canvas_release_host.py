@@ -33,7 +33,7 @@ body = owner[start:end]
 for required in ("Esp32StoryFit_release(doomCanvas, root);",
                  "EspNativeIntroState_release(root);",
                  "DoomRPG_freeImage(root, &doomCanvas->imgFont);",
-                 "SDL_free(doomCanvas);"):
+                 "free(doomCanvas);"):
     assert required in body
 assert "DoomCanvas_free(" not in owner + glyph
 assert "doom_canvas_bridge_exports" not in builder
@@ -66,7 +66,7 @@ void traced_free(void* p) {
     assert(p == expectedCanvas && n == 3);
     trace[n++] = 4; frees++; free(p);
 }
-#define SDL_free traced_free
+#define free traced_free
 """
 harness = r"""
 int main(void) {

@@ -33,7 +33,8 @@ name = "EspNativeEngineRoot_releaseRender"
 body = extract(owner, "static void " + name +
                "(Render_t* render, boolean freePtr)")
 runtime = extract(bridge, "void EspNativeRenderRuntime_releaseCompatibility(Render_t* render)")
-normalized = (body.replace("static void " + name + "(", "void Render_free(")
+normalized = (body.replace("free(", "SDL_free(")
+              .replace("static void " + name + "(", "void Render_free(")
               .replace("EspNativeRenderRuntime_releaseCompatibility(render);",
                        "Render_freeRuntime(render);"))
 hash_value = 2166136261

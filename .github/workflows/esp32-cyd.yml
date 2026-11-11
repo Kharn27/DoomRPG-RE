@@ -330,6 +330,9 @@ jobs:
       - name: SDL-F11 menu and native PAK mappings allocation aliases to libc
         run: python ESP32/test/sdl_f11_native_menu_mappings_libc_host.py
 
+      - name: SDL-F12 engine root/layout libc-only allocations and full Git source parity
+        run: python ESP32/test/sdl_f12_engine_stubs_libc_host.py
+
       - name: Test native presentation and clip pixel parity (host C)
         run: python ESP32/test/doomrpg_presentation_host.py
 
