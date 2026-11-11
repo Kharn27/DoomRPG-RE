@@ -140,23 +140,9 @@ void DoomRPG_Error(const char* fmt, ...)
 }
 
 
-SDLVideo_t sdlVideo = {
-    NULL,
-    (SDL_Renderer*)1,
-    DOOMRPG_LOGICAL_WIDTH,
-    DOOMRPG_LOGICAL_HEIGHT,
-    false,
-    false,
-    true,
-    false,
-    0,
-};
-
 FluidSynth_t fluidSynth = {NULL, NULL, NULL};
 
-void SDL_InitVideo(void) {}
 void SDL_Close(void) {}
-SDLVideo_t* SDL_GetVideo(void) { return &sdlVideo; }
 
 void SDL_InitAudio(void) {}
 void SDL_CloseAudio(void) {}

@@ -8,6 +8,7 @@ rollback route, PAK owner or shared framebuffer lifetime may change in F12.
 """
 from pathlib import Path
 from sdl_f13_dead_input_mode_host import restore_pre_f13
+from sdl_f14_video_mirror_host import restore_pre_f14
 import hashlib
 import re
 
@@ -75,7 +76,7 @@ if __name__ == "__main__":
                 "SDL_CloseAudio();", "SDL_Close();",
                 "EspNativeRenderRuntime_releaseCompatibility(render);",
                 "EspNativeEngineRoot_releaseCanvas(", "DoomRPG_Error("):
-        assert abi in owner, abi
+        assert abi in restore_pre_f14(owner), abi  # F12 historic ABI before F14
     active = re.sub(r"/\*[\s\S]*?\*/|//[^\n]*", "", owner)
     assert not re.search(r"\bSDL_(?:malloc|free|memset)\s*\(", active)
     assert sum(item[2] for item in UNDO) == 16

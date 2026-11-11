@@ -5,6 +5,7 @@ No native input, touch, renderer, audio, process-root or PAK behavior changed.
 The desktop SDL_Video.h declarations survive as a reference/ABI oracle.
 """
 from pathlib import Path
+from sdl_f14_video_mirror_host import restore_pre_f14
 import hashlib
 import re
 import shutil
@@ -26,6 +27,7 @@ RETIRED = (
 
 def restore_pre_f13(current: str) -> str:
     """Reconstruct the complete actual main/F12 C file before F13."""
+    current = restore_pre_f14(current)  # restore subsequent F14 retirement first
     a = "FluidSynth_t fluidSynth = {NULL, NULL, NULL};\n\n"
     assert current.count(a) == 1
     restored = current.replace(a, a[:-1] + CONTROLLER + "\n" + MODES, 1)
@@ -39,6 +41,7 @@ def git_sha(s: str) -> str:
 
 def check_sources() -> None:
     native = OWNER.read_text(encoding="utf-8")
+    pre_f14 = restore_pre_f14(native)
     old = restore_pre_f13(native)
     assert git_sha(old) == PRE_F13_BLOB, (git_sha(old), PRE_F13_BLOB)
     for preserved in (
@@ -50,7 +53,7 @@ def check_sources() -> None:
         "doomrpg == NULL || doomrpg != doomRpg",
         "Esp32PlatformVideo_framebuffer()",
     ):
-        assert preserved in native, preserved
+        assert preserved in pre_f14, preserved  # F13 historic ABI before F14
     header = (ROOT / "src/SDL_Video.h").read_text(encoding="latin-1")
     for proto in RETIRED:
         assert re.search(r"\b" + proto + r"\b", header), proto
