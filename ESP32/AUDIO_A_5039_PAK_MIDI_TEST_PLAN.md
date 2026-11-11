@@ -4,6 +4,27 @@
 La piste `5039.mid` du PAK natif est l'unique source de données musicales.
 Le test réel du classic CYD reste nécessaire avant de fusionner.
 
+## Contrôle visuel du PCB fourni par l'utilisateur — défaut audio confirmé (11 novembre 2026)
+
+Photo réelle du dos de la carte classique double-USB `ESP32-2432S028` : sérigraphie du réseau **U5 (amplificateur)** lisible et codes CMS observés directement :
+
+| Référence sérigraphiée | Code CMS de cette carte | Valeur de cette carte | Correction documentée sur cette variante |
+|---|---|---|---|
+| R4 | `472` | 4,7 kΩ | conservée |
+| **R7** | `0` | **0 Ω** | **47 kΩ** (code 473) |
+| **R8** | `0` | **0 Ω** | **22 kΩ** (code 223) |
+| **R9** | `683` | **68 kΩ** | **47 kΩ** (code 473), selon la correction partagée dans la discussion CYD |
+
+**Attribution : il s'agit de marques PHYSIQUEMENT VISIBLES sur la photo utilisateur**, pas d'un diagnostic inféré du modèle de carte ou d'un test électrique. Sans mesure au multimètre, les codes restent l'indication de composants montés, mais correspondent exactement au réseau fautif documenté dans [CYD Mods for better Audio #356](https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display/discussions/356), et corroboré par [hexeguitar/ESP32_TFT_PIO](https://github.com/hexeguitar/ESP32_TFT_PIO) et [Embedded Kiddie](https://embedded-kiddie.github.io/2025/04/24/).
+
+La discussion indique explicitement **R7 0 Ω, R8 0 Ω et R9 68 kΩ = configuration incorrecte**, et **R7 47 kΩ, R8 22 kΩ et R9 47 kΩ = configuration audio améliorée**. Attention à la distinction : le schéma 2022 indiquait parfois R9=68 kΩ avec R7/R8 normaux, tandis que le correctif communautaire destiné à l'audio propre adopte R9=47 kΩ.
+
+Le test trois états avait montré `DAC-OFF` silence, `DAC-MIDPOINT` craquement, `MIDI` overdrive important, HP 8Ω. Ces indices joints au marquage des CMS étayent **fortement** la cause de gain / charge d'entrée analogique. Cela n'exclut pas d'autres sources de bruit, et un test musical après modification reste obligatoire.
+
+**Conduite :** ne plus gaspiller de cycles à compenser ce défaut en abaissant le PCM 8 bits. L'utilisateur peut choisir une réparation micro-soudure **0603** par une personne équipée : carte éteinte, USB et HP déconnectés, vérifier sérigraphie, remplacement des trois résistances seulement, contrôle des ponts/courts-circuits avant remise sous tension. **Aucune intervention physique n'est faite par l'agent.** Une alternative est un module audio externe, projet distinct avec contraintes de pins/RAM. Ne jamais imposer la soudure à un utilisateur non équipé. La PR #301 reste **Draft / NON PASS audio**, même si le matériel en cause est maintenant visuellement identifié.
+
+---
+
 ## Validation différentielle réelle — 11 novembre 2026, AUDIO-A FAIL matériel
 
 L'utilisateur a réalisé le test des **trois étapes**, sur le vrai CYD et son HP **8 Ω** :
