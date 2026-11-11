@@ -25,8 +25,8 @@ for path in SRC.rglob("*"):
         assert "if (!PlatformVideo_present())" in content
         continue  # historical host oracle, not production linked
     # Remove comments and literals only for the legacy-call inventory.
-    code = re.sub(r'/\\*[\\s\\S]*?\\*/|//[^\\n]*|"(?:\\\\.|[^"\\\\])*"', " ", content)
-    assert not re.search(r"\\bSDL_RenderPresent\\s*\\(", code), path
+    code = re.sub(r'/\*[\s\S]*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ", content)
+    assert not re.search(r"\bSDL_RenderPresent\s*\(", code), path
 
 for name, count in EXPECTED.items():
     content = (SRC / name).read_text(encoding="utf-8")
