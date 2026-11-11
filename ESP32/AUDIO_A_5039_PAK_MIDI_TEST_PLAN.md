@@ -4,6 +4,26 @@
 La piste `5039.mid` du PAK natif est l'unique source de données musicales.
 Le test réel du classic CYD reste nécessaire avant de fusionner.
 
+## Validation différentielle réelle — 11 novembre 2026, AUDIO-A FAIL matériel
+
+L'utilisateur a réalisé le test des **trois étapes**, sur le vrai CYD et son HP **8 Ω** :
+
+| Étape du candidat `fe46b49220b7fb32df44b8a2b05e239f43d3955a` | Observation audible |
+| --- | --- |
+| `DAC-OFF` : GPIO26 désactivé, DMA silence numérique | **« Rien »** |
+| `DAC-MIDPOINT` : GPIO26 activé, PCM `0x8000` constant | **« Cracha »** (craquement audible) |
+| `MIDI` : fichier `5039.mid` original du PAK | **« La musique est jouée en mode gain overdrive a fond comme d'hab »** |
+
+**Interprétation bornée :** le bruit est déclenché par l'activation du DAC sans note MIDI. Le moteur de fichiers MIDI, le mixage polyphonique et l'écrêtage PCM numérique ne sont pas nécessaires pour produire ce bruit. Néanmoins, la réponse utilisateur ne précise pas si `DAC-MIDPOINT` produit uniquement un *pop* au moment de l'activation ou du crachotement **continu** durant les deux secondes ; ne pas assimiler ces cas. Le MIDI reste reconnaissable mais très saturé. Les mesures précédentes de ce même matériel (I2S `15999–16000 Hz`, `speedPct=100`, `dmaErrors=0`, `pcmPeak8=10..15`, `pcmClipped=0`) excluent un clipping **dans le PCM calculé**, et ne mesurent pas le signal réel GPIO26 ni la sortie SC8002B.
+
+**Hypothèse matérielle forte (NON prouvée sur ce PCB)** : gain excessif de l'étage SC8002B causé par des valeurs d'entrée erronées. Rapport communautaire sur certaines variantes CYD : `R7=0 Ω`/`R8=0 Ω`/`R9=68 kΩ` au lieu du réseau atténuateur, avec signal audio totalement écrêté ; voir [discussion CYD audio #356](https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display/discussions/356) et [retour d'expérience CYD_MP3Player](https://github.com/embedded-kiddie/CYD_MP3Player). Le schéma ESP32-2432S028R ancien affiche `R7=47 kΩ`, `R8=22 kΩ`, `R9=68 kΩ`, tandis que la discussion cite une version corrigée à `R9=47 kΩ` : **les variantes de PCB et révisions doivent être distinguées**, ne pas donner une valeur R9 universelle à souder. Si `R7=R8=0 Ω`, le gain approximatif `R9/(R4+R7+R8)=68 kΩ/4,7 kΩ≈14,5` rend plausible une saturation même à 25 % de volume PCM. Charge HP 8 Ω normale.
+
+**Suite autorisée** : photographier/identifier le réseau R7/R8/R9 de la **carte réelle**, ou mesurer hors tension si équipé ; confirmer les valeurs avant tout changement CMS. Ne pas souder sans identification, ne pas remplacer le HP par réflexe. Une correction logicielle brutale du volume ne résout pas un étage analogique défectueux et dégraderait la résolution du DAC 8 bits. Ne pas activer l'audio en production sur la seule base de la CI.
+
+**Décision** : #301 reste Draft / AUDIO-A NON PASS matériel, aucun merge. Le test différentiel a atteint son objectif de localisation : prioriser l'étage DAC/entrée-ampli et l'éventuel pop d'activation, plutôt que modifier le tempo MIDI ou ajouter des filtres de mixage à l'aveugle.
+
+---
+
 ## Diagnostic différentiel CYD — brouhaha avec HP **8 Ω** (nouveau candidat)
 
 Retour utilisateur, vrai firmware normal, après le correctif Q8 : musique originale audible mais couverte par un très fort brouhaha saturé. Extraits :
