@@ -25,6 +25,7 @@
 #include "native_sprite_lru_cache.h"
 #include "native_wall_lru_cache.h"
 #include "platform_video_config.h"
+#include "platform_video_c_bridge.h"
 
 /* Keep ESP-IDF's stdbool macros after DoomRPG's legacy boolean enum. */
 #include <esp_heap_caps.h>
@@ -369,7 +370,7 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase,
         return 0;
     }
 
-    SDL_RenderPresent(NULL);
+    (void)Esp32PlatformVideo_present();
     if (finalFramebufferFNV != NULL) *finalFramebufferFNV = finalHash;
     printf("[MAINOPTIONS] Presented MENU_MAIN_OPTIONS root=BACK/VIDEO/SOUND videoChild=BRIGHTNESS/ORIENTATION/THEME brightness=%u ready=%d orientationReady=%d theme=%u\n",
            (unsigned int)Esp32Backlight_percent(), Esp32Backlight_isReady(),

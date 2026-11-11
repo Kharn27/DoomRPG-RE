@@ -106,14 +106,14 @@ def main():
     assert not e1_retired.intersection(current), (
         f"{args.profile}: SDL-E1 legacy vector ABI still linked "
         f"{sorted(e1_retired.intersection(current))}")
-    assert "SDL_RenderPresent" in current, (
-        f"{args.profile}: SDL-F1 must not touch live framebuffer presentation")
+    assert "SDL_RenderPresent" not in current, (
+        f"{args.profile}: SDL-F2 still links desktop presentation")
     f1_retired = {"SDL_GetTicks", "SDL_GetError", "SDL_ShowMessageBox"}
     assert not f1_retired.intersection(current), (
         f"{args.profile}: SDL-F1 legacy non-render services still linked "
         f"{sorted(f1_retired.intersection(current))}")
-    assert set(current) == {"SDL_RenderPresent"}, (
-        f"{args.profile}: expected only live SDL presentation, got {sorted(current)}")
+    assert not current, (
+        f"{args.profile}: expected zero linked SDL functions, got {sorted(current)}")
     nm_tool = (shutil.which("xtensa-esp32-elf-nm") or
                str(Path.home() / ".platformio/packages/toolchain-xtensa-esp32/bin/xtensa-esp32-elf-nm"))
     actual_names = set()
@@ -128,7 +128,7 @@ def main():
                  "EspNativeTexture_setColorMod", "EspNativeTexture_setClipRect"}
     e1_native = {"EspNativeTexture_setDrawColor", "EspNativeTexture_fillRect",
                  "EspNativeTexture_drawLine"}
-    native_providers = c1_native | d1_native | e1_native | {"EspNativeProcessClock_ticks"}
+    native_providers = c1_native | d1_native | e1_native | {"EspNativeProcessClock_ticks", "Esp32PlatformVideo_present"}
     assert native_providers.issubset(actual_names), (
         f"{args.profile}: missing production image/raster owners "
         f"{sorted(native_providers - actual_names)}")
@@ -156,7 +156,7 @@ def main():
             f"{args.profile}: unexpected SDL exports after native migration "
             f"added={sorted(set(current)-set(before))}")
         removed = set(before) - set(current)
-        all_retired = c1_retired | d1_retired | e1_retired | f1_retired
+        all_retired = c1_retired | d1_retired | e1_retired | f1_retired | {"SDL_RenderPresent"}
         assert all_retired.issubset(removed), (
             f"{args.profile}: missing C1/D1/E1 linked SDL retirement "
             f"{sorted(all_retired - removed)}")
@@ -164,6 +164,7 @@ def main():
         report["d1_removed_sdl"] = sorted(d1_retired)
         report["e1_removed_sdl"] = sorted(e1_retired)
         report["f1_removed_sdl"] = sorted(f1_retired)
+        report["f2_removed_sdl"] = ["SDL_RenderPresent"]
         report["e1_native_providers"] = sorted(e1_native)
         report["c1_native_providers"] = sorted(c1_native)
         report["d1_native_providers"] = sorted(d1_native)
@@ -183,7 +184,7 @@ def main():
     print("SDL-A " + json.dumps({k: v for k, v in report.items()
                                  if k not in ("elf", "baseline_elf", "linked_sdl",
                                               "baseline_linked_sdl")}, sort_keys=True))
-    print(f"SDL-F1 PASS {args.profile}: native process clock and fatal/error path; framebuffer presentation unchanged, "
+    print(f"SDL-F2 PASS {args.profile}: native platform video presentation, same framebuffer/presenter, "
           f"{len(current)} linked SDL functions / {sum(current.values())} symbolic bytes")
 
 

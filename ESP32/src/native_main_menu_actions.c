@@ -902,7 +902,7 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
     DoomRPG_setFontColor(doomRpg, 0xffffffffU);
     frameFNV = DoomRPG_esp32MainMenuFramebufferHash(EspNativeRootOwners_live()->render);
     if (frameFNV == 0U) return 0;
-    SDL_RenderPresent(NULL);
+    (void)Esp32PlatformVideo_present();
     if (outFrameFNV != NULL) *outFrameFNV = frameFNV;
     if (helpLoggedScroll != menuSystem->scrollIndex) {
         printf("[MAINHELP] PAINT lines=%d visible=%d range=%d..%d maxScroll=%d frame=%08x background=intro-c.bmp shift=%d buttons=industrial\n",
@@ -1241,7 +1241,7 @@ static void showNoSaveFeedback(DoomRPG_t* doomRpg) {
     DoomRPG_setFontColor(doomRpg, 0xffff0000);
     EspNativeCanvas_drawText(canvas, noSaveLabel, x, y, 0);
     DoomRPG_setFontColor(doomRpg, 0xffffffff);
-    SDL_RenderPresent(NULL);
+    (void)Esp32PlatformVideo_present();
 
     frameFNV = DoomRPG_esp32MainMenuFramebufferHash(EspNativeRootOwners_live()->render);
     DoomRPG_esp32MainMenuTouchRebaseFrame(MAIN_LOAD_ITEM_INDEX, frameFNV);
