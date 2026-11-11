@@ -44,7 +44,7 @@ assert "EspNativeMainMenu_transitionCanvasState(doomCanvas, doomRpg, ST_INTRO)" 
     ROOT / "ESP32/src/native_main_menu_start_action.c").read_text()
 assert "EspNativeMainMenu_transitionCanvasState(EspNativeRootOwners_live()->doomCanvas, doomRpg, ST_PLAYING)" in (
     ROOT / "ESP32/src/native_main_menu_actions.c").read_text()
-assert "EspNativeMainMenu_transitionCanvasState(EspNativeRootOwners_live()->doomCanvas, doomRpg, ST_MENU)" in (
+assert "EspNativeMainMenu_transitionCanvasState(EspNativeRootOwners_live()->doomCanvas, touchDoomRpg, ST_MENU)" in (
     ROOT / "ESP32/src/native_main_menu_touch.c").read_text()
 STORY = (ROOT / "ESP32/src/native_story_fit.c").read_text()
 STORY_H = (ROOT / "ESP32/include/native_story_fit.h").read_text()
