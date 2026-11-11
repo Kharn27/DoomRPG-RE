@@ -23,8 +23,6 @@ _Static_assert(sizeof(Render_t) == 108U,
 #endif
 
 
-extern DoomRPG_t* doomRpg;
-
 /* Render-shell compatibility slots have two native lifecycle callers:
  * MENU_MAIN new-game START and fatal root teardown. This is the previous
  * Render_freeRuntime body with only the native symbol substituted; map-owned
@@ -258,7 +256,7 @@ static int EspNativeRenderStartup_initialize(Render_t* render) {
     return 1;
 }
 
-int EspRenderStartupBridge_start(int preRenderReady) {
+int EspRenderStartupBridge_start(DoomRPG_t* root, int preRenderReady) {
     Render_t* render;
     byte* expectedFramebuffer;
     uint32_t heapBefore;
@@ -281,7 +279,7 @@ int EspRenderStartupBridge_start(int preRenderReady) {
         return 0;
     }
 
-    if (doomRpg == NULL || EspNativeRootOwners_live()->render == NULL ||
+    if (root == NULL || EspNativeRootOwners_live()->render == NULL ||
         EspNativeRootOwners_live()->doomCanvas == NULL) {
         printf("[RENDERSTART] Core object graph incomplete; probe refused\n");
         return 0;

@@ -284,7 +284,7 @@ namespace
         enginePreRenderReady =
             EspLegacyPrerenderStartup_start(engineLayoutReady ? 1 : 0) != 0;
         engineRenderStartupReady =
-            EspRenderStartupBridge_start(enginePreRenderReady ? 1 : 0) != 0;
+            EspRenderStartupBridge_start(doomRpg, enginePreRenderReady ? 1 : 0) != 0;
 
         if (engineRenderStartupReady)
         {

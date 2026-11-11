@@ -7,7 +7,8 @@ extern "C" {
 
 /*
  * Initialize the retained CYD Render compatibility shell after the preceding
- * engine layout / pre-render startup stage has succeeded.
+ * engine layout / pre-render startup stage has succeeded. The caller passes
+ * its process token explicitly; this owner never reads the global doomRpg.
  *
  * The linker-owned Render_startup() bridge reuses PlatformVideo's permanent
  * 160x120 RGB565 framebuffer instead of allocating the desktop piDIB + second
@@ -18,7 +19,8 @@ extern "C" {
  * sintable and palettes are all ready. No map loading or gameplay ownership is
  * performed here.
  */
-int EspRenderStartupBridge_start(int preRenderReady);
+struct DoomRPG_s;
+int EspRenderStartupBridge_start(struct DoomRPG_s* root, int preRenderReady);
 
 /* Compatibility slots only, shared between native MENU_MAIN START and fatal
  * root teardown. Does not own PlatformVideo framebuffer or map-state arenas. */
