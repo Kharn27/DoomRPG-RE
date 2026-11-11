@@ -67,8 +67,14 @@ assert "EspNativeAudioPcm_scaleLimitQ8(" in cpp
 assert "EspNativeAudioPcm_toDacWord(" in cpp
 assert "i2s_set_dac_mode(I2S_DAC_CHANNEL_DISABLE)" in cpp
 assert "i2s_set_dac_mode(I2S_DAC_CHANNEL_LEFT_EN)" in cpp
-assert cpp.index("i2s_set_dac_mode(I2S_DAC_CHANNEL_LEFT_EN)") < cpp.index(
-    "__atomic_store_n(&clockProbeState, accepted")
+assert cpp.index("__atomic_store_n(&clockProbeState, accepted") < cpp.index(
+    "i2s_set_dac_mode(I2S_DAC_CHANNEL_LEFT_EN)")
+assert "kAudioDiagStageSamples = 2U * kSampleRate" in cpp
+assert "diag == kAudioDiagDacOff || diag == kAudioDiagDacMidpoint" in cpp
+assert "pcm[i] = (uint16_t)(128U << 8)" in cpp
+assert "kAudioDiagMidpoint" not in cpp
+assert cpp.index("kAudioDiagDacOff") < cpp.index("kAudioDiagDacMidpoint") < cpp.index("kAudioDiagMidi")
+assert 'stage=%s gpio26=%s' in cpp
 assert "v.patch < 48U && v.note <= 105U" in cpp
 assert "v.patch >= 80U && v.note <= 97U" in cpp
 assert "pcmClipped=%u" in cpp and "pcmQuiet=%u" in cpp
