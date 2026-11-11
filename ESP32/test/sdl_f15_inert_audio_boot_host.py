@@ -49,7 +49,12 @@ def check_sources() -> None:
     ):
         if contract == "FluidSynth_t":
             assert contract not in native, "FluidSynth_t source-global should be absent"
-        elif contract in ("SDL_CloseAudio();", "SDL_Close();",\n                          "void SDL_Close(void) {}", "void SDL_CloseAudio(void) {}"):\n            assert contract in pre_f16, contract  # F15 historic contract before F16\n        else:\n            assert contract in native, contract\n    legacy = (ROOT / "src/SDL_Video.h").read_text(encoding="latin-1")
+        elif contract in ("SDL_CloseAudio();", "SDL_Close();",
+                          "void SDL_Close(void) {}", "void SDL_CloseAudio(void) {}"):
+            assert contract in pre_f16, contract  # F15 historic contract before F16
+        else:
+            assert contract in native, contract
+    legacy = (ROOT / "src/SDL_Video.h").read_text(encoding="latin-1")
     for contract in ("FluidSynth_t", "extern FluidSynth_t fluidSynth;",
                      "void SDL_InitAudio(void);", "void SDL_CloseAudio(void);",
                      "void SDL_Close(void);"):
