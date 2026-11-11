@@ -255,7 +255,7 @@ namespace
             return;
         }
 
-        engineLayoutReady = DoomRPG_startEngineLayout(&layoutReport) != 0;
+        engineLayoutReady = DoomRPG_startEngineLayout(doomRpg, &layoutReport) != 0;
 
         char status[48];
         if (engineLayoutReady)

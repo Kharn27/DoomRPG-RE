@@ -28,7 +28,8 @@ assert "EspNativeEngineRoot_releaseCanvas(EspNativeRootOwners_live()->doomCanvas
 assert "EspNativeIntroState_release(root);" in CORE
 assert "DoomRPG_freeImage(root, &doomCanvas->imgFont);" in CORE
 assert "EspNativeEngineLayout_startupCanvas(DoomCanvas_t* doomCanvas, DoomRPG_t* root)" in CORE
-assert "EspNativeEngineLayout_startupCanvas(canvas, doomRpg);" in CORE
+assert "EspNativeEngineLayout_startupCanvas(canvas, root);" in CORE
+assert "int DoomRPG_startEngineLayout(DoomRPG_t* root, DoomRpgLayoutReport* report)" in CORE
 assert "if (doomCanvas == NULL || root == NULL) return;" in CORE
 assert 'DoomRPG_createImage(root, "a.bmp", true, &doomCanvas->imgFont);' in CORE
 assert "doomRpg = &nativeRootIdentity;" in CORE  # unrelated root identity still live
