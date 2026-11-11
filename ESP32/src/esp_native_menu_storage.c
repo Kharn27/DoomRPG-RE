@@ -1,4 +1,5 @@
-#include <SDL.h>
+#include <stdlib.h>
+#include <string.h>
 #include <stdio.h>
 
 #include "DoomRPG.h"
@@ -8,11 +9,11 @@
 
 EspNativeMenuState_t* EspNativeMenuStorage_init(EspNativeMenuState_t* storage) {
     if (storage == NULL) {
-        storage = (EspNativeMenuState_t*)SDL_calloc(1, sizeof(EspNativeMenuState_t));
+        storage = (EspNativeMenuState_t*)calloc(1, sizeof(EspNativeMenuState_t));
         if (storage == NULL) return NULL;
     }
     else {
-        SDL_memset(storage, 0, sizeof(EspNativeMenuState_t));
+        memset(storage, 0, sizeof(EspNativeMenuState_t));
     }
 
     storage->oldMenu = -1;
@@ -47,5 +48,5 @@ void EspNativeMenuStorage_free(EspNativeMenuState_t* storage, DoomRPG_t* doomRpg
         DoomRPG_freeImage(doomRpg, &storage->imgLogo);
     }
     storage->imgBG = NULL;
-    if (freePtr) SDL_free(storage);
+    if (freePtr) free(storage);
 }

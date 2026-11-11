@@ -327,6 +327,9 @@ jobs:
       - name: SDL-F10 native image bootstrap and first-frame no SDL headers
         run: python ESP32/test/sdl_f10_native_header_only_units_host.py
 
+      - name: SDL-F11 menu and native PAK mappings allocation aliases to libc
+        run: python ESP32/test/sdl_f11_native_menu_mappings_libc_host.py
+
       - name: Test native presentation and clip pixel parity (host C)
         run: python ESP32/test/doomrpg_presentation_host.py
 
