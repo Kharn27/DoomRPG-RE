@@ -318,6 +318,9 @@ jobs:
       - name: SDL-F7 SDL-free native visual owners, unchanged C source and ABI
         run: python ESP32/test/sdl_f7_native_visual_no_sdl_host.py
 
+      - name: SDL-F8 native intro lifecycle without SDL aliases (host Python)
+        run: python ESP32/test/sdl_f8_native_intro_no_sdl_host.py
+
       - name: Test native presentation and clip pixel parity (host C)
         run: python ESP32/test/doomrpg_presentation_host.py
 

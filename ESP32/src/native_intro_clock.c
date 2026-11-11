@@ -1,7 +1,7 @@
-#include <SDL.h>
 #include "esp_native_root_state.h"
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "DoomRPG.h"
 #include "DoomCanvas.h"
@@ -151,7 +151,7 @@ static void parkClock(const char* reason) {
            (unsigned int)heap8Free(),
            (unsigned int)largest8Block());
     clockState.exitReadyPark =
-        reason != NULL && SDL_strcmp(reason, "intro-exit-ready") == 0;
+        reason != NULL && strcmp(reason, "intro-exit-ready") == 0;
     clockState.active = 0;
 }
 
@@ -197,7 +197,7 @@ int Esp32IntroClock_arm(struct DoomRPG_s* doomRpgBase,
     EspNativeIntroState_t* introState;
     const uint32_t frameHash = framebufferHash();
 
-    SDL_memset(&clockState, 0, sizeof(clockState));
+    memset(&clockState, 0, sizeof(clockState));
     Esp32IntroDispose_reset();
     EspNativeStartup_reset();
 
