@@ -39,10 +39,10 @@ assert 'DoomRPG_esp32PaintVideoMenuCards(' in paint
 assert '"BACK", "LUMINOSITE", "ORIENTATION", "THEME"' in paint
 assert '"BACK", "CLASSIC", "INFERNO", "PHOSPHORE"' in paint
 assert '#define DOOMRPG_ESP32_THEME_CARD_COUNT 4' in layout
-assert 'mask |= (1U << OPTIONS_VIDEO_ITEM);' in action
+assert 'mask |= (1U << OPTIONS_VIDEO_ITEM) | (1U << OPTIONS_SOUND_ITEM);' in action
 assert 'DoomRPG_esp32PaintMainMenuVideoDashboardSelection(' in action
 
-# Distinct pages, no unreachable root Sound, and no direct child->root Back.
+# Sound is an enabled root child; VIDEO's existing nested Back stays intact.
 route = touch[touch.index("static void optionsBackTap("):
               touch.index("int DoomRPG_esp32OptionsBackActivate(")]
 assert route.index("if (luminositeOpen) {") < route.index("if (orientationOpen) {")
@@ -54,7 +54,16 @@ assert route.count("if (!paintVideoState(VIDEO_BACK_ITEM, 0))") >= 4
 assert 'if (armedItem != item)' in route
 assert 'videoOpen = 1U;' in route
 assert 'videoOpen = 0U;' in route
-assert 'if (item != OPTIONS_BACK_ITEM && item != OPTIONS_VIDEO_ITEM)' in route
+assert 'item != OPTIONS_SOUND_ITEM)' in route
+assert 'if (soundOpen) {' in route
+assert 'soundOpen ? luminositeItemAt' in route
+assert 'paintSoundState()' in route
+assert 'DoomRPG_esp32PaintBrightnessPresetCardsSelection(' in touch
+assert 'DoomRPG_esp32PaintMainMenuSoundDashboard(' in action
+assert 'EspNativeAudioVolume_savePercent(after)' in route
+assert 'soundOpen = 1U;' in route
+assert 'soundOpen = 0U;' in route
+assert 'persistence=audio-sd-v1' in route
 assert 'printf("[OPTIONSVIDEO] BACK to=Options' in route
 assert 'printf("[OPTIONSVIDEO] OPEN from=Options' in route
 assert 'printf("[OPTIONSBRIGHTNESS] BACK to=VIDEO' in route
@@ -128,4 +137,4 @@ with tempfile.TemporaryDirectory(prefix="doom-video-nested-") as temp:
     subprocess.run(["cc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
                     "-I", str(inc), str(source), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
-print("PASS native VIDEO root/child/back contracts, SD intents and fail-closed SOUND")
+print("PASS native VIDEO/SOUND root/child/back contracts and 4 preset volume commands")

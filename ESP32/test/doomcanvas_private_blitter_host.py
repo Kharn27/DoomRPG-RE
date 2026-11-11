@@ -77,7 +77,8 @@ assert (SRC / "native_main_menu_actions.c").read_text().count("EspNativeMainMenu
 assert (SRC / "native_main_menu_touch.c").read_text().count("EspNativeMainMenu_transitionCanvasState(") == 1
 begin = owner.index("static int doomCanvasBeginIntro(")
 # Only the help data section moved (PAK phone parser -> ROM CYD guide).
-# The handoff body and the hard-coded FNV must remain strictly unchanged.
+# AUDIO-A adds STOP_ALL on PLAYING->MENU; keep Root-I's explicit root ABI
+# and pin this combined hardware-candidate state handoff body.
 end = owner.index("\n/* Native ROM-owned CYD guide:", begin)
 # Root-I passes process identity explicitly through MENU/INTRO. Normalize
 # only the retired back-reference/signature for the hardware-proven FNV.
@@ -100,7 +101,7 @@ state_body = (
 state_fnv = 2166136261
 for byte in state_body.encode("utf-8"):
     state_fnv = ((state_fnv ^ byte) * 16777619) & 0xFFFFFFFF
-assert state_fnv == 0x2f165f3f, f"Native state handoff body drift: {state_fnv:08x}"
+assert state_fnv == 0x2f3fe645, f"Native state handoff body drift: {state_fnv:08x}"
 
 # Reject retired desktop state callers even if the TU is currently unlinked.
 for path in sorted(SRC.rglob("*")):

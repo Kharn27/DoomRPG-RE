@@ -5,10 +5,34 @@
 
 static EspNativeAudioIntent lastIntent;
 static uint32_t intentCount;
+static EspNativeAudioIntent pending[ESP_NATIVE_AUDIO_INTENT_QUEUE_CAP];
+static uint8_t pendingHead;
+static uint8_t pendingCount;
+
+static int enqueue(EspNativeAudioIntent intent) {
+    uint8_t tail;
+    if (pendingCount >= ESP_NATIVE_AUDIO_INTENT_QUEUE_CAP) return 0;
+    tail = (uint8_t)((pendingHead + pendingCount) %
+                     ESP_NATIVE_AUDIO_INTENT_QUEUE_CAP);
+    pending[tail] = intent;
+    ++pendingCount;
+    return 1;
+}
+
+int EspNativeAudioIntent_takeNext(EspNativeAudioIntent* outIntent) {
+    if (outIntent == NULL || pendingCount == 0U) return 0;
+    *outIntent = pending[pendingHead];
+    pendingHead = (uint8_t)((pendingHead + 1U) %
+                            ESP_NATIVE_AUDIO_INTENT_QUEUE_CAP);
+    --pendingCount;
+    return 1;
+}
 
 void EspNativeAudioIntent_reset(void) {
     memset(&lastIntent, 0, sizeof(lastIntent));
     intentCount = 0U;
+    pendingHead = 0U;
+    pendingCount = 0U;
 }
 
 int EspNativeAudioIntent_publish(uint16_t resourceId,
@@ -22,7 +46,12 @@ int EspNativeAudioIntent_publish(uint16_t resourceId,
     lastIntent.flags = flags;
     lastIntent.priority = priority;
 
-    printf("[AUDIOINTENT] PUBLISH seq=%u resource=%u flags=%u priority=%u backend=silent order=call-order\n",
+    if (!enqueue(lastIntent)) {
+        printf("[AUDIOINTENT] DROP resource=%u reason=fifo-full gameplay=unaffected\n",
+               (unsigned int)resourceId);
+        return 0;
+    }
+    printf("[AUDIOINTENT] PUBLISH seq=%u resource=%u flags=%u priority=%u backend=queued order=call-order\n",
            (unsigned int)lastIntent.sequence,
            (unsigned int)lastIntent.resourceId,
            (unsigned int)lastIntent.flags,
@@ -39,7 +68,12 @@ int EspNativeAudioIntent_stopAll(void) {
     lastIntent.flags = ESP_NATIVE_AUDIO_STOP_ALL_FLAG;
     lastIntent.priority = 0U;
 
-    printf("[AUDIOINTENT] STOP_ALL seq=%u backend=silent order=call-order\n",
+    if (pendingCount == ESP_NATIVE_AUDIO_INTENT_QUEUE_CAP) {
+        pendingHead = 0U; /* STOP is authoritative even under saturation. */
+        pendingCount = 0U;
+    }
+    (void)enqueue(lastIntent);
+    printf("[AUDIOINTENT] STOP_ALL seq=%u backend=queued order=call-order\n",
            (unsigned int)lastIntent.sequence);
     return 1;
 }

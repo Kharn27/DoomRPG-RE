@@ -92,6 +92,8 @@ void EspNativeMainMenu_transitionCanvasState(DoomCanvas_t* doomCanvas, DoomRPG_t
     doomCanvas->state = stateNum;
 
     if (stateNum == ST_MENU && oldState == ST_PLAYING) {
+        /* Stop intro music when leaving gameplay, retain legacy effect intents. */
+        EspNativeAudioIntent_stopAll();
         (void)EspNativeAudioIntent_publish(5042U, 0U, 3U);
         (void)EspNativeAudioIntent_publish(5067U, 0U, 3U);
     }

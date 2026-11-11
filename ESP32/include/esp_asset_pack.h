@@ -202,6 +202,15 @@ int EspAssetPack_readRange(const EspAssetPackEntry* entry,
                            void* destination,
                            size_t length);
 
+/* AUDIO-A streaming ranges: explicit cache bypass so a continuously playing
+ * MIDI never evicts the hot world-renderer PAK cache. Same active raw-flash
+ * backing and strict misses as readRange(); no SD fallback in gameplay.
+ * Caller owns the exclusive logical PAK lease; requests are max 256 bytes. */
+int EspAssetPack_readStreamRange(const EspAssetPackEntry* entry,
+                                 uint32_t relativeOffset,
+                                 void* destination,
+                                 size_t length);
+
 #ifdef __cplusplus
 }
 #endif

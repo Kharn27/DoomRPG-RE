@@ -488,6 +488,18 @@ jobs:
       - name: Test nested VIDEO menu paint/touch parity and Back routing
         run: python ESP32/test/native_video_menu_nesting_host.py
 
+      - name: AUDIO-A 5039 native PAK MIDI mandatory, no WAV dependency
+        run: python ESP32/test/audio_pak_midi_backend_host.py
+
+      - name: AUDIO-A stereo DAC throughput and MIDI prefill guard
+        run: python ESP32/test/audio_dac_timing_host.py
+
+      - name: AUDIO-A native volume codec and Sound menu persistence guard
+        run: python ESP32/test/audio_volume_host.py
+
+      - name: AUDIO-A bounded native SMF-0/1 reader (host C)
+        run: python ESP32/test/audio_midi_parser_host.py
+
       - name: Test native canvas audio handoff without desktop Sound ABI (host C)
         run: python ESP32/test/native_audio_handoff_host.py
 

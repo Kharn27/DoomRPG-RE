@@ -20,7 +20,7 @@ assert "Sound_playSound(" not in bridge + native_state
 assert "Sound_stopSounds(" not in bridge + native_state
 assert "EspNativeAudioIntent_stopAll();" not in bridge
 assert "EspNativeAudioIntent_publish(" not in bridge
-assert native_state.count("EspNativeAudioIntent_stopAll();") == 2
+assert native_state.count("EspNativeAudioIntent_stopAll();") == 3  # AUDIO-A PLAYING->MENU stops intro MIDI
 assert native_state.count("EspNativeAudioIntent_publish(") == 3
 assert "5039U" in native_state
 assert "ESP32_SND_FLG_LOOP | ESP32_SND_FLG_STOPSOUNDS" in native_state
@@ -57,6 +57,15 @@ int main(void) {
     assert(intent != NULL && intent->sequence == 3U);
     assert(intent->resourceId == 5067U && intent->priority == 3U);
 
+    /* AUDIO-A ordered FIFO: STOP must not erase a following PLAY. */
+    EspNativeAudioIntent queued;
+    assert(EspNativeAudioIntent_takeNext(&queued) && queued.sequence == 1U &&
+           queued.resourceId == 5039U);
+    assert(EspNativeAudioIntent_takeNext(&queued) && queued.sequence == 2U &&
+           queued.flags == ESP_NATIVE_AUDIO_STOP_ALL_FLAG);
+    assert(EspNativeAudioIntent_takeNext(&queued) && queued.sequence == 3U &&
+           queued.resourceId == 5067U);
+    assert(!EspNativeAudioIntent_takeNext(&queued));
     EspNativeAudioIntent_reset();
     assert(EspNativeAudioIntent_count() == 0U);
     assert(EspNativeAudioIntent_last() == NULL);

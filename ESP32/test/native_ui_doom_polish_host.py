@@ -175,7 +175,10 @@ assert "OPTIONSBRIGHTNESS] OPEN" in options
 assert "OPTIONSBRIGHTNESS] BACK" in options
 assert "DoomRPG_esp32MainMenuReturnToMain(" in options
 assert "optionsExpectedFrameFNV" in options
-assert "SOUND is intentionally deferred" in options
+# AUDIO-A: previously disabled SOUND is now the native volume preset child.
+assert "item != OPTIONS_SOUND_ITEM" in options
+assert "EspNativeAudioVolume_savePercent(after)" in options
+assert "soundOpen = 1U;" in options
 assert "#define OPTIONS_ITEM_COUNT DOOMRPG_ESP32_OPTIONS_CARD_COUNT" in options
 assert "videoOpen = 1U;" in options
 assert "videoOpen = 0U;" in options

@@ -54,6 +54,11 @@ changes = {
          "if (doomRpg == NULL || EspNativeRootOwners_live()->render == NULL ||"),
     ],
     "ESP32/src/main.cpp": [
+        # AUDIO-A only adds two includes and two lifecycle/service calls.
+        ('#include "esp_native_audio_midi.h"\n'
+         '#include "esp_native_audio_volume.h"\n', ''),
+        ("    EspNativeAudioVolume_loadAtBoot(sdReady ? 1 : 0);\n", ""),
+        ("    EspNativeAudioMidi_service();\n", ""),
         # Root-J3 also changes the same boot TU; revert its independent call
         # first so Root-J2's original golden-blob parity remains exact.
         ("EspLegacyPrerenderStartup_start(doomRpg, engineLayoutReady ? 1 : 0) != 0;",

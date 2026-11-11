@@ -18,6 +18,8 @@
 #include "native_main_menu_actions.h"
 #include "native_main_menu_touch_layout.h"
 #include "platform_input.h"
+#include "esp_native_audio_midi.h"
+#include "esp_native_audio_volume.h"
 #include "platform_video.h"
 #include "esp_legacy_prerender_startup.h"
 #include "esp_render_startup_bridge.h"
@@ -473,6 +475,7 @@ void setup()
     initializePlatformVideo();
     initializeSdCard();
     EspNativeConfig_loadAtBoot(sdReady ? 1 : 0);
+    EspNativeAudioVolume_loadAtBoot(sdReady ? 1 : 0);
     initializeGameAssets();
     initializeEngineCore();
     initializeEngineLayout();
@@ -493,6 +496,7 @@ void loop()
     EspNativeResidentGameplay_serviceMenuExit(doomRpg);
     EspNativeStartup_serviceDeathRoute(doomRpg);
     updateTouchDiagnostic();
+    EspNativeAudioMidi_service();
     printHeartbeat();
     delay(5);
 }

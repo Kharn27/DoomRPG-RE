@@ -16,7 +16,7 @@ struct DoomRPG_s;
 int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpg,
                                          uint32_t* finalFramebufferFNV);
 
-/* Root Options: BACK / VIDEO / disabled SOUND, 3 spacious 54x20 cards.
+/* Root Options: BACK / VIDEO / SOUND, 3 spacious touch cards.
  * The immutable MENU_MAIN_OPTIONS model and logo stage stay unchanged. */
 int DoomRPG_esp32PaintMainMenuOptionsDashboardSelection(
     struct DoomRPG_s* doomRpg,
@@ -35,6 +35,10 @@ int DoomRPG_esp32PaintMainMenuVideoDashboardSelection(
 int DoomRPG_esp32PaintMainMenuBrightnessDashboard(
     struct DoomRPG_s* doomRpg,
     uint32_t* framebufferFNV);
+
+/* Sound child: BACK/25/50/75/100, identical bounded panel as brightness. */
+int DoomRPG_esp32PaintMainMenuSoundDashboard(
+    struct DoomRPG_s* doomRpg, uint32_t* framebufferFNV);
 
 /* Orientation child shares the protected right rail, with 3 direct-tap
  * choices (Back, Normal, Inverse); source framebuffer stays unchanged. */

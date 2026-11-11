@@ -2066,3 +2066,35 @@ int EspAssetPack_readRange(const EspAssetPackEntry* entry,
     }
     return 1;
 }
+
+
+/* MIDI's per-track 64-byte windows must never consume the bounded resident
+ * range cache needed for gameplay sprite/texture lookups. This still uses the
+ * identical original-entry coordinates and strict raw-flash translation.
+ * Source-probe leases belong exclusively to map transitions, not music. */
+int EspAssetPack_readStreamRange(const EspAssetPackEntry* entry,
+                                 uint32_t relativeOffset,
+                                 void* destination,
+                                 size_t length) {
+    if (!openReady || entry == nullptr || destination == nullptr ||
+        sourceProbeReady || length > 256U ||
+        !validateEntry(*entry) || relativeOffset > entry->size ||
+        length > (size_t)(entry->size - relativeOffset))
+        return 0;
+    if (length == 0U) return 1;
+
+    const uint32_t absoluteOffset = entry->offset + relativeOffset;
+    if (physicalUsesMapFlash) {
+        uint32_t flashOffset = 0U;
+        if (!mapFlashTranslate(absoluteOffset, (uint32_t)length, &flashOffset) ||
+            !mapFlashRead(flashOffset, destination, length, true)) {
+            logMapFlashStrictMiss(entry, relativeOffset, length);
+            return 0;
+        }
+    } else if (!packFile.seek(absoluteOffset) ||
+               !readSdExact(destination, length)) {
+        return 0;
+    }
+    if (residentEnabled) ++residentStats.rangeCacheBypasses;
+    return 1;
+}

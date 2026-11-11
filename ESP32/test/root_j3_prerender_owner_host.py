@@ -55,6 +55,11 @@ reversals = {
          "int EspLegacyPrerenderStartup_start(int layoutReady);"),
     ],
     "ESP32/src/main.cpp": [
+        # AUDIO-A only adds two includes and two lifecycle/service calls.
+        ('#include "esp_native_audio_midi.h"\n'
+         '#include "esp_native_audio_volume.h"\n', ''),
+        ("    EspNativeAudioVolume_loadAtBoot(sdReady ? 1 : 0);\n", ""),
+        ("    EspNativeAudioMidi_service();\n", ""),
         ("EspLegacyPrerenderStartup_start(doomRpg, engineLayoutReady ? 1 : 0) != 0;",
          "EspLegacyPrerenderStartup_start(engineLayoutReady ? 1 : 0) != 0;"),
     ],
