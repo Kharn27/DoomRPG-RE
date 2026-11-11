@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Root-J5: exact Git inverse parity + extracted real layout C under two owners."""
 from pathlib import Path
+from sdl_f12_engine_stubs_libc_host import restore_pre_f12
 import hashlib
 import subprocess
 import tempfile
@@ -40,7 +41,8 @@ undo = {
     ],
 }
 for path, replacements in undo.items():
-    restored = files[path]
+    restored = (restore_pre_f12(files[path]) if path == "ESP32/src/engine_stubs.c"
+                else files[path])
     for newer, older in replacements:
         assert restored.count(newer) == 1, (path, newer)
         restored = restored.replace(newer, older, 1)

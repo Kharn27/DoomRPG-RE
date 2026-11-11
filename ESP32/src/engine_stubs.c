@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "DoomRPG.h"
 #include "esp_native_process_rng_owner.h"
@@ -51,7 +52,7 @@ static void EspNativeEngineRoot_releaseCanvas(DoomCanvas_t* doomCanvas, DoomRPG_
     Esp32StoryFit_release(doomCanvas, root);
     EspNativeIntroState_release(root);
     DoomRPG_freeImage(root, &doomCanvas->imgFont);
-    SDL_free(doomCanvas);
+    free(doomCanvas);
 }
 
 /* Process-root-owned Render destructor. The original native cleanup body and
@@ -70,14 +71,14 @@ static void EspNativeEngineRoot_releaseRender(Render_t* render, boolean freePtr)
            sharedFramebuffer, (int)freePtr);
 
     EspNativeRenderRuntime_releaseCompatibility(render);
-    SDL_free(render->columnScale);
-    SDL_free(render->mediaPalettes);
+    free(render->columnScale);
+    free(render->mediaPalettes);
 
-    SDL_free(render->framebuffer);
+    free(render->framebuffer);
     render->framebuffer = NULL;
 
     if (freePtr) {
-        SDL_free(render);
+        free(render);
     }
 }
 
@@ -111,7 +112,7 @@ void DoomRPG_FreeAppData(DoomRPG_t* doomrpg)
         EspNativeEngineRoot_releaseCanvas(EspNativeRootOwners_live()->doomCanvas, doomrpg);
     }
     EspNativeRootOwners_live()->doomCanvas = NULL;
-    SDL_memset(&nativeRootIdentity, 0, sizeof(nativeRootIdentity));
+    memset(&nativeRootIdentity, 0, sizeof(nativeRootIdentity));
     doomRpg = NULL;
 }
 
@@ -303,12 +304,12 @@ static DoomCanvas_t* EspNativeEngineRoot_initCanvas(DoomCanvas_t* doomCanvas)
     printf("DoomCanvas_init\n");
 
     if (doomCanvas == NULL) {
-        doomCanvas = SDL_malloc(sizeof(DoomCanvas_t));
+        doomCanvas = malloc(sizeof(DoomCanvas_t));
         if (doomCanvas == NULL) {
             return NULL;
         }
     }
-    SDL_memset(doomCanvas, 0, sizeof(DoomCanvas_t));
+    memset(doomCanvas, 0, sizeof(DoomCanvas_t));
 
     doomCanvas->imgFont.imgBitmap = NULL;
     doomCanvas->fontColor = 0xffffffff;
@@ -339,12 +340,12 @@ static Render_t* EspNativeEngineRoot_initRender(Render_t* render)
 
 	if (render == NULL)
 	{
-		render = SDL_malloc(sizeof(Render_t));
+		render = malloc(sizeof(Render_t));
 		if (render == NULL) {
 			return NULL;
 		}
 	}
-	SDL_memset(render, 0, sizeof(Render_t));
+	memset(render, 0, sizeof(Render_t));
 
 	//resourceAsStream.Init(&renderClass->mapFile, doomRPGClass, 1);
 	/* Render_t no longer points back to the process root. */
@@ -368,7 +369,7 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
     }
     coreInitAttempted = true;
 
-    SDL_memset(&coreInitReport, 0, sizeof(coreInitReport));
+    memset(&coreInitReport, 0, sizeof(coreInitReport));
     coreInitReport.failedStage = DOOMRPG_CORE_NO_FAILURE;
     coreInitReport.heapBefore = coreFreeHeap();
     coreInitReport.largestBlockBefore = coreLargestBlock();
@@ -378,8 +379,8 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
            (unsigned int)coreInitReport.largestBlockBefore);
 
     before = coreFreeHeap();
-    SDL_memset(&nativeRootIdentity, 0, sizeof(nativeRootIdentity));
-    SDL_memset(&nativeRootOwners, 0, sizeof(nativeRootOwners));
+    memset(&nativeRootIdentity, 0, sizeof(nativeRootIdentity));
+    memset(&nativeRootOwners, 0, sizeof(nativeRootOwners));
     doomRpg = &nativeRootIdentity;
     after = coreFreeHeap();
     recordCoreStage(DOOMRPG_CORE_ROOT, before, after);
@@ -560,8 +561,8 @@ static void EspNativeEngineLayout_setupRender(Render_t* render, SDL_Rect* window
 	printf("render->screenY %d\n", windowRect->y);
 #endif
 
-	SDL_free(render->columnScale);
-	render->columnScale = SDL_malloc(render->screenWidth * sizeof(int));
+	free(render->columnScale);
+	render->columnScale = malloc(render->screenWidth * sizeof(int));
 	if (render->columnScale == NULL) { memError = true; }
 
 	if (memError) {
@@ -607,7 +608,7 @@ int DoomRPG_startEngineLayout(DoomRPG_t* root, DoomRpgLayoutReport* report) {
     }
     layoutAttempted = true;
 
-    SDL_memset(&layoutReport, 0, sizeof(layoutReport));
+    memset(&layoutReport, 0, sizeof(layoutReport));
 
     if (!coreInitReport.ready || root == NULL || EspNativeRootOwners_live()->doomCanvas == NULL ||
         EspNativeRootOwners_live()->render == NULL) {

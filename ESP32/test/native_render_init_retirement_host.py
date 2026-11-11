@@ -19,14 +19,16 @@ assert re.search(r"#ifndef DOOMRPG_ESP32\s+Render_t\* Render_init\(", header)
 start = owner.index(anchor)
 end = owner.index("\nint DoomRPG_initEngineCore(", start)
 body = owner[start:end]
-assert "SDL_memset(render, 0, sizeof(Render_t));" in body
+assert "memset(render, 0, sizeof(Render_t));" in body
 assert "ioBufferPos" not in body
 assert "mapCameraSpawnIndex" not in body
 normalized = (body.replace("static Render_t* " + name + "(Render_t* render)",
                            "static Render_t* " + name + "(Render_t* render, DoomRPG_t* doomRpg)")
               .replace("/* Render_t no longer points back to the process root. */",
                        "render->doomRpg = doomRpg;")
-              .replace("static Render_t* " + name + "(", "Render_t* Render_init("))
+              .replace("static Render_t* " + name + "(", "Render_t* Render_init(")
+              .replace("render = malloc(", "render = SDL_malloc(")
+              .replace("memset(render,", "SDL_memset(render,"))
 h = 2166136261
 for byte in normalized.rstrip().encode("utf-8"):
     h = ((h ^ byte) * 16777619) & 0xffffffff
@@ -51,8 +53,8 @@ typedef struct Render_s {
 static int fail_alloc,allocs,zeros;
 void* tracked_malloc(size_t n) { ++allocs; return fail_alloc ? NULL : malloc(n); }
 void* tracked_memset(void* p,int b,size_t n) { ++zeros; return memset(p,b,n); }
-#define SDL_malloc tracked_malloc
-#define SDL_memset tracked_memset
+#define malloc tracked_malloc
+#define memset tracked_memset
 """
 harness = r"""
 int main(void) {

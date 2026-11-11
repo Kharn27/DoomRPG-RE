@@ -59,7 +59,7 @@ with tempfile.TemporaryDirectory(prefix="canvas-plane-abi-") as tmp:
 begin = NATIVE.index("static DoomCanvas_t* EspNativeEngineRoot_initCanvas(")
 end = NATIVE.index("/* Native Render constructor owned by the process root;", begin)
 actual = NATIVE[begin:end]
-assert "SDL_memset(doomCanvas, 0, sizeof(DoomCanvas_t));" in actual
+assert "memset(doomCanvas, 0, sizeof(DoomCanvas_t));" in actual
 assert "doomCanvas->fontColor = 0xffffffff;" in actual
 stub = r"""
 #include <assert.h>
@@ -78,8 +78,8 @@ typedef struct DoomCanvas_s {
 static int fail_alloc, mallocs, zeros;
 static void* tracked_malloc(size_t n) { ++mallocs; return fail_alloc ? NULL : malloc(n); }
 static void* tracked_memset(void* p, int v, size_t n) { ++zeros; return memset(p,v,n); }
-#define SDL_malloc tracked_malloc
-#define SDL_memset tracked_memset
+#define malloc tracked_malloc
+#define memset tracked_memset
 #define DOOMRPG_CANVAS_WIDTH 160
 #define DOOMRPG_CANVAS_HEIGHT 120
 #define printf(...) ((void)0)

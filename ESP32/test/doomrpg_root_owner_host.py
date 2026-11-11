@@ -44,7 +44,7 @@ assert teardown.count("EspNativeEngineRoot_releaseRender(")==1
 assert teardown.count("EspNativeEngineRoot_releaseCanvas(")==1
 assert all(x in teardown for x in (
     "EspNativeMenuStorage_free(", "EspNativeEngineRoot_releaseRender(",
-    "EspNativeEngineRoot_releaseCanvas(", "SDL_memset(&nativeRootIdentity"))
+    "EspNativeEngineRoot_releaseCanvas(", "memset(&nativeRootIdentity"))
 assert all(not __import__("re").search(r"doomrpg->" + field + r"\b", teardown)
            for field in ("combat", "particleSystem", "entityDef",
                          "sound", "hud", "menu"))
