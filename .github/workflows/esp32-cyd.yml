@@ -333,6 +333,9 @@ jobs:
       - name: Test Root-I Canvas backref retirement with explicit lifecycle root (host)
         run: python ESP32/test/root_i_canvas_backref_host.py
 
+      - name: Test Root-J MENU_MAIN touch gate with captured process owner (host C + parity)
+        run: python ESP32/test/root_j_menu_touch_captured_owner_host.py
+
       - name: Test retirement of Canvas desktop plane texture gate (host C + ABI)
         run: python ESP32/test/native_canvas_plane_gate_retirement_host.py
 

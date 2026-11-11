@@ -406,8 +406,6 @@ static int gateSelectedItem = 0;
 static int lastTappedItem = -1;
 static uint32_t gateTapCount = 0;
 
-extern DoomRPG_t* doomRpg;
-
 void __real_PlatformInput_setTapCallback(PlatformTapCallback callback);
 
 static int gateHitItem(int16_t screenX, int16_t screenY) {
@@ -441,9 +439,11 @@ static void disableMainMenuTouchForTransition(void) {
 
 static void executeConfirmedAction(int item) {
     DoomRpgEsp32MainMenuDispatchResult result;
+    /* MENU_MAIN already owns a validated process token from TouchPrepare. */
+    DoomRPG_t* const doomRpg = touchActive ? touchDoomRpg : NULL;
 
     if (doomRpg == NULL) {
-        printf("[MAINACTION] FAILED global DoomRPG unavailable item=%d\n", item);
+        printf("[MAINACTION] FAILED captured DoomRPG unavailable item=%d\n", item);
         return;
     }
 
@@ -490,8 +490,8 @@ static void gatedTap(int16_t screenX,
     if (EspNativeGameplaySave_mainSelectorActive()) {
         const int result = EspNativeGameplaySave_mainSelectorTap(screenX / 2, screenY / 2);
         if (result == 1) executeConfirmedAction(DOOMRPG_ESP32_MAIN_MENU_ACTION_LOAD);
-        else if (result == -1 && doomRpg != NULL)
-            (void)DoomRPG_esp32MainMenuRecover(doomRpg, "slot-selector-back");
+        else if (result == -1 && touchActive && touchDoomRpg != NULL)
+            (void)DoomRPG_esp32MainMenuRecover(touchDoomRpg, "slot-selector-back");
         return;
     }
     hit = gateHitItem(screenX, screenY);
@@ -558,10 +558,10 @@ void __wrap_PlatformInput_setTapCallback(PlatformTapCallback callback) {
          * here at the exact point where our native MENU_MAIN becomes interactive.
          * This also covers the full bring-up path; Options -> Back already arrives
          * here in ST_MENU and therefore remains a no-op. */
-        if (doomRpg != NULL && EspNativeRootOwners_live()->doomCanvas != NULL &&
+        if (touchActive && touchDoomRpg != NULL && EspNativeRootOwners_live()->doomCanvas != NULL &&
             EspNativeRootOwners_live()->doomCanvas->state != ST_MENU) {
             const int priorState = EspNativeRootOwners_live()->doomCanvas->state;
-            EspNativeMainMenu_transitionCanvasState(EspNativeRootOwners_live()->doomCanvas, doomRpg, ST_MENU);
+            EspNativeMainMenu_transitionCanvasState(EspNativeRootOwners_live()->doomCanvas, touchDoomRpg, ST_MENU);
             printf("[MENUTOUCH] STATE SYNC canvas=%d->%d source=native-MENU_MAIN activation\n",
                    priorState,
                    EspNativeRootOwners_live()->doomCanvas->state);
