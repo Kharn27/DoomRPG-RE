@@ -17,7 +17,9 @@ ini = (ROOT / "ESP32/platformio.ini").read_text()
 diff = (ROOT / "ESP32/test/doomrpg_presentation_host.py").read_text()
 
 for path, text in (("presentation", present), ("image owner", images)):
-    assert "#include <SDL.h>" not in text, path
+    # DoomRPG.h still uses Uint8/SDL_RWops/SDL_Texture declarations from SDL.h.
+    # This is type-only and must not be confused with the retired runtime shim.
+    assert "#include <SDL.h>" in text, path
     assert '#include "SDL_Video.h"' not in text, path
     stripped = re.sub(r"/\*[\s\S]*?\*/|//[^\n]*", "", text)
     assert not re.search(r"\bSDL_\w*", stripped), path
@@ -40,5 +42,5 @@ assert "typedef struct EspNativeTexture_s {" in texture
 assert 'expected.replace("SDL_Rect clip;", "EspNativeRect clip;")' in diff
 assert 'expected.replace("SDL_Rect rect;", "EspNativeRect rect;")' in diff
 assert "-<esp32_sdl.cpp>" in ini
-print("SDL-F4 PASS both native owners use EspNativeRect/EspNativeTexture;"
-      " no active SDL calls/direct SDL headers, pixel oracle still pinned")
+print("SDL-F4 PASS native locals use EspNativeRect/EspNativeTexture;"
+      " active SDL calls absent, legacy SDL.h type ABI explicit, pixel oracle pinned")

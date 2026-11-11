@@ -1,3 +1,4 @@
+#include <SDL.h> /* transitional DoomRPG.h type ABI; not a runtime SDL call */
 #include "esp_native_texture.h"
 #include "DoomRPG.h"
 #include "esp_native_root_state.h"
