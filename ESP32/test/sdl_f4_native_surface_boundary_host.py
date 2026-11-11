@@ -16,10 +16,11 @@ legacy = (ROOT / "ESP32/include/SDL.h").read_text()
 ini = (ROOT / "ESP32/platformio.ini").read_text()
 diff = (ROOT / "ESP32/test/doomrpg_presentation_host.py").read_text()
 
-# SDL-F7 removes the native presentation include but intentionally retains
-# SDL-C1 image resource source unchanged for its byte-exact host oracle.
+# SDL-F7 removed the presentation include. SDL-F10 also removes the
+# image adapter's unused include; its full pre-F10 source is FNV-locked
+# by the inverse-header oracle, while SDL-C1 keeps the real function bodies.
 assert "#include <SDL.h>" not in present
-assert "#include <SDL.h>" in images
+assert "#include <SDL.h>" not in images
 for path, text in (("presentation", present), ("image owner", images)):
     assert '#include "SDL_Video.h"' not in text, path
     stripped = re.sub(r"/\*[\s\S]*?\*/|//[^\n]*", "", text)
