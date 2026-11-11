@@ -41,6 +41,9 @@ h = 2166136261
 assert body.count("EspNativeTexture_blit(img->imgBitmap, &clip, &renderQuad);") == 1
 body = body.replace("EspNativeTexture_blit(img->imgBitmap, &clip, &renderQuad);",
                     "SDL_RenderCopy(sdlVideo.renderer, img->imgBitmap, &clip, &renderQuad);")
+# F7 reverses only native geometry-alias spelling before frozen body FNV.
+body = body.replace("EspNativeRect renderQuad;", "SDL_Rect renderQuad;")
+body = body.replace("EspNativeRect clip;", "SDL_Rect clip;")
 for byte in body.encode("utf-8"):
     h = ((h ^ byte) * 16777619) & 0xFFFFFFFF
 assert h == 0x4C4A9A93, "private blitter draw/clipping logic changed"
