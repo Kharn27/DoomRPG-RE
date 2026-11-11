@@ -15,7 +15,7 @@ static unsigned imageLive, imageCreated, imageFreed, introReleases;
 static int failImage;
 static DoomRPG_t* lastFreedOwner;
 
-Uint32 SDL_GetTicks(void) { return 0U; }
+uint32_t EspNativeProcessClock_ticks(void) { return 0U; }
 void EspNativeIntroState_release(struct DoomRPG_s* owner) {
     assert(owner != NULL);
     ++introReleases;
@@ -24,7 +24,7 @@ void DoomRPG_createImage(DoomRPG_t* owner, const char* name,
                         boolean transparent, Image_t* image) {
     assert(owner != NULL && strcmp(name, "p.bmp") == 0 && transparent);
     if (failImage) { image->imgBitmap = NULL; return; }
-    image->imgBitmap = calloc(1, 1); /* Opaque mock texture, never dereferenced. */
+    image->imgBitmap = calloc(1, sizeof(*image->imgBitmap)); /* Opaque mock, full native type size. */
     assert(image->imgBitmap != NULL);
     image->width = image->height = 16;
     ++imageCreated;
