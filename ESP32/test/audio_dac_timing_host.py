@@ -20,7 +20,9 @@ assert frames * lanes * 2 == 640  # 16-bit I2S stereo per 10ms
 assert 'uint16_t pcm[kBufferSamples * kDacSlotsPerFrame]' in midi
 assert 'pcm[2U * i] = dac;' in midi
 assert 'pcm[2U * i + 1U] = dac;' in midi
-assert 'const uint16_t dac = static_cast<uint16_t>(mixed + 128) << 8;' in midi
+assert 'const uint16_t dac = EspNativeAudioPcm_toDacWord(finalQ8);' in midi
+assert 'i2s_set_dac_mode(I2S_DAC_CHANNEL_DISABLE) != ESP_OK' in midi
+assert 'dacGate=%s' in midi
 assert 'cfg.channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT;' in midi
 assert 'i2s_set_dac_mode(I2S_DAC_CHANNEL_LEFT_EN)' in midi
 assert 'i2s_set_pin(I2S_NUM_0, nullptr) != ESP_OK' not in midi
