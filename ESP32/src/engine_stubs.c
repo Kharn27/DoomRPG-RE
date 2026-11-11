@@ -153,24 +153,6 @@ SDLVideo_t sdlVideo = {
 };
 
 FluidSynth_t fluidSynth = {NULL, NULL, NULL};
-SDLController_t sdlController = {NULL, NULL, NULL, 0, 0};
-
-SDLVidModes_t sdlVideoModes[14] = {
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
-};
 
 void SDL_InitVideo(void) {}
 void SDL_Close(void) {}
@@ -178,18 +160,6 @@ SDLVideo_t* SDL_GetVideo(void) { return &sdlVideo; }
 
 void SDL_InitAudio(void) {}
 void SDL_CloseAudio(void) {}
-int SDL_GameControllerGetButtonID(void) { return -1; }
-char* SDL_GameControllerGetNameButton(int id) {
-    static char name[] = "Controller";
-    (void)id;
-    return name;
-}
-char* SDL_MouseGetNameButton(int id) {
-    static char name[] = "Touch";
-    (void)id;
-    return name;
-}
-int SDL_JoystickGetButtonID(void) { return -1; }
 
 void Sound_stopSounds(Sound_t* sound) { (void)sound; }
 void Sound_freeSound(Sound_t* sound, int chan) { (void)sound; (void)chan; }

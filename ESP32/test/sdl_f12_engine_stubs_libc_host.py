@@ -7,6 +7,7 @@ No SDL video ABI, SDL.h typedef, allocation expression, order, error path,
 rollback route, PAK owner or shared framebuffer lifetime may change in F12.
 """
 from pathlib import Path
+from sdl_f13_dead_input_mode_host import restore_pre_f13
 import hashlib
 import re
 
@@ -44,6 +45,7 @@ UNDO = (
 
 def restore_pre_f12(current: str) -> str:
     """For historical fingerprint tests only; firmware compiles `current`."""
+    current = restore_pre_f13(current)  # restore separate SDL-F13 inert frontend owner
     old_includes = "#include <stdlib.h>\n"
     new_includes = old_includes + "#include <string.h>\n"
     assert current.count(new_includes) == 1
