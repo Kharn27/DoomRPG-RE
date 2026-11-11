@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <string.h>
 #include "esp_err.h"
+#include "esp_rom_sys.h"
 #include "esp_heap_caps.h"
 #include "esp_bt.h"
 #include "esp_bt_main.h"
@@ -60,6 +61,15 @@ extern "C" void initVariant(void) {
     bt0Boot.heap8After = heap_caps_get_free_size(MALLOC_CAP_8BIT);
     bt0Boot.largest8After = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
     bt0Boot.called = true;
+    /* ROM UART is available before Serial.begin(). Without this witness, a
+     * low-RAM crash during gameplay boot would hide the only BT reservation
+     * measurements made before Doom RPG allocates its framebuffer/maps. */
+    esp_rom_printf("[BT0] BOOT_EARLY ctrl=%d BLE=%ld heap8=%lu->%lu largest8=%lu->%lu\n",
+                   bt0Boot.controllerStatus, (long)bt0Boot.bleRelease,
+                   (unsigned long)bt0Boot.heap8Before,
+                   (unsigned long)bt0Boot.heap8After,
+                   (unsigned long)bt0Boot.largest8Before,
+                   (unsigned long)bt0Boot.largest8After);
 }
 
 namespace {
