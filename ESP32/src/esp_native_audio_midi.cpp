@@ -12,6 +12,7 @@
 #include "esp_asset_pack.h"
 #include "esp_native_audio_intent.h"
 #include "esp_native_audio_midi.h"
+#include "esp_native_audio_pcm_math.h"
 #include "esp_native_midi_stream.h"
 
 /* AUDIO-A: authentic PAK MIDI notes, intentionally tiny synthesized timbres.
@@ -103,6 +104,10 @@ static uint32_t sampleClock;
 static uint32_t lateEvents;
 static uint32_t audioWrites;
 static uint32_t audioErrors;
+static uint32_t pcmLimitedSamples;
+static uint32_t pcmClippedSamples;
+static uint32_t pcmQuietSamples;
+static uint32_t pcmPeak8;
 /* I2S's i2s_get_clk() reports the requested rate; the DAC clock can
  * physically run much faster if the 160 MHz clock divider saturates.
  * Measure DMA backpressure on the real CYD before playing any notes. */
@@ -235,8 +240,15 @@ static void verifyDacClock(uint16_t pcm[kBufferSamples * kDacSlotsPerFrame]) {
         ? static_cast<uint32_t>(
             (static_cast<uint64_t>(measured) * kBufferSamples *
              1000000ULL) / us) : 0U;
-    const uint32_t accepted = ok && measured == kClockMeasuredWrites &&
+    uint32_t accepted = ok && measured == kClockMeasuredWrites &&
         hz >= kClockMinAcceptHz && hz <= kClockMaxAcceptHz ? 1U : 2U;
+    /* A continuous 8-bit DAC output during the silent clock probe can
+     * whistle through the SC8002B amplifier. Keep BOTH DAC pins disabled
+     * while DMA settles; enable only the GPIO26/left DAC once its FIFO
+     * contains midscale silence and the measured clock passed. */
+    if (accepted == 1U &&
+        i2s_set_dac_mode(I2S_DAC_CHANNEL_LEFT_EN) != ESP_OK)
+        accepted = 2U;
     __atomic_store_n(&clockProbeUs, us, __ATOMIC_RELEASE);
     __atomic_store_n(&clockProbeHz, hz, __ATOMIC_RELEASE);
     __atomic_store_n(&clockProbeState, accepted, __ATOMIC_RELEASE);
@@ -286,8 +298,11 @@ static void taskBody(void*) {
         }
         const uint32_t master = __atomic_load_n(
             &masterPercent, __ATOMIC_ACQUIRE);
+        uint32_t blockLimited = 0U, blockClipped = 0U;
+        uint32_t blockQuiet = 0U, blockPeak = 0U;
         for (unsigned i = 0; i < kBufferSamples; ++i) {
-            int32_t mixed = 0;
+            int32_t mixedQ8 = 0;
+            bool voiceSound = false;
             const bool playing = __atomic_load_n(
                 &enabled, __ATOMIC_ACQUIRE) != 0U;
             if (playing) {
@@ -315,6 +330,7 @@ static void taskBody(void*) {
                 for (unsigned vIndex = 0; vIndex < kVoices; ++vIndex) {
                     Voice& v = voices[vIndex];
                     if (!v.active) continue;
+                    voiceSound = true;
                     v.phase += v.step;
                     int32_t wave;
                     if (v.drum) {
@@ -327,10 +343,12 @@ static void taskBody(void*) {
                         wave = sinus[phase];
                         /* Tiny FM-like harmonic variation from real Program
                          * Change events; no large sampled instrument bank. */
-                        if (v.patch < 48U)
+                        /* Harmonics above ~7kHz fold into harsh alias tones
+                         * at 16kHz. Use the fundamental for upper notes. */
+                        if (v.patch < 48U && v.note <= 105U)
                             wave = (wave * 3 +
                                 sinus[static_cast<uint8_t>(phase * 2U)]) / 4;
-                        else if (v.patch >= 80U)
+                        else if (v.patch >= 80U && v.note <= 97U)
                             wave = (wave * 2 +
                                 sinus[static_cast<uint8_t>(phase * 3U)]) / 3;
                     }
@@ -348,20 +366,34 @@ static void taskBody(void*) {
                             v.active = 0U;
                         }
                     }
-                    mixed += (wave * v.gain * envelope) / (1024 * 128);
+                    mixedQ8 += EspNativeAudioPcm_voiceQ8(
+                        wave, v.gain, envelope);
                 }
                 ++sample;
             }
-            /* Scale AFTER synthesis, BEFORE clipping: four true levels.
-             * No change to note events, timing, DMA buffers or MIDI velocity. */
-            mixed = (mixed * static_cast<int32_t>(master)) / 100;
-            if (mixed < -127) mixed = -127;
-            if (mixed > 127) mixed = 127;
-            const uint16_t dac = static_cast<uint16_t>(mixed + 128) << 8;
+            /* Preserve 8 fractional bits THROUGH volume control and the
+             * soft limiter; round only at the final 8-bit DAC boundary. */
+            uint8_t limited = 0U, clipped = 0U;
+            const int32_t finalQ8 = EspNativeAudioPcm_scaleLimitQ8(
+                mixedQ8, master, &limited, &clipped);
+            const uint16_t dac = EspNativeAudioPcm_toDacWord(finalQ8);
+            blockLimited += limited;
+            blockClipped += clipped;
+            if (!playing || !voiceSound) ++blockQuiet;
+            const int32_t actual = (int32_t)(dac >> 8) - 128;
+            const uint32_t amplitude = actual < 0 ? (uint32_t)-actual : (uint32_t)actual;
+            if (amplitude > blockPeak) blockPeak = amplitude;
             pcm[2U * i] = dac;
-            pcm[2U * i + 1U] = dac; // both slots identical; GPIO25 DAC remains OFF
+            pcm[2U * i + 1U] = dac; // identical slots; GPIO25 DAC remains OFF
         }
         __atomic_store_n(&sampleClock, sample, __ATOMIC_RELEASE);
+        __atomic_fetch_add(&pcmLimitedSamples, blockLimited, __ATOMIC_RELAXED);
+        __atomic_fetch_add(&pcmClippedSamples, blockClipped, __ATOMIC_RELAXED);
+        __atomic_fetch_add(&pcmQuietSamples, blockQuiet, __ATOMIC_RELAXED);
+        uint32_t previousPeak = __atomic_load_n(&pcmPeak8, __ATOMIC_RELAXED);
+        while (blockPeak > previousPeak &&
+               !__atomic_compare_exchange_n(&pcmPeak8, &previousPeak,
+                    blockPeak, false, __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {}
         size_t written = 0U;
         const esp_err_t result = i2s_write(
             I2S_NUM_0, pcm, sizeof(pcm), &written, portMAX_DELAY);
@@ -404,7 +436,7 @@ static int initOutput() {
      * including GPIO25, which is the classic CYD's XPT2046 touch clock.
      * Configure ONLY the GPIO26/left DAC via the explicit IDF API. */
     if (i2s_driver_install(I2S_NUM_0, &cfg, 0, nullptr) != ESP_OK ||
-        i2s_set_dac_mode(I2S_DAC_CHANNEL_LEFT_EN) != ESP_OK) {
+        i2s_set_dac_mode(I2S_DAC_CHANNEL_DISABLE) != ESP_OK) {
         printf("[AUDIO] FAIL reason=i2s-dac-init gpio=26 gameplay=unaffected\n");
         i2s_driver_uninstall(I2S_NUM_0);
         return 0;
@@ -422,7 +454,8 @@ static int initOutput() {
     driverReady = 1U;
     printf("[AUDIO] READY output=GPIO26/P4 dac=I2S0-left "
            "sampleRate=16000 driverRequestedHz=%u source=APLL "
-           "realClock=DMA-probe-pending transport=stereo-2x16bit "
+           "realClock=DMA-probe-pending dacGate=muted-until-clock-pass "
+           "transport=stereo-2x16bit "
            "framesPerWrite=%u bytesPerWrite=%u voices=12 queue=96 dma=4x160 "
            "task=core0 synth=bounded-FM-like backend=native\n",
            (unsigned)(i2s_get_clk(I2S_NUM_0) + 0.5f),
@@ -623,10 +656,11 @@ extern "C" void EspNativeAudioMidi_service(void) {
         printf("[AUDIOCLK] VERIFY source=APLL targetHz=16000 "
                "measuredHz=%u elapsedUs=%u frames=%u "
                "result=%s threshold=14000..18000 "
-               "nominalI2sGetClk=not-authoritative\n",
+               "dacGate=%s nominalI2sGetClk=not-authoritative\n",
                (unsigned)measured, (unsigned)us,
                (unsigned)kClockMeasuredWrites * kBufferSamples,
-               state == 1U ? "PASS" : "FAIL-CLOSED");
+               state == 1U ? "PASS" : "FAIL-CLOSED",
+               state == 1U ? "gpio26-only-enabled" : "both-disabled");
         if (state != 1U && music.active)
             stopMusic("dac-clock-probe-invalid");
         else if (state == 1U && music.active) {
@@ -648,7 +682,8 @@ extern "C" void EspNativeAudioMidi_service(void) {
         printf("[AUDIO] PULSE resource=%u timeMs=%u wallMs=%u "
                "speedPct=%u fifo=%u late=%u dmaWrites=%u dmaErrors=%u "
                "pakLease=loop-only src=PAK notesQueued=%u drumsQueued=%u "
-               "programsQueued=%u eventsQueued=%u\n",
+               "programsQueued=%u eventsQueued=%u "
+           "pcmPeak8=%u pcmLimited=%u pcmClipped=%u pcmQuiet=%u\n",
                (unsigned)music.resourceId,
                (unsigned)audioMs, (unsigned)wallMs, (unsigned)ratioPct,
                (unsigned)uxQueueMessagesWaiting(eventQueue),
@@ -656,7 +691,11 @@ extern "C" void EspNativeAudioMidi_service(void) {
                (unsigned)__atomic_load_n(&audioWrites, __ATOMIC_RELAXED),
                (unsigned)__atomic_load_n(&audioErrors, __ATOMIC_RELAXED),
                (unsigned)music.queuedNotes, (unsigned)music.queuedDrums,
-               (unsigned)music.queuedPrograms, (unsigned)music.queuedEvents);
+               (unsigned)music.queuedPrograms, (unsigned)music.queuedEvents,
+           (unsigned)__atomic_load_n(&pcmPeak8, __ATOMIC_RELAXED),
+           (unsigned)__atomic_load_n(&pcmLimitedSamples, __ATOMIC_RELAXED),
+           (unsigned)__atomic_load_n(&pcmClippedSamples, __ATOMIC_RELAXED),
+           (unsigned)__atomic_load_n(&pcmQuietSamples, __ATOMIC_RELAXED));
     }
 }
 
