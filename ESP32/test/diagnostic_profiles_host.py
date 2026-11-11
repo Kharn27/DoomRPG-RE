@@ -23,8 +23,15 @@ def run(args):
 def main():
     config = configparser.ConfigParser(interpolation=None, inline_comment_prefixes=(";",))
     config.read(ROOT / "ESP32/platformio.ini")
-    assert {s for s in config if s.startswith("env:")} == {
-        "env:esp32-cyd", "env:esp32-cyd-trace", "env:esp32-cyd-bringup"}
+    # BT-1 adds one isolated experimental environment without changing the
+    # three production/diagnostic profiles or their sprite-trace contracts.
+    expected = {"env:esp32-cyd", "env:esp32-cyd-trace", "env:esp32-cyd-bringup"}
+    if "env:esp32-cyd-bt-test" in config:
+        expected.add("env:esp32-cyd-bt-test")
+        assert config["env:esp32-cyd-bt-test"]["extends"] == "env:esp32-cyd"
+        assert "-<main.cpp>" in config["env:esp32-cyd-bt-test"]["build_src_filter"]
+        assert "DOOMRPG_ESP32_BT_TEST_PROFILE=1" in config["env:esp32-cyd-bt-test"]["build_flags"]
+    assert {section for section in config if section.startswith("env:")} == expected
     assert config["platformio"]["default_envs"] == "esp32-cyd"
     base = config["env:esp32-cyd"]
     assert base["build_type"] == "release"
