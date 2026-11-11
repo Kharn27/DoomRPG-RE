@@ -1,0 +1,11 @@
+# BT-0 experimental ONLY: 4 MiB classic CYD; do not merge as production
+# without proving staged PAK sizes for ALL game maps, not merely Entrance.
+# Factory app 0x1A0000 (1,703,936 B) for Bluetooth Classic/BlueDroid/SBC.
+# Raw map PAK 0x240000 (2,359,296 B), down from 0x2A0000; unchanged
+# coredump and NVS. No overlap. Raw flash is never mounted as SPIFFS.
+# Name,    Type, SubType, Offset,   Size,      Flags
+nvs,       data, nvs,     0x9000,   0x5000,
+otadata,   data, ota,     0xe000,   0x2000,
+app0,      app,  factory, 0x10000,  0x1A0000,
+spiffs,    data, spiffs,  0x1B0000, 0x240000,
+coredump,  data, coredump,0x3F0000, 0x10000,
