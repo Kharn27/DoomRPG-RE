@@ -282,7 +282,7 @@ namespace
     void initializeRenderStartup()
     {
         enginePreRenderReady =
-            EspLegacyPrerenderStartup_start(engineLayoutReady ? 1 : 0) != 0;
+            EspLegacyPrerenderStartup_start(doomRpg, engineLayoutReady ? 1 : 0) != 0;
         engineRenderStartupReady =
             EspRenderStartupBridge_start(doomRpg, enginePreRenderReady ? 1 : 0) != 0;
 

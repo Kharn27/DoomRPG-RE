@@ -345,6 +345,9 @@ jobs:
       - name: Test Root-J2 Render startup with explicit process token (host C + parity)
         run: python ESP32/test/root_j2_render_startup_token_host.py
 
+      - name: Test Root-J3 pre-render startup with explicit process token (host C + parity)
+        run: python ESP32/test/root_j3_prerender_owner_host.py
+
       - name: Test retirement of Canvas desktop plane texture gate (host C + ABI)
         run: python ESP32/test/native_canvas_plane_gate_retirement_host.py
 
