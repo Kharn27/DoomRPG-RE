@@ -26,7 +26,23 @@ assert 'i2s_set_dac_mode(I2S_DAC_CHANNEL_LEFT_EN)' in midi
 assert 'i2s_set_pin(I2S_NUM_0, nullptr) != ESP_OK' not in midi
 assert 'i2s_set_dac_mode(I2S_DAC_CHANNEL_BOTH_EN)' not in midi
 assert 'i2s_write(' in midi and 'pcm, sizeof(pcm), &written, portMAX_DELAY' in midi
-assert 'actualClkHz=%u' in midi
+assert 'driverRequestedHz=%u' in midi
+# Source-level drift guards for the classic DAC overclock found on hardware.
+# The 160MHz D2CLK / 6-bit MCLK divider cannot produce 512kHz MCLK.
+assert 'cfg.use_apll = true;' in midi
+assert 'cfg.use_apll = false;' not in midi
+assert 'verifyDacClock(pcm);' in midi
+assert 'esp_timer_get_time()' in midi
+assert 'kClockMeasuredWrites = 80U' in midi
+assert 'kClockMinAcceptHz = 14000U' in midi
+assert 'kClockMaxAcceptHz = 18000U' in midi
+assert 'nominalI2sGetClk=not-authoritative' in midi
+assert 'result=%s threshold=14000..18000' in midi
+assert 'stopMusic("dac-clock-probe-invalid")' in midi
+assert 'vTaskDelay(pdMS_TO_TICKS(100))' in midi
+# Clock validation is performed on core 0, not from the game input loop.
+assert midi.index('verifyDacClock(pcm);') < midi.index(
+    'const uint32_t master = __atomic_load_n(')
 assert 'speedPct=%u' in midi and 'wallMs=%u' in midi
 start = midi[midi.index('static int startMusic('):midi.index('} // namespace')]
 assert start.index('refillMusic(kEventQueueCapacity)') < start.index(
