@@ -40,7 +40,8 @@ with open(native_layout_source, "r", encoding="utf-8") as owner_file:
 if ("static DoomCanvas_t* EspNativeEngineRoot_initCanvas(DoomCanvas_t* doomCanvas)" not in native_layout_owner or
         "EspNativeEngineRoot_initCanvas(NULL));" not in native_layout_owner or
         "static void EspNativeEngineRoot_releaseCanvas(DoomCanvas_t* doomCanvas, DoomRPG_t* root)" not in native_layout_owner or
-        "EspNativeEngineRoot_releaseCanvas(EspNativeRootOwners_live()->doomCanvas, doomRpg);" not in native_layout_owner or
+        "EspNativeEngineRoot_releaseCanvas(EspNativeRootOwners_live()->doomCanvas, doomrpg);" not in native_layout_owner or
+        "if (doomrpg == NULL || doomrpg != doomRpg)" not in native_layout_owner or
         "doomCanvas->doomRpg" in native_layout_owner or
         "DoomCanvas_free(" in native_layout_owner or
         "DoomCanvas_init(" in native_canvas_text):

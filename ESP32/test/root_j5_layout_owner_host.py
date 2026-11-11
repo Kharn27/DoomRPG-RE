@@ -19,6 +19,11 @@ assert "struct DoomRPG_s;\nint DoomRPG_startEngineLayout(struct DoomRPG_s* root,
 assert main.count("DoomRPG_startEngineLayout(doomRpg, &layoutReport) != 0;") == 1
 undo = {
     "ESP32/src/engine_stubs.c": [
+        # Root-J6 fatal process teardown is a separate isolated change: undo first.
+        ("    /* Only the live process identity may release process-owned shells. */\n    if (doomrpg == NULL || doomrpg != doomRpg)\n        return;",
+         "    if (doomRpg == NULL)\n        return;"),
+        ("EspNativeEngineRoot_releaseCanvas(EspNativeRootOwners_live()->doomCanvas, doomrpg);",
+         "EspNativeEngineRoot_releaseCanvas(EspNativeRootOwners_live()->doomCanvas, doomRpg);"),
         (sig, "int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report) {"),
         ("if (!coreInitReport.ready || root == NULL || EspNativeRootOwners_live()->doomCanvas == NULL ||",
          "if (!coreInitReport.ready || doomRpg == NULL || EspNativeRootOwners_live()->doomCanvas == NULL ||"),

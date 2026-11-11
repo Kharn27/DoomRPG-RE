@@ -24,7 +24,8 @@ assert "doomCanvas->doomRpg" not in CORE
 assert "EspNativeEngineRoot_initCanvas(DoomCanvas_t* doomCanvas)" in CORE
 assert "EspNativeEngineRoot_initCanvas(NULL)" in CORE
 assert "EspNativeEngineRoot_releaseCanvas(DoomCanvas_t* doomCanvas, DoomRPG_t* root)" in CORE
-assert "EspNativeEngineRoot_releaseCanvas(EspNativeRootOwners_live()->doomCanvas, doomRpg)" in CORE
+assert "EspNativeEngineRoot_releaseCanvas(EspNativeRootOwners_live()->doomCanvas, doomrpg)" in CORE
+assert "if (doomrpg == NULL || doomrpg != doomRpg)" in CORE  # J6 fail-closed root identity
 assert "EspNativeIntroState_release(root);" in CORE
 assert "DoomRPG_freeImage(root, &doomCanvas->imgFont);" in CORE
 assert "EspNativeEngineLayout_startupCanvas(DoomCanvas_t* doomCanvas, DoomRPG_t* root)" in CORE
