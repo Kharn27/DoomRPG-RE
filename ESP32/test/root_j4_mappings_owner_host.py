@@ -55,8 +55,24 @@ reversals = {
          "EspLegacyConfigMappingsStartup_start(engineRenderStartupReady ? 1 : 0) != 0;"),
     ],
 }
+def restore_sdl_f11_mappings(text: str) -> str:
+    """Normalize only F11 aliases/includes, not Root-J4 startup semantics."""
+    assert text.startswith("#include <stdlib.h>\n")
+    text = "#include <SDL.h>\n" + text[len("#include <stdlib.h>\n"):]
+    anchor = '#include "esp_legacy_asset_source.h"\n'
+    assert text.count(anchor) == 1
+    text = text.replace(anchor, '#include "SDL_Video.h"\n' + anchor, 1)
+    assert text.count("free(render->media") == 4
+    text = text.replace("free(render->media", "SDL_free(render->media")
+    assert text.count("malloc(plan.") == 4
+    text = text.replace("malloc(plan.", "SDL_malloc(plan.")
+    return text
+
+
 for path, changes in reversals.items():
     restored = files[path]
+    if path == "ESP32/src/esp_legacy_config_mappings_startup.c":
+        restored = restore_sdl_f11_mappings(restored)
     for new, old in changes:
         assert restored.count(new) == 1, (path, new)
         restored = restored.replace(new, old, 1)

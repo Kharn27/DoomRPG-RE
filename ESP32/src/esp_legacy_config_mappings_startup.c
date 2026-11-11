@@ -1,4 +1,4 @@
-#include <SDL.h>
+#include <stdlib.h>
 #include "esp_native_root_state.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -7,7 +7,6 @@
 #include "DoomRPG.h"
 #include "Game.h"
 #include "Render.h"
-#include "SDL_Video.h"
 #include "esp_legacy_asset_source.h"
 
 #include "esp_legacy_config_mappings_startup.h"
@@ -153,10 +152,10 @@ static int readMappingsToFramebuffer(Render_t* render,
 }
 
 static void releaseMappings(Render_t* render) {
-    SDL_free(render->mediaTexelOffsets);
-    SDL_free(render->mediaBitShapeOffsets);
-    SDL_free(render->mediaTexturesIds);
-    SDL_free(render->mediaSpriteIds);
+    free(render->mediaTexelOffsets);
+    free(render->mediaBitShapeOffsets);
+    free(render->mediaTexturesIds);
+    free(render->mediaSpriteIds);
     render->mediaTexelOffsets = NULL;
     render->mediaBitShapeOffsets = NULL;
     render->mediaTexturesIds = NULL;
@@ -188,10 +187,10 @@ int EspLegacyMappings_load(struct Render_s* renderBase) {
         return 0;
     }
 
-    render->mediaTexelOffsets = (int*)SDL_malloc(plan.texelOffsetBytes);
-    render->mediaBitShapeOffsets = (int*)SDL_malloc(plan.bitShapeOffsetBytes);
-    render->mediaTexturesIds = (short*)SDL_malloc(plan.textureIdBytes);
-    render->mediaSpriteIds = (short*)SDL_malloc(plan.spriteIdBytes);
+    render->mediaTexelOffsets = (int*)malloc(plan.texelOffsetBytes);
+    render->mediaBitShapeOffsets = (int*)malloc(plan.bitShapeOffsetBytes);
+    render->mediaTexturesIds = (short*)malloc(plan.textureIdBytes);
+    render->mediaSpriteIds = (short*)malloc(plan.spriteIdBytes);
     if (render->mediaTexelOffsets == NULL ||
         render->mediaBitShapeOffsets == NULL ||
         render->mediaTexturesIds == NULL ||

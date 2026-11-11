@@ -30,8 +30,14 @@ def extract(sig):
     raise AssertionError("unterminated native method "+sig)
 
 mapper=extract("int EspLegacyMappings_load(struct Render_s* renderBase)")
+# SDL-F11 removes libc-identical SDL_malloc only. Restore the four original
+# allocation spellings before the historical function-body FNV check; the
+# 4096-cycle startup harness below still executes actual current production C.
+assert mapper.count("malloc(plan.") == 4
+assert "SDL_malloc(plan." not in mapper
+mapper_original=mapper.replace("malloc(plan.", "SDL_malloc(plan.")
 fnv=2166136261
-for b in mapper.encode("utf-8"):
+for b in mapper_original.encode("utf-8"):
     fnv=((fnv^b)*16777619)&0xffffffff
 assert fnv==0x4ab5b50f, f"Native PAK mapper drift: {fnv:08x}"
 entry=extract("int EspLegacyConfigMappingsStartup_start(DoomRPG_t* root, int renderStartupReady)")
