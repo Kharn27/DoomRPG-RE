@@ -92,12 +92,12 @@ def main():
         assert "compiledOriginal=0 compiledPatchedC=0" in log
         assert not obsolete.exists(), "stale generated root was not retired"
 
-        # SDL-A owns its exact packed implementation in the permanent TU.
+        # SDL-A keeps its packed implementation for host oracle tests only; F3 no longer compiles it in firmware.
         permanent = native / "esp32_sdl.cpp"
         snapshot = permanent.read_bytes()
         shim = snapshot.decode("utf-8")
-        # SDL-D1: generated shim still absent, but live texture ownership
-        # and packed sampling now reside in a permanent independent TU.
+        # SDL-D1: generated shim absent; packed texture ownership and
+        # sampling are now native; only host fixtures retain this SDL oracle.
         native_header = (ROOT / "ESP32/include/esp_native_texture.h").read_text()
         native_owner = (ROOT / "ESP32/src/esp_native_texture.cpp").read_text()
         assert "uint8_t* indexedPixels;" in native_header
@@ -112,7 +112,7 @@ def main():
         assert not stale_shim.exists() and not stale_objects.exists()
         assert len(env.includes) == 3
 
-        # A second build must not write or mutate the permanent source.
+        # A second build must not write or mutate the host-only oracle source.
         env2 = FakeEnv(project, build)
         execute_build_script(env2)
         assert permanent.read_bytes() == snapshot
@@ -159,7 +159,7 @@ def main():
         try:
             execute_build_script(FakeEnv(project, build))
         except RuntimeError as exc:
-            assert "Missing permanent SDL shim source" in str(exc)
+            assert "Missing host-only SDL shim oracle source" in str(exc)
         else:
             raise AssertionError("missing permanent SDL source accepted")
 

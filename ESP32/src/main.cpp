@@ -12,7 +12,6 @@
 #include "esp_native_gameplay_session.h"
 #include "esp_native_startup.h"
 #include "esp_native_resident_gameplay.h"
-#include "esp32_sdl_platform.h"
 #include "menu_bsp_probe.h"
 #include "native_intro_clock.h"
 #include "native_main_menu_model.h"
@@ -466,7 +465,6 @@ void setup()
     display.begin();
     display.setRotation(cyd::kDisplayRotation);
     display.setSwapBytes(true);
-    Esp32Sdl_attachDisplay(&display);
     drawDiagnosticScreen();
     Serial.printf("[TFT] Ready, physical size=%dx%d diagnostics=%s\n",
                   display.width(), display.height(),

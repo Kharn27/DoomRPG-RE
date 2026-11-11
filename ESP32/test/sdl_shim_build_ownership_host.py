@@ -49,11 +49,11 @@ def candidate_sources(profile):
         p = (Path(entry["directory"]) / entry["file"]).resolve()
         if p.name == "esp32_sdl.cpp" or "doomrpg_esp32_sdl_patched" in str(p):
             candidates.append(p)
-    expected = (ROOT / "ESP32/src/esp32_sdl.cpp").resolve()
-    assert candidates == [expected], f"{profile}: expected one permanent TU, got {candidates}"
+    assert not candidates, (f"{profile}: dormant SDL source is still compiled: {candidates}")
     build = ROOT / "ESP32/.pio/build" / profile
     assert not (build / "doomrpg_patched_sources/esp32_sdl.cpp").exists()
     assert not (build / "doomrpg_esp32_sdl_patched").exists()
+    assert not (build / "src/esp32_sdl.cpp.o").exists(), f"{profile}: shim object unexpectedly exists"
     assert not (build / "doomrpg_patched_sources/DoomRPG.c").exists()
     assert (build / "firmware.map").is_file()
     return build / "firmware.elf"
@@ -132,11 +132,13 @@ def main():
     assert native_providers.issubset(actual_names), (
         f"{args.profile}: missing production image/raster owners "
         f"{sorted(native_providers - actual_names)}")
+    assert "Esp32Sdl_attachDisplay" not in actual_names, (
+        f"{args.profile}: old SDL display attachment is still linked")
     assert "Esp32Bmp_LoadRW" not in actual_names, (
         f"{args.profile}: old RWops BMP decoder is unexpectedly still linked")
     report = {"profile": args.profile, "linked_sdl": current,
               "linked_sdl_count": len(current), "linked_sdl_body_bytes": sum(current.values()),
-              "elf": allocated(elf), "source": "ESP32/src/esp32_sdl.cpp"}
+              "elf": allocated(elf), "source": "ESP32/src/esp32_sdl.cpp (uncompiled host oracle)"}
     if args.baseline_dir is not None:
         baseline_elf = args.baseline_dir / "ESP32/.pio/build" / args.profile / "firmware.elf"
         assert baseline_elf.is_file(), baseline_elf
@@ -184,7 +186,7 @@ def main():
     print("SDL-A " + json.dumps({k: v for k, v in report.items()
                                  if k not in ("elf", "baseline_elf", "linked_sdl",
                                               "baseline_linked_sdl")}, sort_keys=True))
-    print(f"SDL-F2 PASS {args.profile}: native platform video presentation, same framebuffer/presenter, "
+    print(f"SDL-F3 PASS {args.profile}: shim completely uncompiled; native platform video owner, "
           f"{len(current)} linked SDL functions / {sum(current.values())} symbolic bytes")
 
 

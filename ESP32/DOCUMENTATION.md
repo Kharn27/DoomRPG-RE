@@ -1,3 +1,11 @@
+## SDL-F3 — shim SDL hors build ESP32 : PASS classic CYD (11 novembre 2026)
+
+[PR #297](https://github.com/Kharn27/DoomRPG-RE/pull/297), [issue #269](https://github.com/Kharn27/DoomRPG-RE/issues/269) : `esp32_sdl.cpp` exclu explicitement des trois builds, `Esp32Sdl_attachDisplay` et header de bootstrap retirés de `main.cpp`; `PlatformVideo_begin/present` propriétaire natif inchangé (framebuffer unique RGB565 160×120, sortie ×2). [CI #43011477981](https://github.com/Kharn27/DoomRPG-RE/actions/runs/43011477981) **SUCCESS** sur code `504973472a0ad3f51ae53f3c7450efa056284a73` ; 3 builds, tests hôte/pixels et audit compiledb+ELF : **0 TU SDL compilé, 0 `Esp32Sdl_attachDisplay`, 0 symbole `SDL_*` lié**. Normal : **859445 B flash / 80768 B RAM statique**, −476/0 B par rapport à SDL-F2, sans gain runtime revendiqué.
+
+Log du vrai CYD `device-monitor-261111-123300.log` (**1766 lignes**, PSRAM=0, code attribué par flash utilisateur sans SHA embarqué) : aucun ancien log `[SDL]`, OPTIONS, HELP jusqu'à scroll 49/112, intro et Entrance, 7 dialogues, 7 portes, 14 ramassages (14 miniatures START, **13 END observés**), EXIT→LOAD V11 slot04→EXIT, **2× RESIDENTRESET empty=1**, **2× SYSEXIT MENU-READY**, 2× `HEADROOM_OK` marges heap8 **28428/27616 B**, invariants NULL, aucun panic/WDT. 7× `NATIVEFRAME BOUNDARY-INLINE` connus/non fatals. **PASS matériel ciblé ; code gelé et clôture docs-only.** [Rapport](MILESTONE_PR297_SDL_F3_UNCOMPILED_SHIM_CYD_PASS.md). L'ancien TU est conservé comme oracle hôte ; aliases `SDL_Texture`, `SDL_Rect` et `SDL.h` sont encore présents en source. Prochaine étape : audit et décapage de ces noms par familles.
+
+---
+
 ## Root-H — retrait du back-pointer Render→DoomRPG : PASS matériel classic CYD (11 novembre 2026)
 
 [PR #295](https://github.com/Kharn27/DoomRPG-RE/pull/295) après rebase exact sur SDL-F2 #296 (`main=acdb4751963dc2cc68af457f776d895517b2fe0e`, candidat `07b2e055894ecd6ecec4e831ba22f6325cca594c`) : `Render_t::doomRpg` retiré des builds natifs normal/bringup/trace, conservé desktop/oracle ; taille attendue Xtensa **112→108 B**. `EspNativeEngineRoot_initRender` ne stocke plus de racine ; `sintable.bin` et `palettes.bin` lisent directement via `EspLegacyAssetSource_readAlloc`, source PAK uniquement. Rendu 160×120 RGB565, palette RGB565 et table sinus inchangés ; SDL-F2 reste à **zéro symbole SDL lié**.
