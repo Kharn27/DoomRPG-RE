@@ -19,8 +19,8 @@ diff = (ROOT / "ESP32/test/doomrpg_presentation_host.py").read_text()
 for path, text in (("presentation", present), ("image owner", images)):
     assert "#include <SDL.h>" not in text, path
     assert '#include "SDL_Video.h"' not in text, path
-    stripped = re.sub(r"/\\*[\\s\\S]*?\\*/|//[^\\n]*", "", text)
-    assert not re.search(r"\\bSDL_\\w*", stripped), path
+    stripped = re.sub(r"/\*[\s\S]*?\*/|//[^\n]*", "", text)
+    assert not re.search(r"\bSDL_\w*", stripped), path
 
 assert "EspNativeRect clip;" in present and "EspNativeRect rect;" in present
 assert "SDL_Rect clip;" not in present and "SDL_Rect rect;" not in present
