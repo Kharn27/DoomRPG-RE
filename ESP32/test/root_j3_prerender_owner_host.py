@@ -55,6 +55,10 @@ reversals = {
          "int EspLegacyPrerenderStartup_start(int layoutReady);"),
     ],
     "ESP32/src/main.cpp": [
+        # Normalize the separate Root-J4 mappings token call before restoring
+        # the original pre-Root-J3 boot blob.
+        ("EspLegacyConfigMappingsStartup_start(doomRpg, engineRenderStartupReady ? 1 : 0) != 0;",
+         "EspLegacyConfigMappingsStartup_start(engineRenderStartupReady ? 1 : 0) != 0;"),
         ("EspLegacyPrerenderStartup_start(doomRpg, engineLayoutReady ? 1 : 0) != 0;",
          "EspLegacyPrerenderStartup_start(engineLayoutReady ? 1 : 0) != 0;"),
     ],

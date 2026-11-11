@@ -34,9 +34,11 @@ fnv=2166136261
 for b in mapper.encode("utf-8"):
     fnv=((fnv^b)*16777619)&0xffffffff
 assert fnv==0x4ab5b50f, f"Native PAK mapper drift: {fnv:08x}"
-entry=extract("int EspLegacyConfigMappingsStartup_start(int renderStartupReady)")
+entry=extract("int EspLegacyConfigMappingsStartup_start(DoomRPG_t* root, int renderStartupReady)")
 assert "mappingsResult = EspLegacyMappings_load(render) ? true : false;" in entry
 assert "EspNativeRootOwners_live()->render" in entry
+assert "if (root == NULL || EspNativeRootOwners_live()->render == NULL)" in entry
+assert "extern DoomRPG_t* doomRpg;" not in source
 assert "doomRpg->render" not in entry
 assert "Render_loadMappings(render)" not in entry
 assert "boolean Render_loadMappings(Render_t* render)" not in source
@@ -76,7 +78,6 @@ typedef struct MappingPlan_s {
     uint32_t persistentBytes, largestAllocation;
     uint32_t heapWithData, largestWithData;
 } MappingPlan_t;
-static DoomRPG_t *doomRpg;
 static int configMappingsAttempted, configMappingsReady;
 static MappingPlan_t installedPlan;
 static int statValid=1, mapValid=1, mapperCalls, statCalls;
@@ -114,37 +115,37 @@ int main(void) {
     Render_t render={0};
     DoomRPG_t root={.nativeProcessIdentity=1};
     nativeRootOwners.render=&render;
-    doomRpg=&root;
+    DoomRPG_t* token=&root;
     for (int i=0;i<4096;++i) {
         fresh();
         memset(&render,0,sizeof(render));
         int old=mapperCalls;
-        assert(EspLegacyConfigMappingsStartup_start(1)==1);
+        assert(EspLegacyConfigMappingsStartup_start(token,1)==1);
         assert(mapperCalls==old+1);
         assert(configMappingsReady==1);
         assert(installedPlan.textureCnt==152 && installedPlan.spriteCnt==252);
         assert(render.mediaTexelOffsets && render.mediaBitShapeOffsets);
         assert(render.mediaTexturesIds && render.mediaSpriteIds);
         assert(installedPlan.persistentBytes==8376U);
-        assert(EspLegacyConfigMappingsStartup_start(1)==1);
+        assert(EspLegacyConfigMappingsStartup_start(token,1)==1);
         assert(mapperCalls==old+1);
     }
     int previous=mapperCalls;
     fresh();
-    assert(EspLegacyConfigMappingsStartup_start(0)==0);
+    assert(EspLegacyConfigMappingsStartup_start(token,0)==0);
     assert(mapperCalls==previous);
-    fresh();doomRpg=NULL;
-    assert(EspLegacyConfigMappingsStartup_start(1)==0);
+    fresh();token=NULL;
+    assert(EspLegacyConfigMappingsStartup_start(token,1)==0);
     assert(mapperCalls==previous);
     /* Game_t is ABI-retired: the native root cannot carry a Game pointer. */
-    fresh();doomRpg=&root;nativeRootOwners.render=NULL;
-    assert(EspLegacyConfigMappingsStartup_start(1)==0);
+    fresh();token=&root;nativeRootOwners.render=NULL;
+    assert(EspLegacyConfigMappingsStartup_start(token,1)==0);
     assert(mapperCalls==previous);
     fresh();nativeRootOwners.render=&render;statValid=0;
-    assert(EspLegacyConfigMappingsStartup_start(1)==0);
+    assert(EspLegacyConfigMappingsStartup_start(token,1)==0);
     assert(mapperCalls==previous);
     fresh();mapValid=0;
-    assert(EspLegacyConfigMappingsStartup_start(1)==0);
+    assert(EspLegacyConfigMappingsStartup_start(token,1)==0);
     assert(mapperCalls==previous+1);
     puts("PASS direct native mapping startup: 4096 success/idempotent cycles + fail-closed paths");
     return 0;

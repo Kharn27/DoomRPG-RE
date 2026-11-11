@@ -15,7 +15,8 @@ extern "C" {
  *
  * No BSP/map file is opened by this stage.
  */
-int EspLegacyConfigMappingsStartup_start(int renderStartupReady);
+struct DoomRPG_s;
+int EspLegacyConfigMappingsStartup_start(struct DoomRPG_s* root, int renderStartupReady);
 
 struct Render_s;
 

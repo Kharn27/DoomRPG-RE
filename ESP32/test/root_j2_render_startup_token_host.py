@@ -58,8 +58,9 @@ changes = {
          "if (doomRpg == NULL || EspNativeRootOwners_live()->render == NULL ||"),
     ],
     "ESP32/src/main.cpp": [
-        # Root-J3 also changes the same boot TU; revert its independent call
-        # first so Root-J2's original golden-blob parity remains exact.
+        # Root-J4's independent boot call is reversed before Root-J3/J2 golden-blob parity.
+        ("EspLegacyConfigMappingsStartup_start(doomRpg, engineRenderStartupReady ? 1 : 0) != 0;",
+         "EspLegacyConfigMappingsStartup_start(engineRenderStartupReady ? 1 : 0) != 0;"),
         ("EspLegacyPrerenderStartup_start(doomRpg, engineLayoutReady ? 1 : 0) != 0;",
          "EspLegacyPrerenderStartup_start(engineLayoutReady ? 1 : 0) != 0;"),
         ("EspRenderStartupBridge_start(doomRpg, enginePreRenderReady ? 1 : 0) != 0;",
