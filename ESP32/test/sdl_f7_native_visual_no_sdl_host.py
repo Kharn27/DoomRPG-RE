@@ -58,11 +58,10 @@ def restore_reference(file: str, content: str) -> str:
             "                            top);\n"
         )
         new_lines = (
-            "        /* The transparent line layer follows the same rightward parallax;\n"
-            "         * it is not tiled, unlike the opaque space background. */\n"
+            "        /* The transparent grid stays fixed while the stars move behind it. */\n"
             "        drawAnimationImage(doomCanvas,\n"
             "                           &introState->imgLinesLayer,\n"
-            "                           left + linesOffset,\n"
+            "                           left,\n"
             "                           top,\n"
             "                           0);\n"
         )
@@ -74,9 +73,16 @@ def restore_reference(file: str, content: str) -> str:
             "                           0);\n"
         )
         assert content.count(new_bg) == 1
+        assert content.count("        const int bgOffset = elapsedAnim / 457;\n") == 1
+        assert "        const int linesOffset = elapsedAnim / 157;\n" not in content
         assert content.count(new_lines) == 1
         content = content.replace(new_bg, old_bg, 1)
         content = content.replace(new_lines, old_lines, 1)
+        content = content.replace(
+            "        const int bgOffset = elapsedAnim / 457;\n",
+            "        const int bgOffset = elapsedAnim / 457;\n"
+            "        const int linesOffset = elapsedAnim / 157;\n", 1
+        )
 
         content = "#include <SDL.h>\n" + content
         content = content.replace("#include <string.h>\n", "", 1)
