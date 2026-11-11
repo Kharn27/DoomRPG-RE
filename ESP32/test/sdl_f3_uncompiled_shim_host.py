@@ -14,7 +14,7 @@ shim = (ROOT / "ESP32/src/esp32_sdl.cpp").read_text()
 fixture = (ROOT / "ESP32/test/sdl_shim_permanent_host.py").read_text()
 bridge = (ROOT / "ESP32/src/platform_video_c_bridge.cpp").read_text()
 
-block = re.search(r"(?m)^build_src_filter\\s*=\\s*\\n(?P<body>(?:[ \\t]+[^\\n]*\\n)+)", ini)
+block = re.search(r"(?m)^build_src_filter\s*=\s*\n(?P<body>(?:[ \t]+[^\n]*\n)+)", ini)
 assert block, "build_src_filter missing"
 filters = block.group("body").splitlines()
 assert [s.strip() for s in filters] == ["+<*>", "-<esp32_sdl.cpp>"], filters
