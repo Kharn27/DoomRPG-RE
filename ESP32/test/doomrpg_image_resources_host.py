@@ -55,10 +55,14 @@ HARNESS = r"""
 static int activeTextures, loads, adoptions, failures, freedBuffers;
 static int failLoad, failAdopt, readCalls;
 static char lastRequested[64];
+static char fatalMessage[256];
 
-const char* SDL_GetError(void) { return "forced native bridge failure"; }
 void DoomRPG_Error(const char* fmt, ...) {
     assert(fmt != NULL);
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(fatalMessage, sizeof(fatalMessage), fmt, ap);
+    va_end(ap);
     ++failures;
 }
 int DoomRPG_freeMemory(void) { return 10000 - 64 * activeTextures; }
@@ -149,6 +153,8 @@ int main(void) {
     DoomRPG_createImage(&core, "oom.bmp", false, &failed);
     assert(failures == 2 && loads == 4 && adoptions == 3);
     assert(freedBuffers == 2 && failed.imgBitmap == NULL);
+    assert(strstr(fatalMessage, "native texture adoption failed") != NULL);
+    assert(strstr(fatalMessage, "SDL") == NULL);
     assert(EspNativeImageResources_accountedBytes() == -128);
     failAdopt = 0;
 

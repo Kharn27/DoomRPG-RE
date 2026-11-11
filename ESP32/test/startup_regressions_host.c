@@ -15,7 +15,7 @@ static unsigned imageLive, imageCreated, imageFreed, introReleases;
 static int failImage;
 static DoomRPG_t* lastFreedOwner;
 
-Uint32 SDL_GetTicks(void) { return 0U; }
+uint32_t EspNativeProcessClock_ticks(void) { return 0U; }
 void EspNativeIntroState_release(struct DoomRPG_s* owner) {
     assert(owner != NULL);
     ++introReleases;

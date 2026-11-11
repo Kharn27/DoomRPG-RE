@@ -2,7 +2,7 @@
 """SDL-B5: remove caller-free keyboard label and simple message facade.
 
 Input is owned by native CYD touch. Keep actual native error status,
-the native fatal-error box adapter, Serial present diagnostics, indexed texture ownership
+the native fatal Serial diagnostic, present diagnostics, indexed texture ownership
 and RWops file/memory lifecycle exactly as before.
 """
 from pathlib import Path
@@ -45,14 +45,15 @@ def main():
         assert api in native and api in nativeHeader, f"SDL-D1 native texture owner missing {api}"
     assert "setError(" in shim
     fatal = (ROOT / "ESP32/src/engine_stubs.c").read_text(encoding="utf-8")
-    assert "SDL_ShowMessageBox(&messageboxdata, NULL);" in fatal
+    assert "SDL_ShowMessageBox(&messageboxdata, NULL);" not in fatal
+    assert "[DOOM ERROR] DoomRPG Error:" in fatal
     assert 'Serial.println("[SDL] Platform video present failed")' in shim
     assert "PlatformVideo_present()" in shim
     assert "texture->indexed = true;" in shim
     assert "surface->pixels = nullptr;" in shim
     print(
         f"SDL-B5 PASS 2 caller-free keyboard/message-box stubs absent in {files} "
-        "native files, SDL errors and active video/texture paths preserved"
+        "native files, native fatal diagnostic and active video/texture paths preserved"
     )
 
 

@@ -56,7 +56,7 @@ def main():
                 "EspNativeTexture_setColorMod(", "EspNativeTexture_adoptIndexed("):
         assert api in native and api in nativeHeader, f"SDL-D1 native texture owner missing {api}"
     assert "PlatformVideo_present()" in shim
-    assert "SDL_ShowMessageBox(&messageboxdata, NULL);" in (
+    assert "[DOOM ERROR] DoomRPG Error:" in (
         ROOT / "ESP32/src/engine_stubs.c").read_text(encoding="utf-8")
     print(f"SDL-C1 PASS B7 decoder absent from {count} native files; production image loads via native pack-range owner")
 
