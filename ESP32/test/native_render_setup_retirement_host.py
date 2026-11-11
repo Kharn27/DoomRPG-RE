@@ -31,7 +31,7 @@ assert "windowRect->x, windowRect->y," in body
 assert "render->ceilingColor" not in body and "render->floorColor" not in body
 assert "sizeof(short)" not in body
 assert "render->columnScale = SDL_malloc(render->screenWidth * sizeof(int));" in body
-assert "sizeof(Render_t) == 112U" in bridge
+assert "sizeof(Render_t) == 108U" in bridge
 assert re.search(r"#ifndef DOOMRPG_ESP32\s+short\* ceilingColor;\s+short\* floorColor;\s+#endif", header)
 for subtree in (ROOT / "ESP32/src", ROOT / "ESP32/include"):
     for p in sorted(subtree.rglob("*")):
@@ -41,7 +41,9 @@ for subtree in (ROOT / "ESP32/src", ROOT / "ESP32/include"):
         code = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ", code, flags=re.S)
         assert not re.search(r"\b(?:render|r|rootRender|renderBase)\s*->\s*(?:ceilingColor|floorColor)\b", code), p
 assert "render->fracHalfScreenWidth" not in live_code
-normalized = body.replace("static void " + name + "(", "void Render_setup(").rstrip()
+normalized = (body.replace("static void " + name + "(", "void Render_setup(")
+              .replace("/* Desktop errorID is not part of the native renderer. */",
+                       "//DoomRPG_setErrorID(render->doomRpg, 2);")).rstrip()
 h = 2166136261
 for b in normalized.encode("utf-8"):
     h = ((h ^ b) * 16777619) & 0xffffffff
