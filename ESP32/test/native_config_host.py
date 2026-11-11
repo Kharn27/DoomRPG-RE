@@ -44,7 +44,8 @@ assert "SD.rename(kTempPath, kConfigPath)" in owner
 assert "SD.rename(kBackupPath, kConfigPath)" in owner
 assert "if (!EspNativeConfig_saveBrightness(after))" in menu
 assert menu.index("EspNativeConfig_saveBrightness(after)") < menu.index("Esp32Backlight_setPercent(after)")
-assert "SDL_RenderPresent(NULL)" in menu
+assert "(void)Esp32PlatformVideo_present();" in menu
+assert '#include "platform_video_c_bridge.h"' in menu
 assert "EspNativeConfig_saveTheme(after)" in menu
 
 with tempfile.TemporaryDirectory(prefix="native-cyd-config-") as d:
