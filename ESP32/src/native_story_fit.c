@@ -640,7 +640,6 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase, DoomRPG_t* root) {
 
     {
         const int bgOffset = elapsedAnim / 457;
-        const int linesOffset = elapsedAnim / 157;
         const int shipX = left + (elapsedAnim / 142);
         const int shipY = (DOOMRPG_CANVAS_CENTER_Y + 22) + (elapsedAnim / -333);
 
@@ -658,11 +657,10 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase, DoomRPG_t* root) {
                                 top,
                                 ESP32_STORY_VIRTUAL_SIZE,
                                 ESP32_STORY_VIRTUAL_SIZE);
-        /* The transparent line layer follows the same rightward parallax;
-         * it is not tiled, unlike the opaque space background. */
+        /* The transparent grid stays fixed while the stars move behind it. */
         drawAnimationImage(doomCanvas,
                            &introState->imgLinesLayer,
-                           left + linesOffset,
+                           left,
                            top,
                            0);
         drawAnimationImage(doomCanvas,
