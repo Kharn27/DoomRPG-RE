@@ -66,6 +66,16 @@ assert 'memcmp(th, "MTrk"' in midi
 assert "static bool prime(MidiTrack &t)" in midi
 assert "static void note(const MidiCmd &c)" in midi
 assert "44100U" in midi
+assert "REFERENCE_FRAMES = RATE * 2U" in midi
+assert "REFERENCE_GAP_FRAMES = RATE / 2U" in midi
+assert "referenceSine[256]" in midi
+assert "sinf(angle) * 2400.0f" in midi
+assert "A_B stage=%s" in midi
+assert "hardClips=%lu" in midi
+assert "if (referenceFramesDone < REFERENCE_FRAMES)" in midi
+assert "++playbackSamples;" in midi
+assert midi.index("referenceFramesDone < REFERENCE_FRAMES") < midi.index("while (rd != wr)", midi.index("int32_t EspBtTestMidi_fill("))
+
 cb=midi.split("int32_t EspBtTestMidi_fill(",1)[1].split("int EspBtTestMidi_isReady",1)[0]
 for forbidden in ("EspAssetPack_", "SD.", "malloc(", "Serial.", "new "):
     assert forbidden not in cb, f"callback forbidden {forbidden}"

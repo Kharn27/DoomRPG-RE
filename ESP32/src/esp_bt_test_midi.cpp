@@ -11,6 +11,10 @@ constexpr uint32_t WINDOW = 256U;
 constexpr uint8_t MAX_TRACKS = 24U;
 constexpr uint16_t QSIZE = 128U; /* ring leaves one empty */
 constexpr uint8_t VOICES = 12U;
+constexpr uint32_t REFERENCE_FRAMES = RATE * 2U; /* 2 s clean 440 Hz */
+constexpr uint32_t REFERENCE_GAP_FRAMES = RATE / 2U; /* 0.5 s silence */
+constexpr uint32_t REFERENCE_FADE_FRAMES = RATE / 100U; /* 10 ms */
+constexpr uint32_t REFERENCE_STEP = (uint32_t)((440ULL << 32) / RATE);
 struct MidiCmd {
     uint32_t sample;
     uint8_t type; /* 1=off, 2=on */
@@ -43,6 +47,13 @@ static volatile uint32_t playbackSamples = 0;
 static Voice voices[VOICES] = {};
 static uint32_t eventCount = 0, callbackCount = 0, underruns = 0, pcmBytes = 0;
 static uint8_t nextVoice = 0;
+/* True A/B transport fixture: known clean low-level sine FIRST, then
+ * bit-identical MIDI triangle synthesis. No change to PCM format, callback
+ * threading or tempo. Computed once in setup, read-only in BT callback. */
+static int16_t referenceSine[256] = {};
+static uint32_t referencePhase = 0;
+static uint32_t referenceFramesDone = 0, referenceGapFramesDone = 0;
+static uint32_t peakAbsPcm = 0, hardClips = 0;
 static bool ready = false, finished = false, ioFailed = false;
 
 static bool at(uint32_t offset, uint8_t *value) {
@@ -211,6 +222,11 @@ int EspBtTestMidi_begin(void) {
         tracks[i].end = tracks[i].pos + be32(th + 4);
         offset = tracks[i].end;
     }
+    for (unsigned i = 0; i < 256U; ++i) {
+        const float angle = 6.2831853071795864769f * ((float)i / 256.0f);
+        referenceSine[i] = (int16_t)(sinf(angle) * 2400.0f);
+    }
+    Serial.println("[BTTEST PCM] REFERENCE first=440Hz-pure-sine 2000ms level=2400/32767(-22.7dBFS) fade=10ms then=500ms-silence then=original-triangle-MIDI");
     ready = true;
     Serial.printf("[BTTEST MIDI] READY song=%s size=%lu tracks=%u ppq=%u source=native-PAK renderer=12voice-triangle-PCM44100-stereo16 noFluidSynth\n",
                   song, (unsigned long)entry.size, trackCount, division);
@@ -262,37 +278,70 @@ int32_t EspBtTestMidi_fill(uint8_t *pcm, int32_t len) {
     if (!ready) return len;
     ++callbackCount;
     for (int32_t i = 0; i + 3 < len; i += 4) {
-        while (rd != wr) {
-            __sync_synchronize();
-            const MidiCmd c = queue[rd];
-            if (c.sample > playbackSamples) break;
-            note(c);
-            rd = (uint16_t)((rd + 1U) % QSIZE);
-        }
         int32_t value = 0;
-        for (unsigned v = 0; v < VOICES; ++v) {
-            Voice &voice = voices[v];
-            if (!voice.active) continue;
-            voice.phase += voice.increment;
-            uint32_t wave = voice.phase >> 16;
-            if (wave > 32767U) wave = 65535U - wave;
-            value += ((int32_t)wave - 16384) * (int32_t)voice.velocity / 2048;
+        if (referenceFramesDone < REFERENCE_FRAMES) {
+            /* Linear-interpolated 256-point sine; bounded, no math/SD/heap
+             * on Bluedroid's PCM callback. 10 ms fade avoids click at edges.
+             * MIDI scheduler deliberately does not advance during fixture. */
+            const uint8_t index = (uint8_t)(referencePhase >> 24);
+            const uint8_t fraction = (uint8_t)(referencePhase >> 16);
+            const int32_t a = referenceSine[index];
+            const int32_t b = referenceSine[(uint8_t)(index + 1U)];
+            value = a + ((b - a) * fraction) / 256;
+            uint32_t fade = referenceFramesDone;
+            const uint32_t remaining = REFERENCE_FRAMES - referenceFramesDone;
+            if (remaining < fade) fade = remaining;
+            if (fade < REFERENCE_FADE_FRAMES) {
+                value = value * (int32_t)fade / (int32_t)REFERENCE_FADE_FRAMES;
+            }
+            referencePhase += REFERENCE_STEP;
+            ++referenceFramesDone;
+        } else if (referenceGapFramesDone < REFERENCE_GAP_FRAMES) {
+            /* Explicit separation lets the ear distinguish transport tone
+             * from poor General MIDI instruments / abrupt note gates. */
+            ++referenceGapFramesDone;
+        } else {
+            /* Baseline original MIDI triangle remains unchanged for A/B. */
+            while (rd != wr) {
+                __sync_synchronize();
+                const MidiCmd c = queue[rd];
+                if (c.sample > playbackSamples) break;
+                note(c);
+                rd = (uint16_t)((rd + 1U) % QSIZE);
+            }
+            for (unsigned v = 0; v < VOICES; ++v) {
+                Voice &voice = voices[v];
+                if (!voice.active) continue;
+                voice.phase += voice.increment;
+                uint32_t wave = voice.phase >> 16;
+                if (wave > 32767U) wave = 65535U - wave;
+                value += ((int32_t)wave - 16384) * (int32_t)voice.velocity / 2048;
+            }
+            if (rd == wr && !finished) ++underruns;
+            ++playbackSamples;
         }
-        if (value < -28000) value = -28000;
-        if (value > 28000) value = 28000;
+        if (value < -28000) { value = -28000; ++hardClips; }
+        if (value > 28000) { value = 28000; ++hardClips; }
+        const uint32_t absolute = (uint32_t)(value < 0 ? -value : value);
+        if (absolute > peakAbsPcm) peakAbsPcm = absolute;
         const int16_t sample = (int16_t)value;
         pcm[i] = (uint8_t)sample;
         pcm[i + 1] = (uint8_t)((uint16_t)sample >> 8);
         pcm[i + 2] = pcm[i];
         pcm[i + 3] = pcm[i + 1];
-        ++playbackSamples;
-        if (rd == wr && !finished) ++underruns;
     }
     pcmBytes += (uint32_t)len;
     return len;
 }
 int EspBtTestMidi_isReady(void) { return ready && !ioFailed; }
 void EspBtTestMidi_report(void) {
+    const char *stage = referenceFramesDone < REFERENCE_FRAMES ? "reference-tone" :
+                        referenceGapFramesDone < REFERENCE_GAP_FRAMES ? "reference-gap" : "midi";
+    Serial.printf("[BTTEST PCM] A_B stage=%s refMs=%lu gapMs=%lu peak=%lu hardClips=%lu rate=%u channels=2 format=s16le\n",
+                  stage, (unsigned long)((uint64_t)referenceFramesDone * 1000ULL / RATE),
+                  (unsigned long)((uint64_t)referenceGapFramesDone * 1000ULL / RATE),
+                  (unsigned long)peakAbsPcm, (unsigned long)hardClips,
+                  (unsigned)RATE);
     Serial.printf("[BTTEST MIDI] PCM callbacks=%lu bytes=%lu elapsedMs=%lu events=%lu pending=%u underrunFrames=%lu done=%u error=%u\n",
                   (unsigned long)callbackCount, (unsigned long)pcmBytes,
                   (unsigned long)((uint64_t)playbackSamples * 1000ULL / RATE),
