@@ -2,6 +2,11 @@
  * Clock, physical present, PAK/font, touch and level-up are host seams. */
 #include <assert.h>
 #include "../src/esp_native_gameplay_action_engine.c"
+/* The isolated compositor harness has no production process-root TU. */
+EspNativeRootOwners_t* EspNativeRootOwners_live(void) {
+    static EspNativeRootOwners_t uninitializedWorld;
+    return &uninitializedWorld;
+}
 /* This timing fixture tests the established RED damage-border owner only.
  * The independent pickup miniature has its own host fixture. */
 void EspPickupMini_reset(void) {}

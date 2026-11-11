@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "esp_native_root_state.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -125,7 +126,7 @@ static void releaseDeferredDoorVisual(struct DoomRPG_s* doomRpgBase,
     if (released == 0U) return;
 
     player = EspPlayerView_view();
-    if (doomRpg == NULL || doomRpg->render == NULL || player == NULL ||
+    if (doomRpg == NULL || EspNativeRootOwners_live()->render == NULL || player == NULL ||
         player->active != 1U || player->viewX != player->destX ||
         player->viewY != player->destY ||
         player->viewAngle != player->destAngle) {
@@ -137,7 +138,7 @@ static void releaseDeferredDoorVisual(struct DoomRPG_s* doomRpgBase,
 
     memset(&frame, 0, sizeof(frame));
     if (!EspNativeGameplayFrame_renderTurn(
-            doomRpg->render, (uint8_t)player->viewAngle, &frame)) {
+            EspNativeRootOwners_live()->render, (uint8_t)player->viewAngle, &frame)) {
         printf("[DOORANIM] POST-MONSTER-FAILED lines=%u reason=%s logical=closed recovery=stable-next-frame\n",
                (unsigned int)released,
                reason != NULL ? reason : "turn-end");

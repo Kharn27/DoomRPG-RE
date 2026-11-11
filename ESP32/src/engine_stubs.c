@@ -28,16 +28,19 @@
 #include <esp_heap_caps.h>
 
 #ifdef DOOMRPG_ESP32
-/* Legacy Game_t is a reference-only type; it must never be instantiated.
- * DoomRPG_t keeps an ABI compatibility field, permanently NULL on ESP32. */
+/* Legacy Game_t is reference-only. Native root has no Game/Player/Canvas/Render/Menu fields. */
 #endif
 
 /* The final linked DoomRPG.c globals/functions are now native-owned.
- * Keep the one process root, never create an extra session-owned mirror. */
+ * Only one static root identity survives; owner pointers live in native BSS. */
 DoomRPG_t* doomRpg = NULL;
+static DoomRPG_t nativeRootIdentity;
+static EspNativeRootOwners_t nativeRootOwners;
+
+EspNativeRootOwners_t* EspNativeRootOwners_live(void) { return &nativeRootOwners; }
 
 /* The desktop errorStr[64] is not a native allocation or error owner. */
-_Static_assert(sizeof(DoomRPG_t) == 12U,
+_Static_assert(sizeof(DoomRPG_t) == 1U,
                "native DoomRPG_t must omit dormant desktop owner pointers and metrics");
 
 /* Native process-root Canvas teardown. Preserve the desktop release order
@@ -95,19 +98,20 @@ void DoomRPG_FreeAppData(DoomRPG_t* doomrpg)
     /* Legacy desktop owners omitted from CYD root; only live owners remain. */
     /* No Game allocation/teardown exists on CYD; native resident and
      * session owners are released by their own lifecycle. */
-    if (doomrpg->menuSystem) {
-        EspNativeMenuStorage_free(doomrpg->menuSystem, doomrpg, true);
+    if (EspNativeRootOwners_live()->menuSystem) {
+        EspNativeMenuStorage_free(EspNativeRootOwners_live()->menuSystem, doomrpg, true);
     }
-    doomrpg->menuSystem = NULL;
-    if (doomrpg->render) {
-        EspNativeEngineRoot_releaseRender(doomrpg->render, true);
+    EspNativeRootOwners_live()->menuSystem = NULL;
+    if (EspNativeRootOwners_live()->render) {
+        EspNativeEngineRoot_releaseRender(EspNativeRootOwners_live()->render, true);
     }
-    doomrpg->render = NULL;
-    if (doomrpg->doomCanvas) {
-        EspNativeEngineRoot_releaseCanvas(doomrpg->doomCanvas);
+    EspNativeRootOwners_live()->render = NULL;
+    if (EspNativeRootOwners_live()->doomCanvas) {
+        EspNativeEngineRoot_releaseCanvas(EspNativeRootOwners_live()->doomCanvas);
     }
-    doomrpg->doomCanvas = NULL;
-    SDL_free(doomrpg);
+    EspNativeRootOwners_live()->doomCanvas = NULL;
+    SDL_memset(&nativeRootIdentity, 0, sizeof(nativeRootIdentity));
+    doomRpg = NULL;
 }
 
 /* Fatal desktop callback retains its message/teardown semantics. The only
@@ -385,14 +389,11 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
            (unsigned int)coreInitReport.largestBlockBefore);
 
     before = coreFreeHeap();
-    doomRpg = (DoomRPG_t*)SDL_calloc(1, sizeof(DoomRPG_t));
+    SDL_memset(&nativeRootIdentity, 0, sizeof(nativeRootIdentity));
+    SDL_memset(&nativeRootOwners, 0, sizeof(nativeRootOwners));
+    doomRpg = &nativeRootIdentity;
     after = coreFreeHeap();
     recordCoreStage(DOOMRPG_CORE_ROOT, before, after);
-    if (doomRpg == NULL) {
-        failCoreStage(DOOMRPG_CORE_ROOT);
-        if (report != NULL) *report = coreInitReport;
-        return 0;
-    }
 
     EspNativeImageResources_resetAccounting();
     EspNativePresentation_resetClipState();
@@ -439,10 +440,10 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
 #define INIT_CORE_OBJECT(stage, member, expression) \
     do { \
         before = coreFreeHeap(); \
-        doomRpg->member = (expression); \
+        EspNativeRootOwners_live()->member = (expression); \
         after = coreFreeHeap(); \
         recordCoreStage((stage), before, after); \
-        if (doomRpg->member == NULL) { \
+        if (EspNativeRootOwners_live()->member == NULL) { \
             failCoreStage((stage)); \
             if (report != NULL) *report = coreInitReport; \
             return 0; \
@@ -538,7 +539,7 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
     }
 
     coreInitReport.ready = 1;
-    printf("[CORE] READY stages=%u allocatedObjects=4 heap used=%u remaining=%u largest=%u clip=%ux%u\n",
+    printf("[CORE] READY stages=%u allocatedObjects=3 heap used=%u remaining=%u largest=%u clip=%ux%u\n",
            (unsigned int)coreInitReport.completedStages,
            (unsigned int)coreInitReport.bytesUsed,
            (unsigned int)coreInitReport.heapAfter,
@@ -599,7 +600,7 @@ static void EspNativeEngineLayout_startupCanvas(DoomCanvas_t* doomCanvas)
     screenRect.y = DOOMRPG_VIEWPORT_Y;
     screenRect.w = DOOMRPG_VIEWPORT_WIDTH;
     screenRect.h = DOOMRPG_VIEWPORT_HEIGHT;
-    EspNativeEngineLayout_setupRender(doomRpg->render, &screenRect);
+    EspNativeEngineLayout_setupRender(EspNativeRootOwners_live()->render, &screenRect);
     doomCanvas->startupMap = 1;
     doomCanvas->skipIntro = false;
     DoomRPG_createImage(doomCanvas->doomRpg, "a.bmp", true, &doomCanvas->imgFont);
@@ -621,15 +622,15 @@ int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report) {
 
     SDL_memset(&layoutReport, 0, sizeof(layoutReport));
 
-    if (!coreInitReport.ready || doomRpg == NULL || doomRpg->doomCanvas == NULL ||
-        doomRpg->render == NULL) {
+    if (!coreInitReport.ready || doomRpg == NULL || EspNativeRootOwners_live()->doomCanvas == NULL ||
+        EspNativeRootOwners_live()->render == NULL) {
         printf("[LAYOUT] Core graph is not ready; startup refused\n");
         if (report != NULL) *report = layoutReport;
         return 0;
     }
 
-    canvas = doomRpg->doomCanvas;
-    render = doomRpg->render;
+    canvas = EspNativeRootOwners_live()->doomCanvas;
+    render = EspNativeRootOwners_live()->render;
 
     layoutReport.heap8Before = coreFreeHeap();
     layoutReport.largest8Before = coreLargestBlock();

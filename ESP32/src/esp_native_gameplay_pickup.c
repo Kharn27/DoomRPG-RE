@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "esp_native_root_state.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -176,10 +177,10 @@ static int rerender(DoomRPG_t* doomRpg,
                     const EspPlayerViewState* view,
                     const char* reason) {
     EspNativeGameplayFrameStats frame;
-    if (doomRpg == NULL || doomRpg->render == NULL || view == NULL ||
+    if (doomRpg == NULL || EspNativeRootOwners_live()->render == NULL || view == NULL ||
         view->viewAngle < 0 || view->viewAngle > 255) return 0;
     memset(&frame, 0, sizeof(frame));
-    if (!EspNativeGameplayFrame_renderTurn(doomRpg->render,
+    if (!EspNativeGameplayFrame_renderTurn(EspNativeRootOwners_live()->render,
                                            (uint8_t)view->viewAngle,
                                            &frame)) {
         printf("[PICKUP] RENDER-FAILED reason=%s angle=%d\n",

@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "esp_native_root_state.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -251,7 +252,7 @@ int EspLegacyConfigMappingsStartup_start(int renderStartupReady) {
         return 0;
     }
 
-    if (doomRpg == NULL || doomRpg->render == NULL) {
+    if (doomRpg == NULL || EspNativeRootOwners_live()->render == NULL) {
         printf("[CONFIGMAP] Core object graph incomplete; probe refused\n");
         return 0;
     }
@@ -268,7 +269,7 @@ int EspLegacyConfigMappingsStartup_start(int renderStartupReady) {
      * Neither the desktop Config file nor its legacy loader is used here. */
     printf("[CONFIGMAP] Native CYD config restored earlier; legacy Config v23 skipped\n");
 
-    render = doomRpg->render;
+    render = EspNativeRootOwners_live()->render;
     heapBeforeMappings = heap8Free();
     largestBeforeMappings = largest8Block();
 

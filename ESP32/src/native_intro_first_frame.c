@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "esp_native_root_state.h"
 #include <stdint.h>
 #include <stdio.h>
 
@@ -63,19 +64,19 @@ static int introBoundaryIsSafe(const DoomRPG_t* doomRpg) {
     const EspNativeIntroState_t* introState;
     const Render_t* render;
 
-    if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
-        doomRpg->render == NULL ||
-        doomRpg->menuSystem == NULL) {
+    if (doomRpg == NULL || EspNativeRootOwners_live()->doomCanvas == NULL ||
+        EspNativeRootOwners_live()->render == NULL ||
+        EspNativeRootOwners_live()->menuSystem == NULL) {
         return 0;
     }
 
-    canvas = doomRpg->doomCanvas;
+    canvas = EspNativeRootOwners_live()->doomCanvas;
     introState = EspNativeIntroState_view(doomRpg);
-    render = doomRpg->render;
+    render = EspNativeRootOwners_live()->render;
 
     return canvas->state == ST_INTRO &&
            introState != NULL &&
-           doomRpg->menuSystem->menu == MENU_NONE &&
+           EspNativeRootOwners_live()->menuSystem->menu == MENU_NONE &&
            introState->storyPage == 0 &&
            introState->storyTextPage == 0 &&
            introState->storyText1[0] != NULL &&
@@ -117,9 +118,9 @@ int DoomRPG_esp32RenderFirstIntroFrame(struct DoomRPG_s* doomRpgBase) {
         return 0;
     }
 
-    canvas = doomRpg->doomCanvas;
+    canvas = EspNativeRootOwners_live()->doomCanvas;
     introState = EspNativeIntroState_get(doomRpg);
-    render = doomRpg->render;
+    render = EspNativeRootOwners_live()->render;
     if (introState == NULL) {
         printf("[INTRO1] FAILED native intro state unavailable\n");
         return 0;
@@ -130,7 +131,7 @@ int DoomRPG_esp32RenderFirstIntroFrame(struct DoomRPG_s* doomRpgBase) {
 
     printf("[INTRO1] Begin state=%d menu=%d page=%d textPage=%d frameFNV=%08x expectedEntry=%08x heap8=%u largest8=%u\n",
            canvas->state,
-           doomRpg->menuSystem->menu,
+           EspNativeRootOwners_live()->menuSystem->menu,
            introState->storyPage,
            introState->storyTextPage,
            (unsigned int)inputHash,

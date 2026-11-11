@@ -25,7 +25,7 @@ assert "doomrpg->closeApplet = true;" in DESKTOP
 assert "doomRpg->closeApplet = true;" in DESKTOP
 assert not re.search(r"\b(?:doomRpg|doomrpg)\s*->\s*closeApplet\b", CORE), \
     "native process root must not use legacy flag"
-assert "_Static_assert(sizeof(DoomRPG_t) == 12U," in CORE
+assert "_Static_assert(sizeof(DoomRPG_t) == 1U," in CORE
 assert not re.search(r"\bdoomRpg\s*->\s*errorID\b", CORE)
 assert "EspNativeImageResources_resetAccounting();" in CORE
 assert "nativeImageMemory +=" in IMAGES
@@ -33,7 +33,8 @@ assert "nativeImageMemory -=" in IMAGES
 assert "EspNativePresentation_resetClipState();" in CORE
 assert "EspNativePresentation_clipEnabled()" in INTRO
 assert "char errMsg[256];" in CORE
-assert "SDL_calloc(1, sizeof(DoomRPG_t))" in CORE
+assert "SDL_calloc(1, sizeof(DoomRPG_t))" not in CORE
+assert "doomRpg = &nativeRootIdentity;" in CORE
 
 # Guard all currently linked and unlinked C/C++ TUs and native headers.
 count = 0
@@ -73,4 +74,4 @@ with tempfile.TemporaryDirectory(prefix="root-closeapplet-abi-") as tmp:
             assert "closeApplet" in result.stderr, name
 
 print(f"PASS Root-D closeApplet desktop/oracle only; "
-      f"{count} native files guarded; root expected 12B")
+      f"{count} native files guarded; root expected 1B")
