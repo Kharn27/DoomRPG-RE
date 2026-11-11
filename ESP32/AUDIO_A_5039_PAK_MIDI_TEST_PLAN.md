@@ -4,6 +4,20 @@
 La piste `5039.mid` du PAK natif est l'unique source de données musicales.
 Le test réel du classic CYD reste nécessaire avant de fusionner.
 
+## Deuxième écoute CYD 11 novembre 2026 — APLL cadence PASS, **audio FAIL bloquant**
+
+Le log fourni sous l'intitulé « PR #305 » correspond à la branche **AUDIO-A PR #301** : firmware avec `esp_native_audio_midi.cpp`, et non au simple Root-J2 #305 déjà fusionné.
+
+- `[AUDIOCLK] VERIFY source=APLL targetHz=16000 measuredHz=16000 elapsedUs=800000 frames=12800 result=PASS`.
+- `[AUDIO] PULSE resource=5039 timeMs=11280 wallMs=11216 speedPct=100 fifo=24 late=8 dmaWrites=1127 dmaErrors=0`.
+- `[AUDIO] MIDI-START resource=5039 file=5039.mid bytes=17163 tracks=3 ppqn=60 loop=1` depuis PAK ; volume utilisateur 25 %.
+- Retour d'écoute utilisateur : **grésillement, sifflement aigu initial avant la musique et impression d'hyper-ralenti**. Le hardware n'est **pas** PASS pour AUDIO-A, malgré le PASS de débit DMA, `HEADROOM_OK` et les invariants natifs.
+- L'ancienne lecture à `speedPct=547` était anormalement rapide. Le retour à 100 % peut expliquer une *impression comparative* de ralentissement, pas prouver que les événements MIDI eux-mêmes ont une cadence erronée. Ne pas multiplier artificiellement la vitesse du morceau.
+- Le pré-test émet 8+80 tampons PCM au milieu du DAC (128) avant lecture. Un sifflement à cet instant, sans notes synthétisées, implique d'examiner l'étage DAC→SC8002B, l'alimentation/le gain et le flux PCM réellement reçu par le DAC, séparément des harmoniques synthétiques FM-lite. L'horloge mesurée via backpressure DMA ne mesure pas la sortie analogique.
+- **État : PR Draft, NON PASS, ne pas fusionner.** Prochaine itération audio séparée et bornée : diagnostic d'un signal volontairement silencieux, d'une seule voix MIDI réelle et de la polyphonie/limiteur avec nouvelle validation par écoute sur le classic CYD. Aucun changement aux fichiers MIDI, au PAK, à GPIO25 ni au gameplay.
+
+---
+
 ## Retour matériel 11 novembre 2026 — FAIL et correction candidate
 
 - Le vrai CYD a confirmé `[AUDIO] MIDI-START resource=5039 file=5039.mid bytes=17163 tracks=3 ppqn=60` et les événements du PAK : 270 notes, 84 frappes de batterie et 8 changements de programme après la première séquence.
