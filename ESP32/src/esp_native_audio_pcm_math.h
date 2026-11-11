@@ -41,6 +41,24 @@ static inline int32_t EspNativeAudioPcm_scaleLimitQ8(
     return value;
 }
 
+/* ONE LAST listening-only software attenuation test for the CYD 8-ohm
+ * speaker with incorrect R7/R8 gain network. 8 seconds each at 2%, 5%,
+ * then 10% of full digital scale, reverting to a safe 2% after 24 s.
+ * Deterministic sample clock (not wall time), untouched MIDI tempo/events.
+ * The saved user Sound preset is an upper bound, never overwritten. */
+#define ESP_NATIVE_AUDIO_GAIN_TEST_RATE 16000U
+#define ESP_NATIVE_AUDIO_GAIN_TEST_STAGE_SAMPLES (8U * ESP_NATIVE_AUDIO_GAIN_TEST_RATE)
+static inline uint8_t EspNativeAudioPcm_gainTestPhase(uint32_t sample) {
+    const uint32_t stage = sample / ESP_NATIVE_AUDIO_GAIN_TEST_STAGE_SAMPLES;
+    return (uint8_t)(stage > 3U ? 3U : stage);
+}
+static inline uint8_t EspNativeAudioPcm_gainTestPercent(uint32_t sample,
+                                                         uint32_t masterPercent) {
+    static const uint8_t percent[4] = {2U, 5U, 10U, 2U};
+    const uint32_t pct = percent[EspNativeAudioPcm_gainTestPhase(sample)];
+    return (uint8_t)(masterPercent < pct ? masterPercent : pct);
+}
+
 static inline uint16_t EspNativeAudioPcm_toDacWord(int32_t q8) {
     const int32_t rounded = q8 >= 0
         ? (q8 + 128) / 256 : -((-q8 + 128) / 256);
