@@ -336,6 +336,9 @@ jobs:
       - name: SDL-F13 retire dead controller and video-mode facades (host full source oracle)
         run: python ESP32/test/sdl_f13_dead_input_mode_host.py
 
+      - name: SDL-F14 retire inert SDLVideo mirror and getter (host full source oracle)
+        run: python ESP32/test/sdl_f14_video_mirror_host.py
+
       - name: Test native presentation and clip pixel parity (host C)
         run: python ESP32/test/doomrpg_presentation_host.py
 
@@ -611,6 +614,9 @@ jobs:
 
       - name: SDL-F13 reject dormant controller and mode globals in all three linked ELF
         run: python ESP32/test/sdl_f13_dead_input_mode_host.py --elf
+
+      - name: SDL-F14 reject dormant SDLVideo mirror and functions in all three linked ELF
+        run: python ESP32/test/sdl_f14_video_mirror_host.py --elf
 
       - name: Verify sprite timing witnesses absent from production, retained in diagnostic profiles
         run: |
