@@ -30,8 +30,9 @@ assert 'EspNativeAudioVolume_savePercent(after)' in ui
 assert 'paintArmedPreference(4, item)' in ui
 assert 'autoBack=Options persistence=audio-sd-v1' in ui
 assert 'masterPercent = 100U;' in audio
-assert 'mixed = (mixed * static_cast<int32_t>(master)) / 100;' in audio
-assert audio.index('mixed = (mixed * static_cast<int32_t>(master)) / 100;') < audio.index('if (mixed < -127)')
+assert 'EspNativeAudioPcm_scaleLimitQ8(' in audio
+assert audio.index('EspNativeAudioPcm_voiceQ8(') < audio.index('EspNativeAudioPcm_scaleLimitQ8(') < audio.index('EspNativeAudioPcm_toDacWord(finalQ8)')
+assert 'mixed = (mixed * static_cast<int32_t>(master)) / 100;' not in audio
 assert 'EspNativeAudioMidi_setVolume' in audio
 assert 'EspNativeAudioVolume_loadAtBoot(sdReady ? 1 : 0);' in boot
 assert '/DoomRPG-ESP32.audio.cfg' in owner
