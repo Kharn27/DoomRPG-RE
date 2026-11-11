@@ -4,6 +4,27 @@
 La piste `5039.mid` du PAK natif est l'unique source de données musicales.
 Le test réel du classic CYD reste nécessaire avant de fusionner.
 
+## Diagnostic différentiel CYD — brouhaha avec HP **8 Ω** (nouveau candidat)
+
+Retour utilisateur, vrai firmware normal, après le correctif Q8 : musique originale audible mais couverte par un très fort brouhaha saturé. Extraits :
+
+- `AUDIOCLK measuredHz=15999 result=PASS`, `PULSE speedPct=100 dmaErrors=0`, `late=0→57` après chargement d'Entrance.
+- À volume SD **25 %**, `pcmPeak8=10→15`, `pcmLimited=0`, `pcmClipped=0` : **pas de clipping détecté dans le PCM produit**.
+- Intro/Entrance/EXIT, `HEADROOM_OK`, `RESIDENTRESET empty=1`, `shapeData/mediaTexels=NULL` restent fonctionnels.
+- HP utilisateur **8 Ω** : impédance prévue pour le SC8002B, ne constitue pas une preuve de surcharge ; ne pas proposer d'emblée un nouveau haut-parleur.
+- Le schéma classique CYD propose `R7=47 kΩ`, `R8=22 kΩ`, `R9=68 kΩ`. Des variantes de carte ont été rapportées avec R7/R8 de **0 Ω**, augmentant fortement le gain et la distorsion ; **la révision physique exacte n'est pas établie par le Serial**. Aucune intervention CMS/fer à souder demandée avant la confirmation du diagnostic par étapes.
+
+**Nouveau test firmware non musical, une seule fois au premier START :** maintenir le même flux DMA I2S 16kHz/2×16 bits et le MIDI original depuis le PAK, mais insérer avant ses premières notes :
+1. `[AUDIODIAG] stage=DAC-OFF` — **2 secondes**, les deux DAC désactivés, I2S envoie `0x8000`. Écouter si le brouhaha est déjà présent.
+2. `[AUDIODIAG] stage=DAC-MIDPOINT` — **2 secondes**, seul GPIO26 DAC activé ; PCM **0x8000 constant**, donc silence numérique. Écouter le grésillement indépendant du MIDI.
+3. `[AUDIODIAG] stage=MIDI` — chanson originale `5039.mid` à **sample 0**, inchangée, après les deux étapes. Mesurer `[AUDIO] PULSE speedPct≈100`, `dmaErrors=0`, `pcmPeak8` et `pcmClipped`.
+
+Les états sont publiés par le cœur audio et annoncés dans la boucle principale. **Aucune fréquence de test synthétique, aucun second firmware, aucune source WAV/ZIP, aucun GPIO25, aucune allocation map-wide, aucune SD sur cœur 0.** Les quatre secondes de décalage au démarrage servent uniquement à isoler la sortie matérielle et ne représentent pas un ralentissement de tempo.
+
+**Consignes de sécurité :** faible volume initial (25 % déjà enregistré), ne pas mettre le haut-parleur contre l'oreille ; si la distorsion est violente, écourter l'écoute. Fournir pour chacun des trois états « silence / bruit / craquement / musique ». Aucun PASS matériel ni changement physique de résistances tant que l'écoute n'a pas identifié la frontière.
+
+---
+
 ## Deuxième écoute CYD 11 novembre 2026 — APLL cadence PASS, **audio FAIL bloquant**
 
 Le log fourni sous l'intitulé « PR #305 » correspond à la branche **AUDIO-A PR #301** : firmware avec `esp_native_audio_midi.cpp`, et non au simple Root-J2 #305 déjà fusionné.
