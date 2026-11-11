@@ -69,6 +69,6 @@ with tempfile.TemporaryDirectory(prefix="sdl-f6-native-header-") as tmp:
                 ["cc", "-E", "-P", "-IESP32/include", "-Isrc",
                  *flags, str(source)], cwd=ROOT, text=True)
             for forbidden in ("SDL_RWops", "Uint8", "SDL_Texture"):
-                assert not re.search(r"\\b" + forbidden + r"\\b", pre), forbidden
+                assert not re.search(r"\b" + forbidden + r"\b", pre), forbidden
 print("SDL-F6 PASS: native DoomRPG.h has no SDL-dependent IO/key ABI;"
       " desktop/oracle signatures unchanged; image/clock sources SDL-free")
