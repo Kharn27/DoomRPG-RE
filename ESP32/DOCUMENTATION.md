@@ -1,3 +1,13 @@
+## Root-H — retrait du back-pointer Render→DoomRPG : PASS matériel classic CYD (11 novembre 2026)
+
+[PR #295](https://github.com/Kharn27/DoomRPG-RE/pull/295) après rebase exact sur SDL-F2 #296 (`main=acdb4751963dc2cc68af457f776d895517b2fe0e`, candidat `07b2e055894ecd6ecec4e831ba22f6325cca594c`) : `Render_t::doomRpg` retiré des builds natifs normal/bringup/trace, conservé desktop/oracle ; taille attendue Xtensa **112→108 B**. `EspNativeEngineRoot_initRender` ne stocke plus de racine ; `sintable.bin` et `palettes.bin` lisent directement via `EspLegacyAssetSource_readAlloc`, source PAK uniquement. Rendu 160×120 RGB565, palette RGB565 et table sinus inchangés ; SDL-F2 reste à **zéro symbole SDL lié**.
+
+**CI** [push #43011962445](https://github.com/Kharn27/DoomRPG-RE/actions/runs/43011962445) et [PR #43011970302](https://github.com/Kharn27/DoomRPG-RE/actions/runs/43011970302) : **SUCCESS**, 4096 cycles chacun constructeur/startup/palettes, audits 360 sources, 3 firmwares ; normal **859817 B flash, 80768 B RAM statique** (vs SDL-F2 seul : −104 B flash, RAM statique stable).
+
+**Serial matériel** `device-monitor-261111-122807.log` (1668 lignes, capture commençant dans OPTIONS après boot) : luminosité 100→75→100 persistée, HELP 0→63/112, intro→Entrance, 8 dialogues, 4 portes, 13 ramassages avec miniatures équilibrées, 3 ripostes Malwrath, LOAD V11 slot04 puis deuxième EXIT ; deux `HEADROOM_OK` marges heap8 28232/27420 B, deux `RESIDENTRESET released=18008 empty=1`, deux `SYSEXIT MENU-READY` frame `1945fafa`, 13 invariants `shapeData/mediaTexels=NULL`, aucun panic/WDT. 13 diagnostics `BOUNDARY-INLINE` existants non fatals. **PASS ciblé, pas de preuve directe boot/Render struct ni benchmark A/B**. [Milestone détaillé](MILESTONE_PR295_ROOT_H_RENDER_BACKREF_CYD_PASS.md). Après PASS : **docs-only**.
+
+---
+
 ## SDL-F2 — présentation native directe et zéro symbole SDL lié : PASS CYD (11 novembre 2026)
 
 [PR #296](https://github.com/Kharn27/DoomRPG-RE/pull/296), [issue #269](https://github.com/Kharn27/DoomRPG-RE/issues/269), candidat `f5e05d02fd937c9f100f069e1c34b9e7abc9803c` basé sur `main=d11600e4caedbdb1f97c2196d3ae80f136cf8a3b`. Les 13 sites `SDL_RenderPresent` de production pointent maintenant sur `Esp32PlatformVideo_present()` puis `PlatformVideo_present()` **inchangé**, framebuffer 160×120 RGB565 sans second buffer ni cadence modifiée. [CI #43003863136](https://github.com/Kharn27/DoomRPG-RE/actions/runs/43003863136) **SUCCESS** avec pixel-oracle et ELF 3 profils : **0 symbole `SDL_*` lié**, F1→F2 −380 B flash / −24 B RAM statique du build normal (860301→859921 B / 80792→80768 B), aucune revendication runtime.

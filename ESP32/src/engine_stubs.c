@@ -333,7 +333,7 @@ static DoomCanvas_t* EspNativeEngineRoot_initCanvas(DoomCanvas_t* doomCanvas, Do
 
 /* Native Render constructor owned by the process root; old initializer body
  * is preserved apart from retiring the desktop developer skipCull toggle. */
-static Render_t* EspNativeEngineRoot_initRender(Render_t* render, DoomRPG_t* doomRpg)
+static Render_t* EspNativeEngineRoot_initRender(Render_t* render)
 {
 	printf("Render_init\n");
 
@@ -347,7 +347,7 @@ static Render_t* EspNativeEngineRoot_initRender(Render_t* render, DoomRPG_t* doo
 	SDL_memset(render, 0, sizeof(Render_t));
 
 	//resourceAsStream.Init(&renderClass->mapFile, doomRPGClass, 1);
-	render->doomRpg = doomRpg;
+	/* Render_t no longer points back to the process root. */
 	render->columnScale = NULL;
 	/* Only explicit bringup retains the old map-string pointer array. */
 #if defined(DOOMRPG_ESP32_BRINGUP_PROBES)
@@ -442,7 +442,7 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
     INIT_CORE_OBJECT(DOOMRPG_CORE_CANVAS, doomCanvas,
                      EspNativeEngineRoot_initCanvas(NULL, doomRpg));
     INIT_CORE_OBJECT(DOOMRPG_CORE_RENDER, render,
-                     EspNativeEngineRoot_initRender(NULL, doomRpg));
+                     EspNativeEngineRoot_initRender(NULL));
     INIT_CORE_OBJECT(DOOMRPG_CORE_MENU_SYSTEM, menuSystem,
                      EspNativeMenuStorage_init(NULL));
     /* Keep the historical diagnostics slot without an allocation or legacy
@@ -565,7 +565,7 @@ static void EspNativeEngineLayout_setupRender(Render_t* render, SDL_Rect* window
 	if (render->columnScale == NULL) { memError = true; }
 
 	if (memError) {
-		//DoomRPG_setErrorID(render->doomRpg, 2);
+		/* Desktop errorID is not part of the native renderer. */
 		DoomRPG_Error("Render: Insufficient memory for allocation");
 	}
 	printf("[RENDERCORE] SETUP owner=esp-native-bridge view=%dx%d@%d,%d arrays=%uB\n",

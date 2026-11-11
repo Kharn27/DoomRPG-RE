@@ -33,7 +33,11 @@ old_sig = "void Render_loadPalettes(Render_t* render)"
 new_sig = "static void EspNativeRenderStartup_loadPalettes(Render_t* render)"
 palette = extract(native, new_sig)
 desktop_palette = extract(desktop, old_sig)
-normalized = palette.replace(new_sig, old_sig, 1)
+normalized = (palette.replace(new_sig, old_sig, 1)
+              .replace('EspLegacyAssetSource_readAlloc("palettes.bin", NULL)',
+                       'DoomRPG_fileOpenRead(render->doomRpg, "/palettes.bin")'))
+assert "render->doomRpg" not in palette
+assert 'EspLegacyAssetSource_readAlloc("palettes.bin", NULL)' in palette
 desktop_without_ledger = desktop_palette
 for line in (
     "\trender->paletteMemory = DoomRPG_freeMemory();\n",
@@ -71,7 +75,6 @@ shim = r"""
 typedef unsigned char byte;
 typedef struct DoomRPG_s { int marker; } DoomRPG_t;
 typedef struct Render_s {
-    DoomRPG_t *doomRpg;
     short* mediaPalettes;
     int mediaPalettesLength;
 } Render_t;
@@ -99,9 +102,9 @@ static void tracedFree(void* p) {
 static int DoomRPG_freeMemory(void) {
     return 100000-(int)ownedBytes;
 }
-static byte* DoomRPG_fileOpenRead(DoomRPG_t* root, const char* path) {
-    assert(root && root->marker==123);
-    assert(strcmp(path,"/palettes.bin")==0);
+static byte* EspLegacyAssetSource_readAlloc(const char* path, int* outSize) {
+    (void)outSize;
+    assert(strcmp(path,"palettes.bin")==0);
     byte* data=(byte*)SDL_malloc(14);
     static const byte fixture[14]={
         10,0,0,0, 0,0, 31,0, 0xe0,0x07, 0,0xf8, 0xff,0xff
@@ -140,9 +143,7 @@ static void verify(const Render_t* render) {
         assert((unsigned short)render->mediaPalettes[i]==expected[i]);
 }
 int main(void) {
-    DoomRPG_t root={123};
     Render_t render={0};
-    render.doomRpg=&root;
     for(int i=0;i<4096;++i) {
         const int priorFree=DoomRPG_freeMemory();
         EspNativeRenderStartup_loadPalettes(&render);
