@@ -25,11 +25,18 @@ assert "result = " + name + "(render);" in source
 assert "int Render_startup(Render_t* render) {" not in source
 assert "nativeRenderStartup=private" in builder
 assert "EspNativeRootOwners_live()->doomCanvas == NULL" in source
-assert "render->doomRpg->doomCanvas" not in source
+assert "render->doomRpg" not in source
+assert "DoomRPG_fileOpenRead(" not in source
+assert 'EspLegacyAssetSource_readAlloc("sintable.bin", NULL)' in source
+assert 'EspLegacyAssetSource_readAlloc("palettes.bin", NULL)' in source
 assert re.search(r"#ifndef DOOMRPG_ESP32\s+int Render_startup\(", header)
 body = source[source.index(start):source.index(end, source.index(start))].rstrip()
-normalized = (body.replace("EspNativeRootOwners_live()->doomCanvas",
-                           "render->doomRpg->doomCanvas")
+normalized = (body.replace("render == NULL || EspNativeRootOwners_live()->doomCanvas == NULL",
+                           "render == NULL || render->doomRpg == NULL ||\n        EspNativeRootOwners_live()->doomCanvas == NULL")
+              .replace("EspNativeRootOwners_live()->doomCanvas",
+                       "render->doomRpg->doomCanvas")
+              .replace('EspLegacyAssetSource_readAlloc("sintable.bin", NULL)',
+                       'DoomRPG_fileOpenRead(render->doomRpg, "/sintable.bin")')
               .replace("static int " + name + "(", "int Render_startup(")
               .replace("EspNativeRenderStartup_loadPalettes(render);",
                        "Render_loadPalettes(render);"))
@@ -61,7 +68,6 @@ typedef struct EspNativeRootOwners_s { void* doomCanvas; } EspNativeRootOwners_t
 static EspNativeRootOwners_t nativeRootOwners;
 static EspNativeRootOwners_t* EspNativeRootOwners_live(void) { return &nativeRootOwners; }
 typedef struct Render_s {
-    DoomRPG_t* doomRpg;
     /* Sine table lives in native process owner. */
     int pitch;
     byte* framebuffer;
@@ -85,9 +91,9 @@ static void tracedFree(void* p) {
     if(p) ++fileFrees;
     free(p);
 }
-static byte* DoomRPG_fileOpenRead(DoomRPG_t* root, const char* name) {
-    assert(root != NULL);
-    assert(strcmp(name,"/sintable.bin")==0);
+static byte* EspLegacyAssetSource_readAlloc(const char* name, int* outSize) {
+    (void)outSize;
+    assert(strcmp(name,"sintable.bin")==0);
     ++fileReads;
     if (failOpen) return NULL;
     byte* result=(byte*)malloc(1024);
@@ -131,10 +137,8 @@ static void resetProbes(void) {
     memset(framebuffer,0,sizeof(framebuffer));
 }
 int main(void) {
-    DoomRPG_t root={.nativeProcessIdentity=1};
     nativeRootOwners.doomCanvas=(void*)1;
     Render_t render={0};
-    render.doomRpg=&root;
     for (int n=0;n<4096;++n) {
         resetProbes();
         render.framebuffer=NULL;

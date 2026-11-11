@@ -25,7 +25,7 @@ assert re.search(
 ), "desktop/oracle keep original clipping member"
 assert "render->clipRect.x" in DESKTOP
 assert "render->clipRect.w" in DESKTOP
-assert "sizeof(Render_t) == 112U" in BRIDGE
+assert "sizeof(Render_t) == 108U" in BRIDGE
 assert "sdlVideo.rendererW != DOOMRPG_CANVAS_WIDTH" in BRIDGE
 assert "sdlVideo.rendererH != DOOMRPG_CANVAS_HEIGHT" in BRIDGE
 assert "Esp32PlatformVideo_framebufferSizeBytes() < framebufferBytes" in BRIDGE

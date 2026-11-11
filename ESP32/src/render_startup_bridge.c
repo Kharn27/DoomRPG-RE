@@ -18,7 +18,7 @@
 #include <esp_heap_caps.h>
 #if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 /* Desktop/bringup retain the original legacy BSP flags; production does not. */
-_Static_assert(sizeof(Render_t) == 112U,
+_Static_assert(sizeof(Render_t) == 108U,
                "Render_t must omit desktop plane-color arrays, clipRect/skipCull/half-height mirrors, BSP diagnostics, raster state, world and allocations");
 #endif
 
@@ -76,7 +76,7 @@ void EspNativeRenderRuntime_releaseCompatibility(Render_t* render)
  * The original source bodies are preserved exactly, except for one-time
  * source-ownership diagnostics; all legacy world/raster logic stays excluded.
  */
-/* Native palette loader retains desktop RGB565 conversion, allocation and
+/* Native PAK palette loader retains RGB565 conversion, allocation and
  * fatal OOM behavior; the unused desktop heap ledger is no longer resident. */
 static void EspNativeRenderStartup_loadPalettes(Render_t* render)
 {
@@ -86,7 +86,7 @@ static void EspNativeRenderStartup_loadPalettes(Render_t* render)
 	int red, green, blue;
 
 
-	fData = DoomRPG_fileOpenRead(render->doomRpg, "/palettes.bin");
+	fData = EspLegacyAssetSource_readAlloc("palettes.bin", NULL);
 
 	SDL_free(render->mediaPalettes);
 
@@ -183,8 +183,7 @@ static int EspNativeRenderStartup_initialize(Render_t* render) {
     size_t framebufferBytes;
     byte* sharedFramebuffer;
 
-    if (render == NULL || render->doomRpg == NULL ||
-        EspNativeRootOwners_live()->doomCanvas == NULL) {
+    if (render == NULL || EspNativeRootOwners_live()->doomCanvas == NULL) {
         printf("[RENDER] ERROR invalid Render_startup object graph\n");
         return 0;
     }
@@ -202,7 +201,7 @@ static int EspNativeRenderStartup_initialize(Render_t* render) {
 
     printf("[RENDERSTART] OWNER api=Render_startup source=esp-native-render-startup direct=yes wrap=no\n");
 
-    fData = DoomRPG_fileOpenRead(render->doomRpg, "/sintable.bin");
+    fData = EspLegacyAssetSource_readAlloc("sintable.bin", NULL);
     if (fData == NULL) {
         printf("[RENDER] ERROR unable to load sintable.bin\n");
         return 0;
