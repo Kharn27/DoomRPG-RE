@@ -266,6 +266,30 @@ static void drawAnimationImage(DoomCanvas_t* doomCanvas,
     drawImageSpecialMapped(doomCanvas, img, 0, 0, 0, 0, x, y, flags, 1);
 }
 
+/* The text pages scroll c.bmp to the right. Keep that direction during the
+ * Mars insertion as well; repeat the opaque starfield so reversing its motion
+ * cannot uncover the left edge. No new buffers or allocations are needed. */
+static void drawRightwardAnimationBackground(DoomCanvas_t* doomCanvas,
+                                              Image_t* background,
+                                              int left,
+                                              int top,
+                                              int offsetPixels) {
+    int x;
+    int imageWidth;
+
+    if (background == NULL || background->imgBitmap == NULL ||
+        background->width <= 0 || offsetPixels < 0) {
+        return;
+    }
+
+    imageWidth = background->width;
+    for (x = (offsetPixels % imageWidth) - imageWidth;
+         x < ESP32_STORY_VIRTUAL_SIZE;
+         x += imageWidth) {
+        drawBackgroundImage(doomCanvas, background, left + x, top);
+    }
+}
+
 static void drawTextGlyph(DoomCanvas_t* doomCanvas,
                           Image_t* img,
                           int xSrc,
@@ -624,18 +648,21 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase, DoomRPG_t* root) {
                             0, 0,
                             DOOMRPG_LOGICAL_WIDTH,
                             DOOMRPG_LOGICAL_HEIGHT);
-        drawBackgroundImage(doomCanvas,
-                            &introState->imgSpaceBG,
-                            left - bgOffset,
-                            top);
+        drawRightwardAnimationBackground(doomCanvas,
+                                          &introState->imgSpaceBG,
+                                          left,
+                                          top,
+                                          bgOffset);
         setAnimationVirtualClip(doomCanvas, root,
                                 left,
                                 top,
                                 ESP32_STORY_VIRTUAL_SIZE,
                                 ESP32_STORY_VIRTUAL_SIZE);
+        /* The transparent line layer follows the same rightward parallax;
+         * it is not tiled, unlike the opaque space background. */
         drawAnimationImage(doomCanvas,
                            &introState->imgLinesLayer,
-                           left - linesOffset,
+                           left + linesOffset,
                            top,
                            0);
         drawAnimationImage(doomCanvas,
