@@ -1,3 +1,4 @@
+#if defined(DOOMRPG_ESP32_BT_TEST_PROFILE) && DOOMRPG_ESP32_BT_TEST_PROFILE
 /* Isolated BT-MIDI experiment. This TU is the sole Arduino entrypoint in
  * esp32-cyd-bt-test. Pull in the unchanged production bootstrap helpers, but
  * NEVER call its normal setup/loop or poll/dispatch touchscreen events.
@@ -50,3 +51,5 @@ void loop() {
     EspBtTestA2dp_service();
     delay(2);
 }
+
+#endif /* DOOMRPG_ESP32_BT_TEST_PROFILE */

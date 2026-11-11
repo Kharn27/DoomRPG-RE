@@ -5,9 +5,10 @@ root=Path("ESP32")
 pio=(root/"platformio.ini").read_text()
 normal=pio.split("[env:esp32-cyd]",1)[1].split("[env:esp32-cyd-bringup]",1)[0]
 profile=pio.split("[env:esp32-cyd-bt-test]",1)[1]
-assert "-<esp_bt_test_main.cpp>" in normal
-assert "-<esp_bt_test_midi.cpp>" in normal
-assert "-<esp_bt_test_a2dp.cpp>" in normal
+assert "-<esp32_sdl.cpp>" in normal
+assert "-<esp_bt_test_main.cpp>" not in normal
+assert "-<esp_bt_test_midi.cpp>" not in normal
+assert "-<esp_bt_test_a2dp.cpp>" not in normal
 assert "-<main.cpp>" in profile
 assert "DOOMRPG_ESP32_BT_TEST_PROFILE=1" in profile
 assert "board_build.partitions = partitions_cyd_bt0_raw_pak.csv" in profile
@@ -15,6 +16,7 @@ assert "1703936" in profile
 
 source=(root/"src/esp_bt_test_main.cpp").read_text()
 assert '#include "main.cpp"' in source
+assert source.startswith("#if defined(DOOMRPG_ESP32_BT_TEST_PROFILE)")
 assert "#define setup DoomRPG_ProductionSetup_Inert" in source
 assert "#define loop DoomRPG_ProductionLoop_Inert" in source
 assert "initializeMainMenu();" in source
@@ -22,7 +24,7 @@ assert "EspBtTestMidi_begin();" in source
 assert "EspBtTestA2dp_begin();" in source
 assert "EspBtTestMidi_pump();" in source
 assert "EspBtTestA2dp_service();" in source
-assert "input.begin();" not in source.split("void setup() {",1)[1]
+assert "    input.begin();" not in source.split("void setup() {",1)[1]
 assert "EspNativeGameplaySession_service(doomRpg)" not in source.split("void loop() {",1)[1]
 assert "EspNativeResidentGameplay_serviceMenuExit(doomRpg)" not in source.split("void loop() {",1)[1]
 
