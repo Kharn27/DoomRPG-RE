@@ -124,6 +124,7 @@ static uint32_t audioDiagStage; // atomic publication by audio core
 static uint32_t audioDiagFrames; // audio task only
 static uint32_t audioDiagMidiEpochMs; // atomic wall-clock point, MIDI t=0
 static uint32_t audioDiagReported; // loop thread only
+static uint32_t audioGainReportedPhase = UINT32_MAX; // loop-only; one line/phase
 /* I2S's i2s_get_clk() reports the requested rate; the DAC clock can
  * physically run much faster if the 160 MHz clock divider saturates.
  * Measure DMA backpressure on the real CYD before playing any notes. */
@@ -358,6 +359,10 @@ static void taskBody(void*) {
         }
         const uint32_t master = __atomic_load_n(
             &masterPercent, __ATOMIC_ACQUIRE);
+        /* Diagnostic gain is clamped below the persisted user volume.
+         * One value per 10-ms buffer, exact 8-second sample boundaries. */
+        const uint8_t diagnosticGain = EspNativeAudioPcm_gainTestPercent(
+            sample, master);
         uint32_t blockLimited = 0U, blockClipped = 0U;
         uint32_t blockQuiet = 0U, blockPeak = 0U;
         for (unsigned i = 0; i < kBufferSamples; ++i) {
@@ -435,7 +440,7 @@ static void taskBody(void*) {
              * soft limiter; round only at the final 8-bit DAC boundary. */
             uint8_t limited = 0U, clipped = 0U;
             const int32_t finalQ8 = EspNativeAudioPcm_scaleLimitQ8(
-                mixedQ8, master, &limited, &clipped);
+                mixedQ8, diagnosticGain, &limited, &clipped);
             const uint16_t dac = EspNativeAudioPcm_toDacWord(finalQ8);
             blockLimited += limited;
             blockClipped += clipped;
@@ -530,6 +535,7 @@ static void stopMusic(const char* why) {
     __atomic_store_n(&sampleClock, 0U, __ATOMIC_RELEASE);
     if (eventQueue) xQueueReset(eventQueue);
     memset(&music, 0, sizeof(music));
+    audioGainReportedPhase = UINT32_MAX;
     printf("[AUDIO] STOP reason=%s playback=idle gameplay=unchanged\n", why);
 }
 
@@ -747,6 +753,27 @@ extern "C" void EspNativeAudioMidi_service(void) {
                     &audioDiagMidiEpochMs, __ATOMIC_ACQUIRE);
                 previousReport = music.wallStartMs;
             }
+        }
+    }
+
+    const uint32_t diagNow = __atomic_load_n(
+        &audioDiagStage, __ATOMIC_ACQUIRE);
+    if (driverReady && music.active && diagNow == kAudioDiagMidi) {
+        const uint32_t midiSample = currentSample();
+        const uint32_t phase = EspNativeAudioPcm_gainTestPhase(midiSample);
+        if (phase != audioGainReportedPhase) {
+            audioGainReportedPhase = phase;
+            const uint32_t preset = __atomic_load_n(
+                &masterPercent, __ATOMIC_ACQUIRE);
+            const uint32_t applied = EspNativeAudioPcm_gainTestPercent(
+                midiSample, preset);
+            printf("[AUDIOGAIN] step=%u/4 elapsedMs=%u masterPct=%u "
+                   "effectivePct=%u nextAfterMs=%u "
+                   "source=original-MIDI test=temporary-analog-headroom\n",
+                   (unsigned)(phase + 1U),
+                   (unsigned)(midiSample / 16U), (unsigned)preset,
+                   (unsigned)applied,
+                   (unsigned)(phase < 3U ? (phase + 1U) * 8000U : 0U));
         }
     }
 
