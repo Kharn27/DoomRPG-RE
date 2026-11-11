@@ -597,7 +597,7 @@ static void EspNativeEngineLayout_startupCanvas(DoomCanvas_t* doomCanvas, DoomRP
            doomCanvas->startupMap);
 }
 
-int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report) {
+int DoomRPG_startEngineLayout(DoomRPG_t* root, DoomRpgLayoutReport* report) {
     DoomCanvas_t* canvas;
     Render_t* render;
     if (layoutAttempted) {
@@ -608,7 +608,7 @@ int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report) {
 
     SDL_memset(&layoutReport, 0, sizeof(layoutReport));
 
-    if (!coreInitReport.ready || doomRpg == NULL || EspNativeRootOwners_live()->doomCanvas == NULL ||
+    if (!coreInitReport.ready || root == NULL || EspNativeRootOwners_live()->doomCanvas == NULL ||
         EspNativeRootOwners_live()->render == NULL) {
         printf("[LAYOUT] Core graph is not ready; startup refused\n");
         if (report != NULL) *report = layoutReport;
@@ -626,7 +626,7 @@ int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report) {
            (unsigned int)layoutReport.largest8Before);
     printf("[LAYOUT] This stage configures fixed native HUD geometry; legacy Hud_t is retired\n");
 
-    EspNativeEngineLayout_startupCanvas(canvas, doomRpg);
+    EspNativeEngineLayout_startupCanvas(canvas, root);
 
     printf("[LAYOUT] HUD owner=native-gameplay-hud legacyObject=%p top=20 bottom=20\n",
            (void*)NULL);

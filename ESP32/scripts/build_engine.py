@@ -46,7 +46,9 @@ if ("static DoomCanvas_t* EspNativeEngineRoot_initCanvas(DoomCanvas_t* doomCanva
         "DoomCanvas_init(" in native_canvas_text):
     raise RuntimeError("Retired Canvas lifecycle ABI revived or native root owner absent")
 if ("static void EspNativeEngineLayout_startupCanvas(DoomCanvas_t* doomCanvas, DoomRPG_t* root)" not in native_layout_owner or
-        "EspNativeEngineLayout_startupCanvas(canvas, doomRpg);" not in native_layout_owner or
+        "int DoomRPG_startEngineLayout(DoomRPG_t* root, DoomRpgLayoutReport* report)" not in native_layout_owner or
+        "if (!coreInitReport.ready || root == NULL ||" not in native_layout_owner or
+        "EspNativeEngineLayout_startupCanvas(canvas, root);" not in native_layout_owner or
         "DoomCanvas_startup(" in native_canvas_text):
     raise RuntimeError("Retired Canvas startup ABI revived or native layout owner absent")
 native_menu_state_source = join(project_src_dir, "native_main_menu_model.c")

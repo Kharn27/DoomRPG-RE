@@ -55,6 +55,9 @@ reversals = {
          "int EspLegacyPrerenderStartup_start(int layoutReady);"),
     ],
     "ESP32/src/main.cpp": [
+        # Root-J5 layout token is an independent boot edit; reverse before old Git parity.
+        ("DoomRPG_startEngineLayout(doomRpg, &layoutReport) != 0;",
+         "DoomRPG_startEngineLayout(&layoutReport) != 0;"),
         # Normalize the separate Root-J4 mappings token call before restoring
         # the original pre-Root-J3 boot blob.
         ("EspLegacyConfigMappingsStartup_start(doomRpg, engineRenderStartupReady ? 1 : 0) != 0;",

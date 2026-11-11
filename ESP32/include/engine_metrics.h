@@ -113,7 +113,8 @@ void DoomRPG_getEngineMetrics(DoomRpgEngineMetrics* metrics);
 int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report);
 const char* DoomRPG_coreStageName(uint8_t stage);
 
-int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report);
+struct DoomRPG_s;
+int DoomRPG_startEngineLayout(struct DoomRPG_s* root, DoomRpgLayoutReport* report);
 uint32_t DoomRPG_getHeap8Free(void);
 uint32_t DoomRPG_getLargest8BitBlock(void);
 

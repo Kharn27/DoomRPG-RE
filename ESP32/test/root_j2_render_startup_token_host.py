@@ -58,6 +58,9 @@ changes = {
          "if (doomRpg == NULL || EspNativeRootOwners_live()->render == NULL ||"),
     ],
     "ESP32/src/main.cpp": [
+        # Root-J5 layout token is an independent boot edit; reverse before old Git parity.
+        ("DoomRPG_startEngineLayout(doomRpg, &layoutReport) != 0;",
+         "DoomRPG_startEngineLayout(&layoutReport) != 0;"),
         # Root-J4's independent boot call is reversed before Root-J3/J2 golden-blob parity.
         ("EspLegacyConfigMappingsStartup_start(doomRpg, engineRenderStartupReady ? 1 : 0) != 0;",
          "EspLegacyConfigMappingsStartup_start(engineRenderStartupReady ? 1 : 0) != 0;"),
