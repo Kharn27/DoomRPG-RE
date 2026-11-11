@@ -11,6 +11,11 @@
 #include "esp_bt_test_midi.h"
 #include "esp_bt_test_a2dp.h"
 #include "esp_heap_caps.h"
+#include "Render.h"
+#include "esp_native_root_state.h"
+#include "esp_render_startup_bridge.h"
+extern bool PlatformVideo_btTestReleaseFrozenFramebuffer();
+
 
 void setup() {
     Serial.begin(115200);
@@ -40,6 +45,35 @@ void setup() {
         Serial.println("[BTTEST] FAIL-CLOSED menu-or-PAK-not-ready");
         return;
     }
+    /* One last exact native redraw. LCD GRAM retains the image forever;
+     * disabling both input and further renderer calls permits a one-way
+     * release of the RAM framebuffer and now-dead media mappings.
+     * These are valid ONLY in the isolated BT-1 diagnostic firmware. */
+    if (!PlatformVideo_present()) {
+        Serial.println("[BTTEST] FAIL-CLOSED final-menu-present");
+        return;
+    }
+    Render_t *render = EspNativeRootOwners_live()->render;
+    if (render == nullptr ||
+        render->framebuffer != (uint8_t*)PlatformVideo_framebuffer()) {
+        Serial.println("[BTTEST] FAIL-CLOSED render-framebuffer-alias-mismatch");
+        return;
+    }
+    const uint32_t beforeFreeze = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    /* Mapping compatibility release touches NO immutable maps or framebuffer.
+     * No render/game/menu code is ever serviced after this point. */
+    EspNativeRenderRuntime_releaseCompatibility(render);
+    render->framebuffer = nullptr;
+    if (!PlatformVideo_btTestReleaseFrozenFramebuffer()) {
+        Serial.println("[BTTEST] FAIL-CLOSED framebuffer-release");
+        return;
+    }
+    const uint32_t afterFreeze = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    Serial.printf("[BTTEST] FROZEN_RELEASE before=%lu after=%lu gained=%lu largest8=%lu dma=%lu display=latched gameplay=off\\n",
+                  (unsigned long)beforeFreeze, (unsigned long)afterFreeze,
+                  (unsigned long)(afterFreeze - beforeFreeze),
+                  (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+                  (unsigned long)heap_caps_get_free_size(MALLOC_CAP_DMA));
     (void)EspBtTestMidi_begin(); /* exact PAK MIDI or explicit music failure */
     EspBtTestA2dp_begin();
 }

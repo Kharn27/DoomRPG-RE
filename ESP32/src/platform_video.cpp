@@ -450,3 +450,20 @@ void PlatformVideo_showTestPattern() {
 
     PlatformVideo_present();
 }
+
+#if defined(DOOMRPG_ESP32_BT_TEST_PROFILE) && DOOMRPG_ESP32_BT_TEST_PROFILE
+/* BT-1/B ONLY. The menu is already fully presented in ILI9341 GRAM.
+ * After this call NO drawing, touch or gameplay service may execute.
+ * Never link this destructive one-way transition into normal gameplay.
+ * Caller first detaches all known Render aliases and releases mappings. */
+bool PlatformVideo_btTestReleaseFrozenFramebuffer() {
+    if (platformDisplay == nullptr || framebuffer == nullptr) return false;
+    /* The TFT retains last fully presented frame independently of our RAM. */
+    uint16_t* old = framebuffer;
+    framebuffer = nullptr;
+    free(old);
+    Serial.printf("[BTTEST] FRAMEBUFFER_RELEASED bytes=%lu screen=ILI9341-GRAM-retained touch=off redraw=forbidden\n",
+                  (unsigned long)kFramebufferBytes);
+    return true;
+}
+#endif

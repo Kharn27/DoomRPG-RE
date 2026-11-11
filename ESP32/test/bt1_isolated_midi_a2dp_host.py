@@ -20,6 +20,17 @@ assert source.startswith("#if defined(DOOMRPG_ESP32_BT_TEST_PROFILE)")
 assert "#define setup DoomRPG_ProductionSetup_Inert" in source
 assert "#define loop DoomRPG_ProductionLoop_Inert" in source
 assert "initializeMainMenu();" in source
+assert "PlatformVideo_present()" in source
+assert "EspNativeRenderRuntime_releaseCompatibility(render);" in source
+assert "render->framebuffer = nullptr;" in source
+assert "PlatformVideo_btTestReleaseFrozenFramebuffer()" in source
+assert source.index("PlatformVideo_btTestReleaseFrozenFramebuffer()") < source.index("EspBtTestMidi_begin();")
+videoPath="ESP32/src/platform_video.cpp"
+video=(root/videoPath.replace("ESP32/","")).read_text()
+assert "PlatformVideo_btTestReleaseFrozenFramebuffer" in video
+assert "free(old);" in video
+assert "framebuffer = nullptr;" in video
+assert "#if defined(DOOMRPG_ESP32_BT_TEST_PROFILE) && DOOMRPG_ESP32_BT_TEST_PROFILE" in video
 assert "EspBtTestMidi_begin();" in source
 assert "EspBtTestA2dp_begin();" in source
 assert "EspBtTestMidi_pump();" in source
