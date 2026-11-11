@@ -594,6 +594,20 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-platformio-
 
+      - name: Test BT-0 Arduino boot Classic memory reservation (host Python)
+        run: python ESP32/test/bt0_arduino_boot_guard_host.py
+
+      - name: Test BT-0 controller state and exact Classic mode (host Python)
+        run: python ESP32/test/bt0_controller_preflight_host.py
+
+      - name: Test BT-0 experimental 4MiB partition geometry (host Python)
+        run: python ESP32/test/bt0_partition_geometry_host.py
+
+      - name: Test BT-0 fail-closed memory policy (host C)
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -IESP32/src ESP32/test/bt0_memory_policy_host.c -o /tmp/doomrpg-bt0-policy
+          /tmp/doomrpg-bt0-policy
+
       - name: Install PlatformIO Core
         run: python -m pip install 'platformio>=6.1,<7'
 
@@ -611,6 +625,23 @@ jobs:
 
       - name: SDL-F13 reject dormant controller and mode globals in all three linked ELF
         run: python ESP32/test/sdl_f13_dead_input_mode_host.py --elf
+
+      - name: Verify BT-0 boot guard and link contract in normal ELF
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+          root = Path("ESP32/.pio/build")
+          marker = b"[BT0] BOOT_HOOK btInUse=1"
+          normal = (root / "esp32-cyd/firmware.elf").read_bytes()
+          assert marker in normal, "BT-0 boot hook not linked into normal firmware"
+          for env in ("esp32-cyd-bringup", "esp32-cyd-trace"):
+              assert marker not in (root / env / "firmware.elf").read_bytes(), env
+          nm = subprocess.check_output(["xtensa-esp32-elf-nm", str(root / "esp32-cyd/firmware.elf")], text=True)
+          assert any(line.endswith(" T btInUse") for line in nm.splitlines()), "btInUse not strong in final ELF"
+          assert any(line.endswith(" T initVariant") for line in nm.splitlines()), "initVariant not strong in final ELF"
+          print("BT0 ELF: strong btInUse/initVariant in normal; diagnostic ELF inert")
+          PY
 
       - name: Verify sprite timing witnesses absent from production, retained in diagnostic profiles
         run: |
