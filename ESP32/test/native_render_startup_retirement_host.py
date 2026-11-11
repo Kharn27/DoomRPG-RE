@@ -6,6 +6,7 @@ for the *existing* shared framebuffer and palette loader. This does not
 simulate physical TFT output or replace hardware validation.
 """
 from pathlib import Path
+from sdl_f9_render_startup_no_sdl_host import restore_pre_f9
 import re
 import shutil
 import subprocess
@@ -31,7 +32,9 @@ assert 'EspLegacyAssetSource_readAlloc("sintable.bin", NULL)' in source
 assert 'EspLegacyAssetSource_readAlloc("palettes.bin", NULL)' in source
 assert re.search(r"#ifndef DOOMRPG_ESP32\s+int Render_startup\(", header)
 body = source[source.index(start):source.index(end, source.index(start))].rstrip()
-normalized = (body.replace("render == NULL || EspNativeRootOwners_live()->doomCanvas == NULL",
+old_source = restore_pre_f9(source)
+old_body = old_source[old_source.index(start):old_source.index(end, old_source.index(start))].rstrip()
+normalized = (old_body.replace("render == NULL || EspNativeRootOwners_live()->doomCanvas == NULL",
                            "render == NULL || render->doomRpg == NULL ||\n        EspNativeRootOwners_live()->doomCanvas == NULL")
               .replace("EspNativeRootOwners_live()->doomCanvas",
                        "render->doomRpg->doomCanvas")
@@ -74,7 +77,6 @@ typedef struct Render_s {
     short* mediaPalettes;
     int mediaPalettesLength;
 } Render_t;
-static struct { int rendererW,rendererH; } sdlVideo={160,120};
 static byte framebuffer[160*120*2];
 static int fbReady, failOpen, failPalettes;
 static size_t fbBytes;
@@ -91,6 +93,7 @@ static void tracedFree(void* p) {
     if(p) ++fileFrees;
     free(p);
 }
+#define free tracedFree
 static byte* EspLegacyAssetSource_readAlloc(const char* name, int* outSize) {
     (void)outSize;
     assert(strcmp(name,"sintable.bin")==0);
@@ -150,16 +153,8 @@ int main(void) {
         assert(render.mediaPalettesLength==3280 && render.mediaPalettes);
         assert(fileReads==1 && fileFrees==1 && paletteLoads==1 && trigInstalls==1);
     }
-    /* The cached legacy clip rectangle is gone. Both real renderer dimensions
-     * must fail closed before loading the sine table or touching the FB. */
-    resetProbes();sdlVideo.rendererW=159;
-    assert(EspNativeRenderStartup_initialize(&render)==0);
-    assert(fileReads==0 && paletteLoads==0 && trigInstalls==0);
-    sdlVideo.rendererW=160;
-    resetProbes();sdlVideo.rendererH=119;
-    assert(EspNativeRenderStartup_initialize(&render)==0);
-    assert(fileReads==0 && paletteLoads==0 && trigInstalls==0);
-    sdlVideo.rendererH=120;
+    /* SDL-F9: geometry is compile-time native and no mutable SDLVideo_t
+     * remains. The framebuffer NULL/undersize guards below still fail closed. */
 
     resetProbes();
     assert(EspNativeRenderStartup_initialize(NULL)==0);
@@ -189,7 +184,7 @@ int main(void) {
     assert(EspNativeRenderStartup_initialize(&render)==0);
     assert(fileReads==1 && fileFrees==1 && paletteLoads==1 && trigInstalls==1);
 
-    puts("PASS Render startup 4096 shared-FB/palette/trig cases + 6 fail-closed branches");
+    puts("PASS Render startup 4096 shared-FB/palette/trig cases + native framebuffer fail-closed");
     return 0;
 }
 """

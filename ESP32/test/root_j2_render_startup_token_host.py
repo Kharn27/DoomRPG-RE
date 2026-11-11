@@ -5,6 +5,7 @@ Git-blob exact inverse parity on three files and executable C probe of the
 production EspRenderStartupBridge_start body (not a rewritten approximation).
 """
 from pathlib import Path
+from sdl_f9_render_startup_no_sdl_host import restore_pre_f9
 import hashlib
 import subprocess
 import tempfile
@@ -20,6 +21,9 @@ FILE_BLOBS = {
 }
 files = {path: (ROOT / path).read_text(encoding="utf-8")
          for path in FILE_BLOBS}
+# Compare Root-J2 original blobs against precisely pre-SDL-F9 code.
+reference_files = dict(files)
+reference_files["ESP32/src/render_startup_bridge.c"] = restore_pre_f9(files["ESP32/src/render_startup_bridge.c"])
 
 header = files["ESP32/include/esp_render_startup_bridge.h"]
 source = files["ESP32/src/render_startup_bridge.c"]
@@ -63,7 +67,7 @@ changes = {
     ],
 }
 for path, operations in changes.items():
-    restored = files[path]
+    restored = reference_files[path]
     for old, new in operations:
         assert restored.count(old) == 1, (path, old)
         restored = restored.replace(old, new, 1)
@@ -115,6 +119,8 @@ typedef struct {
 } EspNativeRootOwners_t;
 typedef struct { int rendererW, rendererH; } SDLVideo_t;
 
+#define DOOMRPG_CANVAS_WIDTH 160
+#define DOOMRPG_CANVAS_HEIGHT 120
 static int renderStartupAttempted = 0;
 static int renderStartupReady = 0;
 static uint8_t framebuffer[38400], wrongFramebuffer[38400];

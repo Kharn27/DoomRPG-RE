@@ -7,6 +7,7 @@ frees and the intentional absence of desktop heap accounting; physical CYD
 still validates PAK/TFT.
 """
 from pathlib import Path
+from sdl_f9_render_startup_no_sdl_host import restore_pre_f9
 import re
 import shutil
 import subprocess
@@ -32,8 +33,9 @@ def extract(source, signature):
 old_sig = "void Render_loadPalettes(Render_t* render)"
 new_sig = "static void EspNativeRenderStartup_loadPalettes(Render_t* render)"
 palette = extract(native, new_sig)
+pre_f9_palette = extract(restore_pre_f9(native), new_sig)
 desktop_palette = extract(desktop, old_sig)
-normalized = (palette.replace(new_sig, old_sig, 1)
+normalized = (pre_f9_palette.replace(new_sig, old_sig, 1)
               .replace('EspLegacyAssetSource_readAlloc("palettes.bin", NULL)',
                        'DoomRPG_fileOpenRead(render->doomRpg, "/palettes.bin")'))
 assert "render->doomRpg" not in palette
@@ -99,6 +101,9 @@ static void tracedFree(void* p) {
 }
 #define SDL_malloc tracedMalloc
 #define SDL_free tracedFree
+/* The actual SDL-F9 production C now calls standard libc directly. */
+#define malloc tracedMalloc
+#define free tracedFree
 static int DoomRPG_freeMemory(void) {
     return 100000-(int)ownedBytes;
 }

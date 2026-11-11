@@ -5,6 +5,7 @@ The two-lifetime cleanup must remain callable outside the fatal process root.
 This mocks the legacy compatibility slots, not CYD pixels or SD data.
 """
 from pathlib import Path
+from sdl_f9_render_startup_no_sdl_host import restore_pre_f9
 import re
 import shutil
 import subprocess
@@ -41,8 +42,8 @@ assert all(token in menu for token in ("render->shapeData == NULL",
                                        "render->mediaTexels == NULL",
                                        "!EspNativeWallCache_isActive()",
                                        "!EspNativeSpriteCache_isActive()"))
-body = runtime.replace("EspNativeRenderRuntime_releaseCompatibility(",
-                       "Render_freeRuntime(")
+body = extract(restore_pre_f9(bridge), signature).replace(
+    "EspNativeRenderRuntime_releaseCompatibility(", "Render_freeRuntime(")
 fnv = 2166136261
 for b in body.encode("utf-8"):
     fnv = ((fnv ^ b) * 16777619) & 0xffffffff
@@ -88,6 +89,7 @@ static void tracedFree(void* p) {
     free(p);
 }
 #define SDL_free tracedFree
+#define free tracedFree
 #define printf(...) ((void)0)
 static uint32_t heap8Free(void) { return 113768U; }
 static uint32_t largest8Block(void) { return 86004U; }
