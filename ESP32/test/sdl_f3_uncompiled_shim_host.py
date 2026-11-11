@@ -18,7 +18,12 @@ block = re.search(r"(?m)^build_src_filter\s*=\s*\n(?P<body>(?:[ \t]+[^\n]*\n)+)"
 assert block, "build_src_filter missing"
 filters = block.group("body").splitlines()
 assert [s.strip() for s in filters] == ["+<*>", "-<esp32_sdl.cpp>"], filters
-assert ini.count("extends = env:esp32-cyd") == 2
+# SDL-F3 contract is the two production-derived diagnostic environments.
+# BT-1 adds a distinct draft-only profile; it does not change the production
+# filter or SDL exclusion and must not invalidate the historical oracle.
+assert ini.count("extends = env:esp32-cyd") == (
+    2 + int("[env:esp32-cyd-bt-test]" in ini)
+)
 assert "Esp32Sdl_attachDisplay" not in main
 assert '#include "esp32_sdl_platform.h"' not in main
 assert "videoReady = PlatformVideo_begin(&display);" in main
