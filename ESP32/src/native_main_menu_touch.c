@@ -561,7 +561,7 @@ void __wrap_PlatformInput_setTapCallback(PlatformTapCallback callback) {
         if (doomRpg != NULL && EspNativeRootOwners_live()->doomCanvas != NULL &&
             EspNativeRootOwners_live()->doomCanvas->state != ST_MENU) {
             const int priorState = EspNativeRootOwners_live()->doomCanvas->state;
-            EspNativeMainMenu_transitionCanvasState(EspNativeRootOwners_live()->doomCanvas, ST_MENU);
+            EspNativeMainMenu_transitionCanvasState(EspNativeRootOwners_live()->doomCanvas, doomRpg, ST_MENU);
             printf("[MENUTOUCH] STATE SYNC canvas=%d->%d source=native-MENU_MAIN activation\n",
                    priorState,
                    EspNativeRootOwners_live()->doomCanvas->state);

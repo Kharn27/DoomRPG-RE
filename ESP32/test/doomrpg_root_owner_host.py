@@ -71,7 +71,7 @@ EspNativeRootOwners_t* EspNativeRootOwners_live(void);
 DoomRPG_t* root_identity(void);
 void EspNativeMenuStorage_free(void*,DoomRPG_t*,boolean);
 void EspNativeEngineRoot_releaseRender(void*,boolean);
-void EspNativeEngineRoot_releaseCanvas(void*);
+void EspNativeEngineRoot_releaseCanvas(void*,DoomRPG_t*);
 """
 harness=r"""
 #include "shim.h"
@@ -87,8 +87,8 @@ void EspNativeEngineRoot_releaseRender(void* p, boolean freePtr) {
     assert(p && freePtr); assert(n<8);
     trace[n++]=3;renderCalls++;free(p);
 }
-void EspNativeEngineRoot_releaseCanvas(void* p) {
-    assert(p); assert(n<8);
+void EspNativeEngineRoot_releaseCanvas(void* p,DoomRPG_t* root) {
+    assert(p && root==doomRpg); assert(n<8);
     trace[n++]=4;canvasCalls++;free(p);
 }
 int main(void) {

@@ -19,7 +19,8 @@ assert "doomCanvas->renderFloorCeilingTextures = true;" in CANVAS
 assert DESKTOP.count("renderFloorCeilingTextures") == 2
 assert "renderFloorCeilingTextures" not in NATIVE
 assert "ESP32_DOOMCANVAS_RETIRED_PLANE_GATE_BYTES 4U" in METRICS
-assert "ESP32_DOOMCANVAS_RETIRED_PLANE_GATE_BYTES)" in METRICS
+assert "ESP32_DOOMCANVAS_RETIRED_PROCESS_BACKREF_BYTES 4U" in METRICS
+assert "ESP32_DOOMCANVAS_RETIRED_PROCESS_BACKREF_BYTES)" in METRICS
 assert "sizeof(DoomCanvas_t) == ESP32_DOOMCANVAS_COMPACT_BYTES" in NATIVE
 assert "floorRgb565" in (ROOT / "ESP32/src/esp_native_first_frame.c").read_text()
 assert "EspMapRuntime" in (ROOT / "ESP32/src/esp_native_plane_renderer.c").read_text()
@@ -73,7 +74,6 @@ typedef struct DoomCanvas_s {
     int time, state;
     short startupMap;
     int skipIntro, fontColor;
-    DoomRPG_t* doomRpg;
 } DoomCanvas_t;
 static int fail_alloc, mallocs, zeros;
 static void* tracked_malloc(size_t n) { ++mallocs; return fail_alloc ? NULL : malloc(n); }
@@ -86,23 +86,21 @@ static void* tracked_memset(void* p, int v, size_t n) { ++zeros; return memset(p
 """
 main = r"""
 int main(void) {
-    DoomRPG_t root = {42};
     fail_alloc = 1;
-    assert(EspNativeEngineRoot_initCanvas(NULL, &root) == NULL);
+    assert(EspNativeEngineRoot_initCanvas(NULL) == NULL);
     assert(mallocs == 1 && zeros == 0);
     fail_alloc = 0;
     for (int i=0; i<4096; ++i) {
         DoomCanvas_t given;
         memset(&given, 0xa5, sizeof(given));
         mallocs = zeros = 0;
-        assert(EspNativeEngineRoot_initCanvas(&given, &root) == &given);
+        assert(EspNativeEngineRoot_initCanvas(&given) == &given);
         assert(mallocs == 0 && zeros == 1);
         DoomCanvas_t expected = {0};
-        expected.doomRpg = &root;
         expected.fontColor = -1;
         assert(memcmp(&given, &expected, sizeof(expected)) == 0);
         mallocs = zeros = 0;
-        DoomCanvas_t* allocated = EspNativeEngineRoot_initCanvas(NULL, &root);
+        DoomCanvas_t* allocated = EspNativeEngineRoot_initCanvas(NULL);
         assert(allocated && mallocs == 1 && zeros == 1);
         assert(memcmp(allocated, &expected, sizeof(expected)) == 0);
         free(allocated);
@@ -118,4 +116,4 @@ with tempfile.TemporaryDirectory(prefix="canvas-plane-ctor-") as tmp:
                     "-IESP32/include", str(test), "-o", str(binary)],
                    cwd=ROOT, check=True)
     subprocess.run([str(binary)], check=True)
-print("PASS Canvas native plane gate retired ABI=40B; desktop/oracle retained")
+print("PASS Canvas native plane gate + process backref retired ABI=36B; desktop/oracle retained")

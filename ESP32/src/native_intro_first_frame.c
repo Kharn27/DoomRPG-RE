@@ -151,7 +151,7 @@ int DoomRPG_esp32RenderFirstIntroFrame(struct DoomRPG_s* doomRpgBase) {
     introState->storyAnimTime = INTRO_FIRST_FRAME_TIME_MS;
     introState->showTextDone = false;
 
-    Esp32StoryFit_draw(canvas);
+    Esp32StoryFit_draw(canvas, doomRpg);
 
     outputHash = framebufferHash();
     heapAfter = heap8Free();

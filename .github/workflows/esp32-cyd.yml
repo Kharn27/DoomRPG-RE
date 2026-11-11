@@ -324,6 +324,9 @@ jobs:
       - name: Test DoomCanvas private indexed glyph blitter contract (host Python)
         run: python ESP32/test/doomcanvas_private_blitter_host.py
 
+      - name: Test Root-I Canvas backref retirement with explicit lifecycle root (host)
+        run: python ESP32/test/root_i_canvas_backref_host.py
+
       - name: Test retirement of Canvas desktop plane texture gate (host C + ABI)
         run: python ESP32/test/native_canvas_plane_gate_retirement_host.py
 

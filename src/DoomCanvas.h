@@ -216,7 +216,9 @@ typedef struct DoomCanvas_s
 	boolean renderFloorCeilingTextures; // New
 #endif
 
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 	struct DoomRPG_s* doomRpg;
+#endif
 #ifndef DOOMRPG_ESP32
 	struct Render_s* render;
 	struct Player_s* player;
