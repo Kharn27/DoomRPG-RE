@@ -4,6 +4,17 @@
 La piste `5039.mid` du PAK natif est l'unique source de données musicales.
 Le test réel du classic CYD reste nécessaire avant de fusionner.
 
+## Retour matériel 11 novembre 2026 — FAIL et correction candidate
+
+- Le vrai CYD a confirmé `[AUDIO] MIDI-START resource=5039 file=5039.mid bytes=17163 tracks=3 ppqn=60` et les événements du PAK : 270 notes, 84 frappes de batterie et 8 changements de programme après la première séquence.
+- **FAIL de cadence (ancien SHA)** : `[AUDIO] PULSE timeMs=79670 wallMs=14540 speedPct=547 dmaWrites=8015 dmaErrors=0 late=51`. Il ne s'agit PAS d'une musique à 16 kHz, malgré `i2s_get_clk=16000`.
+- Diagnostic du pilote ESP-IDF v4.4.7 : la branche DAC utilise `I2S_LL_AD_BCK_FACTOR=2`, soit `mclk=sampleRate*2*16=512 kHz` à 16 kHz, mais l'horloge 160 MHz et le diviseur maître matériel 6 bits (max 63) ne peuvent fournir cette fréquence correctement. `i2s_get_clk` ne fait que retourner la demande logique, ce n'est pas une lecture de la cadence matérielle.
+- **Correctif candidat** : `cfg.use_apll=true` pour générer l'horloge bas débit via l'APLL ; démarrage de la tâche audio sur cœur 0 avec une calibration **silencieuse de 8+80 buffers PCM** en réutilisant son unique tampon 640B, sans lecture SD ni second tampon audio.
+- Le firmware n'active ensuite la synthèse que si `[AUDIOCLK] VERIFY source=APLL targetHz=16000 measuredHz=... elapsedUs=... frames=12800 result=PASS` indique entre **14 et 18 kHz mesurés** ; sinon `FAIL-CLOSED`, pas de lecture accélérée. **Le timestamp / la cadence doivent être confirmés sur le vrai CYD**, pas par la CI.
+- Pas de changement de MIDI, d'instrument, du nombre de voix, de la topologie PAK, du DAC GPIO26, du volume ni du gameplay. Les timbres FM-lite restent une limite musicale réelle ; ce correctif ne prétend pas produire l'AdLib/General MIDI.
+- Pendant la calibration (~0,8 s attendue), le cœur principal continue les menus et le tactile ; les 80 buffers sont exclusivement émis en silence sur le cœur audio.
+
+
 ## Installer / lancer
 
 - Conserver **seulement** le PAK habituel à la racine microSD : `/DoomRPG-ESP32.pak`.
