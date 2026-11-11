@@ -1,3 +1,11 @@
+## SDL-F8 — introduction native sans alias SDL (PASS CYD, 11 novembre 2026)
+
+[PR #308](https://github.com/Kharn27/DoomRPG-RE/pull/308) sur `main=b78be2101afe04fe9dbb72eae5ad220cc590b525` : les quatre unités clock/input/first_frame/dispose de l'introduction n'utilisent plus `SDL.h`. Les quatre macros string/memory/free remplaçables sont des alias libc exacts ; `SDL-F8` vérifie l'identité des corps C par FNV après restauration inverse, garde les tests historiques et compile les trois firmwares. Code testé sur branche `877fc1204cb8e1aff8db87856267ddd7c19221f1`, CI push/PR SUCCESS ; pas de nouveau buffer, owner, SDL runtime ni changement de taille binaire revendiqué.
+
+Le log physique normal `device-monitor-261111-170410.log` (1920 lignes, SHA firmware absent) valide l'horloge 50 ms, les étapes tactiles de l'intro jusqu'à `INTROCLK PARK`, la libération `INTRODISP READY` (+34116 B), Entrance, gameplay/dialogues/portes, HUB EXIT, LOAD V11 et deuxième EXIT. 2× `HEADROOM_OK`, 2× `RESIDENTRESET empty=1`, 2× `SYSEXIT MENU-READY`, 13 confirmations des deux pointeurs map-wide NULL, aucune erreur fatale. Les onze `NATIVEFRAME BOUNDARY-INLINE` sont des diagnostics anciens non fatals. Ce PASS est ciblé : il ne couvre pas les chemins OOM ni tous les formats d'image. Après le log, seulement mise à jour de la documentation avant fusion.
+
+---
+
 ## Root-J2 — démarrage Render à token explicite : PASS CYD (11 novembre 2026)
 
 [PR #305](https://github.com/Kharn27/DoomRPG-RE/pull/305) sur `main=ae6b78e5fc3773da0ae269f69a90e75a6baed0e2` après Root-J1. Le boot transmet `DoomRPG_t* root` à `EspRenderStartupBridge_start(root, preRenderReady)` ; Render startup ne consulte plus le global `doomRpg` et garde les refus précoces (root NULL, pré-rendu absent, Render/Canvas manquants, assets indisponibles, FB/pitch/palette invalides). Aucune nouvelle allocation ni changement du framebuffer, du PAK ou du gameplay ; singleton 1 B toujours nécessaire aux autres chemins. CI [#43046914423](https://github.com/Kharn27/DoomRPG-RE/actions/runs/43046914423) **SUCCESS**, extraction réelle C exécutée 4096 cycles/2 identités, invariance inverse de 3 fichiers sur blobs du main de départ, 3 builds et ELF. Normal **859481 flash / 80768 RAM statique** inchangés.

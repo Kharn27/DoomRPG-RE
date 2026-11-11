@@ -1,7 +1,8 @@
-#include <SDL.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "DoomRPG.h"
 #include "esp_native_root_state.h"
@@ -148,9 +149,9 @@ static void freeImageMeasured(DoomRPG_t* doomRpg,
 static void freeTextMeasured(char** text, const char* label) {
     const uint32_t heapBefore = heap8Free();
     const uint32_t largestBefore = largest8Block();
-    const size_t bytes = *text != NULL ? SDL_strlen(*text) + 1U : 0U;
+    const size_t bytes = *text != NULL ? strlen(*text) + 1U : 0U;
 
-    SDL_free(*text);
+    free(*text);
     *text = NULL;
 
     printf("[INTRODISP] FREE text=%s bytes=%u heap8=%u->%u gain=%d largest8=%u->%u ptr=%p\n",
