@@ -1,4 +1,3 @@
-#include <SDL.h>
 #include "esp_native_texture.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -7,7 +6,6 @@
 #include "DoomRPG.h"
 #include "DoomCanvas.h"
 #include "Render.h"
-#include "SDL_Video.h"
 
 #include "esp_native_canvas_text.h"
 #include "platform_video_config.h"
@@ -28,8 +26,8 @@ static void EspDoomCanvas_drawImageSpecial(DoomCanvas_t* doomCanvas,
                                  int yDst,
                                  int flags)
 {
-    SDL_Rect renderQuad;
-    SDL_Rect clip;
+    EspNativeRect renderQuad;
+    EspNativeRect clip;
     (void)param_7;
 
     if (doomCanvas == NULL || img == NULL) {
@@ -137,7 +135,7 @@ void EspNativeCanvas_drawText(DoomCanvas_t* doomCanvas,
         EspNativeTexture_setColorMod(imgFont->imgBitmap, r, g, b);
     }
 
-    len = (int)SDL_strlen(text);
+    len = (int)strlen(text);
     if ((flags & 8) != 0) {
         x -= len * advance;
     } else if ((flags & 16) != 0) {

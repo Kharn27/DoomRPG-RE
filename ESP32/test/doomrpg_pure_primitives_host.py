@@ -139,8 +139,14 @@ int main(void) {
         flags = ["-O2", "-std=c11", "-Wall", "-Wextra", "-Werror", "-fwrapv",
                  "-IESP32/include", "-Isrc"]
         flags += shlex.split(os.environ.get("PURE_SANITIZE_FLAGS", ""))
-        run(CC + flags + ["ESP32/src/esp_doomrpg_primitives.c",
-                          str(ref), str(probe), "-o", exe])
+        # SDL-F7: the real native TU no longer imports SDL.h. Compile it as
+        # DOOMRPG_ESP32; keep the original desktop reference and vector runner
+        # in their historical SDL ABI mode. This retains all 60000 vectors.
+        native_obj = str(Path(tmp) / "native_primitives.o")
+        run(CC + flags + ["-DDOOMRPG_ESP32=1", "-c",
+                          "ESP32/src/esp_doomrpg_primitives.c",
+                          "-o", native_obj])
+        run(CC + flags + [str(ref), str(probe), native_obj, "-o", exe])
         run([exe])
 
 

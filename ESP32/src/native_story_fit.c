@@ -1,13 +1,12 @@
-#include <SDL.h>
 #include "esp_native_texture.h"
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "DoomRPG.h"
 #include "esp_native_root_state.h"
 #include "DoomCanvas.h"
 #include "MenuSystem.h"
-#include "SDL_Video.h"
 
 #include "esp_native_intro_state.h"
 #include "native_story_fit.h"
@@ -29,7 +28,7 @@ static Image_t* acquireStoryHand(DoomRPG_t* doomRpg) {
     }
     if (storyHand.imgBitmap != NULL && storyHandOwner != NULL) {
         DoomRPG_freeImage(storyHandOwner, &storyHand);
-        SDL_memset(&storyHand, 0, sizeof(storyHand));
+        memset(&storyHand, 0, sizeof(storyHand));
     }
     DoomRPG_createImage(doomRpg, "p.bmp", true, &storyHand);
     if (storyHand.imgBitmap == NULL) {
@@ -69,7 +68,7 @@ void Esp32StoryFit_release(struct DoomCanvas_s* doomCanvasBase, DoomRPG_t* root)
         DoomRPG_freeImage(owner, &storyHand);
         printf("[INTROFIT] HAND-RELEASE asset=p.bmp owner=native-story\n");
     }
-    SDL_memset(&storyHand, 0, sizeof(storyHand));
+    memset(&storyHand, 0, sizeof(storyHand));
     storyHandOwner = NULL;
 }
 
@@ -171,8 +170,8 @@ static void drawImageSpecialMapped(DoomCanvas_t* doomCanvas,
                                    int yDst,
                                    int flags,
                                    int wideBackground) {
-    SDL_Rect source;
-    SDL_Rect destination;
+    EspNativeRect source;
+    EspNativeRect destination;
     int left;
     int top;
     int right;
@@ -275,8 +274,8 @@ static void drawTextGlyph(DoomCanvas_t* doomCanvas,
                           int height,
                           int xDst,
                           int yDst) {
-    SDL_Rect source;
-    SDL_Rect destination;
+    EspNativeRect source;
+    EspNativeRect destination;
     int left;
     int top;
     int right;
@@ -325,7 +324,7 @@ static void drawFont(DoomCanvas_t* doomCanvas,
     b = (byte)(doomCanvas->fontColor & 0x000000ff);
     EspNativeTexture_setColorMod(imgFont->imgBitmap, r, g, b);
 
-    len = (int)SDL_strlen(text) - strBeg;
+    len = (int)strlen(text) - strBeg;
     if (len < 0) {
         return;
     }
@@ -600,7 +599,7 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase, DoomRPG_t* root) {
         }
 
         if (elapsedText >
-            ((int)SDL_strlen(text[introState->storyTextPage]) * 25)) {
+            ((int)strlen(text[introState->storyTextPage]) * 25)) {
             introState->showTextDone = true;
         }
 

@@ -39,6 +39,8 @@ body = bridge[a:b]
 assert body.count("EspNativeTexture_setColorMod(imgFont->imgBitmap, r, g, b);") == 1
 body = body.replace("EspNativeTexture_setColorMod(imgFont->imgBitmap, r, g, b);",
                     "SDL_SetTextureColorMod(imgFont->imgBitmap, r, g, b);")
+# F7: SDL_strlen was libc strlen; retain the unchanged glyph-loop FNV.
+body = body.replace("len = (int)strlen(text);", "len = (int)SDL_strlen(text);")
 h = 2166136261
 for byte in body.encode("utf-8"):
     h = ((h ^ byte) * 16777619) & 0xFFFFFFFF

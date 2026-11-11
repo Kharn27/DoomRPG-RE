@@ -292,7 +292,10 @@ def main():
             "-O2", "-std=c11", "-Wall", "-Wextra", "-Werror",
             "-Wno-unused-parameter", "-DDOOMRPG_ESP32=1",
             "-DDOOMRPG_ESP32_GEOMETRY_ORACLE=1",
-            "-IESP32/include", "-Isrc",
+            # The reference comparison deliberately builds a desktop/oracle
+            # layout. F7's source is SDL-free in its real ESP32 build; only
+            # this historical host oracle forces SDL types into its TU.
+            "-IESP32/include", "-Isrc", "-include", "SDL.h",
             "ESP32/src/esp_doomrpg_presentation.c", str(temp/"reference.c"),
             str(temp/"test.c"), "-o", str(temp/"test")]
         cmd += shlex.split(os.environ.get("PRESENTATION_SANITIZE_FLAGS", ""))
