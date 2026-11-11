@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <driver/i2s.h>
+#include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
@@ -27,6 +28,10 @@ constexpr uint32_t kSampleRate = 16000U;
 constexpr uint32_t kBufferSamples = 160U;       // 10ms @ 16kHz
 constexpr uint32_t kDacSlotsPerFrame = 2U; // explicit stereo I2S slots, one GPIO26 DAC
 constexpr uint32_t kLookaheadSamples = 12000U;  // 750ms
+constexpr uint8_t kClockWarmupWrites = 8U;
+constexpr uint8_t kClockMeasuredWrites = 80U;
+constexpr uint32_t kClockMinAcceptHz = 14000U;
+constexpr uint32_t kClockMaxAcceptHz = 18000U;
 constexpr uint8_t kEventQueueCapacity = 96U;
 constexpr uint8_t kMaxEventsPerService = 24U;
 constexpr uint8_t kVoices = 12U;
@@ -98,6 +103,13 @@ static uint32_t sampleClock;
 static uint32_t lateEvents;
 static uint32_t audioWrites;
 static uint32_t audioErrors;
+/* I2S's i2s_get_clk() reports the requested rate; the DAC clock can
+ * physically run much faster if the 160 MHz clock divider saturates.
+ * Measure DMA backpressure on the real CYD before playing any notes. */
+static uint32_t clockProbeState; // 0=awaiting, 1=verified, 2=fail-closed
+static uint32_t clockProbeHz;
+static uint32_t clockProbeUs;
+static uint8_t clockReported;
 static int8_t sinus[256];
 static uint32_t previousReport;
 
@@ -186,6 +198,52 @@ static void interpret(const NoteMessage& e,
     }
 }
 
+
+/* Runs exactly once on core 0, reusing the PCM task's existing 640-byte
+ * buffer. No extra buffer, task, timer ISR or SD lease.
+ * Warm the 4-buffer DMA ring, then measure 80 complete buffer writes.
+ * In ESP-IDF v4.4 the built-in DAC clock uses mclk = 2*rate*16.
+ * With the default 160MHz source the requested 512kHz mclk needs a divider
+ * >63, so i2s_get_clk() can falsely report 16kHz while DMA drains ~5x fast.
+ * Using APLL keeps the divisor within its hardware range. */
+static void verifyDacClock(uint16_t pcm[kBufferSamples * kDacSlotsPerFrame]) {
+    for (unsigned i = 0; i < kBufferSamples * kDacSlotsPerFrame; ++i)
+        pcm[i] = static_cast<uint16_t>(128U << 8); // DAC midpoint silence
+    bool ok = true;
+    for (unsigned i = 0; i < kClockWarmupWrites; ++i) {
+        size_t written = 0U;
+        const esp_err_t err = i2s_write(
+            I2S_NUM_0, pcm, sizeof(uint16_t) * kBufferSamples *
+            kDacSlotsPerFrame, &written, portMAX_DELAY);
+        if (err != ESP_OK || written != sizeof(uint16_t) *
+            kBufferSamples * kDacSlotsPerFrame) { ok = false; break; }
+    }
+    const int64_t startUs = esp_timer_get_time();
+    unsigned measured = 0U;
+    for (; ok && measured < kClockMeasuredWrites; ++measured) {
+        size_t written = 0U;
+        const esp_err_t err = i2s_write(
+            I2S_NUM_0, pcm, sizeof(uint16_t) * kBufferSamples *
+            kDacSlotsPerFrame, &written, portMAX_DELAY);
+        if (err != ESP_OK || written != sizeof(uint16_t) *
+            kBufferSamples * kDacSlotsPerFrame) { ok = false; break; }
+    }
+    const int64_t elapsed = esp_timer_get_time() - startUs;
+    const uint32_t us = elapsed > 0 && elapsed <= UINT32_MAX
+        ? static_cast<uint32_t>(elapsed) : 0U;
+    const uint32_t hz = ok && us != 0U
+        ? static_cast<uint32_t>(
+            (static_cast<uint64_t>(measured) * kBufferSamples *
+             1000000ULL) / us) : 0U;
+    const uint32_t accepted = ok && measured == kClockMeasuredWrites &&
+        hz >= kClockMinAcceptHz && hz <= kClockMaxAcceptHz ? 1U : 2U;
+    __atomic_store_n(&clockProbeUs, us, __ATOMIC_RELEASE);
+    __atomic_store_n(&clockProbeHz, hz, __ATOMIC_RELEASE);
+    __atomic_store_n(&clockProbeState, accepted, __ATOMIC_RELEASE);
+    if (accepted != 1U)
+        __atomic_store_n(&enabled, 0U, __ATOMIC_RELEASE);
+}
+
 static void taskBody(void*) {
     Voice voices[kVoices] = {};
     Channel channels[16] = {};
@@ -212,6 +270,19 @@ static void taskBody(void*) {
                 channels[ch].expression = 127U;
             }
             __atomic_store_n(&sampleClock, 0U, __ATOMIC_RELEASE);
+        }
+        /* First play silent frames to verify actual DMA drain rate. The
+         * hardware is authoritative, not the nominal i2s_get_clk().
+         * This runs in the isolated audio task; gameplay never blocks. */
+        const uint32_t probe = __atomic_load_n(
+            &clockProbeState, __ATOMIC_ACQUIRE);
+        if (probe == 0U) {
+            verifyDacClock(pcm);
+            continue;
+        }
+        if (probe != 1U) {
+            vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
         }
         const uint32_t master = __atomic_load_n(
             &masterPercent, __ATOMIC_ACQUIRE);
@@ -324,7 +395,10 @@ static int initOutput() {
     cfg.intr_alloc_flags = ESP_INTR_FLAG_LEVEL1;
     cfg.dma_buf_count = 4;
     cfg.dma_buf_len = kBufferSamples;
-    cfg.use_apll = false;
+    /* Source: ESP-IDF v4.4 I2S DAC computes mclk=2*rate*chanBits.
+     * Default 160MHz clock cannot divide down to 512kHz within 6-bit
+     * divider range. APLL avoids the observed ~5.5x DMA overclock. */
+    cfg.use_apll = true;
     cfg.tx_desc_auto_clear = true;
     /* IMPORTANT: i2s_set_pin(I2S_NUM_0, NULL) would enable BOTH DACs,
      * including GPIO25, which is the classic CYD's XPT2046 touch clock.
@@ -347,7 +421,8 @@ static int initOutput() {
     }
     driverReady = 1U;
     printf("[AUDIO] READY output=GPIO26/P4 dac=I2S0-left "
-           "sampleRate=16000 actualClkHz=%u transport=stereo-2x16bit "
+           "sampleRate=16000 driverRequestedHz=%u source=APLL "
+           "realClock=DMA-probe-pending transport=stereo-2x16bit "
            "framesPerWrite=%u bytesPerWrite=%u voices=12 queue=96 dma=4x160 "
            "task=core0 synth=bounded-FM-like backend=native\n",
            (unsigned)(i2s_get_clk(I2S_NUM_0) + 0.5f),
@@ -494,6 +569,7 @@ static int startMusic(uint16_t resourceId, uint8_t flags) {
         return 0;
     }
     music.wallStartMs = millis();
+    previousReport = music.wallStartMs;
     __atomic_store_n(&enabled, 1U, __ATOMIC_RELEASE);
     printf("[AUDIO] MIDI-START resource=%u file=%s bytes=%u tracks=%u "
            "ppqn=%u loop=%u source=PAK synth=FM-lite-no-GM-bank\n",
@@ -535,6 +611,30 @@ extern "C" void EspNativeAudioMidi_service(void) {
 
     if (music.active && !refillMusic())
         stopMusic("midi-stream-invalid");
+
+    const uint32_t state = __atomic_load_n(
+        &clockProbeState, __ATOMIC_ACQUIRE);
+    if (driverReady && state != 0U && !clockReported) {
+        clockReported = 1U;
+        const uint32_t measured = __atomic_load_n(
+            &clockProbeHz, __ATOMIC_ACQUIRE);
+        const uint32_t us = __atomic_load_n(
+            &clockProbeUs, __ATOMIC_ACQUIRE);
+        printf("[AUDIOCLK] VERIFY source=APLL targetHz=16000 "
+               "measuredHz=%u elapsedUs=%u frames=%u "
+               "result=%s threshold=14000..18000 "
+               "nominalI2sGetClk=not-authoritative\n",
+               (unsigned)measured, (unsigned)us,
+               (unsigned)kClockMeasuredWrites * kBufferSamples,
+               state == 1U ? "PASS" : "FAIL-CLOSED");
+        if (state != 1U && music.active)
+            stopMusic("dac-clock-probe-invalid");
+        else if (state == 1U && music.active) {
+            /* PCM clock starts only after the short core-0 silence probe. */
+            music.wallStartMs = millis();
+            previousReport = music.wallStartMs;
+        }
+    }
 
     const uint32_t now = millis();
     if (driverReady && music.active &&
