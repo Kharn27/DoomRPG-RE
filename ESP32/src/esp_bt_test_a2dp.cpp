@@ -391,10 +391,10 @@ static void start() {
     e = esp_a2d_source_init();
     if (!check(e, "A2DP_SOURCE_INIT")) return;
     sourceInit = true;
-    if (!check(esp_a2d_source_register_data_callback(silenceCallback),
-               "A2DP_SILENCE_CALLBACK")) return;
+    if (!check(esp_a2d_source_register_data_callback(pcmCallback),
+               "A2DP_PCM_CALLBACK")) return;
 
-    Serial.printf("[BTTEST] INIT_COMPLETE elapsedMs=%lu noMediaStart=1\n",
+    Serial.printf("[BTTEST] INIT_COMPLETE elapsedMs=%lu mediaStart=on-connection\n",
                   (unsigned long)(millis() - startedMs));
     if (!EspBtTest_postflight(snapshot())) requestStop("post-init-RAM-budget");
 }
@@ -411,7 +411,7 @@ void EspBtTestA2dp_service(void) {
     if (state == RUNNING) {
         if (!EspBtTest_postflight(snapshot())) {
             logMem("LOW_MEMORY");
-            requestStop("gameplay-RAM-budget");
+            requestStop("test-menu-RAM-budget");
             return;
         }
         if (!scanStarted && now - startedMs >= 250U) {
@@ -422,9 +422,11 @@ void EspBtTestA2dp_service(void) {
         if (now - lastReportMs >= 5000U) {
             lastReportMs = now;
             logMem("RUNNING");
-            Serial.printf("[BTTEST] STATE connected=%u connecting=%u candidates=%u pcmCalls=%lu\n",
+            Serial.printf("[BTTEST] STATE connected=%u connecting=%u candidates=%u pcmCalls=%lu mediaStarted=%u\n",
                           (unsigned)connected, (unsigned)connecting,
-                          (unsigned)renderCandidates, (unsigned long)pcmCalls);
+                          (unsigned)renderCandidates, (unsigned long)pcmCalls,
+                          (unsigned)mediaStarted);
+            EspBtTestMidi_report();
         }
     } else if (state == DRAIN) {
         /* The callback may still be sending connection events. Never tear
