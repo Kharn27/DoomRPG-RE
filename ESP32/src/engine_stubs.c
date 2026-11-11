@@ -92,7 +92,8 @@ int DoomRPG_freeMemory(void) { // 0x1EBFC
  * Normal HUB->EXIT releases only resident/session owners, not this root. */
 void DoomRPG_FreeAppData(DoomRPG_t* doomrpg)
 {
-    if (doomRpg == NULL)
+    /* Only the live process identity may release process-owned shells. */
+    if (doomrpg == NULL || doomrpg != doomRpg)
         return;
 
     /* Legacy desktop owners omitted from CYD root; only live owners remain. */
@@ -107,7 +108,7 @@ void DoomRPG_FreeAppData(DoomRPG_t* doomrpg)
     }
     EspNativeRootOwners_live()->render = NULL;
     if (EspNativeRootOwners_live()->doomCanvas) {
-        EspNativeEngineRoot_releaseCanvas(EspNativeRootOwners_live()->doomCanvas, doomRpg);
+        EspNativeEngineRoot_releaseCanvas(EspNativeRootOwners_live()->doomCanvas, doomrpg);
     }
     EspNativeRootOwners_live()->doomCanvas = NULL;
     SDL_memset(&nativeRootIdentity, 0, sizeof(nativeRootIdentity));
