@@ -14,6 +14,14 @@
 
 ---
 
+## SDL-F5 — `Image_t` sans nom SDL en firmware, PASS CYD (11 novembre 2026)
+
+[PR #300](https://github.com/Kharn27/DoomRPG-RE/pull/300) sur base SDL-F4 : `Image_t::imgBitmap` est `EspNativeTexture*` dans les 3 profils ESP32, `SDL_Texture*` seulement sur desktop/oracle ; `esp_native_texture_bridge.h` est sans include SDL et renvoie la texture native. Pointeur unique, offsets/taille inchangés, ownership indexed/erreurs inchangés. CI push/PR **SUCCESS** ([#43021707258](https://github.com/Kharn27/DoomRPG-RE/actions/runs/43021707258), [#43021716978](https://github.com/Kharn27/DoomRPG-RE/actions/runs/43021716978)), 3 builds, vrai contrat C, 0 SDL dans l'ELF, flash/RAM statique normal 859361/80768 B identiques à F4.
+
+**Test physique** `device-monitor-261111-153931.log` (1623 lignes, SHA firmware non imprimé) : classic CYD sans PSRAM, options/thème, intro et Entrance, 7 images DECODE+ADOPT, 5 dialogues complets, 16 miniatures démarrées/15 terminées observées, 3 ripostes triples Malwrath drainées, retour MENU par EXIT puis LOAD V11 slot04 et deuxième EXIT. 2 `HEADROOM_OK` (marges heap8 28232/27420 B), 2 `RESIDENTRESET empty=1`, 2 `SYSEXIT MENU-READY`, 13 frontières NULL, aucun panic/WDT. Six `BOUNDARY-INLINE` connus non fatals. Le log affiche Canvas=40 B : **ne prouve pas Root-I/SDL-F5 combinés** (Root-I fusionné sur main après la base du firmware). Aucune amélioration de mémoire ou de débit revendiquée. Post-test SDL-F5 : documents uniquement.
+
+---
+
 ## SDL-F3 — shim SDL hors build ESP32 : PASS classic CYD (11 novembre 2026)
 
 [PR #297](https://github.com/Kharn27/DoomRPG-RE/pull/297), [issue #269](https://github.com/Kharn27/DoomRPG-RE/issues/269) : `esp32_sdl.cpp` exclu explicitement des trois builds, `Esp32Sdl_attachDisplay` et header de bootstrap retirés de `main.cpp`; `PlatformVideo_begin/present` propriétaire natif inchangé (framebuffer unique RGB565 160×120, sortie ×2). [CI #43011477981](https://github.com/Kharn27/DoomRPG-RE/actions/runs/43011477981) **SUCCESS** sur code `504973472a0ad3f51ae53f3c7450efa056284a73` ; 3 builds, tests hôte/pixels et audit compiledb+ELF : **0 TU SDL compilé, 0 `Esp32Sdl_attachDisplay`, 0 symbole `SDL_*` lié**. Normal : **859445 B flash / 80768 B RAM statique**, −476/0 B par rapport à SDL-F2, sans gain runtime revendiqué.

@@ -1,6 +1,12 @@
 #ifndef DOOMRPG_H__
 #define DOOMRPG_H__
 
+/* Native ESP32 Image_t owns a native indexed texture. Desktop and geometry
+ * oracle keep the historical SDL_Texture field without changing layout. */
+#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
+#include "esp_native_texture.h"
+#endif
+
 #ifndef __BYTEBOOL__
 #define __BYTEBOOL__
 typedef enum { false, true } boolean;
@@ -299,7 +305,11 @@ typedef struct DoomRPG_s
 
 typedef struct Image_s
 {
+#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
+	EspNativeTexture* imgBitmap;
+#else
 	SDL_Texture* imgBitmap;
+#endif
 	int	width;
 	int	height;
 	boolean isTransparentMask;

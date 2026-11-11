@@ -309,6 +309,9 @@ jobs:
       - name: SDL-F4 native geometry and texture locals, legacy SDL.h type ABI explicit (host Python)
         run: python ESP32/test/sdl_f4_native_surface_boundary_host.py
 
+      - name: SDL-F5 native Image_t pointer layout and SDL-free texture bridge (host C)
+        run: python ESP32/test/sdl_f5_native_image_abi_host.py
+
       - name: Test native presentation and clip pixel parity (host C)
         run: python ESP32/test/doomrpg_presentation_host.py
 
