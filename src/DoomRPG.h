@@ -326,9 +326,12 @@ unsigned int DoomRPG_GetTimeMS(void);
 unsigned int DoomRPG_GetUpTimeMS(void);
 int DoomRPG_freeMemory(void);
 
+/* Desktop/oracle keyboard binding reads SDL keystate; native touch has its own owner. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 int DoomRPG_getEventKey(int mouse_Button, const Uint8* state);
-void DoomRPG_setDefaultBinds(DoomRPG_t* doomrpg);
 void DoomRPG_setBind(DoomRPG_t* doomrpg, int mouse_Button, const Uint8* state);
+#endif
+void DoomRPG_setDefaultBinds(DoomRPG_t* doomrpg);
 
 
 int DoomRPG_Init(void);
@@ -369,6 +372,9 @@ int DoomRPG_randNextInt(Random_t* rand);
 
 void DoomRPG_notifyDestroyed(DoomRPG_t* doomrpg);
 
+/* These File_* RWops adapters belong to desktop/oracle serialization only.
+ * Native checkpoints use their own bounded SD-backed versioned codec. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 void File_writeBoolean(SDL_RWops* rw, int i);
 void File_writeByte(SDL_RWops* rw, int i);
 void File_writeShort(SDL_RWops* rw, int i);
@@ -380,5 +386,6 @@ int File_readByte(SDL_RWops* rw);
 int File_readShort(SDL_RWops* rw);
 int File_readInt(SDL_RWops* rw);
 int File_readLong(SDL_RWops* rw);
+#endif
 
 #endif
