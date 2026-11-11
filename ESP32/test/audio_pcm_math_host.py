@@ -49,7 +49,28 @@ int main(void) {
         const uint16_t mirror = EspNativeAudioPcm_toDacWord(-i);
         assert((int)(word >> 8) + (int)(mirror >> 8) == 256);
     }
-    puts("PASS AUDIO-A production C Q8 volume, symmetric knee, no 12-voice clip");
+    /* Analog-overdrive triage with exact original song sample boundaries. */
+    const uint32_t duration = ESP_NATIVE_AUDIO_GAIN_TEST_STAGE_SAMPLES;
+    assert(duration == 128000U);
+    assert(EspNativeAudioPcm_gainTestPhase(0U) == 0U);
+    assert(EspNativeAudioPcm_gainTestPercent(0U, 25U) == 2U);
+    assert(EspNativeAudioPcm_gainTestPercent(duration-1U, 25U) == 2U);
+    assert(EspNativeAudioPcm_gainTestPhase(duration) == 1U);
+    assert(EspNativeAudioPcm_gainTestPercent(duration, 25U) == 5U);
+    assert(EspNativeAudioPcm_gainTestPercent(duration*2U-1U, 25U) == 5U);
+    assert(EspNativeAudioPcm_gainTestPhase(duration*2U) == 2U);
+    assert(EspNativeAudioPcm_gainTestPercent(duration*2U, 25U) == 10U);
+    assert(EspNativeAudioPcm_gainTestPhase(duration*3U) == 3U);
+    assert(EspNativeAudioPcm_gainTestPercent(duration*3U, 25U) == 2U);
+    assert(EspNativeAudioPcm_gainTestPercent(UINT32_MAX, 25U) == 2U);
+    assert(EspNativeAudioPcm_gainTestPercent(duration*2U, 1U) == 1U);
+    assert(EspNativeAudioPcm_gainTestPercent(duration*2U, 50U) == 10U);
+    assert(EspNativeAudioPcm_gainTestPercent(duration*2U, 0U) == 0U);
+    assert(EspNativeAudioPcm_toDacWord(EspNativeAudioPcm_scaleLimitQ8(
+        12 * EspNativeAudioPcm_voiceQ8(127, 127, 128), 2U,
+        &limited, &clipped)) == (132U << 8));
+    assert(!clipped);
+    puts("PASS AUDIO-A production Q8 + safe 2/5/10/2% sample-boundary test");
     return 0;
 }
 """
@@ -78,5 +99,11 @@ assert 'stage=%s gpio26=%s' in cpp
 assert "v.patch < 48U && v.note <= 105U" in cpp
 assert "v.patch >= 80U && v.note <= 97U" in cpp
 assert "pcmClipped=%u" in cpp and "pcmQuiet=%u" in cpp
+assert "EspNativeAudioPcm_gainTestPercent(" in cpp
+assert "EspNativeAudioPcm_gainTestPhase(" in cpp
+assert 'mixedQ8, diagnosticGain, &limited, &clipped)' in cpp
+assert "source=original-MIDI test=temporary-analog-headroom" in cpp
+assert "kAudioDiagDacOff" in cpp and "kAudioDiagDacMidpoint" in cpp
+assert "cfg.use_apll = true;" in cpp
 assert "cfg.use_apll = true;" in cpp
 print("PASS AUDIO-A DAC muted in warmup; bandlimiting and PCM diagnostics wired")
