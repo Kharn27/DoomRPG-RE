@@ -48,8 +48,8 @@ void DoomRPG_createImage(DoomRPG_t* doomrpg, const char* resourceName, boolean i
     if (texture == NULL) {
         /* Adoption failed: both allocations still belong to decoded. */
         EspNativeImage_dispose(&decoded);
-        DoomRPG_Error("Unable to adopt native indexed image %s! SDL Error: %s\n",
-                      fileName, SDL_GetError());
+        DoomRPG_Error("Unable to adopt native indexed image %s (native texture adoption failed)\n",
+                      fileName);
         return;
     }
 

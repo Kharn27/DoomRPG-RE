@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check actual classic-CYD clock provider against the pinned desktop bodies.
 
-Only SDL_GetTicks is mocked. The two implementations run side by side with
+Both SDL ticks and native ESP timer microseconds are mocked. The implementations run with
 independent basetime state, including boot tick=0, uptime order and wraparound.
 This does not time the physical CYD or establish SDL's underlying clock source.
 """
@@ -17,6 +17,7 @@ SIGNATURES = (
     ("unsigned int DoomRPG_GetUpTimeMS(void)", 0x0FAD5924),
 )
 BASE = "static Uint32 basetime = 0;"
+NATIVE_BASE = "static uint32_t basetime = 0;"
 
 
 def extract(source, signature):
@@ -36,12 +37,15 @@ def extract(source, signature):
 
 legacy = (ROOT / "src/DoomRPG.c").read_text(encoding="latin-1")
 native = (ROOT / "ESP32/src/esp_doomrpg_process_clock.c").read_text(encoding="latin-1")
-assert legacy.count(BASE) == native.count(BASE) == 1
+assert legacy.count(BASE) == 1 and native.count(NATIVE_BASE) == 1
 bodies = []
 for sig, crc in SIGNATURES:
     expected = extract(legacy, sig)
     assert zlib.crc32(expected.encode("latin-1")) == crc, "reference drift " + sig
-    assert extract(native, sig) == expected, "effective clock behavior changed " + sig
+    assert extract(native, sig) == expected.replace(
+        "Uint32 ticks = SDL_GetTicks();",
+        "uint32_t ticks = EspNativeProcessClock_ticks();"
+    ), "effective clock behavior changed " + sig
     bodies.append(expected.replace("DoomRPG_Get", "Legacy_Get"))
 
 HARNESS = r"""
@@ -50,20 +54,24 @@ HARNESS = r"""
 #include <stdio.h>
 #include <SDL.h>
 #include "DoomRPG.h"
+#include "esp_native_process_clock.h"
 _Static_assert(sizeof(Uint32) == 4, "SDL ticks must be exactly 32-bit");
 static Uint32 fake_ticks = 0;
 Uint32 SDL_GetTicks(void) { return fake_ticks; }
+int64_t esp_timer_get_time(void) { return (int64_t)fake_ticks * 1000LL; }
 extern unsigned int Legacy_GetTimeMS(void);
 extern unsigned int Legacy_GetUpTimeMS(void);
 
 static unsigned int calls = 0;
 static void check_time(Uint32 tick) {
     fake_ticks = tick;
+    assert(EspNativeProcessClock_ticks() == tick);
     assert(DoomRPG_GetTimeMS() == Legacy_GetTimeMS());
     calls++;
 }
 static void check_uptime(Uint32 tick) {
     fake_ticks = tick;
+    assert(EspNativeProcessClock_ticks() == tick);
     assert(DoomRPG_GetUpTimeMS() == Legacy_GetUpTimeMS());
     calls++;
 }
@@ -96,6 +104,9 @@ with tempfile.TemporaryDirectory(prefix="doomrpg-clock-") as tmp:
         "#pragma once\n#include <stdint.h>\ntypedef uint32_t Uint32;\n"
         "Uint32 SDL_GetTicks(void);\n"
     )
+    (out / "esp_timer.h").write_text(
+        "#pragma once\n#include <stdint.h>\nint64_t esp_timer_get_time(void);\n"
+    )
     (out / "DoomRPG.h").write_text(
         "#pragma once\nunsigned int DoomRPG_GetTimeMS(void);\n"
         "unsigned int DoomRPG_GetUpTimeMS(void);\n"
@@ -106,7 +117,7 @@ with tempfile.TemporaryDirectory(prefix="doomrpg-clock-") as tmp:
     (out / "harness.c").write_text(HARNESS)
     exe = out / "clock_parity"
     subprocess.run(
-        ["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", str(out),
+        ["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", str(out), "-I", str(ROOT / "ESP32/include"),
          str(out / "harness.c"), str(out / "original_clock.c"),
          str(ROOT / "ESP32/src/esp_doomrpg_process_clock.c"),
          "-o", str(exe)],

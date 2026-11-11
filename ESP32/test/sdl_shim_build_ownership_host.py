@@ -70,7 +70,7 @@ def main():
     # SDL-B3: only retire symbols that were already absent from actual ELFs.
     dormant_render_helpers = {"SDL_RenderDrawRect", "SDL_RenderSetIntegerScale"}
     dormant_memory_hooks = {"SDL_SetMemoryFunctions", "SDL_GetMemoryFunctions"}
-    # SDL_ShowMessageBox has an explicit DoomRPG_Error caller and remains.
+    # SDL-F1 moves the formerly linked clock, lastError and fatal log to native owners.
     dormant_ui_stubs = {"SDL_GetScancodeName", "SDL_ShowSimpleMessageBox"}
     dormant_bmp_decoder = {"SDL_LoadBMP_RW"}
     assert not dormant_bmp_decoder.intersection(current), (
@@ -107,7 +107,13 @@ def main():
         f"{args.profile}: SDL-E1 legacy vector ABI still linked "
         f"{sorted(e1_retired.intersection(current))}")
     assert "SDL_RenderPresent" in current, (
-        f"{args.profile}: SDL-E1 incorrectly retired live framebuffer presentation")
+        f"{args.profile}: SDL-F1 must not touch live framebuffer presentation")
+    f1_retired = {"SDL_GetTicks", "SDL_GetError", "SDL_ShowMessageBox"}
+    assert not f1_retired.intersection(current), (
+        f"{args.profile}: SDL-F1 legacy non-render services still linked "
+        f"{sorted(f1_retired.intersection(current))}")
+    assert set(current) == {"SDL_RenderPresent"}, (
+        f"{args.profile}: expected only live SDL presentation, got {sorted(current)}")
     nm_tool = (shutil.which("xtensa-esp32-elf-nm") or
                str(Path.home() / ".platformio/packages/toolchain-xtensa-esp32/bin/xtensa-esp32-elf-nm"))
     actual_names = set()
@@ -122,7 +128,7 @@ def main():
                  "EspNativeTexture_setColorMod", "EspNativeTexture_setClipRect"}
     e1_native = {"EspNativeTexture_setDrawColor", "EspNativeTexture_fillRect",
                  "EspNativeTexture_drawLine"}
-    native_providers = c1_native | d1_native | e1_native
+    native_providers = c1_native | d1_native | e1_native | {"EspNativeProcessClock_ticks"}
     assert native_providers.issubset(actual_names), (
         f"{args.profile}: missing production image/raster owners "
         f"{sorted(native_providers - actual_names)}")
@@ -150,13 +156,14 @@ def main():
             f"{args.profile}: unexpected SDL exports after native migration "
             f"added={sorted(set(current)-set(before))}")
         removed = set(before) - set(current)
-        all_retired = c1_retired | d1_retired | e1_retired
+        all_retired = c1_retired | d1_retired | e1_retired | f1_retired
         assert all_retired.issubset(removed), (
             f"{args.profile}: missing C1/D1/E1 linked SDL retirement "
             f"{sorted(all_retired - removed)}")
         report["c1_removed_sdl"] = sorted(c1_retired)
         report["d1_removed_sdl"] = sorted(d1_retired)
         report["e1_removed_sdl"] = sorted(e1_retired)
+        report["f1_removed_sdl"] = sorted(f1_retired)
         report["e1_native_providers"] = sorted(e1_native)
         report["c1_native_providers"] = sorted(c1_native)
         report["d1_native_providers"] = sorted(d1_native)
@@ -176,7 +183,7 @@ def main():
     print("SDL-A " + json.dumps({k: v for k, v in report.items()
                                  if k not in ("elf", "baseline_elf", "linked_sdl",
                                               "baseline_linked_sdl")}, sort_keys=True))
-    print(f"SDL-E1 PASS {args.profile}: exactly one native shim TU, native image/raster providers, no generated source/obj, "
+    print(f"SDL-F1 PASS {args.profile}: native process clock and fatal/error path; framebuffer presentation unchanged, "
           f"{len(current)} linked SDL functions / {sum(current.values())} symbolic bytes")
 
 

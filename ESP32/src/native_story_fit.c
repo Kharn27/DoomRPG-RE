@@ -11,6 +11,7 @@
 
 #include "esp_native_intro_state.h"
 #include "native_story_fit.h"
+#include "esp_native_process_clock.h"
 #include "platform_video_config.h"
 
 #define STORY_FONT_ADVANCE 7
@@ -47,9 +48,9 @@ int Esp32StoryFit_prepare(struct DoomCanvas_s* doomCanvasBase) {
     uint32_t after;
     Image_t* hand;
     if (doomCanvas == NULL || doomCanvas->doomRpg == NULL) return 0;
-    before = (uint32_t)SDL_GetTicks();
+    before = (uint32_t)EspNativeProcessClock_ticks();
     hand = acquireStoryHand(doomCanvas->doomRpg);
-    after = (uint32_t)SDL_GetTicks();
+    after = (uint32_t)EspNativeProcessClock_ticks();
     if (hand == NULL) return 0;
     printf("[INTROFIT] PREPARE hand=%dx%d asset=p.bmp owner=native-story elapsedMs=%u drawAllocation=no\n",
            hand->width, hand->height, (unsigned int)(after - before));
