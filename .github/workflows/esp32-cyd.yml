@@ -494,6 +494,9 @@ jobs:
       - name: AUDIO-A stereo DAC throughput and MIDI prefill guard
         run: python ESP32/test/audio_dac_timing_host.py
 
+      - name: AUDIO-A Q8 DAC soft-limiter production C, mute until clock pass
+        run: python ESP32/test/audio_pcm_math_host.py
+
       - name: AUDIO-A native volume codec and Sound menu persistence guard
         run: python ESP32/test/audio_volume_host.py
 
