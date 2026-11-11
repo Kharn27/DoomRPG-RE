@@ -45,12 +45,12 @@ _Static_assert(sizeof(DoomRPG_t) == 1U,
 
 /* Native process-root Canvas teardown. Preserve the desktop release order
  * and its sole CYD freePtr=true call; no Canvas lifecycle ABI survives. */
-static void EspNativeEngineRoot_releaseCanvas(DoomCanvas_t* doomCanvas)
+static void EspNativeEngineRoot_releaseCanvas(DoomCanvas_t* doomCanvas, DoomRPG_t* root)
 {
     if (doomCanvas == NULL) return;
-    Esp32StoryFit_release(doomCanvas);
-    EspNativeIntroState_release(doomCanvas->doomRpg);
-    DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgFont);
+    Esp32StoryFit_release(doomCanvas, root);
+    EspNativeIntroState_release(root);
+    DoomRPG_freeImage(root, &doomCanvas->imgFont);
     SDL_free(doomCanvas);
 }
 
@@ -107,7 +107,7 @@ void DoomRPG_FreeAppData(DoomRPG_t* doomrpg)
     }
     EspNativeRootOwners_live()->render = NULL;
     if (EspNativeRootOwners_live()->doomCanvas) {
-        EspNativeEngineRoot_releaseCanvas(EspNativeRootOwners_live()->doomCanvas);
+        EspNativeEngineRoot_releaseCanvas(EspNativeRootOwners_live()->doomCanvas, doomRpg);
     }
     EspNativeRootOwners_live()->doomCanvas = NULL;
     SDL_memset(&nativeRootIdentity, 0, sizeof(nativeRootIdentity));
@@ -297,7 +297,7 @@ static int failCoreStage(DoomRpgCoreStage stage) {
 _Static_assert(sizeof(DoomCanvas_t) == ESP32_DOOMCANVAS_COMPACT_BYTES,
                "ESP32 DoomCanvas_t layout changed; audit compatibility owners before proceeding");
 
-static DoomCanvas_t* EspNativeEngineRoot_initCanvas(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
+static DoomCanvas_t* EspNativeEngineRoot_initCanvas(DoomCanvas_t* doomCanvas)
 {
     printf("DoomCanvas_init\n");
 
@@ -309,7 +309,6 @@ static DoomCanvas_t* EspNativeEngineRoot_initCanvas(DoomCanvas_t* doomCanvas, Do
     }
     SDL_memset(doomCanvas, 0, sizeof(DoomCanvas_t));
 
-    doomCanvas->doomRpg = doomRpg;
     doomCanvas->imgFont.imgBitmap = NULL;
     doomCanvas->fontColor = 0xffffffff;
 
@@ -440,7 +439,7 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
     } while (0)
 
     INIT_CORE_OBJECT(DOOMRPG_CORE_CANVAS, doomCanvas,
-                     EspNativeEngineRoot_initCanvas(NULL, doomRpg));
+                     EspNativeEngineRoot_initCanvas(NULL));
     INIT_CORE_OBJECT(DOOMRPG_CORE_RENDER, render,
                      EspNativeEngineRoot_initRender(NULL));
     INIT_CORE_OBJECT(DOOMRPG_CORE_MENU_SYSTEM, menuSystem,
@@ -577,14 +576,12 @@ static void EspNativeEngineLayout_setupRender(Render_t* render, SDL_Rect* window
 /* Bounded CYD layout and font initialization, owned by the native process
  * layout stage instead of a desktop DoomCanvas startup ABI entry. The body
  * preserves the validated Render_setup -> map marker -> font ordering. */
-static void EspNativeEngineLayout_startupCanvas(DoomCanvas_t* doomCanvas)
+static void EspNativeEngineLayout_startupCanvas(DoomCanvas_t* doomCanvas, DoomRPG_t* root)
 {
     SDL_Rect screenRect;
-    DoomRPG_t* doomRpg;
 
-    if (doomCanvas == NULL || doomCanvas->doomRpg == NULL) return;
+    if (doomCanvas == NULL || root == NULL) return;
 
-    doomRpg = doomCanvas->doomRpg;
     screenRect.x = DOOMRPG_VIEWPORT_X;
     screenRect.y = DOOMRPG_VIEWPORT_Y;
     screenRect.w = DOOMRPG_VIEWPORT_WIDTH;
@@ -592,7 +589,7 @@ static void EspNativeEngineLayout_startupCanvas(DoomCanvas_t* doomCanvas)
     EspNativeEngineLayout_setupRender(EspNativeRootOwners_live()->render, &screenRect);
     doomCanvas->startupMap = 1;
     doomCanvas->skipIntro = false;
-    DoomRPG_createImage(doomCanvas->doomRpg, "a.bmp", true, &doomCanvas->imgFont);
+    DoomRPG_createImage(root, "a.bmp", true, &doomCanvas->imgFont);
     printf("[DOOMCANVASBRIDGE] STARTUP desktopTU=no display=%dx%d screen=%dx%d@%d,%d startupMap=%d hud=native geometry=fixed-cyd\n",
            DOOMRPG_CANVAS_WIDTH, DOOMRPG_CANVAS_HEIGHT,
            DOOMRPG_VIEWPORT_WIDTH, DOOMRPG_VIEWPORT_HEIGHT,
@@ -629,7 +626,7 @@ int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report) {
            (unsigned int)layoutReport.largest8Before);
     printf("[LAYOUT] This stage configures fixed native HUD geometry; legacy Hud_t is retired\n");
 
-    EspNativeEngineLayout_startupCanvas(canvas);
+    EspNativeEngineLayout_startupCanvas(canvas, doomRpg);
 
     printf("[LAYOUT] HUD owner=native-gameplay-hud legacyObject=%p top=20 bottom=20\n",
            (void*)NULL);

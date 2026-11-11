@@ -42,14 +42,14 @@ static Image_t* acquireStoryHand(DoomRPG_t* doomRpg) {
     return &storyHand;
 }
 
-int Esp32StoryFit_prepare(struct DoomCanvas_s* doomCanvasBase) {
+int Esp32StoryFit_prepare(struct DoomCanvas_s* doomCanvasBase, DoomRPG_t* root) {
     DoomCanvas_t* doomCanvas = (DoomCanvas_t*)doomCanvasBase;
     uint32_t before;
     uint32_t after;
     Image_t* hand;
-    if (doomCanvas == NULL || doomCanvas->doomRpg == NULL) return 0;
+    if (doomCanvas == NULL || root == NULL) return 0;
     before = (uint32_t)EspNativeProcessClock_ticks();
-    hand = acquireStoryHand(doomCanvas->doomRpg);
+    hand = acquireStoryHand(root);
     after = (uint32_t)EspNativeProcessClock_ticks();
     if (hand == NULL) return 0;
     printf("[INTROFIT] PREPARE hand=%dx%d asset=p.bmp owner=native-story elapsedMs=%u drawAllocation=no\n",
@@ -61,10 +61,10 @@ int Esp32StoryFit_hasHand(void) {
     return storyHand.imgBitmap != NULL;
 }
 
-void Esp32StoryFit_release(struct DoomCanvas_s* doomCanvasBase) {
+void Esp32StoryFit_release(struct DoomCanvas_s* doomCanvasBase, DoomRPG_t* root) {
     DoomCanvas_t* doomCanvas = (DoomCanvas_t*)doomCanvasBase;
     DoomRPG_t* owner = storyHandOwner;
-    if (owner == NULL && doomCanvas != NULL) owner = doomCanvas->doomRpg;
+    if (owner == NULL && doomCanvas != NULL) owner = root;
     if (storyHand.imgBitmap != NULL && owner != NULL) {
         DoomRPG_freeImage(owner, &storyHand);
         printf("[INTROFIT] HAND-RELEASE asset=p.bmp owner=native-story\n");
@@ -129,21 +129,21 @@ static int mapY(const DoomCanvas_t* doomCanvas, int y) {
                             ESP32_STORY_VIEWPORT_SIZE);
 }
 
-static void setVirtualClip(DoomCanvas_t* doomCanvas,
+static void setVirtualClip(DoomCanvas_t* doomCanvas, DoomRPG_t* root,
                            int x, int y, int width, int height) {
     const int left = mapX(doomCanvas, x);
     const int top = mapY(doomCanvas, y);
     const int right = mapX(doomCanvas, x + width);
     const int bottom = mapY(doomCanvas, y + height);
 
-    DoomRPG_setClipTrue(doomCanvas->doomRpg,
+    DoomRPG_setClipTrue(root,
                         left,
                         top,
                         right - left,
                         bottom - top);
 }
 
-static void setAnimationVirtualClip(DoomCanvas_t* doomCanvas,
+static void setAnimationVirtualClip(DoomCanvas_t* doomCanvas, DoomRPG_t* root,
                                     int x, int y, int width, int height) {
     const int left = ESP32_STORY_ANIMATION_X +
                      scaleOffsetFloor(x - virtualLeft(doomCanvas),
@@ -154,7 +154,7 @@ static void setAnimationVirtualClip(DoomCanvas_t* doomCanvas,
                                        ESP32_STORY_ANIMATION_WIDTH);
     const int bottom = mapY(doomCanvas, y + height);
 
-    DoomRPG_setClipTrue(doomCanvas->doomRpg,
+    DoomRPG_setClipTrue(root,
                         left,
                         top,
                         right - left,
@@ -402,7 +402,7 @@ static void drawString2(DoomCanvas_t* doomCanvas,
              strEnd);
 }
 
-static void scrollSpaceBG(DoomCanvas_t* doomCanvas,
+static void scrollSpaceBG(DoomCanvas_t* doomCanvas, DoomRPG_t* root,
                           EspNativeIntroState_t* introState) {
     const int i = -((doomCanvas->time / 157) % 192);
     int i2 = i;
@@ -414,7 +414,7 @@ static void scrollSpaceBG(DoomCanvas_t* doomCanvas,
         i2 += 384;
     }
 
-    DoomRPG_setClipTrue(doomCanvas->doomRpg,
+    DoomRPG_setClipTrue(root,
                         0, 0,
                         DOOMRPG_LOGICAL_WIDTH,
                         DOOMRPG_LOGICAL_HEIGHT);
@@ -426,32 +426,32 @@ static void scrollSpaceBG(DoomCanvas_t* doomCanvas,
                         &introState->imgSpaceBG,
                         left - i3,
                         top);
-    setVirtualClip(doomCanvas,
+    setVirtualClip(doomCanvas, root,
                    left,
                    top,
                    ESP32_STORY_VIRTUAL_SIZE,
                    ESP32_STORY_VIRTUAL_SIZE);
 }
 
-static void drawMappedLine(DoomCanvas_t* doomCanvas,
+static void drawMappedLine(DoomCanvas_t* doomCanvas, DoomRPG_t* root,
                            int x1,
                            int y1,
                            int x2,
                            int y2) {
-    DoomRPG_drawLine(doomCanvas->doomRpg,
+    DoomRPG_drawLine(root,
                      mapX(doomCanvas, x1),
                      mapY(doomCanvas, y1),
                      mapX(doomCanvas, x2),
                      mapY(doomCanvas, y2));
 }
 
-static void drawAnimationMappedLine(DoomCanvas_t* doomCanvas,
+static void drawAnimationMappedLine(DoomCanvas_t* doomCanvas, DoomRPG_t* root,
                                     int x1,
                                     int y1,
                                     int x2,
                                     int y2) {
     DoomRPG_drawLine(
-        doomCanvas->doomRpg,
+        root,
         ESP32_STORY_ANIMATION_X +
             scaleOffsetFloor(x1 - virtualLeft(doomCanvas),
                              ESP32_STORY_ANIMATION_WIDTH),
@@ -462,7 +462,7 @@ static void drawAnimationMappedLine(DoomCanvas_t* doomCanvas,
         mapY(doomCanvas, y2));
 }
 
-void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
+void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase, DoomRPG_t* root) {
     DoomCanvas_t* doomCanvas = (DoomCanvas_t*)doomCanvasBase;
     EspNativeIntroState_t* introState;
     char** text;
@@ -473,11 +473,11 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
     int left;
     int top;
 
-    if (doomCanvas == NULL || doomCanvas->doomRpg == NULL) {
+    if (doomCanvas == NULL || root == NULL) {
         return;
     }
 
-    introState = EspNativeIntroState_get(doomCanvas->doomRpg);
+    introState = EspNativeIntroState_get(root);
     if (introState == NULL) {
         printf("[INTROFIT] REFUSE draw native intro state unavailable\n");
         return;
@@ -520,11 +520,11 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
     elapsedText = doomCanvas->time - introState->storyTextTime;
 
     if (EspNativePresentation_clipEnabled()) {
-        DoomRPG_setClipFalse(doomCanvas->doomRpg);
+        DoomRPG_setClipFalse(root);
     }
 
-    DoomRPG_setColor(doomCanvas->doomRpg, 0x000000);
-    DoomRPG_fillRect(doomCanvas->doomRpg,
+    DoomRPG_setColor(root, 0x000000);
+    DoomRPG_fillRect(root,
                      0,
                      0,
                      DOOMRPG_CANVAS_WIDTH,
@@ -546,12 +546,12 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
             return;
         }
 
-        scrollSpaceBG(doomCanvas, introState);
-        promptHand = acquireStoryHand(doomCanvas->doomRpg);
+        scrollSpaceBG(doomCanvas, root, introState);
+        promptHand = acquireStoryHand(root);
 
         /* Text uses its own hardware-tuned soft-wide mapping: wider than the
          * 120x120 content viewport but slightly narrower than the full display. */
-        DoomRPG_setClipTrue(doomCanvas->doomRpg,
+        DoomRPG_setClipTrue(root,
                             ESP32_STORY_TEXT_X,
                             0,
                             ESP32_STORY_TEXT_WIDTH,
@@ -621,7 +621,7 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
         const int shipX = left + (elapsedAnim / 142);
         const int shipY = (DOOMRPG_CANVAS_CENTER_Y + 22) + (elapsedAnim / -333);
 
-        DoomRPG_setClipTrue(doomCanvas->doomRpg,
+        DoomRPG_setClipTrue(root,
                             0, 0,
                             DOOMRPG_LOGICAL_WIDTH,
                             DOOMRPG_LOGICAL_HEIGHT);
@@ -629,7 +629,7 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
                             &introState->imgSpaceBG,
                             left - bgOffset,
                             top);
-        setAnimationVirtualClip(doomCanvas,
+        setAnimationVirtualClip(doomCanvas, root,
                                 left,
                                 top,
                                 ESP32_STORY_VIRTUAL_SIZE,
@@ -651,49 +651,49 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
                            0);
 
         if ((elapsedAnim / 500) % 2 == 0) {
-            setAnimationVirtualClip(doomCanvas,
+            setAnimationVirtualClip(doomCanvas, root,
                                     left + 1,
                                     top + 1,
                                     126,
                                     126);
 
-            DoomRPG_setColor(doomCanvas->doomRpg, 0xBB0000);
-            drawAnimationMappedLine(doomCanvas,
+            DoomRPG_setColor(root, 0xBB0000);
+            drawAnimationMappedLine(doomCanvas, root,
                            shipX,
                            shipY - 1,
                            shipX + 9,
                            shipY - 1);
-            drawAnimationMappedLine(doomCanvas,
+            drawAnimationMappedLine(doomCanvas, root,
                            shipX + 4,
                            top,
                            shipX + 4,
                            shipY - 1);
-            drawAnimationMappedLine(doomCanvas,
+            drawAnimationMappedLine(doomCanvas, root,
                            shipX,
                            shipY + 9,
                            shipX + 9,
                            shipY + 9);
-            drawAnimationMappedLine(doomCanvas,
+            drawAnimationMappedLine(doomCanvas, root,
                            shipX + 4,
                            shipY + 9,
                            shipX + 4,
                            top + ESP32_STORY_VIRTUAL_SIZE);
-            drawAnimationMappedLine(doomCanvas,
+            drawAnimationMappedLine(doomCanvas, root,
                            shipX - 1,
                            shipY,
                            shipX - 1,
                            shipY + 9);
-            drawAnimationMappedLine(doomCanvas,
+            drawAnimationMappedLine(doomCanvas, root,
                            left,
                            shipY + 4,
                            shipX - 1,
                            shipY + 4);
-            drawAnimationMappedLine(doomCanvas,
+            drawAnimationMappedLine(doomCanvas, root,
                            shipX + 9,
                            shipY,
                            shipX + 9,
                            shipY + 9);
-            drawAnimationMappedLine(doomCanvas,
+            drawAnimationMappedLine(doomCanvas, root,
                            shipX + 9,
                            shipY + 4,
                            left + ESP32_STORY_VIRTUAL_SIZE,

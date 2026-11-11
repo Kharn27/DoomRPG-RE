@@ -76,7 +76,24 @@ begin = owner.index("static int doomCanvasBeginIntro(")
 # Only the help data section moved (PAK phone parser -> ROM CYD guide).
 # The handoff body and the hard-coded FNV must remain strictly unchanged.
 end = owner.index("\n/* Native ROM-owned CYD guide:", begin)
-state_body = owner[begin:end].replace("EspNativeMainMenu_transitionCanvasState", "DoomCanvas_setState")
+# Root-I passes process identity explicitly through MENU/INTRO. Normalize
+# only the retired back-reference/signature for the hardware-proven FNV.
+state_body = (
+    owner[begin:end]
+    .replace("static int doomCanvasBeginIntro(DoomCanvas_t* doomCanvas, DoomRPG_t* root)",
+             "static int doomCanvasBeginIntro(DoomCanvas_t* doomCanvas)")
+    .replace("if (doomCanvas == NULL || root == NULL) {",
+             "if (doomCanvas == NULL || doomCanvas->doomRpg == NULL) {", 1)
+    .replace("DoomRPG_setColor(root,", "DoomRPG_setColor(doomCanvas->doomRpg,")
+    .replace("DoomRPG_fillRect(root,", "DoomRPG_fillRect(doomCanvas->doomRpg,")
+    .replace("DoomRPG_flushGraphics(root);", "DoomRPG_flushGraphics(doomCanvas->doomRpg);")
+    .replace("EspNativeIntroState_begin(root)", "EspNativeIntroState_begin(doomCanvas->doomRpg)")
+    .replace("void EspNativeMainMenu_transitionCanvasState(DoomCanvas_t* doomCanvas, DoomRPG_t* root, int stateNum)",
+             "void EspNativeMainMenu_transitionCanvasState(DoomCanvas_t* doomCanvas, int stateNum)")
+    .replace("if (doomCanvas == NULL || root == NULL) {", "if (doomCanvas == NULL) {")
+    .replace("doomCanvasBeginIntro(doomCanvas, root)", "doomCanvasBeginIntro(doomCanvas)")
+    .replace("EspNativeMainMenu_transitionCanvasState", "DoomCanvas_setState")
+)
 state_fnv = 2166136261
 for byte in state_body.encode("utf-8"):
     state_fnv = ((state_fnv ^ byte) * 16777619) & 0xFFFFFFFF
@@ -104,7 +121,22 @@ assert root_owner.count("EspNativeEngineLayout_startupCanvas(") == 2  # definiti
 assert re.search(r"#ifndef DOOMRPG_ESP32\s+void DoomCanvas_startup\(", legacy_canvas_h)
 start = root_owner.index("static void EspNativeEngineLayout_startupCanvas(")
 end = root_owner.index("\nint DoomRPG_startEngineLayout(", start)
+# Root-I removes the Canvas process backref. Reconstitute only the retired
+# root parameter's historical local/backref lines for the source FNV oracle.
 layout = root_owner[start:end]
+layout = layout.replace(
+    "static void EspNativeEngineLayout_startupCanvas(DoomCanvas_t* doomCanvas, DoomRPG_t* root)",
+    "static void EspNativeEngineLayout_startupCanvas(DoomCanvas_t* doomCanvas)")
+layout = layout.replace("    SDL_Rect screenRect;\n\n",
+                        "    SDL_Rect screenRect;\n    DoomRPG_t* doomRpg;\n\n")
+layout = layout.replace(
+    "if (doomCanvas == NULL || root == NULL) return;",
+    "if (doomCanvas == NULL || doomCanvas->doomRpg == NULL) return;")
+layout = layout.replace("    screenRect.x = DOOMRPG_VIEWPORT_X;",
+                        "    doomRpg = doomCanvas->doomRpg;\n    screenRect.x = DOOMRPG_VIEWPORT_X;")
+layout = layout.replace(
+    'DoomRPG_createImage(root, "a.bmp", true, &doomCanvas->imgFont);',
+    'DoomRPG_createImage(doomCanvas->doomRpg, "a.bmp", true, &doomCanvas->imgFont);')
 layout = layout.replace("static void EspNativeEngineLayout_startupCanvas(", "void DoomCanvas_startup(")
 # The Render setup symbol was made private without changing any geometry or
 # initialization behavior. Normalize only this internal call for the old
@@ -138,9 +170,13 @@ assert re.search(r"#ifndef DOOMRPG_ESP32\s+DoomCanvas_t\* DoomCanvas_init\(", le
 assert "ESP32_DOOMCANVAS_COMPACT_BYTES" in (ROOT / "ESP32/include/engine_metrics.h").read_text()
 first = root_owner.index("static DoomCanvas_t* EspNativeEngineRoot_initCanvas(")
 last = root_owner.index("/* Native Render constructor owned by the process root;", first)
-normalized = root_owner[first:last].replace(
-    "static DoomCanvas_t* EspNativeEngineRoot_initCanvas(", "DoomCanvas_t* DoomCanvas_init(").replace(
-    "[DOOMCANVASBRIDGE] INIT exports=0", "[DOOMCANVASBRIDGE] INIT exports=2")
+normalized = (root_owner[first:last]
+    .replace("static DoomCanvas_t* EspNativeEngineRoot_initCanvas(DoomCanvas_t* doomCanvas)",
+             "static DoomCanvas_t* EspNativeEngineRoot_initCanvas(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)")
+    .replace("    doomCanvas->imgFont.imgBitmap = NULL;",
+             "    doomCanvas->doomRpg = doomRpg;\n    doomCanvas->imgFont.imgBitmap = NULL;")
+    .replace("static DoomCanvas_t* EspNativeEngineRoot_initCanvas(", "DoomCanvas_t* DoomCanvas_init(")
+    .replace("[DOOMCANVASBRIDGE] INIT exports=0", "[DOOMCANVASBRIDGE] INIT exports=2"))
 init_fnv = 2166136261
 for byte in normalized.encode("utf-8"):
     init_fnv = ((init_fnv ^ byte) * 16777619) & 0xFFFFFFFF

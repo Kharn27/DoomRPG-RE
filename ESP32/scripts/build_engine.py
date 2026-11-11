@@ -37,15 +37,16 @@ if not os.path.isfile(native_layout_source):
     raise RuntimeError("native engine layout owner missing")
 with open(native_layout_source, "r", encoding="utf-8") as owner_file:
     native_layout_owner = owner_file.read()
-if ("static DoomCanvas_t* EspNativeEngineRoot_initCanvas(" not in native_layout_owner or
-        "EspNativeEngineRoot_initCanvas(NULL, doomRpg));" not in native_layout_owner or
-        "static void EspNativeEngineRoot_releaseCanvas(" not in native_layout_owner or
-        "EspNativeEngineRoot_releaseCanvas(EspNativeRootOwners_live()->doomCanvas);" not in native_layout_owner or
+if ("static DoomCanvas_t* EspNativeEngineRoot_initCanvas(DoomCanvas_t* doomCanvas)" not in native_layout_owner or
+        "EspNativeEngineRoot_initCanvas(NULL));" not in native_layout_owner or
+        "static void EspNativeEngineRoot_releaseCanvas(DoomCanvas_t* doomCanvas, DoomRPG_t* root)" not in native_layout_owner or
+        "EspNativeEngineRoot_releaseCanvas(EspNativeRootOwners_live()->doomCanvas, doomRpg);" not in native_layout_owner or
+        "doomCanvas->doomRpg" in native_layout_owner or
         "DoomCanvas_free(" in native_layout_owner or
         "DoomCanvas_init(" in native_canvas_text):
     raise RuntimeError("Retired Canvas lifecycle ABI revived or native root owner absent")
-if ("static void EspNativeEngineLayout_startupCanvas(" not in native_layout_owner or
-        "EspNativeEngineLayout_startupCanvas(canvas);" not in native_layout_owner or
+if ("static void EspNativeEngineLayout_startupCanvas(DoomCanvas_t* doomCanvas, DoomRPG_t* root)" not in native_layout_owner or
+        "EspNativeEngineLayout_startupCanvas(canvas, doomRpg);" not in native_layout_owner or
         "DoomCanvas_startup(" in native_canvas_text):
     raise RuntimeError("Retired Canvas startup ABI revived or native layout owner absent")
 native_menu_state_source = join(project_src_dir, "native_main_menu_model.c")

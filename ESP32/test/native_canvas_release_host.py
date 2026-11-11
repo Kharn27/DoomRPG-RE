@@ -18,7 +18,7 @@ header = (ROOT / "src/DoomCanvas.h").read_text(encoding="utf-8")
 builder = (ROOT / "ESP32/scripts/build_engine.py").read_text(encoding="utf-8")
 
 name = "EspNativeEngineRoot_releaseCanvas"
-anchor = "static void " + name + "(DoomCanvas_t* doomCanvas)\n{"
+anchor = "static void " + name + "(DoomCanvas_t* doomCanvas, DoomRPG_t* root)\n{"
 assert owner.count(anchor) == 1
 start = owner.index(anchor)
 depth = 0
@@ -30,9 +30,9 @@ for i in range(owner.index("{", start), len(owner)):
         break
 assert end is not None
 body = owner[start:end]
-for required in ("Esp32StoryFit_release(doomCanvas);",
-                 "EspNativeIntroState_release(doomCanvas->doomRpg);",
-                 "DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgFont);",
+for required in ("Esp32StoryFit_release(doomCanvas, root);",
+                 "EspNativeIntroState_release(root);",
+                 "DoomRPG_freeImage(root, &doomCanvas->imgFont);",
                  "SDL_free(doomCanvas);"):
     assert required in body
 assert "DoomCanvas_free(" not in owner + glyph
@@ -47,12 +47,12 @@ shim = r"""
 #include <stdlib.h>
 typedef struct DoomRPG_s { unsigned magic; } DoomRPG_t;
 typedef struct Image_s { unsigned magic; } Image_t;
-typedef struct DoomCanvas_s { Image_t imgFont; DoomRPG_t* doomRpg; } DoomCanvas_t;
+typedef struct DoomCanvas_s { Image_t imgFont; } DoomCanvas_t;
 static DoomCanvas_t* expectedCanvas;
 static DoomRPG_t* expectedRoot;
 static int trace[4], n, frees;
-void Esp32StoryFit_release(DoomCanvas_t* p) {
-    assert(p == expectedCanvas && n == 0); trace[n++] = 1;
+void Esp32StoryFit_release(DoomCanvas_t* p,DoomRPG_t* root) {
+    assert(p == expectedCanvas && root == expectedRoot && n == 0); trace[n++] = 1;
 }
 void EspNativeIntroState_release(DoomRPG_t* p) {
     assert(p == expectedRoot && n == 1); trace[n++] = 2;
@@ -75,13 +75,12 @@ int main(void) {
     for (int i = 0; i < 4096; ++i) {
         n = 0; frees = 0;
         expectedCanvas = NULL;
-        EspNativeEngineRoot_releaseCanvas(NULL);
+        EspNativeEngineRoot_releaseCanvas(NULL, expectedRoot);
         assert(n == 0 && frees == 0);
         expectedCanvas = malloc(sizeof(*expectedCanvas));
         assert(expectedCanvas);
-        expectedCanvas->doomRpg = expectedRoot;
         expectedCanvas->imgFont.magic = 0x12345678;
-        EspNativeEngineRoot_releaseCanvas(expectedCanvas);
+        EspNativeEngineRoot_releaseCanvas(expectedCanvas, expectedRoot);
         assert(n == 4 && frees == 1);
         const int expected[] = { 1, 2, 3, 4 };
         for (int j = 0; j < 4; ++j) assert(trace[j] == expected[j]);

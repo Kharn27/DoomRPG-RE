@@ -234,7 +234,7 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
                (unsigned int)EspNativeGameplayPlayerState_fingerprint());
         return 0;
     }
-    EspNativeMainMenu_transitionCanvasState(doomCanvas, ST_INTRO);
+    EspNativeMainMenu_transitionCanvasState(doomCanvas, doomRpg, ST_INTRO);
     introState = EspNativeIntroState_get(doomRpg);
     if (doomCanvas->state != ST_INTRO || introState == NULL) {
         printf("[MAINSTART] FAILED native transient intro owner was not established\n");
@@ -314,7 +314,7 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
     printf("[MAINSTART] READY native new-game -> PlayerState_resetFresh -> ST_INTRO legacyPlayer=NULL\n");
     printf("[MAINSTART] READY prologue loader executed; dead legal/menu runtime released before intro allocation\n");
 
-    if (!Esp32StoryFit_prepare(doomCanvas)) {
+    if (!Esp32StoryFit_prepare(doomCanvas, doomRpg)) {
         printf("[MAINSTART] FAILED native story hand prepare before bounded first frame\n");
         return 0;
     }
