@@ -603,6 +603,9 @@ jobs:
       - name: Install PlatformIO Core
         run: python -m pip install 'platformio>=6.1,<7'
 
+      - name: BT-1 isolated frozen menu + MIDI PAK + Classic host contracts
+        run: python ESP32/test/bt1_isolated_midi_a2dp_host.py
+
       - name: Build classic CYD firmware
         working-directory: ESP32
         run: pio run -e esp32-cyd
@@ -614,6 +617,34 @@ jobs:
       - name: Build production-path CYD trace firmware
         working-directory: ESP32
         run: pio run -e esp32-cyd-trace
+
+      - name: Build isolated CYD Bluetooth MIDI experiment
+        working-directory: ESP32
+        run: pio run -e esp32-cyd-bt-test
+
+      - name: Verify BT-1 ELF entrypoint, real MIDI source and test-only Bluetooth
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+          builds=Path("ESP32/.pio/build")
+          test=(builds/"esp32-cyd-bt-test/firmware.elf").read_bytes()
+          assert b"[BTTEST] ISOLATED env=esp32-cyd-bt-test" in test
+          assert b"5039.mid" in test
+          assert b"MEDIA_START_REQUEST" in test
+          assert b"ESP_ERR_INVALID_STATE" not in [] # contract lives in compiled code
+          tool=Path.home()/".platformio/packages/toolchain-xtensa-esp32/bin/xtensa-esp32-elf-nm"
+          symbols=subprocess.check_output([str(tool),str(builds/"esp32-cyd-bt-test/firmware.elf")],text=True)
+          assert any(line.endswith(" T btInUse") for line in symbols.splitlines())
+          assert any(line.endswith(" T initVariant") for line in symbols.splitlines())
+          assert any(line.endswith(" T setup") for line in symbols.splitlines())
+          assert any(line.endswith(" T loop") for line in symbols.splitlines())
+          for env in ("esp32-cyd", "esp32-cyd-bringup", "esp32-cyd-trace"):
+              binary=(builds/env/"firmware.elf").read_bytes()
+              assert b"[BTTEST] ISOLATED env=esp32-cyd-bt-test" not in binary, env
+              assert b"MEDIA_START_REQUEST" not in binary, env
+          print("BT-1 ELF PASS: alternate Arduino entrypoint, A2DP + real PAK MIDI; normal/diagnostic inert")
+          PY
 
       - name: SDL-F13 reject dormant controller and mode globals in all three linked ELF
         run: python ESP32/test/sdl_f13_dead_input_mode_host.py --elf
@@ -728,6 +759,8 @@ jobs:
         with:
           name: doom-rpg-esp32-cyd-${{ github.sha }}
           path: |
+            ESP32/.pio/build/esp32-cyd-bt-test/*.bin
+            ESP32/.pio/build/esp32-cyd-bt-test/firmware.elf
             ESP32/.pio/build/esp32-cyd/*.bin
             ESP32/.pio/build/esp32-cyd/firmware.elf
             ESP32/.pio/build/esp32-cyd/sdl_a_elf_report.json
