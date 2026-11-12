@@ -11,7 +11,6 @@
 #include "Game.h"
 #include "esp_native_menu_state.h"
 #include "Render.h"
-#include "SDL_Video.h"
 #include "Sound.h"
 #include "Z_Zone.h"
 #include "Z_Zip.h"
@@ -134,15 +133,9 @@ void DoomRPG_Error(const char* fmt, ...)
     printf("[DOOM ERROR] DoomRPG Error: %s\n", errMsg);
     /* Native PAK backing store is not a desktop ZIP and is not closed here. */
     DoomRPG_FreeAppData(doomRpg);
-    SDL_CloseAudio();
-    SDL_Close();
     exit(0);
 }
 
-
-void SDL_Close(void) {}
-
-void SDL_CloseAudio(void) {}
 
 void Sound_stopSounds(Sound_t* sound) { (void)sound; }
 void Sound_freeSound(Sound_t* sound, int chan) { (void)sound; (void)chan; }
