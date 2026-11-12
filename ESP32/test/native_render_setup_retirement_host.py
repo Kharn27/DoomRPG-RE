@@ -19,7 +19,7 @@ assert re.search(r"#ifndef DOOMRPG_ESP32\s+void Render_setup\(", header)
 first = owner.index(anchor)
 last = owner.index("\n/* Bounded CYD layout and font initialization", first)
 body = owner[first:last]
-assert body.count("EspNativeRect") == 1, "SDL-F19 native layout signature"
+assert body.count("EspNativeRect") == 2, "SDL-F19 signature and layout comment"
 # Historical source FNV and host fixture use the exact pre-F19 spelling.
 # SDL_Rect is already a typedef of EspNativeRect; no C layout or behavior change.
 legacy_body = body.replace("EspNativeRect", "SDL_Rect")
