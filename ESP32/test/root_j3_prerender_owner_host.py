@@ -68,6 +68,14 @@ reversals = {
 }
 for path, reverse in reversals.items():
     restored = files[path]
+    if path == "ESP32/src/esp_legacy_prerender_startup.c":
+        # SDL-F20 keeps SDL ABI types for host/oracle compilation only. Undo
+        # this later native-only include guard before Root-J3 historic parity.
+        guard = ("#if !defined(DOOMRPG_ESP32) || "
+                 "defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)\n"
+                 "#include <SDL.h>\n#endif\n")
+        assert restored.startswith(guard), "native SDL-F20 include guard drift"
+        restored = "#include <SDL.h>\n" + restored[len(guard):]
     for after, before in reverse:
         assert restored.count(after) == 1, (path, after)
         restored = restored.replace(after, before, 1)
