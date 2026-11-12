@@ -43,6 +43,9 @@ jobs:
           python -m py_compile ESP32/tools/playtest_watch.py
           python ESP32/tools/playtest_watch.py --self-test
 
+      - name: Test CYD monitor captures boot from reset (host-only Python)
+        run: python ESP32/test/monitor_cyd_host.py
+
       - name: Test CHANGEMAP level-completion preflight and durable V11 publication (host C)
         run: |
           cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
