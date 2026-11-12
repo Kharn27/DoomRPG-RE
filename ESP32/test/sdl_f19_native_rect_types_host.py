@@ -6,6 +6,7 @@ eight local SDL_Rect spelling changes and removal of the unused SDL.h include.
 This is an ABI/type cleanup, NOT removal of the transitional legacy SDL header.
 """
 from pathlib import Path
+from sdl_f21_zone_call_boundary_host import restore_pre_f21_engine
 import hashlib
 import re
 import subprocess
@@ -32,6 +33,10 @@ for name, (sha, count) in BASELINE.items():
     assert len(re.findall(r"\bEspNativeRect\b", text)) == count, name
     assert not re.search(r"\bSDL_Rect\b", text), name
     assert "#include <SDL.h>" in text, (name, "legacy header still required")
+    # F21 later changed the native-only Zone calling ABI in engine_stubs.
+    # Undo it first so the F19 Git blob is still the original historic source.
+    if name == "engine_stubs.c":
+        text = restore_pre_f21_engine(text)
     restored = re.sub(r"\bEspNativeRect\b", "SDL_Rect", text)
     assert git_blob(restored) == sha, (name, git_blob(restored), sha)
 

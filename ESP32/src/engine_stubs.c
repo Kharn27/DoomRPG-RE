@@ -1,4 +1,6 @@
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 #include <SDL.h>
+#endif
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -165,10 +167,10 @@ int Sound_addVolume(Sound_t* sound, int volume) {
 }
 
 void Z_Init(void) {}
-void* SDLCALL Z_Malloc(size_t size) { return malloc(size); }
-void* SDLCALL Z_Calloc(size_t count, size_t size) { return calloc(count, size); }
-void* SDLCALL Z_Realloc(void* ptr, size_t size) { return realloc(ptr, size); }
-void SDLCALL Z_Free(void* ptr) { free(ptr); }
+void* DOOMRPG_ZONE_CALL Z_Malloc(size_t size) { return malloc(size); }
+void* DOOMRPG_ZONE_CALL Z_Calloc(size_t count, size_t size) { return calloc(count, size); }
+void* DOOMRPG_ZONE_CALL Z_Realloc(void* ptr, size_t size) { return realloc(ptr, size); }
+void DOOMRPG_ZONE_CALL Z_Free(void* ptr) { free(ptr); }
 int Z_FreeMemory(void) {
     return (int)heap_caps_get_free_size(MALLOC_CAP_8BIT);
 }
