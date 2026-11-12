@@ -3,7 +3,9 @@
 #include <stdio.h>
 #include <string.h>
 
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 #include <SDL.h>
+#endif
 #include "DoomRPG.h"
 #include "esp_native_process_rng_owner.h"
 #include <esp_heap_caps.h>
