@@ -443,7 +443,9 @@ jobs:
           /tmp/doomrpg-hud-weapon-feedback
 
       - name: Test native CYD HELP animated starfield, guide and touch parity
-        run: python ESP32/test/native_main_help_host.py
+        run: |
+          python ESP32/test/native_main_help_host.py
+          python ESP32/test/native_bottom_help_breath_host.py
 
       - name: Test original PAK door/wall HELP scene and RGB breathing (host C)
         run: |
