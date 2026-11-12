@@ -62,13 +62,24 @@ assert [lines[i * 7 : i * 7 + 5] for i in range(6, 9)] == [
 assert all(lines[i * 7 + 5:i * 7 + 7] == ["", ""] for i in range(6, 9))
 assert "#define MAIN_HELP_MAX_LINES 112" in model
 assert lines[9 * 7 : 10 * 7] == [
-    "BOTTOM HUD BAR", "STATUS AT A GLANCE", "LEFT: HP + ARMOR",
-    "CENTER: FACE / AMMO", "RIGHT: DIRECTION", "", ""]
+    "BOTTOM HUD BAR", "LEFT: HP + ARMOR", "CENTER: FACE / AMMO",
+    "RIGHT: DIRECTION / AMMO", "Touch for weapon menu", "", ""]
+assert "STATUS AT A GLANCE" not in lines
+assert lines[9 * 7 + 3].startswith("RIGHT: ")
+assert lines[9 * 7 + 4] == "Touch for weapon menu"
 assert lines[10 * 7 : 11 * 7] == [
     "WEAPON SELECT", "Tap gun icon", "", "", "", "", ""]
 
 assert "DOWN: controls" not in lines
-assert max(map(len, lines)) <= 20  # source font=7px/char, x=12
+# Two long strings on BOTTOM HUD are explicitly positioned across the 160px
+# width. Every other guide entry remains within 20x7px / x12.
+assert max(len(line) for i, line in enumerate(lines)
+           if i not in (9 * 7 + 3, 9 * 7 + 4)) <= 20
+assert len(lines[9 * 7 + 3]) == 23
+assert len(lines[9 * 7 + 4]) == 21
+assert 2 + (len("RIGHT:") - 1) * 7 + 9 == 46
+assert 46 + (len("DIRECTION / AMMO") - 1) * 7 + 9 == 160
+assert 8 + (len("Touch for weapon menu") - 1) * 7 + 9 == 157
 assert len(lines) == len(set((i, line) for i, line in enumerate(lines)))
 assert any("CYD" in line for line in lines)
 assert all(label in lines for label in (
@@ -298,6 +309,27 @@ assert 'static uint16_t helpBottomHudMini[MAIN_HELP_HUD_BAR_WIDTH *' in actions
 assert 'helpBottomHudReady = 0U;' in actions
 assert 'EspNativeGameplayHud_paintHelpBottomBand(fb)' in actions
 assert 'static int helpPaintBottomHudIllustration(' in actions
+assert '#define MAIN_HELP_BOTTOM_HUD_BAR_Y (MAIN_HELP_HUD_BAR_Y - MAIN_HELP_LINE_HEIGHT)' in actions
+assert macro("MAIN_HELP_HUD_BAR_Y") == 43
+assert macro("MAIN_HELP_LINE_HEIGHT") == 12
+assert 43 - 12 == 31
+bottom_section = actions.split(
+    'static int helpPaintBottomHudIllustration(uint16_t* fb) {', 1
+)[1].split('/* Build the exact native 4x3 WEAPONS panel', 1)[0]
+assert "MAIN_HELP_BOTTOM_HUD_BAR_Y + y" in bottom_section
+assert "MAIN_HELP_HUD_BAR_Y + y" not in bottom_section
+bottom_page = actions.split(
+    'else if (menuSystem->scrollIndex == MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL) {', 1
+)[1].split('else if (menuSystem->scrollIndex == MAIN_HELP_WEAPON_PAGE_SCROLL) {', 1)[0]
+assert 'helpDrawPositionCaption(doomRpg, canvas, left, 0, 52);' in bottom_page
+assert 'helpDrawPositionCaption(doomRpg, canvas, center, 1, 64);' in bottom_page
+assert 'EspNativeCanvas_drawText(canvas, "RIGHT:", 2, 76, 0);' in bottom_page
+assert 'EspNativeCanvas_drawText(canvas, right + 7, 46, 76, 0);' in bottom_page
+assert 'EspNativeCanvas_drawText(canvas, touch, 8, 88, 0);' in bottom_page
+assert 'EspNativeCanvas_drawText(canvas, caption, 12, 27, 0);' not in bottom_page
+assert 31 + 16 - 1 == 46 < 52
+assert 52 + 12 == 64 and 64 + 12 == 76
+assert 76 + 12 == 88 and 88 + 12 == 100
 assert 'helpPaintBottomHudIllustration(framebuffer)' in actions
 assert 'MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL (9 * MAIN_HELP_VISIBLE_LINES)' in actions
 assert 'helpBottomHudMini[y * MAIN_HELP_HUD_BAR_WIDTH + x]' in actions
