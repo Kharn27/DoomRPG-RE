@@ -7,6 +7,7 @@ This is an ABI/type cleanup, NOT removal of the transitional legacy SDL header.
 """
 from pathlib import Path
 from sdl_f21_zone_call_boundary_host import restore_pre_f21_engine
+from native_help_bottom_history import restore_pre_help_bottom_blue
 import hashlib
 import re
 import subprocess
@@ -37,6 +38,11 @@ for name, (sha, count) in BASELINE.items():
     # Undo it first so the F19 Git blob is still the original historic source.
     if name == "engine_stubs.c":
         text = restore_pre_f21_engine(text)
+    # Later PR #332 changed only the HELP BOTTOM HUD illustration;
+    # reconstruct its exact pre-blue block before verifying the immutable
+    # F19 whole-file blob and native rectangle alias equivalence.
+    if name == "native_main_menu_actions.c":
+        text = restore_pre_help_bottom_blue(text)
     restored = re.sub(r"\bEspNativeRect\b", "SDL_Rect", text)
     assert git_blob(restored) == sha, (name, git_blob(restored), sha)
 
