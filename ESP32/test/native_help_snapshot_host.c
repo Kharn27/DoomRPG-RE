@@ -186,25 +186,24 @@ int main(void) {
                 ++altered;
             }
     assert(altered > 300 && altered < 2900);
-    /* TURN curves keep their original shifted position; arrowheads alone
-     * move another 5px outward, so neither chevron crosses its loop.
+    /* TURN curves retain their 2px position; arrowheads are retracted
+     * 2px after the over-wide shift, staying outward of the curve.
      * The button frames and actual gameplay touch targets never move. */
     {
         int minX, maxX, minY, maxY;
         assert(glyphDeltaBounds(8, 51, 55, 73,
                                &minX, &maxX, &minY, &maxY) > 20);
-        assert(minX == 17 && maxX == 35);
+        assert(minX == 19 && maxX == 35);
         assert(minY == 56 && maxY == 68);
         assert(glyphDeltaBounds(104, 51, 151, 73,
                                &minX, &maxX, &minY, &maxY) > 20);
-        assert(minX == 123 && maxX == 141);
+        assert(minX == 123 && maxX == 139);
         assert(minY == 56 && maxY == 68);
-        /* At the arrow-tip scanline y62, x18..22 and x136..140 must
-         * contain no breathing pixels: this is the gap between the
-         * chevrons at x17/x141 and the untouched loops at x23/x135. */
-        for (x = 18; x <= 22; ++x)
+        /* At the arrow-tip scanline y62, x20..22 and x136..138 must
+         * remain unpainted between the chevrons x19/x139 and curves x23/x135. */
+        for (x = 20; x <= 22; ++x)
             assert(softFrame[62 * W + x] == brightFrame[62 * W + x]);
-        for (x = 136; x <= 140; ++x)
+        for (x = 136; x <= 138; ++x)
             assert(softFrame[62 * W + x] == brightFrame[62 * W + x]);
 
         /* Each two-line 5x7 WPN caption occupies y78..92: its visual
