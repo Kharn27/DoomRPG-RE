@@ -57,7 +57,9 @@ EspNativeGraphicsCatalogStatus EspNativeGraphicsCatalog_ensureSprite(uint16_t id
 __CROSS__
 __PRIME__
 int main(void) {
-    PersistentDropOrder order[8] = {{0}, {1}, {2}};
+    PersistentDropOrder order[8] = {0};
+    order[1].slot = 1;
+    order[2].slot = 2;
     EspNativeGameplayMonsterDropRecord before[8];
     assert(primePersistentDropSprites(order, 0) == 1 && attempts == 0);
     records[0].active = 1; records[0].defTile = 100;
