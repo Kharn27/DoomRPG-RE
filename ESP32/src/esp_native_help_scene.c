@@ -269,9 +269,9 @@ static void helpPaintTurnArc(uint16_t* fb, int cx, int cy,
                 cy + turnCurve[i][1], core);
     }
     /* Keep the curved U-turn unchanged. Moving the whole symbol did not
-     * reduce overlap: only its arrowhead moves 5px farther outward, leaving
+     * reduce overlap: only its arrowhead moves 3px outward, leaving
      * a visible gap between the chevron wings and the loop on both sides. */
-    const int headCx = cx - mirror * 5;
+    const int headCx = cx - mirror * 3;
     segment(fb, headCx - mirror * 3, cy - 4,
             headCx - mirror * 7, cy, core);
     segment(fb, headCx - mirror * 7, cy,
