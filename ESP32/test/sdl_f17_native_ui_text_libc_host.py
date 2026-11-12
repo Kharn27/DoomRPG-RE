@@ -9,7 +9,8 @@ import hashlib
 import re
 import subprocess
 import tempfile
-from native_help_bottom_history import restore_pre_help_bottom_blue
+from native_help_bottom_history import (restore_pre_help_bottom_blue,
+                                        restore_pre_help_bottom_model)
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "ESP32/src"
@@ -65,6 +66,8 @@ def restore(filename: str, current: str) -> str:
     original = current
     if filename == "native_main_menu_actions.c":
         original = restore_pre_help_bottom_blue(original)
+    if filename == "native_main_menu_model.c":
+        original = restore_pre_help_bottom_model(original)
     # SDL-F19 only renames local layout typedef uses; reconstruct the exact
     # historical pre-F17 source before the F17 alias reversions.
     if filename in ("native_main_menu_actions.c",
