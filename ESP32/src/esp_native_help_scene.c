@@ -268,11 +268,14 @@ static void helpPaintTurnArc(uint16_t* fb, int cx, int cy,
                 cx + mirror * turnCurve[i][0],
                 cy + turnCurve[i][1], core);
     }
-    /* Arrowhead faces the turn, never a mirrored forward/backward chevron. */
-    segment(fb, cx - mirror * 3, cy - 4,
-            cx - mirror * 7, cy, core);
-    segment(fb, cx - mirror * 7, cy,
-            cx - mirror * 3, cy + 4, core);
+    /* Keep the curved U-turn unchanged. Moving the whole symbol did not
+     * reduce overlap: only its arrowhead moves 5px farther outward, leaving
+     * a visible gap between the chevron wings and the loop on both sides. */
+    const int headCx = cx - mirror * 5;
+    segment(fb, headCx - mirror * 3, cy - 4,
+            headCx - mirror * 7, cy, core);
+    segment(fb, headCx - mirror * 7, cy,
+            headCx - mirror * 3, cy + 4, core);
 }
 
 /* Only the eight glyphs used by WPN/PREV/NEXT. 5x7 ROM masks cost 56B,
@@ -351,8 +354,8 @@ static void drawActionMark(uint16_t* framebuffer, int row, int col,
         putGlow(framebuffer, cx, cy, core);
     }
     else if (row == 1) {
-        /* TURN LEFT/RIGHT symbols sit 2px farther toward their own edges.
-         * Shift the connected arc and chevron together, not the hitboxes. */
+        /* Preserve the previous 2px curve position. Inside the painter,
+         * only the arrowhead moves outward; hitboxes stay unchanged. */
         helpPaintTurnArc(framebuffer, cx + (col == 0 ? -2 : 2), cy, col, core);
     }
     else {
