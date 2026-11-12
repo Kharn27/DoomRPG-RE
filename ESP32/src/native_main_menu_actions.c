@@ -300,7 +300,8 @@ static int helpIsAnimatedScenePage(int scroll) {
 }
 static int helpIsAnimatedHudPage(int scroll) {
     return scroll == MAIN_HELP_HUD_PAGE_SCROLL ||
-           scroll == MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL;
+           scroll == MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL ||
+           scroll == MAIN_HELP_WEAPON_PAGE_SCROLL;
 }
 
 /* Compact white 5x7 ROM glyphs for TOP HUD labels only.
@@ -609,6 +610,41 @@ static int helpPaintBottomHudIllustration(uint16_t* fb) {
     return 1;
 }
 
+/* Keep the source PAK geometry, gray/dark tile interiors and 4x3 layout.
+ * In this HELP-only miniature the authored sprites are visually muted even
+ * when all 12 player->weapons bits are owned; bring their ORIGINAL RGB565
+ * colors forward with a gentle cyan lift, never gray desaturation.
+ * This modifies only the existing 144x60 cache, no extra buffer or SD read. */
+static uint16_t helpWeaponPreviewLitPixel(uint16_t original) {
+    uint32_t red, green, blue;
+    if (original == 0x0841U || original == 0x0000U) return original;
+    red = ((uint32_t)(original >> 11) * 5U) / 4U + 2U;
+    green = ((uint32_t)((original >> 5) & 63U) * 5U) / 4U + 8U;
+    blue = ((uint32_t)(original & 31U) * 5U) / 4U + 6U;
+    if (red > 31U) red = 31U;
+    if (green > 63U) green = 63U;
+    if (blue > 31U) blue = 31U;
+    return (uint16_t)((red << 11) | (green << 5) | blue);
+}
+
+static void helpIlluminateWeaponGridMini(void) {
+    int col, row, x, y;
+    /* Four 36px columns by three 20px rows; preserve each 1px native
+     * border and the black (0x0841) interior around each PAK sprite. */
+    for (row = 0; row < 3; ++row) {
+        for (col = 0; col < 4; ++col) {
+            for (y = 2; y < 18; ++y) {
+                for (x = 2; x < 34; ++x) {
+                    uint16_t* pixel = &helpWeaponMini[
+                        (row * 20 + y) * MAIN_HELP_WEAPON_MINI_W +
+                        col * 36 + x];
+                    *pixel = helpWeaponPreviewLitPixel(*pixel);
+                }
+            }
+        }
+    }
+}
+
 /* Build the exact native 4x3 WEAPONS panel from its real sprite PAK
  * decoder, *without* a resident player, world, modal, turn or gameplay UI.
  * The compact immutable entity-type catalog may be initialized once from
@@ -646,6 +682,9 @@ static int helpBuildWeaponGridMini(uint16_t* framebuffer) {
                 framebuffer[sy * DOOMRPG_LOGICAL_WIDTH + sx];
         }
     }
+    /* The real grid rendered every weapon as owned; only HELP applies a
+     * brighter preview to all 12 mini-icons, never gameplay/HUB assets. */
+    helpIlluminateWeaponGridMini();
     helpWeaponMiniReady = 1U;
     ok = 1;
 done:
@@ -668,27 +707,34 @@ static void helpDrawWeaponGridMini(uint16_t* fb) {
                 helpWeaponMini[y * MAIN_HELP_WEAPON_MINI_W + x];
 }
 
-/* On the WEAPON SELECT help page: crop the REAL weapon touch target
- * [100..159] from the canonical HUD thumbnail. Downsample to 36x12 so
- * its miniature sits on the SAME BASELINE as the themed title at y14.
- * No recreated weapon icon, no cropped face/compass neighbours. */
+/* WEAPON SELECT: the actual x100..159 ammo touch-zone from the shared
+ * native k/m/l/o/a.bmp miniature. Larger 46x15 in the unused title-side
+ * corridor x108..153/y12..26 (clear of page number, title and caption).
+ * Apply the SAME gray->blue full-button breath as BOTTOM HUD BAR, using
+ * original cached pixels each frame: no amber corners or accumulated tint. */
 static void helpDrawWeaponButtonCue(uint16_t* fb) {
     const int sourceX = ESP_NATIVE_HUD_WEAPON_LEFT *
                         MAIN_HELP_HUD_BAR_WIDTH / DOOMRPG_LOGICAL_WIDTH;
     const int sourceWidth = (ESP_NATIVE_HUD_WEAPON_RIGHT + 1 -
                              ESP_NATIVE_HUD_WEAPON_LEFT) *
                             MAIN_HELP_HUD_BAR_WIDTH / DOOMRPG_LOGICAL_WIDTH;
-    const int dstX = 116, dstY = 14, dstW = 36, dstH = 12;
+    const int dstX = 108, dstY = 12, dstW = 46, dstH = 15;
+    const int step = helpBreathStepAt(DoomRPG_GetUpTimeMS());
+    const uint8_t power = EspNativeHelpScene_breathPower(
+        helpBreathLevel(step));
     int x, y;
     if (!helpBottomHudReady || fb == NULL) return;
     for (y = 0; y < dstH; ++y) {
         const int sy = y * MAIN_HELP_HUD_BAR_HEIGHT / dstH;
         for (x = 0; x < dstW; ++x) {
             const int sx = sourceX + x * sourceWidth / dstW;
-            fb[(dstY + y) * DOOMRPG_LOGICAL_WIDTH + dstX + x] =
+            const uint16_t original =
                 helpBottomHudMini[sy * MAIN_HELP_HUD_BAR_WIDTH + sx];
+            fb[(dstY + y) * DOOMRPG_LOGICAL_WIDTH + dstX + x] =
+                helpTintBottomHudWeaponBlue(original, power);
         }
     }
+    helpHudBreathStep = step;
 }
 
 static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
