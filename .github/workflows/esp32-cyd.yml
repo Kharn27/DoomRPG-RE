@@ -363,6 +363,9 @@ jobs:
       - name: Test SDL-F21 native zone call ABI and real allocation wrappers
         run: python ESP32/test/sdl_f21_zone_call_boundary_host.py
 
+      - name: Test SDL-F22 retired compiled SDL_RWops BMP TU, preserved host oracle
+        run: python ESP32/test/sdl_f22_bmp_tu_retirement_host.py
+
       - name: Native monster drop catalog preflight before render PAK lease
         run: python ESP32/test/native_monster_drop_catalog_host.py
 
@@ -745,6 +748,7 @@ jobs:
               --compiledb compile_commands.json --require-retired-doomrpg-keybinds
             python test/sdl_shim_build_ownership_host.py "$profile" \
               --baseline-dir "$RUNNER_TEMP/doomrpg-sdl-a-main"
+            python test/sdl_f22_bmp_tu_retirement_host.py --profile "$profile"
           done
 
       - name: Upload firmware artifacts

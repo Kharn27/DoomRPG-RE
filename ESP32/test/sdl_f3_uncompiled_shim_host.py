@@ -17,7 +17,11 @@ bridge = (ROOT / "ESP32/src/platform_video_c_bridge.cpp").read_text()
 block = re.search(r"(?m)^build_src_filter\s*=\s*\n(?P<body>(?:[ \t]+[^\n]*\n)+)", ini)
 assert block, "build_src_filter missing"
 filters = block.group("body").splitlines()
-assert [s.strip() for s in filters] == ["+<*>", "-<esp32_sdl.cpp>"], filters
+# SDL-F22 additionally retires the never-linked SDL_RWops BMP decoder TU.
+# Require both exclusions precisely; the historical F3 shim still exists as oracle.
+assert [s.strip() for s in filters] == [
+    "+<*>", "-<esp32_sdl.cpp>", "-<esp32_bmp.cpp>"
+], filters
 assert ini.count("extends = env:esp32-cyd") == 2
 assert "Esp32Sdl_attachDisplay" not in main
 assert '#include "esp32_sdl_platform.h"' not in main
