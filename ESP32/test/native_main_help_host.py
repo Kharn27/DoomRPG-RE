@@ -301,6 +301,16 @@ assert 'static int helpPaintBottomHudIllustration(' in actions
 assert 'helpPaintBottomHudIllustration(framebuffer)' in actions
 assert 'MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL (9 * MAIN_HELP_VISIBLE_LINES)' in actions
 assert 'helpBottomHudMini[y * MAIN_HELP_HUD_BAR_WIDTH + x]' in actions
+assert 'static uint16_t helpTintBottomHudWeaponBlue(' in actions
+assert 'helpTintBottomHudWeaponBlue(*pixel, power)' in actions
+bottom_paint = actions.split(
+    'static int helpPaintBottomHudIllustration(uint16_t* fb) {', 1
+)[1].split('static int helpBuildWeaponGridMini(', 1)[0]
+assert 'const uint16_t amber' not in bottom_paint
+assert 'buttonLeft; x <= buttonRight; ++x' in bottom_paint
+assert 'if (power != 0U)' in bottom_paint
+assert 'const uint32_t keep = 256U - mix;' in actions
+assert '((uint32_t)power * 160U) / 255U' in actions
 assert 'const int sy = 100 + y * 20 / MAIN_HELP_HUD_BAR_HEIGHT;' in actions
 assert 'const int sx = x * 160 / MAIN_HELP_HUD_BAR_WIDTH;' in actions
 assert '"HP30"' not in actions and '"AR20"' not in actions
@@ -308,6 +318,10 @@ assert '"AM12"' not in actions and 'skin = 0xfba0U' not in actions
 assert 'int EspNativeGameplayHud_paintHelpBottomBand(' in hud_c
 assert 'paintPrepared(&prepared, framebuffer, NULL, 1)' in hud_c
 assert 'if (!bottomOnly) drawTopTouchNotches(framebuffer, stats);' in hud_c
+# The full amber corner overlay stays LIVE in gameplay, but the read-only
+# HELP thumbnail omits it (paintPrepared called with bottomOnly=1).
+assert 'if (status == ESP_NATIVE_GAMEPLAY_HUD_OK && !bottomOnly) {' in hud_c
+assert 'drawWeaponTouchCorners(framebuffer, stats);' in hud_c
 assert 'paintPrepared(&prepared, framebuffer, outStats, 0)' in hud_c
 assert all(f'openAsset("{x}.bmp", &bmp,' in hud_c
            for x in ('k','m','l','o','a'))
@@ -441,7 +455,7 @@ assert 'mini=%ux%u bytes=%u' in actions
 assert 'static void helpPaintTurnArc(' in scene
 assert 'helpPaintTurnArc(framebuffer, cx + (col == 0 ? -2 : 2), cy, col, core);' in scene
 assert 'const int mirror = col == 0 ? 1 : -1;' in scene
-assert 'const int headCx = cx - mirror * 5;' in scene
+assert 'const int headCx = cx - mirror * 3;' in scene
 assert 'segment(fb, headCx - mirror * 3, cy - 4,' in scene
 assert 'headCx - mirror * 7, cy, core);' in scene
 assert 'segment(fb, headCx - mirror * 7, cy,' in scene
@@ -463,19 +477,22 @@ for left, right in ((8, 55), (104, 151)):
     cx = (left + right) // 2
     cy = (51 + 73) // 2
     mirror = 1 if left == 8 else -1
-    # Curved loop retains its previously validated 2px offset. The
-    # chevron alone moves another 5px toward the outer button edge, giving
-    # both sides an actual visual gap instead of shifting the overlap.
+    # The loop keeps its previously validated 2px offset. The chevron
+    # remains independent but comes back 2px after the too-wide 5px shift.
+    # Its tip is still outside the loop on both sides.
     shifted_cx = cx + (-2 if left == 8 else 2)
     curve = [(shifted_cx + mirror * x, cy + y) for x, y in turn_points]
-    head_cx = shifted_cx - mirror * 5
+    head_cx = shifted_cx - mirror * 3
     chevron = [(head_cx - mirror * dx, cy + dy)
                for dx, dy in ((3, -4), (7, 0), (3, 4))]
     assert min(x for x, _ in curve) == (23 if left == 8 else 123)
     assert max(x for x, _ in curve) == (35 if left == 8 else 135)
-    assert min(x for x, _ in chevron) == (17 if left == 8 else 137)
-    assert max(x for x, _ in chevron) == (21 if left == 8 else 141)
-    assert min(abs(px - qx) for px, _ in curve for qx, _ in chevron) == 2
+    assert min(x for x, _ in chevron) == (19 if left == 8 else 135)
+    assert max(x for x, _ in chevron) == (23 if left == 8 else 139)
+    # The tip remains four pixels out from the nearest curve coordinate.
+    assert (min(x for x, _ in curve) - min(x for x, _ in chevron)
+            if left == 8 else max(x for x, _ in chevron) -
+            max(x for x, _ in curve)) == 4
     assert all(left + 2 < x < right - 2 and 51 < y < 73
                for x, y in curve + chevron)
 
