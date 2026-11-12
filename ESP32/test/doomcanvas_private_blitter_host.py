@@ -127,6 +127,10 @@ end = root_owner.index("\nint DoomRPG_startEngineLayout(", start)
 # Root-I removes the Canvas process backref. Reconstitute only the retired
 # root parameter's historical local/backref lines for the source FNV oracle.
 layout = root_owner[start:end]
+# SDL-F19 only changes the already-identical local layout typedef spelling.
+# Normalize it back before the historical hardware-proven body fingerprint.
+assert layout.count("EspNativeRect") == 1, "SDL-F19 Canvas local rectangle"
+layout = layout.replace("EspNativeRect", "SDL_Rect")
 layout = layout.replace(
     "static void EspNativeEngineLayout_startupCanvas(DoomCanvas_t* doomCanvas, DoomRPG_t* root)",
     "static void EspNativeEngineLayout_startupCanvas(DoomCanvas_t* doomCanvas)")
