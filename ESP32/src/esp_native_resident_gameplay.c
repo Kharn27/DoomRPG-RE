@@ -1,4 +1,4 @@
-#include <SDL.h>
+#include <stdlib.h>
 #include "esp_native_root_state.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -1763,7 +1763,7 @@ static int publishCurrentAutomapVisibility(Render_t* render,
     int ok;
 
     if (render == NULL) return 0;
-    visibility = (EspNativeBspVisibilityState*)SDL_malloc(sizeof(*visibility));
+    visibility = (EspNativeBspVisibilityState*)malloc(sizeof(*visibility));
     if (visibility == NULL) {
         printf("[AUTOMAPVIS] FAILED source=automap reason=owner-allocation bytes=%u\n",
                (unsigned int)sizeof(*visibility));
@@ -1773,7 +1773,7 @@ static int publishCurrentAutomapVisibility(Render_t* render,
     ok = EspNativeBspVisibility_build(render, visibility) &&
          EspNativeBspVisibility_publishAutomap(
              visibility, &linesMutated, &spritesMutated);
-    SDL_free(visibility);
+    free(visibility);
     if (!ok) {
         printf("[AUTOMAPVIS] FAILED source=automap reason=%s\n",
                reason != NULL ? reason : "frame");

@@ -1,4 +1,4 @@
-#include <SDL.h>
+#include <stdlib.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
@@ -54,13 +54,13 @@ static char* copyText(const char* text) {
         return NULL;
     }
 
-    bytes = SDL_strlen(text) + 1U;
-    copy = (char*)SDL_calloc(bytes, sizeof(char));
+    bytes = strlen(text) + 1U;
+    copy = (char*)calloc(bytes, sizeof(char));
     if (copy == NULL) {
         return NULL;
     }
 
-    SDL_memcpy(copy, text, bytes);
+    memcpy(copy, text, bytes);
     return copy;
 }
 
@@ -77,10 +77,10 @@ static void releaseOwnedState(DoomRPG_t* owner) {
         DoomRPG_freeImage(owner, &introState->imgSpaceship);
     }
 
-    SDL_free(introState->storyText1[0]);
-    SDL_free(introState->storyText1[1]);
-    SDL_free(introState->storyText2);
-    SDL_free(introState);
+    free(introState->storyText1[0]);
+    free(introState->storyText1[1]);
+    free(introState->storyText2);
+    free(introState);
     introState = NULL;
     introOwner = NULL;
 }
@@ -95,7 +95,7 @@ int EspNativeIntroState_begin(struct DoomRPG_s* doomRpgBase) {
         return 0;
     }
 
-    introState = (EspNativeIntroState_t*)SDL_calloc(
+    introState = (EspNativeIntroState_t*)calloc(
         1U, sizeof(EspNativeIntroState_t));
     if (introState == NULL) {
         printf("[INTROSTATE] FAILED state allocation bytes=%u\n",
