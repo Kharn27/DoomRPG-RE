@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include <stdlib.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -45,7 +46,7 @@ void EspNativeGameplayNotePrefix_reset(void) {
         printf("[NOTE] RESET-DEFER owner=busy mutation=no\n");
         return;
     }
-    SDL_free(notePrefix);
+    free(notePrefix);
     notePrefix = NULL;
     printf("[NOTE] RESET map-owner=released\n");
 }
@@ -86,7 +87,7 @@ void* EspNativeGameplayModalScratch_acquire(uint8_t owner, size_t bytes) {
         return NULL;
     }
     if (state == NULL) {
-        state = (EspNativeGameplayNotePrefixState*)SDL_calloc(1, sizeof(*state));
+        state = (EspNativeGameplayNotePrefixState*)calloc(1, sizeof(*state));
         if (state == NULL) {
             printf("[MODALSCRATCH] DEFER owner=%u reason=allocation bytes=%u\n",
                    (unsigned int)owner,
@@ -132,7 +133,7 @@ int EspNativeGameplayModalScratch_release(uint8_t owner, void* storage) {
     memset(expected, 0, modalScratchCapacity());
     state->busy = 0U;
     if (state->active == 0U) {
-        SDL_free(state);
+        free(state);
         notePrefix = NULL;
         printf("[MODALSCRATCH] RELEASE owner=%u backing=freed-no-notebook\n",
                (unsigned int)owner);
@@ -182,7 +183,7 @@ int EspNativeGameplayNotePrefix_prepare(uint16_t eventIndex, uint8_t offset) {
     name = EspMapCatalog_nameForId(view->targetMapId);
     if (name == NULL) return 0;
     if (notePrefix == NULL) {
-        notePrefix = SDL_calloc(1, sizeof(*notePrefix));
+        notePrefix = calloc(1, sizeof(*notePrefix));
         if (notePrefix == NULL) return 0;
     }
     state = notePrefix;
@@ -351,7 +352,7 @@ __wrap_EspNativeGameplayDialog_begin(uint16_t eventIndex,
     }
 
     if (state == NULL) {
-        state = (EspNativeGameplayNotePrefixState*)SDL_calloc(1, sizeof(*state));
+        state = (EspNativeGameplayNotePrefixState*)calloc(1, sizeof(*state));
         if (state == NULL) {
             printf("[NOTE] DEFER event=%u dialogCmd=%u reason=owner-allocation bytes=%u\n",
                    (unsigned int)eventIndex,

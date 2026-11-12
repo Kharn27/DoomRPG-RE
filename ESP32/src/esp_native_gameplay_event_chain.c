@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include <stdlib.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -138,7 +139,7 @@ static int currentPlayerKeys(uint32_t* outKeys) {
 
 static int ensureTransactionOwner(void) {
     if (transactionOwner != NULL) return 1;
-    transactionOwner = (ChainTransaction*)SDL_calloc(1, sizeof(*transactionOwner));
+    transactionOwner = (ChainTransaction*)calloc(1, sizeof(*transactionOwner));
     if (transactionOwner == NULL) {
         printf("[DIALOGCHAIN] DEFER reason=owner-allocation bytes=%u\n",
                (unsigned int)sizeof(*transactionOwner));
@@ -166,10 +167,10 @@ void EspNativeGameplayEventChain_reset(void) {
     topologyCapacity = transaction.topologyCapacity;
     pendingRollback = transaction.active;
     if (transaction.noteStaged) EspNativeGameplayNotePrefix_cancel();
-    SDL_free(transaction.topologyBytes);
+    free(transaction.topologyBytes);
     transaction.topologyBytes = NULL;
     transaction.topologyCapacity = 0U;
-    SDL_free(transactionOwner);
+    free(transactionOwner);
     transactionOwner = NULL;
     heapAfter = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
     printf("[DIALOGCHAIN] OWNER-RELEASE journal=%u topologyCapacity=%u activeAtTeardown=%u heap8=%u->%u recovered=%d owner=none\n",
@@ -579,7 +580,7 @@ static int captureTopology(void) {
     if (transaction.topologyCaptured) return 1;
     if (view == NULL || view->storage == NULL || view->storageBytes == 0U) return 0;
     if (transaction.topologyCapacity < view->storageBytes) {
-        next = (uint8_t*)SDL_realloc(transaction.topologyBytes,
+        next = (uint8_t*)realloc(transaction.topologyBytes,
                                     view->storageBytes);
         if (next == NULL) return 0;
         transaction.topologyBytes = next;

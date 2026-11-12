@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -495,7 +496,7 @@ int EspNativeGameplayWeapon_render(
                   : idleOffsets[weapon];
 
     if (workspace == NULL) {
-        workspace = (WeaponWorkspace*)SDL_calloc(1, sizeof(*workspace));
+        workspace = (WeaponWorkspace*)calloc(1, sizeof(*workspace));
         if (workspace == NULL) {
             printf("[WEAPON] FAILED workspace-allocation ownerBytes=%u\n",
                    (unsigned int)sizeof(*workspace));

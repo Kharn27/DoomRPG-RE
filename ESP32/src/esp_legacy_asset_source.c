@@ -1,4 +1,4 @@
-#include <SDL.h>
+#include <stdlib.h>
 #include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -58,14 +58,14 @@ uint8_t* EspLegacyAssetSource_readAlloc(const char* name, int* outSize) {
     if (outSize != NULL) *outSize = 0;
     if (!openEntry(name, &entry)) return NULL;
 
-    data = (uint8_t*)SDL_malloc((size_t)entry.size);
+    data = (uint8_t*)malloc((size_t)entry.size);
     if (data == NULL) {
         EspAssetPack_close();
         return NULL;
     }
 
     if (!EspAssetPack_readRange(&entry, 0U, data, (size_t)entry.size)) {
-        SDL_free(data);
+        free(data);
         EspAssetPack_close();
         return NULL;
     }

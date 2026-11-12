@@ -351,6 +351,12 @@ jobs:
       - name: SDL-F17 native menu text libc aliases with exact Git blob and C parity
         run: python ESP32/test/sdl_f17_native_ui_text_libc_host.py
 
+      - name: SDL-F18 native owner allocation libc aliases with whole-file Git blob and C parity
+        run: python ESP32/test/sdl_f18_native_alloc_libc_host.py
+
+      - name: Native monster drop catalog preflight before render PAK lease
+        run: python ESP32/test/native_monster_drop_catalog_host.py
+
       - name: Test native presentation and clip pixel parity (host C)
         run: python ESP32/test/doomrpg_presentation_host.py
 

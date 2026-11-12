@@ -1158,6 +1158,54 @@ static int buildPersistentDropOrder(
     return 1;
 }
 
+/* A native monster drop need not occur among the BSP's immutable sprite
+ * requirements. Ensure its compact PAK-backed resource record BEFORE the
+ * renderer opens its exclusive PAK lease. Includes checkpoint-restored drops.
+ * No texels persist, and failure leaves gameplay/drop state untouched. */
+static int primePersistentDropSprites(
+    const PersistentDropOrder order[ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SLOTS],
+    uint32_t count) {
+    const EspNativeGameplayMonsterDropView* view =
+        EspNativeGameplayMonsterDrop_view();
+    uint32_t i;
+
+    if (count == 0U) return 1;
+    if (order == NULL || view == NULL || view->active == 0U ||
+        view->records == NULL ||
+        count > ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SLOTS) return 0;
+
+    for (i = 0U; i < count; ++i) {
+        const uint8_t slot = order[i].slot;
+        const EspNativeGameplayMonsterDropRecord* drop;
+        uint16_t logical;
+        uint16_t resourceLogical;
+        EspNativeGraphicsCatalogStatus status;
+
+        if (slot >= ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SLOTS) return 0;
+        drop = &view->records[slot];
+        if (drop->active == 0U || drop->taken != 0U) return 0;
+        logical = drop->defTile;
+        resourceLogical = isLegacyCrossLogical(logical)
+                            ? (uint16_t)(logical - 1U) : logical;
+        if (resourceLogical >= 256U) return 0;
+        if (EspNativeGraphicsCatalog_findSprite(resourceLogical) != NULL)
+            continue;
+
+        status = EspNativeGraphicsCatalog_ensureSprite(resourceLogical);
+        if (status != ESP_NATIVE_GRAPHICS_CATALOG_OK &&
+            status != ESP_NATIVE_GRAPHICS_CATALOG_ALREADY_ACTIVE) {
+            printf("[MONSTERDROP] CATALOG-FAILED slot=%u defTile=%u resource=%u status=%u render=fail-closed\n",
+                   (unsigned int)slot, (unsigned int)logical,
+                   (unsigned int)resourceLogical, (unsigned int)status);
+            return 0;
+        }
+        printf("[MONSTERDROP] CATALOG-PRIME slot=%u defTile=%u resource=%u status=%u backing=pak draw=pending\n",
+               (unsigned int)slot, (unsigned int)logical,
+               (unsigned int)resourceLogical, (unsigned int)status);
+    }
+    return 1;
+}
+
 static int drawPersistentDrop(Render_t* render,
                               const Sources* sources,
                               Frame* frame,
@@ -1736,7 +1784,8 @@ static int renderImpl(struct Render_s* renderBase,
     orderScanDone = esp_timer_get_time();
 #endif
     if (!buildPersistentDropOrder(render, workspace->dropOrder,
-                                  &dropOrderCount)) {
+                                  &dropOrderCount) ||
+        !primePersistentDropSprites(workspace->dropOrder, dropOrderCount)) {
         goto done;
     }
     if (!preview && EspMapAutomapState_isReady()) {
