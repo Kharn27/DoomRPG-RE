@@ -109,8 +109,8 @@ static void helpStop(void) {
             DoomRPG_freeImage(helpSpaceOwner, &helpHudBarBG);
         DoomRPG_freeImage(helpSpaceOwner, &helpSpaceBG);
     }
-    SDL_memset(&helpSpaceBG, 0, sizeof(helpSpaceBG));
-    SDL_memset(&helpHudBarBG, 0, sizeof(helpHudBarBG));
+    memset(&helpSpaceBG, 0, sizeof(helpSpaceBG));
+    memset(&helpHudBarBG, 0, sizeof(helpHudBarBG));
     helpSpaceOwner = NULL;
     helpSpaceEpoch = 0U;
     helpSpaceShift = 0;
@@ -329,7 +329,7 @@ static void helpPaintMiniHudLabel(uint16_t* framebuffer,
         ((31U * scale / 256U) << 11) |
         ((63U * scale / 256U) << 5) |
         (31U * scale / 256U));
-    const int length = (int)SDL_strlen(label);
+    const int length = (int)strlen(label);
     const int pixels = length * 6 - 1;
     int pen = (left + right - pixels + 1) / 2;
     int i, j, x, row;
@@ -368,7 +368,7 @@ static void helpDrawPositionCaption(DoomRPG_t* doomRpg, DoomCanvas_t* canvas,
     size_t n;
     if (doomRpg == NULL || canvas == NULL || label == NULL ||
         zone < 0 || zone > 2) return;
-    n = SDL_strlen(prefixes[zone]);
+    n = strlen(prefixes[zone]);
     if (strncmp(label, prefixes[zone], n) != 0) return;
     DoomRPG_setFontColor(doomRpg,
                          helpColor888(EspMainMenuSkin_letterTone(tones[zone], 9)));
@@ -724,7 +724,7 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
     if (!helpDrawStarfield(doomRpg)) return 0;
     DoomRPG_setFontColor(doomRpg, helpColor888(helpTitleTopTone()));
     EspNativeCanvas_drawText(canvas, "HELP / CYD", 12, 0, 0);
-    SDL_snprintf(page, sizeof(page), "%d/%d",
+    snprintf(page, sizeof(page), "%d/%d",
                  (menuSystem->scrollIndex + MAIN_HELP_VISIBLE_LINES - 1) /
                      MAIN_HELP_VISIBLE_LINES + 1,
                  (menuSystem->numItems + MAIN_HELP_VISIBLE_LINES - 1) /

@@ -1,4 +1,3 @@
-#include <SDL.h>
 #include <string.h>
 
 #include "esp_native_text_format.h"
@@ -12,7 +11,7 @@ char* EspNativeText_buildDivider(char out[32], const char* text) {
     if (out == NULL || text == NULL) return out;
 
     out[0] = '\0';
-    len = SDL_strlen(text);
+    len = strlen(text);
     count = (15 - (len + 2)) / 2;
     index = 0;
 
@@ -23,7 +22,7 @@ char* EspNativeText_buildDivider(char out[32], const char* text) {
     out[index] = ' ';
     /* Preserve the legacy visible bytes without reproducing its strncpy(32)
      * zero-padding past the 32-byte destination. */
-    SDL_memcpy(&out[index + 1], text, (size_t)len);
+    memcpy(&out[index + 1], text, (size_t)len);
     index = index + 1 + len;
     out[index] = ' ';
 

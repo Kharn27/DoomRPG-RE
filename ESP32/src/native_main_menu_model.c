@@ -1,6 +1,7 @@
 #include <SDL.h>
 #include "esp_native_root_state.h"
 #include <stdio.h>
+#include <string.h>
 
 #include "DoomRPG.h"
 #include "DoomCanvas.h"
@@ -236,9 +237,9 @@ static int supportedModel(int menuId) {
 
 static void setFixedItem(MenuItem_t* item, const char* text, int flags) {
     if (item == NULL) return;
-    SDL_memset(item, 0, sizeof(*item));
+    memset(item, 0, sizeof(*item));
     if (text != NULL) {
-        SDL_snprintf(item->textField, sizeof(item->textField), "%s", text);
+        snprintf(item->textField, sizeof(item->textField), "%s", text);
     }
     item->flags = (byte)flags;
     item->action = 0;
