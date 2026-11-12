@@ -1,4 +1,3 @@
-#include <SDL.h>
 #include "esp_native_root_state.h"
 #include <stdio.h>
 
