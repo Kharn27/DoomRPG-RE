@@ -441,6 +441,11 @@ assert 'mini=%ux%u bytes=%u' in actions
 assert 'static void helpPaintTurnArc(' in scene
 assert 'helpPaintTurnArc(framebuffer, cx + (col == 0 ? -2 : 2), cy, col, core);' in scene
 assert 'const int mirror = col == 0 ? 1 : -1;' in scene
+assert 'const int headCx = cx - mirror * 5;' in scene
+assert 'segment(fb, headCx - mirror * 3, cy - 4,' in scene
+assert 'headCx - mirror * 7, cy, core);' in scene
+assert 'segment(fb, headCx - mirror * 7, cy,' in scene
+assert 'headCx - mirror * 3, cy + 4, core);' in scene
 assert 'static const int8_t turnCurve[][2]' in scene
 curve_data = scene.split('static const int8_t turnCurve[][2] = {', 1)[1].split('};', 1)[0]
 turn_points = [
@@ -458,16 +463,21 @@ for left, right in ((8, 55), (104, 151)):
     cx = (left + right) // 2
     cy = (51 + 73) // 2
     mirror = 1 if left == 8 else -1
-    # The complete connected symbol (arc + arrowhead) moves 2px outward;
-    # per-cell frame and input geometry remain unchanged.
+    # Curved loop retains its previously validated 2px offset. The
+    # chevron alone moves another 5px toward the outer button edge, giving
+    # both sides an actual visual gap instead of shifting the overlap.
     shifted_cx = cx + (-2 if left == 8 else 2)
-    outline = [(shifted_cx + mirror * x, cy + y) for x, y in turn_points]
-    outline.extend((shifted_cx - mirror * dx, cy + dy)
-                   for dx, dy in ((3, -4), (7, 0), (3, 4)))
-    assert min(x for x, _ in outline) == (22 if left == 8 else 123)
-    assert max(x for x, _ in outline) == (35 if left == 8 else 136)
+    curve = [(shifted_cx + mirror * x, cy + y) for x, y in turn_points]
+    head_cx = shifted_cx - mirror * 5
+    chevron = [(head_cx - mirror * dx, cy + dy)
+               for dx, dy in ((3, -4), (7, 0), (3, 4))]
+    assert min(x for x, _ in curve) == (23 if left == 8 else 123)
+    assert max(x for x, _ in curve) == (35 if left == 8 else 135)
+    assert min(x for x, _ in chevron) == (17 if left == 8 else 137)
+    assert max(x for x, _ in chevron) == (21 if left == 8 else 141)
+    assert min(abs(px - qx) for px, _ in curve for qx, _ in chevron) == 2
     assert all(left + 2 < x < right - 2 and 51 < y < 73
-               for x, y in outline)
+               for x, y in curve + chevron)
 
 assert 'static void helpPaintWeaponCaption(' in scene
 assert 'static void helpPaintWeaponWord(' in scene
