@@ -439,7 +439,7 @@ assert 'mini=%ux%u bytes=%u' in actions
 # Hardware feedback on CYD TOUCH: turn symbols must curve, not be
 # three perpendicular line segments; weapon controls need explicit words.
 assert 'static void helpPaintTurnArc(' in scene
-assert 'helpPaintTurnArc(framebuffer, cx, cy, col, core);' in scene
+assert 'helpPaintTurnArc(framebuffer, cx + (col == 0 ? -2 : 2), cy, col, core);' in scene
 assert 'const int mirror = col == 0 ? 1 : -1;' in scene
 assert 'static const int8_t turnCurve[][2]' in scene
 curve_data = scene.split('static const int8_t turnCurve[][2] = {', 1)[1].split('};', 1)[0]
@@ -458,20 +458,27 @@ for left, right in ((8, 55), (104, 151)):
     cx = (left + right) // 2
     cy = (51 + 73) // 2
     mirror = 1 if left == 8 else -1
-    outline = [(cx + mirror * x, cy + y) for x, y in turn_points]
-    outline.extend((cx - mirror * dx, cy + dy)
+    # The complete connected symbol (arc + arrowhead) moves 2px outward;
+    # per-cell frame and input geometry remain unchanged.
+    shifted_cx = cx + (-2 if left == 8 else 2)
+    outline = [(shifted_cx + mirror * x, cy + y) for x, y in turn_points]
+    outline.extend((shifted_cx - mirror * dx, cy + dy)
                    for dx, dy in ((3, -4), (7, 0), (3, 4)))
-    assert all(left < x < right and 51 < y < 73
+    assert min(x for x, _ in outline) == (22 if left == 8 else 123)
+    assert max(x for x, _ in outline) == (35 if left == 8 else 136)
+    assert all(left + 2 < x < right - 2 and 51 < y < 73
                for x, y in outline)
 
 assert 'static void helpPaintWeaponCaption(' in scene
 assert 'static void helpPaintWeaponWord(' in scene
 assert 'static const HelpWeaponGlyph helpWeaponGlyphs[]' in scene
 assert 'col == 0 ? "PREV" : "NEXT"' in scene
-assert 'helpPaintWeaponWord(fb, centerX, top + 1, "WPN", ink);' in scene
-assert 'helpPaintWeaponWord(fb, centerX, top + 9, secondLine, ink);' in scene
+assert 'const int textTop = top + ((bottom - top + 1) - 15) / 2;' in scene
+assert 'for (y = textTop; y <= textTop + 15; ++y)' in scene
+assert 'helpPaintWeaponWord(fb, centerX, textTop, "WPN", ink);' in scene
+assert 'helpPaintWeaponWord(fb, centerX, textTop + 8, secondLine, ink);' in scene
 assert 'if (row == 2 && col != 1)' in scene
-assert 'helpPaintWeaponCaption(fb, (left + right) / 2, top,' in scene
+assert 'helpPaintWeaponCaption(fb, (left + right) / 2, top, bottom,' in scene
 assert 'col == 0 ? "PREV" : "NEXT", core);' in scene
 assert 'static void helpPaintTouchDividers(' not in scene
 assert 'dim565(*pixel, 160U)' in scene
@@ -493,8 +500,13 @@ for left, right in ((8, 55), (104, 151)):
         w = len(text) * 6 - 1
         x = cx - w // 2
         assert left < x and x + w - 1 < right
-    assert 74 < 75 and 75 + 7 - 1 < 83
-    assert 83 + 7 - 1 < 97
+    top, bottom = 74, 96
+    caption_height = 2 * 7 + 1
+    text_top = top + (bottom - top + 1 - caption_height) // 2
+    assert text_top == 78
+    assert (text_top + 8 + 6) == 92
+    assert (text_top + text_top + caption_height - 1) // 2 == (top + bottom) // 2
+    assert top < text_top and text_top + 15 < bottom
 
 assert 8 <= 8 + 144 <= 155
 assert 29 + 68 - 1 < 100
