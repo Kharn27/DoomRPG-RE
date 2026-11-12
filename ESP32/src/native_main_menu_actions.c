@@ -535,6 +535,22 @@ int DoomRPG_esp32MainMenuReturnToMain(struct DoomRPG_s* doomRpgBase,
     return 1;
 }
 
+/* Preserve the light/dark texture, ammo icon and numerals: blend each pixel
+ * of the HELP weapon button toward a vivid but restrained blue. At power=0
+ * it is bit-exact to the untouched native gray HUD; at peak, 160/256 blue
+ * tint still leaves 96/256 of every original pixel for contrast. No
+ * allocations, framebuffer captures, palette changes or cumulative tint. */
+static uint16_t helpTintBottomHudWeaponBlue(uint16_t original, uint8_t power) {
+    const uint32_t mix = ((uint32_t)power * 160U) / 255U;
+    const uint32_t keep = 256U - mix;
+    const uint32_t red = ((uint32_t)(original >> 11) * keep + 128U) >> 8;
+    const uint32_t green =
+        ((uint32_t)((original >> 5) & 63U) * keep + 128U) >> 8;
+    const uint32_t blue =
+        ((uint32_t)(original & 31U) * keep + 31U * mix + 128U) >> 8;
+    return (uint16_t)((red << 11) | (green << 5) | blue);
+}
+
 /* Original k/m/l/o/a BMPs, exact gameplay HUD painter, no substitutes.
  * Stage y100..119 once before HELP footer plates overwrite those pixels,
  * and keep only a 128x16 RGB565 thumbnail for subsequent soft repaints. */
@@ -565,10 +581,10 @@ static int helpPaintBottomHudIllustration(uint16_t* fb) {
                MAIN_HELP_HUD_BAR_X + x] =
                 helpBottomHudMini[y * MAIN_HELP_HUD_BAR_WIDTH + x];
 
-    /* Scale the ACTUAL weapon hitbox x100..159 to x96..143 of this
-     * 128px miniature. Highlight the same four 3px touch corners as the
-     * canonical gameplay HUD (not arbitrary full-height blue dividers).
-     * x97/x142 and y44..46/y55..57; no framebuffer region is tinted. */
+    /* Map the actual weapon touch zone x100..159 to x96..143 in the
+     * 128px HELP miniature. The first stage omits native amber notches;
+     * breathe the WHOLE button gray->blue instead of tracing its corners.
+     * Every repaint is based on the unmodified cached k/m/l/o/a pixels. */
     {
         const int buttonLeft = MAIN_HELP_HUD_BAR_X +
             ESP_NATIVE_HUD_WEAPON_LEFT * MAIN_HELP_HUD_BAR_WIDTH /
@@ -576,19 +592,12 @@ static int helpPaintBottomHudIllustration(uint16_t* fb) {
         const int buttonRight = MAIN_HELP_HUD_BAR_X +
             (ESP_NATIVE_HUD_WEAPON_RIGHT + 1) *
             MAIN_HELP_HUD_BAR_WIDTH / DOOMRPG_LOGICAL_WIDTH - 1;
-        const uint16_t amber = (uint16_t)(
-            (((31U * (uint32_t)power) / 255U) << 11) |
-            (((40U * (uint32_t)power) / 255U) << 5));
-        int edge, corner;
-        if (power > 0U) {
-            for (edge = 0; edge < 2; ++edge) {
-                const int buttonX = edge == 0
-                    ? buttonLeft + 1 : buttonRight - 1;
-                for (corner = 0; corner < 2; ++corner) {
-                    const int firstY = MAIN_HELP_HUD_BAR_Y +
-                        (corner == 0 ? 1 : MAIN_HELP_HUD_BAR_HEIGHT - 4);
-                    for (y = firstY; y < firstY + 3; ++y)
-                        fb[y * DOOMRPG_LOGICAL_WIDTH + buttonX] = amber;
+        if (power != 0U) {
+            for (y = 0; y < MAIN_HELP_HUD_BAR_HEIGHT; ++y) {
+                for (x = buttonLeft; x <= buttonRight; ++x) {
+                    uint16_t* pixel = &fb[
+                        (MAIN_HELP_HUD_BAR_Y + y) * DOOMRPG_LOGICAL_WIDTH + x];
+                    *pixel = helpTintBottomHudWeaponBlue(*pixel, power);
                 }
             }
         }
