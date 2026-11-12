@@ -489,10 +489,10 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
 
 /* Native layout retains only column occlusion scratch. Desktop plane-color
  * arrays have no CYD reader; viewport and odd-height behavior are unchanged. */
-static void EspNativeEngineLayout_setupRender(Render_t* render, SDL_Rect* windowRect)
+static void EspNativeEngineLayout_setupRender(Render_t* render, EspNativeRect* windowRect)
 {
 	boolean memError = false;
-	/* Source viewport origin remains in the caller's bounded SDL_Rect;
+	/* Source viewport origin remains in the caller's bounded EspNativeRect;
 	 * Render_t only owns the width/height and active raster scratch. */
 	render->screenWidth = windowRect->w;
 	render->screenHeight = windowRect->h;
@@ -526,7 +526,7 @@ static void EspNativeEngineLayout_setupRender(Render_t* render, SDL_Rect* window
  * preserves the validated Render_setup -> map marker -> font ordering. */
 static void EspNativeEngineLayout_startupCanvas(DoomCanvas_t* doomCanvas, DoomRPG_t* root)
 {
-    SDL_Rect screenRect;
+    EspNativeRect screenRect;
 
     if (doomCanvas == NULL || root == NULL) return;
 

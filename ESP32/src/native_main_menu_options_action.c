@@ -198,7 +198,7 @@ static int paintOptionsBounded(DoomRPG_t* doomRpg,
                                uint32_t* finalHashOut) {
     DoomCanvas_t* doomCanvas = EspNativeRootOwners_live()->doomCanvas;
     EspNativeMenuState_t* menuSystem = EspNativeRootOwners_live()->menuSystem;
-    SDL_Rect logoDst;
+    EspNativeRect logoDst;
     uint32_t logoHash;
     uint32_t finalHash;
 

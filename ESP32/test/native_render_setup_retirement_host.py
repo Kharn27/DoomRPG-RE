@@ -11,7 +11,7 @@ owner = (ROOT / "ESP32/src/engine_stubs.c").read_text(encoding="utf-8")
 bridge = (ROOT / "ESP32/src/render_startup_bridge.c").read_text(encoding="utf-8")
 header = (ROOT / "src/Render.h").read_text(encoding="utf-8")
 name = "EspNativeEngineLayout_setupRender"
-anchor = "static void " + name + "(Render_t* render, SDL_Rect* windowRect)\n{"
+anchor = "static void " + name + "(Render_t* render, EspNativeRect* windowRect)\n{"
 assert owner.count(anchor) == 1
 assert owner.count(name + "(") == 2
 assert "void Render_setup(" not in bridge
@@ -19,6 +19,10 @@ assert re.search(r"#ifndef DOOMRPG_ESP32\s+void Render_setup\(", header)
 first = owner.index(anchor)
 last = owner.index("\n/* Bounded CYD layout and font initialization", first)
 body = owner[first:last]
+assert body.count("EspNativeRect") == 2, "SDL-F19 signature and layout comment"
+# Historical source FNV and host fixture use the exact pre-F19 spelling.
+# SDL_Rect is already a typedef of EspNativeRect; no C layout or behavior change.
+legacy_body = body.replace("EspNativeRect", "SDL_Rect")
 assert "render->halfScreenWidth" not in body
 assert "render->fracHalfScreenHeight" not in body
 # Historical #if 0 printf labels contain the literal "render->screenX"
@@ -41,7 +45,7 @@ for subtree in (ROOT / "ESP32/src", ROOT / "ESP32/include"):
         code = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ", code, flags=re.S)
         assert not re.search(r"\b(?:render|r|rootRender|renderBase)\s*->\s*(?:ceilingColor|floorColor)\b", code), p
 assert "render->fracHalfScreenWidth" not in live_code
-normalized = (body.replace("static void " + name + "(", "void Render_setup(")
+normalized = (legacy_body.replace("static void " + name + "(", "void Render_setup(")
               .replace("free(render->columnScale);", "SDL_free(render->columnScale);")
               .replace("malloc(render->screenWidth * sizeof(int));",
                        "SDL_malloc(render->screenWidth * sizeof(int));")
@@ -144,7 +148,7 @@ int main(void) {
 """
 with tempfile.TemporaryDirectory(prefix="render-setup-retirement-") as d:
     source = Path(d) / "test.c"
-    source.write_text(shim + "\n" + body + "\n" + main, encoding="utf-8")
+    source.write_text(shim + "\n" + legacy_body + "\n" + main, encoding="utf-8")
     exe = str(Path(d) / "run")
     subprocess.run([shutil.which("cc") or "cc", "-std=c11", "-O2", "-Wall",
                     "-Wextra", "-Werror", str(source), "-o", exe], check=True)

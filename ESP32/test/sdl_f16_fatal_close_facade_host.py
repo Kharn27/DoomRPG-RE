@@ -23,6 +23,12 @@ RETIRED = ("SDL_Close", "SDL_CloseAudio")
 
 
 def restore_pre_f16(current: str) -> str:
+    # SDL-F19 renames three local engine_stubs SDL_Rect spellings to their
+    # EXACT existing typedef alias EspNativeRect. Undo that *later* change
+    # before reconstructing the complete historical F16/F15/F14/F13/F12 blobs.
+    if "EspNativeRect" in current:
+        assert current.count("EspNativeRect") == 3, "SDL-F19 engine rectangles"
+        current = current.replace("EspNativeRect", "SDL_Rect")
     include_anchor = '#include "Render.h"\n'
     fatal_anchor = '    DoomRPG_FreeAppData(doomRpg);\n    exit(0);\n'
     defs_anchor = 'void Sound_stopSounds(Sound_t* sound)'
