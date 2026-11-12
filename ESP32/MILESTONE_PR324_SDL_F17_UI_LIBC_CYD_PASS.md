@@ -37,3 +37,7 @@ Jeu : 11 dialogues OPEN + 11 CLOSE dont weapon-standalone ; 12 complétions port
 ## Prochaine frontière
 
 Relire vrai main et SHA exact post-merge ; auditer SDL.h et les consommateurs réellement compilés, sélectionner une famille sûre, fournir test C/empreintes et attendre le PASS hardware avant toute fusion. Ne pas retirer des types SDL qui restent réellement consommés.
+
+## Synchronisation concurrente avec PR #323
+
+Après PASS hardware de F17, PR #323 a fusionné dans `main` (`ec1f0c561728b607c24803b73396dbeb415e0492`). Le C de `native_main_menu_touch_layout.c` conserve les changements de #323, avec seulement les alias SDL-F17 substitués. Test F17 de la source entière basé désormais sur le blob Git exact pré-F17 de #323 : `e63ac60d024148dfbbdb758773e96a7976707afc` (les trois autres empreintes restent invariantes). Workflow conserve les tests #323 et F17. La CI du SHA d’intégration doit être vérifiée avant fusion ; aucune affirmation de test physique de cette combinaison exacte.

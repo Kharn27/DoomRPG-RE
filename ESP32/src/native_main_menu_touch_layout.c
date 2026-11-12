@@ -357,17 +357,19 @@ int DoomRPG_esp32PaintMenuDashboardCards(
                 DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT,
                 DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM,
                 industrialMain ? 0x0800U : MAIN_DOOM_METAL);
-    /* Only the *button rail* is framed. The larger PAK logo is free on black. */
-    drawRect565(render,
-                DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT,
-                DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP,
-                DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT - 1,
-                DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM,
-                industrialMain ? 0x4a48U : ESP_HUB_COLOR_STEEL_DARK);
-    fillRect565(render, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT + 1,
-                5, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT + 2,
-                115, industrialMain ? 0x3123U : MAIN_DOOM_METAL_HI);
+    /* The four MENU_MAIN plates already have their own steel borders.
+     * Remove the redundant enclosing frame and left groove from this rail;
+     * nested Options screens keep their original industrial chassis. */
     if (!industrialMain) {
+        drawRect565(render,
+                    DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT,
+                    DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP,
+                    DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT - 1,
+                    DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM,
+                    ESP_HUB_COLOR_STEEL_DARK);
+        fillRect565(render, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT + 1,
+                    5, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT + 2,
+                    115, MAIN_DOOM_METAL_HI);
         /* Preserve the exact CLASSIC root ornaments, historically Doom red.
          * INFERNO and PHOSPHORE follow their active plate seam color. */
         const uint16_t trimAccent =

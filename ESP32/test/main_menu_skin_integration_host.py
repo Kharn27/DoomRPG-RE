@@ -133,11 +133,17 @@ assert "horizontal(fb, stride, l + 9, r - 9, b - 3," in skin
 assert "vertical(fb, stride, l + 3, t + 7, b - 7," in skin
 assert "vertical(fb, stride, r - 3, t + 7, b - 7," in skin
 assert "industrialMain ? 0x0800U : MAIN_DOOM_METAL" in menu
-assert "industrialMain ? 0x4a48U : ESP_HUB_COLOR_STEEL_DARK" in menu
-# Only Options keeps its historical top/bottom decoration; MENU_MAIN removes it.
+assert "industrialMain ? 0x4a48U : ESP_HUB_COLOR_STEEL_DARK" not in menu
+# The MENU_MAIN rail has no enclosing frame or left-hand groove. Only nested
+# Options retains those steel decorations, without changing child card geometry.
 rail = menu[menu.index("int DoomRPG_esp32PaintMenuDashboardCards("):
             menu.index("static int paintChildRail(")]
-assert "if (!industrialMain) {" in rail
+assert rail.count("if (!industrialMain) {") == 1
+assert rail.index("if (!industrialMain) {") < rail.index("drawRect565(render,")
+assert rail.index("if (!industrialMain) {") < rail.index(
+    "115, MAIN_DOOM_METAL_HI);")
+assert "ESP_HUB_COLOR_STEEL_DARK);" in rail
+assert "0x4a48U" not in rail
 assert "const uint16_t trimAccent" in rail
 assert "EspMainMenuSkin_getTheme() == ESP_MAIN_MENU_THEME_CLASSIC" in rail
 assert "EspMainMenuSkin_accentTone(ESP_MAIN_MENU_SKIN_IDLE)" in rail

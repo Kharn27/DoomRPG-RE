@@ -19,7 +19,7 @@ OLD_BLOBS = {
     "esp_native_text_format.c": "d8320e5026103573d746a1ee875cf343d379dd9d",
     "native_main_menu_model.c": "72a3bb69155e08d335464a5e73017659da3f9666",
     "native_main_menu_actions.c": "c13c42d3b03f24004e129e8f6a181019d1cf4dcd",
-    "native_main_menu_touch_layout.c": "2234884200da94bd81566f4091e65d2fef640251",
+    "native_main_menu_touch_layout.c": "e63ac60d024148dfbbdb758773e96a7976707afc",
 }
 
 # Each old/new pair is a *single exact source occurrence*; reversed on the
