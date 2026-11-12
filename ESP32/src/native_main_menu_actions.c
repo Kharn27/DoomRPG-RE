@@ -69,6 +69,9 @@
 #define MAIN_HELP_ROW_FIRST_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)
 #define MAIN_HELP_ROW_LAST_SCROLL (8 * MAIN_HELP_VISIBLE_LINES)
 #define MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL (9 * MAIN_HELP_VISIBLE_LINES)
+/* BOTTOM HUD has no redundant subtitle: preview and labels move up 12px.
+ * The TOP HUD miniature retains its existing y43 position. */
+#define MAIN_HELP_BOTTOM_HUD_BAR_Y (MAIN_HELP_HUD_BAR_Y - MAIN_HELP_LINE_HEIGHT)
 #define MAIN_HELP_WEAPON_PAGE_SCROLL (10 * MAIN_HELP_VISIBLE_LINES)
 /* Full available HELP viewport under the caption (y27..38) and above
  * the navigation footer (y100..119): 144x60, x8..151/y39..98. */
@@ -577,7 +580,7 @@ static int helpPaintBottomHudIllustration(uint16_t* fb) {
     }
     for (y = 0; y < MAIN_HELP_HUD_BAR_HEIGHT; ++y)
         for (x = 0; x < MAIN_HELP_HUD_BAR_WIDTH; ++x)
-            fb[(MAIN_HELP_HUD_BAR_Y + y) * DOOMRPG_LOGICAL_WIDTH +
+            fb[(MAIN_HELP_BOTTOM_HUD_BAR_Y + y) * DOOMRPG_LOGICAL_WIDTH +
                MAIN_HELP_HUD_BAR_X + x] =
                 helpBottomHudMini[y * MAIN_HELP_HUD_BAR_WIDTH + x];
 
@@ -596,7 +599,7 @@ static int helpPaintBottomHudIllustration(uint16_t* fb) {
             for (y = 0; y < MAIN_HELP_HUD_BAR_HEIGHT; ++y) {
                 for (x = buttonLeft; x <= buttonRight; ++x) {
                     uint16_t* pixel = &fb[
-                        (MAIN_HELP_HUD_BAR_Y + y) * DOOMRPG_LOGICAL_WIDTH + x];
+                        (MAIN_HELP_BOTTOM_HUD_BAR_Y + y) * DOOMRPG_LOGICAL_WIDTH + x];
                     *pixel = helpTintBottomHudWeaponBlue(*pixel, power);
                 }
             }
@@ -767,20 +770,32 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
     else if (menuSystem->scrollIndex == MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL) {
         const char* title = DoomRPG_esp32MainMenuHelpLine(
             MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL);
-        const char* caption = DoomRPG_esp32MainMenuHelpLine(
+        const char* left = DoomRPG_esp32MainMenuHelpLine(
             MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL + 1);
-        if (title == NULL || caption == NULL || visible != 7) return 0;
+        const char* center = DoomRPG_esp32MainMenuHelpLine(
+            MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL + 2);
+        const char* right = DoomRPG_esp32MainMenuHelpLine(
+            MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL + 3);
+        const char* touch = DoomRPG_esp32MainMenuHelpLine(
+            MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL + 4);
+        if (title == NULL || left == NULL || center == NULL ||
+            right == NULL || touch == NULL || visible != 7 ||
+            strncmp(right, "RIGHT: ", 7) != 0) return 0;
         helpDrawThemedPageTitle(doomRpg, canvas, title, 12, 14);
-        DoomRPG_setFontColor(doomRpg, 0xffffffffU);
-        EspNativeCanvas_drawText(canvas, caption, 12, 27, 0);
         if (!helpPaintBottomHudIllustration(framebuffer)) return 0;
-        for (i = 2; i <= 4; ++i) {
-            const char* label = DoomRPG_esp32MainMenuHelpLine(
-                MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL + i);
-            if (label == NULL || label[0] == '\0') return 0;
-            helpDrawPositionCaption(doomRpg, canvas, label, i - 2,
-                                    64 + (i - 2) * MAIN_HELP_LINE_HEIGHT);
-        }
+        /* No STATUS AT A GLANCE subtitle. The PAK HUD thumbnail moves
+         * y43->31, leaving four full 12px text rows y52,64,76,88. */
+        helpDrawPositionCaption(doomRpg, canvas, left, 0, 52);
+        helpDrawPositionCaption(doomRpg, canvas, center, 1, 64);
+        /* RIGHT + its 16-char value need 160px of text space. Keeping
+         * the usual 7px a.bmp font, x2 / x46 fit both with no clipping. */
+        DoomRPG_setFontColor(doomRpg,
+            helpColor888(EspMainMenuSkin_letterTone(7, 9)));
+        EspNativeCanvas_drawText(canvas, "RIGHT:", 2, 76, 0);
+        DoomRPG_setFontColor(doomRpg, 0xffffffffU);
+        EspNativeCanvas_drawText(canvas, right + 7, 46, 76, 0);
+        /* 21 chars at 7px advance start x8 and end x156, above y100. */
+        EspNativeCanvas_drawText(canvas, touch, 8, 88, 0);
     }
     else if (menuSystem->scrollIndex == MAIN_HELP_WEAPON_PAGE_SCROLL) {
         const char* title = DoomRPG_esp32MainMenuHelpLine(
