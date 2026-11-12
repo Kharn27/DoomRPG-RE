@@ -61,10 +61,18 @@ new_sources = {}
 total = 0
 for filename, (sha, aliases) in REFERENCES.items():
     current = (SRC / filename).read_text(encoding="utf-8")
-    assert current.startswith("#include <stdlib.h>\n"), filename
+    # Files including legacy DoomRPG/renderer/chain headers still need the
+    # transitional SDL typedef ABI. Only the standalone PAK owner can retire
+    # SDL.h outright; all six eliminate their callable SDL libc aliases.
+    if filename == "esp_legacy_asset_source.c":
+        assert current.startswith("#include <stdlib.h>\n"), filename
+        assert "#include <SDL.h>" not in current, filename
+        restored = current.replace("#include <stdlib.h>\n", "#include <SDL.h>\n", 1)
+    else:
+        assert current.startswith("#include <SDL.h>\n#include <stdlib.h>\n"), filename
+        restored = current.replace("#include <SDL.h>\n#include <stdlib.h>\n",
+                                   "#include <SDL.h>\n", 1)
     assert not re.search(r"\bSDL_[A-Za-z_][A-Za-z_0-9]*\b", current), filename
-    assert "#include <SDL.h>" not in current, filename
-    restored = current.replace("#include <stdlib.h>\n", "#include <SDL.h>\n", 1)
     for name, count in aliases.items():
         assert re.search(r"^#define\s+SDL_" + name + r"\s+" + name + r"\s*$",
                          SDL, re.M), name
