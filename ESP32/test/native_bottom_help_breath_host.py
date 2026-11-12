@@ -37,6 +37,8 @@ assert "const uint32_t keep = 256U - mix;" in tint
 assert "31U * mix" in tint
 assert "const uint32_t mix = ((uint32_t)power * 160U) / 255U;" in tint
 assert "helpBottomHudMini[y * MAIN_HELP_HUD_BAR_WIDTH + x]" in paint
+assert "MAIN_HELP_BOTTOM_HUD_BAR_Y + y" in paint
+assert "MAIN_HELP_HUD_BAR_Y + y" not in paint
 assert "helpTintBottomHudWeaponBlue(*pixel, power)" in paint
 assert "const uint16_t amber" not in paint
 assert "= amber;" not in paint
@@ -50,6 +52,7 @@ preamble = r"""
 #define DOOMRPG_LOGICAL_HEIGHT 120
 #define MAIN_HELP_HUD_BAR_X 16
 #define MAIN_HELP_HUD_BAR_Y 43
+#define MAIN_HELP_BOTTOM_HUD_BAR_Y 31
 #define MAIN_HELP_HUD_BAR_WIDTH 128
 #define MAIN_HELP_HUD_BAR_HEIGHT 16
 #define ESP_NATIVE_HUD_WEAPON_LEFT 100
@@ -115,7 +118,7 @@ int main(void) {
             const uint16_t source = (uint16_t)(
                 ((shade >> 1) << 11) | (shade << 5) | (shade >> 1));
             reference[y * 128 + x] =
-                readPixel(MAIN_HELP_HUD_BAR_X + x, MAIN_HELP_HUD_BAR_Y + y);
+                readPixel(MAIN_HELP_HUD_BAR_X + x, MAIN_HELP_BOTTOM_HUD_BAR_Y + y);
             assert(reference[y * 128 + x] == source);
         }
     }
@@ -123,14 +126,14 @@ int main(void) {
     paintPower(128U);
     for (y = 0; y < MAIN_HELP_HUD_BAR_HEIGHT; ++y)
         for (x = 0; x < MAIN_HELP_HUD_BAR_WIDTH; ++x)
-            middle[y * 128 + x] = readPixel(16 + x, 43 + y);
+            middle[y * 128 + x] = readPixel(16 + x, MAIN_HELP_BOTTOM_HUD_BAR_Y + y);
 
     paintPower(255U);
     assert(paintCalls == 1);
     for (y = 0; y < MAIN_HELP_HUD_BAR_HEIGHT; ++y) {
         for (x = 0; x < MAIN_HELP_HUD_BAR_WIDTH; ++x) {
             const uint16_t original = reference[y * 128 + x];
-            const uint16_t current = readPixel(16 + x, 43 + y);
+            const uint16_t current = readPixel(16 + x, MAIN_HELP_BOTTOM_HUD_BAR_Y + y);
             const uint16_t half = middle[y * 128 + x];
             const int ammo = x >= 80 && x <= 127;
             peak[y * 128 + x] = current;
@@ -153,11 +156,11 @@ int main(void) {
     paintPower(255U);
     for (y = 0; y < 16; ++y)
         for (x = 0; x < 128; ++x)
-            assert(peak[y * 128 + x] == readPixel(16 + x, 43 + y));
+            assert(peak[y * 128 + x] == readPixel(16 + x, MAIN_HELP_BOTTOM_HUD_BAR_Y + y));
     paintPower(0U);
     for (y = 0; y < 16; ++y)
         for (x = 0; x < 128; ++x)
-            assert(reference[y * 128 + x] == readPixel(16 + x, 43 + y));
+            assert(reference[y * 128 + x] == readPixel(16 + x, MAIN_HELP_BOTTOM_HUD_BAR_Y + y));
     assert(paintCalls == 1);
     puts("PASS real native HELP bottom painter: full 48x16 gray-blue breath, preserved neighbor HUD, no amber overlay, no accumulation");
     return 0;
