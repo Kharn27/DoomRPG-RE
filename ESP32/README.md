@@ -34,6 +34,29 @@ Depuis le dossier `ESP32/`, compiler, flasher et afficher le Serial :
 pio run -e esp32-cyd -t upload -t monitor
 ```
 
+Pour capturer **tout le démarrage ROM** dans un fichier (y compris
+`ets Jul 29 2019 ...` et `rst:...`), après le flash et avec le
+moniteur PlatformIO fermé, utiliser depuis la racine du dépôt :
+
+```sh
+cd ESP32
+./monitorCyd.sh
+```
+
+Le script démarre `ESP32/tools/monitor_cyd.py` avec le Python de
+PlatformIO (`pyserial` inclus). Il crée un nouveau
+`platformio-device-monitor-YYMMDD-HHMMSS.log` dans le répertoire
+courant **avant** d’ouvrir le port `/dev/ttyUSB0`, puis pulse RTS
+(reset EN), en laissant DTR désactivé (GPIO0 haut, boot normal).
+La sortie console et le fichier contiennent les mêmes octets Serial.
+`Ctrl+C` arrête et ferme proprement le moniteur.
+Pour changer de port : `./monitorCyd.sh --port /dev/ttyUSB1` ;
+pour surveiller **sans** redémarrer : `./monitorCyd.sh --no-reset`.
+Le reset RTS suppose le câblage USB-UART auto-reset du CYD :
+sa confirmation matérielle se fait dans le log.
+Cette commande est indépendante de `pio run -t upload -t monitor` :
+ce dernier conserve son comportement PlatformIO habituel.
+
 Le port de téléversement configuré pour cette installation est
 `/dev/ttyUSB0` ; il peut varier sur un autre PC. Le firmware de
 référence est **`esp32-cyd` normal** : `esp32-cyd-bringup`
