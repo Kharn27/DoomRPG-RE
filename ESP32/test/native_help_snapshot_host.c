@@ -186,19 +186,26 @@ int main(void) {
                 ++altered;
             }
     assert(altered > 300 && altered < 2900);
-    /* TURN symbols retain their connected curves but shift two pixels
-     * outward (left x22..35, right x123..136). The original green frames
-     * and every gameplay touch target stay exactly where they were. */
+    /* TURN curves keep their original shifted position; arrowheads alone
+     * move another 5px outward, so neither chevron crosses its loop.
+     * The button frames and actual gameplay touch targets never move. */
     {
         int minX, maxX, minY, maxY;
         assert(glyphDeltaBounds(8, 51, 55, 73,
                                &minX, &maxX, &minY, &maxY) > 20);
-        assert(minX == 22 && maxX == 35);
+        assert(minX == 17 && maxX == 35);
         assert(minY == 56 && maxY == 68);
         assert(glyphDeltaBounds(104, 51, 151, 73,
                                &minX, &maxX, &minY, &maxY) > 20);
-        assert(minX == 123 && maxX == 136);
+        assert(minX == 123 && maxX == 141);
         assert(minY == 56 && maxY == 68);
+        /* At the arrow-tip scanline y62, x18..22 and x136..140 must
+         * contain no breathing pixels: this is the gap between the
+         * chevrons at x17/x141 and the untouched loops at x23/x135. */
+        for (x = 18; x <= 22; ++x)
+            assert(softFrame[62 * W + x] == brightFrame[62 * W + x]);
+        for (x = 136; x <= 140; ++x)
+            assert(softFrame[62 * W + x] == brightFrame[62 * W + x]);
 
         /* Each two-line 5x7 WPN caption occupies y78..92: its visual
          * center is y85, matching the center of the 74..96 button. */
