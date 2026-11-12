@@ -106,13 +106,18 @@ constexpr int kPanelBottom = 118;
 constexpr int kButtonLeft = ESP_NATIVE_SYS_BUTTON_LEFT;
 constexpr int kButtonRight = ESP_NATIVE_SYS_BUTTON_RIGHT;
 
-/* Standalone MENU_MAIN -> LOAD selector only. HUB SAVE/LOAD keeps its own
- * slots, back navigation, header and page arrows completely unchanged.
- * BACK must be 16px+ for the shared industrial chassis. Extending upward
- * from y105 to y102 preserves every existing slot/nav rectangle. */
+/* Standalone MENU_MAIN -> LOAD selector only. The compact title frees
+ * vertical space for five slots and a 22px BACK plate. HUB SAVE/LOAD keeps
+ * its independent layout, header and arrow hitboxes unchanged. */
+constexpr int kMainLoadFirstSlotTop = 24;
+constexpr int kMainLoadSlotPitch = 14;
+constexpr int kMainLoadPreviousTop = 26;
+constexpr int kMainLoadPreviousBottom = 54;
+constexpr int kMainLoadNextTop = 61;
+constexpr int kMainLoadNextBottom = 90;
 constexpr int kMainLoadBackLeft = 34;
 constexpr int kMainLoadBackRight = 111;
-constexpr int kMainLoadBackTop = 102;
+constexpr int kMainLoadBackTop = 97;
 constexpr int kMainLoadBackBottom = 118;
 
 int systemRowTop(uint8_t row) {
@@ -3467,19 +3472,17 @@ static void paintMainSlots(void) {
     const uint8_t first = slotFocus <= 5U ? 1U : 6U;
     char text[40];
     fillRect(fb, 0, 0, 159, 119, ESP_HUB_COLOR_BG);
-    /* Standalone LOAD title only: no side triple-hatches. The restrained
-     * centered signal rail is NOT a clickable chassis and stays clear of
-     * the 5x9 gradient lettering at y11..19. Other modal titles retain
-     * their established stencil and cannot regress through this change. */
-    fillRect(fb, 45, 27, 114, 27, EspMainMenuSkin_uiAccentDim());
-    fillRect(fb, 73, 27, 86, 27, EspMainMenuSkin_uiAccent());
+    /* Compact title: nine-row glyphs at y6..14, accent line at y19.
+     * Reclaimed space goes to slots and BACK; no other modal changes. */
+    fillRect(fb, 45, 19, 114, 19, EspMainMenuSkin_uiAccentDim());
+    fillRect(fb, 73, 19, 86, 19, EspMainMenuSkin_uiAccent());
     if (!EspMainMenuSkin_paintText(
             fb, DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_WIDTH,
-            DOOMRPG_LOGICAL_HEIGHT, 28, 7, 131, 23,
+            DOOMRPG_LOGICAL_HEIGHT, 28, 2, 131, 18,
             "LOAD GAME", 0, 1)) return;
     for (uint8_t row = 0U; row < 5U; ++row) {
         const uint8_t slot = first + row;
-        const int y = 32 + row * 14;
+        const int y = kMainLoadFirstSlotTop + row * kMainLoadSlotPitch;
         const bool focused = slot == slotFocus;
         const bool occupied = formatSlotCaption(
             slot, focused && slotArmed == slot, text, sizeof(text));
@@ -3489,24 +3492,24 @@ static void paintMainSlots(void) {
                          occupied ? (focused ? ESP_HUB_COLOR_GREEN : ESP_HUB_COLOR_IVORY)
                                   : ESP_HUB_COLOR_STEEL_DARK);
     }
-    drawSlotNav(fb, 34, 62, false, first != 1U);
-    drawSlotNav(fb, 69, 98, true, first == 1U);
-    /* Page fraction belongs BELOW DOWN, not in the title area.
-     * Mini 3x5 text occupies x132..142/y106..110: fully outside both
-     * arrow hitboxes and the BACK chassis x34..111/y102..118. */
+    drawSlotNav(fb, kMainLoadPreviousTop, kMainLoadPreviousBottom,
+                false, first != 1U);
+    drawSlotNav(fb, kMainLoadNextTop, kMainLoadNextBottom,
+                true, first == 1U);
+    /* Page fraction stays below DOWN at x132..142/y99..103; it does
+     * not overlap the BACK chassis at x34..111/y97..118. */
     snprintf(text, sizeof(text), "%u/2", first == 1U ? 1U : 2U);
     EspNativeGameplayHubTouchUi_drawMiniText(
-        fb, text, 137, 106, EspMainMenuSkin_uiAccent());
-    /* Raise BACK 3px to obtain a real 17px symmetric industrial plate.
-     * Only one blank scanline separates it from the fifth slot (y88..100),
-     * and its x34..111 touch target remains independent of the nav arrows. */
+        fb, text, 137, 99, EspMainMenuSkin_uiAccent());
+    /* A full 22px BACK plate begins four pixels below the fifth slot
+     * (y80..92); the matching touch rectangle is changed below as well. */
     if (!EspMainMenuSkin_paintPlate(
             fb, DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_WIDTH,
             DOOMRPG_LOGICAL_HEIGHT, kMainLoadBackLeft, kMainLoadBackTop,
             kMainLoadBackRight, kMainLoadBackBottom,
             ESP_MAIN_MENU_SKIN_IDLE)) return;
-    /* The same full nine-row theme gradient as LOAD GAME; black inset
-     * at y106..114 keeps every glyph away from the copper seams. */
+    /* Same nine-row theme gradient; the taller backing leaves the glyph
+     * centered in the black inset without crowding its metal end caps. */
     if (!EspMainMenuSkin_paintText(
             fb, DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_WIDTH,
             DOOMRPG_LOGICAL_HEIGHT, kMainLoadBackLeft, kMainLoadBackTop,
@@ -3524,8 +3527,8 @@ extern "C" int EspNativeGameplaySave_mainSelectorBegin(void) {
 /* 0 stay, 1 confirmed, -1 back */
 extern "C" int EspNativeGameplaySave_mainSelectorTap(int x, int y) {
     if (slotMode != 3U) return 0;
-    /* Hit-test exactly the new BACK chassis, rather than accepting the
-     * unused last LCD row. Touches above its top remain slot-row owned. */
+    /* Hit-test the full 22px BACK chassis, without claiming the bottom
+     * LCD scanline or stealing touches from the last slot. */
     if (y >= kMainLoadBackTop) {
         if (y <= kMainLoadBackBottom &&
             x >= kMainLoadBackLeft && x <= kMainLoadBackRight) {
@@ -3534,10 +3537,12 @@ extern "C" int EspNativeGameplaySave_mainSelectorTap(int x, int y) {
         }
         return 0;
     }
-    if (x >= 118 && x <= 156 && y >= 34 && y <= 98) {
-        const bool previous = y <= 62;
+    if (x >= 118 && x <= 156 &&
+        y >= kMainLoadPreviousTop && y <= kMainLoadNextBottom) {
+        const bool previous = y <= kMainLoadPreviousBottom;
         const uint8_t page = slotFocus <= 5U ? 1U : 2U;
-        if ((previous && page != 2U) || (!previous && (y < 69 || page != 1U)))
+        if ((previous && page != 2U) ||
+            (!previous && (y < kMainLoadNextTop || page != 1U)))
             return 0;
         slotFocus = previous ? 1U : 6U;
         slotArmed = 0U;
@@ -3546,8 +3551,10 @@ extern "C" int EspNativeGameplaySave_mainSelectorTap(int x, int y) {
         paintMainSlots();
         return 0;
     }
-    if (x < 7 || x > 113 || y < 32 || y >= 102) return 0;
-    const uint8_t row = (uint8_t)((y - 32) / 14);
+    if (x < 7 || x > 113 || y < kMainLoadFirstSlotTop ||
+        y >= kMainLoadFirstSlotTop + 5 * kMainLoadSlotPitch) return 0;
+    const uint8_t row = (uint8_t)((y - kMainLoadFirstSlotTop) /
+                                  kMainLoadSlotPitch);
     const uint8_t selected = (uint8_t)((slotFocus <= 5U ? 1U : 6U) + row);
     if (selected > 10U) return 0;
     if (selected != slotFocus) { slotFocus = selected; slotArmed = 0U; }
