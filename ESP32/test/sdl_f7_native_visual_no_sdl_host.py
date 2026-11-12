@@ -36,6 +36,54 @@ def restore_reference(file: str, content: str) -> str:
         content = content.replace("EspNativeRect clip;", "SDL_Rect clip;")
         content = content.replace("len = (int)strlen(text);", "len = (int)SDL_strlen(text);")
     elif file == "native_story_fit.c":
+        # Invert only the later, deliberately scoped Mars-scene scroll fix
+        # before testing the exact historical SDL-F7 source fingerprint.
+        marker = "\n/* The text pages scroll c.bmp to the right."
+        assert content.count(marker) == 1
+        helper_start = content.index(marker)
+        helper_end = content.index("\nstatic void drawTextGlyph(", helper_start)
+        content = content[:helper_start] + content[helper_end:]
+
+        new_bg = (
+            "        drawRightwardAnimationBackground(doomCanvas,\n"
+            "                                          &introState->imgSpaceBG,\n"
+            "                                          left,\n"
+            "                                          top,\n"
+            "                                          bgOffset);\n"
+        )
+        old_bg = (
+            "        drawBackgroundImage(doomCanvas,\n"
+            "                            &introState->imgSpaceBG,\n"
+            "                            left - bgOffset,\n"
+            "                            top);\n"
+        )
+        new_lines = (
+            "        /* The transparent grid stays fixed while the stars move behind it. */\n"
+            "        drawAnimationImage(doomCanvas,\n"
+            "                           &introState->imgLinesLayer,\n"
+            "                           left,\n"
+            "                           top,\n"
+            "                           0);\n"
+        )
+        old_lines = (
+            "        drawAnimationImage(doomCanvas,\n"
+            "                           &introState->imgLinesLayer,\n"
+            "                           left - linesOffset,\n"
+            "                           top,\n"
+            "                           0);\n"
+        )
+        assert content.count(new_bg) == 1
+        assert content.count("        const int bgOffset = elapsedAnim / 457;\n") == 1
+        assert "        const int linesOffset = elapsedAnim / 157;\n" not in content
+        assert content.count(new_lines) == 1
+        content = content.replace(new_bg, old_bg, 1)
+        content = content.replace(new_lines, old_lines, 1)
+        content = content.replace(
+            "        const int bgOffset = elapsedAnim / 457;\n",
+            "        const int bgOffset = elapsedAnim / 457;\n"
+            "        const int linesOffset = elapsedAnim / 157;\n", 1
+        )
+
         content = "#include <SDL.h>\n" + content
         content = content.replace("#include <string.h>\n", "", 1)
         content = content.replace(

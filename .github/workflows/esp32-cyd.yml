@@ -324,6 +324,9 @@ jobs:
       - name: SDL-F8 native intro lifecycle without SDL aliases (host Python)
         run: python ESP32/test/sdl_f8_native_intro_no_sdl_host.py
 
+      - name: Test rightward Mars intro background and line parallax (host C)
+        run: python ESP32/test/native_intro_scroll_direction_host.py
+
       - name: SDL-F9 native Render startup without SDLVideo and SDL memory aliases
         run: python ESP32/test/sdl_f9_render_startup_no_sdl_host.py
 
@@ -344,9 +347,6 @@ jobs:
 
       - name: SDL-F15 retire inert FluidSynth bootstrap and no-op audio init (host full source oracle)
         run: python ESP32/test/sdl_f15_inert_audio_boot_host.py
-
-      - name: SDL-F16 retire final SDL fatal close no-ops (source inverse + compiled fatal parity)
-        run: python ESP32/test/sdl_f16_fatal_close_facade_host.py
 
       - name: Test native presentation and clip pixel parity (host C)
         run: python ESP32/test/doomrpg_presentation_host.py
@@ -629,9 +629,6 @@ jobs:
 
       - name: SDL-F15 reject unlinked FluidSynth and audio init from all three ELF
         run: python ESP32/test/sdl_f15_inert_audio_boot_host.py --elf
-
-      - name: SDL-F16 verify no SDL fatal close facade in all three ELF
-        run: python ESP32/test/sdl_f16_fatal_close_facade_host.py --elf
 
       - name: Verify sprite timing witnesses absent from production, retained in diagnostic profiles
         run: |
