@@ -360,6 +360,9 @@ jobs:
       - name: Test SDL-F20 eight native owner header-independent C sources
         run: python ESP32/test/sdl_f20_native_leaf_header_host.py
 
+      - name: Test SDL-F21 native zone call ABI and real allocation wrappers
+        run: python ESP32/test/sdl_f21_zone_call_boundary_host.py
+
       - name: Native monster drop catalog preflight before render PAK lease
         run: python ESP32/test/native_monster_drop_catalog_host.py
 

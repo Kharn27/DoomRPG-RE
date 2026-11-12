@@ -6,6 +6,7 @@ C-body stdout / teardown / exit for old vs new with exact no-op close stubs,
 and reject retired symbols from all native source and three linked Xtensa ELFs.
 """
 from pathlib import Path
+from sdl_f21_zone_call_boundary_host import restore_pre_f21_engine
 import hashlib
 import re
 import shutil
@@ -23,6 +24,8 @@ RETIRED = ("SDL_Close", "SDL_CloseAudio")
 
 
 def restore_pre_f16(current: str) -> str:
+    # Undo later F21 native zone ABI before the historical F16/F15/F14/F12 blobs.
+    current = restore_pre_f21_engine(current)
     # SDL-F19 renames three local engine_stubs SDL_Rect spellings to their
     # EXACT existing typedef alias EspNativeRect. Undo that *later* change
     # before reconstructing the complete historical F16/F15/F14/F13/F12 blobs.

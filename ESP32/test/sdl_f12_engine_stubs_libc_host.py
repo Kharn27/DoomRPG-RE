@@ -70,7 +70,7 @@ if __name__ == "__main__":
         assert re.search(r"^#define\s+" + alias + r"\s+" + native + r"\s*$",
                          shim, re.M), (alias, native)
     owner = OWNER.read_text(encoding="utf-8")
-    assert owner.startswith("#include <SDL.h>\n")
+    assert restore_pre_f16(owner).startswith("#include <SDL.h>\n")
     assert '#include "SDL_Video.h"' not in owner  # SDL-F16 removed native desktop header
     assert '#include "SDL_Video.h"' in restore_pre_f16(owner)  # F12 historical ABI
     for abi in ("SDLVideo_t sdlVideo = {", "SDLVideo_t* SDL_GetVideo(void)",
