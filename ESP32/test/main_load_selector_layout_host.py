@@ -145,14 +145,12 @@ int EspMainMenuSkin_paintText(uint16_t*, int, int, int,
     }
     return 1;
 }
-struct EspNativeGameplayHubTouchUi {
-    static void drawMiniText(uint16_t*, const char* text, int x, int y,
-                             uint16_t) {
-        assert(x == 137 && (!std::strcmp(text, "1/2") ||
-                            !std::strcmp(text, "2/2")));
-        labelY = y;
-    }
-};
+void EspNativeGameplayHubTouchUi_drawMiniText(uint16_t*, const char* text,
+                                                 int x, int y, uint16_t) {
+    assert(x == 137 && (!std::strcmp(text, "1/2") ||
+                        !std::strcmp(text, "2/2")));
+    labelY = y;
+}
 """
 
 cases = r"""
