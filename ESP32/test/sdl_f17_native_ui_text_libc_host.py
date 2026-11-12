@@ -62,6 +62,13 @@ def git_blob(content: str) -> str:
 
 def restore(filename: str, current: str) -> str:
     original = current
+    # SDL-F19 only renames local layout typedef uses; reconstruct the exact
+    # historical pre-F17 source before the F17 alias reversions.
+    if filename in ("native_main_menu_actions.c",
+                    "native_main_menu_touch_layout.c"):
+        expected = 3 if filename == "native_main_menu_actions.c" else 1
+        assert original.count("EspNativeRect") == expected, filename
+        original = original.replace("EspNativeRect", "SDL_Rect")
     for old, new in reversed(PATCHES[filename]):
         assert original.count(new) == 1, (filename, new, original.count(new))
         original = original.replace(new, old, 1)
@@ -110,8 +117,10 @@ for filename in OLD_BLOBS:
 assert not re.search(r"#\s*include\s*[<\"]SDL\.h[>\"]",
                      new["esp_native_text_format.c"])
 for name in ("native_main_menu_actions.c", "native_main_menu_touch_layout.c"):
-    # Deliberately NOT retiring the SDL_Rect native-layout type in this step.
-    assert "SDL_Rect" in new[name], name
+    # SDL-F19 uses the exact native alias for local rectangles; legacy
+    # DoomRPG headers still require the transitional SDL typedef ABI.
+    assert "EspNativeRect" in new[name], name
+    assert "SDL_Rect" not in new[name], name
     assert "#include <SDL.h>" in new[name], name
 
 # Compile real bodies from both old and new translation units into one tiny

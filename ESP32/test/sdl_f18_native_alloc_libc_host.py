@@ -68,6 +68,14 @@ for filename, (sha, aliases) in REFERENCES.items():
         assert current.startswith("#include <stdlib.h>\n"), filename
         assert "#include <SDL.h>" not in current, filename
         restored = current.replace("#include <stdlib.h>\n", "#include <SDL.h>\n", 1)
+    elif filename == "esp_native_gameplay_note_prefix.c":
+        # SDL-F19 retires an include after F18; re-instate it to recover the
+        # exact pre-F18 blob without weakening the alias parity assertions.
+        assert current.startswith("#include <stdlib.h>\n"), filename
+        assert "#include <SDL.h>" not in current, filename
+        restored = "#include <SDL.h>\n" + current
+        restored = restored.replace("#include <SDL.h>\n#include <stdlib.h>\n",
+                                   "#include <SDL.h>\n", 1)
     else:
         assert current.startswith("#include <SDL.h>\n#include <stdlib.h>\n"), filename
         restored = current.replace("#include <SDL.h>\n#include <stdlib.h>\n",

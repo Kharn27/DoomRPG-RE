@@ -181,9 +181,9 @@ static int helpDrawStarfield(DoomRPG_t* doomRpg) {
                             MAIN_HELP_STAR_VIRTUAL_WIDTH);
     const int shift = (phase * DOOMRPG_LOGICAL_WIDTH) /
                       (int)MAIN_HELP_STAR_VIRTUAL_WIDTH;
-    SDL_Rect primary = {-shift, 0, DOOMRPG_LOGICAL_WIDTH,
+    EspNativeRect primary = {-shift, 0, DOOMRPG_LOGICAL_WIDTH,
                         DOOMRPG_LOGICAL_HEIGHT};
-    SDL_Rect wrap = {DOOMRPG_LOGICAL_WIDTH - shift, 0,
+    EspNativeRect wrap = {DOOMRPG_LOGICAL_WIDTH - shift, 0,
                      DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT};
     uint16_t accent = EspMainMenuSkin_uiAccent();
     uint16_t dimAccent = EspMainMenuSkin_uiAccentDim();
@@ -390,7 +390,7 @@ static int helpPaintMiniHudBacking(uint16_t* fb) {
         return 0;
     for (tileX = 0; tileX < MAIN_HELP_HUD_BAR_WIDTH;
          tileX += MAIN_HELP_HUD_MINI_TILE) {
-        SDL_Rect dst = {MAIN_HELP_HUD_BAR_X + tileX,
+        EspNativeRect dst = {MAIN_HELP_HUD_BAR_X + tileX,
                         MAIN_HELP_HUD_BAR_Y, MAIN_HELP_HUD_MINI_TILE,
                         MAIN_HELP_HUD_BAR_HEIGHT};
         if (EspNativeTexture_blit(helpHudBarBG.imgBitmap, NULL, &dst) != 0)
