@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """SDL-F20: prove exact single-include removals on eight native leaf owners.
 
-No compatibility SDL header, SDL typedef, shim function, compiler flag,
-allocation, RNG sequence, renderer, gameplay or legacy desktop code is altered.
+The normal ESP32 profile does not include SDL.h in these owners, while the
+old SDL ABI include is retained only for desktop/host/oracle compilation.
 C11 compiles real DoomRPG/Render native headers WITHOUT pre-including SDL.h.
 """
 from pathlib import Path
@@ -32,10 +32,18 @@ def git_blob(source):
 
 for name, old_sha in BASELINE.items():
     current = (SRC / name).read_text(encoding="utf-8")
-    assert "#include <SDL.h>" not in current, name
-    assert not re.search(r"\bSDL_[A-Za-z0-9_]+\b", current), name
-    # Only the first, direct SDL.h include from the true merged main is gone.
-    assert git_blob("#include <SDL.h>\n" + current) == old_sha, name
+    host_header = ("#if !defined(DOOMRPG_ESP32) || "
+                   "defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)\n"
+                   "#include <SDL.h>\n#endif\n")
+    # Native firmware skips this compatibility-only header entirely. Historical
+    # host oracles may compile without -DDOOMRPG_ESP32 and need desktop SDL
+    # struct typedefs from the original source.
+    assert current.startswith(host_header), name
+    assert current.count("#include <SDL.h>") == 1, name
+    assert not re.search(r"\bSDL_[A-Za-z0-9_]+\b",
+                         current[len(host_header):]), name
+    restored = "#include <SDL.h>\n" + current[len(host_header):]
+    assert git_blob(restored) == old_sha, name
     assert '#include "DoomRPG.h"' in current, name
 
 # The real legacy structures are natively self-contained in the production
@@ -64,5 +72,5 @@ with tempfile.TemporaryDirectory(prefix="doomrpg-sdl-f20-") as folder:
                     str(executable)], check=True, cwd=ROOT)
     subprocess.run([str(executable)], check=True, cwd=ROOT)
 
-print("SDL-F20 PASS: eight exact Git blobs + eight retired SDL.h includes; "
+print("SDL-F20 PASS: eight exact Git blobs, eight SDL.h native-compile guards; "
       "native DoomRPG/Render headers compile and execute without SDL.h")
