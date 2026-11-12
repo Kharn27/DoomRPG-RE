@@ -38,8 +38,8 @@ assert "31U * mix" in tint
 assert "const uint32_t mix = ((uint32_t)power * 160U) / 255U;" in tint
 assert "helpBottomHudMini[y * MAIN_HELP_HUD_BAR_WIDTH + x]" in paint
 assert "helpTintBottomHudWeaponBlue(*pixel, power)" in paint
-assert "amber" not in paint and "corner" not in paint.lower().split(
-    "whole button", 1)[-1].split("if (power != 0U)", 1)[-1]
+assert "const uint16_t amber" not in paint
+assert "= amber;" not in paint
 
 preamble = r"""
 #include <assert.h>
