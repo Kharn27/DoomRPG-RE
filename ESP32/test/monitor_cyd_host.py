@@ -15,6 +15,9 @@ assert spec is not None and spec.loader is not None
 monitor = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(monitor)
 
+# Default is ESP32/logs even when monitorCyd.sh is invoked from elsewhere.
+assert monitor.DEFAULT_LOG_DIRECTORY == ROOT / "logs"
+
 
 class FakeSerial:
     def __init__(self, *args, **kwargs):
@@ -115,4 +118,20 @@ with tempfile.TemporaryDirectory() as temp:
     assert output.getvalue() == expected
     assert len(list(temp_path.glob("*.log"))) == 2
 
-print("monitor_cyd_host PASS: log before reset, normal boot, bytes preserved, --no-reset")
+# Check public CLI defaults and explicit --log-dir override without opening UART.
+previous_capture = monitor.capture
+cli_calls = []
+try:
+    def fake_capture(port, baud, directory, *, do_reset=True):
+        cli_calls.append((port, baud, directory, do_reset))
+
+    monitor.capture = fake_capture
+    assert monitor.main(["--no-reset"]) == 0
+    assert cli_calls[-1] == ("/dev/ttyUSB0", 115200, ROOT / "logs", False)
+    assert monitor.main(["--log-dir", str(ROOT / "custom"), "--no-reset"]) == 0
+    assert cli_calls[-1] == ("/dev/ttyUSB0", 115200, ROOT / "custom", False)
+finally:
+    monitor.capture = previous_capture
+
+print("monitor_cyd_host PASS: log before reset, normal boot, bytes preserved, "
+      "default ESP32/logs and --log-dir override")

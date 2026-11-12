@@ -348,6 +348,9 @@ jobs:
       - name: SDL-F15 retire inert FluidSynth bootstrap and no-op audio init (host full source oracle)
         run: python ESP32/test/sdl_f15_inert_audio_boot_host.py
 
+      - name: SDL-F17 native menu text libc aliases with exact Git blob and C parity
+        run: python ESP32/test/sdl_f17_native_ui_text_libc_host.py
+
       - name: Test native presentation and clip pixel parity (host C)
         run: python ESP32/test/doomrpg_presentation_host.py
 

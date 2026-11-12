@@ -17,6 +17,10 @@ from typing import BinaryIO, Callable
 
 RESET_HOLD_SECONDS = 0.1
 
+# Stable ESP32/logs/ location independent of the invoking working directory.
+# Open the file in this directory BEFORE triggering the normal RTS boot.
+DEFAULT_LOG_DIRECTORY = Path(__file__).resolve().parents[1] / "logs"
+
 
 def reset_cyd(device: object, sleep: Callable[[float], None] = time.sleep) -> None:
     """Pulse ESP32 EN/RTS while keeping GPIO0/DTR deasserted (normal boot)."""
@@ -87,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", default="/dev/ttyUSB0")
     parser.add_argument("--baud", type=int, default=115200)
-    parser.add_argument("--log-dir", type=Path, default=Path.cwd())
+    parser.add_argument("--log-dir", type=Path, default=DEFAULT_LOG_DIRECTORY)
     parser.add_argument("--no-reset", action="store_true",
                         help="Attach to a running session (do not reboot the CYD)")
     args = parser.parse_args(argv)

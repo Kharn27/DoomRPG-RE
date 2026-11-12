@@ -54,9 +54,9 @@ static const char* dashboardLabels[DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT] = {
 
 static void setNativeMainItem(MenuItem_t* item, const char* text) {
     if (item == NULL) return;
-    SDL_memset(item, 0, sizeof(*item));
+    memset(item, 0, sizeof(*item));
     if (text != NULL) {
-        SDL_snprintf(item->textField, sizeof(item->textField), "%s", text);
+        snprintf(item->textField, sizeof(item->textField), "%s", text);
     }
     item->flags = 2;
     item->action = 0;

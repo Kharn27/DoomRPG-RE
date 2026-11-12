@@ -45,13 +45,15 @@ cd ESP32
 
 Le script démarre `ESP32/tools/monitor_cyd.py` avec le Python de
 PlatformIO (`pyserial` inclus). Il crée un nouveau
-`platformio-device-monitor-YYMMDD-HHMMSS.log` dans le répertoire
-courant **avant** d’ouvrir le port `/dev/ttyUSB0`, puis pulse RTS
+`platformio-device-monitor-YYMMDD-HHMMSS.log` dans **`ESP32/logs/`**
+(par défaut, quel que soit le dossier de lancement), **avant**
+d’ouvrir le port `/dev/ttyUSB0`, puis pulse RTS
 (reset EN), en laissant DTR désactivé (GPIO0 haut, boot normal).
 La sortie console et le fichier contiennent les mêmes octets Serial.
 `Ctrl+C` arrête et ferme proprement le moniteur.
 Pour changer de port : `./monitorCyd.sh --port /dev/ttyUSB1` ;
-pour surveiller **sans** redémarrer : `./monitorCyd.sh --no-reset`.
+pour surveiller **sans** redémarrer : `./monitorCyd.sh --no-reset` ;
+pour choisir un autre dossier : `./monitorCyd.sh --log-dir /chemin/logs`.
 Le reset RTS suppose le câblage USB-UART auto-reset du CYD :
 sa confirmation matérielle se fait dans le log.
 Cette commande est indépendante de `pio run -t upload -t monitor` :

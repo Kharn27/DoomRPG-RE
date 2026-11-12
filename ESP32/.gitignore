@@ -8,3 +8,4 @@
 /test/__pycache__/
 /compile_commands.json
 /playtest-captures/
+/logs/
