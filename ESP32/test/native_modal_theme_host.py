@@ -72,22 +72,22 @@ assert "EspMainMenuSkin_paintNavKey(" in nav
 assert "fillRect(fb" not in nav and "drawRect(fb" not in nav
 assert "118, top, 156, bottom, next ? 1 : 0, enabled ? 1 : 0" in nav
 for call in (
-    "drawSlotNav(fb, 34, 62, false, first != 1U);",
-    "drawSlotNav(fb, 69, 98, true, first == 1U);",
     "drawSlotNav(fb, 49, 78, false, first != 1U);",
     "drawSlotNav(fb, 83, 112, true, first == 1U);",
 ):
     assert call in system
-assert "if (x >= 118 && x <= 156 && y >= 34 && y <= 98)" in system
+assert "drawSlotNav(fb, kMainLoadPreviousTop, kMainLoadPreviousBottom," in system
+assert "drawSlotNav(fb, kMainLoadNextTop, kMainLoadNextBottom," in system
+assert "y >= kMainLoadPreviousTop && y <= kMainLoadNextBottom" in system
 assert "if (x >= 118 && x <= 156)" in system
 assert "const bool previous = y >= 49 && y <= 78;" in system
 assert "const bool next = y >= 83 && y <= 112;" in system
 
 
-# MENU_MAIN -> LOAD GAME is the only layout changed. The shared 5x9 skin
+# MENU_MAIN -> LOAD GAME is the only slot layout changed. The shared 5x9 skin
 # painter gives the title and BACK their true 3-theme row gradient, while
 # the label's non-clickable title rail has no triple-hatch side ornaments.
-# The page fraction sits BELOW the unchanged DOWN key.
+# The page fraction sits BELOW the shifted DOWN key.
 main_load = system.split("static void paintMainSlots(void) {", 1)[1].split(
     'extern "C" int EspNativeGameplaySave_mainSelectorBegin(', 1)[0]
 main_tap = system.split('extern "C" int EspNativeGameplaySave_mainSelectorTap(', 1)[1].split(
@@ -95,16 +95,16 @@ main_tap = system.split('extern "C" int EspNativeGameplaySave_mainSelectorTap(',
 hub_slots = system.split("bool paintSaveOverlay(void) {", 1)[1].split(
     "}  // namespace", 1)[0]
 assert "EspMainMenuSkin_paintModalTitleStencil(" not in main_load
-assert 'fillRect(fb, 45, 27, 114, 27, EspMainMenuSkin_uiAccentDim());' in main_load
-assert 'fillRect(fb, 73, 27, 86, 27, EspMainMenuSkin_uiAccent());' in main_load
+assert 'fillRect(fb, 45, 19, 114, 19, EspMainMenuSkin_uiAccentDim());' in main_load
+assert 'fillRect(fb, 73, 19, 86, 19, EspMainMenuSkin_uiAccent());' in main_load
 assert '"LOAD GAME", 0, 1)) return;' in main_load
 assert '"LOAD - PAGE' not in main_load
 assert 'snprintf(text, sizeof(text), "%u/2", first == 1U ? 1U : 2U);' in main_load
 assert "EspNativeGameplayHubTouchUi_drawMiniText(" in main_load
-assert "fb, text, 137, 106, EspMainMenuSkin_uiAccent());" in main_load
-assert main_load.index("drawSlotNav(fb, 69, 98, true, first == 1U);") < main_load.index(
+assert "fb, text, 137, 99, EspMainMenuSkin_uiAccent());" in main_load
+assert main_load.index("drawSlotNav(fb, kMainLoadNextTop, kMainLoadNextBottom,") < main_load.index(
     'snprintf(text, sizeof(text), "%u/2",')
-assert 98 < 106 and 106 + 5 <= 118  # fraction under DOWN in safe 20px foot
+assert 90 < 99 and 99 + 5 <= 118  # fraction under DOWN in safe foot
 assert (137 - 5, 137 + 5) == (132, 142)  # 3 glyphs x 3 + gaps=11px
 assert 111 < 132  # fraction cannot collide with BACK on same y band
 # Title and BACK both use the true 9-row skin palette and no flat color face.
@@ -113,7 +113,7 @@ assert 'drawCenteredWord(fb, 80, 11, "LOAD GAME"' not in main_load
 assert 'drawCenteredWord(fb, 72, 107, "BACK"' not in main_load
 assert "kMainLoadBackLeft = 34;" in system
 assert "kMainLoadBackRight = 111;" in system
-assert "kMainLoadBackTop = 102;" in system
+assert "kMainLoadBackTop = 97;" in system
 assert "kMainLoadBackBottom = 118;" in system
 assert "kMainLoadBackLeft, kMainLoadBackTop," in main_load
 assert "kMainLoadBackRight, kMainLoadBackBottom," in main_load
@@ -124,18 +124,24 @@ assert "drawRect(fb, 34, 105, 111, 118" not in main_load
 assert "if (y >= kMainLoadBackTop)" in main_tap
 assert "if (y <= kMainLoadBackBottom &&" in main_tap
 assert "x >= kMainLoadBackLeft && x <= kMainLoadBackRight" in main_tap
-# All five original 107x13 row cards, their select/confirm cadence, page
-# arrows, and the HUB's separate save overlay remain untouched.
+# All five 107x13 cards retain their select/confirm cadence, but move
+# up 8px with both pagination arrows; HUB stays at its old coordinates.
 for call in (
-    "const int y = 32 + row * 14;",
+    "const int y = kMainLoadFirstSlotTop + row * kMainLoadSlotPitch;",
     "fillRect(fb, 7, y, 113, y + 12,",
-    "drawSlotNav(fb, 34, 62, false, first != 1U);",
-    "drawSlotNav(fb, 69, 98, true, first == 1U);",
+    "drawSlotNav(fb, kMainLoadPreviousTop, kMainLoadPreviousBottom,",
+    "drawSlotNav(fb, kMainLoadNextTop, kMainLoadNextBottom,",
 ):
     assert call in main_load
-assert "const uint8_t row = (uint8_t)((y - 32) / 14);" in main_tap
-assert "if (x >= 118 && x <= 156 && y >= 34 && y <= 98)" in main_tap
-assert "(!previous && (y < 69 || page != 1U))" in main_tap
+assert "kMainLoadFirstSlotTop = 24;" in system
+assert "kMainLoadSlotPitch = 14;" in system
+assert "kMainLoadPreviousTop = 26;" in system
+assert "kMainLoadPreviousBottom = 54;" in system
+assert "kMainLoadNextTop = 61;" in system
+assert "kMainLoadNextBottom = 90;" in system
+assert "(y - kMainLoadFirstSlotTop) /" in main_tap
+assert "y >= kMainLoadPreviousTop && y <= kMainLoadNextBottom" in main_tap
+assert "y < kMainLoadNextTop || page != 1U" in main_tap
 assert "slotArmed = 0U;" in main_tap
 assert "mainSlotReady = 1U;" in main_tap
 assert "EspMainMenuSkin_paintModalTitleStencil(" not in hub_slots

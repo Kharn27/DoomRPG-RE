@@ -507,6 +507,7 @@ jobs:
             -o /tmp/doomrpg-menu-skin-test
           /tmp/doomrpg-menu-skin-test
           python ESP32/test/main_menu_skin_integration_host.py
+          python ESP32/test/main_load_selector_layout_host.py
           python ESP32/test/native_modal_theme_host.py
 
       - name: Test native HUB topbar tabs and no AUTOMAP leak
