@@ -77,6 +77,13 @@ for filename, (sha, aliases) in REFERENCES.items():
         restored = restored.replace("#include <SDL.h>\n#include <stdlib.h>\n",
                                    "#include <SDL.h>\n", 1)
     else:
+        if filename == "esp_native_gameplay_event_chain.c":
+            # SDL-F24 now guards the historic SDL.h include for native builds.
+            # First undo only that later header gate, then reconstruct the
+            # original F18 Git blob and verify every libc substitution.
+            from sdl_f24_native_geometry_event_header_host import HOST_GUARD
+            assert current.startswith(HOST_GUARD), filename
+            current = "#include <SDL.h>\n" + current[len(HOST_GUARD):]
         assert current.startswith("#include <SDL.h>\n#include <stdlib.h>\n"), filename
         restored = current.replace("#include <SDL.h>\n#include <stdlib.h>\n",
                                    "#include <SDL.h>\n", 1)

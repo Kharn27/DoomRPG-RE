@@ -369,6 +369,15 @@ jobs:
       - name: Test SDL-F23 Sound.h opaque mixer header and native SDL.h exclusion (host C)
         run: python ESP32/test/sdl_f23_opaque_mixer_header_host.py
 
+      - name: Test SDL-F24 three real native geometry/event TU SDL.h include guards
+        run: python ESP32/test/sdl_f24_native_geometry_event_header_host.py
+
+      - name: Test SDL-F25 native monster combat SDL.h include boundary and Git blobs
+        run: python ESP32/test/sdl_f25_monster_combat_header_host.py
+
+      - name: Test SDL-F26 native monster movement and RNG header SDL boundary
+        run: python ESP32/test/sdl_f26_monster_movement_rng_header_host.py
+
       - name: Native monster drop catalog preflight before render PAK lease
         run: python ESP32/test/native_monster_drop_catalog_host.py
 
@@ -755,6 +764,9 @@ jobs:
             python test/sdl_shim_build_ownership_host.py "$profile" \
               --baseline-dir "$RUNNER_TEMP/doomrpg-sdl-a-main"
             python test/sdl_f22_bmp_tu_retirement_host.py --profile "$profile"
+            python test/sdl_f24_native_geometry_event_header_host.py --profile "$profile"
+            python test/sdl_f25_monster_combat_header_host.py --profile "$profile"
+            python test/sdl_f26_monster_movement_rng_header_host.py --profile "$profile"
           done
 
       - name: Upload firmware artifacts
