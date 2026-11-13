@@ -1,7 +1,9 @@
 #ifndef DOOMRPG_ESP32_NATIVE_RNG_REPLAY_GUARD_H
 #define DOOMRPG_ESP32_NATIVE_RNG_REPLAY_GUARD_H
 
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 #include <SDL.h>
+#endif
 #include <stdint.h>
 
 #include "DoomRPG.h"
