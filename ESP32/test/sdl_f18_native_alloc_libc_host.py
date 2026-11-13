@@ -84,6 +84,14 @@ for filename, (sha, aliases) in REFERENCES.items():
             from sdl_f24_native_geometry_event_header_host import HOST_GUARD
             assert current.startswith(HOST_GUARD), filename
             current = "#include <SDL.h>\n" + current[len(HOST_GUARD):]
+        if filename in ("esp_native_gameplay_weapon.c",
+                        "esp_native_resident_gameplay.c"):
+            # SDL-F27 guards these source-only includes after F18.
+            # Reconstruct the exact historical pre-F27 prefix exclusively
+            # inside the oracle. Production C bodies remain unmodified.
+            from sdl_f27_native_gameplay_header_host import GUARD
+            assert current.startswith(GUARD), filename
+            current = "#include <SDL.h>\n" + current[len(GUARD):]
         assert current.startswith("#include <SDL.h>\n#include <stdlib.h>\n"), filename
         restored = current.replace("#include <SDL.h>\n#include <stdlib.h>\n",
                                    "#include <SDL.h>\n", 1)
