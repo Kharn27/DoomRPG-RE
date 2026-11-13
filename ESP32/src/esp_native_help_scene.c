@@ -268,11 +268,14 @@ static void helpPaintTurnArc(uint16_t* fb, int cx, int cy,
                 cx + mirror * turnCurve[i][0],
                 cy + turnCurve[i][1], core);
     }
-    /* Arrowhead faces the turn, never a mirrored forward/backward chevron. */
-    segment(fb, cx - mirror * 3, cy - 4,
-            cx - mirror * 7, cy, core);
-    segment(fb, cx - mirror * 7, cy,
-            cx - mirror * 3, cy + 4, core);
+    /* Keep the curved U-turn unchanged. Moving the whole symbol did not
+     * reduce overlap: only its arrowhead moves 3px outward, leaving
+     * a visible gap between the chevron wings and the loop on both sides. */
+    const int headCx = cx - mirror * 3;
+    segment(fb, headCx - mirror * 3, cy - 4,
+            headCx - mirror * 7, cy, core);
+    segment(fb, headCx - mirror * 7, cy,
+            headCx - mirror * 3, cy + 4, core);
 }
 
 /* Only the eight glyphs used by WPN/PREV/NEXT. 5x7 ROM masks cost 56B,
@@ -314,19 +317,23 @@ static void helpPaintWeaponWord(uint16_t* fb, int centerX, int y,
     }
 }
 
-static void helpPaintWeaponCaption(uint16_t* fb, int centerX, int top,
+static void helpPaintWeaponCaption(uint16_t* fb, int centerX,
+                                   int top, int bottom,
                                    const char* secondLine, uint16_t ink) {
+    /* Two 7px glyph rows with one blank scanline: 15px total, centered
+     * vertically in the full 23px weapon button (including its frame). */
+    const int textTop = top + ((bottom - top + 1) - 15) / 2;
     int x, y;
-    /* A small translucent-black reading pad makes the yellow text legible
-     * against bright PAK wall textures while keeping the cell frame visible. */
-    for (y = top + 1; y <= top + 16; ++y) {
+    /* The stable 16px reading pad follows the centered glyphs. No new
+     * buffer, extra draw or change to the neon breathing/text palette. */
+    for (y = textTop; y <= textTop + 15; ++y) {
         for (x = centerX - 14; x <= centerX + 13; ++x) {
             uint16_t* pixel = &fb[y * DOOMRPG_LOGICAL_WIDTH + x];
             *pixel = dim565(*pixel, 160U);
         }
     }
-    helpPaintWeaponWord(fb, centerX, top + 1, "WPN", ink);
-    helpPaintWeaponWord(fb, centerX, top + 9, secondLine, ink);
+    helpPaintWeaponWord(fb, centerX, textTop, "WPN", ink);
+    helpPaintWeaponWord(fb, centerX, textTop + 8, secondLine, ink);
 }
 
 static void drawActionMark(uint16_t* framebuffer, int row, int col,
@@ -347,7 +354,9 @@ static void drawActionMark(uint16_t* framebuffer, int row, int col,
         putGlow(framebuffer, cx, cy, core);
     }
     else if (row == 1) {
-        helpPaintTurnArc(framebuffer, cx, cy, col, core);
+        /* Preserve the previous 2px curve position. Inside the painter,
+         * only the arrowhead moves outward; hitboxes stay unchanged. */
+        helpPaintTurnArc(framebuffer, cx + (col == 0 ? -2 : 2), cy, col, core);
     }
     else {
         const int d = col == 0 ? -1 : 1;
@@ -395,7 +404,7 @@ static void helpPaintTouchCell(uint16_t* fb, int row, int col,
     if (row == 2 && col != 1) {
         /* WPN/PREV/NEXT letters breathe yellow; black glyph reading pad
          * is stable so there is no flashing or solid-colour wash. */
-        helpPaintWeaponCaption(fb, (left + right) / 2, top,
+        helpPaintWeaponCaption(fb, (left + right) / 2, top, bottom,
                                col == 0 ? "PREV" : "NEXT", core);
     }
     else {

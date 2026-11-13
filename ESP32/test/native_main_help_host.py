@@ -62,13 +62,24 @@ assert [lines[i * 7 : i * 7 + 5] for i in range(6, 9)] == [
 assert all(lines[i * 7 + 5:i * 7 + 7] == ["", ""] for i in range(6, 9))
 assert "#define MAIN_HELP_MAX_LINES 112" in model
 assert lines[9 * 7 : 10 * 7] == [
-    "BOTTOM HUD BAR", "STATUS AT A GLANCE", "LEFT: HP + ARMOR",
-    "CENTER: FACE / AMMO", "RIGHT: DIRECTION", "", ""]
+    "BOTTOM HUD BAR", "LEFT: HP + ARMOR", "CENTER: FACE / AMMO",
+    "RIGHT: DIRECTION / AMMO", "Touch for weapon menu", "", ""]
+assert "STATUS AT A GLANCE" not in lines
+assert lines[9 * 7 + 3].startswith("RIGHT: ")
+assert lines[9 * 7 + 4] == "Touch for weapon menu"
 assert lines[10 * 7 : 11 * 7] == [
     "WEAPON SELECT", "Tap gun icon", "", "", "", "", ""]
 
 assert "DOWN: controls" not in lines
-assert max(map(len, lines)) <= 20  # source font=7px/char, x=12
+# Two long strings on BOTTOM HUD are explicitly positioned across the 160px
+# width. Every other guide entry remains within 20x7px / x12.
+assert max(len(line) for i, line in enumerate(lines)
+           if i not in (9 * 7 + 3, 9 * 7 + 4)) <= 20
+assert len(lines[9 * 7 + 3]) == 23
+assert len(lines[9 * 7 + 4]) == 21
+assert 2 + (len("RIGHT:") - 1) * 7 + 9 == 46
+assert 46 + (len("DIRECTION / AMMO") - 1) * 7 + 9 == 160
+assert 8 + (len("Touch for weapon menu") - 1) * 7 + 9 == 157
 assert len(lines) == len(set((i, line) for i, line in enumerate(lines)))
 assert any("CYD" in line for line in lines)
 assert all(label in lines for label in (
@@ -222,7 +233,9 @@ hud_paint_section = actions.split(
     'if (menuSystem->scrollIndex == MAIN_HELP_HUD_PAGE_SCROLL) {', 1
 )[1].split('    else if (menuSystem->scrollIndex == MAIN_HELP_SCENE_PAGE_SCROLL &&', 1)[0]
 assert 'helpDrawPositionCaption(doomRpg, canvas, label, i - 2,' in hud_paint_section
-assert actions.count('helpDrawPositionCaption(doomRpg, canvas, label, i - 2,') == 3
+# TOP HUD and the three illustrated touch rows keep their shared loop;
+# BOTTOM HUD now uses two direct captions plus a third compact line.
+assert actions.count('helpDrawPositionCaption(doomRpg, canvas, label, i - 2,') == 2
 assert 'helpDrawPositionCaption(doomRpg, canvas, label, i - 2,' in actions
 assert 'static void helpDrawPositionCaption(' in actions
 assert 'static const int tones[3] = {1, 4, 7};' in actions
@@ -298,9 +311,40 @@ assert 'static uint16_t helpBottomHudMini[MAIN_HELP_HUD_BAR_WIDTH *' in actions
 assert 'helpBottomHudReady = 0U;' in actions
 assert 'EspNativeGameplayHud_paintHelpBottomBand(fb)' in actions
 assert 'static int helpPaintBottomHudIllustration(' in actions
+assert '#define MAIN_HELP_BOTTOM_HUD_BAR_Y (MAIN_HELP_HUD_BAR_Y - MAIN_HELP_LINE_HEIGHT)' in actions
+assert macro("MAIN_HELP_HUD_BAR_Y") == 43
+assert macro("MAIN_HELP_LINE_HEIGHT") == 12
+assert 43 - 12 == 31
+bottom_section = actions.split(
+    'static int helpPaintBottomHudIllustration(uint16_t* fb) {', 1
+)[1].split('/* Build the exact native 4x3 WEAPONS panel', 1)[0]
+assert "MAIN_HELP_BOTTOM_HUD_BAR_Y + y" in bottom_section
+assert "MAIN_HELP_HUD_BAR_Y + y" not in bottom_section
+bottom_page = actions.split(
+    'else if (menuSystem->scrollIndex == MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL) {', 1
+)[1].split('else if (menuSystem->scrollIndex == MAIN_HELP_WEAPON_PAGE_SCROLL) {', 1)[0]
+assert 'helpDrawPositionCaption(doomRpg, canvas, left, 0, 52);' in bottom_page
+assert 'helpDrawPositionCaption(doomRpg, canvas, center, 1, 64);' in bottom_page
+assert 'EspNativeCanvas_drawText(canvas, "RIGHT:", 2, 76, 0);' in bottom_page
+assert 'EspNativeCanvas_drawText(canvas, right + 7, 46, 76, 0);' in bottom_page
+assert 'EspNativeCanvas_drawText(canvas, touch, 8, 88, 0);' in bottom_page
+assert 'EspNativeCanvas_drawText(canvas, caption, 12, 27, 0);' not in bottom_page
+assert 31 + 16 - 1 == 46 < 52
+assert 52 + 12 == 64 and 64 + 12 == 76
+assert 76 + 12 == 88 and 88 + 12 == 100
 assert 'helpPaintBottomHudIllustration(framebuffer)' in actions
 assert 'MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL (9 * MAIN_HELP_VISIBLE_LINES)' in actions
 assert 'helpBottomHudMini[y * MAIN_HELP_HUD_BAR_WIDTH + x]' in actions
+assert 'static uint16_t helpTintBottomHudWeaponBlue(' in actions
+assert 'helpTintBottomHudWeaponBlue(*pixel, power)' in actions
+bottom_paint = actions.split(
+    'static int helpPaintBottomHudIllustration(uint16_t* fb) {', 1
+)[1].split('static int helpBuildWeaponGridMini(', 1)[0]
+assert 'const uint16_t amber' not in bottom_paint
+assert 'buttonLeft; x <= buttonRight; ++x' in bottom_paint
+assert 'if (power != 0U)' in bottom_paint
+assert 'const uint32_t keep = 256U - mix;' in actions
+assert '((uint32_t)power * 160U) / 255U' in actions
 assert 'const int sy = 100 + y * 20 / MAIN_HELP_HUD_BAR_HEIGHT;' in actions
 assert 'const int sx = x * 160 / MAIN_HELP_HUD_BAR_WIDTH;' in actions
 assert '"HP30"' not in actions and '"AR20"' not in actions
@@ -308,6 +352,10 @@ assert '"AM12"' not in actions and 'skin = 0xfba0U' not in actions
 assert 'int EspNativeGameplayHud_paintHelpBottomBand(' in hud_c
 assert 'paintPrepared(&prepared, framebuffer, NULL, 1)' in hud_c
 assert 'if (!bottomOnly) drawTopTouchNotches(framebuffer, stats);' in hud_c
+# The full amber corner overlay stays LIVE in gameplay, but the read-only
+# HELP thumbnail omits it (paintPrepared called with bottomOnly=1).
+assert 'if (status == ESP_NATIVE_GAMEPLAY_HUD_OK && !bottomOnly) {' in hud_c
+assert 'drawWeaponTouchCorners(framebuffer, stats);' in hud_c
 assert 'paintPrepared(&prepared, framebuffer, outStats, 0)' in hud_c
 assert all(f'openAsset("{x}.bmp", &bmp,' in hud_c
            for x in ('k','m','l','o','a'))
@@ -404,10 +452,21 @@ assert 'helpBuildWeaponGridMini(framebuffer)' in actions
 assert 'helpDrawWeaponGridMini(framebuffer);' in actions
 assert 'helpDrawWeaponButtonCue(framebuffer);' in actions
 assert 'helpBottomHudMini[sy * MAIN_HELP_HUD_BAR_WIDTH + sx]' in actions
-assert 'const int dstX = 116, dstY = 14, dstW = 36, dstH = 12;' in actions
+assert 'const int dstX = 108, dstY = 12, dstW = 46, dstH = 15;' in actions
+assert 'helpTintBottomHudWeaponBlue(original, power)' in actions
+assert 'helpHudBreathStep = step;' in actions
+assert 'scroll == MAIN_HELP_WEAPON_PAGE_SCROLL;' in actions
+assert 'static uint16_t helpWeaponPreviewLitPixel(' in actions
+assert 'static void helpIlluminateWeaponGridMini(void)' in actions
+assert 'helpIlluminateWeaponGridMini();' in actions
+assert 'original == 0x0841U || original == 0x0000U' in actions
+assert 'red = ((uint32_t)(original >> 11) * 5U) / 4U + 2U;' in actions
+assert 'demo.weapons = 0x0fffU;' in actions
 assert 'sourceX + x * sourceWidth / dstW' in actions
-assert 116 > 12 + len("WEAPON SELECT") * 7  # no title/icon overlap
-assert 116 + 36 <= 154 and 14 + 12 < 27
+assert 108 > 12 + len("WEAPON SELECT") * 7  # no title/icon overlap
+assert 108 + 46 <= 154 and 12 + 15 - 1 < 27
+assert 12 >= 12  # page counter raster ends at y11
+assert 108 + 46 - 1 == 153 and 12 + 15 - 1 == 26
 assert 'if (!helpBottomHudReady)' in actions
 assert 'EspEntityDefTypeCatalog_buildFromPackEntry(&entities)' in actions
 assert 'EspNativeGameplayHubWeaponGrid_paint(framebuffer, &demo, 2U)' in actions
@@ -439,8 +498,13 @@ assert 'mini=%ux%u bytes=%u' in actions
 # Hardware feedback on CYD TOUCH: turn symbols must curve, not be
 # three perpendicular line segments; weapon controls need explicit words.
 assert 'static void helpPaintTurnArc(' in scene
-assert 'helpPaintTurnArc(framebuffer, cx, cy, col, core);' in scene
+assert 'helpPaintTurnArc(framebuffer, cx + (col == 0 ? -2 : 2), cy, col, core);' in scene
 assert 'const int mirror = col == 0 ? 1 : -1;' in scene
+assert 'const int headCx = cx - mirror * 3;' in scene
+assert 'segment(fb, headCx - mirror * 3, cy - 4,' in scene
+assert 'headCx - mirror * 7, cy, core);' in scene
+assert 'segment(fb, headCx - mirror * 7, cy,' in scene
+assert 'headCx - mirror * 3, cy + 4, core);' in scene
 assert 'static const int8_t turnCurve[][2]' in scene
 curve_data = scene.split('static const int8_t turnCurve[][2] = {', 1)[1].split('};', 1)[0]
 turn_points = [
@@ -458,20 +522,35 @@ for left, right in ((8, 55), (104, 151)):
     cx = (left + right) // 2
     cy = (51 + 73) // 2
     mirror = 1 if left == 8 else -1
-    outline = [(cx + mirror * x, cy + y) for x, y in turn_points]
-    outline.extend((cx - mirror * dx, cy + dy)
-                   for dx, dy in ((3, -4), (7, 0), (3, 4)))
-    assert all(left < x < right and 51 < y < 73
-               for x, y in outline)
+    # The loop keeps its previously validated 2px offset. The chevron
+    # remains independent but comes back 2px after the too-wide 5px shift.
+    # Its tip is still outside the loop on both sides.
+    shifted_cx = cx + (-2 if left == 8 else 2)
+    curve = [(shifted_cx + mirror * x, cy + y) for x, y in turn_points]
+    head_cx = shifted_cx - mirror * 3
+    chevron = [(head_cx - mirror * dx, cy + dy)
+               for dx, dy in ((3, -4), (7, 0), (3, 4))]
+    assert min(x for x, _ in curve) == (23 if left == 8 else 123)
+    assert max(x for x, _ in curve) == (35 if left == 8 else 135)
+    assert min(x for x, _ in chevron) == (19 if left == 8 else 135)
+    assert max(x for x, _ in chevron) == (23 if left == 8 else 139)
+    # The tip remains four pixels out from the nearest curve coordinate.
+    assert (min(x for x, _ in curve) - min(x for x, _ in chevron)
+            if left == 8 else max(x for x, _ in chevron) -
+            max(x for x, _ in curve)) == 4
+    assert all(left + 2 < x < right - 2 and 51 < y < 73
+               for x, y in curve + chevron)
 
 assert 'static void helpPaintWeaponCaption(' in scene
 assert 'static void helpPaintWeaponWord(' in scene
 assert 'static const HelpWeaponGlyph helpWeaponGlyphs[]' in scene
 assert 'col == 0 ? "PREV" : "NEXT"' in scene
-assert 'helpPaintWeaponWord(fb, centerX, top + 1, "WPN", ink);' in scene
-assert 'helpPaintWeaponWord(fb, centerX, top + 9, secondLine, ink);' in scene
+assert 'const int textTop = top + ((bottom - top + 1) - 15) / 2;' in scene
+assert 'for (y = textTop; y <= textTop + 15; ++y)' in scene
+assert 'helpPaintWeaponWord(fb, centerX, textTop, "WPN", ink);' in scene
+assert 'helpPaintWeaponWord(fb, centerX, textTop + 8, secondLine, ink);' in scene
 assert 'if (row == 2 && col != 1)' in scene
-assert 'helpPaintWeaponCaption(fb, (left + right) / 2, top,' in scene
+assert 'helpPaintWeaponCaption(fb, (left + right) / 2, top, bottom,' in scene
 assert 'col == 0 ? "PREV" : "NEXT", core);' in scene
 assert 'static void helpPaintTouchDividers(' not in scene
 assert 'dim565(*pixel, 160U)' in scene
@@ -493,8 +572,13 @@ for left, right in ((8, 55), (104, 151)):
         w = len(text) * 6 - 1
         x = cx - w // 2
         assert left < x and x + w - 1 < right
-    assert 74 < 75 and 75 + 7 - 1 < 83
-    assert 83 + 7 - 1 < 97
+    top, bottom = 74, 96
+    caption_height = 2 * 7 + 1
+    text_top = top + (bottom - top + 1 - caption_height) // 2
+    assert text_top == 78
+    assert (text_top + 8 + 6) == 92
+    assert (text_top + text_top + caption_height - 1) // 2 == (top + bottom) // 2
+    assert top < text_top and text_top + 15 < bottom
 
 assert 8 <= 8 + 144 <= 155
 assert 29 + 68 - 1 < 100

@@ -22,7 +22,12 @@ assert re.search(r"#ifndef DOOMRPG_ESP32\s+void DoomCanvas_drawString1\(", legac
 assert 'doomCanvas, "Loading...", DOOMRPG_CANVAS_CENTER_X' in (SRC / "native_main_menu_model.c").read_text(encoding="utf-8")
 assert "(char*)line" not in menu and "(char*)label" not in layout
 assert "(char*)names[item]" not in layout
-assert menu.count("EspNativeCanvas_drawText(") == 13  # removed obsolete WEAPON SELECT footer; Canvas ABI unchanged
+# Two additional explicit text draws on BOTTOM HUD (RIGHT value and the
+# weapon-menu touch instruction) replace one former subtitle; Canvas ABI stays
+# unchanged and the native glyph-loop hash is checked below.
+assert menu.count("EspNativeCanvas_drawText(") == 15
+assert 'EspNativeCanvas_drawText(canvas, right + 7, 46, 76, 0);' in menu
+assert 'EspNativeCanvas_drawText(canvas, touch, 8, 88, 0);' in menu
 # All child cards now use the same clipped industrial glyph painter.
 # Native Canvas ABI itself remains byte-for-byte unchanged and call-free here.
 assert layout.count("EspNativeCanvas_drawText(") == 0

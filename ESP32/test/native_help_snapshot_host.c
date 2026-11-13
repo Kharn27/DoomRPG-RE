@@ -128,6 +128,27 @@ static int breathAllowed(int x, int y) {
     }
     return 0;
 }
+/* The real HELP painter must keep every breathing glyph inside its own
+ * button. The interior excludes the two-pixel frame; delta bounds isolate
+ * the neon glyphs from the static PAK texture and stable reading pads. */
+static int glyphDeltaBounds(int left, int top, int right, int bottom,
+                            int* minX, int* maxX, int* minY, int* maxY) {
+    int x, y, count = 0;
+    *minX = W; *maxX = -1;
+    *minY = H; *maxY = -1;
+    for (y = top + 3; y <= bottom - 3; ++y) {
+        for (x = left + 3; x <= right - 3; ++x) {
+            if (softFrame[y * W + x] == brightFrame[y * W + x]) continue;
+            if (x < *minX) *minX = x;
+            if (x > *maxX) *maxX = x;
+            if (y < *minY) *minY = y;
+            if (y > *maxY) *maxY = y;
+            ++count;
+        }
+    }
+    return count;
+}
+
 int main(void) {
     uint32_t rowHash[3], original, newMap, newPack;
     uint16_t textureId;
@@ -165,6 +186,37 @@ int main(void) {
                 ++altered;
             }
     assert(altered > 300 && altered < 2900);
+    /* TURN curves retain their 2px position; arrowheads are retracted
+     * 2px after the over-wide shift, staying outward of the curve.
+     * The button frames and actual gameplay touch targets never move. */
+    {
+        int minX, maxX, minY, maxY;
+        assert(glyphDeltaBounds(8, 51, 55, 73,
+                               &minX, &maxX, &minY, &maxY) > 20);
+        assert(minX == 19 && maxX == 35);
+        assert(minY == 56 && maxY == 68);
+        assert(glyphDeltaBounds(104, 51, 151, 73,
+                               &minX, &maxX, &minY, &maxY) > 20);
+        assert(minX == 123 && maxX == 139);
+        assert(minY == 56 && maxY == 68);
+        /* At the arrow-tip scanline y62, x20..22 and x136..138 must
+         * remain unpainted between the chevrons x19/x139 and curves x23/x135. */
+        for (x = 20; x <= 22; ++x)
+            assert(softFrame[62 * W + x] == brightFrame[62 * W + x]);
+        for (x = 136; x <= 138; ++x)
+            assert(softFrame[62 * W + x] == brightFrame[62 * W + x]);
+
+        /* Each two-line 5x7 WPN caption occupies y78..92: its visual
+         * center is y85, matching the center of the 74..96 button. */
+        assert(glyphDeltaBounds(8, 74, 55, 96,
+                               &minX, &maxX, &minY, &maxY) > 20);
+        assert(minY == 78 && maxY == 92);
+        assert(minX > 8 + 2 && maxX < 55 - 2);
+        assert(glyphDeltaBounds(104, 74, 151, 96,
+                               &minX, &maxX, &minY, &maxY) > 20);
+        assert(minY == 78 && maxY == 92);
+        assert(minX > 104 + 2 && maxX < 151 - 2);
+    }
     assert(packReads == readCount);
     assert(!packOpen);
 

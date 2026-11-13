@@ -98,9 +98,9 @@ void EspNativeMainMenu_transitionCanvasState(DoomCanvas_t* doomCanvas, DoomRPG_t
     }
 }
 /* Native ROM-owned CYD guide: no obsolete 2005 keypad help.txt parser,
- * no SD allocation/read and no pointer-heavy MenuItem table. ASCII text
- * is at most 20 glyphs wide (7px advance, x=12 on the 160px canvas).
- */
+ * no SD allocation/read and no pointer-heavy MenuItem table. Normally
+ * 20 glyphs max at 7px advance/x12. The BOTTOM HUD page alone has two
+ * longer lines with dedicated x8 / split-x45 bounded placement. */
 #define MAIN_HELP_MAX_LINES 112
 static const char* const helpLines[] = {
     "DOOM RPG ON CYD",
@@ -167,10 +167,10 @@ static const char* const helpLines[] = {
     "",
     "",
     "BOTTOM HUD BAR",
-    "STATUS AT A GLANCE",
     "LEFT: HP + ARMOR",
     "CENTER: FACE / AMMO",
-    "RIGHT: DIRECTION",
+    "RIGHT: DIRECTION / AMMO",
+    "Touch for weapon menu",
     "",
     "",
     "WEAPON SELECT",

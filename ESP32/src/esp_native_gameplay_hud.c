@@ -423,7 +423,10 @@ static EspNativeGameplayHudStatus paintPrepared(
     status = drawSmallText(&bmp, framebuffer, dir,
                            HUD_ORIENTATION_X + cx,
                            y + 2, 1U, 1U, stats);
-    if (status == ESP_NATIVE_GAMEPLAY_HUD_OK) {
+    /* The real gameplay HUD retains its amber touch corners. HELP takes
+     * a corner-free thumbnail so its own full-button blue breath can
+     * replace the amber markers without painting over gameplay assets. */
+    if (status == ESP_NATIVE_GAMEPLAY_HUD_OK && !bottomOnly) {
         drawWeaponTouchCorners(framebuffer, stats);
     }
     return status;
