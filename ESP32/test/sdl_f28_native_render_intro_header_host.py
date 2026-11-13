@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """SDL-F28: six real native rendering/intro C modules do not import SDL.h in
-firmware. Reconstruct exact pre-F27 Git source bodies and compile the real
+firmware. Reconstruct exact pre-F28 Git source bodies and compile the real
 C11 DoomRPG/Render headers with native, host and geometry SDL boundaries.
 """
 import argparse
@@ -57,7 +57,7 @@ def original_body_parity() -> None:
             clean), f"{filename}: SDL API retained in body"
         assert '#include "DoomRPG.h"' in clean, filename
     print("SDL-F28 PASS sources: 6 native render/intro C bodies are exact "
-          "pre-F27 Git blobs, native SDL.h imports absent")
+          "pre-F28 Git blobs, native SDL.h imports absent")
 
 
 def header_probe() -> None:
@@ -113,7 +113,7 @@ def compiled_profile(profile: str) -> None:
     compiled = {Path(x["file"]).name for x in
                 json.loads(db.read_text(encoding="utf-8"))}
     assert all(name in compiled for name in BEFORE), (
-        f"{profile}: F27 native gameplay source not compiled")
+        f"{profile}: F28 native render/intro source not compiled")
     assert "esp32_sdl.cpp" not in compiled, profile
     assert "esp32_bmp.cpp" not in compiled, profile
     print(f"SDL-F28 PASS {profile}: 6 render/intro TUs compiled; "
