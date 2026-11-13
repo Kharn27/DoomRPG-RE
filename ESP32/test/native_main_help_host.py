@@ -452,10 +452,21 @@ assert 'helpBuildWeaponGridMini(framebuffer)' in actions
 assert 'helpDrawWeaponGridMini(framebuffer);' in actions
 assert 'helpDrawWeaponButtonCue(framebuffer);' in actions
 assert 'helpBottomHudMini[sy * MAIN_HELP_HUD_BAR_WIDTH + sx]' in actions
-assert 'const int dstX = 116, dstY = 14, dstW = 36, dstH = 12;' in actions
+assert 'const int dstX = 108, dstY = 12, dstW = 46, dstH = 15;' in actions
+assert 'helpTintBottomHudWeaponBlue(original, power)' in actions
+assert 'helpHudBreathStep = step;' in actions
+assert 'scroll == MAIN_HELP_WEAPON_PAGE_SCROLL;' in actions
+assert 'static uint16_t helpWeaponPreviewLitPixel(' in actions
+assert 'static void helpIlluminateWeaponGridMini(void)' in actions
+assert 'helpIlluminateWeaponGridMini();' in actions
+assert 'original == 0x0841U || original == 0x0000U' in actions
+assert 'red = ((uint32_t)(original >> 11) * 5U) / 4U + 2U;' in actions
+assert 'demo.weapons = 0x0fffU;' in actions
 assert 'sourceX + x * sourceWidth / dstW' in actions
-assert 116 > 12 + len("WEAPON SELECT") * 7  # no title/icon overlap
-assert 116 + 36 <= 154 and 14 + 12 < 27
+assert 108 > 12 + len("WEAPON SELECT") * 7  # no title/icon overlap
+assert 108 + 46 <= 154 and 12 + 15 - 1 < 27
+assert 12 >= 12  # page counter raster ends at y11
+assert 108 + 46 - 1 == 153 and 12 + 15 - 1 == 26
 assert 'if (!helpBottomHudReady)' in actions
 assert 'EspEntityDefTypeCatalog_buildFromPackEntry(&entities)' in actions
 assert 'EspNativeGameplayHubWeaponGrid_paint(framebuffer, &demo, 2U)' in actions
