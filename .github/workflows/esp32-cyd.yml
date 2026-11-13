@@ -378,6 +378,9 @@ jobs:
       - name: Test SDL-F26 native monster movement and RNG header SDL boundary
         run: python ESP32/test/sdl_f26_monster_movement_rng_header_host.py
 
+      - name: Test SDL-F27 native gameplay SDL.h boundary and original Git blobs
+        run: python ESP32/test/sdl_f27_native_gameplay_header_host.py
+
       - name: Native monster drop catalog preflight before render PAK lease
         run: python ESP32/test/native_monster_drop_catalog_host.py
 
@@ -767,6 +770,7 @@ jobs:
             python test/sdl_f24_native_geometry_event_header_host.py --profile "$profile"
             python test/sdl_f25_monster_combat_header_host.py --profile "$profile"
             python test/sdl_f26_monster_movement_rng_header_host.py --profile "$profile"
+            python test/sdl_f27_native_gameplay_header_host.py --profile "$profile"
           done
 
       - name: Upload firmware artifacts
