@@ -7,6 +7,7 @@ Use each object's GCC .d dependency file rather than grep source text or
 infer from the absence of linked SDL functions. No firmware source is changed.
 """
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -132,10 +133,35 @@ def self_test():
           "SDL.h, SDL_Video.h, escaped paths, -MP and compile object mapping")
 
 
+
+def zip_header_boundary():
+    """Native root must not import the dead ZIP header and its SDL.h edge.
+
+    Inverting the one site-local guard must recover the exact pre-F30
+    engine_stubs.c Git blob; host and geometry still include the same ZIP ABI.
+    """
+    source = (PROJECT / "src/engine_stubs.c").read_bytes()
+    original_include = b'#include "Z_Zip.h"\n'
+    guard = (b"#if !defined(DOOMRPG_ESP32) || "
+             b"defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)\n"
+             + original_include + b"#endif\n")
+    assert source.count(guard) == 1, "native ZIP import not guarded exactly once"
+    restored = source.replace(guard, original_include)
+    blob = hashlib.sha1(
+        b"blob " + str(len(restored)).encode() + b"\0" + restored
+    ).hexdigest()
+    assert blob == "fbec028fc332d4b1bd8bf516f1676757a74dd5ad", (
+        "engine_stubs.c changed outside the ZIP include guard")
+    assert source.count(original_include) == 1
+    assert '#include <SDL.h>' in (ROOT / "src/Z_Zip.h").read_text()
+    print("SDL-F30 PASS engine_stubs.c: exact pre-F30 Git body, "
+          "native ZIP/SDL import isolated; desktop/geometry preserved")
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--profile", choices=PROFILES)
     args = parser.parse_args()
+    zip_header_boundary()
     if args.profile:
         audit_profile(args.profile)
     else:
