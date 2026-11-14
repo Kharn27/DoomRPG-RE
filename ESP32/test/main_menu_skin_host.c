@@ -464,19 +464,45 @@ int main(void) {
         }
     }
     assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_PHOSPHORE));
+    /* Electric green accents are intentionally untouched. */
     assert(EspMainMenuSkin_uiAccent() == 0x87e0U);
     assert(EspMainMenuSkin_uiAccentDim() == 0x246aU);
-    assert(EspMainMenuSkin_uiInk() == 0xdff6U);
+    assert(EspMainMenuSkin_uiInk() == 0xc7b8U);
     {
-        static const uint16_t phosphor[9] = {
-            0xdff6U,0xdff6U,0xdff6U,
-            0x87e0U,0x87e0U,0x87e0U,
-            0x246aU,0x246aU,0x246aU
+        static const uint16_t phosphor5[5] = {
+            0xc7b8U,0xc7b8U,0x87e0U,0x87e0U,0x2638U
         };
+        static const uint16_t phosphor7[7] = {
+            0xc7b8U,0xc7b8U,0xc7b8U,0x87e0U,0x87e0U,0x2638U,0x2638U
+        };
+        static const uint16_t phosphor9[9] = {
+            0xc7b8U,0xc7b8U,0xc7b8U,
+            0x87e0U,0x87e0U,0x87e0U,
+            0x2638U,0x2638U,0x2638U
+        };
+        const uint16_t pale = EspMainMenuSkin_letterTone(0, 9);
+        const uint16_t electric = EspMainMenuSkin_letterTone(4, 9);
+        const uint16_t turquoise = EspMainMenuSkin_letterTone(8, 9);
+        const unsigned tealGreen = (turquoise >> 5) & 63U;
+        const unsigned tealBlue = turquoise & 31U;
+        /* Pale green: green dominant, R/B nearly balanced; old top yellowish. */
+        assert(((pale >> 5) & 63U) > ((pale >> 11) & 31U));
+        assert(((pale >> 11) & 31U) == (pale & 31U));
+        /* Middle remains the original exact electric phosphor green. */
+        assert(electric == 0x87e0U);
+        /* Turquoise: intense near-equal 8-bit green/blue, not dark forest green. */
+        assert(tealGreen > ((0x246aU >> 5) & 63U));
+        assert(tealBlue > (0x246aU & 31U));
+        assert(tealGreen * 31U >= tealBlue * 63U);
+        assert(tealGreen * 31U - tealBlue * 63U < 63U);
+        for (int row = 0; row < 5; ++row)
+            assert(EspMainMenuSkin_letterTone(row, 5) == phosphor5[row]);
+        for (int row = 0; row < 7; ++row)
+            assert(EspMainMenuSkin_letterTone(row, 7) == phosphor7[row]);
         for (int row = 0; row < 9; ++row)
-            assert(EspMainMenuSkin_letterTone(row, 9) == phosphor[row]);
+            assert(EspMainMenuSkin_letterTone(row, 9) == phosphor9[row]);
         static const uint16_t greenFill[6] = {
-            0xdff6U,0xbff3U,0xa7f1U,0x87e0U,0x5e2aU,0x246aU
+            0xc7b8U,0xbff3U,0xa7f1U,0x87e0U,0x4f12U,0x2638U
         };
         for (int y=0;y<6;++y)
             assert(EspMainMenuSkin_progressTone(y,6) == greenFill[y]);
