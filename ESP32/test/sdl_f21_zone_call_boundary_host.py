@@ -7,6 +7,7 @@ complete pre-F21 Git blobs and compile/run the real C wrapper definitions with
 the old and new headers in both ESP32 and desktop/oracle configurations.
 """
 from pathlib import Path
+from sdl_f30_compiler_header_closure_host import restore_pre_f30_engine
 import hashlib
 import re
 import subprocess
@@ -41,6 +42,8 @@ def blob_sha(data: bytes) -> str:
 
 
 def restore_pre_f21_engine(current: str) -> str:
+    # Undo F30 host/geometry-only ZIP header gate before historic F21 Git SHA.
+    current = restore_pre_f30_engine(current)
     assert current.startswith(GUARD), "F21 engine SDL include guard changed"
     assert current.count("#include <SDL.h>") == 1
     restored = "#include <SDL.h>\n" + current[len(GUARD):]
