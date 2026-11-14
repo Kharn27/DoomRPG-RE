@@ -390,6 +390,9 @@ jobs:
       - name: Test SDL-F30 compiler dependency audit parser against adversarial cases
         run: python ESP32/test/sdl_f30_compiler_header_closure_host.py
 
+      - name: Test SDL-F31 native opaque Sound.h with original Git blob and C11 ABI modes
+        run: python ESP32/test/sdl_f31_native_sound_opaque_header_host.py
+
       - name: Native monster drop catalog preflight before render PAK lease
         run: python ESP32/test/native_monster_drop_catalog_host.py
 
