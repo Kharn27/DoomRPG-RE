@@ -408,25 +408,33 @@ int main(void) {
     assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_INFERNO));
     assert(EspMainMenuSkin_uiAccent() == 0xf926U);
     assert(EspMainMenuSkin_uiAccentDim() == 0x9002U);
-    /* INFERNO top ink is blush/pale rose, not the previous straw yellow.
-     * The same hue feeds the modal labels; copper and deep red stay exact. */
-    assert(EspMainMenuSkin_uiInk() == 0xfebcU);
+    /* INFERNO glyph ramp: warm pale red-pink, deep violet rose, unchanged
+     * red foot. Top ink is also used by modal labels; copper seams stay put. */
+    assert(EspMainMenuSkin_uiInk() == 0xfdb8U);
     {
-        static const uint16_t hot[5] = {0xfebcU,0xfebcU,0xd344U,0xd344U,0xc002U};
+        static const uint16_t hot[5] = {0xfdb8U,0xfdb8U,0xc252U,0xc252U,0xc002U};
         static const uint16_t hot7[7] = {
-            0xfebcU,0xfebcU,0xfebcU,0xd344U,0xd344U,0xc002U,0xc002U
+            0xfdb8U,0xfdb8U,0xfdb8U,0xc252U,0xc252U,0xc002U,0xc002U
         };
         static const uint16_t hot9[9] = {
-            0xfebcU,0xfebcU,0xfebcU,0xd344U,0xd344U,0xd344U,
+            0xfdb8U,0xfdb8U,0xfdb8U,0xc252U,0xc252U,0xc252U,
             0xc002U,0xc002U,0xc002U
         };
         const uint16_t rose = EspMainMenuSkin_letterTone(0, 9);
+        const uint16_t violet = EspMainMenuSkin_letterTone(4, 9);
+        const uint16_t foot = EspMainMenuSkin_letterTone(8, 9);
         const unsigned green = (rose >> 5) & 63U;
         const unsigned blue = rose & 31U;
         assert(((rose >> 11) & 31U) == 31U);
-        /* The original yellow was 0xff75: less blue than green/2.
-         * Pale pink must contain a substantial blue component. */
+        /* Less near-white than the previous blush, but still light pink. */
+        assert(green < ((0xfebcU >> 5) & 63U));
         assert(blue * 2U > green);
+        /* Midtone moves from bronze to a saturated deeper pink-violet. */
+        assert((violet & 31U) > (0xd344U & 31U));
+        assert(((violet >> 5) & 63U) < ((0xd344U >> 5) & 63U));
+        assert(((violet >> 11) & 31U) >= 20U);
+        /* The lower red band is explicitly untouched. */
+        assert(foot == 0xc002U);
         for (int row = 0; row < 5; ++row)
             assert(EspMainMenuSkin_letterTone(row, 5) == hot[row]);
         for (int row = 0; row < 7; ++row)
