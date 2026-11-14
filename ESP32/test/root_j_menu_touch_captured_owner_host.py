@@ -63,7 +63,13 @@ restore = [
         "EspNativeRootOwners_live()->doomCanvas, doomRpg, ST_MENU);",
     ),
 ]
-normalized = source
+# SDL-F29 adds header guards, including the second SDL.h import within
+# the consolidated tap wrapper. Undo *only* those site-local guards before
+# reconstructing the exact historic Root-J SHA; keep all functional mutations
+# and the 4096-cycle production dispatch check intact.
+from sdl_f29_native_main_menu_header_host import GUARD, COUNTS
+assert source.count(GUARD) == COUNTS["native_main_menu_touch.c"]
+normalized = source.replace(GUARD, "#include <SDL.h>\n")
 for old, new in restore:
     if normalized.count(old) != 1:
         raise AssertionError(f"Expected one Root-J replacement: {old[:80]!r}")

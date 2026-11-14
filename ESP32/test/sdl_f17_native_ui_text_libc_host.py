@@ -64,6 +64,15 @@ def git_blob(content: str) -> str:
 
 def restore(filename: str, current: str) -> str:
     original = current
+    # SDL-F29 guards all imports, including headers repeated by consolidated
+    # menu source chunks. Unwind those gates only in the history oracle before
+    # reconstructing the exact pre-F17 Git blob.
+    if filename in ("native_main_menu_actions.c",
+                    "native_main_menu_model.c",
+                    "native_main_menu_touch_layout.c"):
+        from sdl_f29_native_main_menu_header_host import GUARD, COUNTS
+        assert original.count(GUARD) == COUNTS[filename], filename
+        original = original.replace(GUARD, "#include <SDL.h>\n")
     if filename == "native_main_menu_actions.c":
         original = restore_pre_help_bottom_blue(original)
     if filename == "native_main_menu_model.c":
