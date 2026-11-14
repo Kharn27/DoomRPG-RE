@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """SDL-F30: verify the *actual compiler-produced* ESP32 header closure.
 
-F29 handled direct SDL.h imports. F30 refuses transitive SDL.h / SDL_Video.h
+F29 handled direct SDL.h imports. F30 refuses transitive SDL.h / SDL_Video.h / SDL_mixer.h / Z_Zip.h
 imports in any ESP32/src object across the three real PlatformIO profiles.
 Use each object's GCC .d dependency file rather than grep source text or
 infer from the absence of linked SDL functions. No firmware source is changed.
@@ -119,7 +119,7 @@ def self_test():
         sample.write_text("obj.o: src/main.cpp \\\n /tmp/ESP32/include/SDL.h \\\n /tmp/ESP32/include/SDL_Video.h\n")
         assert len(forbidden(dependencies(sample))) == 2
         sample.write_text("obj.o: src/main.cpp /tmp/ESP32/include/SDL_mixer.h "
-                          "/tmp/project/src/Z_Zip.h\\n")
+                          "/tmp/project/src/Z_Zip.h\n")
         assert len(forbidden(dependencies(sample))) == 2
         sample.write_text("obj.o: src/main.cpp /tmp/with\\ space/SDL.h\n")
         assert len(forbidden(dependencies(sample))) == 1
