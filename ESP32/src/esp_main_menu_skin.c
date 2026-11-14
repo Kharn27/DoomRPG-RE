@@ -35,6 +35,12 @@ static const SkinPalette palettes[3] = {
 #define INFERNO_PALE_ROSE 0xfe78U
 #define INFERNO_MID_RED 0xe30cU
 
+/* PHOSPHORE glyph and loading ink: pale green -> electric green -> turquoise.
+ * Electric midpoint stays byte-exact; no changes to metallic accent seams. */
+#define PHOSPHORE_PALE_GREEN     0xc7b8U
+#define PHOSPHORE_ELECTRIC_GREEN 0x87e0U
+#define PHOSPHORE_TURQUOISE      0x2638U
+
 /* The only mutable UI-theme state: one byte, never allocated on the heap.
  * Boot's native config loader applies it before the first MENU_MAIN paint. */
 static uint8_t selectedLetterTheme = ESP_MAIN_MENU_THEME_CLASSIC;
@@ -58,11 +64,11 @@ uint16_t EspMainMenuSkin_letterTone(int row, int rows) {
         return 0xc002U;
     }
     if (selectedLetterTheme == ESP_MAIN_MENU_THEME_PHOSPHORE) {
-        /* Pale mint -> acidic phosphor -> deep petrol green (RGB565).
-         * Face pixels only, no offset halo, allocations or assets. */
-        if (row < (rows + 2) / 3) return 0xdff6U;
-        if (row < (2 * rows + 2) / 3) return 0x87e0U;
-        return 0x246aU;
+        /* Pale green -> untouched electric green -> vivid turquoise.
+         * Only ink pixels change; no halo, allocations or new assets. */
+        if (row < (rows + 2) / 3) return PHOSPHORE_PALE_GREEN;
+        if (row < (2 * rows + 2) / 3) return PHOSPHORE_ELECTRIC_GREEN;
+        return PHOSPHORE_TURQUOISE;
     }
     /* CLASSIC: pale yellow -> golden bronze -> vivid red copper. */
     if (row < (rows + 2) / 3) return CLASSIC_PALE_YELLOW;
@@ -93,7 +99,9 @@ uint16_t EspMainMenuSkin_progressTone(int row, int rows) {
          CLASSIC_RED_COPPER, CLASSIC_RED_COPPER, 0xb225U},
         /* INFERNO: six genuinely red rows, not an amber face with a red seam. */
         {0xf946U, 0xf905U, 0xf804U, 0xd004U, 0xb003U, 0x9002U},
-        {0xdff6U, 0xbff3U, 0xa7f1U, 0x87e0U, 0x5e2aU, 0x246aU}
+        /* PHOSPHORE: pale green into electric lime, then teal/turquoise. */
+        {PHOSPHORE_PALE_GREEN, 0xbff3U, 0xa7f1U,
+         PHOSPHORE_ELECTRIC_GREEN, 0x4f12U, PHOSPHORE_TURQUOISE}
     };
     if (rows != 6 || row < 0 || row >= rows ||
         selectedLetterTheme > ESP_MAIN_MENU_THEME_PHOSPHORE) return 0U;
@@ -114,7 +122,7 @@ uint16_t EspMainMenuSkin_uiAccentDim(void) {
 }
 
 uint16_t EspMainMenuSkin_uiInk(void) {
-    static const uint16_t colors[3] = {CLASSIC_PALE_YELLOW, INFERNO_PALE_ROSE, 0xdff6U};
+    static const uint16_t colors[3] = {CLASSIC_PALE_YELLOW, INFERNO_PALE_ROSE, PHOSPHORE_PALE_GREEN};
     return colors[selectedLetterTheme];
 }
 
