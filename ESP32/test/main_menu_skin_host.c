@@ -410,14 +410,14 @@ int main(void) {
     assert(EspMainMenuSkin_uiAccentDim() == 0x9002U);
     /* INFERNO glyph ramp: warm pale red-pink, deep violet rose, unchanged
      * red foot. Top ink is also used by modal labels; copper seams stay put. */
-    assert(EspMainMenuSkin_uiInk() == 0xfdb8U);
+    assert(EspMainMenuSkin_uiInk() == 0xfd12U);
     {
-        static const uint16_t hot[5] = {0xfdb8U,0xfdb8U,0xc252U,0xc252U,0xc002U};
+        static const uint16_t hot[5] = {0xfd12U,0xfd12U,0xc252U,0xc252U,0xc002U};
         static const uint16_t hot7[7] = {
-            0xfdb8U,0xfdb8U,0xfdb8U,0xc252U,0xc252U,0xc002U,0xc002U
+            0xfd12U,0xfd12U,0xfd12U,0xc252U,0xc252U,0xc002U,0xc002U
         };
         static const uint16_t hot9[9] = {
-            0xfdb8U,0xfdb8U,0xfdb8U,0xc252U,0xc252U,0xc252U,
+            0xfd12U,0xfd12U,0xfd12U,0xc252U,0xc252U,0xc252U,
             0xc002U,0xc002U,0xc002U
         };
         const uint16_t rose = EspMainMenuSkin_letterTone(0, 9);
@@ -426,9 +426,11 @@ int main(void) {
         const unsigned green = (rose >> 5) & 63U;
         const unsigned blue = rose & 31U;
         assert(((rose >> 11) & 31U) == 31U);
-        /* Less near-white than the previous blush, but still light pink. */
-        assert(green < ((0xfebcU >> 5) & 63U));
-        assert(blue * 2U > green);
+        /* Previous pale pink was 0xfdb8: the new top is redder, not mauve.
+         * R remains full, while both G/B decrease and B drops below G/2. */
+        assert(green < ((0xfdb8U >> 5) & 63U));
+        assert(blue < (0xfdb8U & 31U));
+        assert(blue * 2U < green);
         /* Midtone moves from bronze to a saturated deeper pink-violet. */
         assert((violet & 31U) > (0xd344U & 31U));
         assert(((violet >> 5) & 63U) < ((0xd344U >> 5) & 63U));
