@@ -134,28 +134,33 @@ def self_test():
 
 
 
-def zip_header_boundary():
-    """Native root must not import the dead ZIP header and its SDL.h edge.
 
-    Inverting the one site-local guard must recover the exact pre-F30
-    engine_stubs.c Git blob; host and geometry still include the same ZIP ABI.
-    """
-    source = (PROJECT / "src/engine_stubs.c").read_bytes()
-    original_include = b'#include "Z_Zip.h"\n'
-    guard = (b"#if !defined(DOOMRPG_ESP32) || "
-             b"defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)\n"
-             + original_include + b"#endif\n")
-    assert source.count(guard) == 1, "native ZIP import not guarded exactly once"
-    restored = source.replace(guard, original_include)
+def restore_pre_f30_engine(current: str) -> str:
+    """Invert F30's single ZIP include guard for *historical* Git SHA tests."""
+    original_include = '#include "Z_Zip.h"\n'
+    guard = ("#if !defined(DOOMRPG_ESP32) || "
+             "defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)\n"
+             + original_include + "#endif\n")
+    assert current.count(guard) == 1, "native ZIP import not guarded exactly once"
+    restored = current.replace(guard, original_include)
+    raw = restored.encode("utf-8")
     blob = hashlib.sha1(
-        b"blob " + str(len(restored)).encode() + b"\0" + restored
+        b"blob " + str(len(raw)).encode() + b"\0" + raw
     ).hexdigest()
     assert blob == "fbec028fc332d4b1bd8bf516f1676757a74dd5ad", (
         "engine_stubs.c changed outside the ZIP include guard")
-    assert source.count(original_include) == 1
+    return restored
+
+
+def zip_header_boundary():
+    """Native root imports no dormant ZIP header, preserve legacy host ABI."""
+    current = (PROJECT / "src/engine_stubs.c").read_text(encoding="utf-8")
+    restored = restore_pre_f30_engine(current)
+    assert restored.count('#include "Z_Zip.h"') == 1
     assert '#include <SDL.h>' in (ROOT / "src/Z_Zip.h").read_text()
     print("SDL-F30 PASS engine_stubs.c: exact pre-F30 Git body, "
           "native ZIP/SDL import isolated; desktop/geometry preserved")
+
 
 def main():
     parser = argparse.ArgumentParser()
