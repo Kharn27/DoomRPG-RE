@@ -1,4 +1,6 @@
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 #include <SDL.h>
+#endif
 #include "esp_native_texture.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -1260,7 +1262,9 @@ DoomRPG_esp32MainMenuDispatchConfirmed(struct DoomRPG_s* doomRpgBase,
 
 
 /* Consolidated main-menu LOAD action. Keep action ownership in one TU. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 #include <SDL.h>
+#endif
 #include <stdint.h>
 #include <stdio.h>
 
