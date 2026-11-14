@@ -32,8 +32,8 @@ static const SkinPalette palettes[3] = {
 
 /* INFERNO text-only gradient: pale red-pink -> deeper violet rose -> Doom red.
  * The bottom glyph tone and all six red loading-track rows remain unchanged. */
-#define INFERNO_PALE_ROSE 0xfd12U
-#define INFERNO_DEEP_VIOLET_ROSE 0xc252U
+#define INFERNO_PALE_ROSE 0xfe78U
+#define INFERNO_DEEP_VIOLET_ROSE 0xd270U
 
 /* The only mutable UI-theme state: one byte, never allocated on the heap.
  * Boot's native config loader applies it before the first MENU_MAIN paint. */
