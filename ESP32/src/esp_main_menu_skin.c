@@ -17,17 +17,29 @@ typedef struct {
 /* Compact original Doom-like pixel-metal lettering. The reference is
  * ONE BIG WORD per control (not two tiny lines). The 5x9 masks use 108 bytes
  * of flash, no font atlas, texture, cache, mutable state or heap. */
+/* CLASSIC text ramp: lighter straw, more golden bronze, livelier red copper.
+ * One set of ROM constants feeds MENU_MAIN, modals and the loading bar. */
+#define CLASSIC_PALE_YELLOW 0xff34U
+#define CLASSIC_GOLD_BRONZE 0xf5aaU
+#define CLASSIC_RED_COPPER  0xd225U
+
 static const SkinPalette palettes[3] = {
     /*      base    steel   top     dark    groove  copper  ink     face  */
-    {0x0800U,0x4a48U,0x838dU,0x0820U,0x3123U,0xd344U,0x2103U,0xe4e9U},
+    {0x0800U,0x4a48U,0x838dU,0x0820U,0x3123U,0xd344U,0x2103U,CLASSIC_GOLD_BRONZE},
     {0x1000U,0x632bU,0xa4d1U,0x0800U,0x39a5U,0xf447U,0x3001U,0xffffU},
     {0x0800U,0x4248U,0x83ceU,0x0800U,0x2903U,0xdba5U,0x2800U,0xffffU}
 };
 
-/* Light pastel rose RGB565 (approx. #ffd6e6): the bright INFERNO ink,
- * replacing straw-yellow on menu glyph faces and related modal labels.
- * The bronze midtone, red foot and entirely red loading track stay put. */
-#define INFERNO_PALE_ROSE 0xfebcU
+/* INFERNO text-only gradient: pale red -> medium red -> dark Doom red.
+ * The bottom glyph tone and all six red loading-track rows remain unchanged. */
+#define INFERNO_PALE_ROSE 0xfe78U
+#define INFERNO_MID_RED 0xe30cU
+
+/* PHOSPHORE glyph and loading ink: pale green -> electric green -> turquoise.
+ * Electric midpoint stays byte-exact; no changes to metallic accent seams. */
+#define PHOSPHORE_PALE_GREEN     0xc7b8U
+#define PHOSPHORE_ELECTRIC_GREEN 0x87e0U
+#define PHOSPHORE_TURQUOISE      0x2638U
 
 /* The only mutable UI-theme state: one byte, never allocated on the heap.
  * Boot's native config loader applies it before the first MENU_MAIN paint. */
@@ -45,24 +57,24 @@ uint16_t EspMainMenuSkin_letterTone(int row, int rows) {
     if (rows != 5 && rows != 7 && rows != 9) return 0U;
     if (row < 0 || row >= rows) return 0U;
     if (selectedLetterTheme == ESP_MAIN_MENU_THEME_INFERNO) {
-        /* Pale blush rose -> copper/bronze -> deep Doom red.
-         * Pure glyph-face change: masks, shadows and geometry untouched. */
+        /* Pale warm red -> saturated medium red -> unchanged deep Doom red.
+         * Only glyph faces vary; masks, shadows and geometry are preserved. */
         if (row < (rows + 2) / 3) return INFERNO_PALE_ROSE;
-        if (row < (2 * rows + 2) / 3) return 0xd344U;
+        if (row < (2 * rows + 2) / 3) return INFERNO_MID_RED;
         return 0xc002U;
     }
     if (selectedLetterTheme == ESP_MAIN_MENU_THEME_PHOSPHORE) {
-        /* Pale mint -> acidic phosphor -> deep petrol green (RGB565).
-         * Face pixels only, no offset halo, allocations or assets. */
-        if (row < (rows + 2) / 3) return 0xdff6U;
-        if (row < (2 * rows + 2) / 3) return 0x87e0U;
-        return 0x246aU;
+        /* Pale green -> untouched electric green -> vivid turquoise.
+         * Only ink pixels change; no halo, allocations or new assets. */
+        if (row < (rows + 2) / 3) return PHOSPHORE_PALE_GREEN;
+        if (row < (2 * rows + 2) / 3) return PHOSPHORE_ELECTRIC_GREEN;
+        return PHOSPHORE_TURQUOISE;
     }
-    /* Exactly the former untouched MENU_MAIN idle tones. */
-    if (row < (rows + 2) / 3) return 0xf6afU;
+    /* CLASSIC: pale yellow -> golden bronze -> vivid red copper. */
+    if (row < (rows + 2) / 3) return CLASSIC_PALE_YELLOW;
     if (row < (2 * rows + 2) / 3)
         return palettes[ESP_MAIN_MENU_SKIN_IDLE].typeFace;
-    return 0xaa85U;
+    return CLASSIC_RED_COPPER;
 }
 
 uint16_t EspMainMenuSkin_accentTone(EspMainMenuSkinState state) {
@@ -80,13 +92,16 @@ uint16_t EspMainMenuSkin_accentTone(EspMainMenuSkinState state) {
 }
 
 uint16_t EspMainMenuSkin_progressTone(int row, int rows) {
-    /* The existing LOADING fill is exactly six logical rows. Keep each
-     * CLASSIC pixel unchanged; alternate themes recolor only filled pixels. */
+    /* The LOADING fill is exactly six logical rows. Theme colors apply
+     * only to filled pixels; no track geometry or ownership changes. */
     static const uint16_t gradients[3][6] = {
-        {0xf6afU, 0xf447U, 0xf447U, 0xd344U, 0xd344U, 0x9243U},
+        {CLASSIC_PALE_YELLOW, CLASSIC_GOLD_BRONZE, CLASSIC_GOLD_BRONZE,
+         CLASSIC_RED_COPPER, CLASSIC_RED_COPPER, 0xb225U},
         /* INFERNO: six genuinely red rows, not an amber face with a red seam. */
         {0xf946U, 0xf905U, 0xf804U, 0xd004U, 0xb003U, 0x9002U},
-        {0xdff6U, 0xbff3U, 0xa7f1U, 0x87e0U, 0x5e2aU, 0x246aU}
+        /* PHOSPHORE: pale green into electric lime, then teal/turquoise. */
+        {PHOSPHORE_PALE_GREEN, 0xbff3U, 0xa7f1U,
+         PHOSPHORE_ELECTRIC_GREEN, 0x4f12U, PHOSPHORE_TURQUOISE}
     };
     if (rows != 6 || row < 0 || row >= rows ||
         selectedLetterTheme > ESP_MAIN_MENU_THEME_PHOSPHORE) return 0U;
@@ -94,8 +109,8 @@ uint16_t EspMainMenuSkin_progressTone(int row, int rows) {
 }
 
 /* One shared, immutable palette for native modal surfaces. CLASSIC keeps
- * its historical HUB amber and warm ivory pixels; danger, health and armor
- * remain semantic colors at their call sites. No owner or new framebuffer. */
+ * historical HUB accent seams while using the new pale yellow text ink;
+ * danger, health and armor remain semantic colors at their call sites. */
 uint16_t EspMainMenuSkin_uiAccent(void) {
     static const uint16_t colors[3] = {0xfd20U, 0xf926U, 0x87e0U};
     return colors[selectedLetterTheme];
@@ -107,7 +122,7 @@ uint16_t EspMainMenuSkin_uiAccentDim(void) {
 }
 
 uint16_t EspMainMenuSkin_uiInk(void) {
-    static const uint16_t colors[3] = {0xf6afU, INFERNO_PALE_ROSE, 0xdff6U};
+    static const uint16_t colors[3] = {CLASSIC_PALE_YELLOW, INFERNO_PALE_ROSE, PHOSPHORE_PALE_GREEN};
     return colors[selectedLetterTheme];
 }
 

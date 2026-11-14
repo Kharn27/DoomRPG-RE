@@ -33,12 +33,12 @@ uint16_t EspMainMenuSkin_letterTone(int row, int rows);
 uint16_t EspMainMenuSkin_accentTone(EspMainMenuSkinState state);
 
 /* Six-row loading progress ink, independently colored by the selected theme.
- * CLASSIC stays byte-identical to the original amber gauge. Bounds checked,
- * ROM-only (no cache or extra framebuffer). */
+ * CLASSIC follows its refreshed yellow/bronze/red-copper ramp. Bounds
+ * checked, ROM-only (no cache or extra framebuffer). */
 uint16_t EspMainMenuSkin_progressTone(int row, int rows);
 
 /* Shared 160x120 native-menu accents for HUB/SYSTEM/fullscreen reports.
- * CLASSIC returns the historical amber, muted amber and ivory ink;
+ * CLASSIC keeps historical amber accents with lighter yellow text ink;
  * INFERNO hot red, PHOSPHORE mint. Pure, allocation-free theme reads.
  * Gameplay health/armor and danger semantics are not palette-swapped. */
 uint16_t EspMainMenuSkin_uiAccent(void);
