@@ -410,14 +410,14 @@ int main(void) {
     assert(EspMainMenuSkin_uiAccentDim() == 0x9002U);
     /* INFERNO glyph ramp: warm pale red-pink, deep violet rose, unchanged
      * red foot. Top ink is also used by modal labels; copper seams stay put. */
-    assert(EspMainMenuSkin_uiInk() == 0xfd12U);
+    assert(EspMainMenuSkin_uiInk() == 0xfe78U);
     {
-        static const uint16_t hot[5] = {0xfd12U,0xfd12U,0xc252U,0xc252U,0xc002U};
+        static const uint16_t hot[5] = {0xfe78U,0xfe78U,0xd270U,0xd270U,0xc002U};
         static const uint16_t hot7[7] = {
-            0xfd12U,0xfd12U,0xfd12U,0xc252U,0xc252U,0xc002U,0xc002U
+            0xfe78U,0xfe78U,0xfe78U,0xd270U,0xd270U,0xc002U,0xc002U
         };
         static const uint16_t hot9[9] = {
-            0xfd12U,0xfd12U,0xfd12U,0xc252U,0xc252U,0xc252U,
+            0xfe78U,0xfe78U,0xfe78U,0xd270U,0xd270U,0xd270U,
             0xc002U,0xc002U,0xc002U
         };
         const uint16_t rose = EspMainMenuSkin_letterTone(0, 9);
@@ -426,15 +426,15 @@ int main(void) {
         const unsigned green = (rose >> 5) & 63U;
         const unsigned blue = rose & 31U;
         assert(((rose >> 11) & 31U) == 31U);
-        /* Previous pale pink was 0xfdb8: the new top is redder, not mauve.
-         * R remains full, while both G/B decrease and B drops below G/2. */
-        assert(green < ((0xfdb8U >> 5) & 63U));
-        assert(blue < (0xfdb8U & 31U));
+        /* Lighter than the last pale-red candidate, but still red-biased.
+         * R stays full, G and B rise and blue stays below half green. */
+        assert(green > ((0xfd12U >> 5) & 63U));
+        assert(blue > (0xfd12U & 31U));
         assert(blue * 2U < green);
-        /* Midtone moves from bronze to a saturated deeper pink-violet. */
-        assert((violet & 31U) > (0xd344U & 31U));
+        /* Warmer red-raspberry middle than the previous purple rose. */
+        assert(((violet >> 11) & 31U) > ((0xc252U >> 11) & 31U));
+        assert((violet & 31U) < (0xc252U & 31U));
         assert(((violet >> 5) & 63U) < ((0xd344U >> 5) & 63U));
-        assert(((violet >> 11) & 31U) >= 20U);
         /* The lower red band is explicitly untouched. */
         assert(foot == 0xc002U);
         for (int row = 0; row < 5; ++row)
