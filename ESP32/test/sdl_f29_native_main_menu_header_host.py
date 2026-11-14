@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """SDL-F29: seven real native main-menu C modules do not import SDL.h in
-firmware. Reconstruct exact pre-F28 Git source bodies and compile the real
+firmware. Reconstruct exact pre-F29 Git source bodies and compile the real
 C11 DoomRPG/Render headers with native, host and geometry SDL boundaries.
 """
 import argparse
@@ -126,7 +126,7 @@ def compiled_profile(profile: str) -> None:
     compiled = {Path(x["file"]).name for x in
                 json.loads(db.read_text(encoding="utf-8"))}
     assert all(name in compiled for name in BEFORE), (
-        f"{profile}: F28 native main-menu source not compiled")
+        f"{profile}: F29 native main-menu source not compiled")
     assert "esp32_sdl.cpp" not in compiled, profile
     assert "esp32_bmp.cpp" not in compiled, profile
     print(f"SDL-F29 PASS {profile}: 7 main-menu TUs compiled; "
