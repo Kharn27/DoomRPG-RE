@@ -1,7 +1,13 @@
 #ifndef SOUND_H__
 #define SOUND_H__
 
+/* ESP32-native keeps only an opaque sound pointer; desktop and geometry
+ * oracles retain the original SDL_mixer.h ABI unchanged. */
+#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
+typedef struct Mix_Chunk Mix_Chunk;
+#else
 #include <SDL_mixer.h>
+#endif
 
 struct DoomRPG_s;
 struct Image_s;

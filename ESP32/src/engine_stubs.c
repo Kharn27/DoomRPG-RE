@@ -15,7 +15,9 @@
 #include "Render.h"
 #include "Sound.h"
 #include "Z_Zone.h"
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 #include "Z_Zip.h"
+#endif
 #include "engine_metrics.h"
 #include "esp_native_intro_state.h"
 #include "native_story_fit.h"
