@@ -30,10 +30,10 @@ static const SkinPalette palettes[3] = {
     {0x0800U,0x4248U,0x83ceU,0x0800U,0x2903U,0xdba5U,0x2800U,0xffffU}
 };
 
-/* INFERNO text-only gradient: pale red-pink -> deeper violet rose -> Doom red.
+/* INFERNO text-only gradient: pale red -> medium red -> dark Doom red.
  * The bottom glyph tone and all six red loading-track rows remain unchanged. */
 #define INFERNO_PALE_ROSE 0xfe78U
-#define INFERNO_DEEP_VIOLET_ROSE 0xd270U
+#define INFERNO_MID_RED 0xe30cU
 
 /* The only mutable UI-theme state: one byte, never allocated on the heap.
  * Boot's native config loader applies it before the first MENU_MAIN paint. */
@@ -51,10 +51,10 @@ uint16_t EspMainMenuSkin_letterTone(int row, int rows) {
     if (rows != 5 && rows != 7 && rows != 9) return 0U;
     if (row < 0 || row >= rows) return 0U;
     if (selectedLetterTheme == ESP_MAIN_MENU_THEME_INFERNO) {
-        /* Red-pink blush -> dark violet rose -> unchanged deep Doom red.
+        /* Pale warm red -> saturated medium red -> unchanged deep Doom red.
          * Only glyph faces vary; masks, shadows and geometry are preserved. */
         if (row < (rows + 2) / 3) return INFERNO_PALE_ROSE;
-        if (row < (2 * rows + 2) / 3) return INFERNO_DEEP_VIOLET_ROSE;
+        if (row < (2 * rows + 2) / 3) return INFERNO_MID_RED;
         return 0xc002U;
     }
     if (selectedLetterTheme == ESP_MAIN_MENU_THEME_PHOSPHORE) {
