@@ -408,20 +408,20 @@ int main(void) {
     assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_INFERNO));
     assert(EspMainMenuSkin_uiAccent() == 0xf926U);
     assert(EspMainMenuSkin_uiAccentDim() == 0x9002U);
-    /* INFERNO glyph ramp: warm pale red-pink, deep violet rose, unchanged
-     * red foot. Top ink is also used by modal labels; copper seams stay put. */
+    /* INFERNO glyph ramp: warm pale red, true middle red, unchanged
+     * deep red foot. Modal labels reuse the top; metallic seams stay put. */
     assert(EspMainMenuSkin_uiInk() == 0xfe78U);
     {
-        static const uint16_t hot[5] = {0xfe78U,0xfe78U,0xd270U,0xd270U,0xc002U};
+        static const uint16_t hot[5] = {0xfe78U,0xfe78U,0xe30cU,0xe30cU,0xc002U};
         static const uint16_t hot7[7] = {
-            0xfe78U,0xfe78U,0xfe78U,0xd270U,0xd270U,0xc002U,0xc002U
+            0xfe78U,0xfe78U,0xfe78U,0xe30cU,0xe30cU,0xc002U,0xc002U
         };
         static const uint16_t hot9[9] = {
-            0xfe78U,0xfe78U,0xfe78U,0xd270U,0xd270U,0xd270U,
+            0xfe78U,0xfe78U,0xfe78U,0xe30cU,0xe30cU,0xe30cU,
             0xc002U,0xc002U,0xc002U
         };
         const uint16_t rose = EspMainMenuSkin_letterTone(0, 9);
-        const uint16_t violet = EspMainMenuSkin_letterTone(4, 9);
+        const uint16_t middleRed = EspMainMenuSkin_letterTone(4, 9);
         const uint16_t foot = EspMainMenuSkin_letterTone(8, 9);
         const unsigned green = (rose >> 5) & 63U;
         const unsigned blue = rose & 31U;
@@ -431,10 +431,17 @@ int main(void) {
         assert(green > ((0xfd12U >> 5) & 63U));
         assert(blue > (0xfd12U & 31U));
         assert(blue * 2U < green);
-        /* Warmer red-raspberry middle than the previous purple rose. */
-        assert(((violet >> 11) & 31U) > ((0xc252U >> 11) & 31U));
-        assert((violet & 31U) < (0xc252U & 31U));
-        assert(((violet >> 5) & 63U) < ((0xd344U >> 5) & 63U));
+        /* Middle must lie strictly between pale-red top and dark-red foot
+         * in every RGB565 channel: unmistakable red, not purple/pink. */
+        assert(((middleRed >> 11) & 31U) < ((rose >> 11) & 31U));
+        assert(((middleRed >> 11) & 31U) > ((foot >> 11) & 31U));
+        assert(((middleRed >> 5) & 63U) < ((rose >> 5) & 63U));
+        assert(((middleRed >> 5) & 63U) > ((foot >> 5) & 63U));
+        assert((middleRed & 31U) < (rose & 31U));
+        assert((middleRed & 31U) > (foot & 31U));
+        /* Less blue, more red than the previous raspberry candidate. */
+        assert(((middleRed >> 11) & 31U) > ((0xd270U >> 11) & 31U));
+        assert((middleRed & 31U) < (0xd270U & 31U));
         /* The lower red band is explicitly untouched. */
         assert(foot == 0xc002U);
         for (int row = 0; row < 5; ++row)
