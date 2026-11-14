@@ -360,12 +360,12 @@ int main(void) {
     /* Exact menu and LOADING face bands, no halo or second text pass. */
     {
         static const uint16_t menu[9] = {
-            0xf6afU, 0xf6afU, 0xf6afU,
-            0xe4e9U, 0xe4e9U, 0xe4e9U,
-            0xaa85U, 0xaa85U, 0xaa85U
+            0xff34U, 0xff34U, 0xff34U,
+            0xf5aaU, 0xf5aaU, 0xf5aaU,
+            0xd225U, 0xd225U, 0xd225U
         };
         static const uint16_t loading[5] = {
-            0xf6afU, 0xf6afU, 0xe4e9U, 0xe4e9U, 0xaa85U
+            0xff34U, 0xff34U, 0xf5aaU, 0xf5aaU, 0xd225U
         };
         int row;
         for (row = 0; row < 9; ++row)
@@ -377,11 +377,11 @@ int main(void) {
         assert(EspMainMenuSkin_letterTone(9, 9) == 0U);
         assert(EspMainMenuSkin_letterTone(0, 0) == 0U);
         assert(EspMainMenuSkin_letterTone(0, 6) == 0U);
-        assert(EspMainMenuSkin_letterTone(0, 7) == 0xf6afU);
-        assert(EspMainMenuSkin_letterTone(3, 7) == 0xe4e9U);
-        assert(EspMainMenuSkin_letterTone(6, 7) == 0xaa85U);
+        assert(EspMainMenuSkin_letterTone(0, 7) == 0xff34U);
+        assert(EspMainMenuSkin_letterTone(3, 7) == 0xf5aaU);
+        assert(EspMainMenuSkin_letterTone(6, 7) == 0xd225U);
         static const uint16_t classicFill[6] = {
-            0xf6afU,0xf447U,0xf447U,0xd344U,0xd344U,0x9243U
+            0xff34U,0xf5aaU,0xf5aaU,0xd225U,0xd225U,0xb225U
         };
         for (int y=0;y<6;++y)
             assert(EspMainMenuSkin_progressTone(y,6) == classicFill[y]);
@@ -392,29 +392,58 @@ int main(void) {
     assert(EspMainMenuSkin_getTheme() == ESP_MAIN_MENU_THEME_CLASSIC);
     assert(EspMainMenuSkin_uiAccent() == 0xfd20U);
     assert(EspMainMenuSkin_uiAccentDim() == 0x7a80U);
-    assert(EspMainMenuSkin_uiInk() == 0xf6afU);
+    assert(EspMainMenuSkin_uiInk() == 0xff34U);
+    /* Directional RGB565 proof against the former CLASSIC tones:
+     * yellow becomes paler, bronze more golden, airain visibly redder. */
+    {
+        const uint16_t yellow = EspMainMenuSkin_letterTone(0, 9);
+        const uint16_t bronze = EspMainMenuSkin_letterTone(4, 9);
+        const uint16_t copper = EspMainMenuSkin_letterTone(8, 9);
+        assert((yellow & 31U) > (0xf6afU & 31U));
+        assert(((yellow >> 5) & 63U) > ((0xf6afU >> 5) & 63U));
+        assert(((bronze >> 5) & 63U) > ((0xe4e9U >> 5) & 63U));
+        assert(((copper >> 11) & 31U) > ((0xaa85U >> 11) & 31U));
+        assert(((copper >> 5) & 63U) < ((0xaa85U >> 5) & 63U));
+    }
     assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_INFERNO));
     assert(EspMainMenuSkin_uiAccent() == 0xf926U);
     assert(EspMainMenuSkin_uiAccentDim() == 0x9002U);
-    /* INFERNO top ink is blush/pale rose, not the previous straw yellow.
-     * The same hue feeds the modal labels; copper and deep red stay exact. */
-    assert(EspMainMenuSkin_uiInk() == 0xfebcU);
+    /* INFERNO glyph ramp: warm pale red, true middle red, unchanged
+     * deep red foot. Modal labels reuse the top; metallic seams stay put. */
+    assert(EspMainMenuSkin_uiInk() == 0xfe78U);
     {
-        static const uint16_t hot[5] = {0xfebcU,0xfebcU,0xd344U,0xd344U,0xc002U};
+        static const uint16_t hot[5] = {0xfe78U,0xfe78U,0xe30cU,0xe30cU,0xc002U};
         static const uint16_t hot7[7] = {
-            0xfebcU,0xfebcU,0xfebcU,0xd344U,0xd344U,0xc002U,0xc002U
+            0xfe78U,0xfe78U,0xfe78U,0xe30cU,0xe30cU,0xc002U,0xc002U
         };
         static const uint16_t hot9[9] = {
-            0xfebcU,0xfebcU,0xfebcU,0xd344U,0xd344U,0xd344U,
+            0xfe78U,0xfe78U,0xfe78U,0xe30cU,0xe30cU,0xe30cU,
             0xc002U,0xc002U,0xc002U
         };
         const uint16_t rose = EspMainMenuSkin_letterTone(0, 9);
+        const uint16_t middleRed = EspMainMenuSkin_letterTone(4, 9);
+        const uint16_t foot = EspMainMenuSkin_letterTone(8, 9);
         const unsigned green = (rose >> 5) & 63U;
         const unsigned blue = rose & 31U;
         assert(((rose >> 11) & 31U) == 31U);
-        /* The original yellow was 0xff75: less blue than green/2.
-         * Pale pink must contain a substantial blue component. */
-        assert(blue * 2U > green);
+        /* Lighter than the last pale-red candidate, but still red-biased.
+         * R stays full, G and B rise and blue stays below half green. */
+        assert(green > ((0xfd12U >> 5) & 63U));
+        assert(blue > (0xfd12U & 31U));
+        assert(blue * 2U < green);
+        /* Middle must lie strictly between pale-red top and dark-red foot
+         * in every RGB565 channel: unmistakable red, not purple/pink. */
+        assert(((middleRed >> 11) & 31U) < ((rose >> 11) & 31U));
+        assert(((middleRed >> 11) & 31U) > ((foot >> 11) & 31U));
+        assert(((middleRed >> 5) & 63U) < ((rose >> 5) & 63U));
+        assert(((middleRed >> 5) & 63U) > ((foot >> 5) & 63U));
+        assert((middleRed & 31U) < (rose & 31U));
+        assert((middleRed & 31U) > (foot & 31U));
+        /* Less blue, more red than the previous raspberry candidate. */
+        assert(((middleRed >> 11) & 31U) > ((0xd270U >> 11) & 31U));
+        assert((middleRed & 31U) < (0xd270U & 31U));
+        /* The lower red band is explicitly untouched. */
+        assert(foot == 0xc002U);
         for (int row = 0; row < 5; ++row)
             assert(EspMainMenuSkin_letterTone(row, 5) == hot[row]);
         for (int row = 0; row < 7; ++row)
@@ -435,19 +464,45 @@ int main(void) {
         }
     }
     assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_PHOSPHORE));
+    /* Electric green accents are intentionally untouched. */
     assert(EspMainMenuSkin_uiAccent() == 0x87e0U);
     assert(EspMainMenuSkin_uiAccentDim() == 0x246aU);
-    assert(EspMainMenuSkin_uiInk() == 0xdff6U);
+    assert(EspMainMenuSkin_uiInk() == 0xc7b8U);
     {
-        static const uint16_t phosphor[9] = {
-            0xdff6U,0xdff6U,0xdff6U,
-            0x87e0U,0x87e0U,0x87e0U,
-            0x246aU,0x246aU,0x246aU
+        static const uint16_t phosphor5[5] = {
+            0xc7b8U,0xc7b8U,0x87e0U,0x87e0U,0x2638U
         };
+        static const uint16_t phosphor7[7] = {
+            0xc7b8U,0xc7b8U,0xc7b8U,0x87e0U,0x87e0U,0x2638U,0x2638U
+        };
+        static const uint16_t phosphor9[9] = {
+            0xc7b8U,0xc7b8U,0xc7b8U,
+            0x87e0U,0x87e0U,0x87e0U,
+            0x2638U,0x2638U,0x2638U
+        };
+        const uint16_t pale = EspMainMenuSkin_letterTone(0, 9);
+        const uint16_t electric = EspMainMenuSkin_letterTone(4, 9);
+        const uint16_t turquoise = EspMainMenuSkin_letterTone(8, 9);
+        const unsigned tealGreen = (turquoise >> 5) & 63U;
+        const unsigned tealBlue = turquoise & 31U;
+        /* Pale green: green dominant, R/B nearly balanced; old top yellowish. */
+        assert(((pale >> 5) & 63U) > ((pale >> 11) & 31U));
+        assert(((pale >> 11) & 31U) == (pale & 31U));
+        /* Middle remains the original exact electric phosphor green. */
+        assert(electric == 0x87e0U);
+        /* Turquoise: intense near-equal 8-bit green/blue, not dark forest green. */
+        assert(tealGreen > ((0x246aU >> 5) & 63U));
+        assert(tealBlue > (0x246aU & 31U));
+        assert(tealGreen * 31U >= tealBlue * 63U);
+        assert(tealGreen * 31U - tealBlue * 63U < 63U);
+        for (int row = 0; row < 5; ++row)
+            assert(EspMainMenuSkin_letterTone(row, 5) == phosphor5[row]);
+        for (int row = 0; row < 7; ++row)
+            assert(EspMainMenuSkin_letterTone(row, 7) == phosphor7[row]);
         for (int row = 0; row < 9; ++row)
-            assert(EspMainMenuSkin_letterTone(row, 9) == phosphor[row]);
+            assert(EspMainMenuSkin_letterTone(row, 9) == phosphor9[row]);
         static const uint16_t greenFill[6] = {
-            0xdff6U,0xbff3U,0xa7f1U,0x87e0U,0x5e2aU,0x246aU
+            0xc7b8U,0xbff3U,0xa7f1U,0x87e0U,0x4f12U,0x2638U
         };
         for (int y=0;y<6;++y)
             assert(EspMainMenuSkin_progressTone(y,6) == greenFill[y]);
@@ -478,7 +533,7 @@ int main(void) {
                 const int textY = t + 8 +
                     (state == ESP_MAIN_MENU_SKIN_CONFIRM ? 1 : 0);
                 const uint16_t topColor =
-                    state == ESP_MAIN_MENU_SKIN_IDLE ? 0xf6afU : 0xffffU;
+                    state == ESP_MAIN_MENU_SKIN_IDLE ? 0xff34U : 0xffffU;
                 assert(fb[t * W + l + 10] ==
                        (state == ESP_MAIN_MENU_SKIN_IDLE ? 0x838dU :
                         state == ESP_MAIN_MENU_SKIN_ARMED ? 0xa4d1U : 0x83ceU));
@@ -493,8 +548,8 @@ int main(void) {
                     for (int xx = l + 6; xx <= r - 6; ++xx) {
                         const uint16_t pixel = fb[yy * W + xx];
                         const int isFace = state == ESP_MAIN_MENU_SKIN_IDLE
-                            ? pixel == 0xf6afU || pixel == 0xe4e9U ||
-                              pixel == 0xaa85U
+                            ? pixel == 0xff34U || pixel == 0xf5aaU ||
+                              pixel == 0xd225U
                             : pixel == 0xffffU;
                         if (isFace) {
                             ++faces;

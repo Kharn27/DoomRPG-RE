@@ -119,7 +119,13 @@ assert 'word(fb, stride, l, t, r, b, first, p,' in skin
 assert "glyphs[][9]" in skin
 assert "length * 6 - 1" in skin
 assert "row < 9" in skin and "bit < 5" in skin
-assert "0xf6afU" in skin and "0xe4e9U" in skin and "0xaa85U" in skin
+# Intentional CLASSIC tint update: preserve the shared nine-row glyph ramp,
+# but assert the current yellow/bronze/airain ROM values rather than old ink.
+assert "#define CLASSIC_PALE_YELLOW 0xff34U" in skin
+assert "#define CLASSIC_GOLD_BRONZE 0xf5aaU" in skin
+assert "#define CLASSIC_RED_COPPER  0xd225U" in skin
+assert "return CLASSIC_PALE_YELLOW;" in skin
+assert "return CLASSIC_RED_COPPER;" in skin
 assert "0xffffU" in skin and "p->ink" in skin
 assert "for (pass = armed ? 0 : 1; pass < 2; ++pass)" in skin
 assert "EspMainMenuSkin_letterTone(row, 9)" in skin
