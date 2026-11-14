@@ -19,7 +19,7 @@ PROJECT = ROOT / "ESP32"
 OWNERS = PROJECT / "src"
 PROFILES = ("esp32-cyd", "esp32-cyd-bringup", "esp32-cyd-trace")
 EXCLUDED = {"esp32_sdl.cpp", "esp32_bmp.cpp"}
-FORBIDDEN_HEADERS = {"SDL.h", "SDL_Video.h"}
+FORBIDDEN_HEADERS = {"SDL.h", "SDL_Video.h", "SDL_mixer.h", "Z_Zip.h"}
 
 
 def object_for(entry):
@@ -106,7 +106,7 @@ def audit_profile(profile):
             f"{source.name}: {hits} ({dep})")
         witnesses += 1
     print(f"SDL-F30 PASS {profile}: {len(sources)} actual ESP32/src TUs, "
-          f"{witnesses} compiler .d closures, 0 SDL.h/SDL_Video.h; "
+          f"{witnesses} compiler .d closures, 0 SDL.h/SDL_Video.h/SDL_mixer.h/Z_Zip.h; "
           "legacy shim/BMP excluded, three-profile ELF audit remains")
 
 
@@ -114,9 +114,12 @@ def self_test():
     with tempfile.TemporaryDirectory(prefix="sdl-f30-dep-") as tmp:
         root = Path(tmp)
         sample = root / "main.cpp.o.d"
-        sample.write_text("obj.o: src/main.cpp \\\n /tmp/ESP32/include/Sound.h \\\n /tmp/ESP32/include/SDL_mixer.h\n")
+        sample.write_text("obj.o: src/main.cpp \\\n /tmp/ESP32/include/Sound.h \\\n /tmp/ESP32/include/esp_native_texture.h\n")
         assert not forbidden(dependencies(sample))
         sample.write_text("obj.o: src/main.cpp \\\n /tmp/ESP32/include/SDL.h \\\n /tmp/ESP32/include/SDL_Video.h\n")
+        assert len(forbidden(dependencies(sample))) == 2
+        sample.write_text("obj.o: src/main.cpp /tmp/ESP32/include/SDL_mixer.h "
+                          "/tmp/project/src/Z_Zip.h\\n")
         assert len(forbidden(dependencies(sample))) == 2
         sample.write_text("obj.o: src/main.cpp /tmp/with\\ space/SDL.h\n")
         assert len(forbidden(dependencies(sample))) == 1
@@ -129,8 +132,8 @@ def self_test():
         assert dependency_for(object_for(entry)) == sample
         entry["arguments"] = ["cc", "-c", "src/main.cpp", "-omain.cpp.o"]
         assert object_for(entry) == root / "main.cpp.o"
-    print("SDL-F30 PASS adversarial .d parsing: clean opaque mixer, nested "
-          "SDL.h, SDL_Video.h, escaped paths, -MP and compile object mapping")
+    print("SDL-F31 PASS adversarial .d parsing: clean native header, nested "
+          "SDL.h, SDL_Video.h, mixer/ZIP, escaped paths, -MP and compile object mapping")
 
 
 
