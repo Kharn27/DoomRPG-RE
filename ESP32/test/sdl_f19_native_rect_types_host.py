@@ -34,6 +34,15 @@ for name, (sha, count) in BASELINE.items():
     assert len(re.findall(r"\bEspNativeRect\b", text)) == count, name
     assert not re.search(r"\bSDL_Rect\b", text), name
     assert "#include <SDL.h>" in text, (name, "legacy header still required")
+    # SDL-F29 isolates the menu's direct SDL.h imports for production only.
+    # Recover historic imports (including consolidated TU chunks) in this
+    # parity oracle before comparing with the immutable pre-F19 Git blobs.
+    if name in ("native_main_menu_actions.c",
+                "native_main_menu_options_action.c",
+                "native_main_menu_touch_layout.c"):
+        from sdl_f29_native_main_menu_header_host import GUARD, COUNTS
+        assert text.count(GUARD) == COUNTS[name], name
+        text = text.replace(GUARD, "#include <SDL.h>\n")
     # F21 later changed the native-only Zone calling ABI in engine_stubs.
     # Undo it first so the F19 Git blob is still the original historic source.
     if name == "engine_stubs.c":

@@ -1,4 +1,6 @@
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 #include <SDL.h>
+#endif
 #include "esp_native_root_state.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -362,7 +364,9 @@ void DoomRPG_esp32MainMenuTouchOnTap(int16_t screenX,
 
 
 /* Consolidated main-menu tap gate / PlatformInput wrapper. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 #include <SDL.h>
+#endif
 #include <stdint.h>
 #include <stdio.h>
 
