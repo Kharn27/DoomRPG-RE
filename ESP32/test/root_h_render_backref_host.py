@@ -55,7 +55,7 @@ with tempfile.TemporaryDirectory(prefix="root-h-render-") as directory:
     ):
         result = subprocess.run(
             [cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-fsyntax-only",
-             "-IESP32/include", "-Isrc", *flags, str(probe)],
+             "-IESP32/test/oracles", "-IESP32/include", "-Isrc", *flags, str(probe)],
             cwd=ROOT, capture_output=True, text=True)
         assert (result.returncode == 0) == visible, (name, result.stderr)
         if not visible:

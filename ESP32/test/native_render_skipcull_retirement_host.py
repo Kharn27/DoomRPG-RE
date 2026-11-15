@@ -66,7 +66,7 @@ with tempfile.TemporaryDirectory(prefix="doomrpg-skipcull-host-") as tmp:
     path = Path(tmp) / "probe.c"
     path.write_text(probe, encoding="utf-8")
     base = [cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-fsyntax-only",
-            "-IESP32/include", "-Isrc"]
+            "-IESP32/test/oracles", "-IESP32/include", "-Isrc"]
     profiles = (
         ("normal", ["-DDOOMRPG_ESP32=1"], False),
         ("bringup", ["-DDOOMRPG_ESP32=1", "-DDOOMRPG_ESP32_BRINGUP_PROBES=1"], False),

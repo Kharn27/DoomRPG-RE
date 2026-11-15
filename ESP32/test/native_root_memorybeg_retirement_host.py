@@ -52,7 +52,7 @@ with tempfile.TemporaryDirectory(prefix="root-memorybeg-abi-") as tmp:
         '#include <SDL.h>\n#include "DoomRPG.h"\n'
         'int root_metric(DoomRPG_t* r) { return r->memoryBeg; }\n')
     cmd = [cc, "-std=c11", "-Wall", "-Wextra", "-Werror",
-           "-fsyntax-only", "-IESP32/include", "-Isrc"]
+           "-fsyntax-only", "-IESP32/test/oracles", "-IESP32/include", "-Isrc"]
     for name, flags, expected in (
         ("normal", ["-DDOOMRPG_ESP32=1"], False),
         ("bringup", ["-DDOOMRPG_ESP32=1",

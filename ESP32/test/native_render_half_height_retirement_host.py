@@ -84,7 +84,7 @@ with tempfile.TemporaryDirectory(prefix="doomrpg-half-height-") as tmp:
     path = Path(tmp) / "probe.c"
     path.write_text(probe, encoding="utf-8")
     flags = [cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-fsyntax-only",
-             "-IESP32/include", "-Isrc"]
+             "-IESP32/test/oracles", "-IESP32/include", "-Isrc"]
     for name, extra, expect_ok in (
         ("normal", ["-DDOOMRPG_ESP32=1"], False),
         ("bringup", ["-DDOOMRPG_ESP32=1", "-DDOOMRPG_ESP32_BRINGUP_PROBES=1"], False),
@@ -101,7 +101,7 @@ with tempfile.TemporaryDirectory(prefix="doomrpg-half-height-") as tmp:
     binary = Path(tmp) / "parity"
     source.write_text(parity, encoding="utf-8")
     subprocess.run([cc, "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
-                    "-IESP32/include", str(source), "-o", str(binary)],
+                    "-IESP32/test/oracles", "-IESP32/include", str(source), "-o", str(binary)],
                    cwd=ROOT, check=True)
     subprocess.run([str(binary)], check=True)
 

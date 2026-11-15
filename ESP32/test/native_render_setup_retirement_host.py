@@ -68,7 +68,7 @@ with tempfile.TemporaryDirectory(prefix="native-plane-color-abi-") as tmp:
     p = Path(tmp) / "probe.c"
     p.write_text(probe, encoding="utf-8")
     cc = [shutil.which("cc") or "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
-          "-fsyntax-only", "-IESP32/include", "-Isrc"]
+          "-fsyntax-only", "-IESP32/test/oracles", "-IESP32/include", "-Isrc"]
     for profile, defs, valid in (
         ("normal", ["-DDOOMRPG_ESP32=1"], False),
         ("bringup", ["-DDOOMRPG_ESP32=1", "-DDOOMRPG_ESP32_BRINGUP_PROBES=1"], False),

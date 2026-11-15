@@ -41,7 +41,7 @@ with tempfile.TemporaryDirectory(prefix="canvas-plane-abi-") as tmp:
         '#include <SDL.h>\n#include "DoomRPG.h"\n#include "DoomCanvas.h"\n'
         'int flag(DoomCanvas_t* c) { return c->renderFloorCeilingTextures; }\n')
     flags = [cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-fsyntax-only",
-             "-IESP32/include", "-Isrc"]
+             "-IESP32/test/oracles", "-IESP32/include", "-Isrc"]
     for name, defs, accepted in (
         ("normal", ["-DDOOMRPG_ESP32=1"], False),
         ("bringup", ["-DDOOMRPG_ESP32=1", "-DDOOMRPG_ESP32_BRINGUP_PROBES=1"], False),
@@ -113,7 +113,7 @@ with tempfile.TemporaryDirectory(prefix="canvas-plane-ctor-") as tmp:
     test.write_text(stub + "\n" + actual + "\n" + main)
     binary = Path(tmp) / "test"
     subprocess.run([cc, "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
-                    "-IESP32/include", str(test), "-o", str(binary)],
+                    "-IESP32/test/oracles", "-IESP32/include", str(test), "-o", str(binary)],
                    cwd=ROOT, check=True)
     subprocess.run([str(binary)], check=True)
 print("PASS Canvas native plane gate + process backref retired ABI=36B; desktop/oracle retained")
