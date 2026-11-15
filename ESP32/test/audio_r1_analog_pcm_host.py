@@ -46,6 +46,44 @@ int main(void) {
     assert(EspAudioR1Pcm_word(0x40000000u, 80) == 0xD000u);
     assert(EspAudioR1Pcm_word(0x40000000u, 4) == 0x8400u);
     assert(EspAudioR1Pcm_word(0xC0000000u, 4) == 0x7C00u);
+    EspAudioR1PcmShapeState sh = {0};
+    assert(EspAudioR1Pcm_shapedWord(0, 0, &sh) == 0x8000u);
+    assert(sh.errorQ16 == 0);
+    assert(EspAudioR1Pcm_shapedWord(0x40000000u, 64, &sh) == 0xC000u);
+    assert(EspAudioR1Pcm_shapedWord(0xC0000000u, 64, &sh) == 0x4000u);
+    assert(sh.errorQ16 == 0);
+    for (uint32_t p = 0; p < 256; ++p) {
+        uint32_t phase = p << 24;
+        uint16_t shaped = EspAudioR1Pcm_shapedWord(phase, 64, &sh);
+        assert((shaped & 255u) == 0);
+        assert((shaped >> 8) >= 64u && (shaped >> 8) <= 192u);
+        assert(sh.errorQ16 >= -32768 && sh.errorQ16 <= 32768);
+    }
+    sh.errorQ16 = 0;
+    uint32_t phase440 = 0;
+    uint32_t phase220 = 0;
+    uint32_t differences440 = 0;
+    uint32_t differences220 = 0;
+    for (int n = 0; n < 16000; ++n) {
+        uint16_t original = EspAudioR1Pcm_word(phase440, 64);
+        uint16_t shaped = EspAudioR1Pcm_shapedWord(phase440, 64, &sh);
+        if (original != shaped) ++differences440;
+        assert(shaped >= 0x4000u && shaped <= 0xC000u);
+        assert(sh.errorQ16 >= -32768 && sh.errorQ16 <= 32768);
+        phase440 += 118111601u;
+        phase220 += 59055800u;
+        (void)phase220;
+    }
+    assert(differences440 > 0u && differences440 < 16000u);
+    sh.errorQ16 = 0;
+    uint32_t phase = 0;
+    for (int n = 0; n < 16000; ++n) {
+        uint16_t original = EspAudioR1Pcm_word(phase, 64);
+        uint16_t shaped = EspAudioR1Pcm_shapedWord(phase, 64, &sh);
+        if (original != shaped) ++differences220;
+        phase += 59055800u;
+    }
+    assert(differences220 > 0u && differences220 < 16000u);
     for (uint32_t i = 0; i < 256; ++i) {
         uint32_t phase = i << 24;
         uint8_t quiet = EspAudioR1Pcm_dacCode(phase, 8);
@@ -68,15 +106,17 @@ with tempfile.TemporaryDirectory() as tmp:
                     "-I", str(src), str(c), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
 assert "kFadeFrames = 3200U" in cpp
+assert "kStep440 = 118111601U" in cpp
+assert "kStep220 = 59055800U" in cpp
 assert "playStage(kDacOff, 3U, 0U" in cpp
-assert "playStage(kMidpoint, 3U, 0U" in cpp
-assert "playStage(kTone8, 3U, 8U" in cpp
-assert "playStage(kGap8To32, 1U, 0U" in cpp
-assert "playStage(kTone32, 3U, 32U" in cpp
-assert "playStage(kGap32To80, 1U, 0U" in cpp
-assert "playStage(kTone80, 3U, 80U" in cpp
+assert "playStage(kMidpoint, 2U, 0U" in cpp
+assert "playStage(kTone440Legacy, 3U, 64U, kStep440" in cpp
+assert "playStage(kTone440Shaped, 3U, 64U, kStep440" in cpp
+assert "playStage(kTone220Legacy, 3U, 64U, kStep220" in cpp
+assert "playStage(kTone220Shaped, 3U, 64U, kStep220" in cpp
 assert "playStage(kSilence, 2U, 0U" in cpp
 assert "playStage(kDacOffTail, 3U, 0U" in cpp
 assert cpp.count("i2s_set_dac_mode(I2S_DAC_CHANNEL_DISABLE)") >= 2
 assert "I2S_DAC_CHANNEL_LEFT_EN" in cpp
-print("PASS AUDIO-R1c: exact DAC peaks8/32/80, 200ms fades, DAC-off/midpoint noise gates, GPIO26 only")
+assert "EspAudioR1Pcm_shapedWord" in cpp
+print("PASS AUDIO-R1d: bounded 8-bit DAC baseline vs interpolated/noise-shaped 440/220Hz, GPIO26 only")

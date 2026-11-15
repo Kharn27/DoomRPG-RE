@@ -28,24 +28,27 @@ constexpr size_t kFrames = 160U;  // 10 ms
 constexpr size_t kSlots = 2U;    // explicit L+R 16-bit physical slots
 constexpr uint32_t kClockWarm = 8U;
 constexpr uint32_t kClockBlocks = 80U;
-constexpr uint32_t kFadeFrames = 3200U; // 200 ms R1c (soft transitions)
+constexpr uint32_t kFadeFrames = 3200U; // 200 ms R1d (soft transitions)
 constexpr uint32_t kStep440 = 118111601U; // round(440 * 2^32 / 16000)
+constexpr uint32_t kStep220 = 59055800U;  // round(220 * 2^32 / 16000)
 
 enum : uint32_t {
     kNever = 0U,
     kClock = 1U,
     kDacOff = 2U,
     kMidpoint = 3U,
-    kTone8 = 4U,
-    kGap8To32 = 5U,
-    kTone32 = 6U,
-    kGap32To80 = 7U,
-    kTone80 = 8U,
-    kSilence = 9U,
-    kDacOffTail = 10U,
-    kFinished = 11U,
-    kStopped = 12U,
-    kFailed = 13U
+    kTone440Legacy = 4U,
+    kGap440Ab = 5U,
+    kTone440Shaped = 6U,
+    kGap440To220 = 7U,
+    kTone220Legacy = 8U,
+    kGap220Ab = 9U,
+    kTone220Shaped = 10U,
+    kSilence = 11U,
+    kDacOffTail = 12U,
+    kFinished = 13U,
+    kStopped = 14U,
+    kFailed = 15U
 };
 enum : uint32_t {
     kErrorNone = 0U, kErrorDriver = 1U, kErrorTask = 2U,
@@ -137,8 +140,10 @@ static bool clockWitness(uint16_t* pcm) {
     return true;
 }
 static bool playStage(uint32_t stage, uint32_t seconds, uint8_t peak,
-                      uint32_t* phase, uint16_t* pcm) {
+                      uint32_t step, uint32_t* phase, uint16_t* pcm) {
     const uint32_t total = seconds * kHz;
+    const bool shaped = (stage == kTone440Shaped || stage == kTone220Shaped);
+    EspAudioR1PcmShapeState shapeState = {0};
     publishStage(stage);
     for (uint32_t at = 0U; at < total; at += kFrames) {
         if (__atomic_load_n(&state.stopRequested, __ATOMIC_ACQUIRE)) return false;
@@ -158,10 +163,12 @@ static bool playStage(uint32_t stage, uint32_t seconds, uint8_t peak,
                     if (release < amplitude) amplitude = release;
                 }
             }
-            const uint16_t value = EspAudioR1Pcm_word(*phase, amplitude);
+            const uint16_t value = shaped ?
+                EspAudioR1Pcm_shapedWord(*phase, amplitude, &shapeState) :
+                EspAudioR1Pcm_word(*phase, amplitude);
             pcm[(size_t)i * kSlots] = value;
             pcm[(size_t)i * kSlots + 1U] = value;
-            *phase += kStep440;
+            *phase += step;
         }
         if (!writeBlock(pcm, sizeof(uint16_t) * kFrames * kSlots)) {
             markFailure(kErrorPcmWrite);
@@ -177,7 +184,7 @@ static void taskMain(void*) {
     uint32_t phase = 0U;
     bool ok = clockWitness(pcm);
     if (ok && !__atomic_load_n(&state.stopRequested, __ATOMIC_ACQUIRE)) {
-        ok = playStage(kDacOff, 3U, 0U, &phase, pcm);
+        ok = playStage(kDacOff, 3U, 0U, kStep440, &phase, pcm);
     }
     if (ok && !__atomic_load_n(&state.stopRequested, __ATOMIC_ACQUIRE)) {
         /* On classic ESP32 the IDF LEFT DAC channel maps to DAC2 GPIO26.
@@ -187,17 +194,20 @@ static void taskMain(void*) {
             ok = false;
         }
     }
-    /* R1c: fresh analog baseline for the new CYD resistor network.
-     * DAC OFF and active DAC midpoint distinguish amplifier noise from
-     * signal-correlated noise. All tones retain the same channel/gain path.
-     * 200 ms fades protect against abrupt 8-bit steps. */
-    if (ok) ok = playStage(kMidpoint, 3U, 0U, &phase, pcm);
-    if (ok) ok = playStage(kTone8, 3U, 8U, &phase, pcm);
-    if (ok) ok = playStage(kGap8To32, 1U, 0U, &phase, pcm);
-    if (ok) ok = playStage(kTone32, 3U, 32U, &phase, pcm);
-    if (ok) ok = playStage(kGap32To80, 1U, 0U, &phase, pcm);
-    if (ok) ok = playStage(kTone80, 3U, 80U, &phase, pcm);
-    if (ok) ok = playStage(kSilence, 2U, 0U, &phase, pcm);
+    /* R1d: user hears crackling ONLY during actual tones, not midpoint
+     * or DAC-off. Compare exact same 440 Hz peak64 through two distinct
+     * quantizers, then repeat at 220 Hz. Same I2S timing, DMA, DAC, gain,
+     * speaker and 200 ms envelopes isolate waveform-side differences.
+     * Do not infer cause from a digital/CI PASS. */
+    if (ok) ok = playStage(kMidpoint, 2U, 0U, kStep440, &phase, pcm);
+    if (ok) ok = playStage(kTone440Legacy, 3U, 64U, kStep440, &phase, pcm);
+    if (ok) ok = playStage(kGap440Ab, 1U, 0U, kStep440, &phase, pcm);
+    if (ok) ok = playStage(kTone440Shaped, 3U, 64U, kStep440, &phase, pcm);
+    if (ok) ok = playStage(kGap440To220, 1U, 0U, kStep440, &phase, pcm);
+    if (ok) ok = playStage(kTone220Legacy, 3U, 64U, kStep220, &phase, pcm);
+    if (ok) ok = playStage(kGap220Ab, 1U, 0U, kStep440, &phase, pcm);
+    if (ok) ok = playStage(kTone220Shaped, 3U, 64U, kStep220, &phase, pcm);
+    if (ok) ok = playStage(kSilence, 2U, 0U, kStep440, &phase, pcm);
     if (ok && !__atomic_load_n(&state.stopRequested, __ATOMIC_ACQUIRE)) {
         /* Keep I2S DMA feeding midpoint but disable only DAC2/GPIO26
          * for a final 3-second OFF witness before uninstall. */
@@ -206,7 +216,7 @@ static void taskMain(void*) {
             ok = false;
         }
     }
-    if (ok) ok = playStage(kDacOffTail, 3U, 0U, &phase, pcm);
+    if (ok) ok = playStage(kDacOffTail, 3U, 0U, kStep440, &phase, pcm);
 
     /* Fail closed on ANY error, cancellation or terminal success.
      * This task is the sole owner of the I2S driver after creation. */
@@ -222,11 +232,13 @@ static const char* stageName(uint32_t stage) {
         case kClock: return "CLOCK-DAC-OFF";
         case kDacOff: return "DAC-OFF";
         case kMidpoint: return "MIDPOINT-GPIO26";
-        case kTone8: return "SINE-440Hz-PEAK8";
-        case kGap8To32: return "MIDPOINT-GAP-8-32";
-        case kTone32: return "SINE-440Hz-PEAK32";
-        case kGap32To80: return "MIDPOINT-GAP-32-80";
-        case kTone80: return "SINE-440Hz-PEAK80";
+        case kTone440Legacy: return "440Hz-BASE-PEAK64";
+        case kGap440Ab: return "MIDPOINT-GAP-440-A-B";
+        case kTone440Shaped: return "440Hz-SHAPED-PEAK64";
+        case kGap440To220: return "MIDPOINT-GAP-FREQUENCY";
+        case kTone220Legacy: return "220Hz-BASE-PEAK64";
+        case kGap220Ab: return "MIDPOINT-GAP-220-A-B";
+        case kTone220Shaped: return "220Hz-SHAPED-PEAK64";
         case kSilence: return "MIDPOINT-TAIL";
         case kDacOffTail: return "DAC-OFF-TAIL";
         case kFinished: return "DONE";
@@ -297,8 +309,8 @@ void EspAudioR1_tryStartInGameplay(void) {
     printf("[AUDIOR1] START oneShot=1 trigger=gameplay i2s=0 dac=GPIO26-only "
            "gpio25=touch-untouched rate=16000 transport=2x16b apll=1 "
            "dma=4x160 task=core0/3072 sound=synthetic-no-SD "
-           "calibration=R1c peaks=8,32,80 fadeMs=200 "
-           "dacOffWindows=initial+tail "
+           "calibration=R1d modes=base+shaped frequencies=440+220 "
+           "peak=64 fadeMs=200 dacOffWindows=initial+tail "
            "heap8=%u largest8=%u dma=%u largestDMA=%u\n",
            (unsigned)heap8(), (unsigned)largest8(),
            (unsigned)dmaFree(), (unsigned)largestDma());
