@@ -29,7 +29,7 @@ static inline void EspEntranceAdpcm_observePcm(
     if (pcm<stats->minPcm) stats->minPcm=pcm;
     if (pcm>stats->maxPcm) stats->maxPcm=pcm;
     if (pcm!=0) ++stats->nonZeroPcm;
-    if (pcm < -4096 || pcm > 4096) ++stats->gainLimited;
+    if (pcm < -2048 || pcm > 2048) ++stats->gainLimited;
 }
 
 static inline uint16_t EspEntranceAdpcm_u16(const uint8_t* p) {
@@ -121,11 +121,11 @@ static inline int EspEntranceAdpcm_clamp(int v,int minV,int maxV) {
 }
 static inline uint8_t EspEntranceAdpcm_toDac(int16_t pcm,
                                             uint32_t firstFrame) {
-    /* AUDIO-R2b: real M_STALKS PCM16 was -1689..2252 over first 20s,
-     * previously collapsing to DAC 125..132 at /512. Use fixed +18dB
-     * trial (/64), clamp to +/-64 DAC codes BEFORE the 200ms fade.
-     * This is not auto-normalization and cannot overflow uint8_t. */
-    int32_t diff=(int32_t)pcm/64;
+    /* AUDIO-R2c: real early-track PCM16 was -1689..2252, which
+     * collapsed near 128 in the original /512 output. Use /32 (~+24dB
+     * over the original), clamp to +/-64 codes before the 200ms fade.
+     * UI volume is applied by the main-loop producer, not in the ISR. */
+    int32_t diff=(int32_t)pcm/32;
     diff=EspEntranceAdpcm_clamp(diff,-64,64);
     const uint32_t fade=firstFrame<4410U?firstFrame:4410U;
     diff=diff*(int32_t)fade/4410;
