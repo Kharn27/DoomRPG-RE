@@ -63,4 +63,18 @@ déclaré préalablement compatible sans son véritable en-tête.
   au-delà de huit secondes. Aucune validation acoustique ni de streaming
   réel anticipée à partir de la CI.
 
-**État actuel : implémentation/CI à confirmer puis test matériel. PR draft.**
+**État initial R2a : implémentation et CI alors validées, écoute matérielle encore en attente. Les observations et la suite supersèdent cet état initial ci-dessous.**
+
+## AUDIO-R2a — premier retour CYD et preuve différentielle (15 novembre 2026)
+
+- Log réel `platformio-device-monitor-261115-221553.log` : `WAV_OK` pour le fichier **personnel inchangé** `/doomrpg/music/opl/M_STALKS.wav`, mono IMA-ADPCM 22050 Hz, 3238912 octets ADPCM, 6455296 échantillons, 292757 ms ; `CLOCK measuredHz=21906`, `PLAY` atteint.
+- `SIGNAL at=3s` : témoin synthétique **440 Hz 2 s** écrit en ISR, `witness=44100`, DAC envoyé sur une plage 64..192 ; les premiers 4096 octets DAC8 produits/consommés ont un FNV identique `cbd79e2b`.
+- `STREAM` vers 20 s : `frames=440552`, `ringConsumed=396625`, `underflows=0`, `gapsOver90us=0`, `maxSdReadUs=3839`, `heap8=68644`. Pour la musique **avant tout correctif de gain**, `pcm16MinMax=-1689..2252`, `isrRingMinMax=125..132` et **aucun** code à plus de ±8 du neutre. Le ring et l'ISR sont donc fonctionnels, mais le signal music DAC8 est trop faible.
+- Retour acoustique utilisateur, distinct de la CI : après débrancher/rebrancher complètement USB, la **branche R1l a retrouvé son bip**, puis sur R2a le **bip de 2 s est audible et la musique est « HYPER faible »**. Ne pas attribuer la réinitialisation requise au seul logiciel sans nouvelle preuve électrique. Le bip audible exclut une panne DAC2 permanente dans ces conditions.
+
+## AUDIO-R2b — correctif de niveau, en attente de reflash réel
+
+- **Changement ciblé de quantification** : `pcm16/512` → `pcm16/64` (**gain fixe ×8**, ~18 dB), et **limiteur** ±64 codes DAC avant fondu 200 ms. Aucune modification du WAV, du décodeur nibble/step, du ring 8192 B, du timer 22050 Hz, du DAC2 GPIO26, des API SD, de la musique de Doom II ou de l'I²S.
+- Ajout `gainLimited` : nombre de PCM16 ayant dépassé le seuil correspondant au limiteur, dans les logs `BLOCK0`/`SIGNAL`. C'est un essai prudent et mesurable, **pas** une normalisation de tout le morceau ni une preuve de non-saturation sur 292 s.
+- Branches : **#342 fusionnée** dans `main` au SHA `a0a730306987806ff03b1a8730a29f1fe5f9e557`, #347 **rebasée sur ce SHA**, toujours draft. Relecture complète de la CI du HEAD R2b obligatoire avant flash.
+- **À tester** sur firmware normal `esp32-cyd` : bip 2 s, volume réel de `M_STALKS.wav`, distorsion éventuelle, `gainLimited`, sous-alimentation, RAM/tactile et sortie menu. Le code/CI ne remplacent pas le PASS acoustique.
