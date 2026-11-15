@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""LCD-C2: exact controller command parity for classic E1-only gamma trial.
+"""LCD-C3: exact panel gamma/polarity and classic-only PWM optical trial.
 
-Compile actual applyCydInvertedGammaProfile() for both release environments.
-Pin the classic E0 to its previously tested bytes, change classic E1 alone,
-keep alternate INV-OFF full E0/E1 sequence unchanged. Optical result pending.
+Compile real controller and PWM functions for both release environments.
+Keep LCD-C2 gamma intact, lower only classic physical PWM duty to 90%.
+Accepted inverted gamma and PWM must remain byte-for-byte unchanged.
 """
 from __future__ import annotations
 
@@ -55,6 +55,15 @@ def main() -> None:
 
     cpp = VIDEO.read_text()
     fn = exact_func(cpp, "void applyCydInvertedGammaProfile()")
+    duty_fn = exact_func(
+        cpp, "constexpr uint32_t backlightDutyFromPercent(uint8_t percent)")
+    assert "ledcWrite(kBacklightChannel, backlightDutyFromPercent(100U))" not in cpp, (
+        "cold boot must evaluate and report calibrated duty separately")
+    assert "const uint32_t initialDuty = backlightDutyFromPercent(100U);" in cpp
+    assert "ledcWrite(kBacklightChannel, initialDuty);" in cpp
+    assert "const uint32_t duty = backlightDutyFromPercent(percent);" in cpp
+    assert "lcd=classic scale=90pct trial=yes" in cpp
+    assert "lcd=inverted scale=100pct" in cpp
     classic_match = re.search(
         r"constexpr uint8_t kCydClassicLegacyE0Gamma\[15\] = \{.*?\};",
         cpp, re.DOTALL)
@@ -109,8 +118,21 @@ struct Panel {
 };
 static Panel mock;
 static Panel* platformDisplay = &mock;
-""" + "#if !DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION\n" + classic_match.group(0) + "\n#else\n" + positive_match.group(0) + "\n#endif\n" + negative_match.group(0) + "\n" + fn + """
+""" + "#if !DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION\n" + classic_match.group(0) + "\n#else\n" + positive_match.group(0) + "\n#endif\n" + negative_match.group(0) + "\n" + fn + "\n" + duty_fn + """
 int main() {
+#if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
+    // The previously accepted alternate CYD must keep all PWM duties exact.
+    assert(backlightDutyFromPercent(25U) == 64U);
+    assert(backlightDutyFromPercent(50U) == 128U);
+    assert(backlightDutyFromPercent(75U) == 191U);
+    assert(backlightDutyFromPercent(100U) == 255U);
+#else
+    // LCD-C3 90pct panel-only physical duty. User config remains 25/50/75/100.
+    assert(backlightDutyFromPercent(25U) == 58U);
+    assert(backlightDutyFromPercent(50U) == 115U);
+    assert(backlightDutyFromPercent(75U) == 172U);
+    assert(backlightDutyFromPercent(100U) == 230U);
+#endif
     applyCydInvertedGammaProfile();
     assert(mock.ncommands == 4 &&
            mock.commands[0] == 0xf2 && mock.commands[1] == 0x26 &&
@@ -167,8 +189,9 @@ int main() {
             print(f"PASS {label}: exact real E0/E1 gamma sequence "
                   "swapBytes=true framebuffer=untouched "
                   f"LCD_INV={'OFF' if flags else 'ON'}")
-    print("PASS LCD-C2: classic INVON changes E1 only; alternate INV-OFF "
-          "E0/E1 preserved; framebuffer/PAK/gameplay untouched")
+    print("PASS LCD-C3: classic INVON gamma C2 and 90pct physical PWM; "
+          "alternate gamma and duty exactly unchanged; "
+          "framebuffer/PAK/gameplay untouched")
 
 if __name__ == "__main__":
     main()
