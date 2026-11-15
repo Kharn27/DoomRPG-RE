@@ -6,7 +6,7 @@ Les profils de production sont **`esp32-cyd`** et **`esp-cyd-inverted`**. Le sec
 
 La différence de sortie est confinée à `ESP32/src/platform_video.cpp::applyCydInvertedGammaProfile()` :
 - normal : **INV ON**, historique **E1 dans E0+E1** (calibration du premier CYD, ne pas changer sans test matériel) ;
-- inverted : **INV OFF**, gamma candidate **paire E0/E1 ILI9341_DRIVER publiée par TFT_eSPI** (pas de traitement des pixels). Le code sélectionne son panneau à la compilation et réapplique la configuration après changement d'orientation.
+- inverted : **INV OFF**, gamma validée visuellement par l'utilisateur **paire E0/E1 ILI9341_DRIVER publiée par TFT_eSPI** (pas de traitement des pixels). Le code sélectionne son panneau à la compilation et réapplique la configuration après changement d'orientation.
 - La variante inverse n'a **ni moteur séparé, ni sources héritées compilées à part, ni PAK différent**. Les binaires ne doivent pas être identiques : les commandes LCD diffèrent volontairement.
 
 ## Nouveau garde-fou CI durable
@@ -23,7 +23,7 @@ La différence de sortie est confinée à `ESP32/src/platform_video.cpp::applyCy
 
 ## Décision de fusion / suite
 
-Le vrai CYD normal a validé R-A2b sur le matériel (voir [milestone R-A2b](MILESTONE_PR341_ARCH_RA2B_CYD_PASS_AND_PANEL_VARIANT.md)). L'utilisateur préfère visuellement le profil inverted sur les comparaisons, mais **il faut rattacher sans ambiguïté ce jugement au firmware/gamma exacte du dernier HEAD** : les branches ont connu plusieurs essais E0/E1, dont un essai plus récent que le premier comparatif photographique. Ne pas inventer de PASS optique de la gamma `ILI9341_DRIVER` sans preuve de version ou nouveau test sur le second CYD. La CI prouve le comportement du code et la séparation des builds, pas l'exactitude chromatique.
+Le vrai CYD normal a validé R-A2b sur le matériel (voir [milestone R-A2b](MILESTONE_PR341_ARCH_RA2B_CYD_PASS_AND_PANEL_VARIANT.md)). **Validation visuelle utilisateur du second CYD, 15 novembre 2026 : profil `esp-cyd-inverted` préféré et accepté.** Le log Serial remis pour la décision de fusion identifie le firmware comme `[VIDEO] CYD display profile alternate-panel inversion=off gamma=ILI9341-driver-E0E1-trial BGR=unchanged resampling=nearest framebuffer=untouched` : il s'agit bien de la dernière paire `ILI9341_DRIVER` E0/E1, et non des essais antérieurs. Boot visible : ESP32-D0WD-V3, PSRAM 0, framebuffer 160×120 RGB565, PAK 241 entrées, MENU READY ; les extraits fournis ne prouvent pas un nouveau parcours gameplay complet. Ce **PASS optique est un jugement comparatif de l'utilisateur**, pas une mesure colorimétrique ou une parité pixel desktop. La CI prouve séparément la compilation identique du moteur dans les deux profils.
 
 **La correction du rendu historique `esp32-cyd` sera un milestone/PR distinct, à partir du SHA exact de `main` après fusion explicite** : modifier exclusivement les registres gamma et/ou INV du premier panneau, tester les deux CYD à luminosité égale, vérifier les FNV du framebuffer inchangés, et ne jamais modifier les fonctions de rendu ni le contenu PAK pour compenser une dalle. Aucun `merge` sans demande explicite.
 
