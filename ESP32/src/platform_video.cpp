@@ -29,10 +29,9 @@ uint8_t currentOrientation = ESP32_ORIENTATION_NORMAL;
 #endif
 
 /* Two classic CYD ILI9341 batches require opposite LCD inversion.
- * The two release environments share ONE native engine, RGB565 framebuffer,
- * and now the same published E0/E1 gamma pair. The only LCD-profile delta
- * is INVON for esp32-cyd versus INVOFF for esp-cyd-inverted.
- * Reapply after setRotation() on both boards. */
+ * Both release environments share the same native engine and framebuffer.
+ * Gamma is calibrated independently for the two physical panel batches.
+ * Reapply gamma and polarity after setRotation() on both boards. */
 #ifndef DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
 #define DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION 0
 #endif
@@ -45,18 +44,24 @@ constexpr size_t kPixelCount =
     static_cast<size_t>(DOOMRPG_LOGICAL_WIDTH) * DOOMRPG_LOGICAL_HEIGHT;
 constexpr size_t kFramebufferBytes = kPixelCount * sizeof(uint16_t);
 
-/* Classic-panel calibration trial after PR #341.
- * INV-OFF with this genuine TFT_eSPI ILI9341_DRIVER E0/E1 pair was visually
- * accepted on the second CYD. Try the SAME two controller gamma tables on
- * the first classic CYD but preserve its required INVON polarity.
- * This trial changes only the first panel's E0/E1 programming; the accepted
- * alternate CYD command sequence stays identical. It does not touch the
- * logical framebuffer, BGR, resampling, backlight, game or PAK. Optical
- * acceptance of the classic panel is PENDING a physical side-by-side test. */
+/* LCD-C1 on classic CYD FAIL (photo, 15 Nov 2026): copying both gamma
+ * tables from the accepted INV-OFF panel into the INV-ON first CYD produced
+ * severely washed-out cyan highlights. LCD-C2 isolates only E1 as the trial:
+ * restore exact proven classic E0 bytes from merged PR #341, but retain
+ * the published ILI9341_DRIVER negative E1. The accepted alternate panel
+ * still writes its EXACT previous E0/E1 bytes with INV OFF. No RGB565/FB,
+ * renderer, PAK, touch, gameplay, backlight or panel power changes. */
+#if !DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
+constexpr uint8_t kCydClassicLegacyE0Gamma[15] = {
+    0x00, 0x15, 0x17, 0x07, 0x11, 0x06, 0x2b, 0x56,
+    0x3c, 0x05, 0x10, 0x0f, 0x3f, 0x3f, 0x0f,
+};
+#else
 constexpr uint8_t kCydPanelPositiveGamma[15] = {
     0x0f, 0x31, 0x2b, 0x0c, 0x0e, 0x08, 0x4e, 0xf1,
     0x37, 0x07, 0x10, 0x03, 0x0e, 0x09, 0x00,
 };
+#endif
 constexpr uint8_t kCydPanelNegativeGamma[15] = {
     0x00, 0x0e, 0x14, 0x03, 0x11, 0x07, 0x31, 0xc1,
     0x48, 0x08, 0x0f, 0x0c, 0x31, 0x36, 0x0f,
@@ -90,18 +95,24 @@ void applyCydInvertedGammaProfile() {
         return;
     }
 
-    /* Preserve power/VCOM/frame-rate, BGR and gamma selector on both panels.
-     * Reuse the previously accepted inverted-panel E0/E1 bytes on the classic
-     * board; only the latter's gamma registers change in this experiment. */
+    /* Keep power/VCOM/frame-rate, BGR, selector and the INV polarity.
+     * C2 differs from merged main ONLY on classic INVON E1; second-panel
+     * INV OFF gamma command stream remains byte-for-byte unchanged. */
     platformDisplay->writecommand(0xf2);
     platformDisplay->writedata(0x00);
     platformDisplay->writecommand(0x26);
     platformDisplay->writedata(0x01);
 
     platformDisplay->writecommand(0xe0);
+#if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
     for (size_t i = 0; i < sizeof(kCydPanelPositiveGamma); ++i) {
         platformDisplay->writedata(kCydPanelPositiveGamma[i]);
     }
+#else
+    for (size_t i = 0; i < sizeof(kCydClassicLegacyE0Gamma); ++i) {
+        platformDisplay->writedata(kCydClassicLegacyE0Gamma[i]);
+    }
+#endif
 
     platformDisplay->writecommand(0xe1);
     for (size_t i = 0; i < sizeof(kCydPanelNegativeGamma); ++i) {
@@ -249,7 +260,7 @@ bool PlatformVideo_begin(TFT_eSPI* display) {
 #if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
     Serial.println("[VIDEO] CYD display profile alternate-panel inversion=off gamma=ILI9341-driver-E0E1-trial BGR=unchanged resampling=nearest framebuffer=untouched");
 #else
-    Serial.println("[VIDEO] CYD display profile classic inversion=on gamma=ILI9341-driver-E0E1-trial BGR=unchanged resampling=nearest framebuffer=untouched");
+    Serial.println("[VIDEO] CYD display profile classic inversion=on gamma=classic-E0-driver-E1-trial BGR=unchanged resampling=nearest framebuffer=untouched");
 #endif
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
     Serial.println("[HITBOX] Physical overlay enabled; framebuffer hashes remain untouched");
