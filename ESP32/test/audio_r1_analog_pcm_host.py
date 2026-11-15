@@ -10,6 +10,14 @@ src = root / "src"
 cpp = (src / "esp_audio_r1_analog.cpp").read_text(encoding="utf-8")
 main = (src / "main.cpp").read_text(encoding="utf-8")
 assert "EspAudioR1_tryStartInGameplay();" in main
+assert "EspAudioR1_runColdBootProbe();" in main
+assert main.index("EspAudioR1_runColdBootProbe();") < main.index("input.begin();")
+assert main.index("EspAudioR1_runColdBootProbe();") < main.index("initializeSdCard();")
+assert "coldBootProbe" in cpp and "taskReleased" in cpp and "taskCreated" in cpp
+assert "while (__atomic_load_n(&taskReleased, __ATOMIC_ACQUIRE) == 0U)" in cpp
+assert "if (ok && !coldBootProbe)" in cpp
+assert "playStage(kTone440Hold, 8U, 64U, kStep440" in cpp
+assert "COLD_BOOT BEGIN" in cpp and "COLD_BOOT END" in cpp
 assert "EspAudioR1_requestStop();" in main
 assert "EspNativeGameplaySession_isActive()" in main
 assert "I2S_DAC_CHANNEL_LEFT_EN" in cpp
@@ -136,4 +144,4 @@ assert "playStage(kGap440To220, 2U, 0U, kStep440" in cpp
 assert "440Hz-BASE-HOLD8S-PEAK64" in cpp
 assert "220Hz-BASE-HOLD8S-PEAK64" in cpp
 assert "EspAudioR1Pcm_shapedWord(" not in cpp
-print("PASS AUDIO-R1f: two sustained pitch controls, same DAC quantizer, deferred DMA logs")
+print("PASS AUDIO-R1g: isolated 440Hz cold-boot R1f waveform, one-shot handoff and deferred DMA logs")

@@ -83,6 +83,9 @@ static uint32_t txDoneEvents;
 static uint32_t txQueueOverflowEvents;
 static uint32_t dmaErrorEvents;
 static bool terminalReportDone;
+static bool coldBootProbe;
+static bool taskCreated;
+static uint32_t taskReleased; // atomic completion handshake, AFTER I2S uninstall
 static void consumeDmaEvents(void) {
     i2s_event_t event;
     while (i2sEvents && xQueueReceive(i2sEvents, &event, 0) == pdTRUE) {
@@ -247,8 +250,13 @@ static void taskMain(void*) {
      * No Audio-R1 Serial printing until the final DMA shutdown. */
     if (ok) ok = playStage(kMidpoint, 2U, 0U, kStep440, &phase, pcm);
     if (ok) ok = playStage(kTone440Hold, 8U, 64U, kStep440, &phase, pcm);
-    if (ok) ok = playStage(kGap440To220, 2U, 0U, kStep440, &phase, pcm);
-    if (ok) ok = playStage(kTone220Hold, 8U, 64U, kStep220, &phase, pcm);
+    /* In R1g cold-boot mode this is an isolated 440 Hz-only witness:
+     * no gameplay, SD, TFT or touch service has been started.
+     * Keep the sample generator, level, fade, DMA and APLL of R1f. */
+    if (ok && !coldBootProbe)
+        ok = playStage(kGap440To220, 2U, 0U, kStep440, &phase, pcm);
+    if (ok && !coldBootProbe)
+        ok = playStage(kTone220Hold, 8U, 64U, kStep220, &phase, pcm);
     if (ok) ok = playStage(kSilence, 2U, 0U, kStep440, &phase, pcm);
     if (ok && !__atomic_load_n(&state.stopRequested, __ATOMIC_ACQUIRE)) {
         /* Keep I2S DMA feeding midpoint but disable only DAC2/GPIO26
@@ -269,6 +277,9 @@ static void taskMain(void*) {
     if (loadStage() != kFailed) {
         publishStage(ok ? kFinished : kStopped);
     }
+    /* Only the boot task waits for this flag. No pause, print or mutex is
+     * introduced into the audio transport or gameplay. */
+    __atomic_store_n(&taskReleased, 1U, __ATOMIC_RELEASE);
     vTaskDelete(nullptr);
 }
 static const char* stageName(uint32_t stage) {
@@ -298,9 +309,9 @@ void EspAudioR1_tryStartInGameplay(void) {
     const uint32_t dma = dmaFree();
     const uint32_t dmaLargest = largestDma();
     printf("[AUDIOR1] PREFLIGHT heap8=%u largest8=%u dma=%u largestDMA=%u "
-           "minimum=61440/24576/32768/16384 gameplay=active\n",
+           "minimum=61440/24576/32768/16384 trigger=%s\n",
            (unsigned)before, (unsigned)largest, (unsigned)dma,
-           (unsigned)dmaLargest);
+           (unsigned)dmaLargest, coldBootProbe ? "COLD-BOOT" : "gameplay");
     if (before < 61440U || largest < 24576U ||
         dma < 32768U || dmaLargest < 16384U) {
         markFailure(kErrorRam);
@@ -352,15 +363,40 @@ void EspAudioR1_tryStartInGameplay(void) {
         markFailure(kErrorTask);
         return;
     }
-    printf("[AUDIOR1] START oneShot=1 trigger=gameplay i2s=0 dac=GPIO26-only "
+    taskCreated = true;
+    printf("[AUDIOR1] START oneShot=1 trigger=%s i2s=0 dac=GPIO26-only "
            "gpio25=touch-untouched rate=16000 transport=2x16b apll=1 "
            "dma=4x160 task=core0/3072 sound=synthetic-no-SD "
-           "calibration=R1f waveform=BASE-both frequencies=440+220 "
+           "calibration=R1g waveform=BASE-coldboot-440-only "
            "holdSeconds=8 peak=64 fadeMs=200 "
            "liveAudioLog=disabled dmaEvents=bounded "
            "heap8=%u largest8=%u dma=%u largestDMA=%u\n",
+           coldBootProbe ? "COLD-BOOT" : "gameplay",
            (unsigned)heap8(), (unsigned)largest8(),
            (unsigned)dmaFree(), (unsigned)largestDma());
+}
+
+void EspAudioR1_runColdBootProbe(void) {
+    if (state.attempted) return;
+    coldBootProbe = true;
+    /* Intentionally before TFT / SD / native engine initialization.
+     * Boot probe adds a bounded ~19s pre-menu diagnostic delay.
+     * This is one-shot: gameplay won't start audio a second time. */
+    printf("[AUDIOR1] COLD_BOOT BEGIN state=before-TFT-SD-PAK "
+           "audio=440Hz-BASE-8s startupDelay=yes\n");
+    EspAudioR1_tryStartInGameplay();
+    if (taskCreated) {
+        while (__atomic_load_n(&taskReleased, __ATOMIC_ACQUIRE) == 0U) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+        /* Give idle task a chance to reclaim the deleted audio task stack. */
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    EspAudioR1_poll(); // emit only the final, post-DAC diagnostic report
+    printf("[AUDIOR1] COLD_BOOT END taskCreated=%u driverReleased=%u "
+           "next=normal-game-boot audioReplay=disabled\n",
+           taskCreated ? 1U : 0U,
+           (unsigned)__atomic_load_n(&taskReleased, __ATOMIC_ACQUIRE));
 }
 
 void EspAudioR1_requestStop(void) {

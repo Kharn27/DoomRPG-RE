@@ -461,6 +461,11 @@ void setup()
     delay(250);
     printSystemInfo();
 
+    /* AUDIO-R1g TEMPORARY diagnostic: the 8s 440Hz R1f tone plays before
+     * the display, SD and gameplay initialize. Expect a ~19s delay before
+     * MENU_MAIN; after this one-shot, the normal game boots silently. */
+    EspAudioR1_runColdBootProbe();
+
     input.begin();
 
     display.begin();
