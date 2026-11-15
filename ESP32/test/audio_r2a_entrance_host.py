@@ -45,6 +45,20 @@ assert "xTaskCreate" not in runtime and "DoomRPG.zip" not in runtime
 assert "WAVE_FORMAT_IMA_ADPCM" not in runtime   # pure numeric codec owner
 assert "test/audio_r2a_entrance_host.py" in ci
 assert "sampleFrames" in header and "blockAlign" in header
+# Hardware diagnosis: R1l waveform is used as a 2s DAC2 timer witness before
+# real ring consumption, with separate main-loop and ISR statistics.
+assert '#include "esp_audio_r1_pcm.h"' in runtime
+assert "kWitnessFrames=2U*kRate" in runtime
+assert "witnessWave[i]=EspAudioR1Pcm_dacCode(wavePhase,64U)" in runtime
+assert "frame<kWitnessFrames" in runtime
+assert "ringConsumed=count+1U" in runtime
+assert 'signalReport("3s")' in runtime
+assert 'signalReport("STREAM")' in runtime
+assert 'signalReport("FINAL")' in runtime
+assert "publishedPrefixFnv" in runtime and "consumedPrefixFnv" in runtime
+assert "EspEntranceAdpcm_decodeBlockObserved(" in header
+assert "pcm16MinMax" in runtime and "publishedDacMinMax" in runtime
+assert "MALLOC_CAP_INTERNAL" in runtime and "DAC_CHANNEL_1" not in runtime
 
 compiler = shutil.which("cc")
 assert compiler, "C compiler required"
@@ -119,6 +133,21 @@ int main(void) {
     for(int i=0;i<2041;i++) assert(decoded[i]==128);
     assert(!EspEntranceAdpcm_decodeBlock(block,1024,2040,
                                           decoded,2041,5000));
+    /* PCM16 must be observed BEFORE the DAC8 quantizer, including header
+     * predictor. Verify positive and negative deltas and LOW nibble first. */
+    EspEntranceAdpcmDecodeStats stats={0};
+    assert(EspEntranceAdpcm_decodeBlockObserved(wav+60,8,9,
+           samples,9,4410,&stats));
+    assert(stats.minPcm==16384 && stats.maxPcm==16384);
+    assert(stats.nonZeroPcm==9);
+    uint8_t nibbleBlock[8]={0};
+    nibbleBlock[2]=70;  /* step=5894 */
+    nibbleBlock[4]=0x78;  /* LOW 8 => -736, then HIGH 7 => +9309 */
+    assert(EspEntranceAdpcm_decodeBlockObserved(nibbleBlock,8,9,
+           samples,9,4410,&stats));
+    assert(samples[0]==128 && samples[1]==127 && samples[2]==146);
+    assert(stats.minPcm==-736 && stats.maxPcm>=9309);
+    assert(stats.nonZeroPcm==8);
     return 0;
 }
 """
