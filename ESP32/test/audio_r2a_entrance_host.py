@@ -71,12 +71,12 @@ assert 'signalReport("FINAL")' in runtime
 assert "publishedPrefixFnv" in runtime and "consumedPrefixFnv" in runtime
 assert "EspEntranceAdpcm_decodeBlockObserved(" in header
 assert "pcm16MinMax" in runtime and "publishedDacMinMax" in runtime
-assert "gainDiv=16" in runtime and "softKneeFrames" in runtime
+assert "gainDiv=14" in runtime and "softKneeFrames" in runtime
 assert "EspNativeAudioIntent_musicVolumePercent()" in runtime
 assert "volume)/100" in runtime
 assert "masterVolume=" in runtime
-assert "pcm/16" in header and "magnitude=96+(excess*16)/(excess+16)" in header
-assert "pcm < -1536 || pcm > 1536" in header
+assert "pcm/14" in header and "magnitude=96+(excess*16)/(excess+16)" in header
+assert "scaled < -96 || scaled > 96" in header
 assert "MALLOC_CAP_INTERNAL" in runtime and "DAC_CHANNEL_1" not in runtime
 
 compiler = shutil.which("cc")
@@ -164,16 +164,23 @@ int main(void) {
     nibbleBlock[4]=0x78;  /* LOW 8 => -736, then HIGH 7 => +9309 */
     assert(EspEntranceAdpcm_decodeBlockObserved(nibbleBlock,8,9,
            samples,9,4410,&stats));
-    assert(samples[0]==128 && samples[1]==82 && samples[2]==239);
+    assert(samples[0]==128 && samples[1]==76 && samples[2]==239);
     assert(stats.minPcm==-736 && stats.maxPcm>=9309);
     assert(stats.nonZeroPcm==8 && stats.gainLimited>0);
     /* Host hard limits and fade: no 8-bit overflow or speaker overdrive. */
-    assert(EspEntranceAdpcm_toDac(2252,4410)==235);
-    assert(EspEntranceAdpcm_toDac(-2252,4410)==21);
+    assert(EspEntranceAdpcm_toDac(2252,4410)==236);
+    assert(EspEntranceAdpcm_toDac(-2252,4410)==20);
     assert(EspEntranceAdpcm_toDac(32767,4410)==239);
     assert(EspEntranceAdpcm_toDac(-32768,4410)==17);
     assert(EspEntranceAdpcm_toDac(2252,0)==128);
-    assert(EspEntranceAdpcm_toDac(2252,2205)==181);
+    /* Compared with R2d /16, level increases at moderate PCM16 while
+     * headroom remains: no hard rail or peak expansion into 0/255. */
+    assert(EspEntranceAdpcm_toDac(700,4410)==178);
+    assert(EspEntranceAdpcm_toDac(-700,4410)==78);
+    assert(EspEntranceAdpcm_toDac(1477,4410)==229);
+    assert(EspEntranceAdpcm_toDac(-1497,4410)==26);
+    assert(EspEntranceAdpcm_toDac(0,4410)==128);
+    assert(EspEntranceAdpcm_toDac(2252,2205)==182);
     return 0;
 }
 """
@@ -185,4 +192,4 @@ with tempfile.TemporaryDirectory() as tmp:
                     "-I", str(src), str(source), "-o", str(program)], check=True)
     subprocess.run([str(program)], check=True)
 
-print("PASS AUDIO-R2d: no boot tone, soft-knee loudness, bounded inter-frame SD refills and IMA-ADPCM")
+print("PASS AUDIO-R2e: gentle +1.16dB gain trim, exact soft knee and unchanged R2d transport")

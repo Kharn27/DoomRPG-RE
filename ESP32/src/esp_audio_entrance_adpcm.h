@@ -29,8 +29,10 @@ static inline void EspEntranceAdpcm_observePcm(
     if (pcm<stats->minPcm) stats->minPcm=pcm;
     if (pcm>stats->maxPcm) stats->maxPcm=pcm;
     if (pcm!=0) ++stats->nonZeroPcm;
-    /* Count the fraction entering the soft gain knee, not hard clipping. */
-    if (pcm < -1536 || pcm > 1536) ++stats->gainLimited;
+    /* R2e: count the exact same threshold as the converter below.
+     * Cast to int32 to avoid any signed 16-bit arithmetic surprises. */
+    const int32_t scaled=(int32_t)pcm/14;
+    if (scaled < -96 || scaled > 96) ++stats->gainLimited;
 }
 
 static inline uint16_t EspEntranceAdpcm_u16(const uint8_t* p) {
@@ -122,13 +124,12 @@ static inline int EspEntranceAdpcm_clamp(int v,int minV,int maxV) {
 }
 static inline uint8_t EspEntranceAdpcm_toDac(int16_t pcm,
                                             uint32_t firstFrame) {
-    /* AUDIO-R2d: this user recording is unusually quiet (-1689..2252
-     * PCM16 in the observed prefix). Raise quiet details by ~6dB vs R2c
-     * while compressing only rare peaks: linear up to +/-96 DAC codes,
-     * then continuous soft knee asymptoting to +/-112 (safe [16,240]).
-     * An abrupt full-scale clamp would add audible harmonics. All of this
-     * is producer-side; the timer ISR only writes an 8-bit DAC code. */
-    int32_t diff=(int32_t)pcm/16;
+    /* AUDIO-R2e: tiny +1.16dB linear trim over hardware-proven R2d (/16).
+     * No change to continuous soft knee +/-96 -> +/-112 (safe [16,240]),
+     * 200ms fade, ISR/timer, ring, SD ownership or GPIOs. The source is
+     * fairly quiet; this is a reversible subjective A/B experiment, NOT
+     * a solution for the unidentified analog/digital moire noise. */
+    int32_t diff=(int32_t)pcm/14;
     const int32_t sign=diff<0?-1:1;
     int32_t magnitude=diff<0?-diff:diff;
     if (magnitude>96) {
