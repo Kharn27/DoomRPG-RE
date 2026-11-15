@@ -39,10 +39,14 @@ def main():
     assert "!EspAssetPack_isOpen()" in resolver
     assert "prepareLegacyWallGuard(work, source)" in sampler
     assert "WALL_PACKED_BYTES" in sampler and "RECORD_FRAME_FAILURE" in sampler
+    legacy_renderer = (ROOT / "src/Render.c").read_text()
+    legacy_span = extract(legacy_renderer, "void Render_SpanMode0(")
+    assert "mediaTexels[param_4 >> 13]" in legacy_span
+    assert "for (; param_6 >= 8;" in legacy_span
     code = "\n\n".join([
         extract(renderer, "static uint16_t readLe16("),
         extract(renderer, "static uint32_t readLe32("),
-        resolver, sampler
+        resolver, sampler, legacy_span
     ])
     source = HARNESS.read_text()
     assert source.count("/* PRODUCTION_FUNCTIONS */") == 1
