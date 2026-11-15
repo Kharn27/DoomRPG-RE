@@ -33,8 +33,8 @@ assert "measuredHz=" in timer and "playedFrames=" in timer
 assert timer.index("if (rateHz < 15000U || rateHz > 17000U)") < timer.index("dac_output_enable(DAC_CHANNEL_2)")
 assert "i2s_write(" not in timer and "i2s_driver_install" not in timer
 assert "SD.open(" not in timer and "xTaskCreate" not in timer
-assert main.index("EspAudioR1_runColdBootProbe();") < main.index("EspAudioR1_runCosineColdBootProbe();")
-assert main.index("EspAudioR1_runCosineColdBootProbe();") < main.index("input.begin();")
+assert main.index("EspAudioR1_timerTryStartInGameplay();") > main.index("initializeMainMenu();")
+assert "EspAudioR1_timerService(gameAudioActive);" in main
 cw = (src / "esp_audio_r1_cw.cpp").read_text(encoding="utf-8")
 cwh = (src / "esp_audio_r1_cw.h").read_text(encoding="utf-8")
 assert "EspAudioR1_runCosineColdBootProbe" in cwh
@@ -65,7 +65,7 @@ assert "while (__atomic_load_n(&taskReleased, __ATOMIC_ACQUIRE) == 0U)" in cpp
 assert "if (ok && !coldBootProbe)" in cpp
 assert "playStage(kTone440Hold, 8U, 64U, kStep440" in cpp
 assert "COLD_BOOT BEGIN" in cpp and "COLD_BOOT END" in cpp
-assert "EspAudioR1_requestStop();" in main
+assert "EspAudioR1_requestStop();" not in main
 assert "EspNativeGameplaySession_isActive()" in main
 assert "I2S_DAC_CHANNEL_LEFT_EN" in cpp
 assert "I2S_DAC_CHANNEL_DISABLE" in cpp
