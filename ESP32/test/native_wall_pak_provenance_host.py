@@ -419,7 +419,7 @@ def self_test(binary: Path, tmp: Path) -> None:
     fixture, info = pack_fixture(pack_path)
     require(len(fixture) == 12 + 2 * (16 + 32 + 2048 + 3 + 4),
             "unexpected bounded host fixture size")
-    require(all("physicalAdjacent=" in line for line in info),
+    require(all("rawPakSameAsCompact=" in line for line in info),
             "witness summary invalid")
     good = run_host(binary, fixture, tmp, 0)
     require("PASS RA2 PACK" in good and good.count("boundaryParity=EXACT") == 2,
