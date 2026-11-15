@@ -28,7 +28,7 @@ constexpr size_t kFrames = 160U;  // 10 ms
 constexpr size_t kSlots = 2U;    // explicit L+R 16-bit physical slots
 constexpr uint32_t kClockWarm = 8U;
 constexpr uint32_t kClockBlocks = 80U;
-constexpr uint32_t kFadeFrames = 320U; // 20 ms
+constexpr uint32_t kFadeFrames = 1600U; // 100 ms R1b (soft transitions)
 constexpr uint32_t kStep440 = 118111601U; // round(440 * 2^32 / 16000)
 
 enum : uint32_t {
@@ -37,11 +37,14 @@ enum : uint32_t {
     kDacOff = 2U,
     kMidpoint = 3U,
     kTone4 = 4U,
-    kTone8 = 5U,
-    kSilence = 6U,
-    kFinished = 7U,
-    kStopped = 8U,
-    kFailed = 9U
+    kGap4To12 = 5U,
+    kTone12 = 6U,
+    kGap12To24 = 7U,
+    kTone24 = 8U,
+    kSilence = 9U,
+    kFinished = 10U,
+    kStopped = 11U,
+    kFailed = 12U
 };
 enum : uint32_t {
     kErrorNone = 0U, kErrorDriver = 1U, kErrorTask = 2U,
@@ -184,8 +187,14 @@ static void taskMain(void*) {
         }
     }
     if (ok) ok = playStage(kMidpoint, 2U, 0U, &phase, pcm);
-    if (ok) ok = playStage(kTone4, 4U, 4U, &phase, pcm);
-    if (ok) ok = playStage(kTone8, 4U, 8U, &phase, pcm);
+    /* R1b: retain continuous DAC bias across all tones. Explicit midpoint
+     * gaps distinguish a transient from steady-state analog noise.
+     * Peaks 4/12/24 remain bounded; fail closed on any DMA error. */
+    if (ok) ok = playStage(kTone4, 3U, 4U, &phase, pcm);
+    if (ok) ok = playStage(kGap4To12, 1U, 0U, &phase, pcm);
+    if (ok) ok = playStage(kTone12, 3U, 12U, &phase, pcm);
+    if (ok) ok = playStage(kGap12To24, 1U, 0U, &phase, pcm);
+    if (ok) ok = playStage(kTone24, 3U, 24U, &phase, pcm);
     if (ok) ok = playStage(kSilence, 1U, 0U, &phase, pcm);
 
     /* Fail closed on ANY error, cancellation or terminal success.
@@ -203,7 +212,10 @@ static const char* stageName(uint32_t stage) {
         case kDacOff: return "DAC-OFF";
         case kMidpoint: return "MIDPOINT-GPIO26";
         case kTone4: return "SINE-440Hz-PEAK4";
-        case kTone8: return "SINE-440Hz-PEAK8";
+        case kGap4To12: return "MIDPOINT-GAP-4-12";
+        case kTone12: return "SINE-440Hz-PEAK12";
+        case kGap12To24: return "MIDPOINT-GAP-12-24";
+        case kTone24: return "SINE-440Hz-PEAK24";
         case kSilence: return "MIDPOINT-TAIL";
         case kFinished: return "DONE";
         case kStopped: return "STOPPED";
@@ -273,6 +285,7 @@ void EspAudioR1_tryStartInGameplay(void) {
     printf("[AUDIOR1] START oneShot=1 trigger=gameplay i2s=0 dac=GPIO26-only "
            "gpio25=touch-untouched rate=16000 transport=2x16b apll=1 "
            "dma=4x160 task=core0/3072 sound=synthetic-no-SD "
+           "calibration=R1b peaks=4,12,24 fadeMs=100 "
            "heap8=%u largest8=%u dma=%u largestDMA=%u\n",
            (unsigned)heap8(), (unsigned)largest8(),
            (unsigned)dmaFree(), (unsigned)largestDma());

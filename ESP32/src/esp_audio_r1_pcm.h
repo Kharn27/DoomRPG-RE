@@ -25,11 +25,11 @@ static const int8_t kEspAudioR1Sine256[256] = {
      -49,  -46,  -43,  -40,  -37,  -34,  -31,  -28,  -25,  -22,  -19,  -16,  -12,   -9,   -6,   -3
 };
 
-/* 128 is DAC midpoint. Keep peak at most +/-8 codes (of 127 possible)
- * for a deliberately quiet analog test. This is NOT a music mixer. */
+/* 128 is DAC midpoint. R1b compares peaks 4/12/24 (of 127 possible),
+ * still <20% of DAC full-scale. This is NOT a music mixer. */
 static inline uint8_t EspAudioR1Pcm_dacCode(uint32_t phase, uint8_t peakCodes) {
     int32_t delta;
-    if (peakCodes > 8U) peakCodes = 8U;
+    if (peakCodes > 24U) peakCodes = 24U;
     delta = ((int32_t)kEspAudioR1Sine256[phase >> 24] *
              (int32_t)peakCodes) / 127;
     return (uint8_t)(128 + delta);
