@@ -116,10 +116,11 @@ assert "playStage(kSilence, 2U, 0U" in cpp
 assert "playStage(kDacOffTail, 3U, 0U" in cpp
 assert cpp.count("i2s_set_dac_mode(I2S_DAC_CHANNEL_DISABLE)") >= 2
 assert "I2S_DAC_CHANNEL_LEFT_EN" in cpp
-assert "EspAudioR1Pcm_shapedWord" in cpp
-print("PASS AUDIO-R1d: bounded 8-bit DAC baseline vs interpolated/noise-shaped 440/220Hz, GPIO26 only")
+# The R1d SHAPED math remains covered by the C harness above, but R1f
+# deliberately runs only the same baseline quantizer at both pitches.
+print("PASS AUDIO-R1f PCM regression: baseline and shaped quantizers bounded")
 
-# R1e: the actual R1d waveform, level and stage duration are unchanged.
+# R1f: same DAC path, identical numeric amplitude, 8s sustained frequency A/B.
 assert "calibration=R1f waveform=BASE-both" in cpp
 assert "i2s_driver_install(I2S_NUM_0, &cfg, 8, &i2sEvents)" in cpp
 assert "I2S_EVENT_DMA_ERROR" in cpp
