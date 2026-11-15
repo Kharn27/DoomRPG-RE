@@ -1,3 +1,9 @@
+## Architecture R-A2a — format PAK-v2 et atlas mural compact, oracle hôte validé (15 novembre 2026)
+
+[PR #341](https://github.com/Kharn27/DoomRPG-RE/pull/341) et [audit technique](ARCH_RA2A_PACK_WALL_ATLAS_AUDIT.md). `src/Render.c::Render_loadTexels` trie puis compacte les textures utilisées de la carte. Le test indépendant utilise `intro.bsp`, `mappings.bin`, `wtexels.bin`, `palettes.bin` et les fonctions réelles `Render_SpanMode0` / `sampleWallSpan`. Double CI [PR](https://github.com/Kharn27/DoomRPG-RE/actions/runs/43701781214) + [push](https://github.com/Kharn27/DoomRPG-RE/actions/runs/43701777718) **SUCCESS 167/167** au HEAD code `358aeb05adf3e078859e039cf7e3606dfd39034b`. Mini-PAK CI synthétique, **pas le PAK original** : mode `--pak <fichier>` disponible pour comparer les vraies ressources sur hôte. R-A1 PASS CYD inchangé ; R-A2a reste à valider avec le vrai PAK avant R-B et une éventuelle parité full frame. Aucun changement firmware, SRAM, runtime ZIP, renderer ou liens `--wrap`.
+
+---
+
 ## Architecture R-A1 — original Render_SpanMode0 comparé au sampler natif : PASS CYD (15 novembre 2026)
 
 [PR #341](https://github.com/Kharn27/DoomRPG-RE/pull/341), [rapport matériel](MILESTONE_PR341_ARCH_RA1_WALL_PARITY_CYD_PASS.md), [audit/limites](ARCH_RA1_WALL_SPAN_AUDIT.md), [issue #340](https://github.com/Kharn27/DoomRPG-RE/issues/340). Base `main=839cc5440a22d6c0a0310bd5bdeeb2dbd674a6c1`, candidat `6a9f4b384649259674e99d3ec82ecc29699be217`. Oracle host réel legacy `src/Render.c::Render_SpanMode0` + fonctions natives extraites, 4098 pixels et FNV golden `ae456812`, ancien corpus fail-closed conservé. Les deux CI 166/166 [PR](https://github.com/Kharn27/DoomRPG-RE/actions/runs/43698457010)/[push](https://github.com/Kharn27/DoomRPG-RE/actions/runs/43698451658) SUCCESS sur le candidat. **Aucun changement du firmware/PAK/mémoire/wrap/RNG**.

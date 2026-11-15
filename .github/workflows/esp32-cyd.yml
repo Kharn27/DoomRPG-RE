@@ -585,7 +585,7 @@ jobs:
       - name: Test bounded native wall texture successor inline (host C)
         run: python ESP32/test/native_wall_boundary_inline_host.py
 
-      - name: Test pack-v2 provenance and physical legacy-adjacent wall parity (host C)
+      - name: Test pack-v2 map-selected compact legacy wall atlas parity (host C)
         run: python ESP32/test/native_wall_pak_provenance_host.py
 
       - name: Test wall sprite visual offset and priority versus desktop (host C)
