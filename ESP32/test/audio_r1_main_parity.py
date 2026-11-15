@@ -1,18 +1,17 @@
-"""Strip only the temporary AUDIO-R1l gameplay hook to preserve exact
-historical Root-J2..J5 Git blob references. Fail closed if source drifts.
-The production game still invokes the hook; AUDIO-R1l tests inspect it.
+"""Strip the AUDIO-R2a main hook for historical root/main SHA parity.
+
+This function is deliberately fail-closed when the exact instrumented
+main.cpp changes; it does NOT remove native gameplay or any other features.
 """
 
 def restore_pre_audio_r1(text: str) -> str:
-    include = '#include "esp_asset_pack.h"\n#include "esp_audio_r1_timer.h"\n'
-    original = '#include "esp_asset_pack.h"\n'
+    include = '#include "esp_asset_pack.h"\n#include "esp_audio_entrance_music.h"\n'
     hook = (
-        '    /* AUDIO-R1l TEMPORARY: bounded 440 Hz PCM timer at real gameplay load.\n'
-        '     * No I2S or cold-boot audio; service is non-blocking on each main loop. */\n'
-        '    const bool gameAudioActive = EspNativeGameplaySession_isActive();\n'
-        '    if (gameAudioActive) EspAudioR1_timerTryStartInGameplay();\n'
-        '    EspAudioR1_timerService(gameAudioActive);\n'
+        '    /* AUDIO-R2a: selected Entrance soundtrack, SD IMA-ADPCM 22050Hz.\n'
+        '     * Game-loop producer owns all SD reads/decoding; DAC timer ISR DRAM-only.\n'
+        '     * Automatically stop and close on session or map exit, fail closed. */\n'
+        '    EspEntranceMusic_service(EspNativeGameplaySession_isActive(), sdReady);\n'
     )
-    assert text.count(include) == 1, "AUDIO-R1l include integration drift"
-    assert text.count(hook) == 1, "AUDIO-R1l gameplay integration drift"
-    return text.replace(include, original, 1).replace(hook, "", 1)
+    assert text.count(include) == 1, "AUDIO-R2a include integration drift"
+    assert text.count(hook) == 1, "AUDIO-R2a service integration drift"
+    return text.replace(include, '#include "esp_asset_pack.h"\n', 1).replace(hook, "", 1)
