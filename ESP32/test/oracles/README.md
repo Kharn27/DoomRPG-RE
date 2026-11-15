@@ -2,6 +2,24 @@
 
 This directory contains **reference code, not ESP32 firmware sources**.
 
+## SDL-F36 — exact SDL.h core ABI remains executable, but host-only
+
+- `SDL.h` moved byte-for-byte to this directory from `ESP32/include`
+  (Git blob `da1040d4fa36f70cafe1141f0d6e573741a3d575`).
+- In F35, `SDL_mixer.h` moved here as well. **There are no SDL headers
+  left inside the firmware `ESP32/include` directory.**
+- Historical SDL-A blit, texture, indexed BMP, Root/Render/RNG, and C11 ABI
+  probes still compile/exercise the original type signatures through explicit
+  host-only include directories. Inline CI `cc` fixtures receive
+  `-IESP32/test/oracles`; PlatformIO firmware flags do not.
+- `sdl_f36_sdl_header_oracle_host.py` checks Git blob identity and SDL types.
+  The real SCons pre-script rejects a production SDL.h resurrection and a
+  missing host oracle, both exercised by adversarial tests.
+- Guarded SDL imports may remain in native-source host/geometry variants;
+  actual Xtensa GCC `.d` dependencies and ELF audit prove the native release
+  does not consume or link them. This is host-only reorganization, not a
+  behavior or RAM optimization.
+
 ## SDL-F33 — exact legacy SDL shim oracle (never linked to firmware)
 
 - `esp32_sdl.cpp` was moved **unchanged** from
