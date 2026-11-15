@@ -128,11 +128,10 @@ static void fixture(void) {
     memset(legacyWallGuards, 0, sizeof(legacyWallGuards));
     legacyWallGuardCount = 0;
 }
-/* R-A2a: bounded pack-v2 fixture generated from three original PAK entries.
- * The witness metadata is independently validated by the Python pack reader.
- * Deliberately reconstruct the legacy physical-adjacent byte from the pack,
- * NOT the mapped guard byte. A mismatch must fail, rather than be hidden by
- * the synthetic R-A1 atlas which manually injected the successor. */
+/* R-A2a: pack-v2 data + exact map-selected texture order recovered from BSP.
+ * The desktop Render_loadTexels reorders and compacts source blocks. Thus
+ * legacy compact-atlas adjacency is NOT raw physical PAK adjacency.
+ * Compare actual source-extracted functions, reject compact-atlas divergence. */
 static int readFixtureBytes(FILE* f, void* p, size_t n) {
     return fread(p, 1U, n, f) == n;
 }
@@ -155,7 +154,7 @@ static int runPackFixture(const char* path) {
         FirstFrameWork work = {0};
         ResolvedWallTexture src = {0};
         unsigned short fb[16] = {0}, legacyFb[16] = {0};
-        uint8_t physicalByte, mappedByte;
+        uint8_t physicalByte, mappedByte, compactLegacyByte;
         uint32_t sourceOffset, successorSource, expectedHash;
         uint16_t successorActual;
         uint32_t nativeHash=2166136261U, legacyHash=2166136261U;
@@ -175,13 +174,17 @@ static int runPackFixture(const char* path) {
             !readFixtureBytes(f,wall,sizeof(wall)) ||
             !readFixtureBytes(f,&physicalByte,1U) ||
             !readFixtureBytes(f,&mappedByte,1U) ||
+            !readFixtureBytes(f,&compactLegacyByte,1U) ||
             !readFixtureBytes(f,raw,4U)) goto invalid;
         expectedHash=readLe32(raw);
         base=(int)(sourceOffset/2U);
         if (base<0 || (uint32_t)base+WALL_PACKED_BYTES>=sizeof(legacyAtlas))
             goto invalid;
         memcpy(legacyAtlas+base,wall,sizeof(wall));
-        legacyAtlas[base+WALL_PACKED_BYTES]=physicalByte;
+        /* Desktop Render_loadTexels sorts the map-selected 4-phase textures
+         * and copies 2048-byte blocks into its COMPACT atlas. Never use
+         * the raw PAK-adjacent byte as the desktop oracle. */
+        legacyAtlas[base+WALL_PACKED_BYTES]=compactLegacyByte;
         for (int i=0;i<16;++i)
             src.paletteRgb565[i]=readLe16(paletteRaw+i*2);
         src.sourceTexelOffset=sourceOffset;
@@ -223,10 +226,11 @@ static int runPackFixture(const char* path) {
             Render_SpanMode0(&render,0,0,(base<<13)+local,0,1);
             if (fb[0]!=legacyFb[0]) ++mismatches;
         }
-        printf("RA2 PACK logical=%u actual=%u source=%u successor=%u/%u physical=%02x mapped=%02x fullTexelNibbles=4096 pixelFNV=%08x boundaryParity=%s\n",
+        printf("RA2 PACK logical=%u actual=%u source=%u successor=%u/%u rawPakAdjacent=%02x mappedGuard=%02x compactLegacy=%02x fullTexelNibbles=4096 pixelFNV=%08x boundaryParity=%s rawPakNeighbor=%s\n",
                src.logicalId,src.actualId,sourceOffset,successorActual,
-               successorSource,physicalByte,mappedByte,nativeHash,
-               physicalByte==mappedByte?"EXACT":"DIFF");
+               successorSource,physicalByte,mappedByte,compactLegacyByte,nativeHash,
+               compactLegacyByte==mappedByte?"EXACT":"DIFF",
+               physicalByte==mappedByte?"SAME":"DIFF");
         continue;
 invalid:
         fprintf(stderr,"FAIL RA2 PACK malformed/incorrect fixture=%d\n",fixtureIndex);
@@ -240,10 +244,10 @@ invalid:
     }
     fclose(f);
     if (mismatches!=0) {
-        fprintf(stderr,"FAIL RA2 PACK legacy physical adjacency != mapped guard: differing nibbles=%d (no silent R-A1 atlas substitution)\n",mismatches);
+        fprintf(stderr,"FAIL RA2 PACK compact legacy adjacency != mapped guard: differing nibbles=%d\n",mismatches);
         return 2;
     }
-    printf("PASS RA2 PACK real-span native/legacy internal=8192 boundary=4 independent-physical-adjacency=yes\n");
+    printf("PASS RA2 PACK native/legacy compact-atlas internal=8192 boundary=4 raw-PAK-adjacency-audited=yes\n");
     return 0;
 }
 
