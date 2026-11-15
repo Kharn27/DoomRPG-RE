@@ -272,7 +272,7 @@ static bool refill() {
     if (blocksRead==0U && loops==0U) {
         printf("[ENTRANCEMUSIC] BLOCK0 predictor=%d stepIndex=%u "
                "pcm16MinMax=%d..%d dacFirst=%u dacLast=%u "
-               "softKneeFrames=%u gainDiv=16 peakCodes=112\n",
+               "softKneeFrames=%u gainDiv=14 peakCodes=112\n",
                (int)(int16_t)EspEntranceAdpcm_u16(raw),
                (unsigned)raw[2],(int)stats.minPcm,(int)stats.maxPcm,
                (unsigned)decoded[0],(unsigned)decoded[samples-1U],
@@ -371,7 +371,7 @@ static bool startPlaying() {
     }
     printf("[ENTRANCEMUSIC] PLAY path=%s backend=timer-DAC2 "
            "format=IMA-ADPCM monoHz=22050 ring=%u primed=%u "
-           "dacPeakCodes=112 gainDiv=16 softKneeAt=96 masterVolume=%u witness=none source=SD-ring "
+           "dacPeakCodes=112 gainDiv=14 softKneeAt=96 masterVolume=%u witness=none source=SD-ring "
            "dacEnabled=yes gpio25=untouched noI2S=yes noPSRAM=yes\n",
            path,(unsigned)kRingCapacity,(unsigned)queued(),
            (unsigned)EspNativeAudioIntent_musicVolumePercent());
