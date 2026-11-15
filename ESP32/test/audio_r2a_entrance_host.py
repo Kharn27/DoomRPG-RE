@@ -38,7 +38,7 @@ assert "FAIL-CLOCK" in runtime and "FAIL-HEAP" in runtime
 assert "gapsOver90us" in runtime and "maxSdReadUs" in runtime
 assert "SD.open(" in runtime and "musicFile.read(raw,wav.blockAlign)" in runtime
 assert "if (kRingCapacity-q<wav.samplesPerBlock)" in runtime
-assert "EspEntranceAdpcm_decodeBlock(" in runtime
+assert "EspEntranceAdpcm_decodeBlockObserved(" in runtime
 assert runtime.index("if (measured<20900U||measured>23200U)") < runtime.index("if (!startPlaying())")
 assert "i2s_" not in runtime and "SPI." not in runtime
 assert "xTaskCreate" not in runtime and "DoomRPG.zip" not in runtime
