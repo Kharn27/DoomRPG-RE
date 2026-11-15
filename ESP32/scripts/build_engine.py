@@ -190,7 +190,13 @@ if os.path.isfile(sdl_platform_production_header):
 sdl_platform_host_oracle = join(project_dir, "test", "oracles", "esp32_sdl_platform.h")
 if not os.path.isfile(sdl_platform_host_oracle):
     raise RuntimeError("Missing host-only SDL display header oracle")
+# SDL-F35: the SDL_mixer compatibility ABI is host-only.
+if os.path.isfile(join(project_dir, "include", "SDL_mixer.h")):
+    raise RuntimeError("Retired SDL mixer header returned to production includes")
+if not os.path.isfile(join(project_dir, "test", "oracles", "SDL_mixer.h")):
+    raise RuntimeError("Missing host-only SDL mixer header oracle")
 print("[ESP32] SDL shim host-only; compiledFirmware=no oracle=ESP32/test/oracles/esp32_sdl.cpp platformHeader=test-only")
+print("[ESP32] SDL-F35 mixer header=host-only nativeSound=opaque")
 
 # The original desktop C and uncompiled SDL shim are host-only references;
 # all firmware owners live in ESP32/src; no generated SDL source remains.

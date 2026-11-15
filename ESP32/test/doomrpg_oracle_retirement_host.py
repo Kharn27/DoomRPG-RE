@@ -84,6 +84,8 @@ def main():
                         fixture_oracles / "esp32_sdl.cpp")
         shutil.copyfile(ROOT / "ESP32/test/oracles/esp32_sdl_platform.h",
                         fixture_oracles / "esp32_sdl_platform.h")
+        shutil.copyfile(ROOT / "ESP32/test/oracles/SDL_mixer.h",
+                        fixture_oracles / "SDL_mixer.h")
         fixture_include = project / "include"
         fixture_include.mkdir()
 
@@ -107,6 +109,9 @@ def main():
         snapshot = permanent.read_bytes()
         platform_header = fixture_oracles / "esp32_sdl_platform.h"
         header_snapshot = platform_header.read_bytes()
+        mixer_header = fixture_oracles / "SDL_mixer.h"
+        mixer_snapshot = mixer_header.read_bytes()
+        assert not (fixture_include / "SDL_mixer.h").exists()
         assert not (fixture_include / "esp32_sdl_platform.h").exists()
         shim = snapshot.decode("utf-8")
         # SDL-D1: generated shim absent; packed texture ownership and
@@ -130,6 +135,7 @@ def main():
         execute_build_script(env2)
         assert permanent.read_bytes() == snapshot
         assert platform_header.read_bytes() == header_snapshot
+        assert mixer_header.read_bytes() == mixer_snapshot
         assert not obsolete.exists() and not stale_shim.exists()
         assert env2.sources == []
 
@@ -177,6 +183,25 @@ def main():
         else:
             raise AssertionError("missing host SDL display header accepted")
         platform_header.write_bytes(header_snapshot)
+
+        # SDL-F35: reject a production mixer header and a missing host oracle.
+        revived_mixer = fixture_include / "SDL_mixer.h"
+        revived_mixer.write_text("FORBIDDEN SDL MIXER HEADER\n")
+        try:
+            execute_build_script(FakeEnv(project, build))
+        except RuntimeError as exc:
+            assert "Retired SDL mixer header returned to production includes" in str(exc)
+        else:
+            raise AssertionError("revived production mixer header accepted")
+        revived_mixer.unlink()
+        mixer_header.unlink()
+        try:
+            execute_build_script(FakeEnv(project, build))
+        except RuntimeError as exc:
+            assert "Missing host-only SDL mixer header oracle" in str(exc)
+        else:
+            raise AssertionError("missing host mixer oracle accepted")
+        mixer_header.write_bytes(mixer_snapshot)
 
         # The 21-file denylist is intentional and fails closed if the desktop
         # tree changes, rather than silently compiling a new original C file.
