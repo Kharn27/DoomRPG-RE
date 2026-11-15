@@ -26,7 +26,6 @@ def restore_pre_audio_r1(text: str) -> str:
         '     * the display, SD and gameplay initialize. Expect a ~19s delay before\n'
         '     * MENU_MAIN; after this one-shot, the normal game boots silently. */\n'
         '    EspAudioR1_runColdBootProbe();\n'
-        '\n'
     )
     cw_hook = (
         '    /* AUDIO-R1h TEMPORARY: compare the identical 440Hz pitch with the\n'
