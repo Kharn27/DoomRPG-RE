@@ -331,6 +331,7 @@ def build_synthetic_pack(path: Path, diverge: bool = False,
             struct.pack_into("<ii", mapping, 16 + (first + phase) * 8,
                              source, palette)
     struct.pack_into("<H", mapping, id_base + 16 * 2, 68)
+    struct.pack_into("<H", mapping, id_base + 50 * 2, 116)
     palette_words = tuple((i * 1733 + 19) & 65535 for i in range(32))
     palettes = struct.pack("<I32H", 64, *palette_words)
     texels = bytearray(4 + 37000)
@@ -342,18 +343,18 @@ def build_synthetic_pack(path: Path, diverge: bool = False,
     texels[4 + 32768 // 2] = 0x12 if wrong_guard else 0x11
     texels[4 + 69632 // 2] = 0xA7
     texels[4 + 20480 // 2 + PACKED_BYTES] = 0x99 if diverge else 0x11
-    # Minimal valid BSP with 3 active logical textures (15, 16, 49).
+    # Minimal valid BSP with 4 active logical textures (15, 16, 49, 50).
     # Follows EspBspReader: 33-byte header + counted sections + block/planes.
     header = (b"Entrance" + b"\0" * 8 + b"\0" * 6 +
               bytes((15, 49)) + b"\0" * 3 +
               struct.pack("<BHBH", 1, 904, 64, 648))
     require(len(header) == 33, "synthetic BSP header construction error")
-    line_records = bytearray(3 * 10)
-    for i, logical in enumerate((15, 16, 49)):
+    line_records = bytearray(4 * 10)
+    for i, logical in enumerate((15, 16, 49, 50)):
         struct.pack_into("<H", line_records, i * 10 + 4, logical)
     bsp = (header +
            struct.pack("<H", 0) +  # nodes
-           struct.pack("<H", 3) + bytes(line_records) +  # lines
+           struct.pack("<H", 4) + bytes(line_records) +  # lines
            struct.pack("<HHHH", 0, 0, 0, 0) +  # sprites/events/codes/strings
            bytes(256) + bytes((15,)) * 2048)
     resources = {
