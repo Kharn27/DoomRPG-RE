@@ -56,6 +56,14 @@ typedef struct GameplayFrameScratch_s {
  * the generic gameplay session owns the proven cold/warm/large-cache lifecycle.
  */
 static GameplayFrameScratch frameScratch;
+
+#if defined(DOOMRPG_RA2B_CAPTURE) && DOOMRPG_RA2B_CAPTURE
+/* At most 48 settled publishes over the whole process. No new framebuffer,
+ * asset read, map-state mutation or heap owner. Startup prime is explicitly
+ * distinguishable by the READY line in Serial and the seq ordinal. */
+static uint8_t ra2bFrameWitnessCount;
+#define RA2B_MAX_FRAME_WITNESSES 48U
+#endif
 /* PR236 B probe uses the real ESP32 flash driver. Host-only fixtures link
  * the frame compositor without any physical partition and must not depend
  * on its metrics; this guard also avoids adding fixture mock state. */
@@ -174,6 +182,11 @@ static int renderComposed(
     EspNativeFirstFrameState* world = &frameScratch.world;
     EspAssetPackResidentStats spriteStorageBefore;
     EspAssetPackResidentStats spriteStorageAfter;
+#if defined(DOOMRPG_RA2B_CAPTURE) && DOOMRPG_RA2B_CAPTURE
+    EspAssetPackResidentStats ra2bBefore;
+    uint32_t ra2bSdBefore = 0U;
+    uint32_t ra2bFlashBefore = 0U;
+#endif
     uint32_t renderBeforeSpritesFNV;
     uint32_t renderAfterSpritesFNV;
     uint32_t hudAfterWorldFNV;
@@ -210,6 +223,12 @@ static int renderComposed(
     memset(world, 0, sizeof(*world));
     memset(&spriteStorageBefore, 0, sizeof(spriteStorageBefore));
     memset(&spriteStorageAfter, 0, sizeof(spriteStorageAfter));
+#if defined(DOOMRPG_RA2B_CAPTURE) && DOOMRPG_RA2B_CAPTURE
+    memset(&ra2bBefore, 0, sizeof(ra2bBefore));
+    EspAssetPack_residentGetStats(&ra2bBefore);
+    ra2bSdBefore = EspAssetPack_ra2bSdRangeMicros();
+    ra2bFlashBefore = EspAssetPack_mapFlashRuntimeReadMicros();
+#endif
     totalStart = esp_timer_get_time();
 
     stats->frameBeforeFNV = frameFNV();
@@ -533,6 +552,55 @@ done:
     if (!ok) stats->active = 0U;
     *outStats = *stats;
     frameScratch.busy = 0U;
+#if defined(DOOMRPG_RA2B_CAPTURE) && DOOMRPG_RA2B_CAPTURE
+    /* Full logical 160x120 RGB565 FNV already computed by the normal frame
+     * compositor. Log only successful, settled, non-automap published poses.
+     * Deliberately log AFTER totalMicros measurement and physical present:
+     * serial baud rate is not included in measured raster/PAK time. */
+    if (ok && publish && !preview &&
+        ra2bFrameWitnessCount < RA2B_MAX_FRAME_WITNESSES &&
+        !EspNativeResidentGameplay_isAutomapActive() &&
+        view->viewX == view->destX && view->viewY == view->destY &&
+        view->viewAngle == view->destAngle &&
+        (view->viewAngle & 63) == 0) {
+        EspAssetPackResidentStats ra2bAfter;
+        const uint32_t sdAfter = EspAssetPack_ra2bSdRangeMicros();
+        const uint32_t flashAfter = EspAssetPack_mapFlashRuntimeReadMicros();
+        EspAssetPack_residentGetStats(&ra2bAfter);
+        ++ra2bFrameWitnessCount;
+        printf("[RA2B] FRAME v=1 seq=%u map=%u x=%d y=%d angle=%u "
+               "full=%08x viewport=%08x world=%08x hud=%08x "
+               "walls=%u wallPixels=%u planes=%u sprites=%u "
+               "glows=%u worldUs=%u spriteUs=%u hudUs=%u "
+               "presentUs=%u totalUs=%u reads=%u bytes=%u "
+               "rangeHit=%u rangeMiss=%u backing=%s sdRangeUs=%u flashReadUs=%u\n",
+               (unsigned int)ra2bFrameWitnessCount,
+               (unsigned int)view->targetMapId,
+               (int)view->viewX, (int)view->viewY,
+               (unsigned int)angle,
+               (unsigned int)stats->frameAfterFNV,
+               (unsigned int)stats->viewportAfterSpritesFNV,
+               (unsigned int)stats->worldFrameFNV,
+               (unsigned int)stats->hudBandsAfterFNV,
+               (unsigned int)stats->wallDraws,
+               (unsigned int)stats->wallPixels,
+               (unsigned int)stats->planePixels,
+               (unsigned int)stats->spritePixels,
+               (unsigned int)stats->glowPixels,
+               (unsigned int)stats->worldMicros,
+               (unsigned int)stats->spriteMicros,
+               (unsigned int)stats->hudMicros,
+               (unsigned int)stats->presentMicros,
+               (unsigned int)stats->totalMicros,
+               (unsigned int)(ra2bAfter.physicalReads - ra2bBefore.physicalReads),
+               (unsigned int)(ra2bAfter.physicalBytes - ra2bBefore.physicalBytes),
+               (unsigned int)(ra2bAfter.rangeCacheHits - ra2bBefore.rangeCacheHits),
+               (unsigned int)(ra2bAfter.rangeCacheMisses - ra2bBefore.rangeCacheMisses),
+               EspAssetPack_isMapFlashActive() ? "flash" : "sd",
+               (unsigned int)(sdAfter - ra2bSdBefore),
+               (unsigned int)(flashAfter - ra2bFlashBefore));
+    }
+#endif
     return ok;
 }
 
