@@ -29,7 +29,8 @@ static inline void EspEntranceAdpcm_observePcm(
     if (pcm<stats->minPcm) stats->minPcm=pcm;
     if (pcm>stats->maxPcm) stats->maxPcm=pcm;
     if (pcm!=0) ++stats->nonZeroPcm;
-    if (pcm < -2048 || pcm > 2048) ++stats->gainLimited;
+    /* Count the fraction entering the soft gain knee, not hard clipping. */
+    if (pcm < -1536 || pcm > 1536) ++stats->gainLimited;
 }
 
 static inline uint16_t EspEntranceAdpcm_u16(const uint8_t* p) {
@@ -121,12 +122,20 @@ static inline int EspEntranceAdpcm_clamp(int v,int minV,int maxV) {
 }
 static inline uint8_t EspEntranceAdpcm_toDac(int16_t pcm,
                                             uint32_t firstFrame) {
-    /* AUDIO-R2c: real early-track PCM16 was -1689..2252, which
-     * collapsed near 128 in the original /512 output. Use /32 (~+24dB
-     * over the original), clamp to +/-64 codes before the 200ms fade.
-     * UI volume is applied by the main-loop producer, not in the ISR. */
-    int32_t diff=(int32_t)pcm/32;
-    diff=EspEntranceAdpcm_clamp(diff,-64,64);
+    /* AUDIO-R2d: this user recording is unusually quiet (-1689..2252
+     * PCM16 in the observed prefix). Raise quiet details by ~6dB vs R2c
+     * while compressing only rare peaks: linear up to +/-96 DAC codes,
+     * then continuous soft knee asymptoting to +/-112 (safe [16,240]).
+     * An abrupt full-scale clamp would add audible harmonics. All of this
+     * is producer-side; the timer ISR only writes an 8-bit DAC code. */
+    int32_t diff=(int32_t)pcm/16;
+    const int32_t sign=diff<0?-1:1;
+    int32_t magnitude=diff<0?-diff:diff;
+    if (magnitude>96) {
+        const int32_t excess=magnitude-96;
+        magnitude=96+(excess*16)/(excess+16);
+    }
+    diff=sign*magnitude;
     const uint32_t fade=firstFrame<4410U?firstFrame:4410U;
     diff=diff*(int32_t)fade/4410;
     return (uint8_t)(128+diff);
