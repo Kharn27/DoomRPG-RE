@@ -1,3 +1,9 @@
+## SDL-F32 — sources SDL BMP conservées uniquement comme oracles (15 novembre 2026)
+
+Le vieux décodeur `Esp32Bmp_LoadRW` (SDL_RWops/SDL_Surface) et son header ne vivent plus dans `ESP32/src` ou `ESP32/include`, mais dans [`test/oracles/`](test/oracles/README.md), avec **les blobs Git exacts** `88a62dfd` et `f896aa52`. Ils ne sont pas de nouvelles dépendances runtime : les exclusions fail-closed `-<esp32_bmp.cpp>` et `-<esp32_sdl.cpp>` restent dans PlatformIO. Le runtime lit toujours les BMP depuis `/DoomRPG-ESP32.pak` via `EspNativeIndexedBmp_open` puis `EspNativeImage_loadPack` et `EspNativeTexture_adoptIndexed`. Les tests SDL-F22 et SDL-B7 lisent maintenant les oracles sans changer leurs octets, et l'inventaire compiledb/ELF demeure obligatoire pour chaque build. [PR #344](https://github.com/Kharn27/DoomRPG-RE/pull/344) : [CI de code 172/172 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/43755597549), déplacement seul **sans changement firmware ni validation CYD revendiquée**.
+
+---
+
 ## Deux CYD / un seul moteur : garde-fou pour toute future modification (15 novembre 2026)
 
 [Contrat du build commun](CYD_DUAL_BUILD_CORE_PARITY.md). `esp-cyd-inverted` hérite de `esp32-cyd`, mêmes 171 unités C/C++ natives et mêmes `-D` hors sélecteur LCD ; validation depuis les **vraies** bases de compilation PlatformIO par `ESP32/test/cyd_dual_build_core_parity_host.py`, en plus du test du code C++ écran. Chaque future modification du gameplay/renderer/PAK entre automatiquement dans **les deux firmwares** ; un écart accidentel fera échouer la CI. Premier candidat `9eed5bdff3a519ec7a52573abadae2bf10e4f64f`, double CI 172/172 SUCCESS. Ajustement du rendu gamma historique sur premier CYD : **milestone séparé après fusion**, par test optique, jamais un fork du raster ou du RGB565. Gamma du second CYD toujours expérimentale tant que version visuelle exacte n'est pas vérifiée.
