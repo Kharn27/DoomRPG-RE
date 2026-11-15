@@ -14,6 +14,7 @@
 
 #include "esp_audio_entrance_adpcm.h"
 #include "esp_audio_entrance_music.h"
+#include "esp_audio_r1_pcm.h" /* R1l-proven synthetic 440Hz code, main loop only */
 #include "esp_player_view_state.h"
 
 /* AUDIO-R2a: native SD music, not a desktop player.
@@ -35,6 +36,11 @@ constexpr uint32_t kPrimeFrames=4096U;  /* 186ms */
 constexpr uint32_t kHeaderBytes=512U;
 constexpr uint32_t kMaxBlockBytes=1024U;
 constexpr uint32_t kMaxBlockSamples=2041U;
+constexpr uint32_t kWitnessFrames=2U*kRate;  /* 2s, before ring playback */
+constexpr uint32_t kWitnessWaveFrames=400U; /* 8 cycles at ~440Hz */
+constexpr uint32_t kWitnessFade=4410U;     /* 200ms, in/out */
+constexpr uint32_t kHashFrames=4096U;      /* first music frames, producer==ISR */
+constexpr uint32_t kFnvBasis=2166136261U;
 constexpr timer_group_t kGroup=TIMER_GROUP_1;
 constexpr timer_idx_t kTimer=TIMER_1;
 static_assert((kRingCapacity&(kRingCapacity-1U))==0U,"ring power of two");
@@ -55,6 +61,19 @@ static volatile uint32_t prevCycle;
 static volatile uint32_t maxGapCycles;
 static volatile uint32_t gapsOver90us;
 static volatile uint32_t maxIsrCycles;
+/* Distinguish known-good synthesis, actual ring consumption and DAC writes.
+ * ISR writes only small volatile counters and registers; no printing/SD. */
+static volatile uint32_t witnessWritten;
+static volatile uint32_t ringConsumed;
+static volatile uint32_t consumedMin;
+static volatile uint32_t consumedMax;
+static volatile uint32_t consumedNonMid;
+static volatile uint32_t consumedOver8;
+static volatile uint32_t consumedOver16;
+static volatile uint32_t consumedPrefixFnv;
+static volatile uint32_t dacWrittenMin;
+static volatile uint32_t dacWrittenMax;
+static DRAM_ATTR uint8_t witnessWave[kWitnessWaveFrames];
 static uint8_t* ring;
 
 /* Single game-loop owner. These buffers do NOT occupy the audio ISR stack. */
@@ -82,6 +101,16 @@ static uint32_t playStartMs;
 static uint32_t nextReportMs;
 static uint32_t lastFrameAtMs;
 static uint32_t lastFrameSeen;
+static bool firstSignalReported;
+/* PCM16 / DAC8 statistics gathered exclusively on the game-loop producer. */
+static int16_t pcmMin;
+static int16_t pcmMax;
+static uint32_t pcmNonZero;
+static uint32_t producedDacMin;
+static uint32_t producedDacMax;
+static uint32_t producedNonMid;
+static uint32_t producedFrames;
+static uint32_t publishedPrefixFnv;
 
 static bool IRAM_ATTR onAudioTick(void*) {
     const uint8_t mode=phase;
@@ -98,13 +127,34 @@ static bool IRAM_ATTR onAudioTick(void*) {
         prevCycle=start;
         const uint32_t r=__atomic_load_n(&rd,__ATOMIC_RELAXED);
         const uint32_t w=__atomic_load_n(&wr,__ATOMIC_ACQUIRE);
+        const uint32_t frame=playedFrames;
         uint32_t code=128U;
-        if (r!=w && ring!=nullptr) {
+        if (frame<kWitnessFrames) {
+            /* A/B reference: R1l's verified 440Hz DAC waveform at the
+             * new 22050Hz timer rate. Ring remains queued for comparison. */
+            const int32_t delta=(int32_t)witnessWave[frame%kWitnessWaveFrames]-128;
+            uint32_t fade=frame<kWitnessFade?frame:kWitnessFade;
+            const uint32_t remaining=kWitnessFrames-frame-1U;
+            if (remaining<fade) fade=remaining;
+            code=(uint32_t)(128+(delta*(int32_t)fade)/(int32_t)kWitnessFade);
+            ++witnessWritten;
+        } else if (r!=w && ring!=nullptr) {
             code=ring[r&kRingMask];
             __atomic_store_n(&rd,r+1U,__ATOMIC_RELEASE);
+            const uint32_t count=ringConsumed;
+            if (count<kHashFrames)
+                consumedPrefixFnv=(consumedPrefixFnv^(uint8_t)code)*16777619U;
+            ringConsumed=count+1U;
+            if (code<consumedMin) consumedMin=code;
+            if (code>consumedMax) consumedMax=code;
+            if (code!=128U) ++consumedNonMid;
+            if (code<120U||code>136U) ++consumedOver8;
+            if (code<112U||code>144U) ++consumedOver16;
         } else {
             ++underruns;
         }
+        if (code<dacWrittenMin) dacWrittenMin=code;
+        if (code>dacWrittenMax) dacWrittenMax=code;
         REG_SET_FIELD(RTC_IO_PAD_DAC2_REG,RTC_IO_PDAC2_DAC,code);
         ++playedFrames;
         const uint32_t cost=xthal_get_ccount()-start;
@@ -116,6 +166,26 @@ static uint32_t queued() {
     return __atomic_load_n(&wr,__ATOMIC_ACQUIRE)-
            __atomic_load_n(&rd,__ATOMIC_ACQUIRE);
 }
+/* Printed on game loop only, never on the 22.05kHz interrupt. */
+static void signalReport(const char* at) {
+    printf("[ENTRANCEMUSIC] SIGNAL at=%s witness=%u ringConsumed=%u "
+           "isrRingMinMax=%u..%u isrNon128=%u isrOver8=%u "
+           "isrOver16=%u dacWrittenMinMax=%u..%u "
+           "pcm16MinMax=%d..%d pcm16NonZero=%u "
+           "publishedDacMinMax=%u..%u publishedNon128=%u "
+           "producerFrames=%u prefix4096Published=%08x "
+           "prefix4096Consumed=%08x queued=%u underruns=%u\n",
+           at,(unsigned)witnessWritten,(unsigned)ringConsumed,
+           (unsigned)consumedMin,(unsigned)consumedMax,
+           (unsigned)consumedNonMid,(unsigned)consumedOver8,
+           (unsigned)consumedOver16,
+           (unsigned)dacWrittenMin,(unsigned)dacWrittenMax,
+           (int)pcmMin,(int)pcmMax,(unsigned)pcmNonZero,
+           (unsigned)producedDacMin,(unsigned)producedDacMax,
+           (unsigned)producedNonMid,(unsigned)producedFrames,
+           (unsigned)publishedPrefixFnv,(unsigned)consumedPrefixFnv,
+           (unsigned)queued(),(unsigned)underruns);
+}
 static void closeMusic(const char* reason) {
     phase=kSilent;
     if (timerInit) (void)timer_pause(kGroup,kTimer);
@@ -123,6 +193,7 @@ static void closeMusic(const char* reason) {
     callbackAdded=false;
     if (timerInit) (void)timer_deinit(kGroup,kTimer);
     timerInit=false;
+    if (playedFrames>0U) signalReport("FINAL");
     if (dacEnabled) {
         (void)dac_output_voltage(DAC_CHANNEL_2,128U);
         (void)dac_output_disable(DAC_CHANNEL_2);
@@ -177,13 +248,32 @@ static bool refill() {
     const uint32_t samples=available<wav.samplesPerBlock?
                            available:wav.samplesPerBlock;
     const uint32_t fadeFrame=(loops==0U)?producedInLoop:4410U;
-    if (!EspEntranceAdpcm_decodeBlock(raw,wav.blockAlign,
-        wav.samplesPerBlock,decoded,kMaxBlockSamples,fadeFrame)) {
+    EspEntranceAdpcmDecodeStats stats={};
+    if (!EspEntranceAdpcm_decodeBlockObserved(raw,wav.blockAlign,
+        wav.samplesPerBlock,decoded,kMaxBlockSamples,fadeFrame,&stats)) {
         failure="adpcm_decode";return false;
     }
+    if (stats.minPcm<pcmMin) pcmMin=stats.minPcm;
+    if (stats.maxPcm>pcmMax) pcmMax=stats.maxPcm;
+    pcmNonZero+=stats.nonZeroPcm;
+    if (blocksRead==0U && loops==0U) {
+        printf("[ENTRANCEMUSIC] BLOCK0 predictor=%d stepIndex=%u "
+               "pcm16MinMax=%d..%d dacFirst=%u dacLast=%u\n",
+               (int)(int16_t)EspEntranceAdpcm_u16(raw),
+               (unsigned)raw[2],(int)stats.minPcm,(int)stats.maxPcm,
+               (unsigned)decoded[0],(unsigned)decoded[samples-1U]);
+    }
     const uint32_t start=__atomic_load_n(&wr,__ATOMIC_RELAXED);
-    for (uint32_t i=0U;i<samples;i++)
-        ring[(start+i)&kRingMask]=decoded[i];
+    for (uint32_t i=0U;i<samples;i++) {
+        const uint8_t code=decoded[i];
+        ring[(start+i)&kRingMask]=code;
+        if (code<producedDacMin) producedDacMin=code;
+        if (code>producedDacMax) producedDacMax=code;
+        if (code!=128U) ++producedNonMid;
+        if (producedFrames<kHashFrames)
+            publishedPrefixFnv=(publishedPrefixFnv^code)*16777619U;
+        ++producedFrames;
+    }
     __atomic_store_n(&wr,start+samples,__ATOMIC_RELEASE);
     producedInLoop+=samples;
     ++blocksRead;
@@ -223,6 +313,14 @@ static bool startClock() {
     return true;
 }
 static bool startPlaying() {
+    /* Identical R1l quantizer and DRAM table pattern, adjusted sample rate.
+     * The main loop builds the wave; ISR never reads flash data. */
+    uint32_t wavePhase=0U;
+    const uint32_t step=(uint32_t)(((uint64_t)440U<<32)/kRate);
+    for (uint32_t i=0U;i<kWitnessWaveFrames;i++) {
+        witnessWave[i]=EspAudioR1Pcm_dacCode(wavePhase,64U);
+        wavePhase+=step;
+    }
     if (dac_output_enable(DAC_CHANNEL_2)!=ESP_OK) {
         failure="dac_enable";return false;
     }
@@ -233,6 +331,17 @@ static bool startPlaying() {
     }
     playedFrames=0U;
     underruns=0U;
+    witnessWritten=0U;
+    ringConsumed=0U;
+    consumedMin=255U;
+    consumedMax=0U;
+    consumedNonMid=0U;
+    consumedOver8=0U;
+    consumedOver16=0U;
+    consumedPrefixFnv=kFnvBasis;
+    dacWrittenMin=255U;
+    dacWrittenMax=0U;
+    firstSignalReported=false;
     prevCycle=0U;
     maxGapCycles=0U;
     gapsOver90us=0U;
@@ -247,7 +356,8 @@ static bool startPlaying() {
     }
     printf("[ENTRANCEMUSIC] PLAY path=%s backend=timer-DAC2 "
            "format=IMA-ADPCM monoHz=22050 ring=%u primed=%u "
-           "dacPeakCodes=64 gpio25=untouched noI2S=yes noPSRAM=yes\n",
+           "dacPeakCodes=64 witness440Ms=2000 then=SD-ring "
+           "dacEnabled=yes gpio25=untouched noI2S=yes noPSRAM=yes\n",
            path,(unsigned)kRingCapacity,(unsigned)queued());
     return true;
 }
@@ -316,6 +426,14 @@ static void begin() {
     maxReadUs=0U;
     slowReadCount=0U;
     minBuffered=kRingCapacity;
+    pcmMin=32767;
+    pcmMax=-32768;
+    pcmNonZero=0U;
+    producedDacMin=255U;
+    producedDacMax=0U;
+    producedNonMid=0U;
+    producedFrames=0U;
+    publishedPrefixFnv=kFnvBasis;
     playedFrames=0U;
     underruns=0U;
     phase=kPrime;
@@ -382,6 +500,10 @@ void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
         }
         const uint32_t count=queued();
         if (count<minBuffered) minBuffered=count;
+        if (!firstSignalReported && now-playStartMs>=3000U) {
+            firstSignalReported=true;
+            signalReport("3s"); /* 2s known tone + ~1s real SD audio */
+        }
         if ((int32_t)(now-nextReportMs)>=0) {
             nextReportMs=now+10000U;
             printf("[ENTRANCEMUSIC] STREAM elapsedMs=%u frames=%u "
@@ -396,6 +518,7 @@ void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
                    (unsigned)maxIsrCycles,(unsigned)reads,
                    (unsigned)maxReadUs,(unsigned)slowReadCount,
                    (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT));
+            signalReport("STREAM");
         }
     }
 }
