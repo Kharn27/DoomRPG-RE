@@ -14,7 +14,6 @@
 
 #include "esp_audio_entrance_adpcm.h"
 #include "esp_audio_entrance_music.h"
-#include "esp_audio_r1_pcm.h" /* R1l-proven synthetic 440Hz code, main loop only */
 #include "esp_native_audio_intent.h" /* session music volume preset owner */
 #include "esp_player_view_state.h"
 
@@ -39,9 +38,6 @@ constexpr uint32_t kMaxSilentFrames=8U*kRate; /* 8s -> fail closed */
 constexpr uint32_t kHeaderBytes=512U;
 constexpr uint32_t kMaxBlockBytes=1024U;
 constexpr uint32_t kMaxBlockSamples=2041U;
-constexpr uint32_t kWitnessFrames=2U*kRate;  /* 2s, before ring playback */
-constexpr uint32_t kWitnessWaveFrames=400U; /* 8 cycles at ~440Hz */
-constexpr uint32_t kWitnessFade=4410U;     /* 200ms, in/out */
 constexpr uint32_t kHashFrames=4096U;      /* first music frames, producer==ISR */
 constexpr uint32_t kFnvBasis=2166136261U;
 constexpr timer_group_t kGroup=TIMER_GROUP_1;
@@ -70,7 +66,6 @@ static volatile uint32_t gapsOver90us;
 static volatile uint32_t maxIsrCycles;
 /* Distinguish known-good synthesis, actual ring consumption and DAC writes.
  * ISR writes only small volatile counters and registers; no printing/SD. */
-static volatile uint32_t witnessWritten;
 static volatile uint32_t ringConsumed;
 static volatile uint32_t consumedMin;
 static volatile uint32_t consumedMax;
@@ -80,7 +75,6 @@ static volatile uint32_t consumedOver16;
 static volatile uint32_t consumedPrefixFnv;
 static volatile uint32_t dacWrittenMin;
 static volatile uint32_t dacWrittenMax;
-static DRAM_ATTR uint8_t witnessWave[kWitnessWaveFrames];
 static uint8_t* ring;
 
 /* Single game-loop owner. These buffers do NOT occupy the audio ISR stack. */
@@ -119,6 +113,8 @@ static uint32_t producedDacMax;
 static uint32_t producedNonMid;
 static uint32_t producedFrames;
 static uint32_t publishedPrefixFnv;
+static uint32_t pumpCalls;
+static uint32_t pumpBlockReads;
 
 static bool IRAM_ATTR onAudioTick(void*) {
     const uint8_t mode=phase;
@@ -135,23 +131,12 @@ static bool IRAM_ATTR onAudioTick(void*) {
         prevCycle=start;
         const uint32_t r=__atomic_load_n(&rd,__ATOMIC_RELAXED);
         const uint32_t w=__atomic_load_n(&wr,__ATOMIC_ACQUIRE);
-        const uint32_t frame=playedFrames;
         uint32_t code=128U;
-        if (frame<kWitnessFrames) {
-            /* A/B reference: R1l's verified 440Hz DAC waveform at the
-             * new 22050Hz timer rate. Ring remains queued for comparison. */
-            const int32_t delta=(int32_t)witnessWave[frame%kWitnessWaveFrames]-128;
-            uint32_t fade=frame<kWitnessFade?frame:kWitnessFade;
-            const uint32_t remaining=kWitnessFrames-frame-1U;
-            if (remaining<fade) fade=remaining;
-            code=(uint32_t)(128+(delta*(int32_t)fade)/(int32_t)kWitnessFade);
-            ++witnessWritten;
-        } else {
-            /* Never turn a single slow gameplay frame into permanent music
-             * shutdown. Hold DAC midpoint until >=186ms are refilled.
-             * The consumer does not advance rd during silence. */
-            if (recovering && w-r>=kResumeFrames) recovering=0U;
-            if (!recovering && r!=w && ring!=nullptr) {
+        /* Real music starts at sample zero; no 440Hz hardware witness.
+         * When starved, hold the DAC midpoint until the ring is primed
+         * again. Neither the read pointer nor clock is reset on resume. */
+        if (recovering && w-r>=kResumeFrames) recovering=0U;
+        if (!recovering && r!=w && ring!=nullptr) {
             code=ring[r&kRingMask];
             __atomic_store_n(&rd,r+1U,__ATOMIC_RELEASE);
             const uint32_t count=ringConsumed;
@@ -164,13 +149,12 @@ static bool IRAM_ATTR onAudioTick(void*) {
             if (code<120U||code>136U) ++consumedOver8;
             if (code<112U||code>144U) ++consumedOver16;
             silentStreak=0U;
-            } else {
-                if (!recovering) { recovering=1U; ++recoveryStarts; }
-                ++underruns;
-                ++silentStreak;
-                if (silentStreak>maxSilentStreak)
-                    maxSilentStreak=silentStreak;
-            }
+        } else {
+            if (!recovering) { recovering=1U; ++recoveryStarts; }
+            ++underruns;
+            ++silentStreak;
+            if (silentStreak>maxSilentStreak)
+                maxSilentStreak=silentStreak;
         }
         if (code<dacWrittenMin) dacWrittenMin=code;
         if (code>dacWrittenMax) dacWrittenMax=code;
@@ -187,16 +171,16 @@ static uint32_t queued() {
 }
 /* Printed on game loop only, never on the 22.05kHz interrupt. */
 static void signalReport(const char* at) {
-    printf("[ENTRANCEMUSIC] SIGNAL at=%s witness=%u ringConsumed=%u "
+    printf("[ENTRANCEMUSIC] SIGNAL at=%s ringConsumed=%u "
            "isrRingMinMax=%u..%u isrNon128=%u isrOver8=%u "
            "isrOver16=%u dacWrittenMinMax=%u..%u "
-           "pcm16MinMax=%d..%d pcm16NonZero=%u gainLimited=%u "
+           "pcm16MinMax=%d..%d pcm16NonZero=%u softKneeFrames=%u "
            "masterVolume=%u "
            "publishedDacMinMax=%u..%u publishedNon128=%u "
            "producerFrames=%u prefix4096Published=%08x "
            "prefix4096Consumed=%08x queued=%u underruns=%u "
            "recoveryStarts=%u recovering=%u maxSilentFrames=%u\n",
-           at,(unsigned)witnessWritten,(unsigned)ringConsumed,
+           at,(unsigned)ringConsumed,
            (unsigned)consumedMin,(unsigned)consumedMax,
            (unsigned)consumedNonMid,(unsigned)consumedOver8,
            (unsigned)consumedOver16,
@@ -231,7 +215,7 @@ static void closeMusic(const char* reason) {
     printf("[ENTRANCEMUSIC] FINAL reason=%s path=%s frames=%u "
            "loops=%u underruns=%u maxGapCycles=%u gapsOver90us=%u "
            "maxIsrCycles=%u recoveries=%u maxSilentFrames=%u "
-           "reads=%u maxSdReadUs=%u "
+           "reads=%u maxSdReadUs=%u pumpCalls=%u pumpReads=%u "
            "slowReadsOver20ms=%u heap8Before=%u heap8After=%u "
            "largest8=%u timer=OFF dacPad=OFF file=CLOSED\n",
            reason,path?path:"none",(unsigned)playedFrames,
@@ -239,6 +223,7 @@ static void closeMusic(const char* reason) {
            (unsigned)gapsOver90us,(unsigned)maxIsrCycles,
            (unsigned)recoveryStarts,(unsigned)maxSilentStreak,
            (unsigned)reads,(unsigned)maxReadUs,
+           (unsigned)pumpCalls,(unsigned)pumpBlockReads,
            (unsigned)slowReadCount,(unsigned)heapBefore,
            (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
            (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
@@ -287,7 +272,7 @@ static bool refill() {
     if (blocksRead==0U && loops==0U) {
         printf("[ENTRANCEMUSIC] BLOCK0 predictor=%d stepIndex=%u "
                "pcm16MinMax=%d..%d dacFirst=%u dacLast=%u "
-               "gainLimited=%u gainDiv=32 peakCodes=64\n",
+               "softKneeFrames=%u gainDiv=16 peakCodes=112\n",
                (int)(int16_t)EspEntranceAdpcm_u16(raw),
                (unsigned)raw[2],(int)stats.minPcm,(int)stats.maxPcm,
                (unsigned)decoded[0],(unsigned)decoded[samples-1U],
@@ -347,14 +332,7 @@ static bool startClock() {
     return true;
 }
 static bool startPlaying() {
-    /* Identical R1l quantizer and DRAM table pattern, adjusted sample rate.
-     * The main loop builds the wave; ISR never reads flash data. */
-    uint32_t wavePhase=0U;
-    const uint32_t step=(uint32_t)(((uint64_t)440U<<32)/kRate);
-    for (uint32_t i=0U;i<kWitnessWaveFrames;i++) {
-        witnessWave[i]=EspAudioR1Pcm_dacCode(wavePhase,64U);
-        wavePhase+=step;
-    }
+    /* First DAC tick consumes the already-primed SD music directly. */
     if (dac_output_enable(DAC_CHANNEL_2)!=ESP_OK) {
         failure="dac_enable";return false;
     }
@@ -369,7 +347,6 @@ static bool startPlaying() {
     recovering=0U;
     silentStreak=0U;
     maxSilentStreak=0U;
-    witnessWritten=0U;
     ringConsumed=0U;
     consumedMin=255U;
     consumedMax=0U;
@@ -394,7 +371,7 @@ static bool startPlaying() {
     }
     printf("[ENTRANCEMUSIC] PLAY path=%s backend=timer-DAC2 "
            "format=IMA-ADPCM monoHz=22050 ring=%u primed=%u "
-           "dacPeakCodes=64 gainDiv=32 masterVolume=%u witness440Ms=2000 then=SD-ring "
+           "dacPeakCodes=112 gainDiv=16 softKneeAt=96 masterVolume=%u witness=none source=SD-ring "
            "dacEnabled=yes gpio25=untouched noI2S=yes noPSRAM=yes\n",
            path,(unsigned)kRingCapacity,(unsigned)queued(),
            (unsigned)EspNativeAudioIntent_musicVolumePercent());
@@ -474,6 +451,8 @@ static void begin() {
     producedNonMid=0U;
     producedFrames=0U;
     publishedPrefixFnv=kFnvBasis;
+    pumpCalls=0U;
+    pumpBlockReads=0U;
     playedFrames=0U;
     underruns=0U;
     phase=kPrime;
@@ -502,8 +481,7 @@ void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
     if (__atomic_load_n(&silentStreak,__ATOMIC_ACQUIRE)>kMaxSilentFrames) {
         closeMusic("FAIL-UNDERRUN-TIMEOUT");return;
     }
-    /* At most two 1024B SD reads per main-loop service, never in ISR.
-     * Leave gameplay/PAK on same task; no concurrent SPI ownership. */
+    /* At most two 1024B SD reads per main loop. No concurrent SPI owner. */
     for (uint32_t burst=0U;burst<2U;burst++) {
         if (!refill()) { closeMusic(failure);return; }
         if (queued()>kRingCapacity-kMaxBlockSamples) break;
@@ -545,7 +523,7 @@ void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
         if (count<minBuffered) minBuffered=count;
         if (!firstSignalReported && now-playStartMs>=3000U) {
             firstSignalReported=true;
-            signalReport("3s"); /* 2s known tone + ~1s real SD audio */
+            signalReport("3s"); /* first 3 seconds are real SD music */
         }
         if ((int32_t)(now-nextReportMs)>=0) {
             nextReportMs=now+10000U;
@@ -553,7 +531,7 @@ void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
                    "queued=%u minQueued=%u loops=%u underflows=%u "
                    "maxGapCycles=%u gapsOver90us=%u maxIsrCycles=%u "
                    "sdReads=%u maxReadUs=%u slowReadsOver20ms=%u "
-                   "recoveries=%u maxSilentFrames=%u heap8=%u\n",
+                   "recoveries=%u maxSilentFrames=%u pumpCalls=%u pumpReads=%u heap8=%u\n",
                    (unsigned)(now-playStartMs),(unsigned)frames,
                    (unsigned)count,(unsigned)minBuffered,
                    (unsigned)loops,(unsigned)underruns,
@@ -561,8 +539,29 @@ void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
                    (unsigned)maxIsrCycles,(unsigned)reads,
                    (unsigned)maxReadUs,(unsigned)slowReadCount,
                    (unsigned)recoveryStarts,(unsigned)maxSilentStreak,
+                   (unsigned)pumpCalls,(unsigned)pumpBlockReads,
                    (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT));
             signalReport("STREAM");
         }
     }
+}
+
+/* AUDIO-R2d cooperative yield called strictly after a completed native
+ * gameplay frame, once EspAssetPack has released its backing store. This
+ * is still the SAME Arduino main task and the SAME SD File instance.
+ * No background thread, reentrant SD access, or renderer-side buffering.
+ * A busy ring means O(1) no-I/O; otherwise publish up to 4082 samples. */
+void EspEntranceMusic_pumpGameplay(void) {
+    if (phase!=kPlay || !fileOpen || ring==nullptr) return;
+    if (queued()>kRingCapacity-kMaxBlockSamples) return;
+    ++pumpCalls;
+    const uint32_t before=reads;
+    for (uint32_t burst=0U;burst<2U;burst++) {
+        if (!refill()) {
+            closeMusic(failure);
+            break;
+        }
+        if (queued()>kRingCapacity-kMaxBlockSamples) break;
+    }
+    pumpBlockReads+=reads-before;
 }
