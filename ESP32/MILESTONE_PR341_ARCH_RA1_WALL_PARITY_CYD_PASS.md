@@ -1,0 +1,27 @@
+# PR #341 / Issue #340 — R-A1 : oracle mural réel — PASS classic CYD (15 novembre 2026)
+
+## Provenance et périmètre
+
+- Base GitHub `main=839cc5440a22d6c0a0310bd5bdeeb2dbd674a6c1`. Branche `agent/esp32-arch-ra-real-span-oracle`, PR [#341](https://github.com/Kharn27/DoomRPG-RE/pull/341).
+- Candidat **source testé** `6a9f4b384649259674e99d3ec82ecc29699be217` : deux tests hôte (`native_wall_boundary_inline_host.c/.py`) + `ARCH_RA1_WALL_SPAN_AUDIT.md`. **Aucune modification du firmware de production** depuis `main`. La capture Serial n'embarque pas un identifiant SHA firmware ; attribution au candidat d'après la branche annoncée testée par l'utilisateur.
+- Nouvel oracle : extraction de la **vraie fonction historique `src/Render.c::Render_SpanMode0`**, compilation avec `sampleWallSpan` et `prepareLegacyWallGuard` réels de `ESP32/src/esp_native_first_frame.c`, atlas logical 4-bpp synthétique dans le seul test host (interdit dans firmware).
+- `2000` prélèvements préexistants + **4098 comparaisons nibble/pixel** host, golden FNV32 `ae456812` vérifié, span 9 pixels franchissant 2048 et exerçant boucle legacy déroulée par huit ; double PAK non adjacent `logical15 actual40 source20480 → actual68 source32768`, refus des sources manquantes/corrompues, garde 4 entrées BSS, reuse sans nouvelle lecture. Mesure **fixture hôte uniquement** : 12 lectures/85 octets jusqu'au premier garde, puis zéro lecture additionnelle à sa réutilisation. Ne pas interpréter comme mesure SD sur CYD.
+- [CI PR #43698457010](https://github.com/Kharn27/DoomRPG-RE/actions/runs/43698457010) et [CI push #43698451658](https://github.com/Kharn27/DoomRPG-RE/actions/runs/43698451658) **SUCCESS 166/166 chacune** sur le candidat, trois profils firmware compilés et contrôles hôte. CI post-documentation à revalider.
+
+## Capture matérielle vérifiée — firmware normal `esp32-cyd`
+
+- Fichier fourni par l'utilisateur `platformio-device-monitor-261115-103040.log` : **1997 lignes, 240825 octets**, SHA256 `fdce8c8f1e85f6f104c619e1239da4f39b0f459e42a41830c7f0922cb8859d2d`.
+- 1 boot `POWERON_RESET`, ESP32-D0WD-V3 révision 3, 240 MHz, **4 Mo flash, PSRAM 0**, SD 240 MiB, **PAK 241 entrées**, framebuffer logique 160×120 RGB565 38400 B, sortie 320×240 nearest x2. **25 `ALIVE`** jusqu'à uptime **133962 ms**, dernière sortie menu effectuée ensuite ; aucun deuxième reset, panic, Guru, abort, Backtrace, WDT ou échec de rendu détecté.
+- Options → Video → Theme : **INFERNO(1)→CLASSIC(0)**, `NATIVECONFIG SAVE result=committed` V3 (12 B), HELP scrolling/back, retour MENU_MAIN stable à FNV `9b2f0032` après changement de thème. Ne pas comparer ce FNV à un ancien thème différent.
+- START → intro entière et disposal **+34080 B**, `/intro.bsp` Entrance CRC `623f34e4`, map native arena **14095 B**, FNV `c3882516`, `FRESH-VISIBLE`, parcours gameplay avec rotations, strafes, caisses, portes, pickups et dialogue.
+- Deux sessions (new game + LOAD V11 slot04 **5604 B**), restauration exacte déclarée resources/script/line states/textures/automap/crates/monster states/topology/positions/activation/drops, `RESUME-VISIBLE`. **9 dialogues OPEN/CLOSE** (8 event 8/26 + 1 standalone), **7 `DOORANIM COMPLETE`**, **18 `PICKUPMINI START` et 18 END**, deux `CRATE COMMIT`, 33 `MONSTERACTIVESEQ COMPLETE`; deux `MONSTER3GOAL COMMIT`, aucun `MONSTERMOVE COMMIT` générique.
+- Malwrath sprite322 **2 `MONSTERCOMBAT COMMIT`, HP 11→8→0**, 3 `MONSTERRETAL COMMIT` au total (dont une autre créature), projectile natif ; `MONSTERDROP COMMIT` def99/small medkit tile285 et deux `RENDER-CULL reason=player-tile`. Ne pas prétendre drop visuellement affiché avant pickup, ni nouvelle sauvegarde V11 (aucune écriture SAVE V11 dans ce log). Coordonnées de projectile Malwrath avec bit haut déjà connues ; hors périmètre R-A1.
+- 2× `RAMBUDGET RESERVE advisory=HEADROOM_OK`, `margin8=27892` en session fraîche, `27080` en LOAD, largest8 gameplay **61428 B** ; concorde avec F31 et ne prouve **aucun gain RAM** attribuable aux tests host.
+- 2 `RESIDENTRESET` libèrent **18008 B** chacun, `empty=1`, suivis de deux `SYSEXIT MENU-READY`, fin stable `frame=9b2f0032`. Aux frontières inspectées `shapeData=0x0 mediaTexels=0x0`.
+- **14 `[NATIVEFRAME] BOUNDARY-INLINE`**, tous des résolutions bornées : **10** × `logical15 actual40 source20480 → successorActual68 successorSource32768 byte11`, **4** × `logical49 actual112 source65536 → successorActual116 successorSource69632 bytea7`; 2 couples de texture distincts, garde BSS de 16 B/entrée, **0 `NATIVEFRAME FAILED` / `SPAN_OOB`**. Le nombre de lignes de diagnostics **n'est pas le nombre de pixels en frontière**, ni une mesure de fréquence des `packedIndex==2048` en production.
+
+## Conclusion et limites
+
+**PASS CYD R-A1** pour le jalon borné d'oracle hôte + non-régression firmware normal. Le rendu, la topologie mémoire, les RNG, le PAK et les wraps **n'ont pas changé**. Aucune preuve de parité pixel réelle acquise sur les assets originaux : l'oracle utilise des données synthétiques, les golden FNV de frames complètes, différentes phases animées et la latence/coût I/O microSD restent à construire avant le refactoring R-B. `packedIndex>2048` n'a pas été instrumenté en fréquence au-delà du fail-closed de l'oracle.
+
+**Discipline post-test :** aucune modification C/C++/Python firmware ou test après le PASS. Les seuls commits post-PASS sont Markdown, CI post-doc à vérifier, PR sans merge automatique. L'utilisateur a déclaré le test « Ca m'a l'air niquel » mais **n'a pas demandé explicitement de fusion dans ce tour**.
