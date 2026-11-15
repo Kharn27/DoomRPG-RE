@@ -13,6 +13,8 @@ src = root / "src"
 main = (src / "main.cpp").read_text(encoding="utf-8")
 runtime = (src / "esp_audio_entrance_music.cpp").read_text(encoding="utf-8")
 header = (src / "esp_audio_entrance_adpcm.h").read_text(encoding="utf-8")
+frame = (src / "esp_native_gameplay_frame.c").read_text(encoding="utf-8")
+api = (src / "esp_audio_entrance_music.h").read_text(encoding="utf-8")
 ci = (root.parent / ".github/workflows/esp32-cyd.yml").read_text(encoding="utf-8")
 
 assert "EspEntranceMusic_service(EspNativeGameplaySession_isActive(), sdReady);" in main
@@ -50,12 +52,18 @@ assert "xTaskCreate" not in runtime and "DoomRPG.zip" not in runtime
 assert "WAVE_FORMAT_IMA_ADPCM" not in runtime   # pure numeric codec owner
 assert "test/audio_r2a_entrance_host.py" in ci
 assert "sampleFrames" in header and "blockAlign" in header
-# Hardware diagnosis: R1l waveform is used as a 2s DAC2 timer witness before
-# real ring consumption, with separate main-loop and ISR statistics.
-assert '#include "esp_audio_r1_pcm.h"' in runtime
-assert "kWitnessFrames=2U*kRate" in runtime
-assert "witnessWave[i]=EspAudioR1Pcm_dacCode(wavePhase,64U)" in runtime
-assert "frame<kWitnessFrames" in runtime
+# AUDIO-R2d: actual SD music begins on the first DAC tick, no 440Hz beep.
+assert '#include "esp_audio_r1_pcm.h"' not in runtime
+assert "kWitnessFrames" not in runtime
+assert "witnessWave" not in runtime
+assert "EspAudioR1Pcm_dacCode" not in runtime
+assert "witness=none source=SD-ring" in runtime
+assert "EspEntranceMusic_pumpGameplay(void)" in api
+assert "if (ok && publish) EspEntranceMusic_pumpGameplay();" in frame
+assert "if (EspAssetPack_isOpen()) EspAssetPack_close();" in frame
+assert frame.index("if (EspAssetPack_isOpen()) EspAssetPack_close();") < frame.index("if (ok && publish) EspEntranceMusic_pumpGameplay();")
+assert "if (phase!=kPlay || !fileOpen || ring==nullptr) return;" in runtime
+assert "pumpCalls=%u pumpReads=%u" in runtime
 assert "ringConsumed=count+1U" in runtime
 assert 'signalReport("3s")' in runtime
 assert 'signalReport("STREAM")' in runtime
@@ -63,12 +71,12 @@ assert 'signalReport("FINAL")' in runtime
 assert "publishedPrefixFnv" in runtime and "consumedPrefixFnv" in runtime
 assert "EspEntranceAdpcm_decodeBlockObserved(" in header
 assert "pcm16MinMax" in runtime and "publishedDacMinMax" in runtime
-assert "gainDiv=32" in runtime and "gainLimited" in runtime
+assert "gainDiv=16" in runtime and "softKneeFrames" in runtime
 assert "EspNativeAudioIntent_musicVolumePercent()" in runtime
 assert "volume)/100" in runtime
 assert "masterVolume=" in runtime
-assert "pcm/32" in header and "EspEntranceAdpcm_clamp(diff,-64,64)" in header
-assert "pcm < -2048 || pcm > 2048" in header
+assert "pcm/16" in header and "magnitude=96+(excess*16)/(excess+16)" in header
+assert "pcm < -1536 || pcm > 1536" in header
 assert "MALLOC_CAP_INTERNAL" in runtime and "DAC_CHANNEL_1" not in runtime
 
 compiler = shutil.which("cc")
@@ -107,8 +115,8 @@ int main(void) {
     assert(!EspEntranceAdpcm_parse(wav,59,68,&view));
     uint8_t samples[9]={0};
     assert(EspEntranceAdpcm_decodeBlock(wav+60,8,9,samples,9,4410));
-    assert(samples[0]==192);
-    for(int i=1;i<9;i++) assert(samples[i]==192);
+    assert(samples[0]==239);
+    for(int i=1;i<9;i++) assert(samples[i]==239);
     assert(EspEntranceAdpcm_decodeBlock(wav+60,8,9,samples,9,0));
     assert(samples[0]==128);
     assert(!EspEntranceAdpcm_decodeBlock(wav+60,8,9,samples,8,0));
@@ -156,16 +164,16 @@ int main(void) {
     nibbleBlock[4]=0x78;  /* LOW 8 => -736, then HIGH 7 => +9309 */
     assert(EspEntranceAdpcm_decodeBlockObserved(nibbleBlock,8,9,
            samples,9,4410,&stats));
-    assert(samples[0]==128 && samples[1]==105 && samples[2]==192);
+    assert(samples[0]==128 && samples[1]==82 && samples[2]==239);
     assert(stats.minPcm==-736 && stats.maxPcm>=9309);
     assert(stats.nonZeroPcm==8 && stats.gainLimited>0);
     /* Host hard limits and fade: no 8-bit overflow or speaker overdrive. */
-    assert(EspEntranceAdpcm_toDac(2252,4410)==192);
-    assert(EspEntranceAdpcm_toDac(-2252,4410)==64);
-    assert(EspEntranceAdpcm_toDac(32767,4410)==192);
-    assert(EspEntranceAdpcm_toDac(-32768,4410)==64);
+    assert(EspEntranceAdpcm_toDac(2252,4410)==235);
+    assert(EspEntranceAdpcm_toDac(-2252,4410)==21);
+    assert(EspEntranceAdpcm_toDac(32767,4410)==239);
+    assert(EspEntranceAdpcm_toDac(-32768,4410)==17);
     assert(EspEntranceAdpcm_toDac(2252,0)==128);
-    assert(EspEntranceAdpcm_toDac(2252,2205)==160);
+    assert(EspEntranceAdpcm_toDac(2252,2205)==181);
     return 0;
 }
 """
@@ -177,4 +185,4 @@ with tempfile.TemporaryDirectory() as tmp:
                     "-I", str(src), str(source), "-o", str(program)], check=True)
     subprocess.run([str(program)], check=True)
 
-print("PASS AUDIO-R2c: bounded 16KiB recoverable DAC2 ring, /32 gain, session volume and IMA-ADPCM")
+print("PASS AUDIO-R2d: no boot tone, soft-knee loudness, bounded inter-frame SD refills and IMA-ADPCM")
