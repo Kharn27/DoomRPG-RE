@@ -14,6 +14,22 @@ typedef struct EspEntranceAdpcmWav_s {
     uint16_t samplesPerBlock;
 } EspEntranceAdpcmWav;
 
+/* Optional producer-only observation of decoded PCM16, before DAC scaling.
+ * No instrumentation runs in the ISR and no audio samples are retained. */
+typedef struct EspEntranceAdpcmDecodeStats_s {
+    int16_t minPcm;
+    int16_t maxPcm;
+    uint32_t nonZeroPcm;
+} EspEntranceAdpcmDecodeStats;
+
+static inline void EspEntranceAdpcm_observePcm(
+    EspEntranceAdpcmDecodeStats* stats,int16_t pcm) {
+    if (!stats) return;
+    if (pcm<stats->minPcm) stats->minPcm=pcm;
+    if (pcm>stats->maxPcm) stats->maxPcm=pcm;
+    if (pcm!=0) ++stats->nonZeroPcm;
+}
+
 static inline uint16_t EspEntranceAdpcm_u16(const uint8_t* p) {
     return (uint16_t)((uint16_t)p[0]|((uint16_t)p[1]<<8));
 }
@@ -112,9 +128,10 @@ static inline uint8_t EspEntranceAdpcm_toDac(int16_t pcm,
 /* One complete mono block, <=1024 compressed bytes, <=2041 output samples.
  * caller output must have capacity >= samplesPerBlock.
  * All step/index updates and padding counts are explicit. */
-static inline int EspEntranceAdpcm_decodeBlock(
+static inline int EspEntranceAdpcm_decodeBlockObserved(
     const uint8_t* block,uint32_t n,uint16_t samplesPerBlock,
-    uint8_t* out,uint32_t outCapacity,uint32_t firstFrame) {
+    uint8_t* out,uint32_t outCapacity,uint32_t firstFrame,
+    EspEntranceAdpcmDecodeStats* stats) {
     if (!block||!out||n<8U||n>1024U||samplesPerBlock!=1U+2U*(n-4U)||
         outCapacity<samplesPerBlock) return 0;
     static const int16_t steps[89]={
@@ -134,6 +151,12 @@ static inline int EspEntranceAdpcm_decodeBlock(
     int predictor=(int16_t)EspEntranceAdpcm_u16(block);
     int index=(int)block[2U];
     if (index>88||block[3U]!=0U) return 0;
+    if (stats) {
+        stats->minPcm=32767;
+        stats->maxPcm=-32768;
+        stats->nonZeroPcm=0U;
+    }
+    EspEntranceAdpcm_observePcm(stats,(int16_t)predictor);
     out[0]=EspEntranceAdpcm_toDac((int16_t)predictor,firstFrame);
     uint32_t produced=1U;
     for (uint32_t i=4U;i<n;i++) {
@@ -148,6 +171,7 @@ static inline int EspEntranceAdpcm_decodeBlock(
             predictor=EspEntranceAdpcm_clamp(
                 predictor+((nibble&8)?-delta:delta),-32768,32767);
             index=EspEntranceAdpcm_clamp(index+offsets[nibble],0,88);
+            EspEntranceAdpcm_observePcm(stats,(int16_t)predictor);
             if (produced>=outCapacity) return 0;
             out[produced]=EspEntranceAdpcm_toDac(
                 (int16_t)predictor,firstFrame+produced);
@@ -155,5 +179,12 @@ static inline int EspEntranceAdpcm_decodeBlock(
         }
     }
     return produced==samplesPerBlock;
+}
+/* Preserve the original pure decoder API for existing host callers. */
+static inline int EspEntranceAdpcm_decodeBlock(
+    const uint8_t* block,uint32_t n,uint16_t samplesPerBlock,
+    uint8_t* out,uint32_t outCapacity,uint32_t firstFrame) {
+    return EspEntranceAdpcm_decodeBlockObserved(block,n,samplesPerBlock,
+                                               out,outCapacity,firstFrame,NULL);
 }
 #endif
