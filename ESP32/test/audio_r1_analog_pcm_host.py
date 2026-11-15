@@ -153,7 +153,7 @@ assert "I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_STEREO" in cpp
 assert "i2s_get_clk(I2S_NUM_0)" in cpp
 assert "authoritative=DMA-witness" in cpp
 assert "kErrorClockConfigure = 9U" in cpp
-assert cpp.index("i2s_set_clk(") < cpp.index("i2s_set_dac_mode(I2S_DAC_CHANNEL_DISABLE)", cpp.index("if (i2s_driver_install("))
+assert cpp.index("const esp_err_t clockResult = i2s_set_clk(") < cpp.index("i2s_set_dac_mode(I2S_DAC_CHANNEL_DISABLE)", cpp.index("if (i2s_driver_install("))
 assert "if (hz < 15000U || hz > 17000U)" in cpp
 assert "i2s_driver_install(I2S_NUM_0, &cfg, 8, &i2sEvents)" in cpp
 assert "I2S_EVENT_DMA_ERROR" in cpp
