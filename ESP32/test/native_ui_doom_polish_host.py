@@ -160,7 +160,7 @@ assert "DoomRPG_esp32BrightnessCardRect(item, &l, &t, &r, &b)" in function(menu,
 assert "(uint8_t)(item * 25U) == activePercent" in presets
 assert "DoomRPG_esp32BrightnessCardRect(item, &left, &top, &right, &bottom)" in options
 assert "DoomRPG_esp32VideoCardRect(item, &left, &top, &right, &bottom)" in options
-assert "luminositeOpen ? luminositeItemAt" in options
+assert "(luminositeOpen || soundOpen) ? luminositeItemAt" in options
 assert "if (luminositeOpen)" in options
 assert "if (armedItem != item)" in options
 assert "if (item == OPTIONS_VIDEO_ITEM)" in options
@@ -175,7 +175,10 @@ assert "OPTIONSBRIGHTNESS] OPEN" in options
 assert "OPTIONSBRIGHTNESS] BACK" in options
 assert "DoomRPG_esp32MainMenuReturnToMain(" in options
 assert "optionsExpectedFrameFNV" in options
-assert "SOUND is intentionally deferred" in options
+assert "SOUND is a native session-volume child." in options
+assert "if (soundOpen)" in options
+assert "EspNativeAudioIntent_setMusicVolumePercent(after)" in options
+assert "soundOpen=1U;" in options and "soundOpen=0U;" in options
 assert "#define OPTIONS_ITEM_COUNT DOOMRPG_ESP32_OPTIONS_CARD_COUNT" in options
 assert "videoOpen = 1U;" in options
 assert "videoOpen = 0U;" in options

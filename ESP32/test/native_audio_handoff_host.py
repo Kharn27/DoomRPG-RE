@@ -33,6 +33,15 @@ harness = r"""
 int main(void) {
     const EspNativeAudioIntent *intent;
     assert(sizeof(EspNativeAudioIntent) == 8);
+    /* Audio intent remains 8B, session volume lives in an independent byte. */
+    assert(EspNativeAudioIntent_musicVolumePercent() == 100U);
+    assert(EspNativeAudioIntent_setMusicVolumePercent(75U));
+    assert(EspNativeAudioIntent_musicVolumePercent() == 75U);
+    assert(!EspNativeAudioIntent_setMusicVolumePercent(65U));
+    assert(EspNativeAudioIntent_musicVolumePercent() == 75U);
+    assert(EspNativeAudioIntent_setMusicVolumePercent(0U));
+    assert(EspNativeAudioIntent_musicVolumePercent() == 0U);
+    assert(EspNativeAudioIntent_setMusicVolumePercent(100U));
     EspNativeAudioIntent_reset();
     assert(EspNativeAudioIntent_last() == NULL);
     assert(EspNativeAudioIntent_count() == 0U);
@@ -60,6 +69,7 @@ int main(void) {
     EspNativeAudioIntent_reset();
     assert(EspNativeAudioIntent_count() == 0U);
     assert(EspNativeAudioIntent_last() == NULL);
+    assert(EspNativeAudioIntent_musicVolumePercent() == 100U);
     return 0;
 }
 """

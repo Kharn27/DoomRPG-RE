@@ -36,14 +36,14 @@
 #define OPTIONS_BACK_ITEM 0
 #define OPTIONS_VIDEO_ITEM 1
 #define OPTIONS_SOUND_ITEM 2
-#define OPTIONS_ENABLED_MASK (1U << OPTIONS_BACK_ITEM)
+#define OPTIONS_ENABLED_MASK ((1U << OPTIONS_BACK_ITEM) | (1U << OPTIONS_SOUND_ITEM))
 
 static const char* expectedOptionsItems[OPTIONS_ITEM_COUNT] = {
     "Back", "Video", "Sound"
 };
 
 /* Only these three belong to the immutable MENU_MAIN_OPTIONS model.
- * VIDEO/LUMINOSITE/ORIENTATION/THEME are compact native UI sublayers,
+ * VIDEO/LUMINOSITE/ORIENTATION/THEME and SOUND volume are native UI sublayers,
  * not new desktop MenuSystem models or allocations. */
 static const char* optionsDashboardLabels[OPTIONS_ITEM_COUNT] = {
     "BACK", "VIDEO", "SOUND"
@@ -131,7 +131,7 @@ int DoomRPG_esp32PaintMainMenuOptionsDashboardSelection(
 
     if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
         !validateOptionsModel(EspNativeRootOwners_live()->menuSystem) ||
-        selectedItem < OPTIONS_BACK_ITEM || selectedItem > OPTIONS_VIDEO_ITEM) {
+        selectedItem < OPTIONS_BACK_ITEM || selectedItem > OPTIONS_SOUND_ITEM) {
         return 0;
     }
     /* VIDEO always available: even without PWM/TFT, THEME is usable. */
@@ -336,7 +336,7 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase,
                menuSystem->items[i].flags,
                menuSystem->items[i].action,
                (i == OPTIONS_BACK_ITEM ||
-             i == OPTIONS_VIDEO_ITEM) ? "yes" : "no",
+             i == OPTIONS_VIDEO_ITEM || i == OPTIONS_SOUND_ITEM) ? "yes" : "no",
                i == menuSystem->selectedIndex ? "yes" : "no");
     }
 
@@ -374,7 +374,7 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase,
 
     (void)Esp32PlatformVideo_present();
     if (finalFramebufferFNV != NULL) *finalFramebufferFNV = finalHash;
-    printf("[MAINOPTIONS] Presented MENU_MAIN_OPTIONS root=BACK/VIDEO/SOUND videoChild=BRIGHTNESS/ORIENTATION/THEME brightness=%u ready=%d orientationReady=%d theme=%u\n",
+    printf("[MAINOPTIONS] Presented MENU_MAIN_OPTIONS root=BACK/VIDEO/SOUND videoChild=BRIGHTNESS/ORIENTATION/THEME soundChild=VOLUME-SESSION brightness=%u ready=%d orientationReady=%d theme=%u\n",
            (unsigned int)Esp32Backlight_percent(), Esp32Backlight_isReady(),
            Esp32Orientation_isReady(), (unsigned int)EspMainMenuSkin_getTheme());
     printf("[MAINOPTIONS] READY explicit MENU_MAIN -> MENU_MAIN_OPTIONS composition; no legacy Render_render, no map reload, no gameplay loader\n");

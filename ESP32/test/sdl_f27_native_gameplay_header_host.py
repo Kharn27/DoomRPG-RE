@@ -76,6 +76,25 @@ def original_body_parity() -> None:
         assert current.startswith(marker), (
             f"{filename}: expected bounded host/geometry-only SDL guard")
         if filename == "esp_native_gameplay_frame.c":
+            # AUDIO-R2d adds a single synchronous SD pump after a successful
+            # frame. Reverse ONLY these two additions before checking the
+            # immutable pre-F27 Git blob. No weakened hashes or skipped TU.
+            audio_import = (b"#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n"
+                            b'#include "esp_audio_entrance_music.h"\n'
+                            b"#endif\n")
+            audio_hook = (
+                b"#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n"
+                b"    /* AUDIO-R2d cooperative main-task inter-frame refill. Renderer and PAK\n"
+                b"     * have completed/released ownership above. Never read SD during raster\n"
+                b"     * or the TFT present, and never in the timer ISR. Metrics were frozen\n"
+                b"     * above before servicing audio; gameplay state and frame FNV untouched. */\n"
+                b"    if (ok && publish) EspEntranceMusic_pumpGameplay();\n"
+                b"#endif\n"
+            )
+            assert current.count(audio_import) == 1
+            assert current.count(audio_hook) == 1
+            current = current.replace(audio_import, b"", 1)
+            current = current.replace(audio_hook, b"", 1)
             current = strip_ra2b_probe(current)
         restored = b"#include <SDL.h>\n" + current[len(marker):]
         assert git_blob(restored) == blob, (
