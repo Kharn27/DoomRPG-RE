@@ -396,6 +396,9 @@ jobs:
       - name: Test SDL-F35 mixer header host-only isolation and C11 ABI in all modes
         run: python ESP32/test/sdl_f35_mixer_oracle_host.py
 
+      - name: Test SDL-F36 core SDL header in byte-exact host-only C11 ABI oracle
+        run: python ESP32/test/sdl_f36_sdl_header_oracle_host.py
+
       - name: Native monster drop catalog preflight before render PAK lease
         run: python ESP32/test/native_monster_drop_catalog_host.py
 

@@ -86,6 +86,8 @@ def main():
                         fixture_oracles / "esp32_sdl_platform.h")
         shutil.copyfile(ROOT / "ESP32/test/oracles/SDL_mixer.h",
                         fixture_oracles / "SDL_mixer.h")
+        shutil.copyfile(ROOT / "ESP32/test/oracles/SDL.h",
+                        fixture_oracles / "SDL.h")
         fixture_include = project / "include"
         fixture_include.mkdir()
 
@@ -111,6 +113,8 @@ def main():
         header_snapshot = platform_header.read_bytes()
         mixer_header = fixture_oracles / "SDL_mixer.h"
         mixer_snapshot = mixer_header.read_bytes()
+        sdl_header = fixture_oracles / "SDL.h"
+        sdl_snapshot = sdl_header.read_bytes()
         assert not (fixture_include / "SDL_mixer.h").exists()
         assert not (fixture_include / "esp32_sdl_platform.h").exists()
         shim = snapshot.decode("utf-8")
@@ -136,6 +140,7 @@ def main():
         assert permanent.read_bytes() == snapshot
         assert platform_header.read_bytes() == header_snapshot
         assert mixer_header.read_bytes() == mixer_snapshot
+        assert sdl_header.read_bytes() == sdl_snapshot
         assert not obsolete.exists() and not stale_shim.exists()
         assert env2.sources == []
 
@@ -202,6 +207,25 @@ def main():
         else:
             raise AssertionError("missing host mixer oracle accepted")
         mixer_header.write_bytes(mixer_snapshot)
+
+        # SDL-F36: forbid the core header in production but require the oracle.
+        revived_sdl = fixture_include / "SDL.h"
+        revived_sdl.write_text("FORBIDDEN SDL CORE HEADER\n")
+        try:
+            execute_build_script(FakeEnv(project, build))
+        except RuntimeError as exc:
+            assert "Retired SDL core header returned to production includes" in str(exc)
+        else:
+            raise AssertionError("revived production SDL header accepted")
+        revived_sdl.unlink()
+        sdl_header.unlink()
+        try:
+            execute_build_script(FakeEnv(project, build))
+        except RuntimeError as exc:
+            assert "Missing host-only SDL core header oracle" in str(exc)
+        else:
+            raise AssertionError("missing host SDL core oracle accepted")
+        sdl_header.write_bytes(sdl_snapshot)
 
         # The 21-file denylist is intentional and fails closed if the desktop
         # tree changes, rather than silently compiling a new original C file.
