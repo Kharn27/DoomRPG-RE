@@ -2,6 +2,25 @@
 
 This directory contains **reference code, not ESP32 firmware sources**.
 
+## SDL-F33 — exact legacy SDL shim oracle (never linked to firmware)
+
+- `esp32_sdl.cpp` was moved **unchanged** from
+  `ESP32/src/esp32_sdl.cpp` to this directory. Git blob:
+  `b8385250706b8b5396c3f3808e5084ad1f318425`.
+- Its original SDL-A/B/C/D/E/F implementation is still **compiled and
+  executed by host fixtures**, especially `sdl_shim_permanent_host.py` against
+  native texture primitives; the file remains an executable oracle, not an
+  ESP32 production translation unit.
+- `sdl_f3_uncompiled_shim_host.py` pins the full Git blob, source
+  location, negative PlatformIO src_filter and the native display owner.
+  `doomrpg_oracle_retirement_host.py` executes the actual SCons pre-script
+  against an adversarial fake project: a shim reintroduced under `src` or a
+  missing host oracle must both fail closed.
+- `ESP32/include/SDL.h` and `esp32_sdl_platform.h` remain **host compatibility
+  headers** for these oracles; separate milestones are needed before removing
+  or relocating those headers. Never treat their presence as an active SDL
+  runtime dependency without checking real compiledb/ELF evidence.
+
 ## SDL-F32 — retired SDL_RWops indexed BMP reader
 
 - `esp32_bmp.cpp` is the byte-exact historical ESP32 SDL compatibility
