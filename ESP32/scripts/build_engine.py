@@ -172,12 +172,25 @@ if os.path.isdir(stale_sdl_objects):
 print("[ESP32] DoomRPG C oracle generation retired; reference=src/DoomRPG.c "
       "compiledPatchedC=0 nativeProviders=yes")
 
-# SDL-F3: no SDL shim is built into the firmware (platformio build_src_filter
-# excludes it). Keep the original source as a host-only pixel/ownership oracle.
-# Do not generate or register it through SCons either.
-if not os.path.isfile(join(project_src_dir, "esp32_sdl.cpp")):
+# SDL-F33: the byte-exact F3 SDL shim is a test-only reference under
+# ESP32/test/oracles, NEVER a source inside ESP32/src. Keep the old negative
+# PlatformIO filter and refuse accidental resurrection in production.
+# SCons must neither generate nor register this historical reference.
+if os.path.isfile(join(project_src_dir, "esp32_sdl.cpp")):
+    raise RuntimeError("Retired SDL shim returned to production source tree")
+sdl_host_oracle = join(project_dir, "test", "oracles", "esp32_sdl.cpp")
+if not os.path.isfile(sdl_host_oracle):
     raise RuntimeError("Missing host-only SDL shim oracle source")
-print("[ESP32] SDL shim host-only; compiledFirmware=no oracle=ESP32/src/esp32_sdl.cpp")
+# SDL-F34: no obsolete display-attachment ABI should be advertised by the
+# production include directory. The exact declaration accompanies the shim
+# only in the test oracle directory.
+sdl_platform_production_header = join(project_dir, "include", "esp32_sdl_platform.h")
+if os.path.isfile(sdl_platform_production_header):
+    raise RuntimeError("Retired SDL display header returned to production includes")
+sdl_platform_host_oracle = join(project_dir, "test", "oracles", "esp32_sdl_platform.h")
+if not os.path.isfile(sdl_platform_host_oracle):
+    raise RuntimeError("Missing host-only SDL display header oracle")
+print("[ESP32] SDL shim host-only; compiledFirmware=no oracle=ESP32/test/oracles/esp32_sdl.cpp platformHeader=test-only")
 
 # The original desktop C and uncompiled SDL shim are host-only references;
 # all firmware owners live in ESP32/src; no generated SDL source remains.

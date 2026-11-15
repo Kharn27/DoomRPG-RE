@@ -59,7 +59,7 @@ extern "C" void __wrap_free(void* ptr) {
     __real_free(ptr);
 }
 
-#include "ESP32/src/esp32_sdl.cpp"
+#include "ESP32/test/oracles/esp32_sdl.cpp"
 
 static Uint16 framebuffer[DOOMRPG_LOGICAL_WIDTH * DOOMRPG_LOGICAL_HEIGHT];
 static int presents = 0;
@@ -328,7 +328,7 @@ int main() {
 """
 
 def main():
-    sdl = ROOT / "ESP32/src/esp32_sdl.cpp"
+    sdl = ROOT / "ESP32/test/oracles/esp32_sdl.cpp"
     assert "uint8_t* indexedPixels;" in (ROOT / "ESP32/include/esp_native_texture.h").read_text()
     with tempfile.TemporaryDirectory(prefix="doomrpg-sdl-permanent-") as temp:
         tmp = Path(temp)

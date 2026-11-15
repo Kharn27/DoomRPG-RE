@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""SDL-F22: retire a compiled but never linked SDL_RWops BMP decoder.
+"""SDL-F32: keep historical SDL_RWops BMP oracles OUTSIDE production trees.
 
-The old Esp32Bmp_LoadRW implementation and its header remain exact Git blobs
-for the historical SDL-B7/C1/D1 host oracles. The firmware must compile the
-native PAK-backed indexed BMP reader instead. The three real PlatformIO
-compiledb/ELF pairs prove that this is a *build-graph* retirement, not merely
-an absence of calls in a regex.
+F22 stopped compiling the old decoder; F32 moves the exact .cpp/.h Git blobs
+to ESP32/test/oracles, and asserts that src/include no longer contain them.
+The firmware continues to compile the PAK-backed native indexed BMP reader.
+Real PlatformIO compiledb/ELF checks remain the ultimate build/link guard.
 """
 from pathlib import Path
 import argparse
@@ -17,8 +16,9 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "ESP32/src"
-LEGACY = SRC / "esp32_bmp.cpp"
-LEGACY_HEADER = ROOT / "ESP32/include/esp32_bmp.h"
+ORACLES = ROOT / "ESP32/test/oracles"
+LEGACY = ORACLES / "esp32_bmp.cpp"
+LEGACY_HEADER = ORACLES / "esp32_bmp.h"
 NATIVE = SRC / "esp_native_indexed_bmp.c"
 RESOURCE_OWNER = SRC / "esp_doomrpg_image_resources.c"
 INI = ROOT / "ESP32/platformio.ini"
@@ -36,6 +36,10 @@ def active(source: str) -> str:
 
 
 def source_gate() -> None:
+    assert not (SRC / "esp32_bmp.cpp").exists(), (
+        "host-only SDL BMP decoder returned to production sources")
+    assert not (ROOT / "ESP32/include/esp32_bmp.h").exists(), (
+        "host-only SDL BMP header returned to production includes")
     assert git_blob(LEGACY.read_bytes()) == LEGACY_GIT_BLOB, "legacy BMP oracle changed"
     assert git_blob(LEGACY_HEADER.read_bytes()) == HEADER_GIT_BLOB, "legacy BMP ABI changed"
     old = LEGACY.read_text(encoding="utf-8")
@@ -69,8 +73,9 @@ def source_gate() -> None:
         assert '#include "esp32_bmp.h"' not in s, path
         checked += 1
     assert checked > 125, checked
-    print(f"SDL-F22 PASS source: {checked} other ESP32/src TUs without legacy "
-          "decoder references; historical BMP blobs exact, native PAK reader intact")
+    print(f"SDL-F32 PASS source: {checked} ESP32/src TUs free from SDL BMP; "
+          "CPP/header moved to host-only test/oracles with exact Git blobs; "
+          "native PAK reader intact")
 
 
 def compiled_profile(profile: str) -> None:

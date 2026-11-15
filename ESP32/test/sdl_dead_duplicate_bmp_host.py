@@ -29,7 +29,7 @@ def main():
             assert re.search(r"\bSDL_LoadBMP_RW\s*\(", code) is None, (
                 f"SDL-B7 old BMP decoder still referenced in {p}"
             )
-    shim = (ROOT / "ESP32/src/esp32_sdl.cpp").read_text(encoding="utf-8")
+    shim = (ROOT / "ESP32/test/oracles/esp32_sdl.cpp").read_text(encoding="utf-8")
     header = (ROOT / "ESP32/include/SDL.h").read_text(encoding="utf-8")
     for name in OLD:
         assert not re.search(r"\b" + name + r"\s*\(", shim), (
@@ -39,7 +39,7 @@ def main():
     for api in ACTIVE:
         assert api in shim, f"SDL-B7 removed a required SDL runtime entry: {api}"
         assert api in header, f"SDL-B7 removed active SDL header declaration: {api}"
-    native = (ROOT / "ESP32/src/esp32_bmp.cpp").read_text(encoding="utf-8")
+    native = (ROOT / "ESP32/test/oracles/esp32_bmp.cpp").read_text(encoding="utf-8")
     owner = (ROOT / "ESP32/src/esp_doomrpg_image_resources.c").read_text(encoding="utf-8")
     assert "Esp32Bmp_LoadRW(SDL_RWops* source, int freeSource)" in native
     assert 'bitsPerPixel != 1 && bitsPerPixel != 4 && bitsPerPixel != 8' in native

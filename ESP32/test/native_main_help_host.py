@@ -197,7 +197,7 @@ assert "EspMainMenuSkin_uiAccent()" in actions
 # The 1:3:1 input proportions come from the real gameplay classifier,
 # while the UI remains a visual-only demonstration.
 hud_c = (SRC / "esp_native_gameplay_hud.c").read_text()
-shim = (SRC / "esp32_sdl.cpp").read_text()
+shim = (ROOT / "ESP32/test/oracles/esp32_sdl.cpp").read_text()
 assert '"k.bmp"' in hud_c
 assert 'bar->width != 20U || bar->height != 20U' in (
     SRC / "esp_native_gameplay_hud_direction.c").read_text()

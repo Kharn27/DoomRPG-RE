@@ -178,6 +178,13 @@ int EspAssetPack_isResidentLargeRangeEnabled(void);
  * around one sprite-render phase; reset with resident counters. */
 uint32_t EspAssetPack_mapFlashRuntimeReadMicros(void);
 
+#if defined(DOOMRPG_RA2B_CAPTURE) && DOOMRPG_RA2B_CAPTURE
+/* Temporary R-A2b diagnostic: cumulative resident SD seek+read time for
+ * EspAssetPack_readRange() cache misses. Zero for flash-only gameplay.
+ * Excludes PAK indexing and boot; NOT a total microSD service benchmark. */
+uint32_t EspAssetPack_ra2bSdRangeMicros(void);
+#endif
+
 /* Returns one fixed-size source-index record by ordinal. The active backing may
  * be SD or the verified raw-flash copy, but callers always see original PAK
  * offsets/size/CRC/flags.

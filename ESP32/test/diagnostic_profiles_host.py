@@ -24,7 +24,8 @@ def main():
     config = configparser.ConfigParser(interpolation=None, inline_comment_prefixes=(";",))
     config.read(ROOT / "ESP32/platformio.ini")
     assert {s for s in config if s.startswith("env:")} == {
-        "env:esp32-cyd", "env:esp32-cyd-trace", "env:esp32-cyd-bringup"}
+        "env:esp32-cyd", "env:esp32-cyd-trace", "env:esp32-cyd-bringup",
+        "env:esp-cyd-inverted"}
     assert config["platformio"]["default_envs"] == "esp32-cyd"
     base = config["env:esp32-cyd"]
     assert base["build_type"] == "release"
