@@ -14,6 +14,7 @@
 #include "native_main_menu_160x120_layout.h"
 #include "native_main_menu_actions.h"
 #include "esp_native_backlight.h"
+#include "esp_native_audio_intent.h"
 #include "esp_native_config.h"
 #include "esp_native_orientation.h"
 #include "esp_main_menu_skin.h"
@@ -38,6 +39,7 @@
 #define OPTIONS_ITEM_COUNT DOOMRPG_ESP32_OPTIONS_CARD_COUNT
 #define OPTIONS_BACK_ITEM 0
 #define OPTIONS_VIDEO_ITEM 1
+#define OPTIONS_SOUND_ITEM 2
 #define VIDEO_BACK_ITEM 0
 #define VIDEO_BRIGHTNESS_ITEM 1
 #define VIDEO_ORIENTATION_ITEM 2
@@ -50,6 +52,7 @@ static uint8_t videoOpen = 0U; /* UI-only intermediate page, model unchanged. */
 static uint8_t luminositeOpen = 0U; /* Child uses direct single taps. */
 static uint8_t orientationOpen = 0U;
 static uint8_t themeOpen = 0U;
+static uint8_t soundOpen = 0U; /* session-only volume child */
 static uint32_t optionsTapCount = 0;
 static uint32_t optionsExpectedFrameFNV = 0U;
 
@@ -120,13 +123,13 @@ static int themeItemAt(int16_t screenX, int16_t screenY) {
 static void registerOptionsHitboxOverlay(void) {
     int item;
     Esp32PlatformVideo_debugOverlayClear();
-    const int count = luminositeOpen ? DOOMRPG_ESP32_BRIGHTNESS_CARD_COUNT :
+    const int count = (luminositeOpen || soundOpen) ? DOOMRPG_ESP32_BRIGHTNESS_CARD_COUNT :
                       (themeOpen ? DOOMRPG_ESP32_THEME_CARD_COUNT :
                       (orientationOpen ? DOOMRPG_ESP32_ORIENTATION_CARD_COUNT :
                       (videoOpen ? DOOMRPG_ESP32_VIDEO_CARD_COUNT : OPTIONS_ITEM_COUNT)));
     for (item = 0; item < count; ++item) {
         int left, top, right, bottom;
-        if (luminositeOpen)
+        if (luminositeOpen || soundOpen)
             DoomRPG_esp32BrightnessCardRect(item, &left, &top, &right, &bottom);
         else if (themeOpen)
             DoomRPG_esp32VideoCardRect(item, &left, &top, &right, &bottom);
@@ -195,6 +198,25 @@ static int paintLuminositeState(void) {
     (void)Esp32PlatformVideo_present();
     printf("[OPTIONSBRIGHTNESS] VISUAL percent=%u framebufferFNV=%08x\n",
            (unsigned int)Esp32Backlight_percent(), (unsigned int)nextHash);
+    return 1;
+}
+
+static int paintSoundState(int armedChoice) {
+    uint32_t nextHash=0U;
+    const uint8_t percent=EspNativeAudioIntent_musicVolumePercent();
+    /* Reuse bounded, 5-card brightness geometry and painter, but update
+     * MUSIC volume rather than brightness hardware or native config. */
+    if (!DoomRPG_esp32PaintBrightnessPresetCardsSelection(
+            optionsDoomRpg, percent == 0U ? 25U : percent,
+            armedChoice, &nextHash)) {
+        printf("[OPTIONSSOUND] FAILED paint percent=%u armed=%d\n",
+               (unsigned)percent,armedChoice);
+        return 0;
+    }
+    optionsExpectedFrameFNV=nextHash;
+    (void)Esp32PlatformVideo_present();
+    printf("[OPTIONSSOUND] VISUAL percent=%u armed=%d framebufferFNV=%08x\n",
+           (unsigned)percent,armedChoice,(unsigned)nextHash);
     return 1;
 }
 
@@ -271,7 +293,7 @@ static int returnToMainMenu(DoomRPG_t* doomRpg) {
         menuSystem->menu != MENU_MAIN_OPTIONS ||
         menuSystem->selectedIndex != OPTIONS_BACK_ITEM ||
         videoOpen != 0U || luminositeOpen != 0U ||
-        orientationOpen != 0U || themeOpen != 0U ||
+        orientationOpen != 0U || themeOpen != 0U || soundOpen != 0U ||
         optionsExpectedFrameFNV == 0U ||
         DoomRPG_esp32MainMenuFramebufferHash(render) != optionsExpectedFrameFNV) {
         printf("[OPTIONBACK] FAILED precondition safe=%d menu=%d selected=%d framebuffer=%08x expected=%08x\n",
@@ -316,7 +338,7 @@ static void optionsBackTap(int16_t screenX,
     if (!optionsBackActive || optionsDoomRpg == NULL) return;
 
     optionsTapCount++;
-    item = luminositeOpen ? luminositeItemAt(screenX, screenY) :
+    item = (luminositeOpen || soundOpen) ? luminositeItemAt(screenX, screenY) :
            (orientationOpen ? orientationItemAt(screenX, screenY) :
            (themeOpen ? themeItemAt(screenX, screenY) :
            (videoOpen ? videoItemAt(screenX, screenY) :
@@ -668,8 +690,9 @@ static void optionsBackTap(int16_t screenX,
         return;
     }
 
-    /* OPTIONS root has only BACK/VIDEO. SOUND is intentionally deferred. */
-    if (item != OPTIONS_BACK_ITEM && item != OPTIONS_VIDEO_ITEM) {
+    /* SOUND is a native session-volume child. */
+    if (item != OPTIONS_BACK_ITEM && item != OPTIONS_VIDEO_ITEM &&
+        item != OPTIONS_SOUND_ITEM) {
         if (armedItem != -1) {
             if (!paintOptionsState(OPTIONS_BACK_ITEM, 0)) {
                 optionsBackActive = 0;
@@ -708,6 +731,21 @@ static void optionsBackTap(int16_t screenX,
         printf("[OPTIONSVIDEO] OPEN from=Options cards=BACK/LUMINOSITE/ORIENTATION/THEME\n");
         return;
     }
+    if (item == OPTIONS_SOUND_ITEM) {
+        if (!paintSoundState(-1)) {
+            optionsBackActive=0;
+            PlatformInput_setTapCallback(NULL);
+            DoomRPG_esp32MainMenuRecover(optionsDoomRpg, "sound-open-failed");
+            return;
+        }
+        soundOpen=1U;
+#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
+        registerOptionsHitboxOverlay();
+#endif
+        printf("[OPTIONSSOUND] OPEN from=Options levels=25/50/75/100 "
+               "persistence=session confirmTap=2\n");
+        return;
+    }
     printf("[OPTIONBACK] CONFIRM Back action=native-semantic-return\n");
     optionsBackActive = 0;
     PlatformInput_setTapCallback(NULL);
@@ -728,6 +766,7 @@ int DoomRPG_esp32OptionsBackActivate(struct DoomRPG_s* doomRpgBase,
     luminositeOpen = 0U;
     orientationOpen = 0U;
     themeOpen = 0U;
+    soundOpen = 0U;
     optionsTapCount = 0;
     optionsExpectedFrameFNV = 0U;
 
@@ -760,7 +799,7 @@ int DoomRPG_esp32OptionsBackActivate(struct DoomRPG_s* doomRpgBase,
         int left, top, right, bottom;
         DoomRPG_esp32OptionsCardRect(OPTIONS_BACK_ITEM,
                                      &left, &top, &right, &bottom);
-        printf("[OPTIONBACK] READY Back card logical=x%d..%d y%d..%d physical=x%d..%d y%d..%d firstTap=red-arm secondReleasedTap=confirm VIDEO=intermediate-4-cards SOUND=deferred fastOpaqueReturn=yes\n",
+        printf("[OPTIONBACK] READY Back card logical=x%d..%d y%d..%d physical=x%d..%d y%d..%d firstTap=red-arm secondReleasedTap=confirm VIDEO=intermediate-4-cards SOUND=session-volume-5-cards fastOpaqueReturn=yes\n",
                left, right, top, bottom,
                left * DOOMRPG_INTEGER_SCALE,
                ((right + 1) * DOOMRPG_INTEGER_SCALE) - 1,
