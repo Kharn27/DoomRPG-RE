@@ -110,10 +110,8 @@ assert "kStep440 = 118111601U" in cpp
 assert "kStep220 = 59055800U" in cpp
 assert "playStage(kDacOff, 3U, 0U" in cpp
 assert "playStage(kMidpoint, 2U, 0U" in cpp
-assert "playStage(kTone440Legacy, 3U, 64U, kStep440" in cpp
-assert "playStage(kTone440Shaped, 3U, 64U, kStep440" in cpp
-assert "playStage(kTone220Legacy, 3U, 64U, kStep220" in cpp
-assert "playStage(kTone220Shaped, 3U, 64U, kStep220" in cpp
+assert "playStage(kTone440Hold, 8U, 64U, kStep440" in cpp
+assert "playStage(kTone220Hold, 8U, 64U, kStep220" in cpp
 assert "playStage(kSilence, 2U, 0U" in cpp
 assert "playStage(kDacOffTail, 3U, 0U" in cpp
 assert cpp.count("i2s_set_dac_mode(I2S_DAC_CHANNEL_DISABLE)") >= 2
@@ -122,7 +120,7 @@ assert "EspAudioR1Pcm_shapedWord" in cpp
 print("PASS AUDIO-R1d: bounded 8-bit DAC baseline vs interpolated/noise-shaped 440/220Hz, GPIO26 only")
 
 # R1e: the actual R1d waveform, level and stage duration are unchanged.
-assert "calibration=R1e waveform=R1d-identical" in cpp
+assert "calibration=R1f waveform=BASE-both" in cpp
 assert "i2s_driver_install(I2S_NUM_0, &cfg, 8, &i2sEvents)" in cpp
 assert "I2S_EVENT_DMA_ERROR" in cpp
 assert "I2S_EVENT_TX_Q_OVF" in cpp
@@ -131,8 +129,10 @@ assert "if (stage < kFinished) return;" in cpp
 assert "maxFillUs" in cpp and "maxInterWriteGapUs" in cpp
 assert "maxProducerGapUs=" in cpp and "fillAtFrame=" in cpp
 assert "for (uint32_t at = kDacOff; at <= kDacOffTail; ++at)" in cpp
-assert "playStage(kTone440Legacy, 3U, 64U, kStep440" in cpp
-assert "playStage(kTone440Shaped, 3U, 64U, kStep440" in cpp
-assert "playStage(kTone220Legacy, 3U, 64U, kStep220" in cpp
-assert "playStage(kTone220Shaped, 3U, 64U, kStep220" in cpp
-print("PASS AUDIO-R1e: no live AUDIO-R1 stage logging, bounded timing and I2S event telemetry")
+assert "playStage(kTone440Hold, 8U, 64U, kStep440" in cpp
+assert "playStage(kTone220Hold, 8U, 64U, kStep220" in cpp
+assert "playStage(kGap440To220, 2U, 0U, kStep440" in cpp
+assert "440Hz-BASE-HOLD8S-PEAK64" in cpp
+assert "220Hz-BASE-HOLD8S-PEAK64" in cpp
+assert "EspAudioR1Pcm_shapedWord(" not in cpp
+print("PASS AUDIO-R1f: two sustained pitch controls, same DAC quantizer, deferred DMA logs")

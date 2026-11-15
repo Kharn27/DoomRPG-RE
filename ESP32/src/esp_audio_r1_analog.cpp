@@ -29,7 +29,7 @@ constexpr size_t kFrames = 160U;  // 10 ms
 constexpr size_t kSlots = 2U;    // explicit L+R 16-bit physical slots
 constexpr uint32_t kClockWarm = 8U;
 constexpr uint32_t kClockBlocks = 80U;
-constexpr uint32_t kFadeFrames = 3200U; // 200 ms R1e, PCM identical to R1d
+constexpr uint32_t kFadeFrames = 3200U; // 200 ms R1f BASE comparison
 constexpr uint32_t kStep440 = 118111601U; // round(440 * 2^32 / 16000)
 constexpr uint32_t kStep220 = 59055800U;  // round(220 * 2^32 / 16000)
 
@@ -38,18 +38,14 @@ enum : uint32_t {
     kClock = 1U,
     kDacOff = 2U,
     kMidpoint = 3U,
-    kTone440Legacy = 4U,
-    kGap440Ab = 5U,
-    kTone440Shaped = 6U,
-    kGap440To220 = 7U,
-    kTone220Legacy = 8U,
-    kGap220Ab = 9U,
-    kTone220Shaped = 10U,
-    kSilence = 11U,
-    kDacOffTail = 12U,
-    kFinished = 13U,
-    kStopped = 14U,
-    kFailed = 15U
+    kTone440Hold = 4U,
+    kGap440To220 = 5U,
+    kTone220Hold = 6U,
+    kSilence = 7U,
+    kDacOffTail = 8U,
+    kFinished = 9U,
+    kStopped = 10U,
+    kFailed = 11U
 };
 enum : uint32_t {
     kErrorNone = 0U, kErrorDriver = 1U, kErrorTask = 2U,
@@ -172,8 +168,7 @@ static bool clockWitness(uint16_t* pcm) {
 static bool playStage(uint32_t stage, uint32_t seconds, uint8_t peak,
                       uint32_t step, uint32_t* phase, uint16_t* pcm) {
     const uint32_t total = seconds * kHz;
-    const bool shaped = (stage == kTone440Shaped || stage == kTone220Shaped);
-    EspAudioR1PcmShapeState shapeState = {0};
+    /* R1f: same BASE quantizer for both pitches, no SHAPED variable. */
     StageTelemetry& witness = stageTelemetry[stage];
     witness.startMs = (uint32_t)(esp_timer_get_time() / 1000LL);
     int64_t previousWriteEndUs = 0;
@@ -205,9 +200,7 @@ static bool playStage(uint32_t stage, uint32_t seconds, uint8_t peak,
                     if (release < amplitude) amplitude = release;
                 }
             }
-            const uint16_t value = shaped ?
-                EspAudioR1Pcm_shapedWord(*phase, amplitude, &shapeState) :
-                EspAudioR1Pcm_word(*phase, amplitude);
+            const uint16_t value = EspAudioR1Pcm_word(*phase, amplitude);
             pcm[(size_t)i * kSlots] = value;
             pcm[(size_t)i * kSlots + 1U] = value;
             *phase += step;
@@ -246,23 +239,16 @@ static void taskMain(void*) {
             ok = false;
         }
     }
-    /* R1e: SAME R1d PCM and stages; only buffered telemetry/no live printf.
-     * User hears crackling at repeatable ~1s point into 3s tones.
-     * R1e distinguishes a scheduling/data-path hiccup from a static waveform.
-     *
-     * R1d: user hears crackling ONLY during actual tones, not midpoint
-     * or DAC-off. Compare exact same 440 Hz peak64 through two distinct
-     * quantizers, then repeat at 220 Hz. Same I2S timing, DMA, DAC, gain,
-     * speaker and 200 ms envelopes isolate waveform-side differences.
-     * Do not infer cause from a digital/CI PASS. */
+    /* R1f: real 8-ohm CYD report described crackle at the tone's
+     * beginning and approximately 1s later, possibly periodic.
+     * R1e's last (quieter/cleaner) clip changed BOTH pitch and quantizer.
+     * Hold each BASE tone 8s at identical +/-64 DAC amplitude, giving
+     * enough time to hear a 1s pattern while isolating pitch vs quantizer.
+     * No Audio-R1 Serial printing until the final DMA shutdown. */
     if (ok) ok = playStage(kMidpoint, 2U, 0U, kStep440, &phase, pcm);
-    if (ok) ok = playStage(kTone440Legacy, 3U, 64U, kStep440, &phase, pcm);
-    if (ok) ok = playStage(kGap440Ab, 1U, 0U, kStep440, &phase, pcm);
-    if (ok) ok = playStage(kTone440Shaped, 3U, 64U, kStep440, &phase, pcm);
-    if (ok) ok = playStage(kGap440To220, 1U, 0U, kStep440, &phase, pcm);
-    if (ok) ok = playStage(kTone220Legacy, 3U, 64U, kStep220, &phase, pcm);
-    if (ok) ok = playStage(kGap220Ab, 1U, 0U, kStep440, &phase, pcm);
-    if (ok) ok = playStage(kTone220Shaped, 3U, 64U, kStep220, &phase, pcm);
+    if (ok) ok = playStage(kTone440Hold, 8U, 64U, kStep440, &phase, pcm);
+    if (ok) ok = playStage(kGap440To220, 2U, 0U, kStep440, &phase, pcm);
+    if (ok) ok = playStage(kTone220Hold, 8U, 64U, kStep220, &phase, pcm);
     if (ok) ok = playStage(kSilence, 2U, 0U, kStep440, &phase, pcm);
     if (ok && !__atomic_load_n(&state.stopRequested, __ATOMIC_ACQUIRE)) {
         /* Keep I2S DMA feeding midpoint but disable only DAC2/GPIO26
@@ -290,13 +276,9 @@ static const char* stageName(uint32_t stage) {
         case kClock: return "CLOCK-DAC-OFF";
         case kDacOff: return "DAC-OFF";
         case kMidpoint: return "MIDPOINT-GPIO26";
-        case kTone440Legacy: return "440Hz-BASE-PEAK64";
-        case kGap440Ab: return "MIDPOINT-GAP-440-A-B";
-        case kTone440Shaped: return "440Hz-SHAPED-PEAK64";
-        case kGap440To220: return "MIDPOINT-GAP-FREQUENCY";
-        case kTone220Legacy: return "220Hz-BASE-PEAK64";
-        case kGap220Ab: return "MIDPOINT-GAP-220-A-B";
-        case kTone220Shaped: return "220Hz-SHAPED-PEAK64";
+        case kTone440Hold: return "440Hz-BASE-HOLD8S-PEAK64";
+        case kGap440To220: return "MIDPOINT-GAP-440-220";
+        case kTone220Hold: return "220Hz-BASE-HOLD8S-PEAK64";
         case kSilence: return "MIDPOINT-TAIL";
         case kDacOffTail: return "DAC-OFF-TAIL";
         case kFinished: return "DONE";
@@ -373,8 +355,8 @@ void EspAudioR1_tryStartInGameplay(void) {
     printf("[AUDIOR1] START oneShot=1 trigger=gameplay i2s=0 dac=GPIO26-only "
            "gpio25=touch-untouched rate=16000 transport=2x16b apll=1 "
            "dma=4x160 task=core0/3072 sound=synthetic-no-SD "
-           "calibration=R1e waveform=R1d-identical modes=base+shaped "
-           "frequencies=440+220 peak=64 fadeMs=200 "
+           "calibration=R1f waveform=BASE-both frequencies=440+220 "
+           "holdSeconds=8 peak=64 fadeMs=200 "
            "liveAudioLog=disabled dmaEvents=bounded "
            "heap8=%u largest8=%u dma=%u largestDMA=%u\n",
            (unsigned)heap8(), (unsigned)largest8(),
