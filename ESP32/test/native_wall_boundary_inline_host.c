@@ -6,6 +6,7 @@
 #include <string.h>
 #include <limits.h>
 #include <stddef.h>
+#include <stdlib.h>
 
 #define MAPPINGS_HEADER_BYTES 16U
 #define MAPPING_PAIR_BYTES 8U
@@ -70,7 +71,8 @@ static uint8_t texelData[65536];
 static uint32_t mappingBytes, texelBytes;
 static unsigned readCalls;
 static uint64_t readBytes;
-static byte legacyAtlas[32768];
+/* HOST-ONLY physical legacy byte at source+2048, never allocated on CYD. */
+static byte legacyAtlas[65536];
 static int packOpened = 1;
 static EspNativeGraphicsCatalogRecord records[2] = {{15}, {16}};
 static EspNativeGraphicsCatalogView catalog = {2, records};
@@ -126,7 +128,126 @@ static void fixture(void) {
     memset(legacyWallGuards, 0, sizeof(legacyWallGuards));
     legacyWallGuardCount = 0;
 }
-int main(void) {
+/* R-A2a: bounded pack-v2 fixture generated from three original PAK entries.
+ * The witness metadata is independently validated by the Python pack reader.
+ * Deliberately reconstruct the legacy physical-adjacent byte from the pack,
+ * NOT the mapped guard byte. A mismatch must fail, rather than be hidden by
+ * the synthetic R-A1 atlas which manually injected the successor. */
+static int readFixtureBytes(FILE* f, void* p, size_t n) {
+    return fread(p, 1U, n, f) == n;
+}
+static int runPackFixture(const char* path) {
+    static const uint8_t signature[8] = {'D','R','P','G','R','2','A','2'};
+    uint8_t raw[8];
+    uint8_t wall[WALL_PACKED_BYTES];
+    uint8_t paletteRaw[32];
+    FILE* f = fopen(path, "rb");
+    int mismatches = 0;
+    if (f == NULL) { fprintf(stderr, "FAIL RA2 PACK fixture-open\n"); return 1; }
+    if (!readFixtureBytes(f,raw,8U) || memcmp(raw,signature,8U)!=0 ||
+        !readFixtureBytes(f,raw,4U) || readLe32(raw)!=2U) {
+        fprintf(stderr, "FAIL RA2 PACK fixture-header\n");
+        fclose(f);
+        return 1;
+    }
+    for (int fixtureIndex=0; fixtureIndex<2; ++fixtureIndex) {
+        Render_t render = {0};
+        FirstFrameWork work = {0};
+        ResolvedWallTexture src = {0};
+        unsigned short fb[16] = {0}, legacyFb[16] = {0};
+        uint8_t physicalByte, mappedByte;
+        uint32_t sourceOffset, successorSource, expectedHash;
+        uint16_t successorActual;
+        uint32_t nativeHash=2166136261U, legacyHash=2166136261U;
+        int base;
+        if (!readFixtureBytes(f,raw,8U)) goto invalid;
+        src.logicalId=readLe16(raw);
+        src.actualId=readLe16(raw+2);
+        successorActual=readLe16(raw+4);
+        if (readLe16(raw+6)!=0U) goto invalid;
+        if (!readFixtureBytes(f,raw,8U)) goto invalid;
+        sourceOffset=readLe32(raw);
+        successorSource=readLe32(raw+4);
+        if ((sourceOffset&1U)!=0U || sourceOffset>131072U ||
+            successorSource<=sourceOffset || successorActual==src.actualId)
+            goto invalid;
+        if (!readFixtureBytes(f,paletteRaw,sizeof(paletteRaw)) ||
+            !readFixtureBytes(f,wall,sizeof(wall)) ||
+            !readFixtureBytes(f,&physicalByte,1U) ||
+            !readFixtureBytes(f,&mappedByte,1U) ||
+            !readFixtureBytes(f,raw,4U)) goto invalid;
+        expectedHash=readLe32(raw);
+        base=(int)(sourceOffset/2U);
+        if (base<0 || (uint32_t)base+WALL_PACKED_BYTES>=sizeof(legacyAtlas))
+            goto invalid;
+        memcpy(legacyAtlas+base,wall,sizeof(wall));
+        legacyAtlas[base+WALL_PACKED_BYTES]=physicalByte;
+        for (int i=0;i<16;++i)
+            src.paletteRgb565[i]=readLe16(paletteRaw+i*2);
+        src.sourceTexelOffset=sourceOffset;
+
+        memset(legacyWallGuards,0,sizeof(legacyWallGuards));
+        legacyWallGuardCount=1U;
+        legacyWallGuards[0].valid=1U;
+        legacyWallGuards[0].logicalId=src.logicalId;
+        legacyWallGuards[0].actualId=src.actualId;
+        legacyWallGuards[0].sourceOffset=sourceOffset;
+        legacyWallGuards[0].successorActualId=successorActual;
+        legacyWallGuards[0].successorSourceOffset=successorSource;
+        legacyWallGuards[0].packedByte=mappedByte;
+        memset(&frameFailure,0,sizeof(frameFailure));
+        render.screenRight=1;
+        render.screenBottom=16;
+        render.pitch=2;
+        render.mediaTexels=legacyAtlas;
+        render.spanPalettes=src.paletteRgb565;
+        work.render=&render;
+        for (uint32_t nibble=0;nibble<4096U;++nibble) {
+            const int local=(int)(((nibble/2U)<<13)+((nibble&1U)<<12));
+            render.pixels=fb;
+            if (!sampleWallSpan(&work,&src,wall,0,0,local,0,1)) goto invalid;
+            render.pixels=legacyFb;
+            Render_SpanMode0(&render,0,0,(base<<13)+local,0,1);
+            if (fb[0]!=legacyFb[0]) goto invalid;
+            nativeHash=(nativeHash^(uint8_t)fb[0])*16777619U;
+            nativeHash=(nativeHash^(uint8_t)(fb[0]>>8))*16777619U;
+            legacyHash=(legacyHash^(uint8_t)legacyFb[0])*16777619U;
+            legacyHash=(legacyHash^(uint8_t)(legacyFb[0]>>8))*16777619U;
+        }
+        if (nativeHash!=expectedHash || nativeHash!=legacyHash) goto invalid;
+        for (int high=0;high<2;++high) {
+            const int local=(2048<<13)+(high<<12);
+            render.pixels=fb;
+            if (!sampleWallSpan(&work,&src,wall,0,0,local,0,1)) goto invalid;
+            render.pixels=legacyFb;
+            Render_SpanMode0(&render,0,0,(base<<13)+local,0,1);
+            if (fb[0]!=legacyFb[0]) ++mismatches;
+        }
+        printf("RA2 PACK logical=%u actual=%u source=%u successor=%u/%u physical=%02x mapped=%02x fullTexelNibbles=4096 pixelFNV=%08x boundaryParity=%s\n",
+               src.logicalId,src.actualId,sourceOffset,successorActual,
+               successorSource,physicalByte,mappedByte,nativeHash,
+               physicalByte==mappedByte?"EXACT":"DIFF");
+        continue;
+invalid:
+        fprintf(stderr,"FAIL RA2 PACK malformed/incorrect fixture=%d\n",fixtureIndex);
+        fclose(f);
+        return 1;
+    }
+    if (fgetc(f)!=EOF) {
+        fprintf(stderr,"FAIL RA2 PACK trailing-bytes\n");
+        fclose(f);
+        return 1;
+    }
+    fclose(f);
+    if (mismatches!=0) {
+        fprintf(stderr,"FAIL RA2 PACK legacy physical adjacency != mapped guard: differing nibbles=%d (no silent R-A1 atlas substitution)\n",mismatches);
+        return 2;
+    }
+    printf("PASS RA2 PACK real-span native/legacy internal=8192 boundary=4 independent-physical-adjacency=yes\n");
+    return 0;
+}
+
+int main(int argc, char** argv) {
     fixture();
     uint8_t wall[WALL_PACKED_BYTES];
     memset(wall, 0x21, sizeof(wall));
@@ -260,5 +381,11 @@ int main(void) {
     assert((uint16_t)framebuffer[0]==0x5a5a && !packOpened);
 
     printf("PASS native wall boundary inline spans=2000 parity=4098 golden=ae456812 successor=68 source=32768 guardMax=4 guardIO=%u reads/%llu bytes retry=0\\n", afterFirst, (unsigned long long)firstGuardBytes);
+    if (argc == 3 && strcmp(argv[1],"--fixture")==0)
+        return runPackFixture(argv[2]);
+    if (argc != 1) {
+        fprintf(stderr,"Usage: wall_boundary [--fixture file]\n");
+        return 1;
+    }
     return 0;
 }
