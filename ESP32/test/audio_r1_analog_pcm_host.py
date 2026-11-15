@@ -11,6 +11,21 @@ cpp = (src / "esp_audio_r1_analog.cpp").read_text(encoding="utf-8")
 main = (src / "main.cpp").read_text(encoding="utf-8")
 assert "EspAudioR1_tryStartInGameplay();" in main
 assert "EspAudioR1_runColdBootProbe();" in main
+assert "EspAudioR1_runCosineColdBootProbe();" in main
+assert main.index("EspAudioR1_runColdBootProbe();") < main.index("EspAudioR1_runCosineColdBootProbe();")
+assert main.index("EspAudioR1_runCosineColdBootProbe();") < main.index("input.begin();")
+cw = (src / "esp_audio_r1_cw.cpp").read_text(encoding="utf-8")
+cwh = (src / "esp_audio_r1_cw.h").read_text(encoding="utf-8")
+assert "EspAudioR1_runCosineColdBootProbe" in cwh
+assert "DAC_CHANNEL_2" in cw and "DAC_CHANNEL_1" not in cw.replace("DAC_CHANNEL_1 / GPIO25", "")
+assert "DAC_CW_SCALE_2" in cw and "DAC_CW_PHASE_0" in cw
+assert "cfg.en_ch = kSpeakerDac;" in cw and "cfg.freq = kCosineFrequencyHz;" in cw
+assert "dac_cw_generator_config(&cfg)" in cw
+assert "dac_cw_generator_enable()" in cw and "dac_cw_generator_disable()" in cw
+assert "dac_output_disable(kSpeakerDac)" in cw
+assert "i2s_driver_install" not in cw.replace("i2s_driver_install, ISR", "")
+assert "xTaskCreate" not in cw and "SD.open" not in cw
+assert "vTaskDelay(pdMS_TO_TICKS(kCosineHoldMs))" in cw
 assert main.index("EspAudioR1_runColdBootProbe();") < main.index("input.begin();")
 assert main.index("EspAudioR1_runColdBootProbe();") < main.index("initializeSdCard();")
 assert "coldBootProbe" in cpp and "taskReleased" in cpp and "taskCreated" in cpp
@@ -144,4 +159,4 @@ assert "playStage(kGap440To220, 2U, 0U, kStep440" in cpp
 assert "440Hz-BASE-HOLD8S-PEAK64" in cpp
 assert "220Hz-BASE-HOLD8S-PEAK64" in cpp
 assert "EspAudioR1Pcm_shapedWord(" not in cpp
-print("PASS AUDIO-R1g: isolated 440Hz cold-boot R1f waveform, one-shot handoff and deferred DMA logs")
+print("PASS AUDIO-R1h: cold-boot I2S 440Hz vs native DAC cosine 440Hz, GPIO26-only, bounded cleanup")

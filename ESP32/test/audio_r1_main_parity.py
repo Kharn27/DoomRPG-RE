@@ -6,7 +6,7 @@ Strict unique markers fail closed if either integration point drifts.
 """
 
 def restore_pre_audio_r1(text: str) -> str:
-    include = '#include "esp_asset_pack.h"\n#include "esp_audio_r1_analog.h"\n'
+    include = '#include "esp_asset_pack.h"\n#include "esp_audio_r1_analog.h"\n#include "esp_audio_r1_cw.h"\n'
     original = '#include "esp_asset_pack.h"\n'
     hook = (
         '    /* AUDIO-R1: non-blocking, one-shot GPIO26 analog proof only after the\n'
@@ -28,9 +28,18 @@ def restore_pre_audio_r1(text: str) -> str:
         '    EspAudioR1_runColdBootProbe();\n'
         '\n'
     )
+    cw_hook = (
+        '    /* AUDIO-R1h TEMPORARY: compare the identical 440Hz pitch with the\n'
+        '     * hardware-only DAC cosine after R1g I2S has fully stopped.\n'
+        '     * Both occur before TFT, touch and SD initialization. */\n'
+        '    EspAudioR1_runCosineColdBootProbe();\n'
+        '\n'
+    )
     assert text.count(include) == 1, "AUDIO-R1 include integration drift"
     assert text.count(hook) == 1, "AUDIO-R1 gameplay integration drift"
     assert text.count(cold_boot_hook) == 1, "AUDIO-R1g cold-boot integration drift"
+    assert text.count(cw_hook) == 1, "AUDIO-R1h hardware cosine integration drift"
     return (text.replace(include, original, 1)
                 .replace(hook, "", 1)
-                .replace(cold_boot_hook, "", 1))
+                .replace(cold_boot_hook, "", 1)
+                .replace(cw_hook, "", 1))
