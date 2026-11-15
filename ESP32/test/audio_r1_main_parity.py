@@ -1,51 +1,18 @@
-"""Remove ONLY AUDIO-R1's dedicated injection for historical root Git parity.
-
-The old Root-J2..J5 oracles reconstruct pre-AUDIO-R1 Git blobs. The current
-firmware still executes the injected code; the AUDIO-R1 host test audits it.
-Strict unique markers fail closed if either integration point drifts.
+"""Strip only the temporary AUDIO-R1l gameplay hook to preserve exact
+historical Root-J2..J5 Git blob references. Fail closed if source drifts.
+The production game still invokes the hook; AUDIO-R1l tests inspect it.
 """
 
 def restore_pre_audio_r1(text: str) -> str:
-    include = '#include "esp_asset_pack.h"\n#include "esp_audio_r1_analog.h"\n#include "esp_audio_r1_cw.h"\n#include "esp_audio_r1_timer.h"\n'
+    include = '#include "esp_asset_pack.h"\n#include "esp_audio_r1_timer.h"\n'
     original = '#include "esp_asset_pack.h"\n'
     hook = (
-        '    /* AUDIO-R1: non-blocking, one-shot GPIO26 analog proof only after the\n'
-        '     * permanent native gameplay session has become fully active. */\n'
-        '    if (EspNativeGameplaySession_isActive()) {\n'
-        '        EspAudioR1_tryStartInGameplay();\n'
-        '    } else {\n'
-        '        EspAudioR1_requestStop();\n'
-        '    }\n'
-        '    EspAudioR1_poll();\n'
+        '    /* AUDIO-R1l TEMPORARY: bounded 440 Hz PCM timer at real gameplay load.\n'
+        '     * No I2S or cold-boot audio; service is non-blocking on each main loop. */\n'
+        '    const bool gameAudioActive = EspNativeGameplaySession_isActive();\n'
+        '    if (gameAudioActive) EspAudioR1_timerTryStartInGameplay();\n'
+        '    EspAudioR1_timerService(gameAudioActive);\n'
     )
-    # R1g temporarily inserts a cold-boot test before SD/TFT initialization.
-    # Historical root parity must strip this ENTIRELY, just like the already
-    # isolated AUDIO-R1 gameplay hook. Preserve exact pre-audio Git blobs.
-    cold_boot_hook = (
-        '    /* AUDIO-R1g TEMPORARY diagnostic: the 8s 440Hz R1f tone plays before\n'
-        '     * the display, SD and gameplay initialize. Expect a ~19s delay before\n'
-        '     * MENU_MAIN; after this one-shot, the normal game boots silently. */\n'
-        '    EspAudioR1_runColdBootProbe();\n'
-    )
-    timer_hook = (
-        '    /* AUDIO-R1k TEMPORARY: same 440Hz PCM through timer ISR directly to\n'
-        '     * DAC2/GPIO26. No I2S; precedes the known-clean cosine reference. */\n'
-        '    EspAudioR1_runTimerColdBootProbe();\n'
-    )
-    cw_hook = (
-        '    /* AUDIO-R1h TEMPORARY: compare the identical 440Hz pitch with the\n'
-        '     * hardware-only DAC cosine after R1g I2S has fully stopped.\n'
-        '     * Both occur before TFT, touch and SD initialization. */\n'
-        '    EspAudioR1_runCosineColdBootProbe();\n'
-        '\n'
-    )
-    assert text.count(include) == 1, "AUDIO-R1 include integration drift"
-    assert text.count(hook) == 1, "AUDIO-R1 gameplay integration drift"
-    assert text.count(cold_boot_hook) == 1, "AUDIO-R1g cold-boot integration drift"
-    assert text.count(cw_hook) == 1, "AUDIO-R1h hardware cosine integration drift"
-    assert text.count(timer_hook) == 1, "AUDIO-R1k timer integration drift"
-    return (text.replace(include, original, 1)
-                .replace(hook, "", 1)
-                .replace(cold_boot_hook, "", 1)
-                .replace(timer_hook, "", 1)
-                .replace(cw_hook, "", 1))
+    assert text.count(include) == 1, "AUDIO-R1l include integration drift"
+    assert text.count(hook) == 1, "AUDIO-R1l gameplay integration drift"
+    return text.replace(include, original, 1).replace(hook, "", 1)

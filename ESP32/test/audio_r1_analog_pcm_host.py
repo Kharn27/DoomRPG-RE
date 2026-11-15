@@ -9,12 +9,13 @@ root = Path(__file__).resolve().parents[1]
 src = root / "src"
 cpp = (src / "esp_audio_r1_analog.cpp").read_text(encoding="utf-8")
 main = (src / "main.cpp").read_text(encoding="utf-8")
-assert "EspAudioR1_tryStartInGameplay();" in main
-assert "EspAudioR1_runColdBootProbe();" in main
-assert "EspAudioR1_runCosineColdBootProbe();" in main
-assert "EspAudioR1_runTimerColdBootProbe();" in main
-assert main.index("EspAudioR1_runColdBootProbe();") < main.index("EspAudioR1_runTimerColdBootProbe();")
-assert main.index("EspAudioR1_runTimerColdBootProbe();") < main.index("EspAudioR1_runCosineColdBootProbe();")
+assert "EspAudioR1_tryStartInGameplay();" not in main
+assert "EspAudioR1_runColdBootProbe();" not in main
+assert "EspAudioR1_runCosineColdBootProbe();" not in main
+assert "EspAudioR1_runTimerColdBootProbe();" not in main
+assert "EspAudioR1_timerTryStartInGameplay();" in main
+assert "EspAudioR1_timerService(gameAudioActive);" in main
+assert "const bool gameAudioActive = EspNativeGameplaySession_isActive();" in main
 timer = (src / "esp_audio_r1_timer.cpp").read_text(encoding="utf-8")
 timer_h = (src / "esp_audio_r1_timer.h").read_text(encoding="utf-8")
 assert "EspAudioR1_runTimerColdBootProbe" in timer_h
@@ -46,8 +47,19 @@ assert "dac_output_disable(kSpeakerDac)" in cw
 assert "i2s_driver_install" not in cw.replace("i2s_driver_install, ISR", "")
 assert "xTaskCreate" not in cw and "SD.open" not in cw
 assert "vTaskDelay(pdMS_TO_TICKS(kCosineHoldMs))" in cw
-assert main.index("EspAudioR1_runColdBootProbe();") < main.index("input.begin();")
-assert main.index("EspAudioR1_runColdBootProbe();") < main.index("initializeSdCard();")
+assert main.index("EspAudioR1_timerTryStartInGameplay();") > main.index("initializeMainMenu();")
+assert "EspAudioR1_timerTryStartInGameplay" in timer_h
+assert "EspAudioR1_timerService(bool gameplayActive)" in timer
+assert "if (!gameplayActive)" in timer
+assert "session_exit" in timer
+assert "timerGameplayClose(\"STOPPED\")" in timer
+assert "timerGameplayClose(\"PASS-TRANSPORT\")" in timer
+assert "maxToneGapCycles" in timer and "maxToneIsrCycles" in timer
+assert "gapsOver125us=" in timer
+assert "clock_timeout" in timer and "tone_timeout" in timer
+assert "heap_after_init" in timer
+assert "xthal_get_ccount()" in timer
+assert "EspNativeGameplaySession_isActive()" in main
 assert "coldBootProbe" in cpp and "taskReleased" in cpp and "taskCreated" in cpp
 assert "while (__atomic_load_n(&taskReleased, __ATOMIC_ACQUIRE) == 0U)" in cpp
 assert "if (ok && !coldBootProbe)" in cpp
@@ -185,4 +197,4 @@ assert "playStage(kGap440To220, 2U, 0U, kStep440" in cpp
 assert "440Hz-BASE-HOLD8S-PEAK64" in cpp
 assert "220Hz-BASE-HOLD8S-PEAK64" in cpp
 assert "EspAudioR1Pcm_shapedWord(" not in cpp
-print("PASS AUDIO-R1k: APLL I2S + independent 16kHz IRAM timer DAC2 PCM + hardware CW")
+print("PASS AUDIO-R1l: nonblocking gameplay timer PCM stress probe, fail-closed session exit and ISR metrics")

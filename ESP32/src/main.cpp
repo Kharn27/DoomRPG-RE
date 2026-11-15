@@ -5,8 +5,6 @@
 
 #include "board_config.h"
 #include "esp_asset_pack.h"
-#include "esp_audio_r1_analog.h"
-#include "esp_audio_r1_cw.h"
 #include "esp_audio_r1_timer.h"
 #include "esp_legacy_asset_source.h"
 #include "esp_legacy_config_mappings_startup.h"
@@ -463,18 +461,6 @@ void setup()
     delay(250);
     printSystemInfo();
 
-    /* AUDIO-R1g TEMPORARY diagnostic: the 8s 440Hz R1f tone plays before
-     * the display, SD and gameplay initialize. Expect a ~19s delay before
-     * MENU_MAIN; after this one-shot, the normal game boots silently. */
-    EspAudioR1_runColdBootProbe();
-    /* AUDIO-R1k TEMPORARY: same 440Hz PCM through timer ISR directly to
-     * DAC2/GPIO26. No I2S; precedes the known-clean cosine reference. */
-    EspAudioR1_runTimerColdBootProbe();
-    /* AUDIO-R1h TEMPORARY: compare the identical 440Hz pitch with the
-     * hardware-only DAC cosine after R1g I2S has fully stopped.
-     * Both occur before TFT, touch and SD initialization. */
-    EspAudioR1_runCosineColdBootProbe();
-
     input.begin();
 
     display.begin();
@@ -507,14 +493,11 @@ void loop()
     }
     EspNativeResidentGameplay_serviceMenuExit(doomRpg);
     EspNativeStartup_serviceDeathRoute(doomRpg);
-    /* AUDIO-R1: non-blocking, one-shot GPIO26 analog proof only after the
-     * permanent native gameplay session has become fully active. */
-    if (EspNativeGameplaySession_isActive()) {
-        EspAudioR1_tryStartInGameplay();
-    } else {
-        EspAudioR1_requestStop();
-    }
-    EspAudioR1_poll();
+    /* AUDIO-R1l TEMPORARY: bounded 440 Hz PCM timer at real gameplay load.
+     * No I2S or cold-boot audio; service is non-blocking on each main loop. */
+    const bool gameAudioActive = EspNativeGameplaySession_isActive();
+    if (gameAudioActive) EspAudioR1_timerTryStartInGameplay();
+    EspAudioR1_timerService(gameAudioActive);
     updateTouchDiagnostic();
     printHeartbeat();
     delay(5);
