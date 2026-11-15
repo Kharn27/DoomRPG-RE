@@ -24,6 +24,11 @@ int EspNativeAudioIntent_publish(uint16_t resourceId,
 int EspNativeAudioIntent_stopAll(void);
 const EspNativeAudioIntent* EspNativeAudioIntent_last(void);
 uint32_t EspNativeAudioIntent_count(void);
+/* Shared compact music volume owner: 0/25/50/75/100, boot default 100.
+ * C UI sets it; native ADPCM producer reads it. No ISR or SD writes.
+ * This is explicitly runtime-only, no silent V3 config schema change. */
+uint8_t EspNativeAudioIntent_musicVolumePercent(void);
+int EspNativeAudioIntent_setMusicVolumePercent(uint8_t percent);
 
 #ifdef __cplusplus
 }
