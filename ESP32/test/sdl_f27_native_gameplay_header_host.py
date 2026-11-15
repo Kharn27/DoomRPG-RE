@@ -56,6 +56,15 @@ def strip_ra2b_probe(source: bytes) -> bytes:
         rb".*?^#endif\n",
         b"\n", source, flags=re.MULTILINE | re.DOTALL)
     assert count == 4, "Unexpected R-A2b probe extraction count"
+    # The first diagnostic block was inserted after an intentionally empty
+    # separator line. Restore the exact historical adjacency for this ONE
+    # original C body, leaving every other line byte-identical.
+    separator = (b"static GameplayFrameScratch frameScratch;\n\n"
+                 b"/* PR236 B probe")
+    assert stripped.count(separator) == 1, "R-A2b frame separator changed"
+    stripped = stripped.replace(separator,
+                                b"static GameplayFrameScratch frameScratch;\n"
+                                b"/* PR236 B probe", 1)
     assert b"RA2B" not in stripped, "R-A2b diagnostic escaped its guards"
     return stripped
 
