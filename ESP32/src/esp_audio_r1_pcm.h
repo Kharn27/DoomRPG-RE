@@ -25,11 +25,13 @@ static const int8_t kEspAudioR1Sine256[256] = {
      -49,  -46,  -43,  -40,  -37,  -34,  -31,  -28,  -25,  -22,  -19,  -16,  -12,   -9,   -6,   -3
 };
 
-/* 128 is DAC midpoint. R1b compares peaks 4/12/24 (of 127 possible),
- * still <20% of DAC full-scale. This is NOT a music mixer. */
+/* 128 is DAC midpoint. R1c calibrates the NEW board independently:
+ * compare peaks 8/32/80 of 127 possible, up to ~63% DAC full-scale,
+ * without assuming the gain of the prior board with zero-ohm resistors.
+ * This is NOT a music mixer. */
 static inline uint8_t EspAudioR1Pcm_dacCode(uint32_t phase, uint8_t peakCodes) {
     int32_t delta;
-    if (peakCodes > 24U) peakCodes = 24U;
+    if (peakCodes > 80U) peakCodes = 80U;
     delta = ((int32_t)kEspAudioR1Sine256[phase >> 24] *
              (int32_t)peakCodes) / 127;
     return (uint8_t)(128 + delta);
