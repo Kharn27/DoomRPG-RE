@@ -60,15 +60,22 @@ constexpr uint8_t kCydInvertedGamma[15] = {
     0x3c, 0x05, 0x10, 0x0f, 0x3f, 0x3f, 0x0f,
 };
 
-/* Original TFT_eSPI ILI9341_2_DRIVER positive gamma table (E0).
- * The first CYD deliberately uses the E1 curve for E0 as well; leave that
- * hardware-proven profile UNCHANGED. The alternate LCD with INV OFF instead
- * needs the stock E0/E1 pair for a meaningful optical calibration test.
- * This is panel register programming, not a RGB565 software correction. */
+/* The INV-OFF CYD was optically too bright/washed with the stock
+ * ILI9341_2_DRIVER E0/E1 pair. Trial: an independently published,
+ * internally consistent ILI9341_DRIVER E0/E1 pair from TFT_eSPI's
+ * ILI9341_Init.h. Keep its stock power/VCOM, BGR, gamma-selection,
+ * backlight and everything else unchanged. Only the two gamma register
+ * payloads differ from the previous trial. This is NOT pixel processing:
+ * real photos of the second CYD must validate the optical result.
+ * The first CYD retains its exact existing kCydInvertedGamma E0/E1. */
 #if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
 constexpr uint8_t kCydAlternatePositiveGamma[15] = {
-    0x0f, 0x2a, 0x28, 0x08, 0x0e, 0x08, 0x54, 0xa9,
-    0x43, 0x0a, 0x0f, 0x00, 0x00, 0x00, 0x00,
+    0x0f, 0x31, 0x2b, 0x0c, 0x0e, 0x08, 0x4e, 0xf1,
+    0x37, 0x07, 0x10, 0x03, 0x0e, 0x09, 0x00,
+};
+constexpr uint8_t kCydAlternateNegativeGamma[15] = {
+    0x00, 0x0e, 0x14, 0x03, 0x11, 0x07, 0x31, 0xc1,
+    0x48, 0x08, 0x0f, 0x0c, 0x31, 0x36, 0x0f,
 };
 #endif
 
@@ -119,9 +126,15 @@ void applyCydInvertedGammaProfile() {
 #endif
 
     platformDisplay->writecommand(0xe1);
+#if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
+    for (size_t i = 0; i < sizeof(kCydAlternateNegativeGamma); ++i) {
+        platformDisplay->writedata(kCydAlternateNegativeGamma[i]);
+    }
+#else
     for (size_t i = 0; i < sizeof(kCydInvertedGamma); ++i) {
         platformDisplay->writedata(kCydInvertedGamma[i]);
     }
+#endif
 
 #if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
     platformDisplay->invertDisplay(false); /* alternative LCD INV OFF */
@@ -262,7 +275,7 @@ bool PlatformVideo_begin(TFT_eSPI* display) {
                   DOOMRPG_PHYSICAL_WIDTH, DOOMRPG_PHYSICAL_HEIGHT,
                   DOOMRPG_INTEGER_SCALE);
 #if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
-    Serial.println("[VIDEO] CYD display profile alternate-panel inversion=off gamma=stock-ILI9341_2-E0E1 BGR=unchanged resampling=nearest framebuffer=untouched");
+    Serial.println("[VIDEO] CYD display profile alternate-panel inversion=off gamma=ILI9341-driver-E0E1-trial BGR=unchanged resampling=nearest framebuffer=untouched");
 #else
     Serial.println("[VIDEO] CYD display profile raw RGB565 + hardware inverted-gamma resampling=nearest framebuffer=untouched");
 #endif
