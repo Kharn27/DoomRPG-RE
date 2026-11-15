@@ -1,4 +1,4 @@
-# Issue #340 — R-A1 : oracle réel de span mural (candidat, avant PASS CI/CYD)
+# Issue #340 — R-A1 : oracle réel de span mural (PASS CI/CYD, 15 novembre 2026)
 
 ## Base et portée
 
@@ -33,3 +33,8 @@ L'atlas legacy de ce test est **synthétique** : l'octet de continuation résolu
 ## Garde-fous
 
 `shapeData == NULL`, `mediaTexels == NULL` **dans le firmware** ; pas de ZIP en runtime ; 2048 B par cache slot, quatre guards maximum, rendu et RNG non modifiés. `--wrap` (45 flags normal) reste inchangé pour le futur audit R-C.
+
+
+## Validation R-A1 après test matériel
+
+PASS sur classic CYD normal, candidat `6a9f4b384649259674e99d3ec82ecc29699be217`, avec aucun changement production. Détails et SHA256 du log : [MILESTONE_PR341_ARCH_RA1_WALL_PARITY_CYD_PASS.md](MILESTONE_PR341_ARCH_RA1_WALL_PARITY_CYD_PASS.md). **14 BOUNDARY-INLINE** correspondant à 2 véritables couples de textures, aucun échec de rendu ; il ne faut pas confondre ce comptage avec une fréquence par pixel. Les vrais assets/frames golden et métriques SD restent hors de R-A1. Documentation seule après test.
