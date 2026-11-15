@@ -44,7 +44,7 @@ def main() -> None:
     variant_flags = [l.strip() for l in
                      ini.get(variant, "build_flags").splitlines() if l.strip()]
     assert variant_flags == [
-        "\${env:esp32-cyd.build_flags}",
+        "${env:esp32-cyd.build_flags}",
         "-D DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION=1",
         "-I.pio/libdeps/esp-cyd-inverted/TFT_eSPI",
     ], "alternate env changes more than LCD inversion/build include"
