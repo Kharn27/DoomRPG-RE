@@ -62,10 +62,16 @@ def main() -> None:
     positive_match = re.search(
         r"constexpr uint8_t kCydAlternatePositiveGamma\[15\] = \{.*?\};",
         cpp, re.DOTALL)
-    assert positive_match, "real positive gamma LUT missing"
+    assert positive_match, "real alternate positive gamma LUT missing"
+    negative_match = re.search(
+        r"constexpr uint8_t kCydAlternateNegativeGamma\[15\] = \{.*?\};",
+        cpp, re.DOTALL)
+    assert negative_match, "real alternate negative gamma LUT missing"
     assert "#if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION" in cpp
     assert fn.count("kCydAlternatePositiveGamma") == 2, (
-        "only E0 on the INV-OFF variant should use stock positive gamma")
+        "only E0 on INV-OFF variant should use alternate positive gamma")
+    assert fn.count("kCydAlternateNegativeGamma") == 2, (
+        "only E1 on INV-OFF variant should use alternate negative gamma")
     assert fn.count("invertDisplay(false)") == 1
     assert fn.count("invertDisplay(true)") == 1
     assert fn.count("setSwapBytes(true)") == 1
@@ -97,7 +103,7 @@ struct Panel {
 };
 static Panel mock;
 static Panel* platformDisplay = &mock;
-""" + palette_match.group(0) + "\n#if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION\n" + positive_match.group(0) + "\n#endif\n" + fn + """
+""" + palette_match.group(0) + "\n#if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION\n" + positive_match.group(0) + "\n" + negative_match.group(0) + "\n#endif\n" + fn + """
 int main() {
     applyCydInvertedGammaProfile();
     assert(mock.ncommands == 4 &&
@@ -108,16 +114,29 @@ int main() {
     assert(mock.lengths[1] == 1 && mock.data[1][0] == 0x01);
     assert(mock.lengths[2] == 15 && mock.lengths[3] == 15);
     for (int i = 0; i < 15; ++i) {
-        assert(mock.data[3][i] == kCydInvertedGamma[i]);
 #if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
         assert(mock.data[2][i] == kCydAlternatePositiveGamma[i]);
+        assert(mock.data[3][i] == kCydAlternateNegativeGamma[i]);
 #else
         assert(mock.data[2][i] == kCydInvertedGamma[i]);
+        assert(mock.data[3][i] == kCydInvertedGamma[i]);
 #endif
     }
+#if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
+    // This exact published reference pair is intentionally pinned. Reject
+    // arbitrary byte tweaking disguised as reproducible panel calibration.
+    const int refE0[15] = {0x0f,0x31,0x2b,0x0c,0x0e,0x08,0x4e,0xf1,
+                           0x37,0x07,0x10,0x03,0x0e,0x09,0x00};
+    const int refE1[15] = {0x00,0x0e,0x14,0x03,0x11,0x07,0x31,0xc1,
+                           0x48,0x08,0x0f,0x0c,0x31,0x36,0x0f};
+    for (int i = 0; i < 15; ++i) {
+        assert(mock.data[2][i] == refE0[i]);
+        assert(mock.data[3][i] == refE1[i]);
+    }
+#endif
     assert(mock.invertCalls == 1 && mock.swapCalls == 1 && mock.swap);
 #if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
-    assert(!mock.inv);  // INV OFF + stock positive/negative gamma pair
+    assert(!mock.inv);  // INV OFF + published classic ILI9341 gamma pair
 #else
     assert(mock.inv);   // INV ON + original identical negative gamma tables
 #endif
@@ -142,8 +161,8 @@ int main() {
                   "swapBytes=true framebuffer=untouched "
                   f"LCD_INV={'OFF' if flags else 'ON'}")
     print("PASS CYD panel env: same sources, PAK, UI, TFT pins, BGR, "
-          "touch and framebuffer; LCD INV polarity and E0 gamma "
-          "are the only optical differences")
+          "touch and framebuffer; only panel INV polarity + E0/E1 gamma "
+          "register payloads differ")
 
 if __name__ == "__main__":
     main()
