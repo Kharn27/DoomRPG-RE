@@ -58,6 +58,8 @@ assert 'signalReport("FINAL")' in runtime
 assert "publishedPrefixFnv" in runtime and "consumedPrefixFnv" in runtime
 assert "EspEntranceAdpcm_decodeBlockObserved(" in header
 assert "pcm16MinMax" in runtime and "publishedDacMinMax" in runtime
+assert "gainDiv=64" in runtime and "gainLimited" in runtime
+assert "pcm/64" in header and "EspEntranceAdpcm_clamp(diff,-64,64)" in header
 assert "MALLOC_CAP_INTERNAL" in runtime and "DAC_CHANNEL_1" not in runtime
 
 compiler = shutil.which("cc")
@@ -96,8 +98,8 @@ int main(void) {
     assert(!EspEntranceAdpcm_parse(wav,59,68,&view));
     uint8_t samples[9]={0};
     assert(EspEntranceAdpcm_decodeBlock(wav+60,8,9,samples,9,4410));
-    assert(samples[0]==160);
-    for(int i=1;i<9;i++) assert(samples[i]==160);
+    assert(samples[0]==192);
+    for(int i=1;i<9;i++) assert(samples[i]==192);
     assert(EspEntranceAdpcm_decodeBlock(wav+60,8,9,samples,9,0));
     assert(samples[0]==128);
     assert(!EspEntranceAdpcm_decodeBlock(wav+60,8,9,samples,8,0));
@@ -139,15 +141,22 @@ int main(void) {
     assert(EspEntranceAdpcm_decodeBlockObserved(wav+60,8,9,
            samples,9,4410,&stats));
     assert(stats.minPcm==16384 && stats.maxPcm==16384);
-    assert(stats.nonZeroPcm==9);
+    assert(stats.nonZeroPcm==9 && stats.gainLimited==9);
     uint8_t nibbleBlock[8]={0};
     nibbleBlock[2]=70;  /* step=5894 */
     nibbleBlock[4]=0x78;  /* LOW 8 => -736, then HIGH 7 => +9309 */
     assert(EspEntranceAdpcm_decodeBlockObserved(nibbleBlock,8,9,
            samples,9,4410,&stats));
-    assert(samples[0]==128 && samples[1]==127 && samples[2]==146);
+    assert(samples[0]==128 && samples[1]==117 && samples[2]==192);
     assert(stats.minPcm==-736 && stats.maxPcm>=9309);
-    assert(stats.nonZeroPcm==8);
+    assert(stats.nonZeroPcm==8 && stats.gainLimited>0);
+    /* Host hard limits and fade: no 8-bit overflow or speaker overdrive. */
+    assert(EspEntranceAdpcm_toDac(2252,4410)==163);
+    assert(EspEntranceAdpcm_toDac(-2252,4410)==93);
+    assert(EspEntranceAdpcm_toDac(32767,4410)==192);
+    assert(EspEntranceAdpcm_toDac(-32768,4410)==64);
+    assert(EspEntranceAdpcm_toDac(2252,0)==128);
+    assert(EspEntranceAdpcm_toDac(2252,2205)==145);
     return 0;
 }
 """
