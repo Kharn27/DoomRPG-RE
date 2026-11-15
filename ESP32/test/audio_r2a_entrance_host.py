@@ -22,7 +22,8 @@ assert "/doomrpg/music/opl/M_STALKS.wav" in runtime
 assert "/M_STALKS.wav" in runtime
 assert "22050U" in runtime and "1814U" in runtime
 assert "IMA-ADPCM" in runtime
-assert "kRingCapacity=8192U" in runtime
+assert "kRingCapacity=16384U" in runtime
+assert "kPrimeFrames=8192U" in runtime and "kResumeFrames=4096U" in runtime
 assert "kMaxBlockBytes=1024U" in runtime
 assert "kMaxBlockSamples=2041U" in runtime
 assert "heap_caps_malloc(" in runtime and "MALLOC_CAP_INTERNAL" in runtime
@@ -33,7 +34,11 @@ assert "DAC_CHANNEL_2" in runtime and "DAC_CHANNEL_1" not in runtime
 assert "ESP_INTR_FLAG_LEVEL1" in runtime
 assert "timer_isr_callback_remove" in runtime and "timer_deinit" in runtime
 assert "musicFile.close();" in runtime and "heap_caps_free(ring)" in runtime
-assert "SESSION_EXIT" in runtime and "FAIL-UNDERRUN" in runtime
+assert "SESSION_EXIT" in runtime and "FAIL-UNDERRUN-TIMEOUT" in runtime
+assert 'closeMusic("FAIL-UNDERRUN")' not in runtime
+assert "if (recovering && w-r>=kResumeFrames) recovering=0U" in runtime
+assert "maxSilentStreak" in runtime and "recoveryStarts" in runtime
+assert "for (uint32_t burst=0U;burst<2U;burst++)" in runtime
 assert "FAIL-CLOCK" in runtime and "FAIL-HEAP" in runtime
 assert "gapsOver90us" in runtime and "maxSdReadUs" in runtime
 assert "SD.open(" in runtime and "musicFile.read(raw,wav.blockAlign)" in runtime
@@ -58,8 +63,12 @@ assert 'signalReport("FINAL")' in runtime
 assert "publishedPrefixFnv" in runtime and "consumedPrefixFnv" in runtime
 assert "EspEntranceAdpcm_decodeBlockObserved(" in header
 assert "pcm16MinMax" in runtime and "publishedDacMinMax" in runtime
-assert "gainDiv=64" in runtime and "gainLimited" in runtime
-assert "pcm/64" in header and "EspEntranceAdpcm_clamp(diff,-64,64)" in header
+assert "gainDiv=32" in runtime and "gainLimited" in runtime
+assert "EspNativeAudioIntent_musicVolumePercent()" in runtime
+assert "volume)/100" in runtime
+assert "masterVolume=" in runtime
+assert "pcm/32" in header and "EspEntranceAdpcm_clamp(diff,-64,64)" in header
+assert "pcm < -2048 || pcm > 2048" in header
 assert "MALLOC_CAP_INTERNAL" in runtime and "DAC_CHANNEL_1" not in runtime
 
 compiler = shutil.which("cc")
@@ -147,16 +156,16 @@ int main(void) {
     nibbleBlock[4]=0x78;  /* LOW 8 => -736, then HIGH 7 => +9309 */
     assert(EspEntranceAdpcm_decodeBlockObserved(nibbleBlock,8,9,
            samples,9,4410,&stats));
-    assert(samples[0]==128 && samples[1]==117 && samples[2]==192);
+    assert(samples[0]==128 && samples[1]==105 && samples[2]==192);
     assert(stats.minPcm==-736 && stats.maxPcm>=9309);
     assert(stats.nonZeroPcm==8 && stats.gainLimited>0);
     /* Host hard limits and fade: no 8-bit overflow or speaker overdrive. */
-    assert(EspEntranceAdpcm_toDac(2252,4410)==163);
-    assert(EspEntranceAdpcm_toDac(-2252,4410)==93);
+    assert(EspEntranceAdpcm_toDac(2252,4410)==192);
+    assert(EspEntranceAdpcm_toDac(-2252,4410)==64);
     assert(EspEntranceAdpcm_toDac(32767,4410)==192);
     assert(EspEntranceAdpcm_toDac(-32768,4410)==64);
     assert(EspEntranceAdpcm_toDac(2252,0)==128);
-    assert(EspEntranceAdpcm_toDac(2252,2205)==145);
+    assert(EspEntranceAdpcm_toDac(2252,2205)==160);
     return 0;
 }
 """
@@ -168,4 +177,4 @@ with tempfile.TemporaryDirectory() as tmp:
                     "-I", str(src), str(source), "-o", str(program)], check=True)
     subprocess.run([str(program)], check=True)
 
-print("PASS AUDIO-R2a: M_STALKS.wav 22.05kHz IMA-ADPCM mono, strict RIFF, bounded DAC2 SD pipeline")
+print("PASS AUDIO-R2c: bounded 16KiB recoverable DAC2 ring, /32 gain, session volume and IMA-ADPCM")
