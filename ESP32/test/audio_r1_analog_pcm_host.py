@@ -129,7 +129,7 @@ assert "I2S_DAC_CHANNEL_LEFT_EN" in cpp
 print("PASS AUDIO-R1f PCM regression: baseline and shaped quantizers bounded")
 
 # R1f: same DAC path, identical numeric amplitude, 8s sustained frequency A/B.
-assert "calibration=R1f waveform=BASE-both" in cpp
+assert "calibration=R1g waveform=BASE-coldboot-440-only" in cpp
 assert "i2s_driver_install(I2S_NUM_0, &cfg, 8, &i2sEvents)" in cpp
 assert "I2S_EVENT_DMA_ERROR" in cpp
 assert "I2S_EVENT_TX_Q_OVF" in cpp
