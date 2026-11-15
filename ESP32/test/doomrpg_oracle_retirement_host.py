@@ -82,6 +82,10 @@ def main():
         fixture_oracles.mkdir(parents=True)
         shutil.copyfile(ROOT / "ESP32/test/oracles/esp32_sdl.cpp",
                         fixture_oracles / "esp32_sdl.cpp")
+        shutil.copyfile(ROOT / "ESP32/test/oracles/esp32_sdl_platform.h",
+                        fixture_oracles / "esp32_sdl_platform.h")
+        fixture_include = project / "include"
+        fixture_include.mkdir()
 
         obsolete = staged / "DoomRPG.c"
         obsolete.write_text("stale generated C root\n")
@@ -101,6 +105,9 @@ def main():
         assert not (native / "esp32_sdl.cpp").exists()
         permanent = fixture_oracles / "esp32_sdl.cpp"
         snapshot = permanent.read_bytes()
+        platform_header = fixture_oracles / "esp32_sdl_platform.h"
+        header_snapshot = platform_header.read_bytes()
+        assert not (fixture_include / "esp32_sdl_platform.h").exists()
         shim = snapshot.decode("utf-8")
         # SDL-D1: generated shim absent; packed texture ownership and
         # sampling are now native; only host fixtures retain this SDL oracle.
@@ -122,6 +129,7 @@ def main():
         env2 = FakeEnv(project, build)
         execute_build_script(env2)
         assert permanent.read_bytes() == snapshot
+        assert platform_header.read_bytes() == header_snapshot
         assert not obsolete.exists() and not stale_shim.exists()
         assert env2.sources == []
 
@@ -147,6 +155,28 @@ def main():
         else:
             raise AssertionError("missing host-only shim oracle accepted")
         permanent.write_bytes(snapshot)
+
+        # SDL-F34: a display attachment header under production includes
+        # reintroduces a dead SDL ABI, even if no source calls it.
+        revived_header = fixture_include / "esp32_sdl_platform.h"
+        revived_header.write_text("FORBIDDEN SDL DISPLAY HEADER\n")
+        try:
+            execute_build_script(FakeEnv(project, build))
+        except RuntimeError as exc:
+            assert "Retired SDL display header returned to production includes" in str(exc)
+        else:
+            raise AssertionError("revived SDL display header accepted")
+        revived_header.unlink()
+
+        # The preserved oracle header is mandatory for the host SDL harness.
+        platform_header.unlink()
+        try:
+            execute_build_script(FakeEnv(project, build))
+        except RuntimeError as exc:
+            assert "Missing host-only SDL display header oracle" in str(exc)
+        else:
+            raise AssertionError("missing host SDL display header accepted")
+        platform_header.write_bytes(header_snapshot)
 
         # The 21-file denylist is intentional and fails closed if the desktop
         # tree changes, rather than silently compiling a new original C file.
