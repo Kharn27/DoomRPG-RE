@@ -13,9 +13,9 @@ assert "EspAudioR1_tryStartInGameplay();" not in main
 assert "EspAudioR1_runColdBootProbe();" not in main
 assert "EspAudioR1_runCosineColdBootProbe();" not in main
 assert "EspAudioR1_runTimerColdBootProbe();" not in main
-assert "EspAudioR1_timerTryStartInGameplay();" in main
-assert "EspAudioR1_timerService(gameAudioActive);" in main
-assert "const bool gameAudioActive = EspNativeGameplaySession_isActive();" in main
+assert "EspAudioR1_timerTryStartInGameplay();" not in main
+assert "EspAudioR1_timerService(gameAudioActive);" not in main
+assert "EspEntranceMusic_service(EspNativeGameplaySession_isActive(), sdReady);" in main
 timer = (src / "esp_audio_r1_timer.cpp").read_text(encoding="utf-8")
 timer_h = (src / "esp_audio_r1_timer.h").read_text(encoding="utf-8")
 assert "EspAudioR1_runTimerColdBootProbe" in timer_h
@@ -33,8 +33,8 @@ assert "measuredHz=" in timer and "playedFrames=" in timer
 assert timer.index("if (rateHz < 15000U || rateHz > 17000U)") < timer.index("dac_output_enable(DAC_CHANNEL_2)")
 assert "i2s_write(" not in timer and "i2s_driver_install" not in timer
 assert "SD.open(" not in timer and "xTaskCreate" not in timer
-assert main.index("EspAudioR1_timerTryStartInGameplay();") > main.index("initializeMainMenu();")
-assert "EspAudioR1_timerService(gameAudioActive);" in main
+assert main.index("EspEntranceMusic_service(") > main.index("initializeMainMenu();")
+assert "EspEntranceMusic_service(EspNativeGameplaySession_isActive(), sdReady);" in main
 cw = (src / "esp_audio_r1_cw.cpp").read_text(encoding="utf-8")
 cwh = (src / "esp_audio_r1_cw.h").read_text(encoding="utf-8")
 assert "EspAudioR1_runCosineColdBootProbe" in cwh
@@ -47,7 +47,7 @@ assert "dac_output_disable(kSpeakerDac)" in cw
 assert "i2s_driver_install" not in cw.replace("i2s_driver_install, ISR", "")
 assert "xTaskCreate" not in cw and "SD.open" not in cw
 assert "vTaskDelay(pdMS_TO_TICKS(kCosineHoldMs))" in cw
-assert main.index("EspAudioR1_timerTryStartInGameplay();") > main.index("initializeMainMenu();")
+assert main.index("EspEntranceMusic_service(") > main.index("initializeMainMenu();")
 assert "EspAudioR1_timerTryStartInGameplay" in timer_h
 assert "EspAudioR1_timerService(bool gameplayActive)" in timer
 assert "if (!gameplayActive)" in timer

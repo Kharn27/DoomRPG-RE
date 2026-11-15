@@ -42,19 +42,28 @@ assert '#define DOOMRPG_ESP32_THEME_CARD_COUNT 4' in layout
 assert 'mask |= (1U << OPTIONS_VIDEO_ITEM);' in action
 assert 'DoomRPG_esp32PaintMainMenuVideoDashboardSelection(' in action
 
-# Distinct pages, no unreachable root Sound, and no direct child->root Back.
+# Distinct pages, native session Sound volume, and no direct VIDEO child->root Back.
 route = touch[touch.index("static void optionsBackTap("):
               touch.index("int DoomRPG_esp32OptionsBackActivate(")]
 assert route.index("if (luminositeOpen) {") < route.index("if (orientationOpen) {")
 assert route.index("if (orientationOpen) {") < route.index("if (themeOpen) {")
 assert route.index("if (themeOpen) {") < route.index("if (videoOpen) {")
-assert 'luminositeOpen ? luminositeItemAt' in route
+assert '(luminositeOpen || soundOpen) ? luminositeItemAt' in route
 assert '(videoOpen ? videoItemAt(screenX, screenY)' in route
 assert route.count("if (!paintVideoState(VIDEO_BACK_ITEM, 0))") >= 4
 assert 'if (armedItem != item)' in route
 assert 'videoOpen = 1U;' in route
 assert 'videoOpen = 0U;' in route
-assert 'if (item != OPTIONS_BACK_ITEM && item != OPTIONS_VIDEO_ITEM)' in route
+assert 'item != OPTIONS_SOUND_ITEM' in route
+assert '#define OPTIONS_SOUND_ITEM 2' in touch
+assert 'OPTIONS_SOUND_ITEM' in action and 'OPTIONS_ENABLED_MASK' in action
+assert 'if (soundOpen) {' in route
+assert 'paintSoundState(item)' in route
+assert 'EspNativeAudioIntent_setMusicVolumePercent(after)' in route
+assert 'soundOpen=0U;' in route and 'soundOpen=1U;' in route
+assert 'persistence=session' in route
+assert 'EspNativeConfig_saveSound' not in route
+assert 'EspNativeConfig_saveVolume' not in route
 assert 'printf("[OPTIONSVIDEO] BACK to=Options' in route
 assert 'printf("[OPTIONSVIDEO] OPEN from=Options' in route
 assert 'printf("[OPTIONSBRIGHTNESS] BACK to=VIDEO' in route
@@ -128,4 +137,4 @@ with tempfile.TemporaryDirectory(prefix="doom-video-nested-") as temp:
     subprocess.run(["cc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
                     "-I", str(inc), str(source), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
-print("PASS native VIDEO root/child/back contracts, SD intents and fail-closed SOUND")
+print("PASS native VIDEO root/child/back contracts and session-only AUDIO Sound volume")

@@ -14,6 +14,9 @@
 #include "doomrpg_log.h"
 #include "esp_native_first_frame.h"
 #include "esp_native_gameplay_frame.h"
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+#include "esp_audio_entrance_music.h"
+#endif
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_hud_direction.h"
@@ -552,6 +555,13 @@ done:
     if (!ok) stats->active = 0U;
     *outStats = *stats;
     frameScratch.busy = 0U;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    /* AUDIO-R2d cooperative main-task inter-frame refill. Renderer and PAK
+     * have completed/released ownership above. Never read SD during raster
+     * or the TFT present, and never in the timer ISR. Metrics were frozen
+     * above before servicing audio; gameplay state and frame FNV untouched. */
+    if (ok && publish) EspEntranceMusic_pumpGameplay();
+#endif
 #if defined(DOOMRPG_RA2B_CAPTURE) && DOOMRPG_RA2B_CAPTURE
     /* Full logical 160x120 RGB565 FNV already computed by the normal frame
      * compositor. Log only successful, settled, non-automap published poses.
