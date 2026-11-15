@@ -5,6 +5,7 @@
 
 #include "board_config.h"
 #include "esp_asset_pack.h"
+#include "esp_audio_r1_analog.h"
 #include "esp_legacy_asset_source.h"
 #include "esp_legacy_config_mappings_startup.h"
 #include "esp_native_config.h"
@@ -492,6 +493,14 @@ void loop()
     }
     EspNativeResidentGameplay_serviceMenuExit(doomRpg);
     EspNativeStartup_serviceDeathRoute(doomRpg);
+    /* AUDIO-R1: non-blocking, one-shot GPIO26 analog proof only after the
+     * permanent native gameplay session has become fully active. */
+    if (EspNativeGameplaySession_isActive()) {
+        EspAudioR1_tryStartInGameplay();
+    } else {
+        EspAudioR1_requestStop();
+    }
+    EspAudioR1_poll();
     updateTouchDiagnostic();
     printHeartbeat();
     delay(5);
