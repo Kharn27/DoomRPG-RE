@@ -594,6 +594,9 @@ jobs:
       - name: Verify alternate CYD LCD INV polarity only (real C++ panel profile host oracle)
         run: python ESP32/test/cyd_alternate_panel_inversion_host.py
 
+      - name: Reject forked native engine sources in the two CYD release profiles (host)
+        run: python ESP32/test/cyd_dual_build_core_parity_host.py --self-test
+
       - name: Test wall sprite visual offset and priority versus desktop (host C)
         run: python ESP32/test/wall_sprite_visual_host.py
       - name: Native ambient sprite animation
@@ -677,6 +680,16 @@ jobs:
       - name: Build classic CYD firmware
         working-directory: ESP32
         run: pio run -e esp32-cyd
+
+      - name: Assert the two release builds compile the SAME engine units and defines
+        working-directory: ESP32
+        run: |
+          pio run -e esp32-cyd -t compiledb
+          cp compile_commands.json "$RUNNER_TEMP/doomrpg-normal-compile-commands.json"
+          pio run -e esp-cyd-inverted -t compiledb
+          python test/cyd_dual_build_core_parity_host.py \
+            --normal "$RUNNER_TEMP/doomrpg-normal-compile-commands.json" \
+            --inverted compile_commands.json
 
       - name: Build diagnostic CYD bringup firmware
         working-directory: ESP32
