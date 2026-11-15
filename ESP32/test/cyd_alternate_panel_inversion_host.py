@@ -68,7 +68,9 @@ def main() -> None:
 
     harness = """
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
+using std::size_t;
 struct Panel {
     int commands[4] = {0};
     int ncommands = 0, ndata = 0, invertCalls = 0, swapCalls = 0;
