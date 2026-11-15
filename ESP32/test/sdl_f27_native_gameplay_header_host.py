@@ -37,12 +37,37 @@ def git_blob(data: bytes) -> str:
     ).hexdigest()
 
 
+def strip_ra2b_probe(source: bytes) -> bytes:
+    """The R-A2b instrumentation is an explicitly opt-in, small diagnostic.
+    Remove EXACTLY its four compiler-gated blocks before comparing against the
+    immutable pre-F27 Git C body. Do not weaken any other 9 body oracles.
+    """
+    flag = b"#if defined(DOOMRPG_RA2B_CAPTURE) && DOOMRPG_RA2B_CAPTURE"
+    assert source.count(flag) == 4, "R-A2b probe blocks missing or unexpected"
+    for witness in (
+        b"RA2B_MAX_FRAME_WITNESSES 48U",
+        b"EspAssetPack_ra2bSdRangeMicros()",
+        b"ra2bFlashBefore = EspAssetPack_mapFlashRuntimeReadMicros()",
+        b'printf("[RA2B] FRAME v=1',
+    ):
+        assert witness in source, "R-A2b diagnostic contract changed"
+    stripped, count = re.subn(
+        rb"\n#if defined\(DOOMRPG_RA2B_CAPTURE\) && DOOMRPG_RA2B_CAPTURE\n"
+        rb".*?^#endif\n",
+        b"\n", source, flags=re.MULTILINE | re.DOTALL)
+    assert count == 4, "Unexpected R-A2b probe extraction count"
+    assert b"RA2B" not in stripped, "R-A2b diagnostic escaped its guards"
+    return stripped
+
+
 def original_body_parity() -> None:
     marker = GUARD.encode("ascii")
     for filename, blob in BEFORE.items():
         current = (SOURCES / filename).read_bytes()
         assert current.startswith(marker), (
             f"{filename}: expected bounded host/geometry-only SDL guard")
+        if filename == "esp_native_gameplay_frame.c":
+            current = strip_ra2b_probe(current)
         restored = b"#include <SDL.h>\n" + current[len(marker):]
         assert git_blob(restored) == blob, (
             f"{filename}: original pre-F27 body not preserved exactly")
