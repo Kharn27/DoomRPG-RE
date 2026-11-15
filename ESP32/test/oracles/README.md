@@ -16,10 +16,28 @@ This directory contains **reference code, not ESP32 firmware sources**.
   `doomrpg_oracle_retirement_host.py` executes the actual SCons pre-script
   against an adversarial fake project: a shim reintroduced under `src` or a
   missing host oracle must both fail closed.
-- `ESP32/include/SDL.h` and `esp32_sdl_platform.h` remain **host compatibility
-  headers** for these oracles; separate milestones are needed before removing
-  or relocating those headers. Never treat their presence as an active SDL
-  runtime dependency without checking real compiledb/ELF evidence.
+- `ESP32/include/SDL.h` and `ESP32/include/SDL_mixer.h` still
+  support historical desktop/geometry ABI oracles. They are **not** retired
+  by F34; moving them needs its own compile/dependency audit.
+
+## SDL-F34 — retired display attachment header now host-only
+
+- `esp32_sdl_platform.h` moved byte-for-byte from
+  `ESP32/include/esp32_sdl_platform.h` into this directory, adjacent to
+  the uncompiled `esp32_sdl.cpp`. Its Git blob is
+  `6d89897ebbcccaba4dd7e041520fc7776bae6142`.
+- The old `Esp32Sdl_attachDisplay(TFT_eSPI*)` declaration is now **only
+  available to the shim host oracle**. The shim's quoted include continues
+  resolving directly from its directory, with zero shim source changes.
+- The production pre-script refuses a returned header in `ESP32/include`
+  or a missing test/oracles header; the real SCons pre-script is exercised
+  under both adversarial conditions by `doomrpg_oracle_retirement_host.py`.
+- The F3 host gate pins the original full Git blob and scans production
+  sources and includes for forbidden imports. The SDL-A host C++ fixture
+  still compiles/executes the real shim and native texture owner.
+- **No production TU, framebuffer, renderer, gameplay, PAK owner, audio,
+  gamma or backlight is modified**; the old declaration was never a live
+  firmware ABI. No new CYD hardware PASS or RAM improvement is claimed.
 
 ## SDL-F32 — retired SDL_RWops indexed BMP reader
 

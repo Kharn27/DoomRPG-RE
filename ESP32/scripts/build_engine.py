@@ -181,7 +181,16 @@ if os.path.isfile(join(project_src_dir, "esp32_sdl.cpp")):
 sdl_host_oracle = join(project_dir, "test", "oracles", "esp32_sdl.cpp")
 if not os.path.isfile(sdl_host_oracle):
     raise RuntimeError("Missing host-only SDL shim oracle source")
-print("[ESP32] SDL shim host-only; compiledFirmware=no oracle=ESP32/test/oracles/esp32_sdl.cpp")
+# SDL-F34: no obsolete display-attachment ABI should be advertised by the
+# production include directory. The exact declaration accompanies the shim
+# only in the test oracle directory.
+sdl_platform_production_header = join(project_dir, "include", "esp32_sdl_platform.h")
+if os.path.isfile(sdl_platform_production_header):
+    raise RuntimeError("Retired SDL display header returned to production includes")
+sdl_platform_host_oracle = join(project_dir, "test", "oracles", "esp32_sdl_platform.h")
+if not os.path.isfile(sdl_platform_host_oracle):
+    raise RuntimeError("Missing host-only SDL display header oracle")
+print("[ESP32] SDL shim host-only; compiledFirmware=no oracle=ESP32/test/oracles/esp32_sdl.cpp platformHeader=test-only")
 
 # The original desktop C and uncompiled SDL shim are host-only references;
 # all firmware owners live in ESP32/src; no generated SDL source remains.

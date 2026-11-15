@@ -30,7 +30,7 @@ def main():
                 )
 
     src = (ROOT / "ESP32/test/oracles/esp32_sdl.cpp").read_text()
-    hdr = (ROOT / "ESP32/include/esp32_sdl_platform.h").read_text()
+    hdr = (ROOT / "ESP32/test/oracles/esp32_sdl_platform.h").read_text()
     for live in (
         "void Esp32Sdl_attachDisplay(",  "SDL_RenderDrawLine(",
         "SDL_RenderFillRect(", "SDL_RenderPresent(", "SDL_RenderSetClipRect(",

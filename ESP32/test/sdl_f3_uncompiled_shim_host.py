@@ -21,6 +21,25 @@ actual_sha = hashlib.sha1(
 assert actual_sha == "b8385250706b8b5396c3f3808e5084ad1f318425", (
     "SDL-F33 host shim oracle bytes changed", actual_sha)
 shim = oracle_data.decode("utf-8")
+# F34: archived display declaration may only be imported by host oracles.
+assert not (ROOT / "ESP32/include/esp32_sdl_platform.h").exists()
+header_path = ROOT / "ESP32/test/oracles/esp32_sdl_platform.h"
+header_bytes = header_path.read_bytes()
+header_blob = hashlib.sha1(
+    b"blob " + str(len(header_bytes)).encode("ascii") + b"\0" + header_bytes
+).hexdigest()
+assert header_blob == "6d89897ebbcccaba4dd7e041520fc7776bae6142", (
+    "SDL-F34 archived display header changed", header_blob)
+assert 'void Esp32Sdl_attachDisplay(TFT_eSPI* display);' in header_bytes.decode("utf-8")
+assert '#include "esp32_sdl_platform.h"' in shim
+for directory in (ROOT / "ESP32/src", ROOT / "ESP32/include"):
+    for source in directory.rglob("*"):
+        if source.suffix not in (".c", ".cpp", ".h", ".hpp"):
+            continue
+        code = source.read_text(encoding="utf-8", errors="replace")
+        assert not re.search(
+            r'(?m)^\s*#\s*include\s*[<"]esp32_sdl_platform\.h[>"]',
+            code), f"retired SDL display header imported by {source}"
 fixture = (ROOT / "ESP32/test/sdl_shim_permanent_host.py").read_text()
 bridge = (ROOT / "ESP32/src/platform_video_c_bridge.cpp").read_text()
 
@@ -44,6 +63,8 @@ assert "SDL shim host-only; compiledFirmware=no" in builder
 assert 'if os.path.isfile(join(project_src_dir, "esp32_sdl.cpp")):' in builder
 assert 'sdl_host_oracle = join(project_dir, "test", "oracles", "esp32_sdl.cpp")' in builder
 assert 'oracle=ESP32/test/oracles/esp32_sdl.cpp' in builder
+assert 'Retired SDL display header returned to production includes' in builder
+assert 'Missing host-only SDL display header oracle' in builder
 assert "env.BuildSources(" not in builder
 assert "void Esp32Sdl_attachDisplay(TFT_eSPI* display)" in shim
 assert '#include "ESP32/test/oracles/esp32_sdl.cpp"' in fixture
