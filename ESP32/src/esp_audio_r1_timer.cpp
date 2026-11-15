@@ -100,7 +100,7 @@ void EspAudioR1_runTimerColdBootProbe(void) {
         cfg.counter_dir = TIMER_COUNT_UP;
         cfg.counter_en = TIMER_PAUSE;
         cfg.alarm_en = TIMER_ALARM_EN;
-        cfg.auto_reload = TIMER_AUTORELOAD;
+        cfg.auto_reload = TIMER_AUTORELOAD_EN;
         cfg.intr_type = TIMER_INTR_LEVEL;
         esp_err_t ret = timer_init(kGroup, kTimer, &cfg);
         if (ret != ESP_OK) {
