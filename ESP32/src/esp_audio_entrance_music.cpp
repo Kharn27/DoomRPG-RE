@@ -15,6 +15,7 @@
 #include "esp_audio_entrance_adpcm.h"
 #include "esp_audio_entrance_music.h"
 #include "esp_audio_r1_pcm.h" /* R1l-proven synthetic 440Hz code, main loop only */
+#include "esp_native_audio_intent.h" /* session music volume preset owner */
 #include "esp_player_view_state.h"
 
 /* AUDIO-R2a: native SD music, not a desktop player.
@@ -190,6 +191,7 @@ static void signalReport(const char* at) {
            "isrRingMinMax=%u..%u isrNon128=%u isrOver8=%u "
            "isrOver16=%u dacWrittenMinMax=%u..%u "
            "pcm16MinMax=%d..%d pcm16NonZero=%u gainLimited=%u "
+           "masterVolume=%u "
            "publishedDacMinMax=%u..%u publishedNon128=%u "
            "producerFrames=%u prefix4096Published=%08x "
            "prefix4096Consumed=%08x queued=%u underruns=%u "
@@ -201,6 +203,7 @@ static void signalReport(const char* at) {
            (unsigned)dacWrittenMin,(unsigned)dacWrittenMax,
            (int)pcmMin,(int)pcmMax,(unsigned)pcmNonZero,
            (unsigned)gainLimited,
+           (unsigned)EspNativeAudioIntent_musicVolumePercent(),
            (unsigned)producedDacMin,(unsigned)producedDacMax,
            (unsigned)producedNonMid,(unsigned)producedFrames,
            (unsigned)publishedPrefixFnv,(unsigned)consumedPrefixFnv,
@@ -284,15 +287,19 @@ static bool refill() {
     if (blocksRead==0U && loops==0U) {
         printf("[ENTRANCEMUSIC] BLOCK0 predictor=%d stepIndex=%u "
                "pcm16MinMax=%d..%d dacFirst=%u dacLast=%u "
-               "gainLimited=%u gainDiv=64 peakCodes=64\n",
+               "gainLimited=%u gainDiv=32 peakCodes=64\n",
                (int)(int16_t)EspEntranceAdpcm_u16(raw),
                (unsigned)raw[2],(int)stats.minPcm,(int)stats.maxPcm,
                (unsigned)decoded[0],(unsigned)decoded[samples-1U],
                (unsigned)stats.gainLimited);
     }
     const uint32_t start=__atomic_load_n(&wr,__ATOMIC_RELAXED);
+    const uint8_t volume=EspNativeAudioIntent_musicVolumePercent();
+    if (volume>100U) {failure="invalid_volume";return false;}
     for (uint32_t i=0U;i<samples;i++) {
-        const uint8_t code=decoded[i];
+        /* Main-loop only: never run volume scaling in the 22050Hz ISR. */
+        const int32_t diff=(int32_t)decoded[i]-128;
+        const uint8_t code=(uint8_t)(128+(diff*(int32_t)volume)/100);
         ring[(start+i)&kRingMask]=code;
         if (code<producedDacMin) producedDacMin=code;
         if (code>producedDacMax) producedDacMax=code;
@@ -387,9 +394,10 @@ static bool startPlaying() {
     }
     printf("[ENTRANCEMUSIC] PLAY path=%s backend=timer-DAC2 "
            "format=IMA-ADPCM monoHz=22050 ring=%u primed=%u "
-           "dacPeakCodes=64 gainDiv=64 witness440Ms=2000 then=SD-ring "
+           "dacPeakCodes=64 gainDiv=32 masterVolume=%u witness440Ms=2000 then=SD-ring "
            "dacEnabled=yes gpio25=untouched noI2S=yes noPSRAM=yes\n",
-           path,(unsigned)kRingCapacity,(unsigned)queued());
+           path,(unsigned)kRingCapacity,(unsigned)queued(),
+           (unsigned)EspNativeAudioIntent_musicVolumePercent());
     return true;
 }
 static void begin() {
