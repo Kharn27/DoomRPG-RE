@@ -20,6 +20,7 @@ typedef struct EspEntranceAdpcmDecodeStats_s {
     int16_t minPcm;
     int16_t maxPcm;
     uint32_t nonZeroPcm;
+    uint32_t gainLimited;  /* PCM16 values limited before 200ms fade */
 } EspEntranceAdpcmDecodeStats;
 
 static inline void EspEntranceAdpcm_observePcm(
@@ -28,6 +29,7 @@ static inline void EspEntranceAdpcm_observePcm(
     if (pcm<stats->minPcm) stats->minPcm=pcm;
     if (pcm>stats->maxPcm) stats->maxPcm=pcm;
     if (pcm!=0) ++stats->nonZeroPcm;
+    if (pcm < -4096 || pcm > 4096) ++stats->gainLimited;
 }
 
 static inline uint16_t EspEntranceAdpcm_u16(const uint8_t* p) {
@@ -119,8 +121,12 @@ static inline int EspEntranceAdpcm_clamp(int v,int minV,int maxV) {
 }
 static inline uint8_t EspEntranceAdpcm_toDac(int16_t pcm,
                                             uint32_t firstFrame) {
-    /* half-scale DAC: 128 +- 64 codes. 200ms initial fade. */
-    int32_t diff=(int32_t)pcm/512;
+    /* AUDIO-R2b: real M_STALKS PCM16 was -1689..2252 over first 20s,
+     * previously collapsing to DAC 125..132 at /512. Use fixed +18dB
+     * trial (/64), clamp to +/-64 DAC codes BEFORE the 200ms fade.
+     * This is not auto-normalization and cannot overflow uint8_t. */
+    int32_t diff=(int32_t)pcm/64;
+    diff=EspEntranceAdpcm_clamp(diff,-64,64);
     const uint32_t fade=firstFrame<4410U?firstFrame:4410U;
     diff=diff*(int32_t)fade/4410;
     return (uint8_t)(128+diff);
@@ -155,6 +161,7 @@ static inline int EspEntranceAdpcm_decodeBlockObserved(
         stats->minPcm=32767;
         stats->maxPcm=-32768;
         stats->nonZeroPcm=0U;
+        stats->gainLimited=0U;
     }
     EspEntranceAdpcm_observePcm(stats,(int16_t)predictor);
     out[0]=EspEntranceAdpcm_toDac((int16_t)predictor,firstFrame);
