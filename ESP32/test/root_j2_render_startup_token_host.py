@@ -5,6 +5,7 @@ Git-blob exact inverse parity on three files and executable C probe of the
 production EspRenderStartupBridge_start body (not a rewritten approximation).
 """
 from pathlib import Path
+from audio_r1_main_parity import restore_pre_audio_r1
 from sdl_f9_render_startup_no_sdl_host import restore_pre_f9
 import hashlib
 import subprocess
@@ -23,6 +24,7 @@ files = {path: (ROOT / path).read_text(encoding="utf-8")
          for path in FILE_BLOBS}
 # Compare Root-J2 original blobs against precisely pre-SDL-F9 code.
 reference_files = dict(files)
+reference_files["ESP32/src/main.cpp"] = restore_pre_audio_r1(files["ESP32/src/main.cpp"])
 reference_files["ESP32/src/render_startup_bridge.c"] = restore_pre_f9(files["ESP32/src/render_startup_bridge.c"])
 
 header = files["ESP32/include/esp_render_startup_bridge.h"]

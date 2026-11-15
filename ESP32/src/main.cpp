@@ -5,6 +5,7 @@
 
 #include "board_config.h"
 #include "esp_asset_pack.h"
+#include "esp_audio_r1_timer.h"
 #include "esp_legacy_asset_source.h"
 #include "esp_legacy_config_mappings_startup.h"
 #include "esp_native_config.h"
@@ -492,6 +493,11 @@ void loop()
     }
     EspNativeResidentGameplay_serviceMenuExit(doomRpg);
     EspNativeStartup_serviceDeathRoute(doomRpg);
+    /* AUDIO-R1l TEMPORARY: bounded 440 Hz PCM timer at real gameplay load.
+     * No I2S or cold-boot audio; service is non-blocking on each main loop. */
+    const bool gameAudioActive = EspNativeGameplaySession_isActive();
+    if (gameAudioActive) EspAudioR1_timerTryStartInGameplay();
+    EspAudioR1_timerService(gameAudioActive);
     updateTouchDiagnostic();
     printHeartbeat();
     delay(5);
