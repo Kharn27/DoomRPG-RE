@@ -10,7 +10,9 @@ ROOT = Path(__file__).resolve().parents[2]
 ini = (ROOT / "ESP32/platformio.ini").read_text()
 main = (ROOT / "ESP32/src/main.cpp").read_text()
 builder = (ROOT / "ESP32/scripts/build_engine.py").read_text()
-shim = (ROOT / "ESP32/src/esp32_sdl.cpp").read_text()
+assert not (ROOT / "ESP32/src/esp32_sdl.cpp").exists(), (
+    "retired SDL shim returned to production sources")
+shim = (ROOT / "ESP32/test/oracles/esp32_sdl.cpp").read_text()
 fixture = (ROOT / "ESP32/test/sdl_shim_permanent_host.py").read_text()
 bridge = (ROOT / "ESP32/src/platform_video_c_bridge.cpp").read_text()
 
@@ -31,10 +33,12 @@ assert '#include "esp32_sdl_platform.h"' not in main
 assert "videoReady = PlatformVideo_begin(&display);" in main
 assert main.index("display.begin();") < main.index("initializePlatformVideo();")
 assert "SDL shim host-only; compiledFirmware=no" in builder
-assert 'if not os.path.isfile(join(project_src_dir, "esp32_sdl.cpp")):' in builder
+assert 'if os.path.isfile(join(project_src_dir, "esp32_sdl.cpp")):' in builder
+assert 'sdl_host_oracle = join(project_dir, "test", "oracles", "esp32_sdl.cpp")' in builder
+assert 'oracle=ESP32/test/oracles/esp32_sdl.cpp' in builder
 assert "env.BuildSources(" not in builder
 assert "void Esp32Sdl_attachDisplay(TFT_eSPI* display)" in shim
-assert '#include "ESP32/src/esp32_sdl.cpp"' in fixture
+assert '#include "ESP32/test/oracles/esp32_sdl.cpp"' in fixture
 assert "return PlatformVideo_present() ? 1 : 0;" in bridge
-print("SDL-F3 PASS shim TU excluded from all firmware profiles;"
+print("SDL-F33 PASS shim moved to exact host-only oracle; excluded from all firmware profiles;"
       " bootstrap no longer attaches SDL display; host oracle retained")
