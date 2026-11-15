@@ -49,7 +49,7 @@ jobs:
       - name: Test CHANGEMAP level-completion preflight and durable V11 publication (host C)
         run: |
           cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
-            -IESP32/include ESP32/src/esp_map_level_exit_stats.c \
+            -IESP32/test/oracles -IESP32/include ESP32/src/esp_map_level_exit_stats.c \
             ESP32/test/level_exit_completion_host.c -Wl,--gc-sections \
             -o /tmp/doomrpg-level-exit-commit
           /tmp/doomrpg-level-exit-commit
@@ -57,7 +57,7 @@ jobs:
       - name: Test CHANGEMAP destination spawn before resident teardown (host C)
         run: |
           cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
-            -IESP32/include ESP32/src/esp_player_spawn_state.c \
+            -IESP32/test/oracles -IESP32/include ESP32/src/esp_player_spawn_state.c \
             ESP32/src/esp_map_catalog.c ESP32/test/map_spawn_preflight_host.c \
             -Wl,--gc-sections -o /tmp/doomrpg-map-spawn-preflight
           /tmp/doomrpg-map-spawn-preflight
@@ -67,27 +67,27 @@ jobs:
 
       - name: Test Junction completed-level event predicate (host C)
         run: |
-          cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/level_gate_native_host.c -o /tmp/doomrpg-native-level-gate-test
+          cc -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include ESP32/test/level_gate_native_host.c -o /tmp/doomrpg-native-level-gate-test
           /tmp/doomrpg-native-level-gate-test
 
       - name: Test inert legacy line barrier during barrel radius preflight (host C)
         run: |
-          cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/barrel_radius_inert_line_host.c -o /tmp/doomrpg-barrel-radius-inert-line-test
+          cc -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include ESP32/test/barrel_radius_inert_line_host.c -o /tmp/doomrpg-barrel-radius-inert-line-test
           /tmp/doomrpg-barrel-radius-inert-line-test
 
       - name: Test Sector 2 BSP visibility capacity and bounded scratch (host C)
         run: |
-          cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/native_bsp_visibility_capacity_host.c -o /tmp/doomrpg-native-bsp-visibility-test
+          cc -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include ESP32/test/native_bsp_visibility_capacity_host.c -o /tmp/doomrpg-native-bsp-visibility-test
           /tmp/doomrpg-native-bsp-visibility-test
 
       - name: Test Malwrath triple projectile versus Imp single projectile (host C)
         run: |
-          cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/malwrath_projectile204_contract_host.c -o /tmp/doomrpg-malwrath-projectile-test
+          cc -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include ESP32/test/malwrath_projectile204_contract_host.c -o /tmp/doomrpg-malwrath-projectile-test
           /tmp/doomrpg-malwrath-projectile-test
 
       - name: Test cooperative monster turn service budget (host C)
         run: |
-          cc -std=c11 -Wall -Wextra -Werror -IESP32/include \
+          cc -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include \
             ESP32/test/monster_active_sequence_budget_host.c \
             -o /tmp/doomrpg-monster-budget-test
           /tmp/doomrpg-monster-budget-test
@@ -96,37 +96,37 @@ jobs:
         run: |
           cc -O2 -std=c11 -Wall -Wextra -Werror -Wno-unused-variable \
             -D_POSIX_C_SOURCE=200809L -ffunction-sections -fdata-sections \
-            -IESP32/test/host_include -IESP32/include -IESP32/src -Isrc \
+            -IESP32/test/host_include -IESP32/test/oracles -IESP32/include -IESP32/src -Isrc \
             ESP32/test/monster_attack_visual_timeline_host.c \
             -Wl,--gc-sections -o /tmp/doomrpg-monster-visual-timeline-test
           /tmp/doomrpg-monster-visual-timeline-test
 
       - name: Test Imp projectile 204 sparse catalog prime and rollback (host C)
         run: |
-          cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/src/esp_native_graphics_catalog.c ESP32/test/imp_projectile_catalog_host.c -o /tmp/doomrpg-imp-projectile-catalog-test
+          cc -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include ESP32/src/esp_native_graphics_catalog.c ESP32/test/imp_projectile_catalog_host.c -o /tmp/doomrpg-imp-projectile-catalog-test
           /tmp/doomrpg-imp-projectile-catalog-test
 
       - name: Test all twelve native WPN grid and familiar touch cells (host C)
         run: |
-          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/include ESP32/src/esp_native_gameplay_hub_weapon_grid.c ESP32/src/esp_main_menu_skin.c ESP32/test/hub_weapon_grid_native_host.c -Wl,--gc-sections -o /tmp/doomrpg-native-weapon-grid-test
+          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/test/oracles -IESP32/include ESP32/src/esp_native_gameplay_hub_weapon_grid.c ESP32/src/esp_main_menu_skin.c ESP32/test/hub_weapon_grid_native_host.c -Wl,--gc-sections -o /tmp/doomrpg-native-weapon-grid-test
           /tmp/doomrpg-native-weapon-grid-test
 
       - name: Test native store catalog and purchase semantics (host C)
         run: |
           # Compile the real event router as well; the filtered event view
           # deliberately exposes arg2 but NOT the immutable bytecode arg1.
-          cc -std=c11 -Wall -Wextra -fsyntax-only -IESP32/include ESP32/src/esp_native_gameplay_action.c
-          cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/src/esp_native_gameplay_store.c ESP32/test/store_native_host.c -o /tmp/doomrpg-native-store-test
+          cc -std=c11 -Wall -Wextra -fsyntax-only -IESP32/test/oracles -IESP32/include ESP32/src/esp_native_gameplay_action.c
+          cc -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include ESP32/src/esp_native_gameplay_store.c ESP32/test/store_native_host.c -o /tmp/doomrpg-native-store-test
           /tmp/doomrpg-native-store-test
 
       - name: Test lethal barrel damage through real native PlayerState (host C)
         run: |
-          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/include -Isrc ESP32/test/barrel_lethal_damage_host.c ESP32/src/esp_native_gameplay_player_state.c -Wl,--gc-sections -o /tmp/doomrpg-barrel-lethal-test
+          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/test/oracles -IESP32/include -Isrc ESP32/test/barrel_lethal_damage_host.c ESP32/src/esp_native_gameplay_player_state.c -Wl,--gc-sections -o /tmp/doomrpg-barrel-lethal-test
           /tmp/doomrpg-barrel-lethal-test
 
       - name: Test original player pain face/palette and reversible expiry (host C)
         run: |
-          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include \
             ESP32/src/esp_native_gameplay_player_pain_visual.c \
             ESP32/test/player_pain_visual_host.c \
             -o /tmp/doomrpg-player-pain-visual-test
@@ -134,7 +134,7 @@ jobs:
 
       - name: Test original source projectile impact/claw sprites and packed bitshape (host C)
         run: |
-          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include \
             ESP32/src/esp_native_gameplay_player_pain_visual.c \
             ESP32/test/player_pain_original_impact_host.c \
             -o /tmp/doomrpg-original-impact-test
@@ -142,7 +142,7 @@ jobs:
 
       - name: Test native 500ms original player pain camera shake (host C)
         run: |
-          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include \
             ESP32/src/esp_native_gameplay_player_pain_visual.c \
             ESP32/test/player_pain_shake_host.c \
             -o /tmp/doomrpg-player-pain-shake
@@ -153,7 +153,7 @@ jobs:
 
       - name: Test original 100ms monster damage palette tint (host C)
         run: |
-          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include \
             ESP32/src/esp_native_gameplay_player_pain_visual.c \
             ESP32/test/monster_damage_blend_host.c \
             -o /tmp/doomrpg-monster-damage-blend
@@ -161,7 +161,7 @@ jobs:
 
       - name: Test original gibs_24.bmp 4x6 animation and safe viewport clipping (host C)
         run: |
-          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include \
             ESP32/src/esp_native_gameplay_gib_sheet.c \
             ESP32/test/gib_sheet_host.c \
             -o /tmp/doomrpg-gib-sheet-test
@@ -169,7 +169,7 @@ jobs:
 
       - name: Test native original gibs atlas through real indexed BMP PAK row reader
         run: |
-          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include \
             ESP32/src/esp_native_indexed_bmp.c \
             ESP32/src/esp_native_gameplay_gib_sheet.c \
             ESP32/test/gib_sheet_indexed_stream_host.c \
@@ -178,7 +178,7 @@ jobs:
 
       - name: Test real dog-familiar native absorption reducer and death fail-closed (host C)
         run: |
-          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include \
             ESP32/src/esp_native_gameplay_dog_familiar.c \
             ESP32/test/dog_familiar_absorb_host.c \
             -o /tmp/doomrpg-dog-familiar
@@ -186,7 +186,7 @@ jobs:
 
       - name: Test original terminal dog corpse and V11 save rollback (real host C owner)
         run: |
-          cc -std=c11 -O2 -Wall -Wextra -Werror -IESP32/include \
+          cc -std=c11 -O2 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include \
             ESP32/src/esp_native_gameplay_monster_drop.c \
             ESP32/src/esp_native_gameplay_dog_familiar.c \
             ESP32/test/dog_corpse_world_host.c \
@@ -195,7 +195,7 @@ jobs:
 
       - name: Test dog-familiar source-backed blood (host C)
         run: |
-          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include \
             ESP32/src/esp_native_gameplay_player_pain_visual.c \
             ESP32/src/esp_native_gameplay_dog_blood.c \
             ESP32/test/dog_blood_visual_host.c \
@@ -204,7 +204,7 @@ jobs:
 
       - name: Test monster damage direction for all cardinal facings (host C)
         run: |
-          cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/directional_damage_side_host.c -o /tmp/doomrpg-directional-damage-test
+          cc -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include ESP32/test/directional_damage_side_host.c -o /tmp/doomrpg-directional-damage-test
           /tmp/doomrpg-directional-damage-test
 
       - name: Test real damage compositor synchronization and delayed service (host C)
@@ -213,7 +213,7 @@ jobs:
           # unreachable in this harness. Suppress existing unrelated warnings.
           cc -O2 -std=c11 -Wall -Wextra -Werror -Wno-unused-variable -Wno-type-limits \
             -D_POSIX_C_SOURCE=200809L -ffunction-sections -fdata-sections \
-            -IESP32/test/host_include -IESP32/include -IESP32/src -Isrc \
+            -IESP32/test/host_include -IESP32/test/oracles -IESP32/include -IESP32/src -Isrc \
             ESP32/test/damage_cue_timing_host.c \
             ESP32/src/esp_native_gameplay_player_pain_visual.c \
             -Wl,--gc-sections -o /tmp/doomrpg-damage-cue-timing-test
@@ -222,7 +222,7 @@ jobs:
       - name: Test nonblocking PAK pickup miniature FIFO and framebuffer lease (host C)
         run: |
           cc -O2 -std=c11 -Wall -Wextra -Werror \
-            -IESP32/test/host_include -IESP32/include -IESP32/src -Isrc \
+            -IESP32/test/host_include -IESP32/test/oracles -IESP32/include -IESP32/src -Isrc \
             ESP32/test/pickup_miniature_host.c \
             -o /tmp/doomrpg-pickup-miniature-test
           /tmp/doomrpg-pickup-miniature-test
@@ -230,7 +230,7 @@ jobs:
       - name: Test actual automap PASS_TURN including hazard, rollback and death (host C)
         run: |
           cc -O2 -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
-            -IESP32/test/host_include -IESP32/include -IESP32/src -Isrc \
+            -IESP32/test/host_include -IESP32/test/oracles -IESP32/include -IESP32/src -Isrc \
             ESP32/test/pass_turn_automap_host.c -Wl,--gc-sections -o /tmp/doomrpg-pass-turn-automap-test
           /tmp/doomrpg-pass-turn-automap-test
           python ESP32/test/automap_pass_turn_routing_host.py
@@ -238,7 +238,7 @@ jobs:
       - name: Test native automap damage pulse and text without map-wide buffers (host C)
         run: |
           cc -O2 -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
-            -IESP32/test/host_include -IESP32/include -IESP32/src -Isrc \
+            -IESP32/test/host_include -IESP32/test/oracles -IESP32/include -IESP32/src -Isrc \
             ESP32/test/automap_damage_host.c -Wl,--gc-sections -o /tmp/doomrpg-automap-damage-test
           /tmp/doomrpg-automap-damage-test
 
@@ -267,7 +267,7 @@ jobs:
 
       - name: SDL-C1 native indexed image decoder, PAK lease and failure rollback
         run: |
-          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include \
             ESP32/src/esp_native_indexed_image.c \
             ESP32/test/native_image_owner_host.c \
             -o /tmp/doomrpg-native-indexed-image
@@ -443,7 +443,7 @@ jobs:
 
       - name: Test live PlayerState HUD weapon/ammo snapshot and strict close (host C + Python)
         run: |
-          cc -O2 -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/include \
+          cc -O2 -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/test/oracles -IESP32/include \
             ESP32/src/esp_native_gameplay_hud.c ESP32/src/esp_native_gameplay_weapon_control.c \
             ESP32/test/hub_weapon_live_model_host.c -Wl,--gc-sections -o /tmp/doomrpg-hud-live-model
           /tmp/doomrpg-hud-live-model
@@ -461,13 +461,13 @@ jobs:
 
       - name: Test HUD weapon button and three-tab navigation (host C + source)
         run: |
-          cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/src/esp_native_gameplay_input.c ESP32/test/native_hud_weapon_route_host.c -o /tmp/doomrpg-hud-weapon-route
+          cc -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include ESP32/src/esp_native_gameplay_input.c ESP32/test/native_hud_weapon_route_host.c -o /tmp/doomrpg-hud-weapon-route
           /tmp/doomrpg-hud-weapon-route
           python ESP32/test/native_hud_weapon_route_host.py
 
       - name: Test HUD weapon-menu feedback glyph and strict 120ms undo (host C)
         run: |
-          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/test/host_include -IESP32/include \
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/test/host_include -IESP32/test/oracles -IESP32/include \
             ESP32/src/esp_native_gameplay_controls.c ESP32/test/hud_weapon_feedback_host.c \
             -o /tmp/doomrpg-hud-weapon-feedback
           /tmp/doomrpg-hud-weapon-feedback
@@ -480,7 +480,7 @@ jobs:
 
       - name: Test original PAK door/wall HELP scene and RGB breathing (host C)
         run: |
-          cc -std=c11 -Wall -Wextra -Werror -IESP32/include \
+          cc -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include \
             ESP32/test/native_help_snapshot_host.c \
             ESP32/src/esp_native_help_scene.c \
             -o /tmp/doomrpg-native-help-snapshot
@@ -559,7 +559,7 @@ jobs:
 
       - name: Test stateless procedural MENU_MAIN skin and native action routing
         run: |
-          cc -std=c11 -O2 -Wall -Wextra -Werror -IESP32/include \
+          cc -std=c11 -O2 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include \
             ESP32/test/main_menu_skin_host.c ESP32/src/esp_main_menu_skin.c \
             -o /tmp/doomrpg-menu-skin-test
           /tmp/doomrpg-menu-skin-test
@@ -573,7 +573,7 @@ jobs:
       - name: Test real HUB topbar classifier and world input isolation (host C)
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
-            -IESP32/include ESP32/test/hub_topbar_live_host.c \
+            -IESP32/test/oracles -IESP32/include ESP32/test/hub_topbar_live_host.c \
             ESP32/src/esp_native_gameplay_hub_touch_ui.c \
             ESP32/src/esp_native_gameplay_input.c ESP32/src/esp_main_menu_skin.c -Wl,--gc-sections \
             -o /tmp/doomrpg-hub-topbar-live-test
@@ -610,23 +610,23 @@ jobs:
 
       - name: Test SYS cards and multislot input ownership (host C)
         run: |
-          cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/test_sys_touch.c ESP32/src/esp_native_gameplay_save_touch.c -o /tmp/doomrpg-sys-touch-test
+          cc -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include ESP32/test/test_sys_touch.c ESP32/src/esp_native_gameplay_save_touch.c -o /tmp/doomrpg-sys-touch-test
           /tmp/doomrpg-sys-touch-test
 
       - name: Test level progress and completion-checkpoint transport (host C)
         run: |
-          cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/test_level_progress.c ESP32/src/esp_player_fresh_map_state.c ESP32/src/esp_map_catalog.c -o /tmp/doomrpg-level-progress-test
+          cc -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include ESP32/test/test_level_progress.c ESP32/src/esp_player_fresh_map_state.c ESP32/src/esp_map_catalog.c -o /tmp/doomrpg-level-progress-test
           /tmp/doomrpg-level-progress-test
 
       - name: Test death menu and explicit slot confirmation (host C)
         run: |
-          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/include -Isrc ESP32/test/test_death_menu.c ESP32/src/esp_native_gameplay_player_death.c ESP32/src/esp_native_gameplay_hub_touch_ui.c ESP32/src/esp_main_menu_skin.c ESP32/src/esp_map_catalog.c -Wl,--gc-sections -o /tmp/doomrpg-death-menu-test
+          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/test/oracles -IESP32/include -Isrc ESP32/test/test_death_menu.c ESP32/src/esp_native_gameplay_player_death.c ESP32/src/esp_native_gameplay_hub_touch_ui.c ESP32/src/esp_main_menu_skin.c ESP32/src/esp_map_catalog.c -Wl,--gc-sections -o /tmp/doomrpg-death-menu-test
           /tmp/doomrpg-death-menu-test
 
       - name: Test credit-gated script with dialog and WAIT (host C)
         run: |
           cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
-            -IESP32/test/host_include -IESP32/include -Isrc \
+            -IESP32/test/host_include -IESP32/test/oracles -IESP32/include -Isrc \
             ESP32/test/paid_interaction_host.c ESP32/src/esp_native_gameplay_event_chain.c \
             ESP32/src/esp_map_events.c ESP32/src/esp_map_event_filter.c \
             ESP32/src/esp_map_opcode_executor.c ESP32/src/esp_map_catalog.c \
@@ -643,20 +643,20 @@ jobs:
 
       - name: Test native dialog BACK touch and cancel semantics (host C)
         run: |
-          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/test/host_include -IESP32/include ESP32/test/dialog_touch_host.c ESP32/src/esp_native_gameplay_hub_touch_ui.c ESP32/src/esp_main_menu_skin.c -Wl,--gc-sections -o /tmp/doomrpg-dialog-touch-test
+          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/test/host_include -IESP32/test/oracles -IESP32/include ESP32/test/dialog_touch_host.c ESP32/src/esp_native_gameplay_hub_touch_ui.c ESP32/src/esp_main_menu_skin.c -Wl,--gc-sections -o /tmp/doomrpg-dialog-touch-test
           /tmp/doomrpg-dialog-touch-test
 
       - name: Test automap restoration on script startup failure (host C)
         run: |
           cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
-            -IESP32/test/host_include -IESP32/include -Isrc \
+            -IESP32/test/host_include -IESP32/test/oracles -IESP32/include -Isrc \
             ESP32/test/script_startup_automap_host.c -Wl,--gc-sections \
             -o /tmp/doomrpg-script-startup-automap-test
           /tmp/doomrpg-script-startup-automap-test
 
       - name: Test read-only SHOW admission and unchanged commit rollback (host C)
         run: |
-          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/test/host_include -IESP32/include ESP32/test/show_preview_host.c -Wl,--gc-sections -o /tmp/doomrpg-show-preview-test
+          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/test/host_include -IESP32/test/oracles -IESP32/include ESP32/test/show_preview_host.c -Wl,--gc-sections -o /tmp/doomrpg-show-preview-test
           /tmp/doomrpg-show-preview-test
 
       - name: Test monster diagnostics policy and activation capture (host Python and C)
