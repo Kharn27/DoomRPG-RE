@@ -52,6 +52,24 @@ for name, (sha, count) in BASELINE.items():
     # F19 whole-file blob and native rectangle alias equivalence.
     if name == "native_main_menu_actions.c":
         text = restore_pre_help_bottom_blue(text)
+    if name == "native_main_menu_options_action.c":
+        # SOUND became functional after F19. Reconstruct the exact historic
+        # pre-audio menu byte stream; do NOT update the frozen F19 Git hash.
+        old_pairs = (
+            ("#define OPTIONS_ENABLED_MASK ((1U << OPTIONS_BACK_ITEM) | (1U << OPTIONS_SOUND_ITEM))",
+             "#define OPTIONS_ENABLED_MASK (1U << OPTIONS_BACK_ITEM)"),
+            (" * VIDEO/LUMINOSITE/ORIENTATION/THEME and SOUND volume are native UI sublayers,",
+             " * VIDEO/LUMINOSITE/ORIENTATION/THEME are compact native UI sublayers,"),
+            ("selectedItem < OPTIONS_BACK_ITEM || selectedItem > OPTIONS_SOUND_ITEM)",
+             "selectedItem < OPTIONS_BACK_ITEM || selectedItem > OPTIONS_VIDEO_ITEM)"),
+            ('i == OPTIONS_VIDEO_ITEM || i == OPTIONS_SOUND_ITEM) ? "yes" : "no",',
+             'i == OPTIONS_VIDEO_ITEM) ? "yes" : "no",'),
+            ("videoChild=BRIGHTNESS/ORIENTATION/THEME soundChild=VOLUME-SESSION brightness=%u",
+             "videoChild=BRIGHTNESS/ORIENTATION/THEME brightness=%u"),
+        )
+        for new, old in old_pairs:
+            assert text.count(new) == 1, ("R2c options delta changed", new)
+            text = text.replace(new, old, 1)
     restored = re.sub(r"\bEspNativeRect\b", "SDL_Rect", text)
     assert git_blob(restored) == sha, (name, git_blob(restored), sha)
 
