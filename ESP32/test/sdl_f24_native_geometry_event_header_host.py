@@ -75,7 +75,8 @@ int main(void) {
         p = Path(d)
         (p / "probe.c").write_text(code, encoding="utf-8")
         command = ["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
-                   "-DDOOMRPG_ESP32=1", "-I", str(ROOT / "ESP32/include"),
+                   "-DDOOMRPG_ESP32=1", "-I", str(ROOT / "ESP32/test/oracles"),
+                "-I", str(ROOT / "ESP32/include"),
                    "-I", str(ROOT / "src"), str(p / "probe.c"),
                    "-o", str(p / "probe")]
         subprocess.run(command, check=True)

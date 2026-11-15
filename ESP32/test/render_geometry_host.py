@@ -72,7 +72,7 @@ def main():
             binary = str(Path(tmp) / ("bringup" if bringup else "normal"))
             flags = ["-std=c11", "-Wall", "-Wextra", "-Werror", "-Wno-unused-parameter", "-fwrapv",
                      "-DDOOMRPG_ESP32=1", "-DDOOMRPG_ESP32_GEOMETRY_ORACLE=1",
-                     "-IESP32/include", "-Isrc"]
+                     "-IESP32/test/oracles", "-IESP32/include", "-Isrc"]
             # Only this differential test compiles the original desktop
             # culler, which needs Render_t::tmpLine; firmware does not.
             if bringup:

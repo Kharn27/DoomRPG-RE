@@ -112,7 +112,7 @@ def compile_and_run(cc: str, old: str) -> None:
                 expect = 0 if (name == "native" and which == "after") else 1
                 binary = temp / (name + "_" + which)
                 cmd = [cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-O0",
-                       "-I", str(directory), "-I", str(INC), "-I", str(LEGACY),
+                       "-I", str(directory), "-I", str(ORACLES), "-I", str(INC), "-I", str(LEGACY),
                        "-DEXPECT_SDL_HEADER=" + str(expect), *macros,
                        str(source), "-o", str(binary)]
                 subprocess.run(cmd, check=True, stdout=subprocess.PIPE,

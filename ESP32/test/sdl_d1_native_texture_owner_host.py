@@ -36,7 +36,7 @@ def main():
     header = (INC / "esp_native_texture.h").read_text()
     native = (SRC / "esp_native_texture.cpp").read_text()
     shim = (ROOT / "ESP32/test/oracles/esp32_sdl.cpp").read_text()
-    sdl_header = (INC / "SDL.h").read_text()
+    sdl_header = (ROOT / "ESP32/test/oracles/SDL.h").read_text()
     for api in NATIVE:
         assert api in header and api in native, f"SDL-D1 missing native API: {api}"
     assert "typedef EspNativeTexture SDL_Texture;" in sdl_header

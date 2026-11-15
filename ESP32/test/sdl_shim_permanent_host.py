@@ -341,7 +341,8 @@ def main():
                      "-fno-builtin-free", "-fno-builtin-calloc",
                      "-Wl,--wrap=calloc", "-Wl,--wrap=free",
                      "-I", str(tmp), "-I", str(ROOT),
-                     "-I", str(ROOT / "ESP32/include"),
+                     "-I", str(ROOT / "ESP32/test/oracles"),
+                      "-I", str(ROOT / "ESP32/include"),
                      "-I", str(ROOT / "ESP32/src"),
                      str(test), str(ROOT / "ESP32/src/esp_native_texture.cpp"), "-o", str(output)]
         subprocess.run(cmd, check=True, cwd=ROOT)

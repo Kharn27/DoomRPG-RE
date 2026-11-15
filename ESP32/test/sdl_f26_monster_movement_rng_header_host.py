@@ -96,6 +96,7 @@ int main(void) {
         source, exe = p / "probe.c", p / "probe"
         source.write_text(code, encoding="utf-8")
         base = ["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                "-I", str(ROOT / "ESP32/test/oracles"),
                 "-I", str(ROOT / "ESP32/include"), "-I", str(ROOT / "src")]
         for mode, flags in (
             ("native", ["-DDOOMRPG_ESP32=1", "-DEXPECT_SDL=0"]),

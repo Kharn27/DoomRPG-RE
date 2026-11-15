@@ -33,7 +33,7 @@ def main():
                 hits = re.search(r"\b" + re.escape(name) + r"\s*\(", body)
                 assert hits is None, f"Retired SDL control entry point revived: {name} in {file}"
     src = (ROOT / "ESP32/test/oracles/esp32_sdl.cpp").read_text()
-    hdr = (ROOT / "ESP32/include/SDL.h").read_text()
+    hdr = (ROOT / "ESP32/test/oracles/SDL.h").read_text()
     for live in (
         "SDL_CreateTextureFromSurface(", 
         "SDL_UpdateTexture(",  "SDL_RenderPresent(",
