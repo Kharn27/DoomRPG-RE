@@ -32,6 +32,9 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Test AUDIO-R1 bounded PCM, DAC GPIO26 and game handoff (host C)
+        run: python ESP32/test/audio_r1_analog_pcm_host.py
+
       - name: Test native process RNG owner and 132B root extraction (host C + ABI)
         run: python ESP32/test/native_process_rng_owner_host.py
 

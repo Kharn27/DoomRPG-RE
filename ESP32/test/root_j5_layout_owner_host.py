@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Root-J5: exact Git inverse parity + extracted real layout C under two owners."""
 from pathlib import Path
+from audio_r1_main_parity import restore_pre_audio_r1
 from sdl_f12_engine_stubs_libc_host import restore_pre_f12
 import hashlib
 import subprocess
@@ -13,6 +14,7 @@ BASE = {
     "ESP32/src/main.cpp": "1f510e2219aeefd1c38ac7be34627a3c7edd04a4",
 }
 files = {path: (ROOT / path).read_text(encoding="utf-8") for path in BASE}
+files["ESP32/src/main.cpp"] = restore_pre_audio_r1(files["ESP32/src/main.cpp"])
 source, header, main = [files[path] for path in BASE]
 sig = "int DoomRPG_startEngineLayout(DoomRPG_t* root, DoomRpgLayoutReport* report) {"
 assert source.count(sig) == 1
