@@ -25,9 +25,12 @@ typedef struct {
     uint8_t packedByte, valid;
     uint32_t sourceOffset, successorSourceOffset;
 } LegacyWallGuard;
+typedef uint8_t byte;
 typedef struct {
-    short* pixels;
+    unsigned short* pixels;
     int pitch, screenLeft, screenRight, screenTop, screenBottom;
+    byte* mediaTexels;
+    unsigned short* spanPalettes;
 } Render_t;
 typedef struct {
     Render_t* render;
@@ -66,6 +69,8 @@ static uint8_t mappingData[1024];
 static uint8_t texelData[65536];
 static uint32_t mappingBytes, texelBytes;
 static unsigned readCalls;
+static uint64_t readBytes;
+static byte legacyAtlas[32768];
 static int packOpened = 1;
 static EspNativeGraphicsCatalogRecord records[2] = {{15}, {16}};
 static EspNativeGraphicsCatalogView catalog = {2, records};
@@ -84,6 +89,7 @@ static int EspAssetPack_readRange(const EspAssetPackEntry* entry,
     else return 0;
     if (entry->size != length || offset > length || size > length - offset) return 0;
     ++readCalls;
+    readBytes += size;
     memcpy(target, data + offset, size);
     return 1;
 }
@@ -114,6 +120,7 @@ static void fixture(void) {
     texelBytes = sizeof(texelData);
     texelData[WALL_TEXEL_HEADER_BYTES + 32768/2] = 0xb4U;
     readCalls = 0;
+    readBytes = 0;
     packOpened = 1;
     memset(&frameFailure, 0, sizeof(frameFailure));
     memset(legacyWallGuards, 0, sizeof(legacyWallGuards));
@@ -123,7 +130,8 @@ int main(void) {
     fixture();
     uint8_t wall[WALL_PACKED_BYTES];
     memset(wall, 0x21, sizeof(wall));
-    short framebuffer[8];
+    unsigned short framebuffer[16];
+    unsigned short legacyFrame[16];
     Render_t render={0};
     FirstFrameWork work={0};
     ResolvedWallTexture src={0};
@@ -168,6 +176,55 @@ int main(void) {
     }
     assert(legacyWallGuardCount==1 && readCalls==afterFirst);
 
+    /* R-A: use the *actual* Render_SpanMode0 body from src/Render.c as
+     * the independent nibble/raster oracle (both its scalar and 8-wide
+     * unrolled paths). The legacy map-wide atlas is a synthetic logical
+     * layout: the boundary byte is at base + 2048; the PAK double above
+     * independently proves that its source is actual68/32768, NOT the
+     * physically adjacent PAK byte. This is not a real-game asset fixture. */
+    for (uint32_t i=0; i<WALL_PACKED_BYTES; ++i)
+        wall[i]=(byte)((i*73U+17U)&255U);
+    const uint32_t legacyBase=src.sourceTexelOffset/2U;
+    assert(legacyBase + WALL_PACKED_BYTES < sizeof(legacyAtlas));
+    memset(legacyAtlas, 0xa5, sizeof(legacyAtlas));
+    memcpy(legacyAtlas + legacyBase, wall, sizeof(wall));
+    legacyAtlas[legacyBase + WALL_PACKED_BYTES] = 0xb4;
+    render.mediaTexels=legacyAtlas;
+    render.spanPalettes=src.paletteRgb565;
+    render.pitch=2;
+    render.screenRight=1;
+    render.screenBottom=16;
+    uint32_t nativeHash=2166136261U, legacyHash=2166136261U;
+    for (uint32_t n=0; n<4098U; ++n) {
+        const uint32_t index=n/2U;
+        const int local=(int)((index<<13)+((n&1U)?4096U:0U));
+        render.pixels=framebuffer;
+        assert(sampleWallSpan(&work,&src,wall,0,0,local,0,1));
+        render.pixels=legacyFrame;
+        Render_SpanMode0(&render,0,0,(int)(legacyBase<<13)+local,0,1);
+        assert(framebuffer[0]==legacyFrame[0]);
+        const uint16_t a=framebuffer[0], b=legacyFrame[0];
+        nativeHash=(nativeHash^(uint8_t)a)*16777619U;
+        nativeHash=(nativeHash^(uint8_t)(a>>8))*16777619U;
+        legacyHash=(legacyHash^(uint8_t)b)*16777619U;
+        legacyHash=(legacyHash^(uint8_t)(b>>8))*16777619U;
+    }
+    assert(nativeHash==legacyHash && nativeHash==0xae456812U);
+    memset(framebuffer, 0, sizeof(framebuffer));
+    memset(legacyFrame, 0, sizeof(legacyFrame));
+    render.pixels=framebuffer;
+    assert(sampleWallSpan(&work,&src,wall,0,0,2040<<13,1<<13,9));
+    render.pixels=legacyFrame;
+    Render_SpanMode0(&render,0,0,(int)(legacyBase<<13)+(2040<<13),
+                     1<<13,9);
+    for (int i=0; i<9; ++i) assert(framebuffer[i]==legacyFrame[i]);
+    assert(legacyWallGuardCount==1 && readCalls==afterFirst);
+    const uint64_t firstGuardBytes=readBytes;
+    render.pixels=framebuffer;
+    render.pitch=4;
+    render.screenRight=2;
+    render.screenBottom=4;
+
     /* Beyond the one-byte legacy successor: strict SPAN_OOB, no overwrite. */
     framebuffer[0]=(short)0x5a5a;
     memset(&frameFailure,0,sizeof(frameFailure));
@@ -202,6 +259,6 @@ int main(void) {
     assert(frameFailure.lineIndex==161U);
     assert((uint16_t)framebuffer[0]==0x5a5a && !packOpened);
 
-    printf("PASS native wall boundary inline spans=2000 successor=68 source=32768 guardMax=4 retry=0\\n");
+    printf("PASS native wall boundary inline spans=2000 parity=4098 golden=ae456812 successor=68 source=32768 guardMax=4 guardIO=%u reads/%llu bytes retry=0\\n", afterFirst, (unsigned long long)firstGuardBytes);
     return 0;
 }
