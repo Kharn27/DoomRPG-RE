@@ -60,6 +60,18 @@ constexpr uint8_t kCydInvertedGamma[15] = {
     0x3c, 0x05, 0x10, 0x0f, 0x3f, 0x3f, 0x0f,
 };
 
+/* Original TFT_eSPI ILI9341_2_DRIVER positive gamma table (E0).
+ * The first CYD deliberately uses the E1 curve for E0 as well; leave that
+ * hardware-proven profile UNCHANGED. The alternate LCD with INV OFF instead
+ * needs the stock E0/E1 pair for a meaningful optical calibration test.
+ * This is panel register programming, not a RGB565 software correction. */
+#if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
+constexpr uint8_t kCydAlternatePositiveGamma[15] = {
+    0x0f, 0x2a, 0x28, 0x08, 0x0e, 0x08, 0x54, 0xa9,
+    0x43, 0x0a, 0x0f, 0x00, 0x00, 0x00, 0x00,
+};
+#endif
+
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
 constexpr int kDebugOverlayMaxZones = 8;
 
@@ -96,9 +108,15 @@ void applyCydInvertedGammaProfile() {
     platformDisplay->writedata(0x01);
 
     platformDisplay->writecommand(0xe0);
+#if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
+    for (size_t i = 0; i < sizeof(kCydAlternatePositiveGamma); ++i) {
+        platformDisplay->writedata(kCydAlternatePositiveGamma[i]);
+    }
+#else
     for (size_t i = 0; i < sizeof(kCydInvertedGamma); ++i) {
         platformDisplay->writedata(kCydInvertedGamma[i]);
     }
+#endif
 
     platformDisplay->writecommand(0xe1);
     for (size_t i = 0; i < sizeof(kCydInvertedGamma); ++i) {
@@ -244,7 +262,7 @@ bool PlatformVideo_begin(TFT_eSPI* display) {
                   DOOMRPG_PHYSICAL_WIDTH, DOOMRPG_PHYSICAL_HEIGHT,
                   DOOMRPG_INTEGER_SCALE);
 #if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
-    Serial.println("[VIDEO] CYD display profile alternate-panel inversion=off gamma=calibrated BGR=unchanged resampling=nearest framebuffer=untouched");
+    Serial.println("[VIDEO] CYD display profile alternate-panel inversion=off gamma=stock-ILI9341_2-E0E1 BGR=unchanged resampling=nearest framebuffer=untouched");
 #else
     Serial.println("[VIDEO] CYD display profile raw RGB565 + hardware inverted-gamma resampling=nearest framebuffer=untouched");
 #endif
