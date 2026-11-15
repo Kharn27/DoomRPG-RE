@@ -77,7 +77,7 @@ def restore_pre_f9(content: str) -> str:
 
 if __name__ == "__main__":
     src = SOURCE.read_text(encoding="utf-8")
-    old = (ROOT / "ESP32/include/SDL.h").read_text(encoding="utf-8")
+    old = (ROOT / "ESP32/test/oracles/SDL.h").read_text(encoding="utf-8")
     for alias in ("free", "malloc"):
         assert re.search(r"^#define\s+SDL_" + alias + r"\s+" + alias + r"\s*$",
                          old, re.M), alias

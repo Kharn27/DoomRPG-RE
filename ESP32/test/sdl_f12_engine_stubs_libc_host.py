@@ -15,7 +15,7 @@ import re
 
 ROOT = Path(__file__).resolve().parents[2]
 OWNER = ROOT / "ESP32/src/engine_stubs.c"
-SDL = ROOT / "ESP32/include/SDL.h"
+SDL = ROOT / "ESP32/test/oracles/SDL.h"
 PRE_F12_GIT_BLOB = "47783298dfcc4824585ef6fbd733ade6a1d5402b"
 
 # All and only the 16 transformed production calls. Inverting exactly these

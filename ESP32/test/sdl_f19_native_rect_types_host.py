@@ -61,7 +61,7 @@ assert "#include <SDL.h>" not in note, "NOTE must not depend on SDL compatibilit
 assert not re.search(r"\bSDL_[A-Za-z0-9_]+\b", note), "no SDL identifier"
 assert git_blob("#include <SDL.h>\n" + note) == NOTE_SHA
 
-header = (ROOT / "ESP32/include/SDL.h").read_text(encoding="utf-8")
+header = (ROOT / "ESP32/test/oracles/SDL.h").read_text(encoding="utf-8")
 native = (ROOT / "ESP32/include/esp_native_texture.h").read_text(encoding="utf-8")
 assert re.search(r"^typedef EspNativeRect SDL_Rect;.*$", header, re.M)
 assert "int x, y, w, h;" in native
@@ -95,7 +95,8 @@ with tempfile.TemporaryDirectory(prefix="doomrpg-sdl-f19-") as d:
     binary = Path(d) / "rect"
     source.write_text(harness, encoding="utf-8")
     subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
-                    "-I", str(ROOT / "ESP32/include"), str(source),
+                    "-I", str(ROOT / "ESP32/test/oracles"),
+                     "-I", str(ROOT / "ESP32/include"), str(source),
                     "-o", str(binary)], check=True, cwd=ROOT)
     subprocess.run([str(binary)], check=True, cwd=ROOT)
 

@@ -11,7 +11,7 @@ import re
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "ESP32/src"
-SHIM = (ROOT / "ESP32/include/SDL.h").read_text(encoding="utf-8")
+SHIM = (ROOT / "ESP32/test/oracles/SDL.h").read_text(encoding="utf-8")
 for old, new in (
     ("SDL_malloc", "malloc"),
     ("SDL_calloc", "calloc"),

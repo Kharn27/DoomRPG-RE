@@ -13,7 +13,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "ESP32/src"
-SDL = (ROOT / "ESP32/include/SDL.h").read_text(encoding="utf-8")
+SDL = (ROOT / "ESP32/test/oracles/SDL.h").read_text(encoding="utf-8")
 REFERENCES = {
     "esp_legacy_asset_source.c": (
         "32bc61e44d0991b9702dd7120a3887431d4369b7",

@@ -30,7 +30,7 @@ def main():
                 f"SDL-B7 old BMP decoder still referenced in {p}"
             )
     shim = (ROOT / "ESP32/test/oracles/esp32_sdl.cpp").read_text(encoding="utf-8")
-    header = (ROOT / "ESP32/include/SDL.h").read_text(encoding="utf-8")
+    header = (ROOT / "ESP32/test/oracles/SDL.h").read_text(encoding="utf-8")
     for name in OLD:
         assert not re.search(r"\b" + name + r"\s*\(", shim), (
             f"SDL-B7 obsolete helper retained: {name}"

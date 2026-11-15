@@ -32,7 +32,7 @@ def main():
                 )
 
     shim = (ROOT / "ESP32/test/oracles/esp32_sdl.cpp").read_text(encoding="utf-8")
-    hdr = (ROOT / "ESP32/include/SDL.h").read_text(encoding="utf-8")
+    hdr = (ROOT / "ESP32/test/oracles/SDL.h").read_text(encoding="utf-8")
     for symbol in ACTIVE:
         assert symbol in shim, f"SDL-B3 lost live renderer: {symbol}"
     native = (ROOT / "ESP32/src/esp_native_texture.cpp").read_text(encoding="utf-8")

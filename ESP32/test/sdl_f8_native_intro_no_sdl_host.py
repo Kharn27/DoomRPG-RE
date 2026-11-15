@@ -11,7 +11,7 @@ import re
 
 ROOT = Path(__file__).resolve().parents[2]
 INTRO = ROOT / "ESP32/src"
-SDL_H = (ROOT / "ESP32/include/SDL.h").read_text(encoding="utf-8")
+SDL_H = (ROOT / "ESP32/test/oracles/SDL.h").read_text(encoding="utf-8")
 REFERENCE_FNV = {
     "native_intro_clock.c": 0x20832EDC,
     "native_intro_input.c": 0x8A0525B1,
