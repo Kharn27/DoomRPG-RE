@@ -38,7 +38,10 @@ assert "EspNativeGameplaySession_isActive()" in main
 assert "I2S_DAC_CHANNEL_LEFT_EN" in cpp
 assert "I2S_DAC_CHANNEL_DISABLE" in cpp
 assert "I2S_CHANNEL_FMT_RIGHT_LEFT" in cpp
-assert "cfg.use_apll = true;" in cpp
+assert "cfg.use_apll = false;" in cpp
+assert "cfg.use_apll = true;" not in cpp
+assert "clock=PLL_D2" in cpp
+assert "apll=0" in cpp
 assert "GPIO25" in cpp
 assert "i2s_set_pin(" not in cpp.replace("i2s_set_pin(NULL)", "").replace("i2s_set_pin(I2S_NUM_0, NULL)", "")
 assert "SD.open(" not in cpp and "EspAssetPack_" not in cpp
@@ -144,7 +147,7 @@ assert "I2S_DAC_CHANNEL_LEFT_EN" in cpp
 print("PASS AUDIO-R1f PCM regression: baseline and shaped quantizers bounded")
 
 # R1f: same DAC path, identical numeric amplitude, 8s sustained frequency A/B.
-assert "calibration=R1g waveform=BASE-coldboot-440-only" in cpp
+assert "calibration=R1i waveform=BASE-coldboot-440-only" in cpp
 assert "i2s_driver_install(I2S_NUM_0, &cfg, 8, &i2sEvents)" in cpp
 assert "I2S_EVENT_DMA_ERROR" in cpp
 assert "I2S_EVENT_TX_Q_OVF" in cpp
@@ -159,4 +162,4 @@ assert "playStage(kGap440To220, 2U, 0U, kStep440" in cpp
 assert "440Hz-BASE-HOLD8S-PEAK64" in cpp
 assert "220Hz-BASE-HOLD8S-PEAK64" in cpp
 assert "EspAudioR1Pcm_shapedWord(" not in cpp
-print("PASS AUDIO-R1h: cold-boot I2S 440Hz vs native DAC cosine 440Hz, GPIO26-only, bounded cleanup")
+print("PASS AUDIO-R1i: isolated PLL_D2 I2S clock vs native DAC cosine 440Hz, GPIO26-only, bounded cleanup")

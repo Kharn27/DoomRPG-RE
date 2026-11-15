@@ -328,7 +328,10 @@ void EspAudioR1_tryStartInGameplay(void) {
     cfg.intr_alloc_flags = ESP_INTR_FLAG_LEVEL1;
     cfg.dma_buf_count = 4;
     cfg.dma_buf_len = kFrames;
-    cfg.use_apll = true;
+    /* R1i: only tested variable versus R1h, use the normal PLL_D2
+     * instead of APLL for the identical 16kHz PCM, DMA and DAC2 path.
+     * The clockWitness still refuses playback if drain rate is unsafe. */
+    cfg.use_apll = false;
     cfg.tx_desc_auto_clear = true;
     /* i2s_set_pin(NULL) is intentionally forbidden: GPIO25 TOUCH CLOCK. */
     /* IDF 4.4 event queue: DMA_ERROR is a real driver error, while
@@ -365,9 +368,9 @@ void EspAudioR1_tryStartInGameplay(void) {
     }
     taskCreated = true;
     printf("[AUDIOR1] START oneShot=1 trigger=%s i2s=0 dac=GPIO26-only "
-           "gpio25=touch-untouched rate=16000 transport=2x16b apll=1 "
-           "dma=4x160 task=core0/3072 sound=synthetic-no-SD "
-           "calibration=R1g waveform=BASE-coldboot-440-only "
+           "gpio25=touch-untouched rate=16000 transport=2x16b apll=0 "
+           "clock=PLL_D2 dma=4x160 task=core0/3072 sound=synthetic-no-SD "
+           "calibration=R1i waveform=BASE-coldboot-440-only "
            "holdSeconds=8 peak=64 fadeMs=200 "
            "liveAudioLog=disabled dmaEvents=bounded "
            "heap8=%u largest8=%u dma=%u largestDMA=%u\n",
