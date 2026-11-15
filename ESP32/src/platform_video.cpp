@@ -28,6 +28,18 @@ uint8_t currentOrientation = ESP32_ORIENTATION_NORMAL;
 #error "CYD backlight PWM requires active-high TFT_BL=21"
 #endif
 
+/* Two physical ILI9341 panel batches exist in classic CYDs. Keep the normal
+ * profile byte-for-byte identical; the optional esp-cyd-inverted environment
+ * reverses ONLY the LCD controller's INVON/INVOFF polarity. The logical
+ * RGB565 framebuffer, gamma LUT, BGR setting, SPI, touch, rendering and PAK
+ * are unchanged. Always reapply after setRotation(), too. */
+#ifndef DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
+#define DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION 0
+#endif
+#if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION != 0 && DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION != 1
+#error "CYD alternate panel inversion flag must be 0 or 1"
+#endif
+
 
 constexpr size_t kPixelCount =
     static_cast<size_t>(DOOMRPG_LOGICAL_WIDTH) * DOOMRPG_LOGICAL_HEIGHT;
@@ -93,7 +105,11 @@ void applyCydInvertedGammaProfile() {
         platformDisplay->writedata(kCydInvertedGamma[i]);
     }
 
-    platformDisplay->invertDisplay(true);
+#if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
+    platformDisplay->invertDisplay(false); /* alternative LCD INV OFF */
+#else
+    platformDisplay->invertDisplay(true);  /* classic calibrated LCD INV ON */
+#endif
     platformDisplay->setSwapBytes(true);
 }
 
@@ -227,7 +243,11 @@ bool PlatformVideo_begin(TFT_eSPI* display) {
     Serial.printf("[VIDEO] Physical output %dx%d, integer scale %dx\n",
                   DOOMRPG_PHYSICAL_WIDTH, DOOMRPG_PHYSICAL_HEIGHT,
                   DOOMRPG_INTEGER_SCALE);
+#if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
+    Serial.println("[VIDEO] CYD display profile alternate-panel inversion=off gamma=calibrated BGR=unchanged resampling=nearest framebuffer=untouched");
+#else
     Serial.println("[VIDEO] CYD display profile raw RGB565 + hardware inverted-gamma resampling=nearest framebuffer=untouched");
+#endif
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
     Serial.println("[HITBOX] Physical overlay enabled; framebuffer hashes remain untouched");
 #endif
