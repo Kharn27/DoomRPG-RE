@@ -10,6 +10,8 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+from audio_r2c_restore_menu_oracle import (restore_sound_options_action,
+                                           restore_sound_options_back)
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCES = ROOT / "ESP32/src"
@@ -57,8 +59,14 @@ def original_body_parity() -> None:
         # Some native menu translation units contain multiple concatenated
         # former .c modules, each with its own original SDL.h include.
         # Restore every one of those original imports before whole-blob SHA.
-        restored = current.replace(marker, old_import)
-        assert git_blob(restored) == blob, (
+        restored = current.replace(marker, old_import).decode("utf-8")
+        # Sound activation is the only later intentional menu behavior delta.
+        # Reverse it exactly without changing the historical frozen blobs.
+        if filename == "native_main_menu_options_action.c":
+            restored = restore_sound_options_action(restored)
+        elif filename == "native_main_menu_options_back.c":
+            restored = restore_sound_options_back(restored)
+        assert git_blob(restored.encode("utf-8")) == blob, (
             f"{filename}: original pre-F29 Git blob not preserved exactly")
         assert current.count(old_import) == expected, filename
         clean = re.sub(r"/\*[\s\S]*?\*/|//[^\n]*", "",
