@@ -591,6 +591,9 @@ jobs:
       - name: Test R-A2b bounded real-CYD multi-pose FNV and PAK timing capture parser (host)
         run: python ESP32/test/ra2b_frame_capture_host.py --self-test
 
+      - name: Verify alternate CYD LCD INV polarity only (real C++ panel profile host oracle)
+        run: python ESP32/test/cyd_alternate_panel_inversion_host.py
+
       - name: Test wall sprite visual offset and priority versus desktop (host C)
         run: python ESP32/test/wall_sprite_visual_host.py
       - name: Native ambient sprite animation
@@ -666,6 +669,10 @@ jobs:
 
       - name: Install PlatformIO Core
         run: python -m pip install 'platformio>=6.1,<7'
+
+      - name: Build alternate classic CYD inverted panel standalone
+        working-directory: ESP32
+        run: pio run -e esp-cyd-inverted
 
       - name: Build classic CYD firmware
         working-directory: ESP32
@@ -802,6 +809,8 @@ jobs:
           path: |
             ESP32/.pio/build/esp32-cyd/*.bin
             ESP32/.pio/build/esp32-cyd/firmware.elf
+            ESP32/.pio/build/esp-cyd-inverted/*.bin
+            ESP32/.pio/build/esp-cyd-inverted/firmware.elf
             ESP32/.pio/build/esp32-cyd/sdl_a_elf_report.json
             ESP32/.pio/build/esp32-cyd-trace/*.bin
             ESP32/.pio/build/esp32-cyd-trace/firmware.elf
