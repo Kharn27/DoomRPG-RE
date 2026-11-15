@@ -67,22 +67,6 @@ constexpr uint8_t kCydPanelNegativeGamma[15] = {
     0x48, 0x08, 0x0f, 0x0c, 0x31, 0x36, 0x0f,
 };
 
-/* LCD-C3 (classic only): perceptual brightness trial independent of C2 gamma.
- * Keep user-facing native config percent values and accepted alternate-panel
- * PWM byte-for-byte unchanged. Scale only the first classic CYD's physical
- * LEDC duty by 90%: no framebuffer changes, no new buffers or timer owners.
- * The scaling applies both at cold boot and when native config restores
- * brightness; never alter or resave the user's percentage. */
-constexpr uint32_t backlightDutyFromPercent(uint8_t percent) {
-    const uint32_t nominalDuty =
-        (static_cast<uint32_t>(percent) * 255U + 50U) / 100U;
-#if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
-    return nominalDuty;
-#else
-    return (nominalDuty * 90U + 50U) / 100U;
-#endif
-}
-
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
 constexpr int kDebugOverlayMaxZones = 8;
 
@@ -260,18 +244,10 @@ bool PlatformVideo_begin(TFT_eSPI* display) {
             Serial.println("[BACKLIGHT] FAILED LEDC setup; video remains usable, Luminosite setting unavailable");
         } else {
             ledcAttachPin(TFT_BL, kBacklightChannel);
-            const uint32_t initialDuty = backlightDutyFromPercent(100U);
-            ledcWrite(kBacklightChannel, initialDuty);
+            ledcWrite(kBacklightChannel, 255U);
             backlightPercent = 100U;
             backlightReady = true;
             Serial.println("[BACKLIGHT] READY pin=21 active=HIGH pwm=5000Hz/8bit channel=7 percent=100 persistence=native-sd-config");
-#if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
-            Serial.printf("[BACKLIGHT] PANEL-CAL requested=100 physicalDuty=%u/255 lcd=inverted scale=100pct\n",
-                          static_cast<unsigned int>(initialDuty));
-#else
-            Serial.printf("[BACKLIGHT] PANEL-CAL requested=100 physicalDuty=%u/255 lcd=classic scale=90pct trial=yes\n",
-                          static_cast<unsigned int>(initialDuty));
-#endif
         }
     }
 
@@ -344,7 +320,7 @@ extern "C" int Esp32Backlight_setPercent(uint8_t percent) {
         return 0;
     }
 
-    const uint32_t duty = backlightDutyFromPercent(percent);
+    const uint32_t duty = ((uint32_t)percent * 255U + 50U) / 100U;
     ledcWrite(kBacklightChannel, duty);
     backlightPercent = percent;
     Serial.printf("[BACKLIGHT] SET percent=%u duty=%u/255 gpio=21 frame=untouched gameplayRng=untouched\n",
