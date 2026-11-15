@@ -147,7 +147,14 @@ assert "I2S_DAC_CHANNEL_LEFT_EN" in cpp
 print("PASS AUDIO-R1f PCM regression: baseline and shaped quantizers bounded")
 
 # R1f: same DAC path, identical numeric amplitude, 8s sustained frequency A/B.
-assert "calibration=R1i waveform=BASE-coldboot-440-only" in cpp
+assert "calibration=R1j waveform=BASE-coldboot-440-only" in cpp
+assert "i2s_set_clk(" in cpp and "I2S_CHANNEL_STEREO" in cpp
+assert "I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_STEREO" in cpp
+assert "i2s_get_clk(I2S_NUM_0)" in cpp
+assert "authoritative=DMA-witness" in cpp
+assert "kErrorClockConfigure = 9U" in cpp
+assert cpp.index("i2s_set_clk(") < cpp.index("i2s_set_dac_mode(I2S_DAC_CHANNEL_DISABLE)", cpp.index("if (i2s_driver_install("))
+assert "if (hz < 15000U || hz > 17000U)" in cpp
 assert "i2s_driver_install(I2S_NUM_0, &cfg, 8, &i2sEvents)" in cpp
 assert "I2S_EVENT_DMA_ERROR" in cpp
 assert "I2S_EVENT_TX_Q_OVF" in cpp
@@ -162,4 +169,4 @@ assert "playStage(kGap440To220, 2U, 0U, kStep440" in cpp
 assert "440Hz-BASE-HOLD8S-PEAK64" in cpp
 assert "220Hz-BASE-HOLD8S-PEAK64" in cpp
 assert "EspAudioR1Pcm_shapedWord(" not in cpp
-print("PASS AUDIO-R1i: isolated PLL_D2 I2S clock vs native DAC cosine 440Hz, GPIO26-only, bounded cleanup")
+print("PASS AUDIO-R1j: explicit PLL_D2 re-clock and independent fail-closed DMA witness, GPIO26-only")

@@ -51,7 +51,8 @@ enum : uint32_t {
     kErrorNone = 0U, kErrorDriver = 1U, kErrorTask = 2U,
     kErrorClockWrite = 3U, kErrorClockRate = 4U,
     kErrorDacGate = 5U, kErrorPcmWrite = 6U,
-    kErrorRam = 7U, kErrorDmaEvent = 8U
+    kErrorRam = 7U, kErrorDmaEvent = 8U,
+    kErrorClockConfigure = 9U
 };
 
 struct R1State {
@@ -328,9 +329,9 @@ void EspAudioR1_tryStartInGameplay(void) {
     cfg.intr_alloc_flags = ESP_INTR_FLAG_LEVEL1;
     cfg.dma_buf_count = 4;
     cfg.dma_buf_len = kFrames;
-    /* R1i: only tested variable versus R1h, use the normal PLL_D2
-     * instead of APLL for the identical 16kHz PCM, DMA and DAC2 path.
-     * The clockWitness still refuses playback if drain rate is unsafe. */
+    /* R1j: IDF 4.4 documented explicit i2s_set_clk() after install.
+     * Keep PLL_D2 to test whether reconfiguration corrects the observed
+     * 88.5kHz DMA drain despite requesting 16kHz in R1i. */
     cfg.use_apll = false;
     cfg.tx_desc_auto_clear = true;
     /* i2s_set_pin(NULL) is intentionally forbidden: GPIO25 TOUCH CLOCK. */
@@ -341,6 +342,29 @@ void EspAudioR1_tryStartInGameplay(void) {
         markFailure(kErrorDriver);
         return;
     }
+    /* The default PLL_D2 clock passed through i2s_driver_install at R1i
+     * had a measured 88494Hz drain, far outside 15..17kHz.
+     * Explicitly request the clock and word width before enabling DAC2.
+     * i2s_get_clk is informative only: clockWitness remains authoritative. */
+    const uint32_t configuredBefore = (uint32_t)i2s_get_clk(I2S_NUM_0);
+    const esp_err_t clockResult = i2s_set_clk(
+        I2S_NUM_0, kHz, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_STEREO);
+    if (clockResult != ESP_OK) {
+        printf("[AUDIOR1] RECLOCK result=FAIL requestedHz=%u "
+               "beforeHz=%u err=%d dac=OFF\n",
+               (unsigned)kHz, (unsigned)configuredBefore, (int)clockResult);
+        (void)i2s_set_dac_mode(I2S_DAC_CHANNEL_DISABLE);
+        (void)i2s_driver_uninstall(I2S_NUM_0);
+        i2sEvents = nullptr;
+        markFailure(kErrorClockConfigure);
+        return;
+    }
+    const uint32_t configuredAfter = (uint32_t)i2s_get_clk(I2S_NUM_0);
+    printf("[AUDIOR1] RECLOCK result=OK source=PLL_D2 requestedHz=%u "
+           "beforeHz=%u afterHz=%u "
+           "bitsPerSample=16 channels=2 authoritative=DMA-witness\n",
+           (unsigned)kHz, (unsigned)configuredBefore,
+           (unsigned)configuredAfter);
     if (i2s_set_dac_mode(I2S_DAC_CHANNEL_DISABLE) != ESP_OK) {
         (void)i2s_driver_uninstall(I2S_NUM_0);
         i2sEvents = nullptr;
@@ -370,7 +394,7 @@ void EspAudioR1_tryStartInGameplay(void) {
     printf("[AUDIOR1] START oneShot=1 trigger=%s i2s=0 dac=GPIO26-only "
            "gpio25=touch-untouched rate=16000 transport=2x16b apll=0 "
            "clock=PLL_D2 dma=4x160 task=core0/3072 sound=synthetic-no-SD "
-           "calibration=R1i waveform=BASE-coldboot-440-only "
+           "calibration=R1j waveform=BASE-coldboot-440-only "
            "holdSeconds=8 peak=64 fadeMs=200 "
            "liveAudioLog=disabled dmaEvents=bounded "
            "heap8=%u largest8=%u dma=%u largestDMA=%u\n",
