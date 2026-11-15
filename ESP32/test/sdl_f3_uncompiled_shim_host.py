@@ -16,7 +16,7 @@ assert not (ROOT / "ESP32/src/esp32_sdl.cpp").exists(), (
 shim_path = ROOT / "ESP32/test/oracles/esp32_sdl.cpp"
 oracle_data = shim_path.read_bytes()
 actual_sha = hashlib.sha1(
-    b"blob " + str(len(oracle_data)).encode("ascii") + b"\\0" + oracle_data
+    b"blob " + str(len(oracle_data)).encode("ascii") + b"\0" + oracle_data
 ).hexdigest()
 assert actual_sha == "b8385250706b8b5396c3f3808e5084ad1f318425", (
     "SDL-F33 host shim oracle bytes changed", actual_sha)
