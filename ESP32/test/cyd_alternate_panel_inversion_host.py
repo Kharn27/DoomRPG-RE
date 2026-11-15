@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Build-contract and exact LCD gamma/polarity oracle on production C++.
+"""LCD-C2: exact controller command parity for classic E1-only gamma trial.
 
-Compiles the real applyCydInvertedGammaProfile() for both release profiles
-against a mocked controller. Pin both E0/E1 tables byte-for-byte, preserve
-the accepted alternate firmware and fail closed on LCD polarity or command
-drift. Hardware color fidelity still needs a real first-CYD test.
+Compile actual applyCydInvertedGammaProfile() for both release environments.
+Pin the classic E0 to its previously tested bytes, change classic E1 alone,
+keep alternate INV-OFF full E0/E1 sequence unchanged. Optical result pending.
 """
 from __future__ import annotations
 
@@ -56,10 +55,14 @@ def main() -> None:
 
     cpp = VIDEO.read_text()
     fn = exact_func(cpp, "void applyCydInvertedGammaProfile()")
+    classic_match = re.search(
+        r"constexpr uint8_t kCydClassicLegacyE0Gamma\[15\] = \{.*?\};",
+        cpp, re.DOTALL)
+    assert classic_match, "original classic E0 bytes missing"
     positive_match = re.search(
         r"constexpr uint8_t kCydPanelPositiveGamma\[15\] = \{.*?\};",
         cpp, re.DOTALL)
-    assert positive_match, "real shared positive gamma table missing"
+    assert positive_match, "accepted alternate E0 missing"
     negative_match = re.search(
         r"constexpr uint8_t kCydPanelNegativeGamma\[15\] = \{.*?\};",
         cpp, re.DOTALL)
@@ -68,17 +71,18 @@ def main() -> None:
     assert "kCydAlternatePositiveGamma" not in cpp
     assert "kCydAlternateNegativeGamma" not in cpp
     assert "#if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION" in cpp
-    assert fn.count("kCydPanelPositiveGamma") == 2, (
-        "E0 must use the shared positive gamma on BOTH release panels")
-    assert fn.count("kCydPanelNegativeGamma") == 2, (
-        "E1 must use the shared negative gamma on BOTH release panels")
+    assert fn.count("kCydPanelPositiveGamma") == 2
+    assert fn.count("kCydClassicLegacyE0Gamma") == 2
+    assert fn.count("kCydPanelNegativeGamma") == 2
+    assert fn.count("#if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION") == 2, (
+        "LCD-C2 changes only E0 source select and INV polarity")
     assert fn.count("invertDisplay(false)") == 1
     assert fn.count("invertDisplay(true)") == 1
     assert fn.count("setSwapBytes(true)") == 1
     assert "#if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION" in fn
     assert "invertDisplay(" not in cpp[cpp.index("bool PlatformVideo_present()"):
                                         cpp.index("void PlatformVideo_showTestPattern()")]
-    assert "classic inversion=on gamma=ILI9341-driver-E0E1-trial" in cpp
+    assert "classic inversion=on gamma=classic-E0-driver-E1-trial" in cpp
     assert "alternate-panel inversion=off gamma=ILI9341-driver-E0E1-trial" in cpp
 
     harness = """
@@ -105,7 +109,7 @@ struct Panel {
 };
 static Panel mock;
 static Panel* platformDisplay = &mock;
-""" + positive_match.group(0) + "\n" + negative_match.group(0) + "\n" + fn + """
+""" + "#if !DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION\n" + classic_match.group(0) + "\n#else\n" + positive_match.group(0) + "\n#endif\n" + negative_match.group(0) + "\n" + fn + """
 int main() {
     applyCydInvertedGammaProfile();
     assert(mock.ncommands == 4 &&
@@ -115,28 +119,30 @@ int main() {
     assert(mock.lengths[0] == 1 && mock.data[0][0] == 0x00);
     assert(mock.lengths[1] == 1 && mock.data[1][0] == 0x01);
     assert(mock.lengths[2] == 15 && mock.lengths[3] == 15);
+    // Published INV-OFF pair remains exact. On INV-ON classic, E0
+    // must match the proven pre-C1 bytes and ONLY E1 changes.
+    const int classicE0[15] = {0x00,0x15,0x17,0x07,0x11,0x06,0x2b,0x56,
+                               0x3c,0x05,0x10,0x0f,0x3f,0x3f,0x0f};
+    const int alternateE0[15] = {0x0f,0x31,0x2b,0x0c,0x0e,0x08,0x4e,0xf1,
+                                 0x37,0x07,0x10,0x03,0x0e,0x09,0x00};
+    const int sharedE1[15] = {0x00,0x0e,0x14,0x03,0x11,0x07,0x31,0xc1,
+                              0x48,0x08,0x0f,0x0c,0x31,0x36,0x0f};
     for (int i = 0; i < 15; ++i) {
-        assert(mock.data[2][i] == kCydPanelPositiveGamma[i]);
-        assert(mock.data[3][i] == kCydPanelNegativeGamma[i]);
-    }
-    // Exact reference from TFT_eSPI ILI9341_DRIVER must now hold
-    // for normal INVON as well as accepted alternate INVOFF.
-
-    // This exact published reference pair is intentionally pinned. Reject
-    // arbitrary byte tweaking disguised as reproducible panel calibration.
-    const int refE0[15] = {0x0f,0x31,0x2b,0x0c,0x0e,0x08,0x4e,0xf1,
-                           0x37,0x07,0x10,0x03,0x0e,0x09,0x00};
-    const int refE1[15] = {0x00,0x0e,0x14,0x03,0x11,0x07,0x31,0xc1,
-                           0x48,0x08,0x0f,0x0c,0x31,0x36,0x0f};
-    for (int i = 0; i < 15; ++i) {
-        assert(mock.data[2][i] == refE0[i]);
-        assert(mock.data[3][i] == refE1[i]);
+#if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
+        assert(mock.data[2][i] == alternateE0[i] &&
+               mock.data[2][i] == kCydPanelPositiveGamma[i]);
+#else
+        assert(mock.data[2][i] == classicE0[i] &&
+               mock.data[2][i] == kCydClassicLegacyE0Gamma[i]);
+#endif
+        assert(mock.data[3][i] == sharedE1[i] &&
+               mock.data[3][i] == kCydPanelNegativeGamma[i]);
     }
     assert(mock.invertCalls == 1 && mock.swapCalls == 1 && mock.swap);
 #if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
     assert(!mock.inv);  // INV OFF + published classic ILI9341 gamma pair
 #else
-    assert(mock.inv);   // INV ON + same published E0/E1 as accepted alternate
+    assert(mock.inv);   // INV ON + classic old E0 / published negative E1
 #endif
     return 0;
 }
@@ -158,9 +164,8 @@ int main() {
             print(f"PASS {label}: exact real E0/E1 gamma sequence "
                   "swapBytes=true framebuffer=untouched "
                   f"LCD_INV={'OFF' if flags else 'ON'}")
-    print("PASS CYD panel trial: identical published E0/E1 register bytes "
-          "on both builds; only INV polarity differs; game, framebuffer, "
-          "PAK, touch and renderer unchanged")
+    print("PASS LCD-C2: classic INVON changes E1 only; alternate INV-OFF "
+          "E0/E1 preserved; framebuffer/PAK/gameplay untouched")
 
 if __name__ == "__main__":
     main()
