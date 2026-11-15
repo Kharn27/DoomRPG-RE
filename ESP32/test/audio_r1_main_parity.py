@@ -22,11 +22,11 @@ def restore_pre_audio_r1(text: str) -> str:
     # Historical root parity must strip this ENTIRELY, just like the already
     # isolated AUDIO-R1 gameplay hook. Preserve exact pre-audio Git blobs.
     cold_boot_hook = (
-        '    /* AUDIO-R1g TEMPORARY diagnostic: the 8s 440Hz R1f tone plays before\\n'
-        '     * the display, SD and gameplay initialize. Expect a ~19s delay before\\n'
-        '     * MENU_MAIN; after this one-shot, the normal game boots silently. */\\n'
-        '    EspAudioR1_runColdBootProbe();\\n'
-        '\\n'
+        '    /* AUDIO-R1g TEMPORARY diagnostic: the 8s 440Hz R1f tone plays before\n'
+        '     * the display, SD and gameplay initialize. Expect a ~19s delay before\n'
+        '     * MENU_MAIN; after this one-shot, the normal game boots silently. */\n'
+        '    EspAudioR1_runColdBootProbe();\n'
+        '\n'
     )
     assert text.count(include) == 1, "AUDIO-R1 include integration drift"
     assert text.count(hook) == 1, "AUDIO-R1 gameplay integration drift"
