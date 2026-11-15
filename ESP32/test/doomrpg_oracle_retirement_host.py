@@ -74,10 +74,14 @@ def main():
         # The build must not open or transform it.
         for name in ORIGINALS:
             (desktop / name).write_text("NOT A C IMPLEMENTATION\n")
-        for name in ("esp32_sdl.cpp", "esp_native_canvas_text.c",
-                     "native_main_menu_model.c", "engine_stubs.c",
-                     "render_startup_bridge.c"):
+        for name in ("esp_native_canvas_text.c", "native_main_menu_model.c",
+                     "engine_stubs.c", "render_startup_bridge.c"):
             shutil.copyfile(ROOT / "ESP32/src" / name, native / name)
+        # SDL-F33: archived shim lives under test/oracles, not project/src.
+        fixture_oracles = project / "test/oracles"
+        fixture_oracles.mkdir(parents=True)
+        shutil.copyfile(ROOT / "ESP32/test/oracles/esp32_sdl.cpp",
+                        fixture_oracles / "esp32_sdl.cpp")
 
         obsolete = staged / "DoomRPG.c"
         obsolete.write_text("stale generated C root\n")
@@ -92,8 +96,10 @@ def main():
         assert "compiledOriginal=0 compiledPatchedC=0" in log
         assert not obsolete.exists(), "stale generated root was not retired"
 
-        # SDL-A keeps its packed implementation for host oracle tests only; F3 no longer compiles it in firmware.
-        permanent = native / "esp32_sdl.cpp"
+        # The exact SDL-A/F3 packed oracle was relocated outside the firmware
+        # sources and must never be rewritten by the real build script.
+        assert not (native / "esp32_sdl.cpp").exists()
+        permanent = fixture_oracles / "esp32_sdl.cpp"
         snapshot = permanent.read_bytes()
         shim = snapshot.decode("utf-8")
         # SDL-D1: generated shim absent; packed texture ownership and
@@ -118,6 +124,29 @@ def main():
         assert permanent.read_bytes() == snapshot
         assert not obsolete.exists() and not stale_shim.exists()
         assert env2.sources == []
+
+        # A legacy SDL shim reappearing in ESP32/src is an explicit build
+        # ownership violation, even though the old src_filter excludes it.
+        revived = native / "esp32_sdl.cpp"
+        revived.write_text("FORBIDDEN LEGACY SHIM\n")
+        try:
+            execute_build_script(FakeEnv(project, build))
+        except RuntimeError as exc:
+            assert "Retired SDL shim returned to production source tree" in str(exc)
+        else:
+            raise AssertionError("revived production SDL shim accepted")
+        revived.unlink()
+
+        # The archived host oracle must exist; no silent fallback to a
+        # production decoder is permitted.
+        permanent.unlink()
+        try:
+            execute_build_script(FakeEnv(project, build))
+        except RuntimeError as exc:
+            assert "Missing host-only SDL shim oracle source" in str(exc)
+        else:
+            raise AssertionError("missing host-only shim oracle accepted")
+        permanent.write_bytes(snapshot)
 
         # The 21-file denylist is intentional and fails closed if the desktop
         # tree changes, rather than silently compiling a new original C file.
