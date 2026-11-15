@@ -366,6 +366,75 @@ static void optionsBackTap(int16_t screenX,
         return;
     }
 
+    if (soundOpen) {
+        if (item == 0) {
+            if (!paintOptionsState(OPTIONS_BACK_ITEM, 0)) {
+                optionsBackActive=0;
+                PlatformInput_setTapCallback(NULL);
+                DoomRPG_esp32MainMenuRecover(optionsDoomRpg, "sound-back-failed");
+                return;
+            }
+            soundOpen=0U;
+            armedItem=-1;
+#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
+            registerOptionsHitboxOverlay();
+#endif
+            printf("[OPTIONSSOUND] BACK percent=%u persistence=session\n",
+                   (unsigned)EspNativeAudioIntent_musicVolumePercent());
+            return;
+        }
+        if (item >= 1 && item < DOOMRPG_ESP32_BRIGHTNESS_CARD_COUNT) {
+            if (armedItem != item) {
+                if (!paintSoundState(item)) {
+                    optionsBackActive=0;
+                    PlatformInput_setTapCallback(NULL);
+                    DoomRPG_esp32MainMenuRecover(optionsDoomRpg, "sound-arm-failed");
+                    return;
+                }
+                armedItem=item;
+                printf("[OPTIONSSOUND] ARM percent=%u confirmation=second-tap\n",
+                       (unsigned)(item*25U));
+                return;
+            }
+            const uint8_t before=EspNativeAudioIntent_musicVolumePercent();
+            const uint8_t after=(uint8_t)(item*25U);
+            if (!EspNativeAudioIntent_setMusicVolumePercent(after)) {
+                printf("[OPTIONSSOUND] FAIL reason=volume-rejected percent=%u\n",
+                       (unsigned)after);
+                return;
+            }
+            if (!paintOptionsState(OPTIONS_BACK_ITEM, 0)) {
+                (void)EspNativeAudioIntent_setMusicVolumePercent(before);
+                optionsBackActive=0;
+                PlatformInput_setTapCallback(NULL);
+                DoomRPG_esp32MainMenuRecover(optionsDoomRpg, "sound-commit-paint-failed");
+                return;
+            }
+            soundOpen=0U;
+            armedItem=-1;
+            PlatformInput_requireFreshTapAfterRelease();
+#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
+            registerOptionsHitboxOverlay();
+#endif
+            printf("[OPTIONSSOUND] SELECT %u->%u changed=%s "
+                   "autoBack=Options persistence=session\n",
+                   (unsigned)before,(unsigned)after,
+                   before==after?"no":"yes");
+            return;
+        }
+        if (armedItem!=-1) {
+            if (!paintSoundState(-1)) {
+                optionsBackActive=0;
+                PlatformInput_setTapCallback(NULL);
+                DoomRPG_esp32MainMenuRecover(optionsDoomRpg, "sound-disarm-failed");
+                return;
+            }
+            armedItem=-1;
+        }
+        printf("[OPTIONSSOUND] MISS outside-presets\n");
+        return;
+    }
+
     if (luminositeOpen) {
         if (item == 0) {
             /* BACK returns to Options, not directly to MENU_MAIN. */
