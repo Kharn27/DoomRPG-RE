@@ -3,6 +3,7 @@
 #include <esp_heap_caps.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
 #include <freertos/task.h>
 
 #include <stdint.h>
@@ -28,7 +29,7 @@ constexpr size_t kFrames = 160U;  // 10 ms
 constexpr size_t kSlots = 2U;    // explicit L+R 16-bit physical slots
 constexpr uint32_t kClockWarm = 8U;
 constexpr uint32_t kClockBlocks = 80U;
-constexpr uint32_t kFadeFrames = 3200U; // 200 ms R1d (soft transitions)
+constexpr uint32_t kFadeFrames = 3200U; // 200 ms R1e, PCM identical to R1d
 constexpr uint32_t kStep440 = 118111601U; // round(440 * 2^32 / 16000)
 constexpr uint32_t kStep220 = 59055800U;  // round(220 * 2^32 / 16000)
 
@@ -54,7 +55,7 @@ enum : uint32_t {
     kErrorNone = 0U, kErrorDriver = 1U, kErrorTask = 2U,
     kErrorClockWrite = 3U, kErrorClockRate = 4U,
     kErrorDacGate = 5U, kErrorPcmWrite = 6U,
-    kErrorRam = 7U
+    kErrorRam = 7U, kErrorDmaEvent = 8U
 };
 
 struct R1State {
@@ -68,8 +69,32 @@ struct R1State {
     bool attempted;
 };
 static R1State state;
-static uint32_t lastReportedStage = UINT32_MAX;
-static uint32_t lastPulseMs;
+/* R1e: observe the original R1d PCM without any Serial writes while
+ * I2S is active. Worker records bounded timing witnesses in static memory.
+ * The main loop prints them ONLY after DAC off and driver uninstall. */
+struct StageTelemetry {
+    uint32_t startMs;
+    uint32_t maxFillUs;
+    uint32_t maxFillFrame;
+    uint32_t maxInterWriteGapUs;
+    uint32_t maxGapFrame;
+    uint32_t over15ms;
+    uint32_t maxWriteUs;
+};
+static StageTelemetry stageTelemetry[kFailed + 1U];
+static QueueHandle_t i2sEvents;
+static uint32_t txDoneEvents;
+static uint32_t txQueueOverflowEvents;
+static uint32_t dmaErrorEvents;
+static bool terminalReportDone;
+static void consumeDmaEvents(void) {
+    i2s_event_t event;
+    while (i2sEvents && xQueueReceive(i2sEvents, &event, 0) == pdTRUE) {
+        if (event.type == I2S_EVENT_TX_DONE) ++txDoneEvents;
+        if (event.type == I2S_EVENT_TX_Q_OVF) ++txQueueOverflowEvents;
+        if (event.type == I2S_EVENT_DMA_ERROR) ++dmaErrorEvents;
+    }
+}
 
 static uint32_t heap8(void) {
     return (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
@@ -103,6 +128,11 @@ static bool writeBlock(const uint16_t* pcm, size_t bytes) {
         return false;
     }
     __atomic_add_fetch(&state.writes, 1U, __ATOMIC_RELAXED);
+    consumeDmaEvents();
+    if (dmaErrorEvents != 0U) {
+        markFailure(kErrorDmaEvent);
+        return false;
+    }
     return true;
 }
 static void fillMidpoint(uint16_t* pcm) {
@@ -144,9 +174,21 @@ static bool playStage(uint32_t stage, uint32_t seconds, uint8_t peak,
     const uint32_t total = seconds * kHz;
     const bool shaped = (stage == kTone440Shaped || stage == kTone220Shaped);
     EspAudioR1PcmShapeState shapeState = {0};
+    StageTelemetry& witness = stageTelemetry[stage];
+    witness.startMs = (uint32_t)(esp_timer_get_time() / 1000LL);
+    int64_t previousWriteEndUs = 0;
     publishStage(stage);
     for (uint32_t at = 0U; at < total; at += kFrames) {
         if (__atomic_load_n(&state.stopRequested, __ATOMIC_ACQUIRE)) return false;
+        const int64_t fillBeginUs = esp_timer_get_time();
+        if (previousWriteEndUs != 0) {
+            const uint32_t gapUs = (uint32_t)(fillBeginUs - previousWriteEndUs);
+            if (gapUs > witness.maxInterWriteGapUs) {
+                witness.maxInterWriteGapUs = gapUs;
+                witness.maxGapFrame = at;
+            }
+            if (gapUs > 15000U) ++witness.over15ms;
+        }
         for (uint32_t i = 0U; i < kFrames; ++i) {
             const uint32_t frame = at + i;
             uint8_t amplitude = peak;
@@ -170,10 +212,20 @@ static bool playStage(uint32_t stage, uint32_t seconds, uint8_t peak,
             pcm[(size_t)i * kSlots + 1U] = value;
             *phase += step;
         }
+        const int64_t fillEndUs = esp_timer_get_time();
+        const uint32_t fillUs = (uint32_t)(fillEndUs - fillBeginUs);
+        if (fillUs > witness.maxFillUs) {
+            witness.maxFillUs = fillUs;
+            witness.maxFillFrame = at;
+        }
         if (!writeBlock(pcm, sizeof(uint16_t) * kFrames * kSlots)) {
-            markFailure(kErrorPcmWrite);
+            if (loadStage() != kFailed) markFailure(kErrorPcmWrite);
             return false;
         }
+        const int64_t writeEndUs = esp_timer_get_time();
+        const uint32_t writeUs = (uint32_t)(writeEndUs - fillEndUs);
+        if (writeUs > witness.maxWriteUs) witness.maxWriteUs = writeUs;
+        previousWriteEndUs = writeEndUs;
         __atomic_add_fetch(&state.framesWritten, (uint32_t)kFrames,
                            __ATOMIC_RELAXED);
     }
@@ -194,7 +246,11 @@ static void taskMain(void*) {
             ok = false;
         }
     }
-    /* R1d: user hears crackling ONLY during actual tones, not midpoint
+    /* R1e: SAME R1d PCM and stages; only buffered telemetry/no live printf.
+     * User hears crackling at repeatable ~1s point into 3s tones.
+     * R1e distinguishes a scheduling/data-path hiccup from a static waveform.
+     *
+     * R1d: user hears crackling ONLY during actual tones, not midpoint
      * or DAC-off. Compare exact same 440 Hz peak64 through two distinct
      * quantizers, then repeat at 220 Hz. Same I2S timing, DMA, DAC, gain,
      * speaker and 200 ms envelopes isolate waveform-side differences.
@@ -221,7 +277,9 @@ static void taskMain(void*) {
     /* Fail closed on ANY error, cancellation or terminal success.
      * This task is the sole owner of the I2S driver after creation. */
     (void)i2s_set_dac_mode(I2S_DAC_CHANNEL_DISABLE);
+    consumeDmaEvents();
     (void)i2s_driver_uninstall(I2S_NUM_0);
+    i2sEvents = nullptr;
     if (loadStage() != kFailed) {
         publishStage(ok ? kFinished : kStopped);
     }
@@ -280,12 +338,16 @@ void EspAudioR1_tryStartInGameplay(void) {
     cfg.use_apll = true;
     cfg.tx_desc_auto_clear = true;
     /* i2s_set_pin(NULL) is intentionally forbidden: GPIO25 TOUCH CLOCK. */
-    if (i2s_driver_install(I2S_NUM_0, &cfg, 0, nullptr) != ESP_OK) {
+    /* IDF 4.4 event queue: DMA_ERROR is a real driver error, while
+     * TX_Q_OVF means the *telemetry queue* filled, NOT a PCM underrun.
+     * Queue size 8 is bounded. No serial tracing from the audio task. */
+    if (i2s_driver_install(I2S_NUM_0, &cfg, 8, &i2sEvents) != ESP_OK) {
         markFailure(kErrorDriver);
         return;
     }
     if (i2s_set_dac_mode(I2S_DAC_CHANNEL_DISABLE) != ESP_OK) {
         (void)i2s_driver_uninstall(I2S_NUM_0);
+        i2sEvents = nullptr;
         markFailure(kErrorDacGate);
         return;
     }
@@ -295,6 +357,7 @@ void EspAudioR1_tryStartInGameplay(void) {
         dmaFree() < 16384U || largestDma() < 8192U) {
         (void)i2s_set_dac_mode(I2S_DAC_CHANNEL_DISABLE);
         (void)i2s_driver_uninstall(I2S_NUM_0);
+        i2sEvents = nullptr;
         markFailure(kErrorRam);
         return;
     }
@@ -303,14 +366,16 @@ void EspAudioR1_tryStartInGameplay(void) {
                                 nullptr, 2U, nullptr, 0) != pdPASS) {
         (void)i2s_set_dac_mode(I2S_DAC_CHANNEL_DISABLE);
         (void)i2s_driver_uninstall(I2S_NUM_0);
+        i2sEvents = nullptr;
         markFailure(kErrorTask);
         return;
     }
     printf("[AUDIOR1] START oneShot=1 trigger=gameplay i2s=0 dac=GPIO26-only "
            "gpio25=touch-untouched rate=16000 transport=2x16b apll=1 "
            "dma=4x160 task=core0/3072 sound=synthetic-no-SD "
-           "calibration=R1d modes=base+shaped frequencies=440+220 "
-           "peak=64 fadeMs=200 dacOffWindows=initial+tail "
+           "calibration=R1e waveform=R1d-identical modes=base+shaped "
+           "frequencies=440+220 peak=64 fadeMs=200 "
+           "liveAudioLog=disabled dmaEvents=bounded "
            "heap8=%u largest8=%u dma=%u largestDMA=%u\n",
            (unsigned)heap8(), (unsigned)largest8(),
            (unsigned)dmaFree(), (unsigned)largestDma());
@@ -323,30 +388,34 @@ void EspAudioR1_requestStop(void) {
 }
 
 void EspAudioR1_poll(void) {
-    if (!state.attempted) return;
+    if (!state.attempted || terminalReportDone) return;
     const uint32_t stage = loadStage();
-    const uint32_t now = millis();
-    if (stage != lastReportedStage) {
-        lastReportedStage = stage;
-        printf("[AUDIOR1] STAGE %s measuredHz=%u writes=%u errors=%u "
-               "frames=%u code=%u heap8=%u largest8=%u dma=%u\n",
-               stageName(stage),
-               (unsigned)__atomic_load_n(&state.measuredHz, __ATOMIC_ACQUIRE),
-               (unsigned)__atomic_load_n(&state.writes, __ATOMIC_RELAXED),
-               (unsigned)__atomic_load_n(&state.errors, __ATOMIC_RELAXED),
-               (unsigned)__atomic_load_n(&state.framesWritten, __ATOMIC_RELAXED),
-               (unsigned)__atomic_load_n(&state.errorCode, __ATOMIC_RELAXED),
-               (unsigned)heap8(), (unsigned)largest8(), (unsigned)dmaFree());
-    }
-    if (stage >= kClock && stage <= kSilence &&
-        (uint32_t)(now - lastPulseMs) >= 3000U) {
-        lastPulseMs = now;
-        printf("[AUDIOR1] PULSE stage=%s measuredHz=%u writes=%u errors=%u "
-               "heap8=%u largest8=%u\n",
-               stageName(stage),
-               (unsigned)__atomic_load_n(&state.measuredHz, __ATOMIC_RELAXED),
-               (unsigned)__atomic_load_n(&state.writes, __ATOMIC_RELAXED),
-               (unsigned)__atomic_load_n(&state.errors, __ATOMIC_RELAXED),
-               (unsigned)heap8(), (unsigned)largest8());
+    /* No serial I/O while DAC is streaming. Stage counters are gathered
+     * in RAM and published after terminal stage (acquire-release). */
+    if (stage < kFinished) return;
+    terminalReportDone = true;
+    printf("[AUDIOR1] FINAL stage=%s measuredHz=%u writes=%u errors=%u "
+           "frames=%u code=%u heap8=%u largest8=%u dma=%u "
+           "dmaErrorEvents=%u txQueueOverflowEvents=%u txDoneEvents=%u\n",
+           stageName(stage),
+           (unsigned)__atomic_load_n(&state.measuredHz, __ATOMIC_ACQUIRE),
+           (unsigned)__atomic_load_n(&state.writes, __ATOMIC_RELAXED),
+           (unsigned)__atomic_load_n(&state.errors, __ATOMIC_RELAXED),
+           (unsigned)__atomic_load_n(&state.framesWritten, __ATOMIC_RELAXED),
+           (unsigned)__atomic_load_n(&state.errorCode, __ATOMIC_RELAXED),
+           (unsigned)heap8(), (unsigned)largest8(), (unsigned)dmaFree(),
+           (unsigned)dmaErrorEvents, (unsigned)txQueueOverflowEvents,
+           (unsigned)txDoneEvents);
+    for (uint32_t at = kDacOff; at <= kDacOffTail; ++at) {
+        const StageTelemetry& w = stageTelemetry[at];
+        if (w.startMs == 0U) continue;
+        printf("[AUDIOR1] TIMING stage=%s startMs=%u "
+               "maxFillUs=%u fillAtFrame=%u "
+               "maxProducerGapUs=%u gapAtFrame=%u gapsOver15ms=%u "
+               "maxWriteUs=%u\n",
+               stageName(at), (unsigned)w.startMs,
+               (unsigned)w.maxFillUs, (unsigned)w.maxFillFrame,
+               (unsigned)w.maxInterWriteGapUs, (unsigned)w.maxGapFrame,
+               (unsigned)w.over15ms, (unsigned)w.maxWriteUs);
     }
 }
