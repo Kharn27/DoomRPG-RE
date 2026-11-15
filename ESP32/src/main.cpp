@@ -7,6 +7,7 @@
 #include "esp_asset_pack.h"
 #include "esp_audio_r1_analog.h"
 #include "esp_audio_r1_cw.h"
+#include "esp_audio_r1_timer.h"
 #include "esp_legacy_asset_source.h"
 #include "esp_legacy_config_mappings_startup.h"
 #include "esp_native_config.h"
@@ -466,6 +467,9 @@ void setup()
      * the display, SD and gameplay initialize. Expect a ~19s delay before
      * MENU_MAIN; after this one-shot, the normal game boots silently. */
     EspAudioR1_runColdBootProbe();
+    /* AUDIO-R1k TEMPORARY: same 440Hz PCM through timer ISR directly to
+     * DAC2/GPIO26. No I2S; precedes the known-clean cosine reference. */
+    EspAudioR1_runTimerColdBootProbe();
     /* AUDIO-R1h TEMPORARY: compare the identical 440Hz pitch with the
      * hardware-only DAC cosine after R1g I2S has fully stopped.
      * Both occur before TFT, touch and SD initialization. */

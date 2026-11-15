@@ -6,7 +6,7 @@ Strict unique markers fail closed if either integration point drifts.
 """
 
 def restore_pre_audio_r1(text: str) -> str:
-    include = '#include "esp_asset_pack.h"\n#include "esp_audio_r1_analog.h"\n#include "esp_audio_r1_cw.h"\n'
+    include = '#include "esp_asset_pack.h"\n#include "esp_audio_r1_analog.h"\n#include "esp_audio_r1_cw.h"\n#include "esp_audio_r1_timer.h"\n'
     original = '#include "esp_asset_pack.h"\n'
     hook = (
         '    /* AUDIO-R1: non-blocking, one-shot GPIO26 analog proof only after the\n'
@@ -27,6 +27,11 @@ def restore_pre_audio_r1(text: str) -> str:
         '     * MENU_MAIN; after this one-shot, the normal game boots silently. */\n'
         '    EspAudioR1_runColdBootProbe();\n'
     )
+    timer_hook = (
+        '    /* AUDIO-R1k TEMPORARY: same 440Hz PCM through timer ISR directly to\n'
+        '     * DAC2/GPIO26. No I2S; precedes the known-clean cosine reference. */\n'
+        '    EspAudioR1_runTimerColdBootProbe();\n'
+    )
     cw_hook = (
         '    /* AUDIO-R1h TEMPORARY: compare the identical 440Hz pitch with the\n'
         '     * hardware-only DAC cosine after R1g I2S has fully stopped.\n'
@@ -38,7 +43,9 @@ def restore_pre_audio_r1(text: str) -> str:
     assert text.count(hook) == 1, "AUDIO-R1 gameplay integration drift"
     assert text.count(cold_boot_hook) == 1, "AUDIO-R1g cold-boot integration drift"
     assert text.count(cw_hook) == 1, "AUDIO-R1h hardware cosine integration drift"
+    assert text.count(timer_hook) == 1, "AUDIO-R1k timer integration drift"
     return (text.replace(include, original, 1)
                 .replace(hook, "", 1)
                 .replace(cold_boot_hook, "", 1)
+                .replace(timer_hook, "", 1)
                 .replace(cw_hook, "", 1))

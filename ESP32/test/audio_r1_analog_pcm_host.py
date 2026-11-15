@@ -12,6 +12,26 @@ main = (src / "main.cpp").read_text(encoding="utf-8")
 assert "EspAudioR1_tryStartInGameplay();" in main
 assert "EspAudioR1_runColdBootProbe();" in main
 assert "EspAudioR1_runCosineColdBootProbe();" in main
+assert "EspAudioR1_runTimerColdBootProbe();" in main
+assert main.index("EspAudioR1_runColdBootProbe();") < main.index("EspAudioR1_runTimerColdBootProbe();")
+assert main.index("EspAudioR1_runTimerColdBootProbe();") < main.index("EspAudioR1_runCosineColdBootProbe();")
+timer = (src / "esp_audio_r1_timer.cpp").read_text(encoding="utf-8")
+timer_h = (src / "esp_audio_r1_timer.h").read_text(encoding="utf-8")
+assert "EspAudioR1_runTimerColdBootProbe" in timer_h
+assert "timer_isr_callback_add(" in timer and "timer_isr_callback_remove(" in timer
+assert "TIMER_GROUP_1" in timer and "TIMER_1" in timer
+assert "kTimerDivider = 2U" in timer and "kTimerAlarm = 2500U" in timer
+assert "kPreflightFrames = kRateHz" in timer
+assert "kToneFrames = 8U * kRateHz" in timer
+assert "EspAudioR1Pcm_dacCode(phase, 64U)" in timer
+assert "RTC_IO_PAD_DAC2_REG, RTC_IO_PDAC2_DAC" in timer
+assert "IRAM_ATTR onTick" in timer and "DRAM_ATTR uint8_t wave" in timer
+assert "DAC_CHANNEL_2" in timer and "DAC_CHANNEL_1" not in timer
+assert "dac_output_disable(DAC_CHANNEL_2)" in timer
+assert "measuredHz=" in timer and "playedFrames=" in timer
+assert timer.index("if (rateHz < 15000U || rateHz > 17000U)") < timer.index("dac_output_enable(DAC_CHANNEL_2)")
+assert "i2s_write(" not in timer and "i2s_driver_install" not in timer
+assert "SD.open(" not in timer and "xTaskCreate" not in timer
 assert main.index("EspAudioR1_runColdBootProbe();") < main.index("EspAudioR1_runCosineColdBootProbe();")
 assert main.index("EspAudioR1_runCosineColdBootProbe();") < main.index("input.begin();")
 cw = (src / "esp_audio_r1_cw.cpp").read_text(encoding="utf-8")
@@ -38,10 +58,10 @@ assert "EspNativeGameplaySession_isActive()" in main
 assert "I2S_DAC_CHANNEL_LEFT_EN" in cpp
 assert "I2S_DAC_CHANNEL_DISABLE" in cpp
 assert "I2S_CHANNEL_FMT_RIGHT_LEFT" in cpp
-assert "cfg.use_apll = false;" in cpp
-assert "cfg.use_apll = true;" not in cpp
-assert "clock=PLL_D2" in cpp
-assert "apll=0" in cpp
+assert "cfg.use_apll = true;" in cpp
+assert "cfg.use_apll = false;" not in cpp
+assert "clock=APLL" in cpp
+assert "apll=1" in cpp
 assert "GPIO25" in cpp
 assert "i2s_set_pin(" not in cpp.replace("i2s_set_pin(NULL)", "").replace("i2s_set_pin(I2S_NUM_0, NULL)", "")
 assert "SD.open(" not in cpp and "EspAssetPack_" not in cpp
@@ -147,13 +167,9 @@ assert "I2S_DAC_CHANNEL_LEFT_EN" in cpp
 print("PASS AUDIO-R1f PCM regression: baseline and shaped quantizers bounded")
 
 # R1f: same DAC path, identical numeric amplitude, 8s sustained frequency A/B.
-assert "calibration=R1j waveform=BASE-coldboot-440-only" in cpp
-assert "i2s_set_clk(" in cpp and "I2S_CHANNEL_STEREO" in cpp
-assert "I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_STEREO" in cpp
-assert "i2s_get_clk(I2S_NUM_0)" in cpp
-assert "authoritative=DMA-witness" in cpp
-assert "kErrorClockConfigure = 9U" in cpp
-assert cpp.index("const esp_err_t clockResult = i2s_set_clk(") < cpp.index("i2s_set_dac_mode(I2S_DAC_CHANNEL_DISABLE)", cpp.index("if (i2s_driver_install("))
+assert "calibration=R1k waveform=BASE-coldboot-440-only" in cpp
+assert "i2s_set_clk(" not in cpp
+assert "i2s_get_clk(" not in cpp
 assert "if (hz < 15000U || hz > 17000U)" in cpp
 assert "i2s_driver_install(I2S_NUM_0, &cfg, 8, &i2sEvents)" in cpp
 assert "I2S_EVENT_DMA_ERROR" in cpp
@@ -169,4 +185,4 @@ assert "playStage(kGap440To220, 2U, 0U, kStep440" in cpp
 assert "440Hz-BASE-HOLD8S-PEAK64" in cpp
 assert "220Hz-BASE-HOLD8S-PEAK64" in cpp
 assert "EspAudioR1Pcm_shapedWord(" not in cpp
-print("PASS AUDIO-R1j: explicit PLL_D2 re-clock and independent fail-closed DMA witness, GPIO26-only")
+print("PASS AUDIO-R1k: APLL I2S + independent 16kHz IRAM timer DAC2 PCM + hardware CW")
