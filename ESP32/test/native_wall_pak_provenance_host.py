@@ -133,9 +133,103 @@ class Pak:
                 f"PAK resource CRC differs: {name}")
 
 
+def map_selected_texture_ids(pak: Pak) -> tuple[int, ...]:
+    """Rebuild EspBspReader's map texture requirements from actual /intro.bsp.
+    The immutable BSP sections are read only by the *host*; this does not
+    recreate the desktop's heap-heavy world on the CYD.
+    """
+    raw = pak.read("intro.bsp", 0, pak.entry("intro.bsp")[1])
+    require(len(raw) >= 33 + 256 + 2048, "intro.bsp undersized")
+    required = {raw[22], raw[23]}  # floor and ceiling from the 33-byte header
+    pos = 33
+
+    def read_count() -> int:
+        nonlocal pos
+        require(pos + 2 <= len(raw), "intro.bsp missing section count")
+        (count,) = struct.unpack_from("<H", raw, pos)
+        pos += 2
+        return count
+
+    def records(count: int, record_bytes: int) -> bytes:
+        nonlocal pos
+        length = count * record_bytes
+        require(pos + length <= len(raw), "intro.bsp section exceeds file")
+        result = raw[pos:pos + length]
+        pos += length
+        return result
+
+    def mark_line(id_: int) -> None:
+        required.add(id_)
+        if id_ == 34:
+            required.add(92)
+        elif id_ == 33:
+            required.add(91)
+        elif id_ == 9:
+            required.add(10)
+        elif id_ == 10:
+            required.add(9)
+
+    records(read_count(), 10)  # BSP nodes
+    lines = records(read_count(), 10)
+    for i in range(0, len(lines), 10):
+        mark_line(struct.unpack_from("<H", lines, i + 4)[0])
+    sprites = records(read_count(), 5)
+    for i in range(0, len(sprites), 5):
+        sprite_id = sprites[i + 2]
+        flags = sprite_id | sprites[i + 3] << 16 | sprites[i + 4] << 24
+        if (flags & 0x20000000) == 0 and (flags & 0x00040000):
+            required.add(sprite_id)
+    records(read_count(), 4)  # events
+    records(read_count(), 9)  # bytecode records
+    strings = read_count()
+    for _ in range(strings):
+        n = read_count()
+        records(n, 1)
+    records(256, 1)  # blockmap
+    plane = records(2048, 1)
+    required.update(plane)
+    require(pos == len(raw), "intro.bsp trailing data or invalid layout")
+    require(all(0 <= item < 256 for item in required),
+            "required map texture id outside 0..255")
+    return tuple(sorted(required))
+
+
+def compact_legacy_successor(pak: Pak, resources: tuple[int, ...],
+                             pairs: int, texture_ids: int,
+                             id_base: int, actual: int, source: int
+                             ) -> tuple[int, int]:
+    """Recreate Render_addMapTextures(+0..3) followed by Render_loadTexels'
+    source-offset sort and unique-block compact copy. Tie resolution matches
+    production prepareLegacyWallGuard's logical/phase traversal.
+    """
+    selected: list[tuple[int, int]] = []
+    current_present = False
+    for logical in resources:
+        lookup = min(logical, texture_ids - 1)
+        (base,) = struct.unpack(
+            "<H", pak.read("mappings.bin", id_base + 2 * lookup, 2))
+        for phase in range(4):
+            texture = base + phase
+            require(texture < pairs, "catalog actual index outside pair map")
+            raw = pak.read("mappings.bin", 16 + texture * 8, 8)
+            offset, _palette = PAIR.unpack(raw)
+            require(offset >= 0 and offset % 2 == 0 and
+                    4 + offset // 2 + PACKED_BYTES <=
+                    pak.entry("wtexels.bin")[1],
+                    "selected map source invalid or truncated")
+            selected.append((offset, texture))
+            current_present |= texture == actual and offset == source
+    require(current_present, "witness actual/source absent from map catalogue")
+    higher = [(offset, texture) for offset, texture in selected
+              if offset > source]
+    require(bool(higher), "compact legacy atlas has no successor texture")
+    next_offset, next_actual = min(higher, key=lambda item: item[0])
+    return next_actual, next_offset
+
+
 def pack_fixture(path: Path) -> tuple[bytes, list[str]]:
     pak = Pak(path)
-    for name in ("mappings.bin", "wtexels.bin", "palettes.bin"):
+    for name in ("mappings.bin", "wtexels.bin", "palettes.bin", "intro.bsp"):
         pak.verify_crc(name)
     mapping_size = pak.entry("mappings.bin")[1]
     palette_size = pak.entry("palettes.bin")[1]
@@ -156,6 +250,9 @@ def pack_fixture(path: Path) -> tuple[bytes, list[str]]:
             "palettes.bin header inconsistent")
     require(4 + wall_bytes == wall_size, "wtexels.bin header inconsistent")
     palette_count = palette_bytes // 2
+    map_resources = map_selected_texture_ids(pak)
+    require(15 in map_resources and 49 in map_resources,
+            "observed wall texture IDs missing from /intro.bsp")
     out = bytearray(FIXTURE_MAGIC + struct.pack("<I", len(WITNESSES)))
     descriptions: list[str] = []
 
@@ -172,6 +269,11 @@ def pack_fixture(path: Path) -> tuple[bytes, list[str]]:
         next_offset, _ = PAIR.unpack(next_bytes)
         require(src_offset == source and next_offset == successor_source,
                 "real Serial source/successor mapping differs from PAK")
+        legacy_next_actual, legacy_next_offset = compact_legacy_successor(
+            pak, map_resources, pairs, texture_ids, id_base, actual, source)
+        require(legacy_next_actual == successor and
+                legacy_next_offset == successor_source,
+                "real legacy compact map-selected successor differs from Serial")
         require(src_offset >= 0 and (src_offset & 1) == 0 and
                 next_offset > src_offset and (next_offset & 1) == 0 and
                 pal_offset >= 0 and pal_offset + 16 <= palette_count,
@@ -184,6 +286,7 @@ def pack_fixture(path: Path) -> tuple[bytes, list[str]]:
         wall = pak.read("wtexels.bin", read_pos, PACKED_BYTES)
         physical = pak.read("wtexels.bin", read_pos + PACKED_BYTES, 1)[0]
         mapped = pak.read("wtexels.bin", next_pos, 1)[0]
+        compact_legacy = pak.read("wtexels.bin", 4 + legacy_next_offset // 2, 1)[0]
         require(mapped == observed, "real Serial guard byte differs from PAK")
         raw_palette = struct.unpack(
             "<16H", pak.read("palettes.bin", 4 + 2 * pal_offset, 32))
@@ -193,13 +296,14 @@ def pack_fixture(path: Path) -> tuple[bytes, list[str]]:
                                src_offset, next_offset))
         out.extend(struct.pack("<16H", *rgb_palette))
         out.extend(wall)
-        out.extend(bytes((physical, mapped)))
+        out.extend(bytes((physical, mapped, compact_legacy)))
         out.extend(struct.pack("<I", pixel_fnv))
         descriptions.append(
             f"logical={logical} actual={actual} source={source} "
             f"successorActual={successor} successorSource={next_offset} "
-            f"physical={physical:02x} mapped={mapped:02x} "
-            f"physicalAdjacent={source + 4096 == next_offset} "
+            f"rawPakAdjacent={physical:02x} mappedGuard={mapped:02x} "
+            f"compactLegacy={compact_legacy:02x} "
+            f"rawPakSameAsCompact={physical == compact_legacy} "
             f"pixelFNV={pixel_fnv:08x}"
         )
     return bytes(out), descriptions
@@ -215,13 +319,18 @@ def build_synthetic_pack(path: Path, diverge: bool = False,
     id_base = 16 + 8 * (pairs + bit_pairs)
     struct.pack_into("<H", mapping, id_base + 15 * 2, 40)
     struct.pack_into("<H", mapping, id_base + 49 * 2, 112)
-    for actual, source, palette in (
+    # Every logical ID reserves four actual phases. Match the original
+    # Render_addMapTextures contract, including repeated source offsets.
+    for first, source, palette in (
         (40, 24576 if wrong_source else 20480, 0),
         (68, 32768, 0),
         (112, 65536, 16),
         (116, 69632, 16),
     ):
-        struct.pack_into("<ii", mapping, 16 + actual * 8, source, palette)
+        for phase in range(4):
+            struct.pack_into("<ii", mapping, 16 + (first + phase) * 8,
+                             source, palette)
+    struct.pack_into("<H", mapping, id_base + 16 * 2, 68)
     palette_words = tuple((i * 1733 + 19) & 65535 for i in range(32))
     palettes = struct.pack("<I32H", 64, *palette_words)
     texels = bytearray(4 + 37000)
@@ -233,7 +342,22 @@ def build_synthetic_pack(path: Path, diverge: bool = False,
     texels[4 + 32768 // 2] = 0x12 if wrong_guard else 0x11
     texels[4 + 69632 // 2] = 0xA7
     texels[4 + 20480 // 2 + PACKED_BYTES] = 0x99 if diverge else 0x11
+    # Minimal valid BSP with 3 active logical textures (15, 16, 49).
+    # Follows EspBspReader: 33-byte header + counted sections + block/planes.
+    header = (b"Entrance" + b"\0" * 8 + b"\0" * 6 +
+              bytes((15, 49)) + b"\0" * 3 +
+              struct.pack("<BHBH", 1, 904, 64, 648))
+    require(len(header) == 33, "synthetic BSP header construction error")
+    line_records = bytearray(3 * 10)
+    for i, logical in enumerate((15, 16, 49)):
+        struct.pack_into("<H", line_records, i * 10 + 4, logical)
+    bsp = (header +
+           struct.pack("<H", 0) +  # nodes
+           struct.pack("<H", 3) + bytes(line_records) +  # lines
+           struct.pack("<HHHH", 0, 0, 0, 0) +  # sprites/events/codes/strings
+           bytes(256) + bytes((15,)) * 2048)
     resources = {
+        "intro.bsp": bsp,
         "mappings.bin": bytes(mapping),
         "palettes.bin": palettes,
         "wtexels.bin": bytes(texels),
@@ -292,7 +416,7 @@ def self_test(binary: Path, tmp: Path) -> None:
     pack_path = tmp / "synthetic.pak"
     build_synthetic_pack(pack_path)
     fixture, info = pack_fixture(pack_path)
-    require(len(fixture) == 12 + 2 * (16 + 32 + 2048 + 2 + 4),
+    require(len(fixture) == 12 + 2 * (16 + 32 + 2048 + 3 + 4),
             "unexpected bounded host fixture size")
     require(all("physicalAdjacent=" in line for line in info),
             "witness summary invalid")
@@ -301,12 +425,21 @@ def self_test(binary: Path, tmp: Path) -> None:
             "real C runner did not prove two matched synthetic boundaries")
     build_synthetic_pack(pack_path, diverge=True)
     fixture, info = pack_fixture(pack_path)
-    require("physical=99 mapped=11" in info[0],
-            "divergent physical byte was not kept independent")
-    divergent = run_host(binary, fixture, tmp, 2)
-    require("boundaryParity=DIFF" in divergent and
-            "legacy physical adjacency != mapped guard" in divergent,
-            "mismatched legacy byte was not rejected by actual C functions")
+    require("rawPakAdjacent=99 mappedGuard=11 compactLegacy=11" in info[0],
+            "raw-PAK byte must not be confused with compact legacy successor")
+    divergent = run_host(binary, fixture, tmp, 0)
+    require("rawPakNeighbor=DIFF" in divergent and
+            divergent.count("boundaryParity=EXACT") == 2,
+            "raw physical-neighbor control incorrectly changed legacy parity")
+    # Negative control: independently reconstructed compact atlas differs
+    # from the guard. This MUST fail, even when raw physical bytes are valid.
+    forged = bytearray(fixture)
+    compact_at = 12 + 16 + 32 + PACKED_BYTES + 2
+    forged[compact_at] ^= 0xF0
+    bad_legacy = run_host(binary, bytes(forged), tmp, 2)
+    require("boundaryParity=DIFF" in bad_legacy and
+            "compact legacy adjacency != mapped guard" in bad_legacy,
+            "genuine compact-legacy mismatch did not fail closed")
     build_synthetic_pack(pack_path, wrong_guard=True)
     try:
         pack_fixture(pack_path)
@@ -335,10 +468,11 @@ def self_test(binary: Path, tmp: Path) -> None:
         raise AssertionError("PAK magic corruption accepted")
     except FixtureError as e:
         require("not a native PAK v2" in str(e), "wrong failure for header")
-    print("PASS RA2a synthetic pack-v2 index+CRC+mapping+palette+"
+    print("PASS RA2a synthetic PAK-v2/intro.bsp/index+CRC+mapping+palette+"
+          "original compact-legacy selected-texture order; "
           "real-RenderSpan parity=8192 nibbles boundary=4 "
-          "physical-mismatch-fail-closed corrupt-pack-fail-closed; "
-          "original-PAK=not-present-in-CI")
+          "naive-raw-neighbor-control=detected compact-mismatch-fail-closed "
+          "corrupt-pack-fail-closed; original-PAK=not-present-in-CI")
 
 
 def main() -> int:
