@@ -30,7 +30,7 @@ def main():
                     f"SDL-B4 retired hook still referenced: {symbol} in {path}"
                 )
 
-    shim = (ROOT / "ESP32/src/esp32_sdl.cpp").read_text(encoding="utf-8")
+    shim = (ROOT / "ESP32/test/oracles/esp32_sdl.cpp").read_text(encoding="utf-8")
     hdr = (ROOT / "ESP32/include/SDL.h").read_text(encoding="utf-8")
     for symbol in LIVE:
         assert symbol in shim, f"SDL-B4 lost live SDL owner: {symbol}"

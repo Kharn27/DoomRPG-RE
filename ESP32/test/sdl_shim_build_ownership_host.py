@@ -138,7 +138,7 @@ def main():
         f"{args.profile}: old RWops BMP decoder is unexpectedly still linked")
     report = {"profile": args.profile, "linked_sdl": current,
               "linked_sdl_count": len(current), "linked_sdl_body_bytes": sum(current.values()),
-              "elf": allocated(elf), "source": "ESP32/src/esp32_sdl.cpp (uncompiled host oracle)"}
+              "elf": allocated(elf), "source": "ESP32/test/oracles/esp32_sdl.cpp (uncompiled host oracle)"}
     if args.baseline_dir is not None:
         baseline_elf = args.baseline_dir / "ESP32/.pio/build" / args.profile / "firmware.elf"
         assert baseline_elf.is_file(), baseline_elf

@@ -29,7 +29,7 @@ def main():
             assert re.search(r"\bSDL_LoadBMP_RW\s*\(", code) is None, (
                 f"SDL-B7 old BMP decoder still referenced in {p}"
             )
-    shim = (ROOT / "ESP32/src/esp32_sdl.cpp").read_text(encoding="utf-8")
+    shim = (ROOT / "ESP32/test/oracles/esp32_sdl.cpp").read_text(encoding="utf-8")
     header = (ROOT / "ESP32/include/SDL.h").read_text(encoding="utf-8")
     for name in OLD:
         assert not re.search(r"\b" + name + r"\s*\(", shim), (
