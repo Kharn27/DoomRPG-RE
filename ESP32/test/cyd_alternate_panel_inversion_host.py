@@ -51,7 +51,7 @@ def main() -> None:
     assert "-D TFT_INVERSION_ON" in base_flags
     assert "-D TFT_RGB_ORDER=TFT_BGR" in base_flags
     assert "DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION" not in base_flags
-    assert ini.get(base, "lib_deps") == "bodmer/TFT_eSPI @ ^2.5.43"
+    assert ini.get(base, "lib_deps").strip() == "bodmer/TFT_eSPI @ ^2.5.43"
 
     cpp = VIDEO.read_text()
     fn = exact_func(cpp, "void applyCydInvertedGammaProfile()")
