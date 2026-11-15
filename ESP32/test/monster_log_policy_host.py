@@ -16,7 +16,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 CC = shlex.split(os.environ.get("CC", "cc"))
 FLAGS = ["-std=c11", "-Wall", "-Wextra", "-Werror", "-Wno-unused-variable",
-         "-IESP32/test/host_include", "-IESP32/include", "-IESP32/src", "-Isrc"]
+         "-IESP32/test/host_include", "-IESP32/test/oracles", "-IESP32/include", "-IESP32/src", "-Isrc"]
 # The existing Turn attackSequence local is TRACE-only; don't turn that old
 # unused-variable warning into a new unrelated code edit. Other warnings fail.
 SITES = {

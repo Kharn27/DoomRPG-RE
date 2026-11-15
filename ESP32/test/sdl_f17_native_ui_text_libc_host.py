@@ -14,7 +14,7 @@ from native_help_bottom_history import (restore_pre_help_bottom_blue,
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "ESP32/src"
-HEADER = ROOT / "ESP32/include/SDL.h"
+HEADER = ROOT / "ESP32/test/oracles/SDL.h"
 
 # Exact pre-F17 Git *blob* SHAs, independently read from main at this milestone.
 OLD_BLOBS = {
@@ -166,7 +166,7 @@ typedef struct MenuItem_s {
     int action;
     uint8_t spare[16];
 } MenuItem_t;
-/* Direct declarations from ESP32/include/SDL.h, as checked above. */
+/* Direct declarations from ESP32/test/oracles/SDL.h, as checked above. */
 #define SDL_strlen strlen
 #define SDL_memcpy memcpy
 #define SDL_memset memset

@@ -62,7 +62,7 @@ with tempfile.TemporaryDirectory(prefix="doomrpg-render-clip-") as tmp:
     path = Path(tmp) / "probe.c"
     path.write_text(probe, encoding="utf-8")
     flags = [cc, "-std=c11", "-Wall", "-Wextra", "-Werror",
-             "-fsyntax-only", "-IESP32/include", "-Isrc"]
+             "-fsyntax-only", "-IESP32/test/oracles", "-IESP32/include", "-Isrc"]
     for name, extra, allowed in (
         ("normal", ["-DDOOMRPG_ESP32=1"], False),
         ("bringup", ["-DDOOMRPG_ESP32=1",

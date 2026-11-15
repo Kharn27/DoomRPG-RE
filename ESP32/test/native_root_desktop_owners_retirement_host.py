@@ -72,7 +72,7 @@ cc = shutil.which("cc") or "cc"
 with tempfile.TemporaryDirectory(prefix="native-root-group-") as tmp:
     probe = Path(tmp) / "probe.c"
     cmd = [cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-fsyntax-only",
-           "-IESP32/include", "-Isrc"]
+           "-IESP32/test/oracles", "-IESP32/include", "-Isrc"]
     for name, flags, expected in (
         ("normal", ["-DDOOMRPG_ESP32=1"], False),
         ("bringup", ["-DDOOMRPG_ESP32=1",

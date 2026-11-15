@@ -118,7 +118,7 @@ for file, expected in REFERENCE_FNV.items():
     subprocess.run(
         ["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
          "-Wno-unused-parameter", "-fsyntax-only",
-         "-DDOOMRPG_ESP32=1", "-IESP32/include", "-IESP32/src", "-Isrc",
+         "-DDOOMRPG_ESP32=1", "-IESP32/test/oracles", "-IESP32/include", "-IESP32/src", "-Isrc",
          str(SOURCES / file)],
         cwd=ROOT, check=True,
     )

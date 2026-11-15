@@ -18,7 +18,8 @@ data = MIXER.read_bytes()
 blob = hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
 assert blob == EXPECTED_BLOB, ("mixer oracle bytes changed", blob)
 assert not (INC / "SDL_mixer.h").exists(), "mixer header returned to production"
-assert (INC / "SDL.h").exists(), "SDL.h remains for desktop/geometry ABI"
+assert not (INC / "SDL.h").exists(), "SDL.h returned to native include tree"
+assert (ORACLES / "SDL.h").exists(), "host SDL.h missing for desktop/geometry ABI"
 assert b"#include <SDL.h>" in data
 sound = (LEGACY / "Sound.h").read_bytes()
 assert b"typedef struct Mix_Chunk Mix_Chunk;" in sound

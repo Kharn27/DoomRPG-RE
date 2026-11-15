@@ -72,7 +72,7 @@ with tempfile.TemporaryDirectory(prefix="sdl-f5-image-abi-") as tmp:
     for n, flags in enumerate(modes):
         exe = Path(tmp) / ("abi" + str(n))
         cmd = ["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
-               "-IESP32/include", "-Isrc"] + flags + [str(source), "-o", str(exe)]
+               "-IESP32/test/oracles", "-IESP32/include", "-Isrc"] + flags + [str(source), "-o", str(exe)]
         subprocess.run(cmd, cwd=ROOT, check=True)
         outputs.append(subprocess.check_output([str(exe)], text=True).strip())
     assert len(set(outputs)) == 1, "Image_t layout differs: " + repr(outputs)

@@ -137,7 +137,7 @@ int main(void) {
         # intAt shifts; preserve its toolchain semantics, do not 'fix' them
         # unnoticed in a no-behavior-change migration.
         flags = ["-O2", "-std=c11", "-Wall", "-Wextra", "-Werror", "-fwrapv",
-                 "-IESP32/include", "-Isrc"]
+                 "-IESP32/test/oracles", "-IESP32/include", "-Isrc"]
         flags += shlex.split(os.environ.get("PURE_SANITIZE_FLAGS", ""))
         # SDL-F7: the real native TU no longer imports SDL.h. Compile it as
         # DOOMRPG_ESP32; keep the original desktop reference and vector runner

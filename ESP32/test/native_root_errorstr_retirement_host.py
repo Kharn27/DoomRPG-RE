@@ -55,7 +55,7 @@ with tempfile.TemporaryDirectory(prefix="root-errorstr-abi-") as tmp:
         '#include <SDL.h>\n#include "DoomRPG.h"\n'
         'int root_error_size(DoomRPG_t* r) { return (int)sizeof(r->errorStr); }\n')
     cmd = [cc, "-std=c11", "-Wall", "-Wextra", "-Werror",
-           "-fsyntax-only", "-IESP32/include", "-Isrc"]
+           "-fsyntax-only", "-IESP32/test/oracles", "-IESP32/include", "-Isrc"]
     for name, flags, expected in (
         ("normal", ["-DDOOMRPG_ESP32=1"], False),
         ("bringup", ["-DDOOMRPG_ESP32=1",

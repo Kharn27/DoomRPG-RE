@@ -34,7 +34,7 @@ def main():
                 )
 
     shim = (ROOT / "ESP32/test/oracles/esp32_sdl.cpp").read_text(encoding="utf-8")
-    header = (ROOT / "ESP32/include/SDL.h").read_text(encoding="utf-8")
+    header = (ROOT / "ESP32/test/oracles/SDL.h").read_text(encoding="utf-8")
     for symbol in LIVE:
         assert symbol in shim, f"SDL-B5 removed live implementation {symbol}"
         assert symbol in header, f"SDL-B5 removed live declaration {symbol}"

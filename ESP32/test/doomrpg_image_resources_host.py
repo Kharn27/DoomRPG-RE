@@ -208,7 +208,7 @@ def main():
         # Desktop/oracle layout remains checked by SDL-F5/F6 independently.
         flags = ["-std=c11", "-Wall", "-Wextra", "-Werror",
                  "-Wno-unused-parameter", "-DDOOMRPG_ESP32=1",
-                 "-IESP32/include", "-Isrc"]
+                 "-IESP32/test/oracles", "-IESP32/include", "-Isrc"]
         flags += shlex.split(os.environ.get("IMAGE_SANITIZE_FLAGS", ""))
         subprocess.run(CC + flags + ["ESP32/src/esp_doomrpg_image_resources.c",
                                     str(test_file), "-o", binary], cwd=ROOT, check=True)

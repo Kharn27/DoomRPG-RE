@@ -13,7 +13,7 @@ CC = shlex.split(os.environ.get("CC", "cc"))
 FLAGS = ["-std=c11", "-Wall", "-Wextra", "-Werror", "-Wno-unused-function",
          "-DDOOMRPG_ESP32=1",
          "-Wno-unused-parameter", "-ffunction-sections", "-fdata-sections",
-         "-IESP32/test/host_include", "-IESP32/include", "-IESP32/src", "-Isrc"]
+         "-IESP32/test/host_include", "-IESP32/test/oracles", "-IESP32/include", "-IESP32/src", "-Isrc"]
 
 
 def run(args):

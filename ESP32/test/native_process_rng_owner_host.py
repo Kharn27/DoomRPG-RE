@@ -51,7 +51,7 @@ cc = shutil.which("cc") or "cc"
 with tempfile.TemporaryDirectory(prefix="root-e-rng-owner-") as tmp:
     path = Path(tmp) / "probe.c"
     command = [cc, "-std=c11", "-Wall", "-Wextra", "-Werror",
-               "-fsyntax-only", "-IESP32/include", "-Isrc"]
+               "-fsyntax-only", "-IESP32/test/oracles", "-IESP32/include", "-Isrc"]
     path.write_text(
         '#include <SDL.h>\n#include "DoomRPG.h"\n'
         'int original_root_rng(DoomRPG_t* r) { return r->random.nextRand; }\n')
@@ -99,7 +99,7 @@ int main(void) {
 """)
     exe = Path(tmp) / "probe"
     subprocess.run([cc, "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
-                    "-DDOOMRPG_ESP32=1", "-IESP32/include", "-Isrc",
+                    "-DDOOMRPG_ESP32=1", "-IESP32/test/oracles", "-IESP32/include", "-Isrc",
                     "ESP32/src/esp_doomrpg_process_rng.c", str(path),
                     "-o", str(exe)], cwd=ROOT, check=True)
     subprocess.run([str(exe)], check=True)

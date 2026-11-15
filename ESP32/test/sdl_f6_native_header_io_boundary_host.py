@@ -62,13 +62,13 @@ with tempfile.TemporaryDirectory(prefix="sdl-f6-native-header-") as tmp:
         ("oracle", ["-DDOOMRPG_ESP32=1", "-DDOOMRPG_ESP32_GEOMETRY_ORACLE=1"]),
     ):
         args = ["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
-                "-IESP32/include", "-Isrc", *flags, str(source)]
+                "-IESP32/test/oracles", "-IESP32/include", "-Isrc", *flags, str(source)]
         subprocess.run([*args, "-o", str(Path(tmp) / name)],
                        check=True, cwd=ROOT)
         subprocess.run([str(Path(tmp) / name)], check=True)
         if name == "esp32":
             pre = subprocess.check_output(
-                ["cc", "-E", "-P", "-IESP32/include", "-Isrc",
+                ["cc", "-E", "-P", "-IESP32/test/oracles", "-IESP32/include", "-Isrc",
                  *flags, str(source)], cwd=ROOT, text=True)
             for forbidden in ("SDL_RWops", "Uint8", "SDL_Texture"):
                 assert not re.search(r"\b" + forbidden + r"\b", pre), forbidden

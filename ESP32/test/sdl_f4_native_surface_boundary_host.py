@@ -12,7 +12,7 @@ src = ROOT / "ESP32/src"
 present = (src / "esp_doomrpg_presentation.c").read_text()
 images = (src / "esp_doomrpg_image_resources.c").read_text()
 texture = (ROOT / "ESP32/include/esp_native_texture.h").read_text()
-legacy = (ROOT / "ESP32/include/SDL.h").read_text()
+legacy = (ROOT / "ESP32/test/oracles/SDL.h").read_text()
 ini = (ROOT / "ESP32/platformio.ini").read_text()
 diff = (ROOT / "ESP32/test/doomrpg_presentation_host.py").read_text()
 
