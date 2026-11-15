@@ -387,6 +387,12 @@ jobs:
       - name: Test SDL-F29 seven native main-menu modules and all eleven SDL include sites
         run: python ESP32/test/sdl_f29_native_main_menu_header_host.py
 
+      - name: Test SDL-F30 compiler dependency audit parser against adversarial cases
+        run: python ESP32/test/sdl_f30_compiler_header_closure_host.py
+
+      - name: Test SDL-F31 native opaque Sound.h with original Git blob and C11 ABI modes
+        run: python ESP32/test/sdl_f31_native_sound_opaque_header_host.py
+
       - name: Native monster drop catalog preflight before render PAK lease
         run: python ESP32/test/native_monster_drop_catalog_host.py
 
@@ -779,6 +785,7 @@ jobs:
             python test/sdl_f27_native_gameplay_header_host.py --profile "$profile"
             python test/sdl_f28_native_render_intro_header_host.py --profile "$profile"
             python test/sdl_f29_native_main_menu_header_host.py --profile "$profile"
+            python test/sdl_f30_compiler_header_closure_host.py --profile "$profile"
           done
 
       - name: Upload firmware artifacts
