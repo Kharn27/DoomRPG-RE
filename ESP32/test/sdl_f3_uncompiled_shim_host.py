@@ -4,6 +4,7 @@ but no firmware source depends on it and PlatformIO excludes its TU.
 ELF/compiledb checks run separately for every firmware profile.
 """
 from pathlib import Path
+import hashlib
 import re
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -12,7 +13,14 @@ main = (ROOT / "ESP32/src/main.cpp").read_text()
 builder = (ROOT / "ESP32/scripts/build_engine.py").read_text()
 assert not (ROOT / "ESP32/src/esp32_sdl.cpp").exists(), (
     "retired SDL shim returned to production sources")
-shim = (ROOT / "ESP32/test/oracles/esp32_sdl.cpp").read_text()
+shim_path = ROOT / "ESP32/test/oracles/esp32_sdl.cpp"
+oracle_data = shim_path.read_bytes()
+actual_sha = hashlib.sha1(
+    b"blob " + str(len(oracle_data)).encode("ascii") + b"\\0" + oracle_data
+).hexdigest()
+assert actual_sha == "b8385250706b8b5396c3f3808e5084ad1f318425", (
+    "SDL-F33 host shim oracle bytes changed", actual_sha)
+shim = oracle_data.decode("utf-8")
 fixture = (ROOT / "ESP32/test/sdl_shim_permanent_host.py").read_text()
 bridge = (ROOT / "ESP32/src/platform_video_c_bridge.cpp").read_text()
 
