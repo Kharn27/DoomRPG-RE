@@ -41,7 +41,7 @@ def original():
     assert git_blob(restored) == BEFORE, "Sound.h changed outside mixer guard"
     assert current.count(OLD) == 1, "desktop/oracle SDL_mixer import drift"
     assert current.count(b"Mix_Chunk* mediaAudioSound;") == 1
-    assert b"typedef struct Mix_Chunk Mix_Chunk;" in (INC / "SDL_mixer.h").read_bytes()
+    assert b"typedef struct Mix_Chunk Mix_Chunk;" in (ROOT / "ESP32/test/oracles/SDL_mixer.h").read_bytes()
     print("SDL-F31 PASS Sound.h: entire exact pre-F31 CRLF Git blob recovered, "
           "native Mix_Chunk opaque; host/geometry mixer include retained")
     return current, restored
@@ -111,7 +111,8 @@ def abi_before_after(current: bytes, restored: bytes):
                 binary = folder / f"{name}-{stage}"
                 cmd = [cc, "-std=c11", "-O0", "-Wall", "-Wextra", "-Werror",
                        *defines, f"-DEXPECT_MIXER={expect}",
-                       "-I", str(directory), "-I", str(INC), "-I", str(LEGACY),
+                       "-I", str(directory), "-I", str(ROOT / "ESP32/test/oracles"),
+                       "-I", str(INC), "-I", str(LEGACY),
                        str(code), "-o", str(binary)]
                 build = subprocess.run(cmd, capture_output=True, text=True)
                 assert build.returncode == 0, (name, stage, build.stderr)

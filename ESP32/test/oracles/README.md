@@ -39,6 +39,16 @@ This directory contains **reference code, not ESP32 firmware sources**.
   gamma or backlight is modified**; the old declaration was never a live
   firmware ABI. No new CYD hardware PASS or RAM improvement is claimed.
 
+## SDL-F35 — byte-exact host mixer ABI
+
+- `SDL_mixer.h` moved unchanged from `ESP32/include` to this directory,
+  blob `59fe49318cb550277f999b5c6307c746eb7f6ad8`.
+- The real `src/Sound.h` remains unchanged: native `Mix_Chunk` is opaque,
+  desktop and geometry C11 tests explicitly use the host include directory.
+- Pre-script fails closed if the old production header returns or the host
+  oracle vanishes. The F23/F31 before-after ABI tests are preserved.
+- `SDL.h` stays in the production include directory pending a separate audit.
+
 ## SDL-F32 — retired SDL_RWops indexed BMP reader
 
 - `esp32_bmp.cpp` is the byte-exact historical ESP32 SDL compatibility

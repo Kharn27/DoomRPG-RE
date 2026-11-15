@@ -16,7 +16,8 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 INC = ROOT / "ESP32/include"
 LEGACY = ROOT / "src"
-MIXER = INC / "SDL_mixer.h"
+ORACLES = ROOT / "ESP32/test/oracles"
+MIXER = ORACLES / "SDL_mixer.h"
 SOUND = LEGACY / "Sound.h"
 ENGINE = ROOT / "ESP32/src/engine_stubs.c"
 PRE_F23_MIXER_BLOB = "0f41248cbbb6ecd27e7de86305bb51b479fcc76a"
@@ -107,7 +108,7 @@ def compile_and_run(cc: str, old: str) -> None:
         ):
             results = []
             for which, directory in (("before", old_header_dir),
-                                     ("after", INC)):
+                                     ("after", ORACLES)):
                 expect = 0 if (name == "native" and which == "after") else 1
                 binary = temp / (name + "_" + which)
                 cmd = [cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-O0",
