@@ -8,12 +8,15 @@ No production changes, SD measurement, or complete-frame oracle is claimed.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 from pathlib import Path
 import shlex
 import struct
 import subprocess
 import tempfile
+import zipfile
 import zlib
 
 from native_wall_boundary_inline_host import ROOT, SOURCE, HARNESS, extract
@@ -27,6 +30,7 @@ PAIR = struct.Struct("<ii")
 PALETTE_SIZE = 16
 PACKED_BYTES = 2048
 MAX_PAK_BYTES = 32 * 1024 * 1024
+ORIGINAL_FINGERPRINTS = ROOT / "ESP32/test/ra2_original_asset_fingerprints.json"
 # These two *provenance witnesses* come from the user's real classic CYD Serial
 # capture platformio-device-monitor-261115-103040.log. They are not invented
 # measurements nor a substitute for an asset-backed parity result.
@@ -378,6 +382,142 @@ def build_synthetic_pack(path: Path, diverge: bool = False,
     )
 
 
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        while data := file.read(64 * 1024):
+            digest.update(data)
+    return digest.hexdigest()
+
+
+def verify_original_zip_matches_pack(pack_path: Path, zip_path: Path) -> int:
+    """Check every original ZIP member against the corresponding indexed PAK
+    payload. Never publish or copy the private archive to CI or firmware.
+    """
+    pak = Pak(pack_path)
+    count = 0
+    seen: set[str] = set()
+    with zipfile.ZipFile(zip_path) as archive:
+        for info in archive.infolist():
+            normalized = info.filename.replace("\\", "/").lstrip("/").lower()
+            require(normalized and normalized not in seen,
+                    "duplicate or empty normalized ZIP resource name")
+            seen.add(normalized)
+            require(info.file_size <= MAX_PAK_BYTES,
+                    "ZIP resource exceeds bounded asset policy")
+            offset, size, crc, flags = pak.entry(normalized)
+            require(size == info.file_size and crc == info.CRC and
+                    bool(flags) == info.is_dir(),
+                    f"PAK index metadata disagrees with ZIP: {normalized}")
+            if not info.is_dir():
+                require(pak.read(normalized, 0, size) ==
+                        archive.read(info),
+                        f"ZIP/PAK data mismatch: {normalized}")
+            count += 1
+    require(count == len(pak.entries),
+            "ZIP and PAK entry totals differ")
+    return count
+
+
+def verify_pinned_original_goldens(pack_path: Path, zip_path: Path | None,
+                                   descriptions: list[str]) -> None:
+    """Original upload fingerprint *metadata* only (no proprietary bytes).
+    Independently rebuild the complete compact wall atlas on HOST to
+    witness the exact legacy source-sort/dedup contract; this is NOT a
+    160x120 framebuffer image, SD timing or embedded runtime allocation.
+    """
+    reference = json.loads(ORIGINAL_FINGERPRINTS.read_text())
+    require(reference.get("schema") == "doomrpg-ra2a-original-assets-v1",
+            "unknown original reference fingerprint schema")
+    pak = Pak(pack_path)
+    require(pack_path.stat().st_size == reference["pak"]["bytes"] and
+            sha256_file(pack_path) == reference["pak"]["sha256"] and
+            len(pak.entries) == reference["pak"]["entries"],
+            "original PAK SHA256/size/index count mismatch")
+    if zip_path is not None:
+        require(zip_path.stat().st_size == reference["zip"]["bytes"] and
+                sha256_file(zip_path) == reference["zip"]["sha256"],
+                "original ZIP SHA256/size mismatch")
+    for name, meta in reference["resources"].items():
+        _offset, size, crc, _flags = pak.entry(name)
+        require(size == meta["size"] and f"{crc:08x}" == meta["crc32"],
+                "original resource CRC/size changed: " + name)
+        pak.verify_crc(name)
+    map_resources = map_selected_texture_ids(pak)
+    mappings_header = pak.read("mappings.bin", 0, 16)
+    pairs, bit_pairs, ids, _sprite_count = MAP_HEADER.unpack(mappings_header)
+    id_base = 16 + (pairs + bit_pairs) * 8
+    sources: set[int] = set()
+    phase_count = 0
+    for logical in map_resources:
+        (base,) = struct.unpack("<H", pak.read(
+            "mappings.bin", id_base + 2 * min(logical, ids - 1), 2))
+        for phase in range(4):
+            actual = base + phase
+            require(actual < pairs, "original mapped texture index out of bounds")
+            source, _palette = PAIR.unpack(
+                pak.read("mappings.bin", 16 + actual * 8, 8))
+            require(source >= 0 and (source & 1) == 0,
+                    "original mapped source offset invalid")
+            sources.add(source)
+            phase_count += 1
+    selected = sorted(sources)
+    texels_size = pak.entry("wtexels.bin")[1]
+    digest = hashlib.sha256()
+    fnv = 2166136261
+    raw_mismatches = 0
+    for i, source in enumerate(selected):
+        read_at = 4 + source // 2
+        require(read_at + PACKED_BYTES <= texels_size,
+                "original compact atlas wall source outside PAK entry")
+        block = pak.read("wtexels.bin", read_at, PACKED_BYTES)
+        digest.update(block)
+        for byte in block:
+            fnv = ((fnv ^ byte) * 16777619) & 0xFFFFFFFF
+        if i + 1 < len(selected):
+            physical_at = read_at + PACKED_BYTES
+            require(physical_at < texels_size,
+                    "original raw next byte outside PAK texels entry")
+            raw_byte = pak.read("wtexels.bin", physical_at, 1)
+            mapped_byte = pak.read(
+                "wtexels.bin", 4 + selected[i + 1] // 2, 1)
+            raw_mismatches += raw_byte != mapped_byte
+    witness = reference["intro"]
+    require(len(map_resources) == witness["required_logical_textures"] and
+            phase_count == witness["selected_phase_records"] and
+            len(selected) == witness["unique_compacted_source_offsets"] and
+            len(selected) * PACKED_BYTES == witness["compact_wall_atlas_bytes"] and
+            f"{fnv:08x}" == witness["compact_wall_atlas_fnv32"] and
+            digest.hexdigest() == witness["compact_wall_atlas_sha256"] and
+            len(selected) - 1 == witness["compact_wall_boundaries"] and
+            raw_mismatches == witness["raw_pak_neighbor_byte_mismatches"],
+            "original map-selected compact atlas fingerprint mismatch")
+    require(len(descriptions) == len(reference["witnesses"]),
+            "original wall witness count mismatch")
+    for info, original in zip(descriptions, reference["witnesses"]):
+        want = (f"logical={original['logical_id']} "
+                f"actual={original['actual_id']} "
+                f"source={original['source_offset']} "
+                f"successorActual={original['successor_actual_id']} "
+                f"successorSource={original['successor_source_offset']} "
+                f"rawPakAdjacent={original['raw_pak_next_byte']} "
+                f"mappedGuard={original['compact_next_byte']} "
+                f"compactLegacy={original['compact_next_byte']} ")
+        require(info.startswith(want) and
+                f"pixelFNV={original['pixel_fnv32']}" in info,
+                "original pixel FNV or physical/compact boundary differs")
+        block = pak.read("wtexels.bin", 4 + original["source_offset"] // 2,
+                         PACKED_BYTES)
+        require(hashlib.sha256(block).hexdigest() ==
+                original["source_texels_sha256"],
+                "original source 2048B SHA256 mismatch")
+    print(f"PASS RA2 ORIGINAL golden-pak={reference['pak']['sha256']} "
+          f"catalog={len(map_resources)} phaseRecords={phase_count} "
+          f"compactBlocks={len(selected)} compactAtlasFNV={fnv:08x} "
+          f"boundaries={len(selected)-1} rawNeighborMismatches={raw_mismatches} "
+          "original-bytes-published=no")
+
 def compile_host(binary: Path, generated_c: Path) -> None:
     native = SOURCE.read_text()
     legacy = (ROOT / "src/Render.c").read_text()
@@ -480,8 +620,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pak", type=Path,
                         help="user-owned DoomRPG-ESP32.pak (optional; CI has no original PAK)")
+    parser.add_argument("--zip", dest="zip_path", type=Path,
+                        help="optional original DoomRPG.zip for strict full-entry byte comparison")
+    parser.add_argument("--expect-original", action="store_true",
+                        help="require exact 2026-11-15 original hashes + compact-atlas goldens")
     args = parser.parse_args()
     try:
+        require(args.zip_path is None or args.pak is not None,
+                "--zip requires --pak")
+        require(not args.expect_original or args.pak is not None,
+                "--expect-original requires --pak")
         with tempfile.TemporaryDirectory(prefix="doomrpg-ra2-wall-") as d:
             tmp = Path(d)
             binary = tmp / "wall-ra2"
@@ -491,6 +639,18 @@ def main() -> int:
                 real_path = args.pak.expanduser().resolve()
                 require(real_path.is_file(), f"original PAK not found: {real_path}")
                 fixture, info = pack_fixture(real_path)
+                if args.zip_path is not None:
+                    zip_path = args.zip_path.expanduser().resolve()
+                    require(zip_path.is_file(),
+                            "original ZIP not found: " + str(zip_path))
+                    matched = verify_original_zip_matches_pack(real_path, zip_path)
+                    print(f"PASS RA2 ZIP/PAK byte-equality entries={matched}")
+                if args.expect_original:
+                    verify_pinned_original_goldens(
+                        real_path,
+                        (args.zip_path.expanduser().resolve()
+                         if args.zip_path is not None else None),
+                        info)
                 for line in info:
                     print("[RA2 ORIGINAL PAK]", line)
                 result = run_host(binary, fixture, tmp, 0)
