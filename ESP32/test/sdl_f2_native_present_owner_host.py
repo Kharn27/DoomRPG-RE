@@ -16,14 +16,17 @@ EXPECTED = {
     "native_main_menu_touch.c": 2,
     "native_main_menu_touch_layout.c": 1,
 }
+shim_path = ROOT / "ESP32/test/oracles/esp32_sdl.cpp"
+assert shim_path.is_file() and not (SRC / "esp32_sdl.cpp").exists()
+shim = shim_path.read_text(encoding="utf-8")
+assert "void SDL_RenderPresent(SDL_Renderer*)" in shim
+assert "if (!PlatformVideo_present())" in shim
+
 for path in SRC.rglob("*"):
     if path.suffix not in (".c", ".cpp"):
         continue
     content = path.read_text(encoding="utf-8")
-    if path.name == "esp32_sdl.cpp":
-        assert "void SDL_RenderPresent(SDL_Renderer*)" in content
-        assert "if (!PlatformVideo_present())" in content
-        continue  # historical host oracle, not production linked
+    assert path.name != "esp32_sdl.cpp", "SDL source returned to production"
     # Remove comments and literals only for the legacy-call inventory.
     code = re.sub(r'/\*[\s\S]*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ", content)
     assert not re.search(r"\bSDL_RenderPresent\s*\(", code), path
