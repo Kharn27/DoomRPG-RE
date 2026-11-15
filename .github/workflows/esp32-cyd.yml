@@ -585,6 +585,18 @@ jobs:
       - name: Test bounded native wall texture successor inline (host C)
         run: python ESP32/test/native_wall_boundary_inline_host.py
 
+      - name: Test pack-v2 map-selected compact legacy wall atlas parity (host C)
+        run: python ESP32/test/native_wall_pak_provenance_host.py
+
+      - name: Test R-A2b bounded real-CYD multi-pose FNV and PAK timing capture parser (host)
+        run: python ESP32/test/ra2b_frame_capture_host.py --self-test
+
+      - name: Verify alternate CYD LCD INV polarity only (real C++ panel profile host oracle)
+        run: python ESP32/test/cyd_alternate_panel_inversion_host.py
+
+      - name: Reject forked native engine sources in the two CYD release profiles (host)
+        run: python ESP32/test/cyd_dual_build_core_parity_host.py --self-test
+
       - name: Test wall sprite visual offset and priority versus desktop (host C)
         run: python ESP32/test/wall_sprite_visual_host.py
       - name: Native ambient sprite animation
@@ -661,9 +673,23 @@ jobs:
       - name: Install PlatformIO Core
         run: python -m pip install 'platformio>=6.1,<7'
 
+      - name: Build alternate classic CYD inverted panel standalone
+        working-directory: ESP32
+        run: pio run -e esp-cyd-inverted
+
       - name: Build classic CYD firmware
         working-directory: ESP32
         run: pio run -e esp32-cyd
+
+      - name: Assert the two release builds compile the SAME engine units and defines
+        working-directory: ESP32
+        run: |
+          pio run -e esp32-cyd -t compiledb
+          cp compile_commands.json "$RUNNER_TEMP/doomrpg-normal-compile-commands.json"
+          pio run -e esp-cyd-inverted -t compiledb
+          python test/cyd_dual_build_core_parity_host.py \
+            --normal "$RUNNER_TEMP/doomrpg-normal-compile-commands.json" \
+            --inverted compile_commands.json
 
       - name: Build diagnostic CYD bringup firmware
         working-directory: ESP32
@@ -796,6 +822,8 @@ jobs:
           path: |
             ESP32/.pio/build/esp32-cyd/*.bin
             ESP32/.pio/build/esp32-cyd/firmware.elf
+            ESP32/.pio/build/esp-cyd-inverted/*.bin
+            ESP32/.pio/build/esp-cyd-inverted/firmware.elf
             ESP32/.pio/build/esp32-cyd/sdl_a_elf_report.json
             ESP32/.pio/build/esp32-cyd-trace/*.bin
             ESP32/.pio/build/esp32-cyd-trace/firmware.elf

@@ -134,6 +134,13 @@ ResidentCache* residentCache = nullptr;
 EspAssetPackResidentStats residentStats = {};
 /* PR236 B timing witness; uint32 subtraction is valid over one bounded frame. */
 uint32_t mapFlashRuntimeReadMicros = 0U;
+#if defined(DOOMRPG_RA2B_CAPTURE) && DOOMRPG_RA2B_CAPTURE
+/* Probe-only cumulative timing for successful or failed resident SD range
+ * transactions. Includes seek+read, excludes PAK index scans and sourceProbe.
+ * No heap, additional I/O, or runtime behavior change; never conflate
+ * this SD window with raw-partition map-flash timing. */
+uint32_t ra2bSdRangeMicros = 0U;
+#endif
 MapFlashState mapFlash = {};
 EspAssetPackMapFlashProgressCallback mapFlashProgressCallback = nullptr;
 
@@ -1825,12 +1832,22 @@ void EspAssetPack_residentResetStats(void)
 {
     memset(&residentStats, 0, sizeof(residentStats));
     mapFlashRuntimeReadMicros = 0U;
+#if defined(DOOMRPG_RA2B_CAPTURE) && DOOMRPG_RA2B_CAPTURE
+    ra2bSdRangeMicros = 0U;
+#endif
 }
 
 uint32_t EspAssetPack_mapFlashRuntimeReadMicros(void)
 {
     return mapFlashRuntimeReadMicros;
 }
+
+#if defined(DOOMRPG_RA2B_CAPTURE) && DOOMRPG_RA2B_CAPTURE
+uint32_t EspAssetPack_ra2bSdRangeMicros(void)
+{
+    return ra2bSdRangeMicros;
+}
+#endif
 
 void EspAssetPack_residentGetStats(EspAssetPackResidentStats* outStats)
 {
@@ -2047,9 +2064,27 @@ int EspAssetPack_readRange(const EspAssetPackEntry* entry,
         }
     }
     else {
+#if defined(DOOMRPG_RA2B_CAPTURE) && DOOMRPG_RA2B_CAPTURE
+        /* RA2b only: profile actual SD seek + read, not flash or cache hits.
+         * The logical lease is already open. Never start I/O for the probe. */
+        const int64_t ra2bStart =
+            residentEnabled ? esp_timer_get_time() : 0LL;
+        const bool ra2bReadOk =
+            packFile.seek(absoluteOffset) && readSdExact(destination, length);
+        if (ra2bStart != 0LL) {
+            const int64_t elapsed = esp_timer_get_time() - ra2bStart;
+            if (elapsed > 0LL) {
+                const uint32_t delta = (uint64_t)elapsed > UINT32_MAX
+                                           ? UINT32_MAX : (uint32_t)elapsed;
+                ra2bSdRangeMicros += delta;
+            }
+        }
+        if (!ra2bReadOk) return 0;
+#else
         if (!packFile.seek(absoluteOffset) || !readSdExact(destination, length)) {
             return 0;
         }
+#endif
     }
 
     if (cacheableSmall) {

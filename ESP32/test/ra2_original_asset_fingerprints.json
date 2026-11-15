@@ -1,0 +1,71 @@
+{
+  "schema": "doomrpg-ra2a-original-assets-v1",
+  "source_note": "Private user-supplied originals inspected on 2026-11-15; fingerprint metadata only, no copyrighted asset payloads committed.",
+  "pak": {
+    "filename": "DoomRPG-ESP32.pak",
+    "sha256": "cd60f352962531cda0c3b6ffc08a0e02bb5d4a028ac5ab957f063b9c43952464",
+    "bytes": 2457398,
+    "format": 2,
+    "entries": 241
+  },
+  "zip": {
+    "filename": "DoomRPG.zip",
+    "sha256": "9e783fd6fae7185c2fd62f5578f3a8e58e7ca775e99780cd738a1030eac7baed",
+    "bytes": 1940320,
+    "entries": 241
+  },
+  "resources": {
+    "intro.bsp": {
+      "size": 21823,
+      "crc32": "623f34e4"
+    },
+    "mappings.bin": {
+      "size": 8392,
+      "crc32": "fc4fd8fa"
+    },
+    "palettes.bin": {
+      "size": 6564,
+      "crc32": "6b880ec2"
+    },
+    "wtexels.bin": {
+      "size": 116740,
+      "crc32": "32e758b5"
+    }
+  },
+  "intro": {
+    "required_logical_textures": 33,
+    "selected_phase_records": 132,
+    "unique_compacted_source_offsets": 38,
+    "compact_wall_atlas_bytes": 77824,
+    "compact_wall_atlas_fnv32": "76568395",
+    "compact_wall_atlas_sha256": "ce1eeabced574e0b9b6036867c4bfead67c328d3bfaeb4c9d765831ae10adc9b",
+    "compact_wall_boundaries": 37,
+    "raw_pak_neighbor_byte_mismatches": 7
+  },
+  "witnesses": [
+    {
+      "logical_id": 15,
+      "actual_id": 40,
+      "source_offset": 20480,
+      "successor_actual_id": 68,
+      "successor_source_offset": 32768,
+      "palette_offset": 208,
+      "raw_pak_next_byte": "b5",
+      "compact_next_byte": "11",
+      "pixel_fnv32": "2d6445f1",
+      "source_texels_sha256": "cf38972477cc1db44270ac2a0f607cd66f50e2984cfbb33f81221f3edd570f1c"
+    },
+    {
+      "logical_id": 49,
+      "actual_id": 112,
+      "source_offset": 65536,
+      "successor_actual_id": 116,
+      "successor_source_offset": 69632,
+      "palette_offset": 480,
+      "raw_pak_next_byte": "a7",
+      "compact_next_byte": "a7",
+      "pixel_fnv32": "a57dc6c1",
+      "source_texels_sha256": "0827a5782b288704fb78baf08ce6896c02a392a8952b99b49ec87b56359c78d4"
+    }
+  ]
+}

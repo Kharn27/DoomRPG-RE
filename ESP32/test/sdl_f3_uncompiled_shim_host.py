@@ -22,7 +22,10 @@ filters = block.group("body").splitlines()
 assert [s.strip() for s in filters] == [
     "+<*>", "-<esp32_sdl.cpp>", "-<esp32_bmp.cpp>"
 ], filters
-assert ini.count("extends = env:esp32-cyd") == 2
+# Production + TRACE/bringup + the display-only alternate CYD release profile.
+# Never permit an unaccounted environment or an SDL source registration.
+assert ini.count("extends = env:esp32-cyd") == 3
+assert "[env:esp-cyd-inverted]" in ini
 assert "Esp32Sdl_attachDisplay" not in main
 assert '#include "esp32_sdl_platform.h"' not in main
 assert "videoReady = PlatformVideo_begin(&display);" in main

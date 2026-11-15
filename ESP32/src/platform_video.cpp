@@ -28,6 +28,18 @@ uint8_t currentOrientation = ESP32_ORIENTATION_NORMAL;
 #error "CYD backlight PWM requires active-high TFT_BL=21"
 #endif
 
+/* Two physical ILI9341 panel batches exist in classic CYDs. Keep the normal
+ * profile byte-for-byte identical; the optional esp-cyd-inverted environment
+ * reverses ONLY the LCD controller's INVON/INVOFF polarity. The logical
+ * RGB565 framebuffer, gamma LUT, BGR setting, SPI, touch, rendering and PAK
+ * are unchanged. Always reapply after setRotation(), too. */
+#ifndef DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
+#define DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION 0
+#endif
+#if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION != 0 && DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION != 1
+#error "CYD alternate panel inversion flag must be 0 or 1"
+#endif
+
 
 constexpr size_t kPixelCount =
     static_cast<size_t>(DOOMRPG_LOGICAL_WIDTH) * DOOMRPG_LOGICAL_HEIGHT;
@@ -47,6 +59,25 @@ constexpr uint8_t kCydInvertedGamma[15] = {
     0x00, 0x15, 0x17, 0x07, 0x11, 0x06, 0x2b, 0x56,
     0x3c, 0x05, 0x10, 0x0f, 0x3f, 0x3f, 0x0f,
 };
+
+/* The INV-OFF CYD was optically too bright/washed with the stock
+ * ILI9341_2_DRIVER E0/E1 pair. Trial: an independently published,
+ * internally consistent ILI9341_DRIVER E0/E1 pair from TFT_eSPI's
+ * ILI9341_Init.h. Keep its stock power/VCOM, BGR, gamma-selection,
+ * backlight and everything else unchanged. Only the two gamma register
+ * payloads differ from the previous trial. This is NOT pixel processing:
+ * real photos of the second CYD must validate the optical result.
+ * The first CYD retains its exact existing kCydInvertedGamma E0/E1. */
+#if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
+constexpr uint8_t kCydAlternatePositiveGamma[15] = {
+    0x0f, 0x31, 0x2b, 0x0c, 0x0e, 0x08, 0x4e, 0xf1,
+    0x37, 0x07, 0x10, 0x03, 0x0e, 0x09, 0x00,
+};
+constexpr uint8_t kCydAlternateNegativeGamma[15] = {
+    0x00, 0x0e, 0x14, 0x03, 0x11, 0x07, 0x31, 0xc1,
+    0x48, 0x08, 0x0f, 0x0c, 0x31, 0x36, 0x0f,
+};
+#endif
 
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
 constexpr int kDebugOverlayMaxZones = 8;
@@ -84,16 +115,32 @@ void applyCydInvertedGammaProfile() {
     platformDisplay->writedata(0x01);
 
     platformDisplay->writecommand(0xe0);
+#if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
+    for (size_t i = 0; i < sizeof(kCydAlternatePositiveGamma); ++i) {
+        platformDisplay->writedata(kCydAlternatePositiveGamma[i]);
+    }
+#else
     for (size_t i = 0; i < sizeof(kCydInvertedGamma); ++i) {
         platformDisplay->writedata(kCydInvertedGamma[i]);
     }
+#endif
 
     platformDisplay->writecommand(0xe1);
+#if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
+    for (size_t i = 0; i < sizeof(kCydAlternateNegativeGamma); ++i) {
+        platformDisplay->writedata(kCydAlternateNegativeGamma[i]);
+    }
+#else
     for (size_t i = 0; i < sizeof(kCydInvertedGamma); ++i) {
         platformDisplay->writedata(kCydInvertedGamma[i]);
     }
+#endif
 
-    platformDisplay->invertDisplay(true);
+#if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
+    platformDisplay->invertDisplay(false); /* alternative LCD INV OFF */
+#else
+    platformDisplay->invertDisplay(true);  /* classic calibrated LCD INV ON */
+#endif
     platformDisplay->setSwapBytes(true);
 }
 
@@ -227,7 +274,11 @@ bool PlatformVideo_begin(TFT_eSPI* display) {
     Serial.printf("[VIDEO] Physical output %dx%d, integer scale %dx\n",
                   DOOMRPG_PHYSICAL_WIDTH, DOOMRPG_PHYSICAL_HEIGHT,
                   DOOMRPG_INTEGER_SCALE);
+#if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
+    Serial.println("[VIDEO] CYD display profile alternate-panel inversion=off gamma=ILI9341-driver-E0E1-trial BGR=unchanged resampling=nearest framebuffer=untouched");
+#else
     Serial.println("[VIDEO] CYD display profile raw RGB565 + hardware inverted-gamma resampling=nearest framebuffer=untouched");
+#endif
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
     Serial.println("[HITBOX] Physical overlay enabled; framebuffer hashes remain untouched");
 #endif
