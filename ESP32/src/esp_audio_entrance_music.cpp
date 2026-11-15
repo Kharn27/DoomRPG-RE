@@ -106,6 +106,7 @@ static bool firstSignalReported;
 static int16_t pcmMin;
 static int16_t pcmMax;
 static uint32_t pcmNonZero;
+static uint32_t gainLimited;
 static uint32_t producedDacMin;
 static uint32_t producedDacMax;
 static uint32_t producedNonMid;
@@ -171,7 +172,7 @@ static void signalReport(const char* at) {
     printf("[ENTRANCEMUSIC] SIGNAL at=%s witness=%u ringConsumed=%u "
            "isrRingMinMax=%u..%u isrNon128=%u isrOver8=%u "
            "isrOver16=%u dacWrittenMinMax=%u..%u "
-           "pcm16MinMax=%d..%d pcm16NonZero=%u "
+           "pcm16MinMax=%d..%d pcm16NonZero=%u gainLimited=%u "
            "publishedDacMinMax=%u..%u publishedNon128=%u "
            "producerFrames=%u prefix4096Published=%08x "
            "prefix4096Consumed=%08x queued=%u underruns=%u\n",
@@ -181,6 +182,7 @@ static void signalReport(const char* at) {
            (unsigned)consumedOver16,
            (unsigned)dacWrittenMin,(unsigned)dacWrittenMax,
            (int)pcmMin,(int)pcmMax,(unsigned)pcmNonZero,
+           (unsigned)gainLimited,
            (unsigned)producedDacMin,(unsigned)producedDacMax,
            (unsigned)producedNonMid,(unsigned)producedFrames,
            (unsigned)publishedPrefixFnv,(unsigned)consumedPrefixFnv,
@@ -256,12 +258,15 @@ static bool refill() {
     if (stats.minPcm<pcmMin) pcmMin=stats.minPcm;
     if (stats.maxPcm>pcmMax) pcmMax=stats.maxPcm;
     pcmNonZero+=stats.nonZeroPcm;
+    gainLimited+=stats.gainLimited;
     if (blocksRead==0U && loops==0U) {
         printf("[ENTRANCEMUSIC] BLOCK0 predictor=%d stepIndex=%u "
-               "pcm16MinMax=%d..%d dacFirst=%u dacLast=%u\n",
+               "pcm16MinMax=%d..%d dacFirst=%u dacLast=%u "
+               "gainLimited=%u gainDiv=64 peakCodes=64\n",
                (int)(int16_t)EspEntranceAdpcm_u16(raw),
                (unsigned)raw[2],(int)stats.minPcm,(int)stats.maxPcm,
-               (unsigned)decoded[0],(unsigned)decoded[samples-1U]);
+               (unsigned)decoded[0],(unsigned)decoded[samples-1U],
+               (unsigned)stats.gainLimited);
     }
     const uint32_t start=__atomic_load_n(&wr,__ATOMIC_RELAXED);
     for (uint32_t i=0U;i<samples;i++) {
@@ -356,7 +361,7 @@ static bool startPlaying() {
     }
     printf("[ENTRANCEMUSIC] PLAY path=%s backend=timer-DAC2 "
            "format=IMA-ADPCM monoHz=22050 ring=%u primed=%u "
-           "dacPeakCodes=64 witness440Ms=2000 then=SD-ring "
+           "dacPeakCodes=64 gainDiv=64 witness440Ms=2000 then=SD-ring "
            "dacEnabled=yes gpio25=untouched noI2S=yes noPSRAM=yes\n",
            path,(unsigned)kRingCapacity,(unsigned)queued());
     return true;
@@ -429,6 +434,7 @@ static void begin() {
     pcmMin=32767;
     pcmMax=-32768;
     pcmNonZero=0U;
+    gainLimited=0U;
     producedDacMin=255U;
     producedDacMax=0U;
     producedNonMid=0U;
