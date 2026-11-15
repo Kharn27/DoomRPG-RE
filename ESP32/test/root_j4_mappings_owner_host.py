@@ -6,6 +6,7 @@ extract, compile and execute the actual production C startup function under
 4096 deterministic trials with two distinct roots and fail-closed paths.
 """
 from pathlib import Path
+from audio_r1_main_parity import restore_pre_audio_r1
 import hashlib
 import subprocess
 import tempfile
@@ -20,6 +21,7 @@ BASE_BLOBS = {
         "fff22b2c36d37524841b4e2b57ac083e2a5d0619",
 }
 files = {p: (ROOT / p).read_text(encoding="utf-8") for p in BASE_BLOBS}
+files["ESP32/src/main.cpp"] = restore_pre_audio_r1(files["ESP32/src/main.cpp"])
 source = files["ESP32/src/esp_legacy_config_mappings_startup.c"]
 header = files["ESP32/include/esp_legacy_config_mappings_startup.h"]
 boot = files["ESP32/src/main.cpp"]

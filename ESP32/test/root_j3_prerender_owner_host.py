@@ -6,6 +6,7 @@ Exact Git-blob inverse parity on all changed C/C++/header files, followed by
 fail-closed PAK/menu checks and idempotent startup behavior.
 """
 from pathlib import Path
+from audio_r1_main_parity import restore_pre_audio_r1
 import hashlib
 import subprocess
 import tempfile
@@ -20,6 +21,7 @@ BASE_BLOBS = {
         "bf9cd302e4d3d45203e7e602a2f9fdb206eb2180",
 }
 files = {path: (ROOT / path).read_text(encoding="utf-8") for path in BASE_BLOBS}
+files["ESP32/src/main.cpp"] = restore_pre_audio_r1(files["ESP32/src/main.cpp"])
 source = files["ESP32/src/esp_legacy_prerender_startup.c"]
 header = files["ESP32/include/esp_legacy_prerender_startup.h"]
 main = files["ESP32/src/main.cpp"]
