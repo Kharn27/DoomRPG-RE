@@ -85,6 +85,12 @@ def parse_log(text: str, minimum_poses: int = 3) -> dict:
     seen = set()
     ignored_priming = 0
     for lineno, line in enumerate(text.splitlines(), 1):
+        # A capture may contain multiple sessions. Never treat a subsequent
+        # loading-phase cache prime as a frame of the preceding session if
+        # the new map happens to have the same map id (e.g. Entrance reload).
+        if ("[SYSEXIT] MENU-READY" in line or
+                "[TRANSITIONLOAD] BEGIN targetMap=" in line):
+            active_map = None
         match = READY.search(line)
         if match:
             session += 1
@@ -181,6 +187,18 @@ def self_test() -> None:
     different = json.loads(json.dumps(golden))
     different["frames"][1]["totalUs"] = 50000
     compare_golden(golden, different)
+    # The same map is reloaded after an exit. The second session's cold/warm
+    # cache prime must NOT silently inherit the previous READY authorization.
+    after_exit = (testlog + "\n[SYSEXIT] MENU-READY session=off\n" +
+                  frame(6, 144, 0) + "\n" +
+                  "[TRANSITIONLOAD] BEGIN targetMap=1\n" +
+                  frame(7, 144, 64) + "\n" + ready +
+                  frame(8, 144, 0))
+    after = parse_log(after_exit)
+    require(after["ignoredPriming"] == 3 and
+            after["uniquePoses"] == 4 and
+            after["frames"][-1]["session"] == 2,
+            "same-map reload falsely authorized priming as golden")
     for bad in (testlog.replace("seq=5", "seq=4"),
                 testlog.replace("backing=sd sdRangeUs=7500",
                                 "backing=flash sdRangeUs=7500"),
