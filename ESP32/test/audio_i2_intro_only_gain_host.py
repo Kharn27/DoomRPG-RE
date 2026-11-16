@@ -9,8 +9,8 @@ header=(src/"esp_audio_entrance_adpcm.h").read_text()
 music=(src/"esp_audio_entrance_music.cpp").read_text()
 ci=(root/".github/workflows/esp32-cyd.yml").read_text()
 
-assert "constexpr uint16_t kIntroGainDiv=32U;" in music
-assert "constexpr uint16_t kEntranceGainDiv=14U;" in music
+assert "constexpr uint16_t kIntroGainDiv=33U;" in music
+assert "constexpr uint16_t kEntranceGainDiv=15U;" in music
 assert "const uint16_t gainDiv=activeIntroTrack?kIntroGainDiv:kEntranceGainDiv;" in music
 assert "EspEntranceAdpcm_decodeBlockObservedGain(raw,wav.blockAlign," in music
 assert "gainDiv,&stats)" in music
@@ -22,7 +22,7 @@ assert "static inline uint8_t EspEntranceAdpcm_limitedDac" in header
 assert "static inline uint8_t EspEntranceAdpcm_toDacGain" in header
 assert "static inline int EspEntranceAdpcm_decodeBlockObservedGain" in header
 assert "static inline int EspEntranceAdpcm_decodeBlockObserved(" in header
-assert "if (gainDiv!=14U && gainDiv!=32U) return 0;" in header
+assert "if (gainDiv!=14U && gainDiv!=15U && gainDiv!=32U && gainDiv!=33U)" in header
 assert "if (scaled < -96 || scaled > 96) ++stats->gainLimited;" in header
 assert 'Test AUDIO-I2 intro-only' in ci
 isr=music[music.index("static bool IRAM_ATTR onAudioTick"):music.index("static uint32_t queued()")]
