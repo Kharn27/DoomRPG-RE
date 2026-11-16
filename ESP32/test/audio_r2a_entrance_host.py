@@ -71,7 +71,7 @@ assert 'signalReport("FINAL")' in runtime
 assert "publishedPrefixFnv" in runtime and "consumedPrefixFnv" in runtime
 assert "EspEntranceAdpcm_decodeBlockObserved(" in header
 assert "pcm16MinMax" in runtime and "publishedDacMinMax" in runtime
-assert "kEntranceGainDiv=14U" in runtime and "kIntroGainDiv=32U" in runtime and "softKneeFrames" in runtime
+assert "kEntranceGainDiv=15U" in runtime and "kIntroGainDiv=33U" in runtime and "softKneeFrames" in runtime
 assert "EspNativeAudioIntent_musicVolumePercent()" in runtime
 assert "volume)/100" in runtime
 assert "masterVolume=" in runtime
