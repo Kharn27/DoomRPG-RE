@@ -405,6 +405,9 @@ jobs:
       - name: Test SDL-F36 core SDL header in byte-exact host-only C11 ABI oracle
         run: python ESP32/test/sdl_f36_sdl_header_oracle_host.py
 
+      - name: ARCH-RC0 linker wrap inventory parser and adversarial fixtures
+        run: python ESP32/test/native_wrap_linkage_inventory_host.py --self-test
+
       - name: Native monster drop catalog preflight before render PAK lease
         run: python ESP32/test/native_monster_drop_catalog_host.py
 
@@ -832,12 +835,40 @@ jobs:
             python test/sdl_f30_compiler_header_closure_host.py --profile "$profile"
           done
 
+      # The SDL-A baseline had only three environments, so its comparison
+      # stays in the loop above. The fourth REAL release firmware nevertheless
+      # gets independent compiler-produced .d and linked-ELF closure checks.
+      - name: Audit inverted-panel firmware GCC dependencies and desktop ELF retirement
+        working-directory: ESP32
+        run: |
+          pio run -e esp-cyd-inverted -t compiledb
+          python test/sdl_f30_compiler_header_closure_host.py --profile esp-cyd-inverted
+          python tools/audit_desktop_elf.py ".pio/build/esp-cyd-inverted" \
+            --compiledb compile_commands.json --require-retired-render
+          python tools/audit_desktop_elf.py ".pio/build/esp-cyd-inverted" \
+            --compiledb compile_commands.json --require-retired-doomrpg
+          python tools/audit_desktop_elf.py ".pio/build/esp-cyd-inverted" \
+            --compiledb compile_commands.json --require-native-doomrpg-presentation
+          python tools/audit_desktop_elf.py ".pio/build/esp-cyd-inverted" \
+            --compiledb compile_commands.json --require-native-doomrpg-clock
+          python tools/audit_desktop_elf.py ".pio/build/esp-cyd-inverted" \
+            --compiledb compile_commands.json --require-native-doomrpg-rng
+
+      - name: ARCH-RC0 inventory native wrappers and direct-call witnesses (four ELFs)
+        working-directory: ESP32
+        run: |
+          for profile in esp32-cyd esp-cyd-inverted esp32-cyd-bringup esp32-cyd-trace; do
+            python test/native_wrap_linkage_inventory_host.py --profile "$profile"
+          done
+          python test/native_wrap_linkage_inventory_host.py --compare-release
+
       - name: Upload firmware artifacts
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: doom-rpg-esp32-cyd-${{ github.sha }}
           path: |
+            ESP32/.pio/build/*/native_wrap_inventory.json
             ESP32/.pio/build/esp32-cyd/*.bin
             ESP32/.pio/build/esp32-cyd/firmware.elf
             ESP32/.pio/build/esp-cyd-inverted/*.bin

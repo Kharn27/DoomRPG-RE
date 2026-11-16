@@ -2,7 +2,7 @@
 """SDL-F30: verify the *actual compiler-produced* ESP32 header closure.
 
 F29 handled direct SDL.h imports. F30 refuses transitive SDL.h / SDL_Video.h / SDL_mixer.h / Z_Zip.h
-imports in any ESP32/src object across the three real PlatformIO profiles.
+imports in any ESP32/src object across all four real PlatformIO profiles.
 Use each object's GCC .d dependency file rather than grep source text or
 infer from the absence of linked SDL functions. No firmware source is changed.
 """
@@ -17,7 +17,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 PROJECT = ROOT / "ESP32"
 OWNERS = PROJECT / "src"
-PROFILES = ("esp32-cyd", "esp32-cyd-bringup", "esp32-cyd-trace")
+PROFILES = ("esp32-cyd", "esp-cyd-inverted", "esp32-cyd-bringup", "esp32-cyd-trace")
 EXCLUDED = {"esp32_sdl.cpp", "esp32_bmp.cpp"}
 FORBIDDEN_HEADERS = {"SDL.h", "SDL_Video.h", "SDL_mixer.h", "Z_Zip.h"}
 
@@ -107,7 +107,7 @@ def audit_profile(profile):
         witnesses += 1
     print(f"SDL-F30 PASS {profile}: {len(sources)} actual ESP32/src TUs, "
           f"{witnesses} compiler .d closures, 0 SDL.h/SDL_Video.h/SDL_mixer.h/Z_Zip.h; "
-          "legacy shim/BMP excluded, three-profile ELF audit remains")
+          "legacy shim/BMP excluded; ELF audit remains")
 
 
 def self_test():
