@@ -154,7 +154,7 @@ static inline uint8_t EspEntranceAdpcm_toDacGain(
     int16_t pcm,uint32_t firstFrame,uint16_t gainDiv) {
     if (gainDiv==14U) return EspEntranceAdpcm_toDac(pcm,firstFrame);
     if (gainDiv!=15U && gainDiv!=32U && gainDiv!=33U) return 128U; /* fail closed */
-    return EspEntranceAdpcm_limitedDac((int32_t)pcm/32,firstFrame);
+    return EspEntranceAdpcm_limitedDac((int32_t)pcm/(int32_t)gainDiv,firstFrame);
 }
 /* One complete mono block, <=1024 compressed bytes, <=2041 output samples.
  * caller output must have capacity >= samplesPerBlock.
