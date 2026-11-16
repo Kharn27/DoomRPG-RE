@@ -475,6 +475,9 @@ void setup()
     initializePlatformVideo();
     initializeSdCard();
     EspNativeConfig_loadAtBoot(sdReady ? 1 : 0);
+    /* SOUND=ON by default: drive DAC2 at digital silence before menus/intro.
+     * No timer, SD read, ring or audio allocation here. */
+    EspEntranceMusic_syncIdleOutput();
     initializeGameAssets();
     initializeEngineCore();
     initializeEngineLayout();
