@@ -32,10 +32,16 @@ static inline uint16_t EspNativeSfxPcm_gainDiv(uint16_t id) {
     if (id==5046U) return 280U; /* +14.3% vs P2 */
     return 512U;
 }
+/* Exact pre-clamp sum for producer-side diagnostics (not in the ISR).
+ * Allows distinguishing a DAC rail hit from a value that was clipped. */
+static inline int32_t EspNativeSfxPcm_unclampedCode(uint8_t music,
+                                                     int16_t sfx,uint16_t id) {
+    return (int32_t)music+
+           (int32_t)sfx/(int32_t)EspNativeSfxPcm_gainDiv(id);
+}
 static inline uint8_t EspNativeSfxPcm_mixGain(uint8_t music,int16_t sfx,
                                                 uint16_t id) {
-    int32_t code=(int32_t)music+
-                 (int32_t)sfx/(int32_t)EspNativeSfxPcm_gainDiv(id);
+    int32_t code=EspNativeSfxPcm_unclampedCode(music,sfx,id);
     if (code<16) code=16;
     if (code>240) code=240;
     return (uint8_t)code;
