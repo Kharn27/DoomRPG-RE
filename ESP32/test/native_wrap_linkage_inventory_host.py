@@ -32,6 +32,11 @@ CALL = re.compile(
 REQUIRED = {"EspNativeGameplayFrame_renderTurn",
             "EspAssetPack_readRange", "DoomRPG_randNextByte",
             "Esp32PlatformVideo_present"}
+# Arduino/ESP-IDF log adapters are provided by the toolchain, not the
+# DoomRPG platformio.ini composition. Their exact linked symbols were
+# confirmed in all four real Xtensa ELF artifacts on ARCH-RC0.
+TOOLCHAIN_LOG_WRAPPERS = frozenset((
+    "__wrap_esp_log_write", "__wrap_esp_log_writev", "__wrap_log_printf"))
 
 
 def require(ok: bool, why: str) -> None:
@@ -144,13 +149,17 @@ def profile_report(profile: str, declared: dict[str, list[str]]) -> dict:
                 "no-linked-wrapper-symbol")
         })
     surplus = sorted(set(symbols) - {"__wrap_" + name for name in names})
+    unexpected = sorted(set(surplus) - TOOLCHAIN_LOG_WRAPPERS)
+    require(not unexpected,
+            f"unknown linked __wrap_ owner absent from platformio.ini: {unexpected}")
     report = {
         "schema": "doomrpg-arch-rc0-native-wraps-v1",
         "profile": profile, "declaredNormal": len(base),
         "declaredProfileExtra": len(names) - len(base),
         "linked": sum(row["wrapperLinked"] for row in rows),
         "directCallWitness": sum(bool(row["observedDirectCallers"]) for row in rows),
-        "unlistedLinkedWrapperSymbols": surplus,
+        "toolchainLogWrapperSymbols": surplus,
+        "unknownLinkedWrapperSymbols": unexpected,
         "boundaries": rows,
         "caution": "ELF linkage != executed call; direct-call witnesses are incomplete"
     }
@@ -160,8 +169,8 @@ def profile_report(profile: str, declared: dict[str, list[str]]) -> dict:
           f"linked={report['linked']} directCallWitness={report['directCallWitness']} "
           f"unlisted={len(surplus)} output={path}")
     if surplus:
-        print(f"ARCH-RC0 {profile} unlistedLinkedWrapperSymbols={','.join(surplus)} "
-              "(inventory-only, not declared by this profile's --wrap flags)")
+        print(f"ARCH-RC0 {profile} toolchainLogWrapperSymbols={','.join(surplus)} "
+              "(ESP32 toolchain logging, not native DoomRPG --wrap flags)")
     return report
 
 
@@ -210,6 +219,10 @@ def self_test() -> None:
         "40000000 00000030 T __wrap_EspAssetPack_readRange\n"
         "40000100 00000010 T __wrap_Esp32PlatformVideo_present\n")
     parsed = parse_nm(fixture)
+    require(len(TOOLCHAIN_LOG_WRAPPERS) == 3 and
+            "__wrap_esp_log_write" in TOOLCHAIN_LOG_WRAPPERS and
+            "__wrap_EspAssetPack_readRange" not in TOOLCHAIN_LOG_WRAPPERS,
+            "unexpected native/toolchain wrapper allowlist")
     require(parsed["__wrap_EspAssetPack_readRange"]["bytes"] == 48,
             "nm symbol size incorrect")
     for bad in (
