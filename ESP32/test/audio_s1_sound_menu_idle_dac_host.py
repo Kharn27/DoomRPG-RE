@@ -26,7 +26,7 @@ assert 'EspNativeAudioIntent_setSoundEnabled' in menu
 assert 'EspNativeAudioIntent_setMusicVolumePercent' in menu
 assert "EspEntranceMusic_syncIdleOutput();" in main
 assert main.index("EspEntranceMusic_syncIdleOutput();") < main.index("initializeGameAssets();")
-assert 'if (!entrance || !soundOn)' in music
+assert 'if ((!entrance && !intro) || !soundOn)' in music
 assert 'closeMusic(soundOn?"SESSION_EXIT":"SOUND_OFF")' in music
 assert 'EspEntranceMusic_syncIdleOutput(); /* SOUND ON' in music
 assert "phase!=kSilent || timerInit || ring!=nullptr" in music
