@@ -204,7 +204,7 @@ static inline int EspEntranceAdpcm_decodeBlockObservedGain(
             predictor=EspEntranceAdpcm_clamp(
                 predictor+((nibble&8)?-delta:delta),-32768,32767);
             index=EspEntranceAdpcm_clamp(index+offsets[nibble],0,88);
-            EspEntranceAdpcm_observePcm(stats,(int16_t)predictor);
+            EspEntranceAdpcm_observePcmGain(stats,(int16_t)predictor,gainDiv);
             if (produced>=outCapacity) return 0;
             out[produced]=EspEntranceAdpcm_toDacGain(
                 (int16_t)predictor,firstFrame+produced,gainDiv);
