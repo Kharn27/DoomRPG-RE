@@ -45,10 +45,11 @@ constexpr uint32_t kMaxSilentFrames=8U*kRate; /* 8s -> fail closed */
 constexpr uint32_t kHeaderBytes=512U;
 constexpr uint32_t kMaxBlockBytes=1024U;
 constexpr uint32_t kMaxBlockSamples=2041U;
-/* Independent track mastering: intro source is much hotter than Entrance.
- * /32 vs /14 = 14/32 amplitude, ~-7.2 dB, BEFORE the soft knee. */
-constexpr uint16_t kIntroGainDiv=32U;
-constexpr uint16_t kEntranceGainDiv=14U;
+/* I4: tiny safety margin measured on CYD. /32 -> /33 (intro ~-0.27dB),
+ * /14 -> /15 (Entrance ~-0.60dB), both BEFORE the original soft knee.
+ * Preserve the legacy /14, /32 pure decoder ABI for host reference tests. */
+constexpr uint16_t kIntroGainDiv=33U;
+constexpr uint16_t kEntranceGainDiv=15U;
 constexpr uint32_t kHashFrames=4096U;      /* first music frames, producer==ISR */
 constexpr uint32_t kFnvBasis=2166136261U;
 constexpr timer_group_t kGroup=TIMER_GROUP_1;
