@@ -133,6 +133,7 @@ constexpr uint32_t kSfxReadBytes=512U;
 struct FireSfxVoice {
     EspAssetPackEntry entry;
     uint32_t start,output,next,srcIndex,srcPhase,readCount;
+    uint32_t clippedLow,clippedHigh;
     bool active;
 };
 static FireSfxVoice fireSfx={};
@@ -392,6 +393,10 @@ static void mixFireSfx() {
         const int16_t pcm=EspNativeSfxPcm_le16(
             chunk+(fireSfx.srcIndex-cachedStart)*2U);
         const uint32_t slot=(fireSfx.start+fireSfx.next+i)&kRingMask;
+        const int32_t unclamped=EspNativeSfxPcm_unclampedCode(
+            ring[slot],pcm,5045U);
+        if (unclamped<16) ++fireSfx.clippedLow;
+        else if (unclamped>240) ++fireSfx.clippedHigh;
         ring[slot]=EspNativeSfxPcm_mixGain(ring[slot],pcm,5045U);
         ++done;
         fireSfx.srcPhase+=8000U;
@@ -422,6 +427,12 @@ static void mixFireSfx() {
            (long long)(esp_timer_get_time()-begun),
            failure!=nullptr?" reason=":"",
            failure!=nullptr?failure:"");
+    if (complete || failure!=nullptr) {
+        printf("[SFXGAIN] id=5045 mixed=%u clippedLow=%u "
+               "clippedHigh=%u limits=16..240 source=producer-precise\n",
+               (unsigned)fireSfx.next,(unsigned)fireSfx.clippedLow,
+               (unsigned)fireSfx.clippedHigh);
+    }
 }
 static void startFireSfx(uint32_t reader,uint32_t writer) {
     if (writer-reader>kRingCapacity ||
@@ -459,6 +470,8 @@ static void startFireSfx(uint32_t reader,uint32_t writer) {
         fireSfx.srcIndex=0U;
         fireSfx.srcPhase=0U;
         fireSfx.readCount=0U;
+        fireSfx.clippedLow=0U;
+        fireSfx.clippedHigh=0U;
         fireSfx.active=true;
         sfxBusyUntil=fireSfx.start+fireSfx.output;
     } else {
@@ -560,6 +573,7 @@ static void mixPendingSfx() {
     uint32_t srcPhase=0U;
     uint32_t mixed=0U;
     uint32_t cacheReads=0U;
+    uint32_t clippedLow=0U,clippedHigh=0U;
     int16_t srcMin=32767,srcMax=-32768;
     const int64_t begun=esp_timer_get_time();
     const char* failed=nullptr;
@@ -597,6 +611,10 @@ static void mixPendingSfx() {
         if (pcm<srcMin) srcMin=pcm;
         if (pcm>srcMax) srcMax=pcm;
         const uint32_t slot=(start+i)&kRingMask;
+        const int32_t unclamped=EspNativeSfxPcm_unclampedCode(
+            ring[slot],pcm,id);
+        if (unclamped<16) ++clippedLow;
+        else if (unclamped>240) ++clippedHigh;
         ring[slot]=EspNativeSfxPcm_mixGain(ring[slot],pcm,id);
         ++mixed;
         srcPhase+=8000U;
@@ -621,6 +639,10 @@ static void mixPendingSfx() {
            (long long)(esp_timer_get_time()-begun),
            (unsigned)sfxPlayedCount,(unsigned)sfxRejectedCount,
            failed!=nullptr?" reason=":"",failed!=nullptr?failed:"");
+    printf("[SFXGAIN] id=%u mixed=%u clippedLow=%u "
+           "clippedHigh=%u limits=16..240 source=producer-precise\n",
+           (unsigned)id,(unsigned)mixed,(unsigned)clippedLow,
+           (unsigned)clippedHigh);
 }
 
 static bool startClock() {
