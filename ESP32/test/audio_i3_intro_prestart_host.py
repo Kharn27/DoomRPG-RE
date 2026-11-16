@@ -43,7 +43,7 @@ assert 'if (!ready) attempted=true;' in pre
 assert 'firstFrame=NOT_PRESENTED' in pre
 assert 'return ready;' in pre
 assert 'kRingCapacity=16384U' in audio
-assert 'kIntroGainDiv=32U' in audio and 'kEntranceGainDiv=14U' in audio
+assert 'kIntroGainDiv=33U' in audio and 'kEntranceGainDiv=15U' in audio
 assert 'int EspEntranceMusic_prestartIntroBeforeFirstFrame' not in (
     src/"native_intro_input.c").read_text()
 assert 'Test AUDIO-I3' in workflow
