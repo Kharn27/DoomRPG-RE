@@ -97,6 +97,7 @@ static const char* path=nullptr;
 static const char* failure="none";
 static bool attempted;
 static bool activeIntroTrack;
+static bool introPrestartWindow; /* main-task only, prior to ST_INTRO clock arm */
 static bool fileOpen;
 static bool timerInit;
 static bool callbackAdded;
@@ -749,7 +750,7 @@ static void begin() {
                (unsigned)heapBefore,(unsigned)largest);
         return;
     }
-    activeIntroTrack=Esp32IntroClock_isActive()!=0;
+    activeIntroTrack=Esp32IntroClock_isActive()!=0||introPrestartWindow;
     const char* requested=activeIntroTrack?kIntroPrimary:kPrimary;
     const char* fallback=activeIntroTrack?kIntroFallback:kRootFallback;
     path=requested;
@@ -833,6 +834,42 @@ static void begin() {
 }
 } // namespace
 
+int EspEntranceMusic_prestartIntroBeforeFirstFrame(void) {
+    /* I3: the menu action has already finished ST_INTRO asset preparation,
+     * but first frame and clock have not been armed. One synchronous bounded
+     * preflight, one existing ring, one SD file, and NO concurrent SPI owner.
+     * Always fail softly into the original visible intro on any fault. */
+    if (!EspNativeAudioIntent_isSoundEnabled()) {
+        printf("[INTROMUSIC] PRESTART skipped reason=SOUND_OFF firstFrame=allowed\n");
+        return 0;
+    }
+    if (EspAssetPack_isOpen() || Esp32IntroClock_isActive() ||
+        phase!=kSilent || ring!=nullptr || fileOpen || timerInit) {
+        printf("[INTROMUSIC] PRESTART skipped reason=owner_not_idle firstFrame=allowed\n");
+        return 0;
+    }
+    const uint32_t startMs=millis();
+    introPrestartWindow=true;
+    while ((uint32_t)(millis()-startMs)<1800U) {
+        EspEntranceMusic_service(false,true);
+        if (phase==kPlay) break;
+        if (phase==kSilent && attempted) break; /* format/memory/file/clock */
+        delay(1); /* Arduino task yields; no spin in timer ISR */
+    }
+    const int ready=(phase==kPlay && activeIntroTrack);
+    if (!ready && (ring!=nullptr || fileOpen || timerInit))
+        closeMusic("INTRO_PRESTART_TIMEOUT");
+    introPrestartWindow=false;
+    /* Attempt latch stays true on failure: do not resume late in ST_INTRO. */
+    if (!ready) attempted=true;
+    printf("[INTROMUSIC] PRESTART ready=%d elapsedMs=%u firstFrame=NOT_PRESENTED "
+           "phase=%u queued=%u ringBytes=%u source=one-SD-owner\n",
+           ready,(unsigned)(millis()-startMs),(unsigned)phase,
+           (unsigned)(ring!=nullptr?queued():0U),
+           (unsigned)(ring!=nullptr?kRingCapacity:0U));
+    return ready;
+}
+
 void EspEntranceMusic_syncIdleOutput(void) {
     /* No timer or ring in menus. Hold DAC2 at the exact digital midpoint.
      * Never modify the live timer's DAC output in gameplay. */
@@ -878,7 +915,7 @@ void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
                                    EspPlayerView_view():nullptr;
     const bool entrance=gameplayActive&&sdReady&&view&&
                         view->targetMapId==1U&&view->gameplayLoadMapId==1U;
-    const bool intro=Esp32IntroClock_isActive()!=0;
+    const bool intro=Esp32IntroClock_isActive()!=0||introPrestartWindow;
     const bool soundOn=EspNativeAudioIntent_isSoundEnabled()!=0;
     /* Intro and Entrance share one reader/ISR/ring, never coexist.
      * Only the confirmed intro handoff closes M_IN_CIT before map load. */
