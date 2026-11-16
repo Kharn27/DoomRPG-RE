@@ -40,6 +40,13 @@ def main() -> None:
         assert "#include <SDL.h>" not in source, file
         assert '#include "SDL_Video.h"' not in source, file
         assert not re.search(r"\bSDL_\w+\b", active_source(source)), file
+        # The loading-bar milestone adds one intentional startup UI call.
+        # Normalize *only* that exact additive line for the frozen SDL-F10
+        # historical byte oracle; all surrounding original bytes remain pinned.
+        if file == "esp_native_startup.c":
+            addition = "            EspNativeTransitionPresentation_deferFlashUntilCache();\n"
+            assert source.count(addition) == 1, "loading progression hook missing"
+            source = source.replace(addition, "", 1)
         restored = header + source
         value = fnv(restored)
         assert value == expected, (

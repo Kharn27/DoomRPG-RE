@@ -622,6 +622,12 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include ESP32/test/test_sys_touch.c ESP32/src/esp_native_gameplay_save_touch.c -o /tmp/doomrpg-sys-touch-test
           /tmp/doomrpg-sys-touch-test
 
+      - name: Test loading bar flash scales and cache boundary (host C11)
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -IESP32/include \
+            ESP32/test/native_loading_progress_scale_host.c -o /tmp/doomrpg-loading-progress-test
+          /tmp/doomrpg-loading-progress-test
+
       - name: Test level progress and completion-checkpoint transport (host C)
         run: |
           cc -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include ESP32/test/test_level_progress.c ESP32/src/esp_player_fresh_map_state.c ESP32/src/esp_map_catalog.c -o /tmp/doomrpg-level-progress-test
