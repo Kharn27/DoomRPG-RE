@@ -5,6 +5,7 @@
 #include <esp_timer.h>
 
 #include "esp_asset_pack.h"
+#include "esp_asset_pack_io_probe.h"
 #include "doomrpg_log.h"
 #include "esp_player_view_state.h"
 #include "esp_native_transition_presentation.h"
@@ -116,7 +117,6 @@ int __real_EspAssetPack_readRange(const EspAssetPackEntry* entry,
                                   uint32_t relativeOffset,
                                   void* destination,
                                   size_t length);
-void __real_EspAssetPack_residentResetStats(void);
 int __real_EspAssetPack_residentEnd(void);
 
 int __wrap_EspAssetPack_residentBegin(void)
@@ -201,12 +201,18 @@ int __wrap_EspAssetPack_readRange(const EspAssetPackEntry* entry,
 #endif
 }
 
-void __wrap_EspAssetPack_residentResetStats(void)
+/* These functions are invoked explicitly from the PAK owner; unlike the
+ * former linker interposition, the ordering is visible to the compiler.
+ * Keep the TRACE behavior exactly as it was; no new resident-cache owner. */
+void EspAssetPackIoProbe_beforeResidentStatsReset(void)
 {
 #if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     reportIoSample("resident-reset");
 #endif
-    __real_EspAssetPack_residentResetStats();
+}
+
+void EspAssetPackIoProbe_afterResidentStatsReset(void)
+{
 #if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     invalidatePhysicalBaseline();
 #endif
