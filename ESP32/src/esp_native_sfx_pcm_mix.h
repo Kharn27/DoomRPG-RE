@@ -23,12 +23,13 @@ static inline uint8_t EspNativeSfxPcm_mix(uint8_t music,int16_t sfx) {
     if (code>240) code=240;
     return (uint8_t)code;
 }
-/* P2: separate PCM gain for quieter pickup, firing and fire extinguishing.
- * This changes ONLY the main-task overlay; no modification to music or ISR. */
+/* P2 families; G1: same balance at 8/7 nominal amplitude (14.3% boost).
+ * Main-task SFX overlay only. SD music, timer and ISR are unchanged.
+ * The DAC 16..240 clamp below remains mandatory. */
 static inline uint16_t EspNativeSfxPcm_gainDiv(uint16_t id) {
-    if (id==5060U) return 128U;
-    if (id==5045U) return 256U;
-    if (id==5046U) return 320U;
+    if (id==5060U) return 112U; /* +14.3% vs P2 */
+    if (id==5045U) return 224U; /* +14.3% vs P2 */
+    if (id==5046U) return 280U; /* +14.3% vs P2 */
     return 512U;
 }
 static inline uint8_t EspNativeSfxPcm_mixGain(uint8_t music,int16_t sfx,
