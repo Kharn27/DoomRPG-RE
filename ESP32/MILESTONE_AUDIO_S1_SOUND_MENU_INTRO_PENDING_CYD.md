@@ -44,3 +44,31 @@ Retour matériel du 16 novembre 2026 : `platformio-device-monitor-261116-231505.
 - Test C11 `audio_i2_intro_only_gain_host.py` : PCM16 synthétique de valeur 3000, sortie ancienne /14 = 238, nouvelle intro /32 = 221, soft-knee 9 -> 0, min/max PCM toujours 3000 et comportement d'ancienne API bit-identique. CI sur les deux builds et hôtes.
 
 **À revalider sur le vrai CYD :** écouter `M_IN_CIT` au volume SOUND=100 %, lire `[ENTRANCEMUSIC] PLAY ... track=INTRO gainDiv=32`, comparer `softKneeFrames` et plages DAC de `SIGNAL at=STREAM/FINAL`, confirmer sortie pré-BSP, musique Entrance `track=ENTRANCE gainDiv=14`, SFX inchangés et 0 underruns. **Le fonctionnement de l'intro et son handoff a été observé matériellement ; le correctif de saturation I2 lui-même est PENDING CYD.**
+
+
+## Retour matériel I2 : gain d'intro /32 amélioré, transport PASS (16 novembre 2026)
+
+Le log normal CYD `platformio-device-monitor-261116-234711.log` démontre :
+- `[AUDIOIDLE] ON dacPad=ON code=128` au démarrage ; `[INTRO1] READY` avant `[ENTRANCEMUSIC] OPEN` : **retard visuel encore observé**, c'est la raison du nouveau jalon I3.
+- `[ENTRANCEMUSIC] PLAY ... M_IN_CIT.wav gainDiv=32 track=INTRO`, `pcm16MinMax=-2915..7443`, `softKneeFrames=26847` sur `producerFrames=624546` (~4,3 %, contre ~28,6 % à /14 lors d'un précédent parcours de durée différente), `dacWrittenMinMax=37..238` ; `underruns=0`, `maxSilentFrames=0`, `gapsOver90us=0`, `recoveries=0`. Retour auditif utilisateur : « L'intro c'est mieux » — amélioration **confirmée**, pas de déclaration de correction parfaite de toute saturation analogique.
+- `[ENTRANCEMUSIC] FINAL reason=INTRO_EXIT_BEFORE_MAP` avec `timer=OFF`, `file=CLOSED`, `[INTROMUSIC] HANDOFF` **avant** `INTRODISP`, `TRANSITIONLOAD BEGIN`, `BSPREAD`.
+- `[ENTRANCEMUSIC] PLAY ... M_STALKS.wav gainDiv=14 track=ENTRANCE`, `underruns=0`, `heap8=60744`, `largest8=45044`, `shapeData=0x0`, `mediaTexels=0x0` ; écran de transition huit frames et cache normal, mais **la musique Entrance commence encore APRÈS le début du loading**. Ce changement de timing n'était pas dans I2.
+- Le log ne teste pas les cartes SOUND ON/OFF/VOLUME. **S1 reste PENDING** même si l'initialisation DAC au boot apparaît.
+
+## AUDIO-I3 — départ de la piste avant la première image d'intro (CYD PENDING)
+
+Le nouvel appel `EspEntranceMusic_prestartIntroBeforeFirstFrame()` est situé dans le propriétaire natif `DoomRPG_esp32ActivateMainMenuStart()` **après** `Esp32StoryFit_prepare()` mais **avant** `DoomRPG_esp32RenderFirstIntroFrame()` et son `DoomRPG_flushGraphics()`. L'audio utilise toujours le WAV IMA mono22.05, seul ring 16 KiB, timer/DAC2 préflight matériel inchangé, `/32` spécifique intro. Le flux est amorcé dans la même tâche Arduino pendant une fenêtre bornée à 1800 ms, par `EspEntranceMusic_service(false,true)` et `delay(1)` ; l'ISR ne change pas. Une seule `File` SD ; garde `EspAssetPack_isOpen()==0`, aucun usage du ZIP, pas d'autre propriétaire de SPI réentrant. La fenêtre `introPrestartWindow` identifie explicitement ST_INTRO avant que sa clock visuelle ne soit armée. `[INTROMUSIC] PRESTART ready=1 ... firstFrame=NOT_PRESENTED` doit désormais précéder `[INTRO1] Begin/READY` et `[INTROCLK] ARMED`.
+
+Si SOUND est OFF, si le PAK est ouvert, si mémoire/WAV absent ou invalide, ou si la calibration dépasse le timeout : **l'image s'affiche quand même**, aucun démarrage tardif non voulu n'est initié dans ST_INTRO (latch fail-closed). Sur le vrai CYD, écouter si le passage menu → écran intro semble plus naturel ; vérifier 0 underruns/FRAME allocation 0 et `heap8` vs la baseline I2.
+
+Conséquence explicite : jusqu'à ~1,8 s de préflight peuvent maintenant s'écouler **avant** la première image de l'intro, pendant que le menu reste affiché. C'est un échange intentionnel à valider à l'oreille et à l'œil ; si gênant, choisir ensuite une transition visuelle dédiée sans démarrer de deuxième ring ni altérer le scheduler natif.
+
+Les fichiers `native_intro_input.c`, `native_intro_first_frame.c` et autres F8 restent bit-identiques ; `native_main_menu_start_action.c` conserve son oracle historique F29 via inversion exacte de **l'unique include et appel I3**. Nouveau test `audio_i3_intro_prestart_host.py` et CI multi-profils.
+
+## Pourquoi la musique pendant loading n'est pas activée avec I3
+
+Le loading/transition **n'est pas** ST_INTRO : il peut exécuter des accès SD→flash, effacer/copier/valider la map flash, lire du PAK et primer le cache. Le ring de 16 384 échantillons représente seulement ~743 ms à 22050 Hz. Le vrai chargement Entrance a duré ~5,48 s avec `TRANSITIONLOAD`, `BSPREAD`, `MAPFLASH` et `ENGINECACHE`. Précharger M_STALKS puis démarrer son ISR *avant le loading* sans service producteur sûr pendant les opérations SD/flash provoquerait des underruns et/ou de la contention SPI. Allouer un buffer de 5,5 s (~121 KiB) violerait les contraintes sans PSRAM. Ne PAS maquiller ça par un ring augmenté, ni accepter des sous-alimentations.
+
+**Jalon séparé à concevoir :** musique par map explicitement choisie, les autres **deferred** ; identification de la route START/LOAD/MAP-TRANSITION et préflight source, petites phases de chargement bornées avec SD owner unique et service de refill uniquement quand le PAK/flash a relâché SPI, débit/horizons prouvés sur flash REUSE et MISS. En cas d'absence de piste sélectionnée, d'ON/OFF OFF, de budget insuffisant ou de longue phase non coopérative : comportement actuel deferred, sans underrun. Aucun `M_STALKS` pendant loading activé dans I3.
+
+**Statut I3 : PENDING CYD ; ne pas fusionner PR #360 avant essai matériel du préstart et du sous-menu SOUND.**
