@@ -694,6 +694,13 @@ int EspNativeTransitionPresentation_isFlashDeferred(void) {
     return presentation.loadingActive && presentation.flashDeferred ? 1 : 0;
 }
 
+void EspNativeTransitionPresentation_flashReady(void) {
+    if (!presentation.loadingActive || !presentation.flashDeferred) return;
+    if (presentation.lastPercent < 85U) {
+        presentOverall(85U, "FLASH-READY", "map-flash");
+    }
+}
+
 void EspNativeTransitionPresentation_abortLoading(const char* reason) {
     if (presentation.loadingActive) {
         printf("[TRANSITIONLOAD] ABORT targetMap=%u frames=%u progress=%u reason=%s framebuffer=caller-owned\n",
