@@ -29,6 +29,11 @@ uint32_t EspNativeAudioIntent_count(void);
  * This is explicitly runtime-only, no silent V3 config schema change. */
 uint8_t EspNativeAudioIntent_musicVolumePercent(void);
 int EspNativeAudioIntent_setMusicVolumePercent(uint8_t percent);
+/* Master SOUND toggle, boot-session only; default ON. Unlike volume=0,
+ * OFF must explicitly silence all music/SFX while retaining volume preset.
+ * Native config V3 is deliberately unchanged. */
+int EspNativeAudioIntent_isSoundEnabled(void);
+int EspNativeAudioIntent_setSoundEnabled(int enabled);
 
 #ifdef __cplusplus
 }
