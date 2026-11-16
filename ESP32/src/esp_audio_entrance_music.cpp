@@ -17,6 +17,7 @@
 #include "esp_native_sfx_pcm_mix.h"
 #include "esp_native_sfx_wav.h"
 #include "esp_asset_pack.h"
+#include "esp_audio_loading_route.h" /* L1: strict Entrance-only music selection */
 #include "esp_audio_entrance_music.h"
 #include "esp_native_audio_intent.h" /* session music volume preset owner */
 #include "esp_player_view_state.h"
@@ -868,6 +869,76 @@ int EspEntranceMusic_prestartIntroBeforeFirstFrame(void) {
            ready,(unsigned)(millis()-startMs),(unsigned)phase,
            (unsigned)(ring!=nullptr?queued():0U),
            (unsigned)(ring!=nullptr?kRingCapacity:0U));
+    return ready;
+}
+
+void EspEntranceMusic_stopBeforeLoading(void) {
+    /* The next BSP/SD->flash loader owns the backing store exclusively.
+     * A live source-map soundtrack must never survive into that loader. */
+    const int wasLive=(phase!=kSilent || ring!=nullptr ||
+                       fileOpen || timerInit) ? 1 : 0;
+    if (wasLive) closeMusic("LOAD_START_BEFORE_BSP");
+    attempted=false;
+    activeIntroTrack=false;
+    introPrestartWindow=false;
+    EspEntranceMusic_syncIdleOutput();
+    printf("[LOADAUDIO-L1] STOP_FOR_LOADING priorActive=%d "
+           "sdFile=CLOSED ring=FREE timer=OFF next=deferred\n",wasLive);
+}
+
+int EspEntranceMusic_prestartGameplayBeforeFirstFrame(uint8_t targetMapId) {
+    /* Called only at the completed loading -> first visible gameplay boundary,
+     * never during BSP / flash staging. Physical loading READY is still shown.
+     * A target without an explicit soundtrack always stays deferred. */
+    const EspAudioLoadingTrack track=EspAudioLoadingRoute_forMap(targetMapId);
+    if (track==ESP_AUDIO_LOADING_TRACK_DEFERRED) {
+        printf("[LOADAUDIO-L1] PRESTART map=%u route=deferred reason=unknown_track "
+               "beforeWorldPresent=1\n",(unsigned)targetMapId);
+        return 0;
+    }
+    if (!EspNativeAudioIntent_isSoundEnabled()) {
+        printf("[LOADAUDIO-L1] PRESTART map=%u route=M_STALKS.wav ready=0 "
+               "reason=SOUND_OFF beforeWorldPresent=1\n",(unsigned)targetMapId);
+        return 0;
+    }
+    const EspPlayerViewState* view=EspPlayerView_view();
+    if (Esp32IntroClock_isActive() ||
+        EspAssetPack_isOpen() || !EspAssetPack_isResident() ||
+        !EspAssetPack_isMapFlashActive() || view==nullptr ||
+        view->targetMapId!=targetMapId ||
+        view->gameplayLoadMapId!=targetMapId ||
+        phase!=kSilent || ring!=nullptr || fileOpen || timerInit) {
+        printf("[LOADAUDIO-L1] PRESTART map=%u route=M_STALKS.wav ready=0 "
+               "reason=owner_or_map_not_ready pakOpen=%u resident=%u "
+               "flash=%u beforeWorldPresent=1\n",
+               (unsigned)targetMapId,(unsigned)EspAssetPack_isOpen(),
+               (unsigned)EspAssetPack_isResident(),
+               (unsigned)EspAssetPack_isMapFlashActive());
+        return 0;
+    }
+    const uint32_t startMs=millis();
+    while ((uint32_t)(millis()-startMs)<1800U) {
+        /* SESSION_STAGE_ACTIVE already published by the native session;
+         * only the physical frame is deferred. The existing service is the
+         * unique SD producer and owns the existing 16 KiB ring. */
+        EspEntranceMusic_service(true,true);
+        if (phase==kPlay) break;
+        if (phase==kSilent && attempted) break;
+        delay(1);
+    }
+    const int ready=(phase==kPlay && !activeIntroTrack) ? 1 : 0;
+    if (!ready && (ring!=nullptr || fileOpen || timerInit))
+        closeMusic("LOAD_PRESTART_TIMEOUT");
+    /* Failure may not cause an unexpected late restart AFTER world present. */
+    if (!ready) attempted=true;
+    printf("[LOADAUDIO-L1] PRESTART map=%u route=M_STALKS.wav ready=%d "
+           "elapsedMs=%u beforeWorldPresent=1 phase=%u queued=%u "
+           "ringBytes=%u failClosed=%u\n",
+           (unsigned)targetMapId,ready,
+           (unsigned)(millis()-startMs),(unsigned)phase,
+           (unsigned)(ring!=nullptr?queued():0U),
+           (unsigned)(ring!=nullptr?kRingCapacity:0U),
+           (unsigned)!ready);
     return ready;
 }
 
