@@ -163,12 +163,14 @@ def main() -> None:
         require(old in reset, f"fixture source missing: {old}")
         bad = harness(reset.replace(old, new), before, after)
         run(bad, 4, 1, False)
-    bad = harness(reset.replace(
-        'EspAssetPackIoProbe_beforeResidentStatsReset();',
-        'EspAssetPackIoProbe_afterResidentStatsReset();').replace(
+    swapped = reset.replace(
+        '    EspAssetPackIoProbe_beforeResidentStatsReset();',
+        '    __RC2_SWAP_MARKER__').replace(
         '    EspAssetPackIoProbe_afterResidentStatsReset();',
-        '    EspAssetPackIoProbe_beforeResidentStatsReset();', 1),
-        before, after)
+        '    EspAssetPackIoProbe_beforeResidentStatsReset();').replace(
+        '    __RC2_SWAP_MARKER__',
+        '    EspAssetPackIoProbe_afterResidentStatsReset();')
+    bad = harness(swapped, before, after)
     run(bad, 4, 1, False)
     print("PASS ARCH-RC2 real-source C++ host: 4 parity modes (INFO/TRACE x "
           "RA2b off/on), 6 adverse reorder/omission fixtures, no link wrapper")
