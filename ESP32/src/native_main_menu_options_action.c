@@ -163,22 +163,6 @@ int DoomRPG_esp32PaintMainMenuVideoDashboardSelection(
         doomRpg, selectedItem, armed, enabledMask, framebufferFNV);
 }
 
-/* Same immutable MENU_MAIN_OPTIONS owner; only right-hand card surface
- * changes. Label reflects the CURRENT master switch, not an action guess. */
-int DoomRPG_esp32PaintMainMenuSoundDashboardSelection(
-    struct DoomRPG_s* doomRpgBase,int selectedItem,int armed,
-    uint32_t* framebufferFNV) {
-    DoomRPG_t* doomRpg=(DoomRPG_t*)doomRpgBase;
-    const char* labels[OPTIONS_ITEM_COUNT]={
-        "BACK", EspNativeAudioIntent_isSoundEnabled()?"ON":"OFF", "VOLUME"
-    };
-    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
-        !validateOptionsModel(EspNativeRootOwners_live()->menuSystem) ||
-        selectedItem<0 || selectedItem>=OPTIONS_ITEM_COUNT) return 0;
-    return DoomRPG_esp32PaintMenuDashboardCards(
-        doomRpg,labels,selectedItem,armed,0x07U,framebufferFNV);
-}
-
 int DoomRPG_esp32PaintMainMenuBrightnessDashboard(
     struct DoomRPG_s* doomRpgBase,
     uint32_t* framebufferFNV) {
@@ -390,7 +374,7 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase,
 
     (void)Esp32PlatformVideo_present();
     if (finalFramebufferFNV != NULL) *finalFramebufferFNV = finalHash;
-    printf("[MAINOPTIONS] Presented MENU_MAIN_OPTIONS root=BACK/VIDEO/SOUND videoChild=BRIGHTNESS/ORIENTATION/THEME soundChild=ONOFF/VOLUME-SESSION brightness=%u ready=%d orientationReady=%d theme=%u\n",
+    printf("[MAINOPTIONS] Presented MENU_MAIN_OPTIONS root=BACK/VIDEO/SOUND videoChild=BRIGHTNESS/ORIENTATION/THEME soundChild=VOLUME-SESSION brightness=%u ready=%d orientationReady=%d theme=%u\n",
            (unsigned int)Esp32Backlight_percent(), Esp32Backlight_isReady(),
            Esp32Orientation_isReady(), (unsigned int)EspMainMenuSkin_getTheme());
     printf("[MAINOPTIONS] READY explicit MENU_MAIN -> MENU_MAIN_OPTIONS composition; no legacy Render_render, no map reload, no gameplay loader\n");
