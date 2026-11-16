@@ -849,9 +849,10 @@ void EspEntranceMusic_syncIdleOutput(void) {
 }
 
 void EspEntranceMusic_stopIntroAtHandoff(void) {
-    /* Called on final intro input BEFORE bootstrap starts BSP/map flash.
-     * Same Arduino task: release SD File, timer and ring before map loader. */
-    if (activeIntroTrack && (phase!=kSilent || ring || timerInit || fileOpen)) {
+    /* Called before the parked intro clock can start BSP/map-flash bootstrap.
+     * Never interrupt a still-active ST_INTRO playback. Pure Arduino task. */
+    if (!activeIntroTrack || Esp32IntroClock_isActive()) return;
+    if (phase!=kSilent || ring || timerInit || fileOpen) {
         closeMusic("INTRO_EXIT_BEFORE_MAP");
     }
     if (activeIntroTrack) {
