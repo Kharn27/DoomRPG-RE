@@ -7,6 +7,7 @@
 #include <esp_timer.h>
 
 #include "esp_asset_pack.h"
+#include "esp_asset_pack_io_probe.h"
 #include "esp_map_catalog.h"
 
 namespace {
@@ -1806,6 +1807,10 @@ int EspAssetPack_residentBegin(void)
 
 int EspAssetPack_residentEnd(void)
 {
+    /* ARCH-RC3 preserves the old --wrap preflight even when openReady rejects
+     * residentEnd: report pending TRACE I/O and invalidate the baseline before
+     * any owner-side close, cache release or flash deactivation. */
+    EspAssetPackIoProbe_beforeResidentEnd();
     if (openReady) {
         return 0;
     }
@@ -1830,11 +1835,16 @@ int EspAssetPack_isResident(void)
 
 void EspAssetPack_residentResetStats(void)
 {
+    /* Preserve the former --wrap order, now under explicit native ownership:
+     * flush the TRACE I/O sample before clearing counters, then invalidate its
+     * physical baseline only after the reset is fully committed. */
+    EspAssetPackIoProbe_beforeResidentStatsReset();
     memset(&residentStats, 0, sizeof(residentStats));
     mapFlashRuntimeReadMicros = 0U;
 #if defined(DOOMRPG_RA2B_CAPTURE) && DOOMRPG_RA2B_CAPTURE
     ra2bSdRangeMicros = 0U;
 #endif
+    EspAssetPackIoProbe_afterResidentStatsReset();
 }
 
 uint32_t EspAssetPack_mapFlashRuntimeReadMicros(void)
