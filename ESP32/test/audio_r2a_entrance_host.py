@@ -45,7 +45,7 @@ assert "FAIL-CLOCK" in runtime and "FAIL-HEAP" in runtime
 assert "gapsOver90us" in runtime and "maxSdReadUs" in runtime
 assert "SD.open(" in runtime and "musicFile.read(raw,wav.blockAlign)" in runtime
 assert "if (kRingCapacity-q<wav.samplesPerBlock)" in runtime
-assert "EspEntranceAdpcm_decodeBlockObserved(" in runtime
+assert "EspEntranceAdpcm_decodeBlockObservedGain(" in runtime
 assert runtime.index("if (measured<20900U||measured>23200U)") < runtime.index("if (!startPlaying())")
 assert "i2s_" not in runtime and "SPI." not in runtime
 assert "xTaskCreate" not in runtime and "DoomRPG.zip" not in runtime
@@ -71,7 +71,7 @@ assert 'signalReport("FINAL")' in runtime
 assert "publishedPrefixFnv" in runtime and "consumedPrefixFnv" in runtime
 assert "EspEntranceAdpcm_decodeBlockObserved(" in header
 assert "pcm16MinMax" in runtime and "publishedDacMinMax" in runtime
-assert "gainDiv=14" in runtime and "softKneeFrames" in runtime
+assert "kEntranceGainDiv=15U" in runtime and "kIntroGainDiv=33U" in runtime and "softKneeFrames" in runtime
 assert "EspNativeAudioIntent_musicVolumePercent()" in runtime
 assert "volume)/100" in runtime
 assert "masterVolume=" in runtime

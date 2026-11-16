@@ -8,6 +8,7 @@ static uint32_t intentCount;
 /* Audio music output preference, independent of incidental sound intents.
  * Runtime-only until native config evolves beyond its validated V3 ABI. */
 static uint8_t musicVolumePercent=100U;
+static uint8_t soundEnabled=1U; /* boot default ON, V3 config unchanged */
 
 void EspNativeAudioIntent_reset(void) {
     memset(&lastIntent, 0, sizeof(lastIntent));
@@ -65,5 +66,19 @@ int EspNativeAudioIntent_setMusicVolumePercent(uint8_t percent) {
     musicVolumePercent=percent;
     printf("[AUDIOVOLUME] SET percent=%u persistence=boot-session configV3=unchanged\n",
            (unsigned)percent);
+    return 1;
+}
+
+int EspNativeAudioIntent_isSoundEnabled(void) {
+    return soundEnabled != 0U;
+}
+
+int EspNativeAudioIntent_setSoundEnabled(int enabled) {
+    if (enabled!=0 && enabled!=1) return 0;
+    const uint8_t before=soundEnabled;
+    soundEnabled=(uint8_t)enabled;
+    printf("[AUDIOSWITCH] SET %s->%s volumeKept=%u persistence=boot-session configV3=unchanged\n",
+           before?"ON":"OFF",soundEnabled?"ON":"OFF",
+           (unsigned)musicVolumePercent);
     return 1;
 }

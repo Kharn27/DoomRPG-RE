@@ -45,6 +45,20 @@ def git_blob(data: bytes) -> str:
     ).hexdigest()
 
 
+def restore_intro_i3_start(text: str) -> str:
+    """Strip just the I3 pre-display prestart from the frozen F29 start TU."""
+    include = '#include "esp_audio_entrance_music.h" /* I3: intro audio before first visible frame */\n'
+    hook = (
+        '    /* I3: Start IMA intro music before presenting its first picture.\n'
+        '     * The old ST_INTRO source and its FNV-exact composition stay untouched.\n'
+        '     * A missing/invalid WAV is NOT a reason to suppress the first frame. */\n'
+        '    (void)EspEntranceMusic_prestartIntroBeforeFirstFrame();\n'
+    )
+    assert text.count(include)==1, "I3 include drift"
+    assert text.count(hook)==1, "I3 intro prestart hook drift"
+    return text.replace(include,"",1).replace(hook,"",1)
+
+
 def original_body_parity() -> None:
     marker = GUARD.encode("ascii")
     old_import = b"#include <SDL.h>\n"
@@ -66,6 +80,8 @@ def original_body_parity() -> None:
             restored = restore_sound_options_action(restored)
         elif filename == "native_main_menu_options_back.c":
             restored = restore_sound_options_back(restored)
+        elif filename == "native_main_menu_start_action.c":
+            restored = restore_intro_i3_start(restored)
         assert git_blob(restored.encode("utf-8")) == blob, (
             f"{filename}: original pre-F29 Git blob not preserved exactly")
         assert current.count(old_import) == expected, filename

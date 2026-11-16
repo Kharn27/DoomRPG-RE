@@ -475,6 +475,9 @@ void setup()
     initializePlatformVideo();
     initializeSdCard();
     EspNativeConfig_loadAtBoot(sdReady ? 1 : 0);
+    /* SOUND=ON by default: drive DAC2 at digital silence before menus/intro.
+     * No timer, SD read, ring or audio allocation here. */
+    EspEntranceMusic_syncIdleOutput();
     initializeGameAssets();
     initializeEngineCore();
     initializeEngineLayout();
@@ -486,6 +489,10 @@ void setup()
 
 void loop()
 {
+    /* Release the one intro SD File/ring AFTER FINAL-CONTINUE has parked the
+     * clock, but BEFORE the next clock service starts BSP/flash loading.
+     * Preserve the native intro C files byte-exact (SDL-F8 regression). */
+    EspEntranceMusic_stopIntroAtHandoff();
     Esp32IntroClock_service();
     DoomRPG_esp32MainMenuHelpService();
     if (EspNativeGameplaySession_canService())

@@ -56,6 +56,21 @@ jobs:
       - name: Test AUDIO-SFX-G1 modest relative SFX boost and DAC clamp (host C)
         run: python ESP32/test/audio_sfx_g1_gain_host.py
 
+      - name: Test AUDIO-S1 native SOUND ON-OFF submenu and idle DAC ownership
+        run: python ESP32/test/audio_s1_sound_menu_idle_dac_host.py
+
+      - name: Test AUDIO-I1 intro WAV IMA SD reader and pre-BSP teardown
+        run: python ESP32/test/audio_i1_intro_music_host.py
+
+      - name: Test AUDIO-I2 intro-only ADPCM pre-knee gain (host C11)
+        run: python ESP32/test/audio_i2_intro_only_gain_host.py
+
+      - name: Test AUDIO-I3 audio prestart before first visible intro frame
+        run: python ESP32/test/audio_i3_intro_prestart_host.py
+
+      - name: Test AUDIO-I4 subtle music headroom and reference decoder (host C11)
+        run: python ESP32/test/audio_i4_music_headroom_host.py
+
       - name: Test native process RNG owner and 132B root extraction (host C + ABI)
         run: python ESP32/test/native_process_rng_owner_host.py
 

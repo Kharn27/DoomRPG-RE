@@ -23,16 +23,20 @@ typedef struct EspEntranceAdpcmDecodeStats_s {
     uint32_t gainLimited;  /* PCM16 values limited before 200ms fade */
 } EspEntranceAdpcmDecodeStats;
 
-static inline void EspEntranceAdpcm_observePcm(
-    EspEntranceAdpcmDecodeStats* stats,int16_t pcm) {
+/* Inspect the ORIGINAL PCM16 extrema, but count gain limiting using the
+ * selected track's divisor. Intro is mastered much louder than Entrance. */
+static inline void EspEntranceAdpcm_observePcmGain(
+    EspEntranceAdpcmDecodeStats* stats,int16_t pcm,uint16_t gainDiv) {
     if (!stats) return;
     if (pcm<stats->minPcm) stats->minPcm=pcm;
     if (pcm>stats->maxPcm) stats->maxPcm=pcm;
     if (pcm!=0) ++stats->nonZeroPcm;
-    /* R2e: count the exact same threshold as the converter below.
-     * Cast to int32 to avoid any signed 16-bit arithmetic surprises. */
-    const int32_t scaled=(int32_t)pcm/14;
+    const int32_t scaled=(int32_t)pcm/(int32_t)gainDiv;
     if (scaled < -96 || scaled > 96) ++stats->gainLimited;
+}
+static inline void EspEntranceAdpcm_observePcm(
+    EspEntranceAdpcmDecodeStats* stats,int16_t pcm) {
+    EspEntranceAdpcm_observePcmGain(stats,pcm,14U);
 }
 
 static inline uint16_t EspEntranceAdpcm_u16(const uint8_t* p) {
@@ -122,14 +126,11 @@ static inline int EspEntranceAdpcm_parse(const uint8_t* p, uint32_t headerBytes,
 static inline int EspEntranceAdpcm_clamp(int v,int minV,int maxV) {
     return v<minV?minV:(v>maxV?maxV:v);
 }
-static inline uint8_t EspEntranceAdpcm_toDac(int16_t pcm,
-                                            uint32_t firstFrame) {
-    /* AUDIO-R2e: tiny +1.16dB linear trim over hardware-proven R2d (/16).
-     * No change to continuous soft knee +/-96 -> +/-112 (safe [16,240]),
-     * 200ms fade, ISR/timer, ring, SD ownership or GPIOs. The source is
-     * fairly quiet; this is a reversible subjective A/B experiment, NOT
-     * a solution for the unidentified analog/digital moire noise. */
-    int32_t diff=(int32_t)pcm/14;
+/* Shared soft knee, safety rails and 200ms fade. The divisor is chosen
+ * BEFORE the limiter (not a post-limiter attenuation), avoiding the heavy
+ * soft-knee compression heard on loud M_IN_CIT samples. */
+static inline uint8_t EspEntranceAdpcm_limitedDac(int32_t diff,
+                                                   uint32_t firstFrame) {
     const int32_t sign=diff<0?-1:1;
     int32_t magnitude=diff<0?-diff:diff;
     if (magnitude>96) {
@@ -141,13 +142,29 @@ static inline uint8_t EspEntranceAdpcm_toDac(int16_t pcm,
     diff=diff*(int32_t)fade/4410;
     return (uint8_t)(128+diff);
 }
+/* AUDIO-R2e verified baseline remains /14 for all ordinary music. */
+static inline uint8_t EspEntranceAdpcm_toDac(int16_t pcm,
+                                            uint32_t firstFrame) {
+    int32_t diff=(int32_t)pcm/14;
+    return EspEntranceAdpcm_limitedDac(diff,firstFrame);
+}
+/* I2/I4: preserve original /14 and /32 reference outputs, while the live
+ * tracks use /15 and /33 for small additional headroom. Other gains fail closed. */
+static inline uint8_t EspEntranceAdpcm_toDacGain(
+    int16_t pcm,uint32_t firstFrame,uint16_t gainDiv) {
+    if (gainDiv==14U) return EspEntranceAdpcm_toDac(pcm,firstFrame);
+    if (gainDiv!=15U && gainDiv!=32U && gainDiv!=33U) return 128U; /* fail closed */
+    return EspEntranceAdpcm_limitedDac((int32_t)pcm/(int32_t)gainDiv,firstFrame);
+}
 /* One complete mono block, <=1024 compressed bytes, <=2041 output samples.
  * caller output must have capacity >= samplesPerBlock.
  * All step/index updates and padding counts are explicit. */
-static inline int EspEntranceAdpcm_decodeBlockObserved(
+static inline int EspEntranceAdpcm_decodeBlockObservedGain(
     const uint8_t* block,uint32_t n,uint16_t samplesPerBlock,
     uint8_t* out,uint32_t outCapacity,uint32_t firstFrame,
-    EspEntranceAdpcmDecodeStats* stats) {
+    uint16_t gainDiv,EspEntranceAdpcmDecodeStats* stats) {
+    if (gainDiv!=14U && gainDiv!=15U && gainDiv!=32U && gainDiv!=33U)
+        return 0; /* no unsupported division */
     if (!block||!out||n<8U||n>1024U||samplesPerBlock!=1U+2U*(n-4U)||
         outCapacity<samplesPerBlock) return 0;
     static const int16_t steps[89]={
@@ -173,8 +190,8 @@ static inline int EspEntranceAdpcm_decodeBlockObserved(
         stats->nonZeroPcm=0U;
         stats->gainLimited=0U;
     }
-    EspEntranceAdpcm_observePcm(stats,(int16_t)predictor);
-    out[0]=EspEntranceAdpcm_toDac((int16_t)predictor,firstFrame);
+    EspEntranceAdpcm_observePcmGain(stats,(int16_t)predictor,gainDiv);
+    out[0]=EspEntranceAdpcm_toDacGain((int16_t)predictor,firstFrame,gainDiv);
     uint32_t produced=1U;
     for (uint32_t i=4U;i<n;i++) {
         const uint8_t packed=block[i];
@@ -188,14 +205,22 @@ static inline int EspEntranceAdpcm_decodeBlockObserved(
             predictor=EspEntranceAdpcm_clamp(
                 predictor+((nibble&8)?-delta:delta),-32768,32767);
             index=EspEntranceAdpcm_clamp(index+offsets[nibble],0,88);
-            EspEntranceAdpcm_observePcm(stats,(int16_t)predictor);
+            EspEntranceAdpcm_observePcmGain(stats,(int16_t)predictor,gainDiv);
             if (produced>=outCapacity) return 0;
-            out[produced]=EspEntranceAdpcm_toDac(
-                (int16_t)predictor,firstFrame+produced);
+            out[produced]=EspEntranceAdpcm_toDacGain(
+                (int16_t)predictor,firstFrame+produced,gainDiv);
             produced++;
         }
     }
     return produced==samplesPerBlock;
+}
+/* Preserve AUDIO-R2e original decoder + stats ABI for existing callers. */
+static inline int EspEntranceAdpcm_decodeBlockObserved(
+    const uint8_t* block,uint32_t n,uint16_t samplesPerBlock,
+    uint8_t* out,uint32_t outCapacity,uint32_t firstFrame,
+    EspEntranceAdpcmDecodeStats* stats) {
+    return EspEntranceAdpcm_decodeBlockObservedGain(
+        block,n,samplesPerBlock,out,outCapacity,firstFrame,14U,stats);
 }
 /* Preserve the original pure decoder API for existing host callers. */
 static inline int EspEntranceAdpcm_decodeBlock(

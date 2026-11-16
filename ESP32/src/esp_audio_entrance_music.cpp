@@ -20,6 +20,7 @@
 #include "esp_audio_entrance_music.h"
 #include "esp_native_audio_intent.h" /* session music volume preset owner */
 #include "esp_player_view_state.h"
+#include "native_intro_clock.h" /* native ST_INTRO active/exit boundary */
 
 /* AUDIO-R2a: native SD music, not a desktop player.
  * M_STALKS.wav (user-supplied Doom II recording, NEVER in Git/PAK):
@@ -31,6 +32,8 @@
 namespace {
 constexpr char kPrimary[]="/doomrpg/music/opl/M_STALKS.wav";
 constexpr char kRootFallback[]="/M_STALKS.wav";
+constexpr char kIntroPrimary[]="/doomrpg/music/opl/M_IN_CIT.wav";
+constexpr char kIntroFallback[]="/M_IN_CIT.wav";
 constexpr uint32_t kRate=22050U;
 constexpr uint32_t kTimerDiv=2U;
 constexpr uint32_t kTimerAlarm=1814U;    /* 80MHz /2 /1814 ≈ 22050.72Hz */
@@ -42,6 +45,11 @@ constexpr uint32_t kMaxSilentFrames=8U*kRate; /* 8s -> fail closed */
 constexpr uint32_t kHeaderBytes=512U;
 constexpr uint32_t kMaxBlockBytes=1024U;
 constexpr uint32_t kMaxBlockSamples=2041U;
+/* I4: tiny safety margin measured on CYD. /32 -> /33 (intro ~-0.27dB),
+ * /14 -> /15 (Entrance ~-0.60dB), both BEFORE the original soft knee.
+ * Preserve the legacy /14, /32 pure decoder ABI for host reference tests. */
+constexpr uint16_t kIntroGainDiv=33U;
+constexpr uint16_t kEntranceGainDiv=15U;
 constexpr uint32_t kHashFrames=4096U;      /* first music frames, producer==ISR */
 constexpr uint32_t kFnvBasis=2166136261U;
 constexpr timer_group_t kGroup=TIMER_GROUP_1;
@@ -89,6 +97,8 @@ static EspEntranceAdpcmWav wav={};
 static const char* path=nullptr;
 static const char* failure="none";
 static bool attempted;
+static bool activeIntroTrack;
+static bool introPrestartWindow; /* main-task only, prior to ST_INTRO clock arm */
 static bool fileOpen;
 static bool timerInit;
 static bool callbackAdded;
@@ -290,8 +300,10 @@ static bool refill() {
                            available:wav.samplesPerBlock;
     const uint32_t fadeFrame=(loops==0U)?producedInLoop:4410U;
     EspEntranceAdpcmDecodeStats stats={};
-    if (!EspEntranceAdpcm_decodeBlockObserved(raw,wav.blockAlign,
-        wav.samplesPerBlock,decoded,kMaxBlockSamples,fadeFrame,&stats)) {
+    const uint16_t gainDiv=activeIntroTrack?kIntroGainDiv:kEntranceGainDiv;
+    if (!EspEntranceAdpcm_decodeBlockObservedGain(raw,wav.blockAlign,
+        wav.samplesPerBlock,decoded,kMaxBlockSamples,fadeFrame,
+        gainDiv,&stats)) {
         failure="adpcm_decode";return false;
     }
     if (stats.minPcm<pcmMin) pcmMin=stats.minPcm;
@@ -301,11 +313,12 @@ static bool refill() {
     if (blocksRead==0U && loops==0U) {
         printf("[ENTRANCEMUSIC] BLOCK0 predictor=%d stepIndex=%u "
                "pcm16MinMax=%d..%d dacFirst=%u dacLast=%u "
-               "softKneeFrames=%u gainDiv=14 peakCodes=112\n",
+               "softKneeFrames=%u gainDiv=%u peakCodes=112 track=%s\n",
                (int)(int16_t)EspEntranceAdpcm_u16(raw),
                (unsigned)raw[2],(int)stats.minPcm,(int)stats.maxPcm,
                (unsigned)decoded[0],(unsigned)decoded[samples-1U],
-               (unsigned)stats.gainLimited);
+               (unsigned)stats.gainLimited,(unsigned)gainDiv,
+               activeIntroTrack?"INTRO":"ENTRANCE");
     }
     const uint32_t start=__atomic_load_n(&wr,__ATOMIC_RELAXED);
     const uint8_t volume=EspNativeAudioIntent_musicVolumePercent();
@@ -673,9 +686,10 @@ static bool startClock() {
     if (timer_start(kGroup,kTimer)!=ESP_OK) {
         failure="clock_start";return false;
     }
-    printf("[ENTRANCEMUSIC] PREFLIGHT timer=TG1T1 dac=OFF "
+    printf("[ENTRANCEMUSIC] PREFLIGHT timer=TG1T1 dacStream=OFF dacPad=%s "
            "targetHz=22050 clockDiv=2 alarm=1814 ringQueued=%u "
-           "guard=20900..23200\n",(unsigned)queued());
+           "guard=20900..23200\n",dacEnabled?"ON":"OFF",
+           (unsigned)queued());
     return true;
 }
 static bool startPlaying() {
@@ -718,9 +732,11 @@ static bool startPlaying() {
     }
     printf("[ENTRANCEMUSIC] PLAY path=%s backend=timer-DAC2 "
            "format=IMA-ADPCM monoHz=22050 ring=%u primed=%u "
-           "dacPeakCodes=112 gainDiv=14 softKneeAt=96 masterVolume=%u witness=none source=SD-ring "
+           "dacPeakCodes=112 gainDiv=%u track=%s softKneeAt=96 masterVolume=%u witness=none source=SD-ring "
            "dacEnabled=yes gpio25=untouched noI2S=yes noPSRAM=yes\n",
            path,(unsigned)kRingCapacity,(unsigned)queued(),
+           (unsigned)(activeIntroTrack?kIntroGainDiv:kEntranceGainDiv),
+           activeIntroTrack?"INTRO":"ENTRANCE",
            (unsigned)EspNativeAudioIntent_musicVolumePercent());
     return true;
 }
@@ -735,13 +751,16 @@ static void begin() {
                (unsigned)heapBefore,(unsigned)largest);
         return;
     }
-    path=kPrimary;
+    activeIntroTrack=Esp32IntroClock_isActive()!=0||introPrestartWindow;
+    const char* requested=activeIntroTrack?kIntroPrimary:kPrimary;
+    const char* fallback=activeIntroTrack?kIntroFallback:kRootFallback;
+    path=requested;
     printf("[ENTRANCEMUSIC] OPEN path=%s fallback=%s "
-           "expected=WAV-IMA-ADPCM-mono-22050\n",kPrimary,kRootFallback);
-    musicFile=SD.open(kPrimary,FILE_READ);
+           "expected=WAV-IMA-ADPCM-mono-22050\n",requested,fallback);
+    musicFile=SD.open(requested,FILE_READ);
     if (!musicFile) {
-        path=kRootFallback;
-        musicFile=SD.open(kRootFallback,FILE_READ);
+        path=fallback;
+        musicFile=SD.open(fallback,FILE_READ);
     }
     if (!musicFile) {
         printf("[ENTRANCEMUSIC] SILENT reason=missing_file "
@@ -816,16 +835,97 @@ static void begin() {
 }
 } // namespace
 
+int EspEntranceMusic_prestartIntroBeforeFirstFrame(void) {
+    /* I3: the menu action has already finished ST_INTRO asset preparation,
+     * but first frame and clock have not been armed. One synchronous bounded
+     * preflight, one existing ring, one SD file, and NO concurrent SPI owner.
+     * Always fail softly into the original visible intro on any fault. */
+    if (!EspNativeAudioIntent_isSoundEnabled()) {
+        printf("[INTROMUSIC] PRESTART skipped reason=SOUND_OFF firstFrame=allowed\n");
+        return 0;
+    }
+    if (EspAssetPack_isOpen() || Esp32IntroClock_isActive() ||
+        phase!=kSilent || ring!=nullptr || fileOpen || timerInit) {
+        printf("[INTROMUSIC] PRESTART skipped reason=owner_not_idle firstFrame=allowed\n");
+        return 0;
+    }
+    const uint32_t startMs=millis();
+    introPrestartWindow=true;
+    while ((uint32_t)(millis()-startMs)<1800U) {
+        EspEntranceMusic_service(false,true);
+        if (phase==kPlay) break;
+        if (phase==kSilent && attempted) break; /* format/memory/file/clock */
+        delay(1); /* Arduino task yields; no spin in timer ISR */
+    }
+    const int ready=(phase==kPlay && activeIntroTrack);
+    if (!ready && (ring!=nullptr || fileOpen || timerInit))
+        closeMusic("INTRO_PRESTART_TIMEOUT");
+    introPrestartWindow=false;
+    /* Attempt latch stays true on failure: do not resume late in ST_INTRO. */
+    if (!ready) attempted=true;
+    printf("[INTROMUSIC] PRESTART ready=%d elapsedMs=%u firstFrame=NOT_PRESENTED "
+           "phase=%u queued=%u ringBytes=%u source=one-SD-owner\n",
+           ready,(unsigned)(millis()-startMs),(unsigned)phase,
+           (unsigned)(ring!=nullptr?queued():0U),
+           (unsigned)(ring!=nullptr?kRingCapacity:0U));
+    return ready;
+}
+
+void EspEntranceMusic_syncIdleOutput(void) {
+    /* No timer or ring in menus. Hold DAC2 at the exact digital midpoint.
+     * Never modify the live timer's DAC output in gameplay. */
+    if (phase!=kSilent || timerInit || ring!=nullptr) return;
+    const int enabled=EspNativeAudioIntent_isSoundEnabled();
+    if (!enabled) {
+        if (dacEnabled) {
+            (void)dac_output_voltage(DAC_CHANNEL_2,128U);
+            (void)dac_output_disable(DAC_CHANNEL_2);
+            dacEnabled=false;
+            printf("[AUDIOIDLE] OFF dacPad=OFF timer=OFF music=STOPPED\n");
+        }
+        return;
+    }
+    if (!dacEnabled) {
+        if (dac_output_enable(DAC_CHANNEL_2)!=ESP_OK) {
+            printf("[AUDIOIDLE] FAILED reason=dac-enable timer=OFF\n");
+            return;
+        }
+        dacEnabled=true;
+        (void)dac_output_voltage(DAC_CHANNEL_2,128U);
+        printf("[AUDIOIDLE] ON dacPad=ON code=128 timer=OFF buffer=0 music=STOPPED\n");
+    }
+}
+
+void EspEntranceMusic_stopIntroAtHandoff(void) {
+    /* Called before the parked intro clock can start BSP/map-flash bootstrap.
+     * Never interrupt a still-active ST_INTRO playback. Pure Arduino task. */
+    if (!activeIntroTrack || Esp32IntroClock_isActive()) return;
+    if (phase!=kSilent || ring || timerInit || fileOpen) {
+        closeMusic("INTRO_EXIT_BEFORE_MAP");
+    }
+    if (activeIntroTrack) {
+        attempted=false; /* Entrance will own the next independent track. */
+        activeIntroTrack=false;
+        EspEntranceMusic_syncIdleOutput();
+        printf("[INTROMUSIC] HANDOFF musicClosed=yes mapLoaderMayStart=yes\n");
+    }
+}
+
 void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
     const EspPlayerViewState* view=gameplayActive?
                                    EspPlayerView_view():nullptr;
     const bool entrance=gameplayActive&&sdReady&&view&&
                         view->targetMapId==1U&&view->gameplayLoadMapId==1U;
-    if (!entrance) {
+    const bool intro=Esp32IntroClock_isActive()!=0||introPrestartWindow;
+    const bool soundOn=EspNativeAudioIntent_isSoundEnabled()!=0;
+    /* Intro and Entrance share one reader/ISR/ring, never coexist.
+     * Only the confirmed intro handoff closes M_IN_CIT before map load. */
+    if ((!entrance && !intro) || !soundOn) {
         if (phase!=kSilent||ring||timerInit||fileOpen)
-            closeMusic("SESSION_EXIT");
-        if (!gameplayActive||!view||view->targetMapId!=1U)
-            attempted=false;  /* one chance per real Entrance session */
+            closeMusic(soundOn?"SESSION_EXIT":"SOUND_OFF");
+        EspEntranceMusic_syncIdleOutput(); /* SOUND ON -> 128, OFF -> disabled */
+        attempted=false;
+        activeIntroTrack=false;
         return;
     }
     if (!attempted) begin();
@@ -862,8 +962,9 @@ void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
         const uint32_t measured=EspAudioClockGuard_rate(
             ticks,elapsed>0?(uint64_t)elapsed:0ULL);
         printf("[ENTRANCEMUSIC] CLOCK measuredHz=%u ticks=%u "
-               "elapsedUs=%lld guard=20900..23200 dac=OFF sampleMode=uncapped-interval\n",
-               (unsigned)measured,(unsigned)ticks,(long long)elapsed);
+               "elapsedUs=%lld guard=20900..23200 dacStream=OFF dacPad=%s sampleMode=uncapped-interval\n",
+               (unsigned)measured,(unsigned)ticks,(long long)elapsed,
+               dacEnabled?"ON":"OFF");
         if (measured<20900U||measured>23200U) {
             closeMusic("FAIL-CLOCK");return;
         }
@@ -871,7 +972,8 @@ void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
         return;
     }
     if (phase==kPlay) {
-        mixPendingSfx(); /* one native real-action intent per main-loop */
+        if (!activeIntroTrack)
+            mixPendingSfx(); /* SFX valid only over real gameplay music. */
         const uint32_t frames=__atomic_load_n(&playedFrames,__ATOMIC_ACQUIRE);
         const uint32_t now=millis();
         if (frames!=lastFrameSeen) {
