@@ -101,7 +101,7 @@ def original_body_parity() -> None:
         # before the frozen ten-source pre-F27 Git blob witness. No hashes
         # are rewritten, no legacy semantics are accepted as new baselines.
         if filename == "esp_native_gameplay_action_engine.c":
-            p1_import = b'#include "esp_native_audio_intent.h"\\n'.replace(b"\\n", b"\n")
+            p1_import = b'#include "esp_native_audio_intent.h"\n'
             p1_hook = (
                 b"            /* SFX-P1: publish only a successfully committed pistol/crate\n"
                 b"             * hit. No I/O here, and no audio on rollback/invalid outcome. */\n"
@@ -113,7 +113,7 @@ def original_body_parity() -> None:
             assert current.count(p1_hook) == 1, "SFX-P1 crate commit hook drift"
             current = current.replace(p1_import, b"", 1).replace(p1_hook, b"", 1)
         elif filename == "esp_native_gameplay_player_resources.c":
-            p1_import = b'#include "esp_native_audio_intent.h"\\n'.replace(b"\\n", b"\n")
+            p1_import = b'#include "esp_native_audio_intent.h"\n'
             p1_hook = (
                 b"        /* SFX-P1: only after irreversible resource/player/world commit.\n"
                 b"         * Original desktop generic pickup cue 5060; no PAK access here. */\n"
