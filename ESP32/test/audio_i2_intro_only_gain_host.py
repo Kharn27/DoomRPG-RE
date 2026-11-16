@@ -62,7 +62,7 @@ int main(void) {
     assert(!EspEntranceAdpcm_decodeBlockObservedGain(
         block,8,9,intro,9,4410,0U,&c));
     assert(!EspEntranceAdpcm_decodeBlockObservedGain(
-        block,8,9,intro,9,4410,33U,&c));
+        block,8,9,intro,9,4410,34U,&c));
     /* No buffer or data offsets are changed by track mastering. */
     return 0;
 }
