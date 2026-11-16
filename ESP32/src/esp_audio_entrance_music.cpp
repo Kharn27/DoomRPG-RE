@@ -13,6 +13,7 @@
 #include <stdio.h>
 
 #include "esp_audio_entrance_adpcm.h"
+#include "esp_audio_clock_guard.h"
 #include "esp_audio_entrance_music.h"
 #include "esp_native_audio_intent.h" /* session music volume preset owner */
 #include "esp_player_view_state.h"
@@ -119,7 +120,10 @@ static uint32_t pumpBlockReads;
 static bool IRAM_ATTR onAudioTick(void*) {
     const uint8_t mode=phase;
     if (mode==kClock) {
-        if (clockTicks<kRate) ++clockTicks;
+        /* R2f: account for *all* real timer interrupts, including time
+         * spent rendering before the game loop polls calibration. A capped
+         * count divided by a delayed wall clock creates false FAIL-CLOCK. */
+        if (clockTicks!=UINT32_MAX) ++clockTicks;
     } else if (mode==kPlay) {
         const uint32_t start=xthal_get_ccount();
         const uint32_t prev=prevCycle;
@@ -491,19 +495,27 @@ void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
         return;
     }
     if (phase==kClock) {
-        const int64_t elapsed=esp_timer_get_time()-clockStartUs;
-        if (clockTicks<kRate) {
-            if (elapsed>1500000LL) closeMusic("FAIL-CLOCK-TIMEOUT");
+        const int64_t nowUs=esp_timer_get_time();
+        const uint32_t seenTicks=__atomic_load_n(&clockTicks,__ATOMIC_ACQUIRE);
+        if (seenTicks<kRate) {
+            if (nowUs-clockStartUs>1500000LL)
+                closeMusic("FAIL-CLOCK-TIMEOUT");
             return;
         }
-        (void)timer_pause(kGroup,kTimer);
-        const uint32_t measured=elapsed>0?
-            (uint32_t)((uint64_t)kRate*1000000ULL/
-                       (uint64_t)elapsed):0U;
+        /* R2f: freeze both operands at the end of the SAME measured
+         * interval. Gameplay animation may delay service hundreds of ms,
+         * but the IRAM ISR keeps accumulating ticks throughout that delay.
+         * Never relax the verified 20900..23200 hardware clock guard. */
+        if (timer_pause(kGroup,kTimer)!=ESP_OK) {
+            closeMusic("FAIL-CLOCK-PAUSE");return;
+        }
+        const int64_t elapsed=esp_timer_get_time()-clockStartUs;
+        const uint32_t ticks=__atomic_load_n(&clockTicks,__ATOMIC_ACQUIRE);
+        const uint32_t measured=EspAudioClockGuard_rate(
+            ticks,elapsed>0?(uint64_t)elapsed:0ULL);
         printf("[ENTRANCEMUSIC] CLOCK measuredHz=%u ticks=%u "
-               "elapsedUs=%lld guard=20900..23200 dac=OFF\n",
-               (unsigned)measured,(unsigned)clockTicks,
-               (long long)elapsed);
+               "elapsedUs=%lld guard=20900..23200 dac=OFF sampleMode=uncapped-interval\n",
+               (unsigned)measured,(unsigned)ticks,(long long)elapsed);
         if (measured<20900U||measured>23200U) {
             closeMusic("FAIL-CLOCK");return;
         }
