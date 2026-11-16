@@ -14,6 +14,7 @@
 
 #include "doomrpg_log.h"
 #include "esp_entity_def_type_catalog.h"
+#include "esp_native_audio_intent.h"
 #include "esp_map_runtime.h"
 #include "esp_map_sprite_topology.h"
 #include "esp_native_gameplay_action_engine.h"
@@ -1020,6 +1021,9 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
                (unsigned int)EspNativeGameplayPlayerState_view()->keys,
                (unsigned int)EspNativeGameplayPlayerState_view()->credits,
                feedbackQueued ? "pickup-live" : "skipped-busy");
+        /* SFX-P1: only after irreversible resource/player/world commit.
+         * Original desktop generic pickup cue 5060; no PAK access here. */
+        (void)EspNativeAudioIntent_publish(5060U,0U,3U);
         printf("[PLAYERRES] FEEDBACK tile=%u message=\"%s\" sourceDefTile=%u flash=none miniature=PAK-24x24/500ms position=13,72 gotFace=deferred weaponHelp=%s messages=%u additionalMessages=%u-queued legacyCap=%u shifted=%u\n",
                (unsigned int)afterTile,
                pickupMessages[0],

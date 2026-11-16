@@ -14,6 +14,9 @@
 
 #include "esp_audio_entrance_adpcm.h"
 #include "esp_audio_clock_guard.h"
+#include "esp_native_sfx_pcm_mix.h"
+#include "esp_native_sfx_wav.h"
+#include "esp_asset_pack.h"
 #include "esp_audio_entrance_music.h"
 #include "esp_native_audio_intent.h" /* session music volume preset owner */
 #include "esp_player_view_state.h"
@@ -116,6 +119,25 @@ static uint32_t producedFrames;
 static uint32_t publishedPrefixFnv;
 static uint32_t pumpCalls;
 static uint32_t pumpBlockReads;
+/* SFX-P1: one brief PCM16 effect, directly overlaid onto the existing
+ * not-yet-consumed music ring. No second timer, ISR edits or WAV allocation. */
+static uint32_t sfxSeenSequence;
+static uint32_t sfxBusyUntil;
+static uint32_t sfxPlayedCount;
+static uint32_t sfxRejectedCount;
+constexpr uint32_t kSfxLeadFrames=1024U; /* ~46ms collision guard */
+constexpr uint32_t kSfxMinLead=128U;
+constexpr uint32_t kSfxReadBytes=512U;
+/* P2: bounded continuation for 5045, whose 17640 output samples exceed
+ * one 16384-byte ring. The PAK entry is only immutable offsets, not a lease. */
+struct FireSfxVoice {
+    EspAssetPackEntry entry;
+    uint32_t start,output,next,srcIndex,srcPhase,readCount;
+    bool active;
+};
+static FireSfxVoice fireSfx={};
+static uint32_t sfxDeferredSequence;
+
 
 static bool IRAM_ATTR onAudioTick(void*) {
     const uint8_t mode=phase;
@@ -201,6 +223,8 @@ static void signalReport(const char* at) {
 }
 static void closeMusic(const char* reason) {
     phase=kSilent;
+    fireSfx.active=false;
+    sfxDeferredSequence=0U;
     if (timerInit) (void)timer_pause(kGroup,kTimer);
     if (callbackAdded) (void)timer_isr_callback_remove(kGroup,kTimer);
     callbackAdded=false;
@@ -302,6 +326,303 @@ static bool refill() {
     ++blocksRead;
     return true;
 }
+/* SFX-P1: emit one actual original short PCM effect immediately after its
+ * native gameplay intent. All reads happen here in the producer task, when
+ * gameplay has closed its PAK lease. The 16KiB ring is shared with music:
+ * overlay at rd+1024 (~46ms), NOT at wr (+~740ms latency).
+ * Fail closed when the entire short SFX cannot fit ahead of the reader.
+ * More SFX codecs, long effects, overlap, priorities and STOP_ALL belong to
+ * later milestones, not this first real audible test. */
+/* P2: Fire Ext WAV 5045, pure PCM16 PAK flash. Allocate nothing.
+ * A short slice is mixed only into the future writer-published DAC bytes.
+ * The main loop continues until all 17640 samples have been mixed. */
+static void mixFireSfx() {
+    if (!fireSfx.active || EspAssetPack_isOpen()) return;
+    const uint32_t reader=__atomic_load_n(&rd,__ATOMIC_ACQUIRE);
+    const uint32_t writer=__atomic_load_n(&wr,__ATOMIC_ACQUIRE);
+    const uint32_t at=fireSfx.start+fireSfx.next;
+    const uint32_t available=(int32_t)(writer-at)>0?writer-at:0U;
+    const uint32_t remain=fireSfx.output-fireSfx.next;
+    const uint32_t budget=available<remain?available:remain;
+    if ((int32_t)(at-reader)<(int32_t)kSfxMinLead) {
+        fireSfx.active=false;
+        ++sfxRejectedCount;
+        printf("[SFXP2] PARTIAL id=5045 reason=reader-caught-up totalMixed=%u\n",
+               (unsigned)fireSfx.next);
+        return;
+    }
+    if (budget==0U) return;
+    if (!EspAssetPack_isMapFlashActive() ||
+        !EspAssetPack_isResident() ||
+        !EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
+        fireSfx.active=false;
+        ++sfxRejectedCount;
+        printf("[SFXP2] PARTIAL id=5045 reason=pak-unavailable totalMixed=%u\n",
+               (unsigned)fireSfx.next);
+        return;
+    }
+    uint8_t chunk[kSfxReadBytes];
+    uint32_t cachedStart=UINT32_MAX,cachedFrames=0U,done=0U,reads=0U;
+    const int64_t begun=esp_timer_get_time();
+    const char* failure=nullptr;
+    for (uint32_t i=0U;i<budget;i++) {
+        if ((i&63U)==0U &&
+            (int32_t)((fireSfx.start+fireSfx.next+i)-
+                __atomic_load_n(&rd,__ATOMIC_ACQUIRE))<
+                (int32_t)kSfxMinLead) {
+            failure="reader-caught-up";break;
+        }
+        if (fireSfx.srcIndex>=6400U) {
+            failure="source-bounds";break;
+        }
+        if (cachedStart==UINT32_MAX ||
+            fireSfx.srcIndex<cachedStart ||
+            fireSfx.srcIndex>=cachedStart+cachedFrames) {
+            cachedStart=fireSfx.srcIndex;
+            const uint32_t left=6400U-fireSfx.srcIndex;
+            cachedFrames=left<(kSfxReadBytes/2U)?
+                left:(kSfxReadBytes/2U);
+            if (!EspAssetPack_readRange(&fireSfx.entry,
+                    44U+fireSfx.srcIndex*2U,
+                    chunk,cachedFrames*2U)) {
+                failure="flash-read";break;
+            }
+            ++reads;
+        }
+        const int16_t pcm=EspNativeSfxPcm_le16(
+            chunk+(fireSfx.srcIndex-cachedStart)*2U);
+        const uint32_t slot=(fireSfx.start+fireSfx.next+i)&kRingMask;
+        ring[slot]=EspNativeSfxPcm_mixGain(ring[slot],pcm,5045U);
+        ++done;
+        fireSfx.srcPhase+=8000U;
+        if (fireSfx.srcPhase>=kRate) {
+            fireSfx.srcPhase-=kRate;
+            ++fireSfx.srcIndex;
+        }
+    }
+    EspAssetPack_close();
+    fireSfx.next+=done;
+    fireSfx.readCount+=reads;
+    const bool complete=failure==nullptr && fireSfx.next==fireSfx.output;
+    if (complete) {
+        fireSfx.active=false;
+        ++sfxPlayedCount;
+    } else if (failure!=nullptr) {
+        fireSfx.active=false;
+        ++sfxRejectedCount;
+    }
+    printf("[SFXP2] %s id=5045 format=PCM16-mono-8000 "
+           "outputFrames=%u mixed=%u totalMixed=%u gainDiv=%u "
+           "readCalls=%u mixUs=%lld musicRing=shared heapAlloc=0%s%s\n",
+           failure!=nullptr?"PARTIAL":complete?"MIX":"CHUNK",
+           (unsigned)fireSfx.output,(unsigned)done,
+           (unsigned)fireSfx.next,
+           (unsigned)EspNativeSfxPcm_gainDiv(5045U),
+           (unsigned)fireSfx.readCount,
+           (long long)(esp_timer_get_time()-begun),
+           failure!=nullptr?" reason=":"",
+           failure!=nullptr?failure:"");
+}
+static void startFireSfx(uint32_t reader,uint32_t writer) {
+    if (writer-reader>kRingCapacity ||
+        writer-reader<kSfxLeadFrames+kSfxMinLead ||
+        !EspAssetPack_isMapFlashActive() ||
+        !EspAssetPack_isResident() ||
+        !EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
+        ++sfxRejectedCount;
+        printf("[SFXP2] DROP id=5045 reason=pak-or-ring-not-ready\n");
+        return;
+    }
+    EspAssetPackEntry entry={};
+    EspNativeSfxWavInfo meta={};
+    uint8_t header[512];
+    bool valid=EspAssetPack_findEntry("5045.wav",&entry)!=0 &&
+               (entry.flags&ESP_ASSET_PACK_FLAG_DIRECTORY)==0U &&
+               entry.size>=44U;
+    if (valid) {
+        const uint32_t count=entry.size<sizeof(header)?
+                             entry.size:(uint32_t)sizeof(header);
+        valid=EspAssetPack_readRange(&entry,0U,header,count)!=0 &&
+              EspNativeSfxWav_probe(header,count,entry.size,&meta)==
+                  ESP_NATIVE_SFX_WAV_PCM &&
+              meta.formatTag==1U && meta.channels==1U &&
+              meta.sampleRate==8000U && meta.bitsPerSample==16U &&
+              meta.blockAlign==2U && meta.dataOffset==44U &&
+              meta.sampleFrames==6400U && meta.dataBytes==12800U &&
+              EspNativeSfxPcm_outputFrames(meta.sampleFrames,kRate)==17640U;
+    }
+    if (valid) {
+        fireSfx.entry=entry;
+        fireSfx.start=reader+kSfxLeadFrames;
+        fireSfx.output=17640U;
+        fireSfx.next=0U;
+        fireSfx.srcIndex=0U;
+        fireSfx.srcPhase=0U;
+        fireSfx.readCount=0U;
+        fireSfx.active=true;
+        sfxBusyUntil=fireSfx.start+fireSfx.output;
+    } else {
+        ++sfxRejectedCount;
+        printf("[SFXP2] DROP id=5045 reason=invalid-original-pcm\n");
+    }
+    EspAssetPack_close();
+}
+
+static void mixPendingSfx() {
+    if (phase!=kPlay || ring==nullptr) return;
+    if (fireSfx.active) mixFireSfx();
+    const EspNativeAudioIntent* intent=EspNativeAudioIntent_last();
+    if (intent==nullptr || intent->sequence==sfxSeenSequence) return;
+    const uint16_t id=intent->resourceId;
+    if ((id!=5045U && id!=5046U && id!=5060U) ||
+        (intent->flags&ESP_NATIVE_AUDIO_STOP_ALL_FLAG)!=0U) {
+        sfxSeenSequence=intent->sequence;
+        return;
+    }
+    if (EspAssetPack_isOpen()) {
+        if (sfxDeferredSequence!=intent->sequence) {
+            sfxDeferredSequence=intent->sequence;
+            printf("[SFXP2] DEFER id=%u reason=pack-lease-open\n",
+                   (unsigned)id);
+        }
+        return;
+    }
+    sfxDeferredSequence=0U;
+    sfxSeenSequence=intent->sequence;
+    const uint32_t reader=__atomic_load_n(&rd,__ATOMIC_ACQUIRE);
+    const uint32_t writer=__atomic_load_n(&wr,__ATOMIC_ACQUIRE);
+    if (id==5045U) {
+        if (fireSfx.active || (int32_t)(sfxBusyUntil-reader)>0) {
+            ++sfxRejectedCount;
+            printf("[SFXP2] DROP id=5045 reason=one-channel-busy\n");
+        } else {
+            startFireSfx(reader,writer);
+            mixFireSfx();
+        }
+        return;
+    }
+    if (fireSfx.active || (int32_t)(sfxBusyUntil-reader)>0) {
+        ++sfxRejectedCount;
+        printf("[SFXP1] DROP id=%u reason=one-channel-busy queued=%u\n",
+               (unsigned)id,(unsigned)(writer-reader));
+        return;
+    }
+    if (writer-reader>kRingCapacity || !EspAssetPack_isMapFlashActive() ||
+        !EspAssetPack_isResident() || EspAssetPack_isOpen()) {
+        ++sfxRejectedCount;
+        printf("[SFXP1] DROP id=%u reason=pack-lease-or-ring-not-ready\n",
+               (unsigned)id);
+        return;
+    }
+    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
+        ++sfxRejectedCount;
+        printf("[SFXP1] DROP id=%u reason=pak-open-failed\n",(unsigned)id);
+        return;
+    }
+    char filename[16];
+    (void)snprintf(filename,sizeof(filename),"%04u.wav",(unsigned)id);
+    EspAssetPackEntry entry={};
+    EspNativeSfxWavInfo meta={};
+    uint8_t header[512];
+    bool valid=EspAssetPack_findEntry(filename,&entry)!=0 &&
+               (entry.flags&ESP_ASSET_PACK_FLAG_DIRECTORY)==0U &&
+               entry.size>=44U;
+    if (valid) {
+        const uint32_t count=entry.size<sizeof(header)?
+                             entry.size:(uint32_t)sizeof(header);
+        valid=EspAssetPack_readRange(&entry,0U,header,count)!=0 &&
+              EspNativeSfxWav_probe(header,count,entry.size,&meta)==
+                  ESP_NATIVE_SFX_WAV_PCM &&
+              meta.formatTag==1U && meta.channels==1U &&
+              meta.sampleRate==8000U && meta.bitsPerSample==16U &&
+              meta.blockAlign==2U && meta.dataOffset==44U &&
+              meta.dataBytes==meta.sampleFrames*2U;
+    }
+    const uint32_t output=valid?
+        EspNativeSfxPcm_outputFrames(meta.sampleFrames,kRate):0U;
+    if (!valid || output==0U ||
+        output+kSfxLeadFrames>kRingCapacity ||
+        writer-reader<output+kSfxLeadFrames) {
+        EspAssetPack_close();
+        ++sfxRejectedCount;
+        printf("[SFXP1] DROP id=%u reason=%s sourceFrames=%u "
+               "outputFrames=%u queued=%u\n",
+               (unsigned)id,valid?"not-entirely-buffered":"invalid-pcm16",
+               (unsigned)meta.sampleFrames,(unsigned)output,
+               (unsigned)(writer-reader));
+        return;
+    }
+    const uint32_t start=reader+kSfxLeadFrames;
+    uint8_t chunk[kSfxReadBytes];
+    uint32_t cachedStart=UINT32_MAX;
+    uint32_t cachedFrames=0U;
+    uint32_t srcIndex=0U;
+    uint32_t srcPhase=0U;
+    uint32_t mixed=0U;
+    uint32_t cacheReads=0U;
+    int16_t srcMin=32767,srcMax=-32768;
+    const int64_t begun=esp_timer_get_time();
+    const char* failed=nullptr;
+    for (uint32_t i=0U;i<output;i++) {
+        /* ISR only reads increasing absolute indices. Keep ahead of it
+         * while the main task visits flash; never write a live DAC byte. */
+        if ((i&63U)==0U) {
+            const uint32_t liveRead=__atomic_load_n(&rd,__ATOMIC_ACQUIRE);
+            if ((int32_t)((start+i)-liveRead)<(int32_t)kSfxMinLead) {
+                failed="reader-caught-up";
+                break;
+            }
+        }
+        if (srcIndex>=meta.sampleFrames) {
+            failed="source-bounds";
+            break;
+        }
+        if (cachedStart==UINT32_MAX ||
+            srcIndex<cachedStart ||
+            srcIndex>=cachedStart+cachedFrames) {
+            cachedStart=srcIndex;
+            const uint32_t left=meta.sampleFrames-srcIndex;
+            cachedFrames=left<(kSfxReadBytes/2U)?
+                         left:(kSfxReadBytes/2U);
+            if (!EspAssetPack_readRange(&entry,
+                    meta.dataOffset+srcIndex*2U,
+                    chunk,cachedFrames*2U)) {
+                failed="flash-range-read";
+                break;
+            }
+            ++cacheReads;
+        }
+        const int16_t pcm=EspNativeSfxPcm_le16(
+            chunk+(srcIndex-cachedStart)*2U);
+        if (pcm<srcMin) srcMin=pcm;
+        if (pcm>srcMax) srcMax=pcm;
+        const uint32_t slot=(start+i)&kRingMask;
+        ring[slot]=EspNativeSfxPcm_mixGain(ring[slot],pcm,id);
+        ++mixed;
+        srcPhase+=8000U;
+        if (srcPhase>=kRate) {
+            srcPhase-=kRate;
+            ++srcIndex;
+        }
+    }
+    EspAssetPack_close();
+    if (mixed!=0U) sfxBusyUntil=start+mixed;
+    if (failed!=nullptr || mixed!=output) ++sfxRejectedCount;
+    else ++sfxPlayedCount;
+    printf("[SFXP1] %s id=%u name=%s source=verified-flash-pak "
+           "format=PCM16-mono-8000 sampleFrames=%u outputFrames=%u "
+           "mixed=%u leadFrames=%u reads=%u pcmMinMax=%d..%d "
+           "mixUs=%lld channel=1 heapAlloc=0 musicRing=shared "
+           "dacTimer=unchanged totalPlayed=%u rejected=%u%s%s\n",
+           failed!=nullptr||mixed!=output?"PARTIAL":"MIX",
+           (unsigned)id,filename,(unsigned)meta.sampleFrames,
+           (unsigned)output,(unsigned)mixed,(unsigned)kSfxLeadFrames,
+           (unsigned)cacheReads,(int)srcMin,(int)srcMax,
+           (long long)(esp_timer_get_time()-begun),
+           (unsigned)sfxPlayedCount,(unsigned)sfxRejectedCount,
+           failed!=nullptr?" reason=":"",failed!=nullptr?failed:"");
+}
+
 static bool startClock() {
     timer_config_t cfg={};
     cfg.divider=kTimerDiv;
@@ -457,6 +778,11 @@ static void begin() {
     publishedPrefixFnv=kFnvBasis;
     pumpCalls=0U;
     pumpBlockReads=0U;
+    sfxBusyUntil=0U;
+    fireSfx.active=false;
+    sfxDeferredSequence=0U;
+    sfxPlayedCount=0U;
+    sfxRejectedCount=0U;
     playedFrames=0U;
     underruns=0U;
     phase=kPrime;
@@ -523,6 +849,7 @@ void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
         return;
     }
     if (phase==kPlay) {
+        mixPendingSfx(); /* one native real-action intent per main-loop */
         const uint32_t frames=__atomic_load_n(&playedFrames,__ATOMIC_ACQUIRE);
         const uint32_t now=millis();
         if (frames!=lastFrameSeen) {
