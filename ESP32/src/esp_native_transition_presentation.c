@@ -14,6 +14,7 @@
 #include "esp_player_fresh_map_state.h"
 #include "esp_native_gameplay_transition.h"
 #include "esp_native_indexed_bmp.h"
+#include "esp_native_loading_progress_scale.h"
 #include "esp_native_transition_presentation.h"
 #include "platform_video_c_bridge.h"
 #include "platform_video_config.h"
@@ -52,6 +53,7 @@ typedef struct EspNativeTransitionPresentationState_s {
     uint8_t lastPercent;
     uint8_t lastPhase;
     uint8_t loadingActive;
+    uint8_t flashDeferred;
 } EspNativeTransitionPresentationState;
 
 typedef struct EspNativeTransitionPaintScratch_s {
@@ -336,25 +338,6 @@ static const char* phaseName(uint8_t phase) {
     case ESP_ASSET_PACK_MAP_FLASH_PROGRESS_COPY: return "COPY";
     case ESP_ASSET_PACK_MAP_FLASH_PROGRESS_VERIFY: return "VERIFY";
     default: return "PREP";
-    }
-}
-
-static uint8_t overallPercent(uint8_t phase,
-                              uint32_t completed,
-                              uint32_t total) {
-    uint32_t local;
-    if (total == 0U) return 0U;
-    if (completed > total) completed = total;
-    local = (completed * 100U) / total;
-    switch (phase) {
-    case ESP_ASSET_PACK_MAP_FLASH_PROGRESS_ERASE:
-        return (uint8_t)((local * 20U) / 100U);
-    case ESP_ASSET_PACK_MAP_FLASH_PROGRESS_COPY:
-        return (uint8_t)(20U + (local * 60U) / 100U);
-    case ESP_ASSET_PACK_MAP_FLASH_PROGRESS_VERIFY:
-        return (uint8_t)(80U + (local * 20U) / 100U);
-    default:
-        return 0U;
     }
 }
 
@@ -672,7 +655,8 @@ void EspNativeTransitionPresentation_progress(uint8_t phase,
     uint8_t phaseChanged;
 
     if (!presentation.loadingActive) return;
-    percent = overallPercent(phase, completed, total);
+    percent = EspNativeLoadingProgress_flashPercent(
+        phase, completed, total, presentation.flashDeferred);
     phaseChanged = phase != presentation.lastPhase ? 1U : 0U;
 
     if (!phaseChanged && percent < 100U &&
@@ -687,6 +671,8 @@ void EspNativeTransitionPresentation_progress(uint8_t phase,
 void EspNativeTransitionPresentation_checkpointProgress(uint8_t percent,
                                                         const char* stage) {
     if (!presentation.loadingActive) return;
+    percent = EspNativeLoadingProgress_checkpointPercent(
+        percent, presentation.flashDeferred);
     if (percent < 100U &&
         percent < (uint8_t)(presentation.lastPercent +
                             TRANSITION_PROGRESS_STEP)) {
@@ -697,6 +683,15 @@ void EspNativeTransitionPresentation_checkpointProgress(uint8_t percent,
 
 int EspNativeTransitionPresentation_isLoadingActive(void) {
     return presentation.loadingActive != 0U ? 1 : 0;
+}
+
+void EspNativeTransitionPresentation_deferFlashUntilCache(void) {
+    /* Fresh and LOAD stage flash at residentBegin, after BSP/restore. */
+    if (presentation.loadingActive) presentation.flashDeferred = 1U;
+}
+
+int EspNativeTransitionPresentation_isFlashDeferred(void) {
+    return presentation.loadingActive && presentation.flashDeferred ? 1 : 0;
 }
 
 void EspNativeTransitionPresentation_abortLoading(const char* reason) {

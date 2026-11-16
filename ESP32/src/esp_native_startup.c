@@ -615,6 +615,7 @@ void EspNativeStartup_service(struct DoomRPG_s* doomRpgBase) {
                 failStartup("intro loading presentation");
                 return;
             }
+            EspNativeTransitionPresentation_deferFlashUntilCache();
             printf("[NATIVEBOOT] LOADING-TAKEOVER map=%u source=intro-disposed owner=transition-presentation\n",
                    (unsigned int)targetMapId);
         }
