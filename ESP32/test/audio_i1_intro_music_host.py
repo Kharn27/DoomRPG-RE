@@ -26,10 +26,12 @@ assert 'EspEntranceMusic_stopIntroAtHandoff(void)' in music
 assert 'closeMusic("INTRO_EXIT_BEFORE_MAP")' in music
 assert 'attempted=false; /* Entrance will own the next independent track. */' in music
 assert 'EspEntranceMusic_stopIntroAtHandoff(void);' in api
-assert 'EspEntranceMusic_stopIntroAtHandoff();' in intro
+assert 'EspEntranceMusic_stopIntroAtHandoff();' not in intro
 assert 'Esp32IntroClock_isActive' in clock
-assert intro.index('EspEntranceMusic_stopIntroAtHandoff();') < intro.index('Esp32IntroClock_park("intro-exit-ready");')
-assert intro.index('EspEntranceMusic_stopIntroAtHandoff();') < intro.index('disarmInternal();',intro.index('EspEntranceMusic_stopIntroAtHandoff();'))
+assert 'Esp32IntroClock_park("intro-exit-ready")' in intro
+assert 'EspEntranceMusic_stopIntroAtHandoff();' in main
+assert main.index("EspEntranceMusic_stopIntroAtHandoff();") < main.index("Esp32IntroClock_service();")
+assert 'if (!activeIntroTrack || Esp32IntroClock_isActive()) return;' in music
 assert "EspEntranceMusic_service(EspNativeGameplaySession_isActive(), sdReady);" in main
 assert "kRingCapacity=16384U" in music
 assert "xTaskCreate" not in music
