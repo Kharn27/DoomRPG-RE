@@ -12,6 +12,8 @@ extern "C" {
  * SOUND is ON. No timer, SD, music ring, ISR, allocations or music playback.
  * SOUND OFF gates and disables the idle DAC. Safe only on Arduino main task. */
 void EspEntranceMusic_syncIdleOutput(void);
+/* Final ST_INTRO Continue: close M_IN_CIT WAV/SD/ring BEFORE BSP/map load. */
+void EspEntranceMusic_stopIntroAtHandoff(void);
 void EspEntranceMusic_service(bool gameplayActive,bool sdReady);
 void EspEntranceMusic_pumpGameplay(void);
 #ifdef __cplusplus
