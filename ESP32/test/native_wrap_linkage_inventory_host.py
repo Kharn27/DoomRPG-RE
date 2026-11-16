@@ -225,7 +225,7 @@ def compare_release(normal: dict, inverted: dict) -> None:
 
 def self_test() -> None:
     real = declarations((PROJECT / "platformio.ini").read_text())
-    require(len(real["env:esp32-cyd"]) == 44, "expected ARCH-RC2 44 normal wraps")
+    require(len(real["env:esp32-cyd"]) == 43, "expected ARCH-RC3 43 normal wraps")
     require(len(real["env:esp32-cyd-bringup"]) == 3,
             "expected 3 surviving diagnostic extras after ARCH-RC1")
     require(set(real["env:esp32-cyd-bringup"]) == RETAINED_BRINGUP_WRAPS,
