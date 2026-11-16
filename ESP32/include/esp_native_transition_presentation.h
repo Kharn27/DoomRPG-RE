@@ -32,6 +32,8 @@ void EspNativeTransitionPresentation_checkpointProgress(uint8_t percent,
  * CHANGEMAP and death recovery keep immediate 0..100%% staging. */
 void EspNativeTransitionPresentation_deferFlashUntilCache(void);
 int EspNativeTransitionPresentation_isFlashDeferred(void);
+/* Report actual flash completion without re-scaling an early checkpoint. */
+void EspNativeTransitionPresentation_flashReady(void);
 int EspNativeTransitionPresentation_isLoadingActive(void);
 void EspNativeTransitionPresentation_abortLoading(const char* reason);
 
