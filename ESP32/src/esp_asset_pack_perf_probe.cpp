@@ -7,6 +7,7 @@
 #include "esp_asset_pack.h"
 #include "doomrpg_log.h"
 #include "esp_player_view_state.h"
+#include "esp_native_transition_presentation.h"
 
 namespace {
 
@@ -122,8 +123,23 @@ int __wrap_EspAssetPack_residentBegin(void)
 {
     const EspPlayerViewState* view = EspPlayerView_view();
     const int64_t prepareStart = esp_timer_get_time();
-    if (view == nullptr || view->active != 1U ||
-        !EspAssetPack_mapFlashPrepare(view->targetMapId)) {
+    const int deferredFlash = EspNativeTransitionPresentation_isFlashDeferred();
+    if (deferredFlash) {
+        /* Same between-chunk heartbeat as CHANGEMAP, without moving
+         * the existing residentBegin ownership and staging boundary. */
+        EspAssetPack_mapFlashSetProgressCallback(
+            EspNativeTransitionPresentation_progress);
+    }
+    const int prepared = view != nullptr && view->active == 1U &&
+                         EspAssetPack_mapFlashPrepare(view->targetMapId);
+    if (deferredFlash) {
+        EspAssetPack_mapFlashSetProgressCallback(NULL);
+        if (prepared) {
+            /* REUSE HIT has no chunks; skip immediately to the real boundary. */
+            EspNativeTransitionPresentation_flashReady();
+        }
+    }
+    if (!prepared) {
         DRPG_LOGE("[MAPFLASH] ARM failed view=%u map=%u residentBegin=blocked\n",
                view != nullptr ? (unsigned int)view->active : 0U,
                view != nullptr ? (unsigned int)view->targetMapId : 0U);

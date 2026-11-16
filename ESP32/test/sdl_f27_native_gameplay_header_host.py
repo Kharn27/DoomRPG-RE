@@ -101,6 +101,14 @@ def original_body_parity() -> None:
         # before the frozen ten-source pre-F27 Git blob witness. No hashes
         # are rewritten, no legacy semantics are accepted as new baselines.
         if filename == "esp_native_gameplay_action_engine.c":
+            # AUDIO-SFX-P2 adds one committed extinguisher hook. Undo only
+            # that exact two-line addition before the frozen pre-F27 blob.
+            p2_hook = (
+                b"            /* P2: only after a committed fire removal, never rollback. */\n"
+                b"            (void)EspNativeAudioIntent_publish(5045U,0U,3U);\n"
+            )
+            assert current.count(p2_hook)==1, "SFX-P2 fire hook drift"
+            current = current.replace(p2_hook, b"", 1)
             p1_import = b'#include "esp_native_audio_intent.h"\n'
             p1_hook = (
                 b"            /* SFX-P1: publish only a successfully committed pistol/crate\n"
