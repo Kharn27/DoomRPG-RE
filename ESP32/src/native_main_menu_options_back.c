@@ -205,12 +205,17 @@ static int paintLuminositeState(void) {
     return 1;
 }
 
+/* Both SOUND pages reuse one physical-present boundary: no extra call site. */
+static void presentSoundUiFrame(void) {
+    (void)Esp32PlatformVideo_present();
+}
+
 static int paintSoundMenuState(int selected,int armed) {
     uint32_t nextHash=0U;
     if (!DoomRPG_esp32PaintMainMenuSoundDashboardSelection(
             optionsDoomRpg,selected,armed,&nextHash)) return 0;
     optionsExpectedFrameFNV=nextHash;
-    (void)Esp32PlatformVideo_present();
+    presentSoundUiFrame();
     printf("[OPTIONSSOUND] MENU state=%s item=%d armed=%d framebufferFNV=%08x\n",
            EspNativeAudioIntent_isSoundEnabled()?"ON":"OFF",
            selected,armed,(unsigned)nextHash);
@@ -230,7 +235,7 @@ static int paintSoundState(int armedChoice) {
         return 0;
     }
     optionsExpectedFrameFNV=nextHash;
-    (void)Esp32PlatformVideo_present();
+    presentSoundUiFrame();
     printf("[OPTIONSSOUND] VISUAL percent=%u armed=%d framebufferFNV=%08x\n",
            (unsigned)percent,armedChoice,(unsigned)nextHash);
     return 1;
