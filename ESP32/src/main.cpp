@@ -489,6 +489,10 @@ void setup()
 
 void loop()
 {
+    /* Release the one intro SD File/ring AFTER FINAL-CONTINUE has parked the
+     * clock, but BEFORE the next clock service starts BSP/flash loading.
+     * Preserve the native intro C files byte-exact (SDL-F8 regression). */
+    EspEntranceMusic_stopIntroAtHandoff();
     Esp32IntroClock_service();
     DoomRPG_esp32MainMenuHelpService();
     if (EspNativeGameplaySession_canService())
