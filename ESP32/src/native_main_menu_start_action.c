@@ -14,6 +14,7 @@
 #include "Render.h"
 #include "esp_render_startup_bridge.h"
 #include "esp_native_audio_intent.h"
+#include "esp_audio_entrance_music.h" /* I3: intro audio before first visible frame */
 #include "esp_native_intro_state.h"
 
 #include "esp_legacy_asset_source.h"
@@ -321,6 +322,10 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
         return 0;
     }
 
+    /* I3: Start IMA intro music before presenting its first picture.
+     * The old ST_INTRO source and its FNV-exact composition stay untouched.
+     * A missing/invalid WAV is NOT a reason to suppress the first frame. */
+    (void)EspEntranceMusic_prestartIntroBeforeFirstFrame();
     if (!DoomRPG_esp32RenderFirstIntroFrame(doomRpg)) {
         printf("[MAINSTART] FAILED bounded first ST_INTRO frame / clock+input handoff\n");
         return 0;
