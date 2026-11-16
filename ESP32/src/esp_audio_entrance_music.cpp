@@ -677,9 +677,10 @@ static bool startClock() {
     if (timer_start(kGroup,kTimer)!=ESP_OK) {
         failure="clock_start";return false;
     }
-    printf("[ENTRANCEMUSIC] PREFLIGHT timer=TG1T1 dac=OFF "
+    printf("[ENTRANCEMUSIC] PREFLIGHT timer=TG1T1 dacStream=OFF dacPad=%s "
            "targetHz=22050 clockDiv=2 alarm=1814 ringQueued=%u "
-           "guard=20900..23200\n",(unsigned)queued());
+           "guard=20900..23200\n",dacEnabled?"ON":"OFF",
+           (unsigned)queued());
     return true;
 }
 static bool startPlaying() {
@@ -876,10 +877,8 @@ void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
         if (phase!=kSilent||ring||timerInit||fileOpen)
             closeMusic(soundOn?"SESSION_EXIT":"SOUND_OFF");
         EspEntranceMusic_syncIdleOutput(); /* SOUND ON -> 128, OFF -> disabled */
-        if ((!entrance && !intro) || !soundOn) {
-            attempted=false;
-            activeIntroTrack=false;
-        }
+        attempted=false;
+        activeIntroTrack=false;
         return;
     }
     if (!attempted) begin();
@@ -916,8 +915,9 @@ void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
         const uint32_t measured=EspAudioClockGuard_rate(
             ticks,elapsed>0?(uint64_t)elapsed:0ULL);
         printf("[ENTRANCEMUSIC] CLOCK measuredHz=%u ticks=%u "
-               "elapsedUs=%lld guard=20900..23200 dac=OFF sampleMode=uncapped-interval\n",
-               (unsigned)measured,(unsigned)ticks,(long long)elapsed);
+               "elapsedUs=%lld guard=20900..23200 dacStream=OFF dacPad=%s sampleMode=uncapped-interval\n",
+               (unsigned)measured,(unsigned)ticks,(long long)elapsed,
+               dacEnabled?"ON":"OFF");
         if (measured<20900U||measured>23200U) {
             closeMusic("FAIL-CLOCK");return;
         }
