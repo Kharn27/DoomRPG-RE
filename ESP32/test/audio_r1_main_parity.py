@@ -5,6 +5,23 @@ main.cpp changes; it does NOT remove native gameplay or any other features.
 """
 
 def restore_pre_audio_r1(text: str) -> str:
+    # SOUND-S1 and INTRO-I1 preserve the exact older Root-J2 main image by
+    # reversing ONLY their two main-loop/boot insertions. Keep the historical
+    # blob SHA, next R2a/R1 inverse and original ownership untouched.
+    idle_hook = (
+        '    /* SOUND=ON by default: drive DAC2 at digital silence before menus/intro.\n'
+        '     * No timer, SD read, ring or audio allocation here. */\n'
+        '    EspEntranceMusic_syncIdleOutput();\n'
+    )
+    intro_hook = (
+        '    /* Release the one intro SD File/ring AFTER FINAL-CONTINUE has parked the\n'
+        '     * clock, but BEFORE the next clock service starts BSP/flash loading.\n'
+        '     * Preserve the native intro C files byte-exact (SDL-F8 regression). */\n'
+        '    EspEntranceMusic_stopIntroAtHandoff();\n'
+    )
+    assert text.count(idle_hook) == 1, "AUDIO-S1 boot idle integration drift"
+    assert text.count(intro_hook) == 1, "AUDIO-I1 pre-BSP release integration drift"
+    text = text.replace(idle_hook, "", 1).replace(intro_hook, "", 1)
     # SFX-P0 added a strictly temporary PAK-format scan before AUDIO-R2a.
     # Remove precisely the added header and call, retaining the historical
     # fixed Root-J2 Git blob (never update the SHA witness).
