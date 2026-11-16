@@ -232,7 +232,7 @@ def self_test() -> None:
             "LCD/trace unexpectedly add wrappers")
     for name in sorted(RETIRED_BRINGUP_WRAPS):
         bad = ((PROJECT / "platformio.ini").read_text() +
-               "\\n[env:retired-negative]\\n-Wl,--wrap=" + name + "\\n")
+               "\n[env:retired-negative]\n-Wl,--wrap=" + name + "\n")
         try:
             declarations(bad)
         except ValueError as error:
