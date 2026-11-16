@@ -159,6 +159,9 @@ def profile_report(profile: str, declared: dict[str, list[str]]) -> dict:
     print(f"ARCH-RC0 {profile} declared={len(names)} "
           f"linked={report['linked']} directCallWitness={report['directCallWitness']} "
           f"unlisted={len(surplus)} output={path}")
+    if surplus:
+        print(f"ARCH-RC0 {profile} unlistedLinkedWrapperSymbols={','.join(surplus)} "
+              "(inventory-only, not declared by this profile's --wrap flags)")
     return report
 
 
