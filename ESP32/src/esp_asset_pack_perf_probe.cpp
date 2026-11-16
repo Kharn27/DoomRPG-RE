@@ -117,7 +117,6 @@ int __real_EspAssetPack_readRange(const EspAssetPackEntry* entry,
                                   uint32_t relativeOffset,
                                   void* destination,
                                   size_t length);
-int __real_EspAssetPack_residentEnd(void);
 
 int __wrap_EspAssetPack_residentBegin(void)
 {
@@ -218,13 +217,12 @@ void EspAssetPackIoProbe_afterResidentStatsReset(void)
 #endif
 }
 
-int __wrap_EspAssetPack_residentEnd(void)
+void EspAssetPackIoProbe_beforeResidentEnd(void)
 {
 #if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     reportIoSample("resident-end");
     invalidatePhysicalBaseline();
 #endif
-    return __real_EspAssetPack_residentEnd();
 }
 
 } // extern "C"

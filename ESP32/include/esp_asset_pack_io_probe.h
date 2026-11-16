@@ -14,6 +14,10 @@ extern "C" {
 void EspAssetPackIoProbe_beforeResidentStatsReset(void);
 void EspAssetPackIoProbe_afterResidentStatsReset(void);
 
+/* ARCH-RC3: close-side TRACE flush and physical baseline invalidation happen
+ * before the PAK owner checks openReady or mutates any resident state. */
+void EspAssetPackIoProbe_beforeResidentEnd(void);
+
 #ifdef __cplusplus
 }
 #endif

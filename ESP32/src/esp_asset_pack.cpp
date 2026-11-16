@@ -1807,6 +1807,10 @@ int EspAssetPack_residentBegin(void)
 
 int EspAssetPack_residentEnd(void)
 {
+    /* ARCH-RC3 preserves the old --wrap preflight even when openReady rejects
+     * residentEnd: report pending TRACE I/O and invalidate the baseline before
+     * any owner-side close, cache release or flash deactivation. */
+    EspAssetPackIoProbe_beforeResidentEnd();
     if (openReady) {
         return 0;
     }

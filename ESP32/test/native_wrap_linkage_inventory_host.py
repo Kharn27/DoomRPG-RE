@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ARCH-RC2: inventory declared GNU ld --wrap boundaries against REAL CYD ELFs.
+"""ARCH-RC3: inventory declared GNU ld --wrap boundaries against REAL CYD ELFs.
 
 A wrapper definition present in an ELF is a linkage witness, NOT proof that a
 call executes at runtime. Disassembled direct calls are lower-bound witnesses:
@@ -42,9 +42,10 @@ TOOLCHAIN_LOG_WRAPPERS = frozenset((
 RETIRED_BRINGUP_WRAPS = frozenset((
     "DoomRPG_probeNativeMenuSpriteFrame",
     "DoomRPG_probeNativeMainMenuOverlay"))
-# ARCH-RC2: production reset-stats instrumentation is an explicit native
-# before/after hook. This linker interposition must not return in any profile.
-RETIRED_NORMAL_WRAPS = frozenset(("EspAssetPack_residentResetStats",))
+# ARCH-RC2/RC3: production PAK reset/end instrumentation has become
+# explicit native hooks. Neither linker interposition may return.
+RETIRED_NORMAL_WRAPS = frozenset((
+    "EspAssetPack_residentResetStats", "EspAssetPack_residentEnd"))
 RETIRED_ALL_WRAPS = RETIRED_BRINGUP_WRAPS | RETIRED_NORMAL_WRAPS
 RETAINED_BRINGUP_WRAPS = frozenset((
     "EspNativeFirstFrame_route",
@@ -224,7 +225,7 @@ def compare_release(normal: dict, inverted: dict) -> None:
 
 def self_test() -> None:
     real = declarations((PROJECT / "platformio.ini").read_text())
-    require(len(real["env:esp32-cyd"]) == 44, "expected ARCH-RC2 44 normal wraps")
+    require(len(real["env:esp32-cyd"]) == 43, "expected ARCH-RC3 43 normal wraps")
     require(len(real["env:esp32-cyd-bringup"]) == 3,
             "expected 3 surviving diagnostic extras after ARCH-RC1")
     require(set(real["env:esp32-cyd-bringup"]) == RETAINED_BRINGUP_WRAPS,
@@ -296,8 +297,8 @@ def self_test() -> None:
         pass
     else:
         raise AssertionError("release wrapper divergence accepted")
-    print("PASS ARCH-RC2 host self-test: 44+3 surviving declarations, 2 retired "
-          "bringup flags + 1 retired production stats-reset wrap blocked, "
+    print("PASS ARCH-RC3 host self-test: 43+3 surviving declarations, 2 retired "
+          "bringup flags + 2 retired production PAK wraps blocked, "
           "malformed/duplicate rejected, nm syntax, direct-call attribution, "
           "release mismatch rejected; linked != executed")
 
