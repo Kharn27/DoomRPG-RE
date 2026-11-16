@@ -13,6 +13,7 @@
 
 #include "doomrpg_log.h"
 #include "esp_asset_pack.h"
+#include "esp_native_audio_intent.h"
 #include "esp_entity_def_type_catalog.h"
 #include "esp_map_line_state.h"
 #include "esp_map_runtime.h"
@@ -4374,6 +4375,11 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                    (unsigned int)(crateTrapArmed != 0U ? crateTrapDamage : 0U),
                    crateTrapArmed != 0U ? "deferred" : "n/a");
             (void)effectiveParm;
+            /* SFX-P1: publish only a successfully committed pistol/crate
+             * hit. No I/O here, and no audio on rollback/invalid outcome. */
+            if (crateWeapon != NULL && crateWeapon->resourceId==5046U &&
+                crateOutcome != ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_INVALID)
+                (void)EspNativeAudioIntent_publish(5046U,0U,3U);
         }
 
         if (animateWeapon) {
