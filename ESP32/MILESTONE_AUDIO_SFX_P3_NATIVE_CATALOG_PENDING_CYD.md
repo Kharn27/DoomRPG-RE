@@ -1,4 +1,4 @@
-# AUDIO-SFX-P3 — inventaire complet des WAV originaux et des sons ennemis (CYD PENDING)
+# AUDIO-SFX-P3 — inventaire complet des WAV originaux et des sons ennemis (PASS CYD pour le catalogue)
 
 **16 novembre 2026 — [issue audio globale #261](https://github.com/Kharn27/DoomRPG-RE/issues/261).** Nouvelle branche unique `agent/audio-sfx-p3-original-wav-catalog` créée à partir du **vrai `main` GitHub** après fusion matérielle [#357](https://github.com/Kharn27/DoomRPG-RE/pull/357), SHA `721e3fe8759f443c30bd7ebcceb1220340e79871`.
 
@@ -18,3 +18,11 @@ Le log P2 valide trois sons `5045` complets, les pickups `5060` différés aprè
 Flasher cette seule branche avec l'environnement `esp32-cyd` ; Start Game sur Entrance et enregistrer tout le boot. Vérifier `[SFXP3] END scanned=83 ...`, les lignes `ENTRY id=5081`, `5085`, `5089`, `5090`, `5099`, `5110`, `5138`. Relever les durées/formats réels et `heap8 delta`. Vérifier encore musique `underruns=0` et gameplay normal.
 
 **Pas de son ennemi nouveau dans P3 :** le prochain jalon utilisera les durées mesurées pour étendre le mixeur par familles d'opcodes/intentions, fail-closed, en respectant les 16 KiB de ring, les buffers bornés et la priorité musicale. Aucun PASS matériel inventé.
+
+## Retour CYD du 16 novembre 2026 — PASS du catalogue P3
+
+Firmware `esp32-cyd`, test de la source P3 `45668f16804126632ff89f81ac572cc0a2414ff5`, capture réelle `platformio-device-monitor-261116-211513.log`. `[SFXP0] END`: 9/9 PCM. `[SFXP3] END`: **83/83 PCM, aucun IMA/autre/invalid, delta heap8 = 0** (81624->81624). Toutes les entrées de la table native sont présentes : **92 WAV mono PCM16 8000Hz**. Durée min 220ms (5114), max 3780ms (5138) ; 68/83 durent >697ms et doivent être abordées avec un streamer segmenté, pas une copie ring monobloc. Références clés : `5081=1380ms`, `5085=800ms`, `5089=840ms`, `5090=740ms`, `5099=880ms`, `5110=740ms`, `5138=3780ms`.
+
+Pendant le scan et le gameplay : **6 sons P1 MIX (5046/5060)**, aucun SFX DROP/PARTIAL observé ; musique IMA-ADPCM 22050Hz stable jusqu'à `STREAM elapsedMs=51125 frames=1125807 underruns=0 recoveries=0 gapsOver90us=0`, SD max 4417µs, heap8 min 59604B. Capture interrompue pendant gameplay : **aucun test de sortie session dans ce log**. Double CI du code P3 [PR](https://github.com/Kharn27/DoomRPG-RE/actions/runs/43871839966)/[push](https://github.com/Kharn27/DoomRPG-RE/actions/runs/43871783941) **SUCCESS**.
+
+**Verdict : PASS matériel pour l'inventaire P3 seulement.** Aucune lecture des sons ennemis, aucune polyphonie et aucun équilibrage acoustique supplémentaire validés dans P3. La demande utilisateur de léger boost des SFX appartient à une modification firmware distincte, à tester ensuite sur CYD avant fusion.
