@@ -175,7 +175,9 @@ assert "OPTIONSBRIGHTNESS] OPEN" in options
 assert "OPTIONSBRIGHTNESS] BACK" in options
 assert "DoomRPG_esp32MainMenuReturnToMain(" in options
 assert "optionsExpectedFrameFNV" in options
-assert "SOUND is a native session-volume child." in options
+assert "SOUND is a native ON/OFF + VOLUME intermediate child." in options
+assert "if (soundMenuOpen)" in options
+assert "EspNativeAudioIntent_setSoundEnabled(!before)" in options
 assert "if (soundOpen)" in options
 assert "EspNativeAudioIntent_setMusicVolumePercent(after)" in options
 assert "soundOpen=1U;" in options and "soundOpen=0U;" in options
