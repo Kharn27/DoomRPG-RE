@@ -96,6 +96,32 @@ def original_body_parity() -> None:
             current = current.replace(audio_import, b"", 1)
             current = current.replace(audio_hook, b"", 1)
             current = strip_ra2b_probe(current)
+        # AUDIO-SFX-P1 publishes two *post-commit-only* native PCM intents.
+        # Strictly undo exactly their imported header and bounded event hooks
+        # before the frozen ten-source pre-F27 Git blob witness. No hashes
+        # are rewritten, no legacy semantics are accepted as new baselines.
+        if filename == "esp_native_gameplay_action_engine.c":
+            p1_import = b'#include "esp_native_audio_intent.h"\\n'.replace(b"\\n", b"\n")
+            p1_hook = (
+                b"            /* SFX-P1: publish only a successfully committed pistol/crate\n"
+                b"             * hit. No I/O here, and no audio on rollback/invalid outcome. */\n"
+                b"            if (crateWeapon != NULL && crateWeapon->resourceId==5046U &&\n"
+                b"                crateOutcome != ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_INVALID)\n"
+                b"                (void)EspNativeAudioIntent_publish(5046U,0U,3U);\n"
+            )
+            assert current.count(p1_import) == 1, "SFX-P1 crate import drift"
+            assert current.count(p1_hook) == 1, "SFX-P1 crate commit hook drift"
+            current = current.replace(p1_import, b"", 1).replace(p1_hook, b"", 1)
+        elif filename == "esp_native_gameplay_player_resources.c":
+            p1_import = b'#include "esp_native_audio_intent.h"\\n'.replace(b"\\n", b"\n")
+            p1_hook = (
+                b"        /* SFX-P1: only after irreversible resource/player/world commit.\n"
+                b"         * Original desktop generic pickup cue 5060; no PAK access here. */\n"
+                b"        (void)EspNativeAudioIntent_publish(5060U,0U,3U);\n"
+            )
+            assert current.count(p1_import) == 1, "SFX-P1 pickup import drift"
+            assert current.count(p1_hook) == 1, "SFX-P1 pickup commit hook drift"
+            current = current.replace(p1_import, b"", 1).replace(p1_hook, b"", 1)
         restored = b"#include <SDL.h>\n" + current[len(marker):]
         assert git_blob(restored) == blob, (
             f"{filename}: original pre-F27 body not preserved exactly")
