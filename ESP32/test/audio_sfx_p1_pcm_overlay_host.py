@@ -26,7 +26,7 @@ assert 'id!=5046U && id!=5060U' in music
 assert 'output+kSfxLeadFrames>kRingCapacity' in music
 assert 'writer-reader<output+kSfxLeadFrames' in music
 assert 'kSfxLeadFrames=1024U' in music
-assert 'ring[slot]=EspNativeSfxPcm_mix(ring[slot],pcm);' in music
+assert 'ring[slot]=EspNativeSfxPcm_mixGain(ring[slot],pcm,id);' in music
 assert 'mixPendingSfx(); /* one native real-action intent' in music
 assert music.index('if (phase==kPlay) {\n        mixPendingSfx();') > music.index('if (phase==kClock)')
 assert 'if (phase!=kPlay || !fileOpen || ring==nullptr) return;' in music

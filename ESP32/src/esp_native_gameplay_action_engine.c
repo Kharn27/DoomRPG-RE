@@ -4329,6 +4329,8 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                    (unsigned int)ammoAfter,
                    (unsigned int)playerFNVBefore,
                    (unsigned int)playerFNVAfter);
+            /* P2: only after a committed fire removal, never rollback. */
+            (void)EspNativeAudioIntent_publish(5045U,0U,3U);
         }
         if (isJammedDoor) {
             ++actionState.jammedDoorClears;

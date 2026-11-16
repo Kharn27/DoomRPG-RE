@@ -23,4 +23,20 @@ static inline uint8_t EspNativeSfxPcm_mix(uint8_t music,int16_t sfx) {
     if (code>240) code=240;
     return (uint8_t)code;
 }
+/* P2: separate PCM gain for quieter pickup, firing and fire extinguishing.
+ * This changes ONLY the main-task overlay; no modification to music or ISR. */
+static inline uint16_t EspNativeSfxPcm_gainDiv(uint16_t id) {
+    if (id==5060U) return 128U;
+    if (id==5045U) return 256U;
+    if (id==5046U) return 320U;
+    return 512U;
+}
+static inline uint8_t EspNativeSfxPcm_mixGain(uint8_t music,int16_t sfx,
+                                                uint16_t id) {
+    int32_t code=(int32_t)music+
+                 (int32_t)sfx/(int32_t)EspNativeSfxPcm_gainDiv(id);
+    if (code<16) code=16;
+    if (code>240) code=240;
+    return (uint8_t)code;
+}
 #endif
