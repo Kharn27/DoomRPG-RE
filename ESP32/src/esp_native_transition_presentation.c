@@ -7,6 +7,7 @@
 
 #include "esp_asset_pack.h"
 #include "esp_audio_loading_route.h" /* LOAD-L0: no transport or I/O */
+#include "esp_audio_entrance_music.h" /* LOAD-L1: stop old playback BEFORE loader */
 #include "esp_map_catalog.h"
 #include "esp_main_menu_skin.h"
 #include "esp_native_gameplay_hub_theme.h"
@@ -653,6 +654,11 @@ int EspNativeTransitionPresentation_beginLoading(uint8_t targetMapId) {
         presentation.loadingActive) {
         return 0;
     }
+
+    /* LOAD-L1: after validation but BEFORE any PAK/flash ownership,
+     * close the previous level's SD music. The intro handoff has already
+     * done so for ST_INTRO, making this an idempotent safety boundary. */
+    EspEntranceMusic_stopBeforeLoading();
 
     memset(&presentation, 0, sizeof(presentation));
     memset(&scratch, 0, sizeof(scratch));
