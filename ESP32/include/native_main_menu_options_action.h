@@ -16,7 +16,7 @@ struct DoomRPG_s;
 int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpg,
                                          uint32_t* finalFramebufferFNV);
 
-/* Root Options: BACK / VIDEO / disabled SOUND, 3 spacious 54x20 cards.
+/* Root Options: BACK / VIDEO / SOUND, 3 native rail cards.
  * The immutable MENU_MAIN_OPTIONS model and logo stage stay unchanged. */
 int DoomRPG_esp32PaintMainMenuOptionsDashboardSelection(
     struct DoomRPG_s* doomRpg,
@@ -32,6 +32,12 @@ int DoomRPG_esp32PaintMainMenuVideoDashboardSelection(
 
 /* Paint five bounded preset cards into the same right-hand rail while
  * keeping the immutable native Options model and the left logo intact. */
+/* SOUND intermediate: BACK / dynamic ON-OFF state / VOLUME.
+ * Same 3-card Options rail, no new desktop menu model or allocation. */
+int DoomRPG_esp32PaintMainMenuSoundDashboardSelection(
+    struct DoomRPG_s* doomRpg, int selectedItem, int armed,
+    uint32_t* framebufferFNV);
+
 int DoomRPG_esp32PaintMainMenuBrightnessDashboard(
     struct DoomRPG_s* doomRpg,
     uint32_t* framebufferFNV);
