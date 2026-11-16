@@ -37,6 +37,15 @@ REQUIRED = {"EspNativeGameplayFrame_renderTurn",
 # confirmed in all four real Xtensa ELF artifacts on ARCH-RC0.
 TOOLCHAIN_LOG_WRAPPERS = frozenset((
     "__wrap_esp_log_write", "__wrap_esp_log_writev", "__wrap_log_printf"))
+# ARCH-RC1: these were declared in the diagnostic build but none of the
+# four ARCH-RC0 real ELFs contained their linked __wrap_ bodies.
+RETIRED_BRINGUP_WRAPS = frozenset((
+    "DoomRPG_probeNativeMenuSpriteFrame",
+    "DoomRPG_probeNativeMainMenuOverlay"))
+RETAINED_BRINGUP_WRAPS = frozenset((
+    "EspNativeFirstFrame_route",
+    "EspNativeGameplayInteractionInventory_log",
+    "EspNativeResidentGameplay_service"))
 
 
 def require(ok: bool, why: str) -> None:
@@ -70,8 +79,12 @@ def declarations(config: str) -> dict[str, list[str]]:
     require(base is not None and len(base) >= 40,
             "missing canonical normal build or unexpectedly small --wrap inventory")
     require(REQUIRED.issubset(base), "missing required native boundary")
-    require(len(sections.get("env:esp32-cyd-bringup", [])) >= 5,
+    require(len(sections.get("env:esp32-cyd-bringup", [])) >= 3,
             "bringup-only diagnostic boundary inventory unexpectedly small")
+    resurrected = sorted(RETIRED_BRINGUP_WRAPS.intersection(
+        name for flags in sections.values() for name in flags))
+    require(not resurrected,
+            f"retired diagnostic --wrap flags resurrected: {resurrected}")
     # Release inverted/diagnostic profiles inherit the normal flags; any
     # local additions are reported separately rather than silently assumed.
     return sections
@@ -123,6 +136,10 @@ def profile_report(profile: str, declared: dict[str, list[str]]) -> dict:
     require(elf.is_file(), f"real firmware ELF missing: {elf}")
     symbols = parse_nm(subprocess.check_output(
         [str(tool("nm")), "-S", "--defined-only", str(elf)], text=True))
+    retired_linked = sorted("__wrap_" + name for name in RETIRED_BRINGUP_WRAPS
+                            if "__wrap_" + name in symbols)
+    require(not retired_linked,
+            f"retired diagnostic wrappers linked in {profile}: {retired_linked}")
     callsites = direct_calls(subprocess.check_output(
         [str(tool("objdump")), "-d", str(elf)], text=True))
     base = declared["env:esp32-cyd"]
@@ -148,6 +165,11 @@ def profile_report(profile: str, declared: dict[str, list[str]]) -> dict:
                 "linked-no-direct-call-witness" if definition else
                 "no-linked-wrapper-symbol")
         })
+    # Every configured native interposition must now have a corresponding
+    # linked body: ARCH-RC1 removed the last two dead diagnostic declarations.
+    missing = [row["target"] for row in rows if not row["wrapperLinked"]]
+    require(not missing,
+            f"declared --wrap has no linked owner in {profile}: {missing}")
     surplus = sorted(set(symbols) - {"__wrap_" + name for name in names})
     unexpected = sorted(set(surplus) - TOOLCHAIN_LOG_WRAPPERS)
     require(not unexpected,
@@ -159,6 +181,7 @@ def profile_report(profile: str, declared: dict[str, list[str]]) -> dict:
         "linked": sum(row["wrapperLinked"] for row in rows),
         "directCallWitness": sum(bool(row["observedDirectCallers"]) for row in rows),
         "toolchainLogWrapperSymbols": surplus,
+        "retiredBringupWrappers": sorted(RETIRED_BRINGUP_WRAPS),
         "unknownLinkedWrapperSymbols": unexpected,
         "boundaries": rows,
         "caution": "ELF linkage != executed call; direct-call witnesses are incomplete"
@@ -197,11 +220,26 @@ def compare_release(normal: dict, inverted: dict) -> None:
 def self_test() -> None:
     real = declarations((PROJECT / "platformio.ini").read_text())
     require(len(real["env:esp32-cyd"]) == 45, "expected baseline 45 normal wraps")
-    require(len(real["env:esp32-cyd-bringup"]) == 5,
-            "expected baseline 5 diagnostic extras")
+    require(len(real["env:esp32-cyd-bringup"]) == 3,
+            "expected 3 surviving diagnostic extras after ARCH-RC1")
+    require(set(real["env:esp32-cyd-bringup"]) == RETAINED_BRINGUP_WRAPS,
+            "bringup diagnostic --wrap set drifted")
+    require(not RETIRED_BRINGUP_WRAPS.intersection(
+        name for flags in real.values() for name in flags),
+        "retired diagnostic interpositions still declared")
     require(not real.get("env:esp-cyd-inverted") and
             not real.get("env:esp32-cyd-trace"),
             "LCD/trace unexpectedly add wrappers")
+    for name in sorted(RETIRED_BRINGUP_WRAPS):
+        bad = ((PROJECT / "platformio.ini").read_text() +
+               "\n[env:retired-negative]\n-Wl,--wrap=" + name + "\n")
+        try:
+            declarations(bad)
+        except ValueError as error:
+            require("resurrected" in str(error),
+                    f"wrong retirement guard failure for {name}: {error}")
+        else:
+            raise AssertionError(f"retired diagnostic wrap {name} accepted")
     for bad in (
         (PROJECT / "platformio.ini").read_text() +
             "\n[env:unexpected]\n-Wl,--wrap=EspAssetPack_readRange\n"
@@ -253,9 +291,9 @@ def self_test() -> None:
         pass
     else:
         raise AssertionError("release wrapper divergence accepted")
-    print("PASS ARCH-RC0 host self-test: 45+5 declarations, malformed/duplicate "
-          "rejected, actual nm syntax, direct-call attribution, release mismatch "
-          "rejected; linked != executed")
+    print("PASS ARCH-RC1 host self-test: 45+3 surviving declarations, 2 retired "
+          "bringup-only flags blocked, malformed/duplicate rejected, nm syntax, "
+          "direct-call attribution, release mismatch rejected; linked != executed")
 
 
 def main() -> int:
