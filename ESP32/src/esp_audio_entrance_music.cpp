@@ -20,6 +20,7 @@
 #include "esp_audio_entrance_music.h"
 #include "esp_native_audio_intent.h" /* session music volume preset owner */
 #include "esp_player_view_state.h"
+#include "native_intro_clock.h" /* native ST_INTRO active/exit boundary */
 
 /* AUDIO-R2a: native SD music, not a desktop player.
  * M_STALKS.wav (user-supplied Doom II recording, NEVER in Git/PAK):
@@ -31,6 +32,8 @@
 namespace {
 constexpr char kPrimary[]="/doomrpg/music/opl/M_STALKS.wav";
 constexpr char kRootFallback[]="/M_STALKS.wav";
+constexpr char kIntroPrimary[]="/doomrpg/music/opl/M_IN_CIT.wav";
+constexpr char kIntroFallback[]="/M_IN_CIT.wav";
 constexpr uint32_t kRate=22050U;
 constexpr uint32_t kTimerDiv=2U;
 constexpr uint32_t kTimerAlarm=1814U;    /* 80MHz /2 /1814 ≈ 22050.72Hz */
@@ -89,6 +92,7 @@ static EspEntranceAdpcmWav wav={};
 static const char* path=nullptr;
 static const char* failure="none";
 static bool attempted;
+static bool activeIntroTrack;
 static bool fileOpen;
 static bool timerInit;
 static bool callbackAdded;
@@ -735,13 +739,16 @@ static void begin() {
                (unsigned)heapBefore,(unsigned)largest);
         return;
     }
-    path=kPrimary;
+    activeIntroTrack=Esp32IntroClock_isActive()!=0;
+    const char* requested=activeIntroTrack?kIntroPrimary:kPrimary;
+    const char* fallback=activeIntroTrack?kIntroFallback:kRootFallback;
+    path=requested;
     printf("[ENTRANCEMUSIC] OPEN path=%s fallback=%s "
-           "expected=WAV-IMA-ADPCM-mono-22050\n",kPrimary,kRootFallback);
-    musicFile=SD.open(kPrimary,FILE_READ);
+           "expected=WAV-IMA-ADPCM-mono-22050\n",requested,fallback);
+    musicFile=SD.open(requested,FILE_READ);
     if (!musicFile) {
-        path=kRootFallback;
-        musicFile=SD.open(kRootFallback,FILE_READ);
+        path=fallback;
+        musicFile=SD.open(fallback,FILE_READ);
     }
     if (!musicFile) {
         printf("[ENTRANCEMUSIC] SILENT reason=missing_file "
@@ -841,18 +848,37 @@ void EspEntranceMusic_syncIdleOutput(void) {
     }
 }
 
+void EspEntranceMusic_stopIntroAtHandoff(void) {
+    /* Called on final intro input BEFORE bootstrap starts BSP/map flash.
+     * Same Arduino task: release SD File, timer and ring before map loader. */
+    if (activeIntroTrack && (phase!=kSilent || ring || timerInit || fileOpen)) {
+        closeMusic("INTRO_EXIT_BEFORE_MAP");
+    }
+    if (activeIntroTrack) {
+        attempted=false; /* Entrance will own the next independent track. */
+        activeIntroTrack=false;
+        EspEntranceMusic_syncIdleOutput();
+        printf("[INTROMUSIC] HANDOFF musicClosed=yes mapLoaderMayStart=yes\n");
+    }
+}
+
 void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
     const EspPlayerViewState* view=gameplayActive?
                                    EspPlayerView_view():nullptr;
     const bool entrance=gameplayActive&&sdReady&&view&&
                         view->targetMapId==1U&&view->gameplayLoadMapId==1U;
+    const bool intro=Esp32IntroClock_isActive()!=0;
     const bool soundOn=EspNativeAudioIntent_isSoundEnabled()!=0;
-    if (!entrance || !soundOn) {
+    /* Intro and Entrance share one reader/ISR/ring, never coexist.
+     * Only the confirmed intro handoff closes M_IN_CIT before map load. */
+    if ((!entrance && !intro) || !soundOn) {
         if (phase!=kSilent||ring||timerInit||fileOpen)
             closeMusic(soundOn?"SESSION_EXIT":"SOUND_OFF");
-        EspEntranceMusic_syncIdleOutput(); /* SOUND ON -> 128, OFF -> pad disabled */
-        if (!gameplayActive||!view||view->targetMapId!=1U||!soundOn)
-            attempted=false; /* allow ON again in a later session */
+        EspEntranceMusic_syncIdleOutput(); /* SOUND ON -> 128, OFF -> disabled */
+        if (!entrance && !intro || !soundOn) {
+            attempted=false;
+            activeIntroTrack=false;
+        }
         return;
     }
     if (!attempted) begin();
