@@ -136,7 +136,7 @@ int __wrap_EspAssetPack_residentBegin(void)
         EspAssetPack_mapFlashSetProgressCallback(NULL);
         if (prepared) {
             /* REUSE HIT has no chunks; skip immediately to the real boundary. */
-            EspNativeTransitionPresentation_checkpointProgress(85U, "FLASH-READY");
+            EspNativeTransitionPresentation_flashReady();
         }
     }
     if (!prepared) {
