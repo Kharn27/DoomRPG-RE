@@ -826,6 +826,25 @@ jobs:
             python test/sdl_f30_compiler_header_closure_host.py --profile "$profile"
           done
 
+      # The SDL-A baseline had only three environments, so its comparison
+      # stays in the loop above. The fourth REAL release firmware nevertheless
+      # gets independent compiler-produced .d and linked-ELF closure checks.
+      - name: Audit inverted-panel firmware GCC dependencies and desktop ELF retirement
+        working-directory: ESP32
+        run: |
+          pio run -e esp-cyd-inverted -t compiledb
+          python test/sdl_f30_compiler_header_closure_host.py --profile esp-cyd-inverted
+          python tools/audit_desktop_elf.py ".pio/build/esp-cyd-inverted" \
+            --compiledb compile_commands.json --require-retired-render
+          python tools/audit_desktop_elf.py ".pio/build/esp-cyd-inverted" \
+            --compiledb compile_commands.json --require-retired-doomrpg
+          python tools/audit_desktop_elf.py ".pio/build/esp-cyd-inverted" \
+            --compiledb compile_commands.json --require-native-doomrpg-presentation
+          python tools/audit_desktop_elf.py ".pio/build/esp-cyd-inverted" \
+            --compiledb compile_commands.json --require-native-doomrpg-clock
+          python tools/audit_desktop_elf.py ".pio/build/esp-cyd-inverted" \
+            --compiledb compile_commands.json --require-native-doomrpg-rng
+
       - name: Upload firmware artifacts
         if: success()
         uses: actions/upload-artifact@v4
