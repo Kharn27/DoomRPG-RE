@@ -20,8 +20,8 @@ assert "soundMenuOpen=1U;" in menu and "soundOpen=1U;" in menu
 assert 'VOLUME-BACK to=SOUND' in menu and 'autoBack=SOUND' in menu
 assert 'TOGGLE %s->%s volumeRetained' in menu
 assert 'paintSoundMenuState(0,0)' in menu and 'paintSoundState(-1)' in menu
-assert '"BACK", EspNativeAudioIntent_isSoundEnabled()?"ON":"OFF", "VOLUME"' in paint
-assert "validateOptionsModel(EspNativeRootOwners_live()->menuSystem)" in paint
+assert '"BACK",EspNativeAudioIntent_isSoundEnabled()?"ON":"OFF","VOLUME"' in menu
+assert "EspNativeRootOwners_live()->menuSystem->menu!=MENU_MAIN_OPTIONS" in menu
 assert 'EspNativeAudioIntent_setSoundEnabled' in menu
 assert 'EspNativeAudioIntent_setMusicVolumePercent' in menu
 assert "EspEntranceMusic_syncIdleOutput();" in main
