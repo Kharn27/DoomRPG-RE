@@ -11,6 +11,9 @@ music=(src/"esp_audio_entrance_music.cpp").read_text()
 assert "P2 families; G1:" in mix
 assert "if (code<16) code=16;" in mix and "if (code>240) code=240;" in mix
 assert "EspNativeSfxPcm_mixGain(ring[slot],pcm,id)" in music
+assert music.count("EspNativeSfxPcm_unclampedCode(")==2
+assert music.count("[SFXGAIN]")==2
+assert "source=producer-precise" in music
 assert "gainDiv=14 peakCodes=112" in music
 assert "EspNativeAudioIntent_musicVolumePercent()" in music
 isr=music[music.index("static bool IRAM_ATTR onAudioTick"):music.index("static uint32_t queued()")]
@@ -42,6 +45,11 @@ int main(void) {
     assert(EspNativeSfxPcm_gainDiv(5061)==512U);
     assert(EspNativeSfxPcm_mix(128,4096)==136U);
     assert(EspNativeSfxPcm_mixGain(128,0,5045)==128U);
+    assert(EspNativeSfxPcm_unclampedCode(230,32767,5046)>240);
+    assert(EspNativeSfxPcm_unclampedCode(25,-32768,5060)<16);
+    assert(EspNativeSfxPcm_unclampedCode(128,0,5045)==128);
+    assert(EspNativeSfxPcm_mixGain(230,32767,5046)==240);
+    assert(EspNativeSfxPcm_mixGain(25,-32768,5060)==16);
     return 0;
 }
 """
