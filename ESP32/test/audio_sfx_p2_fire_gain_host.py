@@ -31,13 +31,13 @@ int main(void) {
     assert(17640U+1024U>16384U);
     assert(EspNativeSfxPcm_outputFrames(4160,22050)==11466);
     assert(EspNativeSfxPcm_outputFrames(3520,22050)==9702);
-    assert(EspNativeSfxPcm_gainDiv(5045)==256);
-    assert(EspNativeSfxPcm_gainDiv(5046)==320);
-    assert(EspNativeSfxPcm_gainDiv(5060)==128);
+    assert(EspNativeSfxPcm_gainDiv(5045)==224);
+    assert(EspNativeSfxPcm_gainDiv(5046)==280);
+    assert(EspNativeSfxPcm_gainDiv(5060)==112);
     assert(EspNativeSfxPcm_gainDiv(5061)==512);
-    assert(EspNativeSfxPcm_mixGain(128,32000,5046)==228);
-    assert(EspNativeSfxPcm_mixGain(128,4096,5060)==160);
-    assert(EspNativeSfxPcm_mixGain(128,-4096,5060)==96);
+    assert(EspNativeSfxPcm_mixGain(128,32000,5046)==240);
+    assert(EspNativeSfxPcm_mixGain(128,4096,5060)==164);
+    assert(EspNativeSfxPcm_mixGain(128,-4096,5060)==92);
     assert(EspNativeSfxPcm_mixGain(230,32767,5045)==240);
     assert(EspNativeSfxPcm_mixGain(25,-32768,5045)==16);
     return 0;
@@ -50,4 +50,4 @@ with tempfile.TemporaryDirectory(prefix="doom-sfx-p2-") as td:
     subprocess.run(["cc","-std=c11","-Wall","-Wextra","-Werror","-pedantic",
                     "-I",str(src),str(c),"-o",str(exe)],check=True,cwd=root)
     subprocess.run([str(exe)],check=True,cwd=root)
-print("PASS AUDIO-SFX-P2: original 5045 full stream and family DAC gains")
+print("PASS AUDIO-SFX-P2/G1: original 5045 full stream and updated DAC family gains")
