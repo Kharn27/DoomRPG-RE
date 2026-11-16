@@ -11,7 +11,6 @@
 #include "esp_native_intro_state.h"
 #include "native_intro_clock.h"
 #include "native_intro_input.h"
-#include "esp_audio_entrance_music.h" /* close intro SD/audio BEFORE BSP startup */
 #include "native_sprite_lru_cache.h"
 #include "native_story_fit.h"
 #include "native_wall_lru_cache.h"
@@ -224,9 +223,6 @@ static void onTap(int16_t screenX,
 
             printf("[INTROIN] FINAL-CONTINUE page=2 textPage=0 t=%d fullTextPresented=yes\n",
                    canvas->time);
-            /* Stop the intro WAV and release its 16KiB ring + SD File before
-             * the parked clock starts resident-map loading next iteration. */
-            EspEntranceMusic_stopIntroAtHandoff();
             Esp32IntroClock_park("intro-exit-ready");
             disarmInternal();
             printf("[INTROIN] READY-TO-EXIT state=%d page=%d textPage=%d heap8=%u largest8=%u assets=retained noDispose=yes noMapLoad=yes\n",
