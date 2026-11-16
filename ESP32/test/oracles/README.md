@@ -1,3 +1,5 @@
+> **État courant post-SDL (16 novembre 2026) :** tous les headers SDL sont désormais hôte uniquement, et le firmware n'en dépend pas. Les paragraphes historiques F33/F34/F35 ci-dessous décrivent **leur date de rédaction**, lorsque `SDL.h` et/ou `SDL_mixer.h` étaient encore dans les includes ; ils sont supersédés par F36 et par [l'audit post-SDL](../../ARCH_POST_SDL_AUDIT.md). Conserver les oracles byte-exacts et les tests de parité.
+>
 # Host-only desktop/SDL behavioral oracles
 
 This directory contains **reference code, not ESP32 firmware sources**.
