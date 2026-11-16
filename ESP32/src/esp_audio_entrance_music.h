@@ -8,6 +8,10 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+/* Hold DAC2/GPIO26 at digital silence (128) already in the main menu when
+ * SOUND is ON. No timer, SD, music ring, ISR, allocations or music playback.
+ * SOUND OFF gates and disables the idle DAC. Safe only on Arduino main task. */
+void EspEntranceMusic_syncIdleOutput(void);
 void EspEntranceMusic_service(bool gameplayActive,bool sdReady);
 void EspEntranceMusic_pumpGameplay(void);
 #ifdef __cplusplus
