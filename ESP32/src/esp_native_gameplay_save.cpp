@@ -2884,6 +2884,7 @@ bool loadNow(void) {
     loadingPresentation =
         EspNativeTransitionPresentation_beginLoading(record->targetMapId) != 0;
     if (loadingPresentation) {
+        EspNativeTransitionPresentation_deferFlashUntilCache();
         EspNativeTransitionPresentation_checkpointProgress(10U, "CHECKPOINT");
         printf("[NATIVESAVE] LOAD-UI targetMap=%u presentation=active progress=10 source=checkpoint\n",
                (unsigned int)record->targetMapId);

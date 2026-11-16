@@ -408,6 +408,9 @@ jobs:
       - name: Test SDL-F36 core SDL header in byte-exact host-only C11 ABI oracle
         run: python ESP32/test/sdl_f36_sdl_header_oracle_host.py
 
+      - name: ARCH-RC1 retired bringup wrap regression and parser adversarial fixtures
+        run: python ESP32/test/native_wrap_linkage_inventory_host.py --self-test
+
       - name: Native monster drop catalog preflight before render PAK lease
         run: python ESP32/test/native_monster_drop_catalog_host.py
 
@@ -621,6 +624,12 @@ jobs:
         run: |
           cc -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include ESP32/test/test_sys_touch.c ESP32/src/esp_native_gameplay_save_touch.c -o /tmp/doomrpg-sys-touch-test
           /tmp/doomrpg-sys-touch-test
+
+      - name: Test loading bar flash scales and cache boundary (host C11)
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -IESP32/include \
+            ESP32/test/native_loading_progress_scale_host.c -o /tmp/doomrpg-loading-progress-test
+          /tmp/doomrpg-loading-progress-test
 
       - name: Test level progress and completion-checkpoint transport (host C)
         run: |
@@ -848,12 +857,21 @@ jobs:
           python tools/audit_desktop_elf.py ".pio/build/esp-cyd-inverted" \
             --compiledb compile_commands.json --require-native-doomrpg-rng
 
+      - name: ARCH-RC1 audit native wrappers and retired probes (four ELFs)
+        working-directory: ESP32
+        run: |
+          for profile in esp32-cyd esp-cyd-inverted esp32-cyd-bringup esp32-cyd-trace; do
+            python test/native_wrap_linkage_inventory_host.py --profile "$profile"
+          done
+          python test/native_wrap_linkage_inventory_host.py --compare-release
+
       - name: Upload firmware artifacts
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: doom-rpg-esp32-cyd-${{ github.sha }}
           path: |
+            ESP32/.pio/build/*/native_wrap_inventory.json
             ESP32/.pio/build/esp32-cyd/*.bin
             ESP32/.pio/build/esp32-cyd/firmware.elf
             ESP32/.pio/build/esp-cyd-inverted/*.bin
