@@ -148,12 +148,12 @@ static inline uint8_t EspEntranceAdpcm_toDac(int16_t pcm,
     int32_t diff=(int32_t)pcm/14;
     return EspEntranceAdpcm_limitedDac(diff,firstFrame);
 }
-/* AUDIO-I2: 32 for loud intro, 14 for Entrance; all other settings invalid.
- * The same output rails and fade are kept for both tracks. */
+/* I2/I4: preserve original /14 and /32 reference outputs, while the live
+ * tracks use /15 and /33 for small additional headroom. Other gains fail closed. */
 static inline uint8_t EspEntranceAdpcm_toDacGain(
     int16_t pcm,uint32_t firstFrame,uint16_t gainDiv) {
     if (gainDiv==14U) return EspEntranceAdpcm_toDac(pcm,firstFrame);
-    if (gainDiv!=32U) return 128U; /* fail closed */
+    if (gainDiv!=15U && gainDiv!=32U && gainDiv!=33U) return 128U; /* fail closed */
     return EspEntranceAdpcm_limitedDac((int32_t)pcm/32,firstFrame);
 }
 /* One complete mono block, <=1024 compressed bytes, <=2041 output samples.
@@ -163,7 +163,8 @@ static inline int EspEntranceAdpcm_decodeBlockObservedGain(
     const uint8_t* block,uint32_t n,uint16_t samplesPerBlock,
     uint8_t* out,uint32_t outCapacity,uint32_t firstFrame,
     uint16_t gainDiv,EspEntranceAdpcmDecodeStats* stats) {
-    if (gainDiv!=14U && gainDiv!=32U) return 0; /* no invalid division */
+    if (gainDiv!=14U && gainDiv!=15U && gainDiv!=32U && gainDiv!=33U)
+        return 0; /* no unsupported division */
     if (!block||!out||n<8U||n>1024U||samplesPerBlock!=1U+2U*(n-4U)||
         outCapacity<samplesPerBlock) return 0;
     static const int16_t steps[89]={
