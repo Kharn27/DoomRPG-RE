@@ -50,6 +50,12 @@ jobs:
       - name: Test SFX-P0 original PAK WAV format probe and fail-closed parser (host C)
         run: python ESP32/test/audio_sfx_p0_pak_inventory_host.py
 
+      - name: Test AUDIO-SFX-P3 complete original WAV catalog and enemy references
+        run: python ESP32/test/audio_sfx_p3_native_catalog_host.py
+
+      - name: Test AUDIO-SFX-G1 modest relative SFX boost and DAC clamp (host C)
+        run: python ESP32/test/audio_sfx_g1_gain_host.py
+
       - name: Test native process RNG owner and 132B root extraction (host C + ABI)
         run: python ESP32/test/native_process_rng_owner_host.py
 
