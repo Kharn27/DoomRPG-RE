@@ -59,6 +59,9 @@ jobs:
       - name: Test AUDIO-S1 native SOUND ON-OFF submenu and idle DAC ownership
         run: python ESP32/test/audio_s1_sound_menu_idle_dac_host.py
 
+      - name: Test AUDIO-I1 intro WAV IMA SD reader and pre-BSP teardown
+        run: python ESP32/test/audio_i1_intro_music_host.py
+
       - name: Test native process RNG owner and 132B root extraction (host C + ABI)
         run: python ESP32/test/native_process_rng_owner_host.py
 
