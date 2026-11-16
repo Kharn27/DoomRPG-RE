@@ -14,6 +14,12 @@ extern "C" {
 void EspEntranceMusic_syncIdleOutput(void);
 /* Final ST_INTRO Continue: close M_IN_CIT WAV/SD/ring BEFORE BSP/map load. */
 void EspEntranceMusic_stopIntroAtHandoff(void);
+/* I3: called only from confirmed new-game ST_INTRO after story assets
+ * prepared and BEFORE first ST_INTRO frame. Starts the existing single
+ * IMA-ADPCM reader, with its verified clock preflight, on this Arduino task.
+ * Returns 1 if music is already playing; 0 is a silent nonfatal fallback.
+ * Never allocate a second ring, hold native PAK open or touch renderer. */
+int EspEntranceMusic_prestartIntroBeforeFirstFrame(void);
 void EspEntranceMusic_service(bool gameplayActive,bool sdReady);
 void EspEntranceMusic_pumpGameplay(void);
 #ifdef __cplusplus
