@@ -405,7 +405,7 @@ jobs:
       - name: Test SDL-F36 core SDL header in byte-exact host-only C11 ABI oracle
         run: python ESP32/test/sdl_f36_sdl_header_oracle_host.py
 
-      - name: ARCH-RC0 linker wrap inventory parser and adversarial fixtures
+      - name: ARCH-RC1 retired bringup wrap regression and parser adversarial fixtures
         run: python ESP32/test/native_wrap_linkage_inventory_host.py --self-test
 
       - name: Native monster drop catalog preflight before render PAK lease
@@ -848,7 +848,7 @@ jobs:
           python tools/audit_desktop_elf.py ".pio/build/esp-cyd-inverted" \
             --compiledb compile_commands.json --require-native-doomrpg-rng
 
-      - name: ARCH-RC0 inventory native wrappers and direct-call witnesses (four ELFs)
+      - name: ARCH-RC1 audit native wrappers and retired probes (four ELFs)
         working-directory: ESP32
         run: |
           for profile in esp32-cyd esp-cyd-inverted esp32-cyd-bringup esp32-cyd-trace; do
