@@ -875,7 +875,7 @@ void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
         if (phase!=kSilent||ring||timerInit||fileOpen)
             closeMusic(soundOn?"SESSION_EXIT":"SOUND_OFF");
         EspEntranceMusic_syncIdleOutput(); /* SOUND ON -> 128, OFF -> disabled */
-        if (!entrance && !intro || !soundOn) {
+        if ((!entrance && !intro) || !soundOn) {
             attempted=false;
             activeIntroTrack=false;
         }
@@ -924,7 +924,8 @@ void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
         return;
     }
     if (phase==kPlay) {
-        mixPendingSfx(); /* one native real-action intent per main-loop */
+        if (!activeIntroTrack)
+            mixPendingSfx(); /* SFX valid only over real gameplay music. */
         const uint32_t frames=__atomic_load_n(&playedFrames,__ATOMIC_ACQUIRE);
         const uint32_t now=millis();
         if (frames!=lastFrameSeen) {
