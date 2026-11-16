@@ -14,8 +14,8 @@ assert "EspNativeSfxPcm_mixGain(ring[slot],pcm,id)" in music
 assert music.count("EspNativeSfxPcm_unclampedCode(")==2
 assert music.count("[SFXGAIN]")==2
 assert "source=producer-precise" in music
-assert "kEntranceGainDiv=14U;" in music
-assert "kIntroGainDiv=32U;" in music
+assert "kEntranceGainDiv=15U;" in music
+assert "kIntroGainDiv=33U;" in music
 assert "peakCodes=112 track=%s" in music
 assert "EspNativeAudioIntent_musicVolumePercent()" in music
 isr=music[music.index("static bool IRAM_ATTR onAudioTick"):music.index("static uint32_t queued()")]
