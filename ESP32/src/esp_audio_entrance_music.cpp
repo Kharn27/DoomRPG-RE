@@ -45,6 +45,10 @@ constexpr uint32_t kMaxSilentFrames=8U*kRate; /* 8s -> fail closed */
 constexpr uint32_t kHeaderBytes=512U;
 constexpr uint32_t kMaxBlockBytes=1024U;
 constexpr uint32_t kMaxBlockSamples=2041U;
+/* Independent track mastering: intro source is much hotter than Entrance.
+ * /32 vs /14 = 14/32 amplitude, ~-7.2 dB, BEFORE the soft knee. */
+constexpr uint16_t kIntroGainDiv=32U;
+constexpr uint16_t kEntranceGainDiv=14U;
 constexpr uint32_t kHashFrames=4096U;      /* first music frames, producer==ISR */
 constexpr uint32_t kFnvBasis=2166136261U;
 constexpr timer_group_t kGroup=TIMER_GROUP_1;
@@ -294,8 +298,10 @@ static bool refill() {
                            available:wav.samplesPerBlock;
     const uint32_t fadeFrame=(loops==0U)?producedInLoop:4410U;
     EspEntranceAdpcmDecodeStats stats={};
-    if (!EspEntranceAdpcm_decodeBlockObserved(raw,wav.blockAlign,
-        wav.samplesPerBlock,decoded,kMaxBlockSamples,fadeFrame,&stats)) {
+    const uint16_t gainDiv=activeIntroTrack?kIntroGainDiv:kEntranceGainDiv;
+    if (!EspEntranceAdpcm_decodeBlockObservedGain(raw,wav.blockAlign,
+        wav.samplesPerBlock,decoded,kMaxBlockSamples,fadeFrame,
+        gainDiv,&stats)) {
         failure="adpcm_decode";return false;
     }
     if (stats.minPcm<pcmMin) pcmMin=stats.minPcm;
@@ -305,11 +311,12 @@ static bool refill() {
     if (blocksRead==0U && loops==0U) {
         printf("[ENTRANCEMUSIC] BLOCK0 predictor=%d stepIndex=%u "
                "pcm16MinMax=%d..%d dacFirst=%u dacLast=%u "
-               "softKneeFrames=%u gainDiv=14 peakCodes=112\n",
+               "softKneeFrames=%u gainDiv=%u peakCodes=112 track=%s\n",
                (int)(int16_t)EspEntranceAdpcm_u16(raw),
                (unsigned)raw[2],(int)stats.minPcm,(int)stats.maxPcm,
                (unsigned)decoded[0],(unsigned)decoded[samples-1U],
-               (unsigned)stats.gainLimited);
+               (unsigned)stats.gainLimited,(unsigned)gainDiv,
+               activeIntroTrack?"INTRO":"ENTRANCE");
     }
     const uint32_t start=__atomic_load_n(&wr,__ATOMIC_RELAXED);
     const uint8_t volume=EspNativeAudioIntent_musicVolumePercent();
@@ -723,9 +730,11 @@ static bool startPlaying() {
     }
     printf("[ENTRANCEMUSIC] PLAY path=%s backend=timer-DAC2 "
            "format=IMA-ADPCM monoHz=22050 ring=%u primed=%u "
-           "dacPeakCodes=112 gainDiv=14 softKneeAt=96 masterVolume=%u witness=none source=SD-ring "
+           "dacPeakCodes=112 gainDiv=%u track=%s softKneeAt=96 masterVolume=%u witness=none source=SD-ring "
            "dacEnabled=yes gpio25=untouched noI2S=yes noPSRAM=yes\n",
            path,(unsigned)kRingCapacity,(unsigned)queued(),
+           (unsigned)(activeIntroTrack?kIntroGainDiv:kEntranceGainDiv),
+           activeIntroTrack?"INTRO":"ENTRANCE",
            (unsigned)EspNativeAudioIntent_musicVolumePercent());
     return true;
 }
