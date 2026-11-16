@@ -27,8 +27,9 @@ assert 'output+kSfxLeadFrames>kRingCapacity' in music
 assert 'writer-reader<output+kSfxLeadFrames' in music
 assert 'kSfxLeadFrames=1024U' in music
 assert 'ring[slot]=EspNativeSfxPcm_mixGain(ring[slot],pcm,id);' in music
-assert 'mixPendingSfx(); /* one native real-action intent' in music
-assert music.index('if (phase==kPlay) {\n        mixPendingSfx();') > music.index('if (phase==kClock)')
+assert 'if (!activeIntroTrack)\n            mixPendingSfx();' in music
+assert music.index('if (phase==kPlay) {') > music.index('if (phase==kClock)')
+assert music.index('mixPendingSfx(); /* SFX valid only over real gameplay music. */') > music.index('if (phase==kPlay) {')
 assert 'if (phase!=kPlay || !fileOpen || ring==nullptr) return;' in music
 assert 'phase=kPlay;' in music
 assert 'RTC_IO_PAD_DAC2_REG,RTC_IO_PDAC2_DAC,code' in music
