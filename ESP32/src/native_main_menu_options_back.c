@@ -205,6 +205,20 @@ static int paintLuminositeState(void) {
     return 1;
 }
 
+/* SOUND presentation belongs to the mutable native sublayer controller,
+ * not the historically frozen F19 Options model/painter source. */
+static int DoomRPG_esp32PaintMainMenuSoundDashboardSelection(
+    struct DoomRPG_s* doomRpg,int selected,int armed,uint32_t* out) {
+    const char* labels[OPTIONS_ITEM_COUNT]={
+        "BACK",EspNativeAudioIntent_isSoundEnabled()?"ON":"OFF","VOLUME"
+    };
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe((DoomRPG_t*)doomRpg) ||
+        EspNativeRootOwners_live()->menuSystem->menu!=MENU_MAIN_OPTIONS ||
+        selected<0 || selected>=OPTIONS_ITEM_COUNT) return 0;
+    return DoomRPG_esp32PaintMenuDashboardCards(
+        doomRpg,labels,selected,armed,0x07U,out);
+}
+
 /* Both SOUND pages reuse one physical-present boundary: no extra call site. */
 static void presentSoundUiFrame(void) {
     (void)Esp32PlatformVideo_present();
