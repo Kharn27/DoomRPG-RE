@@ -816,16 +816,43 @@ static void begin() {
 }
 } // namespace
 
+void EspEntranceMusic_syncIdleOutput(void) {
+    /* No timer or ring in menus. Hold DAC2 at the exact digital midpoint.
+     * Never modify the live timer's DAC output in gameplay. */
+    if (phase!=kSilent || timerInit || ring!=nullptr) return;
+    const int enabled=EspNativeAudioIntent_isSoundEnabled();
+    if (!enabled) {
+        if (dacEnabled) {
+            (void)dac_output_voltage(DAC_CHANNEL_2,128U);
+            (void)dac_output_disable(DAC_CHANNEL_2);
+            dacEnabled=false;
+            printf("[AUDIOIDLE] OFF dacPad=OFF timer=OFF music=STOPPED\n");
+        }
+        return;
+    }
+    if (!dacEnabled) {
+        if (dac_output_enable(DAC_CHANNEL_2)!=ESP_OK) {
+            printf("[AUDIOIDLE] FAILED reason=dac-enable timer=OFF\n");
+            return;
+        }
+        dacEnabled=true;
+        (void)dac_output_voltage(DAC_CHANNEL_2,128U);
+        printf("[AUDIOIDLE] ON dacPad=ON code=128 timer=OFF buffer=0 music=STOPPED\n");
+    }
+}
+
 void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
     const EspPlayerViewState* view=gameplayActive?
                                    EspPlayerView_view():nullptr;
     const bool entrance=gameplayActive&&sdReady&&view&&
                         view->targetMapId==1U&&view->gameplayLoadMapId==1U;
-    if (!entrance) {
+    const bool soundOn=EspNativeAudioIntent_isSoundEnabled()!=0;
+    if (!entrance || !soundOn) {
         if (phase!=kSilent||ring||timerInit||fileOpen)
-            closeMusic("SESSION_EXIT");
-        if (!gameplayActive||!view||view->targetMapId!=1U)
-            attempted=false;  /* one chance per real Entrance session */
+            closeMusic(soundOn?"SESSION_EXIT":"SOUND_OFF");
+        EspEntranceMusic_syncIdleOutput(); /* SOUND ON -> 128, OFF -> pad disabled */
+        if (!gameplayActive||!view||view->targetMapId!=1U||!soundOn)
+            attempted=false; /* allow ON again in a later session */
         return;
     }
     if (!attempted) begin();
