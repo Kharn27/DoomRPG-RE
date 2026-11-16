@@ -44,7 +44,7 @@ def main() -> None:
         # Normalize *only* that exact additive line for the frozen SDL-F10
         # historical byte oracle; all surrounding original bytes remain pinned.
         if file == "esp_native_startup.c":
-            addition = "            EspNativeTransitionPresentation_deferFlashUntilCache();\\n"
+            addition = "            EspNativeTransitionPresentation_deferFlashUntilCache();\n"
             assert source.count(addition) == 1, "loading progression hook missing"
             source = source.replace(addition, "", 1)
         restored = header + source
