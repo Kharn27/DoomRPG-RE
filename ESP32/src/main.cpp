@@ -6,6 +6,7 @@
 #include "board_config.h"
 #include "esp_asset_pack.h"
 #include "esp_audio_entrance_music.h"
+#include "esp_native_sfx_probe.h"
 #include "esp_legacy_asset_source.h"
 #include "esp_legacy_config_mappings_startup.h"
 #include "esp_native_config.h"
@@ -493,6 +494,9 @@ void loop()
     }
     EspNativeResidentGameplay_serviceMenuExit(doomRpg);
     EspNativeStartup_serviceDeathRoute(doomRpg);
+    /* SFX-P0: first validate the original WAV formats from verified PAK.
+     * Exactly once per gameplay session, before music producer activity. */
+    EspNativeSfxProbe_service(EspNativeGameplaySession_isActive());
     /* AUDIO-R2a: selected Entrance soundtrack, SD IMA-ADPCM 22050Hz.
      * Game-loop producer owns all SD reads/decoding; DAC timer ISR DRAM-only.
      * Automatically stop and close on session or map exit, fail closed. */
