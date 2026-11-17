@@ -102,7 +102,7 @@ def main() -> None:
     header = HEADER.read_text(encoding="utf-8")
     scan(files, config, header)
     print(f"PASS ARCH-RC9: {len(files)} real C/C++ sources scanned; "
-          "four caller routes / two raw leaf roles / 2 outer bodies")
+          "six composed source owners / two raw leaf roles / 2 outer bodies")
 
     def clone(changes: dict[str, tuple[str,str]]) -> dict[str,str]:
         mutated = dict(files)
@@ -147,7 +147,7 @@ def main() -> None:
             pass
         else:
             raise AssertionError("RC9 adversarial mutant survived: " + name)
-    print("PASS ARCH-RC9 14/14 adversarial route/alias mutations refused")
+    print("PASS ARCH-RC9 16/16 adversarial route/alias mutations refused")
 
 if __name__ == "__main__":
     main()
