@@ -397,7 +397,7 @@ void EspNativeStartup_reset(void) {
         1U   /* weaponsPresent */
     };
 
-    EspNativeGameplaySession_reset();
+    EspNativeGameplaySessionCoordinator_reset();
     EspMapResidentLifecycle_resetAll();
     resetSpawnOwners();
     memset(&startupState, 0, sizeof(startupState));
@@ -539,7 +539,7 @@ void EspNativeStartup_serviceDeathRoute(struct DoomRPG_s* doomRpgBase) {
     printf("[DEATHROUTE] BEGIN target=%u source=death-menu player=compact-snapshot world=fresh-pack state=preflight-ok\n",
            (unsigned int)target);
     PlatformInput_setTapCallback(NULL);
-    EspNativeGameplaySession_reset();
+    EspNativeGameplaySessionCoordinator_reset();
     EspMapResidentLifecycle_resetAll();
     resetSpawnOwners();
     EspAssetPack_mapFlashSetProgressCallback(

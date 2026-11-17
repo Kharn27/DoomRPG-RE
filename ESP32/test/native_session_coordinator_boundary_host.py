@@ -18,6 +18,7 @@ EXPECTED_COMPOSED = {
     "esp_native_gameplay_save.cpp": ("reset",),
     "esp_native_resident_gameplay.c": ("reset",),
     "esp_native_gameplay_transition_handoff.c": ("reset",),
+    "esp_native_startup.c": ("reset", "reset"),
     "esp_native_gameplay_gib_fx.c": ("service", "reset"),
 }
 EXPECTED_RAW = {
@@ -125,6 +126,14 @@ def main() -> None:
         ("exit reset missing", clone({"esp_native_resident_gameplay.c":(reset,";")}),config,header),
         ("handoff raw reset", clone({"esp_native_gameplay_transition_handoff.c":(reset,raw_reset)}),config,header),
         ("handoff reset missing", clone({"esp_native_gameplay_transition_handoff.c":(reset,";")}),config,header),
+        ("startup initial reset bypass",
+         clone({"esp_native_startup.c":(
+            "    EspNativeGameplaySessionCoordinator_reset();\\n    EspMapResidentLifecycle_resetAll();\\n    resetSpawnOwners();\\n    memset(&startupState",
+            "    EspNativeGameplaySession_reset();\\n    EspMapResidentLifecycle_resetAll();\\n    resetSpawnOwners();\\n    memset(&startupState")}),config,header),
+        ("death route reset bypass",
+         clone({"esp_native_startup.c":(
+             "    PlatformInput_setTapCallback(NULL);\\n    EspNativeGameplaySessionCoordinator_reset();",
+             "    PlatformInput_setTapCallback(NULL);\\n    EspNativeGameplaySession_reset();")}),config,header),
         ("resource recursive", clone({"esp_native_gameplay_player_resources.c":(raw_service,service)}),config,header),
         ("resource reset recursive", clone({"esp_native_gameplay_player_resources.c":(raw_reset,reset)}),config,header),
         ("decl drop", files,config,header.replace("void EspNativeGameplaySessionCoordinator_reset(void);","")),
