@@ -63,7 +63,8 @@ PakIoSample ioSample = {};
 bool physicalBaselineValid = false;
 uint32_t baselineCaptures = 0U, reportCount = 0U, clockReads = 0U;
 int64_t esp_timer_get_time() { ++clockReads; return (int64_t)clockReads * 10LL; }
-int EspAssetPack_isResident() { return physicalBaselineValid || false; }
+bool observerResident = false;
+int EspAssetPack_isResident() { return observerResident ? 1 : 0; }
 void capturePhysicalBaseline() { ++baselineCaptures; physicalBaselineValid = true; }
 void reportIoSample(const char* reason) {
     assert(strcmp(reason, "threshold") == 0);
@@ -167,6 +168,7 @@ int main() {
     residentEnabled = true;
     residentCache = &cache;
     haveCache = true;
+    observerResident = true;
     memset(cache.bytes, 0x44, sizeof(cache.bytes));
     check(1, &entry, 0U, bytes, 8U);
     assert(residentStats.rangeCacheHits == 1U && bytes[0] == 0x44);
@@ -202,6 +204,7 @@ int main() {
     physicalUsesMapFlash = false;
     residentEnabled = false;
     residentCache = nullptr;
+    observerResident = false;
     sdOk = false;
     check(0, &entry, 0U, bytes, 1U);
     sdOk = true;
