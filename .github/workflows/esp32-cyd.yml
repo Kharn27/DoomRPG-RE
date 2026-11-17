@@ -444,8 +444,11 @@ jobs:
       - name: Test SDL-F36 core SDL header in byte-exact host-only C11 ABI oracle
         run: python ESP32/test/sdl_f36_sdl_header_oracle_host.py
 
-      - name: ARCH-RC7 retired native wrap regression and parser adversarial fixtures
+      - name: ARCH-RC8 retired native wrap regression and parser adversarial fixtures
         run: python ESP32/test/native_wrap_linkage_inventory_host.py --self-test
+
+      - name: ARCH-RC8 real C monster-turn session chain and 12 adversarial mutants
+        run: python ESP32/test/native_monster_turn_resource_chain_host.py
 
       - name: ARCH-RC2 resident stats reset explicit-hook parity and negative fixtures
         run: python ESP32/test/native_resident_stats_reset_boundary_host.py
