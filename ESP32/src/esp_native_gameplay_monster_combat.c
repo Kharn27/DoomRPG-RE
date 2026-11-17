@@ -13,6 +13,7 @@
 
 #include "esp_map_sprite_topology.h"
 #include "esp_native_gameplay_action_engine.h"
+#include "esp_native_gameplay_projection_overlay.h"
 #include "esp_native_gameplay_combat_math.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hit_feedback.h"
@@ -1279,7 +1280,7 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayActionEngine_executeSelect
 int __wrap_EspMapSpriteTopology_getVisualState(uint32_t spriteIndex,
                                                uint8_t* outVisualState) {
     const EspNativeGameplayMonsterRecord* monster;
-    if (!EspNativeGameplayActionEngine_getVisualState(spriteIndex,
+    if (!EspNativeGameplayProjectionOverlay_getVisualState(spriteIndex,
                                                        outVisualState)) {
         return 0;
     }
@@ -1311,7 +1312,7 @@ int __wrap_EspMapSpriteTopology_getEntity(uint32_t spriteIndex,
                                           uint16_t* outLinkState,
                                           uint16_t* outLinkOrder) {
     const EspNativeGameplayMonsterRecord* monster;
-    if (!EspNativeGameplayActionEngine_getEntity(spriteIndex, outType, outSubType,
+    if (!EspNativeGameplayProjectionOverlay_getEntity(spriteIndex, outType, outSubType,
                                                   outLinkState, outLinkOrder)) {
         return 0;
     }

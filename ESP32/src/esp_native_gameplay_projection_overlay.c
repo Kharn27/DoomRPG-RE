@@ -47,16 +47,6 @@ static uint8_t lastPaintedMapId;
 /* One shared bounded BMP decode workspace: no malloc/free at every hit. */
 static EspNativeIndexedBmp hudPaintBmp;
 
-int __real_EspNativeGameplayActionEngine_getVisualState(
-    uint32_t spriteIndex,
-    uint8_t* outVisualState);
-int __real_EspNativeGameplayActionEngine_getEntity(
-    uint32_t spriteIndex,
-    uint8_t* outType,
-    uint8_t* outSubType,
-    uint16_t* outLinkState,
-    uint16_t* outLinkOrder);
-
 static uint16_t rgb565(uint32_t rgb888) {
     uint8_t red = (uint8_t)((rgb888 >> 16) & 0xffU);
     uint8_t green = (uint8_t)((rgb888 >> 8) & 0xffU);
@@ -407,10 +397,10 @@ done:
     return ok;
 }
 
-int __wrap_EspNativeGameplayActionEngine_getVisualState(
+int EspNativeGameplayProjectionOverlay_getVisualState(
     uint32_t spriteIndex,
     uint8_t* outVisualState) {
-    if (!__real_EspNativeGameplayActionEngine_getVisualState(spriteIndex,
+    if (!EspNativeGameplayActionEngine_getVisualState(spriteIndex,
                                                               outVisualState)) {
         return 0;
     }
@@ -424,13 +414,13 @@ int __wrap_EspNativeGameplayActionEngine_getVisualState(
     return 1;
 }
 
-int __wrap_EspNativeGameplayActionEngine_getEntity(
+int EspNativeGameplayProjectionOverlay_getEntity(
     uint32_t spriteIndex,
     uint8_t* outType,
     uint8_t* outSubType,
     uint16_t* outLinkState,
     uint16_t* outLinkOrder) {
-    if (!__real_EspNativeGameplayActionEngine_getEntity(
+    if (!EspNativeGameplayActionEngine_getEntity(
             spriteIndex, outType, outSubType, outLinkState, outLinkOrder)) {
         return 0;
     }
