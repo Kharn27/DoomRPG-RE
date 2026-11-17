@@ -302,8 +302,8 @@ def self_test() -> None:
         pass
     else:
         raise AssertionError("release wrapper divergence accepted")
-    print("PASS ARCH-RC7 host self-test: 38+3 surviving declarations, 2 retired 
-          "bringup flags + 7 retired production/native wraps blocked, 
+    print("PASS ARCH-RC7 host self-test: 38+3 surviving declarations, 2 retired "
+          "bringup flags + 7 retired production/native wraps blocked, "
           "malformed/duplicate rejected, nm syntax, direct-call attribution, "
           "release mismatch rejected; linked != executed")
 
