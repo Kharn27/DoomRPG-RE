@@ -1123,6 +1123,11 @@ int EspAssetPack_isOpen(void)
     return openReady ? 1 : 0;
 }
 
+int EspAssetPack_musicSdSafe(void)
+{
+    return !openReady || (physicalUsesMapFlash && !sourceProbeReady);
+}
+
 uint32_t EspAssetPack_fileSize(void)
 {
     return openReady ? packSize : 0U;

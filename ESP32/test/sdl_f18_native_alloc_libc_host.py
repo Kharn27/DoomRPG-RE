@@ -101,6 +101,9 @@ for filename, (sha, aliases) in REFERENCES.items():
         assert current.startswith("#include <SDL.h>\n#include <stdlib.h>\n"), filename
         restored = current.replace("#include <SDL.h>\n#include <stdlib.h>\n",
                                    "#include <SDL.h>\n", 1)
+    if filename == "esp_native_resident_gameplay.c":
+        from audio_menu_m1_history import restore_pre_menu_audio_resident
+        restored = restore_pre_menu_audio_resident(restored)
     assert not re.search(r"\bSDL_[A-Za-z_][A-Za-z_0-9]*\b", current), filename
     for name, count in aliases.items():
         assert re.search(r"^#define\s+SDL_" + name + r"\s+" + name + r"\s*$",

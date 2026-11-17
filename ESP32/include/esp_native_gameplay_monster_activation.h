@@ -44,6 +44,10 @@ int EspNativeGameplayMonsterActivation_observeVisible(uint16_t spriteIndex,
                                                       uint16_t tileIndex);
 int EspNativeGameplayMonsterActivation_isActive(uint16_t spriteIndex);
 uint32_t EspNativeGameplayMonsterActivation_count(void);
+/* Number of previously activated members restored from checkpoint. This
+ * ephemeral baseline prevents re-playing sight cries for save-loaded actors.
+ * Snapshot V9 ABI is unchanged. Fresh maps always return zero. */
+uint32_t EspNativeGameplayMonsterActivation_soundRestoreBaseline(void);
 int EspNativeGameplayMonsterActivation_getOrdered(uint32_t ordinal,
                                                   uint16_t* outSpriteIndex);
 

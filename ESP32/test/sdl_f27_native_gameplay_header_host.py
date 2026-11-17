@@ -159,6 +159,9 @@ def original_body_parity() -> None:
             assert current.count(p1_import) == 1, "SFX-P1 pickup import drift"
             assert current.count(p1_hook) == 1, "SFX-P1 pickup commit hook drift"
             current = current.replace(p1_import, b"", 1).replace(p1_hook, b"", 1)
+        if filename == "esp_native_resident_gameplay.c":
+            from audio_menu_m1_history import restore_pre_menu_audio_resident
+            current = restore_pre_menu_audio_resident(current.decode("utf-8")).encode("utf-8")
         restored = b"#include <SDL.h>\n" + current[len(marker):]
         assert git_blob(restored) == blob, (
             f"{filename}: original pre-F27 body not preserved exactly")

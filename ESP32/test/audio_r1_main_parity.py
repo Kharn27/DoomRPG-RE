@@ -9,6 +9,30 @@ from native_boot_legals_history import restore_pre_boot_legals
 
 def restore_pre_audio_r1(text: str) -> str:
     text = restore_pre_boot_legals(text)
+    # MENU-M1 adds a bounded title prestart between model creation and first
+    # dashboard present. Reverse ONLY that exact later insertion for Root-J2's
+    # frozen, historically tested main.cpp blob.
+    title_current = (
+        "        /* MENU-M1: title audio is already playing before the first MENU_MAIN\n"
+        "         * physical present. A missing WAV never blocks navigation. */\n"
+        "        const bool menuBuilt =\n"
+        "            doomRpg != nullptr &&\n"
+        "            DoomRPG_esp32MainMenuModelBuildMain(doomRpg) != 0;\n"
+        "        if (menuBuilt) (void)EspEntranceMusic_prestartMenuBeforeFirstFrame();\n"
+        "        engineMainMenuReady =\n"
+        "            menuBuilt &&\n"
+        "            DoomRPG_esp32RepaintOpaqueMainMenu(doomRpg, &frameFNV) != 0;\n"
+        "        if (!engineMainMenuReady && menuBuilt)\n"
+        "            EspEntranceMusic_stopMenuBeforeAction();\n"
+    )
+    title_original = (
+        "        engineMainMenuReady =\n"
+        "            doomRpg != nullptr &&\n"
+        "            DoomRPG_esp32MainMenuModelBuildMain(doomRpg) != 0 &&\n"
+        "            DoomRPG_esp32RepaintOpaqueMainMenu(doomRpg, &frameFNV) != 0;\n"
+    )
+    assert text.count(title_current) == 1, "MENU-M1 first-title-present drift"
+    text = text.replace(title_current, title_original, 1)
     # SOUND-S1 and INTRO-I1 preserve the exact older Root-J2 main image by
     # reversing ONLY their two main-loop/boot insertions. Keep the historical
     # blob SHA, next R2a/R1 inverse and original ownership untouched.

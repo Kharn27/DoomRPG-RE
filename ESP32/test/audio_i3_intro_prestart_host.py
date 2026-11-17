@@ -24,7 +24,8 @@ assert 'Esp32IntroClock_arm(doomRpg' in first
 assert 'EspEntranceMusic_prestartIntroBeforeFirstFrame' not in first
 assert 'EspEntranceMusic_prestartIntroBeforeFirstFrame' not in clock
 assert 'static bool introPrestartWindow;' in audio
-assert 'activeIntroTrack=Esp32IntroClock_isActive()!=0||introPrestartWindow;' in audio
+assert 'activeIntroTrack=intro;' in audio
+assert 'activeMenuTrack=!intro&&menu;' in audio
 assert 'const bool intro=Esp32IntroClock_isActive()!=0||introPrestartWindow;' in audio
 signature='int EspEntranceMusic_prestartIntroBeforeFirstFrame(void) {'
 assert audio.count(signature)==1
