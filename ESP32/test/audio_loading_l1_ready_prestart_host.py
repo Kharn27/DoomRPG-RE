@@ -27,6 +27,8 @@ assert 'EspAssetPack_isMapFlashActive()' in audio
 assert 'EspAssetPack_isResident()' in audio
 assert 'view->targetMapId!=targetMapId' in audio
 assert 'view->gameplayLoadMapId!=targetMapId' in audio
+assert 'closeMusic("LOAD_PRESTART_OWNER_NOT_READY");' in audio
+assert 'attempted=true;' in audio
 
 stop=audio[audio.index('void EspEntranceMusic_stopBeforeLoading(void) {'):
            audio.index('int EspEntranceMusic_prestartGameplayBeforeFirstFrame(')]
