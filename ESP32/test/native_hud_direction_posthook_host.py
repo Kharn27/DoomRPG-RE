@@ -236,7 +236,7 @@ int main() {
 def harness(owner: str, hook: str, original: str) -> str:
     hud = original
     macros = "\n".join(re.findall(r"(?m)^#define HUD_.*$", hud))
-    scratch = extract(hud, "typedef struct HudDirectionScratch_s")
+    scratch = extract(hud, "typedef struct HudDirectionScratch_s") + " HudDirectionScratch;"
     helpers = [
         extract(hud, "static void mergeStats("),
         extract(hud, "static int openBmp("),
