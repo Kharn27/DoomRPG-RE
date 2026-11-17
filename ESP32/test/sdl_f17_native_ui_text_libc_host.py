@@ -76,6 +76,9 @@ def restore(filename: str, current: str) -> str:
         original = original.replace(GUARD, "#include <SDL.h>\n")
     if filename == "native_main_menu_actions.c":
         original = restore_pre_help_light_body_pages(original)
+        from audio_menu_m1_history import restore_pre_menu_audio_actions
+        original = restore_pre_menu_audio_actions(original)
+    if filename == "native_main_menu_actions.c":
         original = restore_pre_help_bottom_blue(original)
     if filename == "native_main_menu_model.c":
         original = restore_pre_help_bottom_model(original)

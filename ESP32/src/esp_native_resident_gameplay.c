@@ -63,6 +63,7 @@
 #include "esp_player_orientation_state.h"
 #include "esp_player_finish_rotation_tile.h"
 #include "esp_player_facing_state.h"
+#include "esp_audio_entrance_music.h" /* title prestart before menu present */
 #include "native_intro_clock.h"
 #include "native_main_menu_model.h"
 #include "native_main_menu_present.h"
@@ -2043,6 +2044,9 @@ void EspNativeResidentGameplay_serviceMenuExit(struct DoomRPG_s* doomRpgBase) {
         printf("[SYSEXIT] FAILED reason=menu-boundary input=disabled saveWrite=no\n");
         return;
     }
+    /* MENU-M1: after gameplay teardown, start the fresh title visit before
+     * presenting the first main-menu frame, just like cold boot. */
+    (void)EspEntranceMusic_prestartMenuBeforeFirstFrame();
     if (!DoomRPG_esp32RepaintOpaqueMainMenu(doomRpg, &finalFNV) &&
         !DoomRPG_esp32MainMenuRecover(doomRpg, "exit-to-menu-paint")) {
         PlatformInput_setTapCallback(NULL);

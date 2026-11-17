@@ -11,11 +11,13 @@ ci=(root/".github/workflows/esp32-cyd.yml").read_text()
 
 assert "constexpr uint16_t kIntroGainDiv=33U;" in music
 assert "constexpr uint16_t kEntranceGainDiv=15U;" in music
-assert "const uint16_t gainDiv=activeIntroTrack?kIntroGainDiv:kEntranceGainDiv;" in music
+assert "const uint16_t gainDiv=activeGainDiv();" in music
+assert "activeIntroTrack ? kIntroGainDiv" in music
+assert "activeMenuTrack ? kMenuGainDiv : kEntranceGainDiv" in music
 assert "EspEntranceAdpcm_decodeBlockObservedGain(raw,wav.blockAlign," in music
 assert "gainDiv,&stats)" in music
 assert "gainDiv=%u track=%s" in music
-assert 'activeIntroTrack?"INTRO":"ENTRANCE"' in music
+assert '(activeMenuTrack ? "MENU" : "ENTRANCE")' in music
 assert "EspNativeAudioIntent_musicVolumePercent()" in music
 assert "kRingCapacity=16384U" in music
 assert "static inline uint8_t EspEntranceAdpcm_limitedDac" in header

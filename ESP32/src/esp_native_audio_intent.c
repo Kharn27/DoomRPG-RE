@@ -5,6 +5,19 @@
 
 static EspNativeAudioIntent lastIntent;
 static uint32_t intentCount;
+#define ESP_NATIVE_AUDIO_QUEUE_CAP 16U
+static EspNativeAudioIntent intentQueue[ESP_NATIVE_AUDIO_QUEUE_CAP];
+static uint8_t intentQueueFirst;
+static uint8_t intentQueueCount;
+static void retainIntent(void) {
+    if (intentQueueCount==ESP_NATIVE_AUDIO_QUEUE_CAP) {
+        intentQueueFirst=(uint8_t)((intentQueueFirst+1U)%ESP_NATIVE_AUDIO_QUEUE_CAP);
+        --intentQueueCount;
+        printf("[AUDIOINTENT] OVERFLOW drop=oldest capacity=16\n");
+    }
+    intentQueue[(intentQueueFirst+intentQueueCount)%ESP_NATIVE_AUDIO_QUEUE_CAP]=lastIntent;
+    ++intentQueueCount;
+}
 /* Audio music output preference, independent of incidental sound intents.
  * Runtime-only until native config evolves beyond its validated V3 ABI. */
 static uint8_t musicVolumePercent=100U;
@@ -13,6 +26,8 @@ static uint8_t soundEnabled=1U; /* boot default ON, V3 config unchanged */
 void EspNativeAudioIntent_reset(void) {
     memset(&lastIntent, 0, sizeof(lastIntent));
     intentCount = 0U;
+    intentQueueFirst=0U;
+    intentQueueCount=0U;
 }
 
 int EspNativeAudioIntent_publish(uint16_t resourceId,
@@ -25,6 +40,7 @@ int EspNativeAudioIntent_publish(uint16_t resourceId,
     lastIntent.resourceId = resourceId;
     lastIntent.flags = flags;
     lastIntent.priority = priority;
+    retainIntent();
 
     printf("[AUDIOINTENT] PUBLISH seq=%u resource=%u flags=%u priority=%u backend=silent order=call-order\n",
            (unsigned int)lastIntent.sequence,
@@ -42,6 +58,7 @@ int EspNativeAudioIntent_stopAll(void) {
     lastIntent.resourceId = 0U;
     lastIntent.flags = ESP_NATIVE_AUDIO_STOP_ALL_FLAG;
     lastIntent.priority = 0U;
+    retainIntent();
 
     printf("[AUDIOINTENT] STOP_ALL seq=%u backend=silent order=call-order\n",
            (unsigned int)lastIntent.sequence);
@@ -50,6 +67,20 @@ int EspNativeAudioIntent_stopAll(void) {
 
 const EspNativeAudioIntent* EspNativeAudioIntent_last(void) {
     return intentCount != 0U ? &lastIntent : NULL;
+}
+
+int EspNativeAudioIntent_nextAfter(uint32_t sequence,
+                                   EspNativeAudioIntent* outIntent) {
+    if (outIntent==NULL) return 0;
+    for (uint8_t i=0U;i<intentQueueCount;++i) {
+        const EspNativeAudioIntent* item=
+            &intentQueue[(intentQueueFirst+i)%ESP_NATIVE_AUDIO_QUEUE_CAP];
+        if (item->sequence>sequence) {
+            *outIntent=*item;
+            return 1;
+        }
+    }
+    return 0;
 }
 
 uint32_t EspNativeAudioIntent_count(void) {

@@ -23,6 +23,10 @@ int EspNativeAudioIntent_publish(uint16_t resourceId,
                                  uint8_t priority);
 int EspNativeAudioIntent_stopAll(void);
 const EspNativeAudioIntent* EspNativeAudioIntent_last(void);
+/* Bounded FIFO witness for consecutive events in one turn, without losing
+ * weapon+pain or three monster-attack shots to last-intent overwrite. */
+int EspNativeAudioIntent_nextAfter(uint32_t sequence,
+                                   EspNativeAudioIntent* outIntent);
 uint32_t EspNativeAudioIntent_count(void);
 /* Shared compact music volume owner: 0/25/50/75/100, boot default 100.
  * C UI sets it; native ADPCM producer reads it. No ISR or SD writes.

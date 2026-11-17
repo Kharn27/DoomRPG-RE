@@ -19,7 +19,13 @@
 #include "esp_asset_pack.h"
 #include "esp_audio_loading_route.h" /* L1: strict Entrance-only music selection */
 #include "esp_audio_entrance_music.h"
-#include "esp_native_audio_intent.h" /* session music volume preset owner */
+#include "esp_native_audio_intent.h"
+#include "esp_native_monster_ambience.h"
+#include "esp_native_gameplay_monster_attack_visual.h"
+#include "esp_native_gameplay_monster_active_sequence.h"
+#include "esp_native_gameplay_dialog.h"
+#include "esp_native_gameplay_hub.h"
+#include "esp_native_gameplay_password.h" /* session music volume preset owner */
 #include "esp_player_view_state.h"
 #include "native_intro_clock.h" /* native ST_INTRO active/exit boundary */
 
@@ -35,6 +41,8 @@ constexpr char kPrimary[]="/doomrpg/music/opl/M_STALKS.wav";
 constexpr char kRootFallback[]="/M_STALKS.wav";
 constexpr char kIntroPrimary[]="/doomrpg/music/opl/M_IN_CIT.wav";
 constexpr char kIntroFallback[]="/M_IN_CIT.wav";
+constexpr char kMenuPrimary[]="/doomrpg/music/opl/M_DM2TTL.wav";
+constexpr char kMenuFallback[]="/M_DM2TTL.wav";
 constexpr uint32_t kRate=22050U;
 constexpr uint32_t kTimerDiv=2U;
 constexpr uint32_t kTimerAlarm=1814U;    /* 80MHz /2 /1814 ≈ 22050.72Hz */
@@ -46,11 +54,22 @@ constexpr uint32_t kMaxSilentFrames=8U*kRate; /* 8s -> fail closed */
 constexpr uint32_t kHeaderBytes=512U;
 constexpr uint32_t kMaxBlockBytes=1024U;
 constexpr uint32_t kMaxBlockSamples=2041U;
+/* Normally two small SD/ADPCM blocks per safe main-task service. When a
+ * lengthy monster visual leaves less than half the ring, four blocks can
+ * restore 370ms of headroom in ONE service (4082 frames was not quite
+ * enough to meet the 4096-frame underrun recovery threshold). */
+constexpr uint32_t kNormalRefillBlocks=2U;
+constexpr uint32_t kCatchUpRefillBlocks=4U;
+static_assert(kCatchUpRefillBlocks*kMaxBlockSamples<kRingCapacity,
+              "catch-up must fit into half the single native ring");
 /* I4: tiny safety margin measured on CYD. /32 -> /33 (intro ~-0.27dB),
  * /14 -> /15 (Entrance ~-0.60dB), both BEFORE the original soft knee.
  * Preserve the legacy /14, /32 pure decoder ABI for host reference tests. */
 constexpr uint16_t kIntroGainDiv=33U;
 constexpr uint16_t kEntranceGainDiv=15U;
+/* Conservative initial title gain: same headroom as validated intro. */
+constexpr uint16_t kMenuGainDiv=33U;
+constexpr uint32_t kMenuTailStopFrames=256U; /* ~11ms graceful drain guard */
 constexpr uint32_t kHashFrames=4096U;      /* first music frames, producer==ISR */
 constexpr uint32_t kFnvBasis=2166136261U;
 constexpr timer_group_t kGroup=TIMER_GROUP_1;
@@ -99,6 +118,8 @@ static const char* path=nullptr;
 static const char* failure="none";
 static bool attempted;
 static bool activeIntroTrack;
+static bool activeMenuTrack; /* same one SD File/ring, title session */
+static bool menuSessionLatched; /* one attempt per title-session, survives submenus */
 static bool introPrestartWindow; /* main-task only, prior to ST_INTRO clock arm */
 static bool fileOpen;
 static bool timerInit;
@@ -130,6 +151,11 @@ static uint32_t producedFrames;
 static uint32_t publishedPrefixFnv;
 static uint32_t pumpCalls;
 static uint32_t pumpBlockReads;
+/* Producer-side timing only; no ISR cost, no serial in the refill path. */
+static uint32_t catchUpBursts;
+static uint32_t lastMusicPublishMs;
+static uint32_t maxMusicPublishGapMs;
+static uint32_t publishGapsOver500Ms;
 /* SFX-P1: one brief PCM16 effect, directly overlaid onto the existing
  * not-yet-consumed music ring. No second timer, ISR edits or WAV allocation. */
 static uint32_t sfxSeenSequence;
@@ -149,6 +175,14 @@ struct FireSfxVoice {
 };
 static FireSfxVoice fireSfx={};
 static uint32_t sfxDeferredSequence;
+constexpr uint8_t kGenericSfxVoiceCount=3U;
+struct GenericSfxVoice {
+    EspAssetPackEntry entry;
+    uint32_t start,output,next,sourceFrames,dataOffset,sourceIndex,phase,reads;
+    uint16_t id;
+    bool active;
+};
+static GenericSfxVoice genericSfx[kGenericSfxVoiceCount]={};
 
 
 static bool IRAM_ATTR onAudioTick(void*) {
@@ -207,6 +241,15 @@ static uint32_t queued() {
     return __atomic_load_n(&wr,__ATOMIC_ACQUIRE)-
            __atomic_load_n(&rd,__ATOMIC_ACQUIRE);
 }
+/* Route/gain stay on the main-task producer, never in ISR. */
+static const char* activeTrackName() {
+    return activeIntroTrack ? "INTRO" :
+           (activeMenuTrack ? "MENU" : "ENTRANCE");
+}
+static uint16_t activeGainDiv() {
+    return activeIntroTrack ? kIntroGainDiv :
+           (activeMenuTrack ? kMenuGainDiv : kEntranceGainDiv);
+}
 /* Printed on game loop only, never on the 22.05kHz interrupt. */
 static void signalReport(const char* at) {
     printf("[ENTRANCEMUSIC] SIGNAL at=%s ringConsumed=%u "
@@ -236,6 +279,8 @@ static void signalReport(const char* at) {
 static void closeMusic(const char* reason) {
     phase=kSilent;
     fireSfx.active=false;
+    for (uint8_t i=0U;i<kGenericSfxVoiceCount;++i)
+        genericSfx[i].active=false;
     sfxDeferredSequence=0U;
     if (timerInit) (void)timer_pause(kGroup,kTimer);
     if (callbackAdded) (void)timer_isr_callback_remove(kGroup,kTimer);
@@ -256,7 +301,9 @@ static void closeMusic(const char* reason) {
            "loops=%u underruns=%u maxGapCycles=%u gapsOver90us=%u "
            "maxIsrCycles=%u recoveries=%u maxSilentFrames=%u "
            "reads=%u maxSdReadUs=%u pumpCalls=%u pumpReads=%u "
-           "slowReadsOver20ms=%u heap8Before=%u heap8After=%u "
+           "slowReadsOver20ms=%u catchUpBursts=%u "
+           "maxPublishGapMs=%u gapsOver500Ms=%u "
+           "heap8Before=%u heap8After=%u "
            "largest8=%u timer=OFF dacPad=OFF file=CLOSED\n",
            reason,path?path:"none",(unsigned)playedFrames,
            (unsigned)loops,(unsigned)underruns,(unsigned)maxGapCycles,
@@ -264,7 +311,9 @@ static void closeMusic(const char* reason) {
            (unsigned)recoveryStarts,(unsigned)maxSilentStreak,
            (unsigned)reads,(unsigned)maxReadUs,
            (unsigned)pumpCalls,(unsigned)pumpBlockReads,
-           (unsigned)slowReadCount,(unsigned)heapBefore,
+           (unsigned)slowReadCount,(unsigned)catchUpBursts,
+           (unsigned)maxMusicPublishGapMs,(unsigned)publishGapsOver500Ms,
+           (unsigned)heapBefore,
            (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
            (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
 }
@@ -276,6 +325,8 @@ static bool refill() {
     if (q>kRingCapacity) { failure="ring_bounds";return false; }
     if (kRingCapacity-q<wav.samplesPerBlock) return true;
     if (producedInLoop==wav.sampleFrames) {
+        /* Title has a finite end. Other music keeps its original loop. */
+        if (activeMenuTrack) return true;
         if (!musicFile.seek(wav.dataOffset)) {
             failure="rewind_failed";return false;
         }
@@ -301,7 +352,7 @@ static bool refill() {
                            available:wav.samplesPerBlock;
     const uint32_t fadeFrame=(loops==0U)?producedInLoop:4410U;
     EspEntranceAdpcmDecodeStats stats={};
-    const uint16_t gainDiv=activeIntroTrack?kIntroGainDiv:kEntranceGainDiv;
+    const uint16_t gainDiv=activeGainDiv();
     if (!EspEntranceAdpcm_decodeBlockObservedGain(raw,wav.blockAlign,
         wav.samplesPerBlock,decoded,kMaxBlockSamples,fadeFrame,
         gainDiv,&stats)) {
@@ -319,7 +370,7 @@ static bool refill() {
                (unsigned)raw[2],(int)stats.minPcm,(int)stats.maxPcm,
                (unsigned)decoded[0],(unsigned)decoded[samples-1U],
                (unsigned)stats.gainLimited,(unsigned)gainDiv,
-               activeIntroTrack?"INTRO":"ENTRANCE");
+               activeTrackName());
     }
     const uint32_t start=__atomic_load_n(&wr,__ATOMIC_RELAXED);
     const uint8_t volume=EspNativeAudioIntent_musicVolumePercent();
@@ -337,6 +388,15 @@ static bool refill() {
         ++producedFrames;
     }
     __atomic_store_n(&wr,start+samples,__ATOMIC_RELEASE);
+    if (phase==kPlay) {
+        const uint32_t publishedAtMs=millis();
+        if (lastMusicPublishMs!=0U) {
+            const uint32_t gapMs=publishedAtMs-lastMusicPublishMs;
+            if (gapMs>maxMusicPublishGapMs) maxMusicPublishGapMs=gapMs;
+            if (gapMs>500U) ++publishGapsOver500Ms;
+        }
+        lastMusicPublishMs=publishedAtMs;
+    }
     producedInLoop+=samples;
     ++blocksRead;
     return true;
@@ -495,15 +555,161 @@ static void startFireSfx(uint32_t reader,uint32_t writer) {
     EspAssetPack_close();
 }
 
-static void mixPendingSfx() {
+/* Generic original monster/player effects: three independent PCM16 voices.
+ * All 92 original PAK WAV IDs use the same validated 8k->22050 converter.
+ * Long SFX stream in <=1024 published samples at a time, no heap/ISR I/O. */
+static bool startGenericSfx(uint16_t id) {
+    if (id<5042U || id>5138U || !EspAssetPack_isMapFlashActive() ||
+        !EspAssetPack_isResident() || EspAssetPack_isOpen()) return false;
+    GenericSfxVoice* v=nullptr;
+    for (uint8_t i=0U;i<kGenericSfxVoiceCount;++i)
+        if (!genericSfx[i].active) { v=&genericSfx[i];break; }
+    if (v==nullptr) {
+        printf("[SFXGEN] DROP id=%u reason=three-voices-busy\n",(unsigned)id);
+        ++sfxRejectedCount;return false;
+    }
+    const uint32_t rdNow=__atomic_load_n(&rd,__ATOMIC_ACQUIRE);
+    const uint32_t wrNow=__atomic_load_n(&wr,__ATOMIC_ACQUIRE);
+    if (wrNow-rdNow>kRingCapacity ||
+        wrNow-rdNow<kSfxLeadFrames+kSfxMinLead) {
+        printf("[SFXGEN] DROP id=%u reason=ring-not-ready queued=%u\n",
+               (unsigned)id,(unsigned)(wrNow-rdNow));
+        ++sfxRejectedCount;return false;
+    }
+    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
+        ++sfxRejectedCount;return false;
+    }
+    char filename[16];
+    (void)snprintf(filename,sizeof(filename),"%04u.wav",(unsigned)id);
+    EspAssetPackEntry entry={};
+    EspNativeSfxWavInfo meta={};
+    uint8_t header[512];
+    bool valid=EspAssetPack_findEntry(filename,&entry)!=0 &&
+               (entry.flags&ESP_ASSET_PACK_FLAG_DIRECTORY)==0U &&
+               entry.size>=44U;
+    if (valid) {
+        const uint32_t bytes=entry.size<sizeof(header)?
+                             entry.size:(uint32_t)sizeof(header);
+        valid=EspAssetPack_readRange(&entry,0U,header,bytes)!=0 &&
+              EspNativeSfxWav_probe(header,bytes,entry.size,&meta)==
+                  ESP_NATIVE_SFX_WAV_PCM &&
+              meta.formatTag==1U && meta.channels==1U &&
+              meta.sampleRate==8000U && meta.bitsPerSample==16U &&
+              meta.blockAlign==2U && meta.dataOffset>=44U &&
+              meta.dataBytes==meta.sampleFrames*2U;
+    }
+    EspAssetPack_close();
+    const uint32_t output=valid?
+        EspNativeSfxPcm_outputFrames(meta.sampleFrames,kRate):0U;
+    if (!valid || output==0U) {
+        printf("[SFXGEN] DROP id=%u reason=invalid-original-pcm\n",
+               (unsigned)id);
+        ++sfxRejectedCount;return false;
+    }
+    *v=GenericSfxVoice{};
+    v->entry=entry;
+    v->start=rdNow+kSfxLeadFrames;
+    v->sourceFrames=meta.sampleFrames;
+    v->dataOffset=meta.dataOffset;
+    v->output=output;
+    v->id=id;
+    v->active=true;
+    printf("[SFXGEN] START id=%u sourceFrames=%u outputFrames=%u "
+           "voice=%u ring=shared heapAlloc=0 verified-flash=yes\n",
+           (unsigned)id,(unsigned)v->sourceFrames,(unsigned)v->output,
+           (unsigned)(v-genericSfx));
+    return true;
+}
+
+static void mixGenericSfx(GenericSfxVoice* v) {
+    if (v==nullptr || !v->active || EspAssetPack_isOpen()) return;
+    const uint32_t rdNow=__atomic_load_n(&rd,__ATOMIC_ACQUIRE);
+    const uint32_t wrNow=__atomic_load_n(&wr,__ATOMIC_ACQUIRE);
+    const uint32_t first=v->start+v->next;
+    if ((int32_t)(first-rdNow)<(int32_t)kSfxMinLead) {
+        printf("[SFXGEN] DROP id=%u reason=reader-caught-up mixed=%u/%u\n",
+               (unsigned)v->id,(unsigned)v->next,(unsigned)v->output);
+        v->active=false;++sfxRejectedCount;return;
+    }
+    if (first>=wrNow) return;
+    uint32_t n=wrNow-first;
+    if (n>8192U) n=8192U; /* up to 371ms ahead; >=100ms native frame */
+    if (n>v->output-v->next) n=v->output-v->next;
+    if (n==0U) return;
+    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) return;
+    uint8_t scratch[kSfxReadBytes];
+    uint32_t cachedIndex=UINT32_MAX, cachedFrames=0U,done=0U;
+    const char* failed=nullptr;
+    for (;done<n;++done) {
+        if ((done&63U)==0U &&
+            (int32_t)((first+done)-
+                __atomic_load_n(&rd,__ATOMIC_ACQUIRE))<
+                    (int32_t)kSfxMinLead) {
+            failed="reader-caught-up";break;
+        }
+        if (v->sourceIndex>=v->sourceFrames) {
+            failed="source-bounds";break;
+        }
+        if (cachedIndex==UINT32_MAX ||
+            v->sourceIndex<cachedIndex ||
+            v->sourceIndex>=cachedIndex+cachedFrames) {
+            cachedIndex=v->sourceIndex;
+            const uint32_t left=v->sourceFrames-cachedIndex;
+            cachedFrames=left<kSfxReadBytes/2U?left:kSfxReadBytes/2U;
+            if (!EspAssetPack_readRange(&v->entry,
+                    v->dataOffset+cachedIndex*2U,
+                    scratch,cachedFrames*2U)) {
+                failed="flash-read";break;
+            }
+            ++v->reads;
+        }
+        const int16_t pcm=EspNativeSfxPcm_le16(
+            scratch+(v->sourceIndex-cachedIndex)*2U);
+        const uint32_t slot=(first+done)&kRingMask;
+        ring[slot]=EspNativeSfxPcm_mixGain(ring[slot],pcm,v->id);
+        v->phase+=8000U;
+        if (v->phase>=kRate) {
+            v->phase-=kRate;
+            ++v->sourceIndex;
+        }
+    }
+    EspAssetPack_close();
+    v->next+=done;
+    if (failed!=nullptr) {
+        printf("[SFXGEN] DROP id=%u reason=%s mixed=%u/%u\n",
+               (unsigned)v->id,failed,(unsigned)v->next,
+               (unsigned)v->output);
+        v->active=false;++sfxRejectedCount;
+    } else if (v->next==v->output) {
+        printf("[SFXGEN] END id=%u outputFrames=%u reads=%u "
+               "timer=unchanged heapAlloc=0\n",
+               (unsigned)v->id,(unsigned)v->next,(unsigned)v->reads);
+        v->active=false;++sfxPlayedCount;
+    }
+}
+
+static void mixPendingSfxOne() {
     if (phase!=kPlay || ring==nullptr) return;
     if (fireSfx.active) mixFireSfx();
-    const EspNativeAudioIntent* intent=EspNativeAudioIntent_last();
-    if (intent==nullptr || intent->sequence==sfxSeenSequence) return;
+    for (uint8_t i=0U;i<kGenericSfxVoiceCount;++i)
+        if (genericSfx[i].active) mixGenericSfx(&genericSfx[i]);
+    EspNativeAudioIntent next={};
+    if (!EspNativeAudioIntent_nextAfter(sfxSeenSequence,&next)) return;
+    const EspNativeAudioIntent* intent=&next;
     const uint16_t id=intent->resourceId;
-    if ((id!=5045U && id!=5046U && id!=5060U) ||
-        (intent->flags&ESP_NATIVE_AUDIO_STOP_ALL_FLAG)!=0U) {
+    if ((intent->flags&ESP_NATIVE_AUDIO_STOP_ALL_FLAG)!=0U) {
         sfxSeenSequence=intent->sequence;
+        fireSfx.active=false;
+        for (uint8_t i=0U;i<kGenericSfxVoiceCount;++i)
+            genericSfx[i].active=false;
+        return;
+    }
+    if (id!=5045U && id!=5046U && id!=5060U) {
+        if (EspAssetPack_isOpen()) return;
+        sfxSeenSequence=intent->sequence;
+        if (startGenericSfx(id))
+            for (uint8_t i=0U;i<kGenericSfxVoiceCount;++i)
+                if (genericSfx[i].active) mixGenericSfx(&genericSfx[i]);
         return;
     }
     if (EspAssetPack_isOpen()) {
@@ -520,8 +726,11 @@ static void mixPendingSfx() {
     const uint32_t writer=__atomic_load_n(&wr,__ATOMIC_ACQUIRE);
     if (id==5045U) {
         if (fireSfx.active || (int32_t)(sfxBusyUntil-reader)>0) {
-            ++sfxRejectedCount;
-            printf("[SFXP2] DROP id=5045 reason=one-channel-busy\n");
+            /* Previously this rejected back-to-back effects outright. */
+            if (startGenericSfx(id))
+                for (uint8_t i=0U;i<kGenericSfxVoiceCount;++i)
+                    if (genericSfx[i].active && genericSfx[i].id==id)
+                        mixGenericSfx(&genericSfx[i]);
         } else {
             startFireSfx(reader,writer);
             mixFireSfx();
@@ -529,9 +738,12 @@ static void mixPendingSfx() {
         return;
     }
     if (fireSfx.active || (int32_t)(sfxBusyUntil-reader)>0) {
-        ++sfxRejectedCount;
-        printf("[SFXP1] DROP id=%u reason=one-channel-busy queued=%u\n",
-               (unsigned)id,(unsigned)(writer-reader));
+        /* Use the common progressive voice instead of losing a pistol/pickup
+         * sound while the previous one-shot still occupies the music ring. */
+        if (startGenericSfx(id))
+            for (uint8_t i=0U;i<kGenericSfxVoiceCount;++i)
+                if (genericSfx[i].active && genericSfx[i].id==id)
+                    mixGenericSfx(&genericSfx[i]);
         return;
     }
     if (writer-reader>kRingCapacity || !EspAssetPack_isMapFlashActive() ||
@@ -571,10 +783,24 @@ static void mixPendingSfx() {
         output+kSfxLeadFrames>kRingCapacity ||
         writer-reader<output+kSfxLeadFrames) {
         EspAssetPack_close();
+        /* The music ring is often only 11-12k queued after a drawn frame;
+         * 5046 needs 12490 frames including guard. This was the repeated
+         * real-CYD 'not-entirely-buffered' pistol loss. Progressive voice
+         * is already committed and streams the same original PCM in place. */
+        if (valid && output!=0U && startGenericSfx(id)) {
+            printf("[SFXP1] STREAM-FALLBACK id=%u queued=%u required=%u "
+                   "reason=not-entirely-buffered loss=no\n",
+                   (unsigned)id,(unsigned)(writer-reader),
+                   (unsigned)(output+kSfxLeadFrames));
+            for (uint8_t i=0U;i<kGenericSfxVoiceCount;++i)
+                if (genericSfx[i].active && genericSfx[i].id==id)
+                    mixGenericSfx(&genericSfx[i]);
+            return;
+        }
         ++sfxRejectedCount;
         printf("[SFXP1] DROP id=%u reason=%s sourceFrames=%u "
                "outputFrames=%u queued=%u\n",
-               (unsigned)id,valid?"not-entirely-buffered":"invalid-pcm16",
+               (unsigned)id,valid?"progressive-unavailable":"invalid-pcm16",
                (unsigned)meta.sampleFrames,(unsigned)output,
                (unsigned)(writer-reader));
         return;
@@ -659,6 +885,19 @@ static void mixPendingSfx() {
            (unsigned)clippedHigh);
 }
 
+/* Consume a bounded batch of same-turn sound events: gunfire and a pain/death
+ * cry are produced together after the committed impact, before the monster's
+ * reply animation. The former one-intent-per-loop path delayed pain by one or
+ * more rendered frames. No extra ISR work, SD thread or gameplay RNG. */
+static void mixPendingSfx() {
+    if (phase!=kPlay || ring==nullptr) return;
+    for (uint8_t i=0U;i<4U;++i) {
+        const uint32_t before=sfxSeenSequence;
+        mixPendingSfxOne();
+        if (sfxSeenSequence==before) break; /* pack lease / empty FIFO */
+    }
+}
+
 static bool startClock() {
     timer_config_t cfg={};
     cfg.divider=kTimerDiv;
@@ -724,6 +963,7 @@ static bool startPlaying() {
     gapsOver90us=0U;
     maxIsrCycles=0U;
     phase=kPlay;
+    lastMusicPublishMs=0U; /* ignore 1s clock-calibration prestart gap */
     playStartMs=millis();
     nextReportMs=playStartMs+10000U;
     lastFrameAtMs=playStartMs;
@@ -736,13 +976,15 @@ static bool startPlaying() {
            "dacPeakCodes=112 gainDiv=%u track=%s softKneeAt=96 masterVolume=%u witness=none source=SD-ring "
            "dacEnabled=yes gpio25=untouched noI2S=yes noPSRAM=yes\n",
            path,(unsigned)kRingCapacity,(unsigned)queued(),
-           (unsigned)(activeIntroTrack?kIntroGainDiv:kEntranceGainDiv),
-           activeIntroTrack?"INTRO":"ENTRANCE",
+           (unsigned)activeGainDiv(),
+           activeTrackName(),
            (unsigned)EspNativeAudioIntent_musicVolumePercent());
     return true;
 }
-static void begin() {
+static void begin(bool intro,bool menu) {
     attempted=true;
+    activeIntroTrack=intro;
+    activeMenuTrack=!intro&&menu;
     failure="none";
     heapBefore=heap_caps_get_free_size(MALLOC_CAP_8BIT);
     const uint32_t largest=heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
@@ -752,9 +994,10 @@ static void begin() {
                (unsigned)heapBefore,(unsigned)largest);
         return;
     }
-    activeIntroTrack=Esp32IntroClock_isActive()!=0||introPrestartWindow;
-    const char* requested=activeIntroTrack?kIntroPrimary:kPrimary;
-    const char* fallback=activeIntroTrack?kIntroFallback:kRootFallback;
+    const char* requested=activeIntroTrack?kIntroPrimary:
+                          (activeMenuTrack?kMenuPrimary:kPrimary);
+    const char* fallback=activeIntroTrack?kIntroFallback:
+                         (activeMenuTrack?kMenuFallback:kRootFallback);
     path=requested;
     printf("[ENTRANCEMUSIC] OPEN path=%s fallback=%s "
            "expected=WAV-IMA-ADPCM-mono-22050\n",requested,fallback);
@@ -820,8 +1063,15 @@ static void begin() {
     publishedPrefixFnv=kFnvBasis;
     pumpCalls=0U;
     pumpBlockReads=0U;
+    catchUpBursts=0U;
+    lastMusicPublishMs=0U;
+    maxMusicPublishGapMs=0U;
+    publishGapsOver500Ms=0U;
     sfxBusyUntil=0U;
     fireSfx.active=false;
+    for (uint8_t i=0U;i<kGenericSfxVoiceCount;++i)
+        genericSfx[i].active=false;
+    sfxSeenSequence=EspNativeAudioIntent_count();
     sfxDeferredSequence=0U;
     sfxPlayedCount=0U;
     sfxRejectedCount=0U;
@@ -835,6 +1085,44 @@ static void begin() {
            (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
 }
 } // namespace
+
+int EspEntranceMusic_prestartMenuBeforeFirstFrame(void) {
+    /* Called by boot/exit owners AFTER native MENU_MAIN model creation
+     * and BEFORE the first physical title frame. One SD reader; fail closed.
+     * Never defer a missed prestart to an unexpected later menu repaint. */
+    if (EspAssetPack_isOpen() || Esp32IntroClock_isActive()) {
+        printf("[MENUMUSIC] PRESTART ready=0 reason=owner_busy beforeMenuPresent=1\n");
+        return 0;
+    }
+    if (phase!=kSilent || ring!=nullptr || timerInit || fileOpen)
+        closeMusic("MENU_ENTRY_REPLACE_PRIOR");
+    attempted=false;
+    activeIntroTrack=false;
+    activeMenuTrack=false;
+    menuSessionLatched=true;
+    if (!EspNativeAudioIntent_isSoundEnabled()) {
+        attempted=true;
+        printf("[MENUMUSIC] PRESTART ready=0 reason=SOUND_OFF beforeMenuPresent=1\n");
+        return 0;
+    }
+    const uint32_t startMs=millis();
+    while ((uint32_t)(millis()-startMs)<1800U) {
+        EspEntranceMusic_service(false,true);
+        if (phase==kPlay) break;
+        if (phase==kSilent && attempted) break;
+        delay(1);
+    }
+    const int ready=(phase==kPlay && activeMenuTrack) ? 1 : 0;
+    if (!ready && (ring!=nullptr || fileOpen || timerInit))
+        closeMusic("MENU_PRESTART_TIMEOUT");
+    if (!ready) attempted=true;
+    printf("[MENUMUSIC] PRESTART ready=%d elapsedMs=%u beforeMenuPresent=1 "
+           "phase=%u queued=%u ringBytes=%u source=one-SD-owner\n",
+           ready,(unsigned)(millis()-startMs),(unsigned)phase,
+           (unsigned)(ring!=nullptr?queued():0U),
+           (unsigned)(ring!=nullptr?kRingCapacity:0U));
+    return ready;
+}
 
 int EspEntranceMusic_prestartIntroBeforeFirstFrame(void) {
     /* I3: the menu action has already finished ST_INTRO asset preparation,
@@ -872,6 +1160,21 @@ int EspEntranceMusic_prestartIntroBeforeFirstFrame(void) {
     return ready;
 }
 
+void EspEntranceMusic_stopMenuBeforeAction(void) {
+    /* Only an actual game handoff (START or confirmed saved LOAD) closes
+     * the title session; HELP/OPTIONS/slot browsing keep it playing. */
+    if (!menuSessionLatched && !activeMenuTrack) return;
+    const int wasLive=(phase!=kSilent || ring!=nullptr ||
+                       fileOpen || timerInit) ? 1 : 0;
+    if (wasLive) closeMusic("MENU_ACTION_BEFORE_PAK");
+    activeMenuTrack=false;
+    menuSessionLatched=false;
+    attempted=false;
+    EspEntranceMusic_syncIdleOutput();
+    printf("[MENUMUSIC] HANDOFF track=M_DM2TTL.wav active=%d "
+           "sdFile=CLOSED ring=FREE timer=OFF\n",wasLive);
+}
+
 void EspEntranceMusic_stopBeforeLoading(void) {
     /* The next BSP/SD->flash loader owns the backing store exclusively.
      * A live source-map soundtrack must never survive into that loader. */
@@ -880,6 +1183,8 @@ void EspEntranceMusic_stopBeforeLoading(void) {
     if (wasLive) closeMusic("LOAD_START_BEFORE_BSP");
     attempted=false;
     activeIntroTrack=false;
+    activeMenuTrack=false;
+    menuSessionLatched=false;
     introPrestartWindow=false;
     EspEntranceMusic_syncIdleOutput();
     printf("[LOADAUDIO-L1] STOP_FOR_LOADING priorActive=%d "
@@ -994,23 +1299,56 @@ void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
                         view->targetMapId==1U&&view->gameplayLoadMapId==1U;
     const bool intro=Esp32IntroClock_isActive()!=0||introPrestartWindow;
     const bool soundOn=EspNativeAudioIntent_isSoundEnabled()!=0;
-    /* Intro and Entrance share one reader/ISR/ring, never coexist.
+    /* Audio-owned native sight/idle lifecycle: this service is already
+     * visited every Arduino main-loop tick. Keep main.cpp byte-exact for
+     * Root-J2 historical ABI; no audio I/O or RNG from BSP rendering. */
+    EspNativeMonsterAmbience_service(millis(),
+        gameplayActive && sdReady,
+        gameplayActive && sdReady && soundOn &&
+        !EspNativeGameplayDialog_isActive() &&
+        !EspNativeGameplayHub_isActive() &&
+        !EspNativeGameplayPassword_isActive() &&
+        !EspNativeGameplayMonsterAttackVisual_isBusy() &&
+        !EspNativeGameplayMonsterActiveSequence_isBusy());
+    /* A title visit is an explicit owner lifetime. Do not restart when the
+     * UI changes to HELP/OPTIONS/LOAD or when the finite WAV completes. */
+    const bool menu=sdReady&&!gameplayActive&&!intro&&menuSessionLatched;
+    /* Intro, MENU_MAIN and Entrance share one reader/ISR/ring, never coexist.
      * Only the confirmed intro handoff closes M_IN_CIT before map load. */
-    if ((!entrance && !intro) || !soundOn) {
+    if ((!entrance && !intro && !menu) || !soundOn ||
+        (attempted && (activeIntroTrack!=intro || activeMenuTrack!=menu))) {
         if (phase!=kSilent||ring||timerInit||fileOpen)
-            closeMusic(soundOn?"SESSION_EXIT":"SOUND_OFF");
+            closeMusic(!soundOn?"SOUND_OFF":"TRACK_OR_SESSION_EXIT");
         EspEntranceMusic_syncIdleOutput(); /* SOUND ON -> 128, OFF -> disabled */
         attempted=false;
         activeIntroTrack=false;
+        activeMenuTrack=false;
+        if (!menu) menuSessionLatched=false;
         return;
     }
-    if (!attempted) begin();
+    /* Dialogs keep a logical PAK lease for glyphs. On the verified map
+     * slot that lease is raw internal flash, NOT the SD bus used by music.
+     * Only a genuine SD-backed lease blocks the producer. */
+    if (!EspAssetPack_musicSdSafe()) return;
+    if (!attempted) {
+        if (menu)
+            printf("[MENUMUSIC] ROUTE track=M_DM2TTL.wav "
+                   "source=SD one-reader=yes sound=ON\n");
+        begin(intro,menu);
+    }
     if (phase==kSilent) return;
     if (__atomic_load_n(&silentStreak,__ATOMIC_ACQUIRE)>kMaxSilentFrames) {
         closeMusic("FAIL-UNDERRUN-TIMEOUT");return;
     }
-    /* At most two 1024B SD reads per main loop. No concurrent SPI owner. */
-    for (uint32_t burst=0U;burst<2U;burst++) {
+    /* Normal two-block producer budget. After a long gameplay transaction,
+     * q<8192 needs four blocks to restore headroom and resume a starved DAC
+     * in this same safe main-task visit. Menu/intro prestart unchanged. */
+    const bool catchUp=phase==kPlay && !activeIntroTrack &&
+                       !activeMenuTrack && queued()<kPrimeFrames;
+    const uint32_t burstLimit=catchUp?
+        kCatchUpRefillBlocks:kNormalRefillBlocks;
+    if (catchUp) ++catchUpBursts;
+    for (uint32_t burst=0U;burst<burstLimit;burst++) {
         if (!refill()) { closeMusic(failure);return; }
         if (queued()>kRingCapacity-kMaxBlockSamples) break;
     }
@@ -1048,8 +1386,19 @@ void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
         return;
     }
     if (phase==kPlay) {
-        if (!activeIntroTrack)
-            mixPendingSfx(); /* SFX valid only over real gameplay music. */
+        if (activeMenuTrack && producedInLoop==wav.sampleFrames &&
+            queued()<=kMenuTailStopFrames) {
+            printf("[MENUMUSIC] END_ONCE frames=%u sourceFrames=%u loops=%u "
+                   "remaining=%u next=NONE\n",
+                   (unsigned)playedFrames,(unsigned)wav.sampleFrames,
+                   (unsigned)loops,(unsigned)queued());
+            closeMusic("MENU_END_ONCE");
+            /* Leave attempted=1 and menuSessionLatched=1: no restart. */
+            EspEntranceMusic_syncIdleOutput();
+            return;
+        }
+        if (!activeIntroTrack && !activeMenuTrack)
+            mixPendingSfx(); /* SFX only over real gameplay music. */
         const uint32_t frames=__atomic_load_n(&playedFrames,__ATOMIC_ACQUIRE);
         const uint32_t now=millis();
         if (frames!=lastFrameSeen) {
@@ -1070,7 +1419,9 @@ void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
                    "queued=%u minQueued=%u loops=%u underflows=%u "
                    "maxGapCycles=%u gapsOver90us=%u maxIsrCycles=%u "
                    "sdReads=%u maxReadUs=%u slowReadsOver20ms=%u "
-                   "recoveries=%u maxSilentFrames=%u pumpCalls=%u pumpReads=%u heap8=%u\n",
+                   "recoveries=%u maxSilentFrames=%u pumpCalls=%u pumpReads=%u "
+                   "catchUpBursts=%u maxPublishGapMs=%u gapsOver500Ms=%u "
+                   "heap8=%u\n",
                    (unsigned)(now-playStartMs),(unsigned)frames,
                    (unsigned)count,(unsigned)minBuffered,
                    (unsigned)loops,(unsigned)underruns,
@@ -1079,6 +1430,8 @@ void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
                    (unsigned)maxReadUs,(unsigned)slowReadCount,
                    (unsigned)recoveryStarts,(unsigned)maxSilentStreak,
                    (unsigned)pumpCalls,(unsigned)pumpBlockReads,
+                   (unsigned)catchUpBursts,(unsigned)maxMusicPublishGapMs,
+                   (unsigned)publishGapsOver500Ms,
                    (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT));
             signalReport("STREAM");
         }
@@ -1092,15 +1445,39 @@ void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
  * A busy ring means O(1) no-I/O; otherwise publish up to 4082 samples. */
 void EspEntranceMusic_pumpGameplay(void) {
     if (phase!=kPlay || !fileOpen || ring==nullptr) return;
-    if (queued()>kRingCapacity-kMaxBlockSamples) return;
-    ++pumpCalls;
-    const uint32_t before=reads;
-    for (uint32_t burst=0U;burst<2U;burst++) {
-        if (!refill()) {
-            closeMusic(failure);
-            break;
+    if (activeMenuTrack) return; /* menu never pumps from gameplay frame */
+    if (!EspAssetPack_musicSdSafe()) return;
+    /* First visual activation occurs inside BSP sprite raster, including
+     * the FIRST door-opening frame. That frame has now been presented and
+     * the PAK lease released. Publish the sight intent HERE, before the
+     * next 3 door frames and before monster-turn dispatch; the main-loop
+     * service otherwise arrives too late (after the entire door/AI batch).
+     * idleAllowed=0: no ambient idle selection, world mutation, or gameplay
+     * RNG draw. The existing service remains the non-render fallback. */
+    EspNativeMonsterAmbience_service(millis(),true,false);
+    /* Music first. If a heavyweight monster turn consumed the reserve,
+     * allow four blocks (<=4082 compressed SD bytes) in this safe frame
+     * boundary, otherwise keep the existing two. No second SD/PAK owner,
+     * no additional ring bytes, never called from the ISR or raster. */
+    if (queued()<=kRingCapacity-kMaxBlockSamples) {
+        ++pumpCalls;
+        const uint32_t before=reads;
+        const bool catchUp=queued()<kPrimeFrames;
+        const uint32_t burstLimit=catchUp?
+            kCatchUpRefillBlocks:kNormalRefillBlocks;
+        if (catchUp) ++catchUpBursts;
+        for (uint32_t burst=0U;burst<burstLimit;burst++) {
+            if (!refill()) {
+                closeMusic(failure);
+                break;
+            }
+            if (queued()>kRingCapacity-kMaxBlockSamples) break;
         }
-        if (queued()>kRingCapacity-kMaxBlockSamples) break;
+        pumpBlockReads+=reads-before;
     }
-    pumpBlockReads+=reads-before;
+    /* Mix on freshly published future samples, or on the existing ring if
+     * it was already full. In particular sight is still emitted after the
+     * first confirmed door frame, not at the end of the animation. Unlike
+     * the prior early return, a full ring must not starve active SFX. */
+    if (phase==kPlay) mixPendingSfx();
 }

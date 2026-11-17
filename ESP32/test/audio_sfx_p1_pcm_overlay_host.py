@@ -27,9 +27,12 @@ assert 'output+kSfxLeadFrames>kRingCapacity' in music
 assert 'writer-reader<output+kSfxLeadFrames' in music
 assert 'kSfxLeadFrames=1024U' in music
 assert 'ring[slot]=EspNativeSfxPcm_mixGain(ring[slot],pcm,id);' in music
-assert 'if (!activeIntroTrack)\n            mixPendingSfx();' in music
-assert music.index('if (phase==kPlay) {') > music.index('if (phase==kClock)')
-assert music.index('mixPendingSfx(); /* SFX valid only over real gameplay music. */') > music.index('if (phase==kPlay) {')
+assert 'if (!activeIntroTrack && !activeMenuTrack)\n            mixPendingSfx();' in music
+# The refill producer now also observes phase==kPlay for bounded gap
+# telemetry. Scope the phase ordering assertion to the actual service function.
+service=music.split("void EspEntranceMusic_service(",1)[1]
+assert service.index('if (phase==kPlay) {') > service.index('if (phase==kClock)')
+assert service.index('mixPendingSfx(); /* SFX only over real gameplay music. */') > service.index('if (phase==kPlay) {')
 assert 'if (phase!=kPlay || !fileOpen || ring==nullptr) return;' in music
 assert 'phase=kPlay;' in music
 assert 'RTC_IO_PAD_DAC2_REG,RTC_IO_PDAC2_DAC,code' in music

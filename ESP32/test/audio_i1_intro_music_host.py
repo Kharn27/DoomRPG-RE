@@ -12,16 +12,19 @@ ci=(root/".github/workflows/esp32-cyd.yml").read_text()
 assert '/doomrpg/music/opl/M_IN_CIT.wav' in music
 assert '/M_IN_CIT.wav' in music
 assert '/doomrpg/music/opl/M_STALKS.wav' in music
-assert 'activeIntroTrack=Esp32IntroClock_isActive()!=0||introPrestartWindow;' in music
-assert 'requested=activeIntroTrack?kIntroPrimary:kPrimary' in music
-assert 'fallback=activeIntroTrack?kIntroFallback:kRootFallback' in music
+assert 'activeIntroTrack=intro;' in music
+assert 'activeMenuTrack=!intro&&menu;' in music
+assert 'requested=activeIntroTrack?kIntroPrimary:' in music
+assert '(activeMenuTrack?kMenuPrimary:kPrimary)' in music
+assert 'fallback=activeIntroTrack?kIntroFallback:' in music
+assert '(activeMenuTrack?kMenuFallback:kRootFallback)' in music
 assert 'musicFile=SD.open(requested,FILE_READ)' in music
 assert 'musicFile=SD.open(fallback,FILE_READ)' in music
 assert 'EspEntranceAdpcm_parse(header,n,fileBytes,&wav)' in music
 assert 'expected=IMA-ADPCM-mono-22050' in music
-assert 'if (!activeIntroTrack)' in music and 'mixPendingSfx();' in music
+assert 'if (!activeIntroTrack && !activeMenuTrack)' in music and 'mixPendingSfx();' in music
 assert 'const bool intro=Esp32IntroClock_isActive()!=0||introPrestartWindow;' in music
-assert 'if ((!entrance && !intro) || !soundOn)' in music
+assert 'if ((!entrance && !intro && !menu) || !soundOn ||' in music
 assert 'EspEntranceMusic_stopIntroAtHandoff(void)' in music
 assert 'closeMusic("INTRO_EXIT_BEFORE_MAP")' in music
 assert 'attempted=false; /* Entrance will own the next independent track. */' in music

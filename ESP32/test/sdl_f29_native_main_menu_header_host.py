@@ -77,6 +77,9 @@ def original_body_parity() -> None:
         restored = current.replace(marker, old_import).decode("utf-8")
         # Sound activation is the only later intentional menu behavior delta.
         # Reverse it exactly without changing the historical frozen blobs.
+        if filename == "native_main_menu_actions.c":
+            from audio_menu_m1_history import restore_pre_menu_audio_actions
+            restored = restore_pre_menu_audio_actions(restored)
         if filename == "native_main_menu_options_action.c":
             restored = restore_sound_options_action(restored)
         elif filename == "native_main_menu_options_back.c":

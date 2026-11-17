@@ -7,6 +7,23 @@
 #include <string.h>
 
 #include "../src/esp_native_gameplay_monster_attack_visual.c"
+/* Native audio intent is an external producer; host verifies presentation
+ * without allocating a sound backend or changing gameplay RNG. */
+static uint32_t publishedSfx;
+/* The visual owner can be linked alone in host tests. No real combat owner.
+ * Existing timeline fixtures start without an active pain hold. */
+int EspNativeGameplayMonsterCombat_painSettling(uint16_t sprite,uint32_t now) {
+    (void)sprite; (void)now; return 0;
+}
+int EspNativeMonsterAmbience_sightSettling(uint16_t sprite,uint32_t now) {
+    (void)sprite; (void)now; return 0;
+}
+static uint16_t lastSfx;
+int EspNativeAudioIntent_publish(uint16_t id,uint8_t flags,uint8_t priority) {
+    (void)flags;(void)priority;
+    if (id==0U) return 0;
+    lastSfx=id;++publishedSfx;return 1;
+}
 
 /* The production code now draws from a stable process RNG pointer rather
  * than the desktop root inline table. Host exercises that owner directly. */

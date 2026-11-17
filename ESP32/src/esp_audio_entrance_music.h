@@ -24,6 +24,10 @@ int EspEntranceMusic_prestartIntroBeforeFirstFrame(void);
 /* LOAD-L1: stop any prior level music BEFORE the next loading screen/PACK
  * reconfiguration. Main Arduino task only; no second SD owner or ISR. */
 void EspEntranceMusic_stopBeforeLoading(void);
+/* MENU-M1: close title SD/ring/timer only for real game handoff. */
+void EspEntranceMusic_stopMenuBeforeAction(void);
+/* MENU-M1: synchronous bounded prestart before FIRST physical title present. */
+int EspEntranceMusic_prestartMenuBeforeFirstFrame(void);
 /* LOAD-L1: one-time bounded Entrance music prestart after all map/cache/HUD
  * work, while the physical 100% READY loading frame is still visible.
  * Invoked immediately before first gameplay present. No fallback track for

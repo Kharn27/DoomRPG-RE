@@ -343,10 +343,17 @@ namespace
 #else
         uint32_t frameFNV = 0;
 
-        engineMainMenuReady =
+        /* MENU-M1: title audio is already playing before the first MENU_MAIN
+         * physical present. A missing WAV never blocks navigation. */
+        const bool menuBuilt =
             doomRpg != nullptr &&
-            DoomRPG_esp32MainMenuModelBuildMain(doomRpg) != 0 &&
+            DoomRPG_esp32MainMenuModelBuildMain(doomRpg) != 0;
+        if (menuBuilt) (void)EspEntranceMusic_prestartMenuBeforeFirstFrame();
+        engineMainMenuReady =
+            menuBuilt &&
             DoomRPG_esp32RepaintOpaqueMainMenu(doomRpg, &frameFNV) != 0;
+        if (!engineMainMenuReady && menuBuilt)
+            EspEntranceMusic_stopMenuBeforeAction();
 
         if (engineMainMenuReady)
         {

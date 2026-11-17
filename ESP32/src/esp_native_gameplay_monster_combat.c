@@ -21,6 +21,7 @@
 #include "esp_native_gameplay_hub_action_gate.h"
 #include "esp_native_gameplay_level_up.h"
 #include "esp_native_gameplay_monster_combat.h"
+#include "esp_native_audio_intent.h"
 #include "esp_native_gameplay_monster_pain_tint.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_monster_drop.h"
@@ -119,6 +120,9 @@ static MonsterCombatOwner combatOwner;
  * HUB/save stack-canary recovery pattern.
  */
 static MonsterCombatOwner combatRollbackOwner;
+/* Post-commit audio presentation only: not in rollback or checkpoint owner. */
+static uint32_t painSoundHoldUntilMs;
+static uint16_t painSoundHoldSprite;
 static EspNativeGameplayPlayerXpResult splashLevelUp;
 static uint32_t splashLevelUpSequence;
 static uint8_t splashSequenceActive;
@@ -316,6 +320,8 @@ void EspNativeGameplayMonsterCombat_reset(void) {
     splashLevelUpSequence = 0U;
     splashSequenceActive = 0U;
     splashSequenceNumber = 0U;
+    painSoundHoldUntilMs=0U;
+    painSoundHoldSprite=MONSTER_NO_SPRITE;
     combatOwner.view.pendingSpriteIndex = MONSTER_NO_SPRITE;
     combatOwner.view.painSpriteIndex = MONSTER_NO_SPRITE;
     combatOwner.deathSpriteIndex = MONSTER_NO_SPRITE;
@@ -341,6 +347,17 @@ int EspNativeGameplayMonsterCombat_damageBlend(
     return EspNativeMonsterPainTint_active(
         nowMs, combatOwner.painUntilMs,
         combatOwner.view.painSpriteIndex, spriteIndex);
+}
+
+int EspNativeGameplayMonsterCombat_painSettling(
+    uint16_t spriteIndex, uint32_t nowMs) {
+    return combatOwner.view.active == 1U &&
+           ((combatOwner.view.painSpriteIndex == spriteIndex &&
+             combatOwner.painUntilMs != 0U &&
+             (int32_t)(nowMs-combatOwner.painUntilMs) < 0) ||
+            (painSoundHoldSprite == spriteIndex &&
+             painSoundHoldUntilMs != 0U &&
+             (int32_t)(nowMs-painSoundHoldUntilMs) < 0));
 }
 
 static void applyPain(EspNativeGameplayMonsterRecord* record,
@@ -813,6 +830,24 @@ static int servicePending(DoomRPG_t* runtime) {
            lethal ? "deferred-bounded-topbar" : "n/a");
 
     logFrame(&pending, "attack", &frame);
+    /* Both sounds are committed AFTER attack-frame success, never during
+     * probe/rollback. The audio owner retains both ordered intents. */
+    {
+        const uint16_t shotSound=pending.weapon==0U ? 5136U : weapon->resourceId;
+        if (shotSound!=0U) (void)EspNativeAudioIntent_publish(shotSound,0U,5U);
+        if (consequenceSound!=0U) {
+            (void)EspNativeAudioIntent_publish(consequenceSound,0U,lethal?5U:2U);
+            /* Visual pain began before the attack frame was rendered. Anchor
+             * a separate short audio hold to this actual sound publication. */
+            if (!lethal && EspNativeAudioIntent_isSoundEnabled()) {
+                painSoundHoldSprite=pending.spriteIndex;
+                painSoundHoldUntilMs=DoomRPG_GetUpTimeMS()+MONSTER_PAIN_MS;
+            }
+        }
+        printf("[MONSTERSFX] HIT seq=%u mType=%u shot=%u result=%u lethal=%u rollback=closed\n",
+               (unsigned)pending.sequence,(unsigned)targetBefore.mType,
+               (unsigned)shotSound,(unsigned)consequenceSound,(unsigned)lethal);
+    }
     if (lethal) (void)promoteDeathIfDue();
     printf("[MONSTERCOMBAT] COMMIT seq=%u sprite=%u subtype=%u hp=%d->%d armor=%d->%d alive=%u->%u monsterFNV=%08x->%08x playerFNV=%08x->%08x ammo=%u->%u visual=%s attackSound=%u-deferred consequenceSound=%u-deferred xp=%u-applied level=%u->%u levelUps=%u dropRoll=%s%08x dropMaterialize=%s corpseTrim=deferred turnAdvance=deferred AI=deferred rollback=closed\n",
            (unsigned int)pending.sequence,
