@@ -113,10 +113,6 @@ void reportIoSample(const char* reason)
 extern "C" {
 
 int __real_EspAssetPack_residentBegin(void);
-int __real_EspAssetPack_readRange(const EspAssetPackEntry* entry,
-                                  uint32_t relativeOffset,
-                                  void* destination,
-                                  size_t length);
 
 int __wrap_EspAssetPack_residentBegin(void)
 {
@@ -169,34 +165,34 @@ int __wrap_EspAssetPack_residentBegin(void)
     return 1;
 }
 
-int __wrap_EspAssetPack_readRange(const EspAssetPackEntry* entry,
-                                  uint32_t relativeOffset,
-                                  void* destination,
-                                  size_t length)
+/* Native logical read observer: the public readRange entry owns pairing,
+ * regardless of the core's early return. This does not mutate PAK data. */
+int64_t EspAssetPackIoProbe_beforeReadRange(void)
 {
 #if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     if (EspAssetPack_isResident() && !physicalBaselineValid) {
         capturePhysicalBaseline();
     }
+    return esp_timer_get_time();
+#else
+    return 0LL;
+#endif
+}
 
-    const int64_t start = esp_timer_get_time();
-    const int result = __real_EspAssetPack_readRange(
-        entry, relativeOffset, destination, length);
+void EspAssetPackIoProbe_afterReadRange(int64_t start)
+{
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     const uint32_t duration = elapsedMicros(start, esp_timer_get_time());
-
     ++ioSample.logicalCalls;
     ioSample.logicalMicros += duration;
     if (duration > ioSample.maxLogicalMicros) {
         ioSample.maxLogicalMicros = duration;
     }
-
     if (ioSample.logicalCalls >= kReportLogicalCallThreshold) {
         reportIoSample("threshold");
     }
-    return result;
 #else
-    return __real_EspAssetPack_readRange(
-        entry, relativeOffset, destination, length);
+    (void)start;
 #endif
 }
 

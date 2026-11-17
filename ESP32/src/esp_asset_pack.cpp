@@ -8,6 +8,7 @@
 
 #include "esp_asset_pack.h"
 #include "esp_asset_pack_io_probe.h"
+#include "doomrpg_log.h"
 #include "esp_map_catalog.h"
 
 namespace {
@@ -1988,7 +1989,7 @@ int EspAssetPack_findEntry(const char* name, EspAssetPackEntry* outEntry)
     return 0;
 }
 
-int EspAssetPack_readRange(const EspAssetPackEntry* entry,
+static int readRangeCore(const EspAssetPackEntry* entry,
                            uint32_t relativeOffset,
                            void* destination,
                            size_t length)
@@ -2110,4 +2111,22 @@ int EspAssetPack_readRange(const EspAssetPackEntry* entry,
                                 (uint32_t)length);
     }
     return 1;
+}
+
+/* ARCH-RC4: observe the public logical read exactly once, including every
+ * short-circuit failure and zero-length success. The unchanged core retains
+ * exclusive PAK/flash/cache ownership. INFO builds have no timer calls. */
+int EspAssetPack_readRange(const EspAssetPackEntry* entry,
+                           uint32_t relativeOffset,
+                           void* destination,
+                           size_t length)
+{
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
+    const int64_t ioStart = EspAssetPackIoProbe_beforeReadRange();
+#endif
+    const int result = readRangeCore(entry, relativeOffset, destination, length);
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
+    EspAssetPackIoProbe_afterReadRange(ioStart);
+#endif
+    return result;
 }
