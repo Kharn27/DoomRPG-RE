@@ -98,11 +98,12 @@ def original_body_parity() -> None:
             current = strip_ra2b_probe(current)
         if filename == "esp_native_gameplay_session.c":
             # AUDIO-LOAD-L1 preserves the immutable pre-F27 session body.
-            # Reverse ONLY the three new imports and one pre-world audio
+            # Reverse ONLY the four new imports and one pre-world audio
             # boundary before comparing the exact historical Git blob.
             l1_import = (
                 b'#include "esp_audio_entrance_music.h" /* LOAD-L1: after full loading, before gameplay present */\n'
                 b'#include "esp_audio_loading_route.h"\n'
+                b'#include "esp_native_audio_intent.h" /* SOUND OFF never scans PAK before first frame */\n'
                 b'#include "esp_native_sfx_probe.h" /* drain one-shot PAK metadata before music starts */\n'
             )
             l1_hook = (
@@ -114,7 +115,8 @@ def original_body_parity() -> None:
                 b"                     * (with bounded clock guard) immediately before presenting\n"
                 b"                     * the world. Missing/unknown tracks fail silently. */\n"
                 b"                    if (EspAudioLoadingRoute_forMap(view->targetMapId) ==\n"
-                b"                        ESP_AUDIO_LOADING_TRACK_M_STALKS) {\n"
+                b"                            ESP_AUDIO_LOADING_TRACK_M_STALKS &&\n"
+                b"                        EspNativeAudioIntent_isSoundEnabled()) {\n"
                 b"                        EspNativeSfxProbe_service(true);\n"
                 b"                    }\n"
                 b"                    (void)EspEntranceMusic_prestartGameplayBeforeFirstFrame(\n"
