@@ -8,6 +8,7 @@
 #include "esp_map_sprite_topology.h"
 #include "esp_map_state.h"
 #include "esp_native_gameplay_action_engine.h"
+#include "esp_native_gameplay_projection_overlay.h"
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_monster_trace.h"
@@ -204,9 +205,9 @@ static int findBlockingSprite(uint16_t tile,
         uint16_t linkOrder;
         int specialBlocks;
 
-        /* Use the action-engine private leaf so fire/destructible removal overlays
+        /* Use the projected leaf so fire/destructible and resource overlays
          * are honored without recursing through the combat public wrapper. */
-        if (!EspNativeGameplayActionEngine_getEntity(
+        if (!EspNativeGameplayProjectionOverlay_getEntity(
                 i, &type, &subtype, &linkState, &linkOrder)) return -1;
         if ((linkState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) == 0U ||
             (linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK) != tile ||

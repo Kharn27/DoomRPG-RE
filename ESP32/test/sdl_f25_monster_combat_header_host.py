@@ -2,8 +2,10 @@
 """SDL-F25: four compiled native monster-combat TUs stop importing SDL.h.
 
 Only the first direct include gets a host/geometry guard. The original whole
-C files are recovered from exact Git blobs; the combat, active-turn and
-visual implementations are not modified. The existing real attack timeline
+C files are recovered from exact Git blobs. ARCH-RC7 permits only one
+explicit projection include and two projected getter calls in combat, and
+reconstructs the original bytes before verifying the historic SHA.
+The existing real attack timeline
 host C oracle and PlatformIO/ELF audits remain mandatory CI gates.
 """
 import argparse
@@ -41,6 +43,22 @@ def source_gate() -> None:
         assert data.startswith(prefix), f"{name}: lost host/geometry include"
         assert data.count(b"#include <SDL.h>") == 1, name
         original = b"#include <SDL.h>\n" + data[len(prefix):]
+        if name == "esp_native_gameplay_monster_combat.c":
+            # SDL-F25's historical identity remains checked byte-for-byte,
+            # reversing ONLY the three intentional ARCH-RC7 call-boundary
+            # edits. Any other source drift still invalidates the old SHA.
+            addition = b'#include "esp_native_gameplay_projection_overlay.h"\n'
+            assert original.count(addition) == 1, "RC7 combat include drifted"
+            original = original.replace(addition, b"", 1)
+            pairs = (
+                (b"EspNativeGameplayProjectionOverlay_getVisualState(",
+                 b"EspNativeGameplayActionEngine_getVisualState("),
+                (b"EspNativeGameplayProjectionOverlay_getEntity(",
+                 b"EspNativeGameplayActionEngine_getEntity("),
+            )
+            for updated, historic in pairs:
+                assert original.count(updated) == 1, "RC7 combat call drifted"
+                original = original.replace(updated, historic, 1)
         assert git_blob(original) == sha, f"{name}: C implementation changed"
         body = data[len(prefix):].decode("utf-8")
         # A removal of SDL.h is only safe while the actual compiled body
@@ -50,8 +68,8 @@ def source_gate() -> None:
             r"\b(?:SDL_[A-Za-z0-9_]+|SDLCALL|SDLK_[A-Za-z0-9_]+|Uint(?:8|16|32))\b",
             active), name
         assert '#include "DoomRPG.h"' in body, name
-    print("SDL-F25 PASS sources: 4 exact pre-F25 Git blobs restored; "
-          "native-only SDL.h imports absent, real C bodies identical")
+    print("SDL-F25 PASS sources: 4 exact pre-F25 blobs restored "
+          "(RC7 combat inclusion/2 calls strictly reversed); SDL.h gating intact")
 
 
 def header_probe() -> None:
