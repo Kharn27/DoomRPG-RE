@@ -69,6 +69,7 @@ assert (active.index('EspNativeTransitionPresentation_checkpointProgress(100U, "
         active.index('EspEntranceMusic_prestartGameplayBeforeFirstFrame(') <
         active.index('if (!Esp32PlatformVideo_present())'))
 assert 'EspAudioLoadingRoute_forMap(view->targetMapId)' in active
+assert 'EspNativeAudioIntent_isSoundEnabled()' in active
 assert 'ESP_AUDIO_LOADING_TRACK_M_STALKS' in active
 assert 'EspNativeTransitionPresentation_isLoadingActive()' in active
 assert 'EspNativeSfxProbe_service(true);' in active
