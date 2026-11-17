@@ -69,3 +69,25 @@ def restore_pre_help_bottom_blue(source: str) -> str:
     assert "MAIN_HELP_BOTTOM_HUD_BAR_Y" in new_blue
     new_blue = new_blue.replace("MAIN_HELP_BOTTOM_HUD_BAR_Y", "MAIN_HELP_HUD_BAR_Y")
     return source[:start] + PRE_HELP_BOTTOM_BLUE + source[end:]
+
+
+def restore_pre_help_light_body_pages(source: str) -> str:
+    """Undo only later HELP 2-4 and 12-16 body ink for frozen SDL blobs."""
+    later = """            /* HELP pages 2-4 and 12-16 use the first (light) theme tone
+             * for body text. Section titles keep their 3-band gradient. */
+            const int scroll = menuSystem->scrollIndex;
+            const uint16_t bodyTone =
+                ((scroll >= MAIN_HELP_VISIBLE_LINES &&
+                  scroll <= 3 * MAIN_HELP_VISIBLE_LINES) ||
+                 (scroll >= 11 * MAIN_HELP_VISIBLE_LINES &&
+                  scroll <= 15 * MAIN_HELP_VISIBLE_LINES))
+                    ? helpTitleTopTone() : helpBodyMiddleTone();
+            DoomRPG_setFontColor(doomRpg,
+                (menuSystem->scrollIndex == 0 && i == 5)
+                    ? 0xffffffffU : helpColor888(bodyTone));"""
+    earlier = """            /* John Carmack's tribute closes the cover. */
+            DoomRPG_setFontColor(doomRpg,
+                (menuSystem->scrollIndex == 0 && i == 5)
+                    ? 0xffffffffU : helpColor888(helpBodyMiddleTone()));"""
+    assert source.count(later) == 1, "HELP light body pages delta unexpectedly changed"
+    return source.replace(later, earlier, 1)
