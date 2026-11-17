@@ -2879,7 +2879,7 @@ bool loadNow(void) {
      * takes the shared framebuffer. No old-session cleanup may run after the
      * loading owner has begun.
      */
-    EspNativeGameplaySession_reset();
+    EspNativeGameplaySessionCoordinator_reset();
 
     loadingPresentation =
         EspNativeTransitionPresentation_beginLoading(record->targetMapId) != 0;

@@ -39,12 +39,8 @@
 #include "platform_video_c_bridge.h"
 #include "platform_video_config.h"
 
-/* This translation unit now owns the public session wrapper in front of the
- * proven player-resource chain. The resource implementation is renamed to the
- * private leaves declared by esp_native_gameplay_player_resources.h. */
-#undef __wrap_EspNativeGameplaySession_reset
-#undef __wrap_EspNativeGameplaySession_service
-
+/* RC9: explicit native session coordinator. Its service/reset choreography is
+ * unchanged from the proven outer wrapper, including fatal/early leaf returns. */
 #define GIBFX_MAX_SPRITES 1024U
 #define GIBFX_SEEN_BYTES (GIBFX_MAX_SPRITES / 8U)
 #define GIBFX_VISUAL_HIDDEN 0x80U
@@ -1238,7 +1234,7 @@ int EspNativeGameplayActionEngine_present(void) {
  * table when a movement turn lands on nextRand==127, then restores the live
  * Random_t byte-for-byte; the already-proven byte RNG guard owns the future
  * exact live replay. */
-void __wrap_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg) {
+void EspNativeGameplaySessionCoordinator_service(struct DoomRPG_s* doomRpg) {
     /* Permanent player impact layer shares the ONE existing DAMAGE red
      * border/arrow physical-present owner. No independent animation loop. */
     EspNativeGameplayActionEngine_setImpactPainter(decoratePlayerImpact);
@@ -1262,7 +1258,7 @@ void __wrap_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg) {
     EspNativeGameplayActionEngine_endMonsterVisualWork();
 }
 
-void __wrap_EspNativeGameplaySession_reset(void) {
+void EspNativeGameplaySessionCoordinator_reset(void) {
     EspNativeGameplayActionEngine_setImpactPainter(NULL);
     EspNativeGameplayMonsterTurn_reset();
     EspNativeGameplayPlayerResources_sessionReset();

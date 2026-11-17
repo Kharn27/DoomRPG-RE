@@ -25,6 +25,12 @@ typedef struct EspNativeGameplaySessionConfig_s {
     uint8_t weaponsPresent;
 } EspNativeGameplaySessionConfig;
 
+/* The raw session leaf remains owned by esp_native_gameplay_session.c.
+ * All runtime callers must use the composed native coordinator below: it
+ * preserves player resources, monster turns, presentation and exact teardown
+ * order before/after the original leaf. */
+void EspNativeGameplaySessionCoordinator_reset(void);
+void EspNativeGameplaySessionCoordinator_service(struct DoomRPG_s* doomRpg);
 void EspNativeGameplaySession_reset(void);
 int EspNativeGameplaySession_configure(
     const EspNativeGameplaySessionConfig* config);

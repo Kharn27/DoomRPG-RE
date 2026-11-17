@@ -492,7 +492,7 @@ static void performHandoff(uint8_t acknowledgeStats) {
      * Input reset clears the old transition owner; the committed copy in this
      * static scratch remains the authoritative handoff witness below.
      */
-    EspNativeGameplaySession_reset();
+    EspNativeGameplaySessionCoordinator_reset();
     resetSpawnOwners();
 
     if (!routeCommittedSpawn()) {
