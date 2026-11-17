@@ -131,8 +131,10 @@ int main(void) {
         assert(fb[17 * 160 + 80] == 0x7324U);
         assert(fb[28 * 160 + 38] == 0xe6a6U); /* E of ESP32 */
         assert(fb[68 * 160 + 77] == 0xd964U); /* heart */
-        assert(fb[80 * 160 + 38] == 0xff2cU); /* K of Kharn27 */
-        assert(fb[105 * 160 + 55] == 0x8410U); /* (C) circle */
+        assert(fb[56 * 160 + 38] == 0xc638U); /* m: made with love */
+        assert(fb[80 * 160 + 38] == 0U); /* duplicated large name gone */
+        assert(fb[90 * 160 + 55] == 0x8410U); /* copyright circle */
+        assert(fb[91 * 160 + 65] == 0x8410U); /* © Kharn27, only name */
         assert(fb[119 * 160 + 159] == 0U);
     }
     assert(EspNativeBootLegals_advance(12100U, 0) == 0); /* 2999ms on credit */

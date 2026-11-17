@@ -220,7 +220,7 @@ static void creditMark(uint16_t* framebuffer) {
     for (y = 0; y < 9; ++y) {
         for (x = 0; x < 9; ++x) {
             if (circleC[y] & (1U << (8 - x)))
-                creditPixel(framebuffer, left + x, 105 + y, ink);
+                creditPixel(framebuffer, left + x, 90 + y, ink);
         }
     }
     /* Keep the real copyright mark separate from ASCII text raster. */
@@ -233,7 +233,7 @@ static void creditMark(uint16_t* framebuffer) {
                 for (y = 0; y < 7; ++y) {
                     for (x = 0; x < 5; ++x) {
                         if (rows[y] & (1U << (4 - x)))
-                            creditPixel(framebuffer, cursor + x, 106 + y,
+                            creditPixel(framebuffer, cursor + x, 91 + y,
                                         ink);
                     }
                 }
@@ -252,14 +252,13 @@ static void drawPortCredit(uint16_t* framebuffer, size_t pixelCount) {
     for (x = 39; x <= 120; ++x)
         creditPixel(framebuffer, x, 17, 0x7324U);
     creditText(framebuffer, "ESP32 CYD PORT", 28, 1, 0xe6a6U);
-    creditText(framebuffer, "made with love by", 54, 1, 0xc638U);
+    creditText(framebuffer, "made with love", 54, 1, 0xc638U);
     for (y = 0; y < 7; ++y) {
         for (x = 0; x < 8; ++x) {
             if (heart[y] & (1U << (7 - x)))
                 creditPixel(framebuffer, 76 + x, 68 + y, 0xd964U);
         }
     }
-    creditText(framebuffer, "Kharn27", 80, 2, 0xff2cU);
     creditMark(framebuffer);
 }
 
