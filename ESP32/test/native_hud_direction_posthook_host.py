@@ -75,7 +75,7 @@ static void* trackedMalloc(size_t n) {
     if (p != nullptr) { ++allocations; ++liveScratch; }
     return p;
 }
-static void trackedFree(void* p) {
+inline void trackedFree(void* p) {
     if (p != nullptr) { ++releases; assert(liveScratch > 0U); --liveScratch; }
     std::free(p);
 }
