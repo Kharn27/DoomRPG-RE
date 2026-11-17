@@ -162,7 +162,9 @@ int main() {
     entry.flags = 7U;
     check(0, &entry, 0U, bytes, 1U);  // failed validation
     entry.flags = 0U;
+    sdOk = false;  // zero-length success must bypass physical SD failure
     check(1, &entry, 0U, bytes, 0U);  // zero length still metered
+    sdOk = true;
 
     // The immutable cache hit is never read from raw flash or SD.
     residentEnabled = true;
@@ -331,10 +333,13 @@ def main() -> None:
          after.replace("ioSample.logicalCalls >= kReportLogicalCallThreshold",
                        "ioSample.logicalCalls > kReportLogicalCallThreshold")),
     ]
-    for c, p, b, a in bad:
+    for negative_index, (c, p, b, a) in enumerate(bad, 1):
         require((c, p, b, a) != (core, public, before, after),
                 "no-op adversarial mutation")
-        run(harness(c, p, b, a, elapsed), 4, False)
+        try:
+            run(harness(c, p, b, a, elapsed), 4, False)
+        except AssertionError as error:
+            raise AssertionError(f"negative fixture {negative_index}: {error}") from error
     print("PASS ARCH-RC4 real-source C++: INFO/TRACE 17 read paths + 64-call "
           "threshold/reset; 11 adversarial omissions/bypasses, PAK core retained")
 
