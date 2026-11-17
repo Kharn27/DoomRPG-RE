@@ -304,7 +304,8 @@ def main() -> None:
         (4, "EspNativeGameplayPlayerResources_isConsumed(", "NeverConsumed("),
         (4, "ESP_MAP_SPRITE_TOPOLOGY_ALIVE", "0U"),
         (4, "*outLinkOrder = 0U;", "*outLinkOrder = 7U;"),
-        (4, "return 0;", "return 1;"),
+        (4, "return 0;\n    }\n    if (!EspNativeGameplayCrateState_applyEntity(",
+         "return 1;\n    }\n    if (!EspNativeGameplayCrateState_applyEntity("),
         (4, "EspNativeGameplayActionEngine_getEntity(", "FakeEntityBase("),
     ]
     for i, before, after in mutants:
