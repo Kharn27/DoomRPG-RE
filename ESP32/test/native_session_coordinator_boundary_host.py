@@ -61,9 +61,9 @@ def scan(files: dict[str, str], ini: str, header: str) -> None:
         code = source_code(files[name])
         # configure is still an independent, retained linker boundary:
         # retire ONLY the two session service/reset interpositions.
-        require(not re.search(r"\\b__wrap_EspNativeGameplaySession_(?:service|reset)\\s*\\(", code),
+        require(not re.search(r"\b__wrap_EspNativeGameplaySession_(?:service|reset)\s*\(", code),
                 "retired service/reset wrapper source left in " + name)
-        require(not re.search(r"\\b__real_EspNativeGameplaySession_(?:service|reset)\\s*\\(", code),
+        require(not re.search(r"\b__real_EspNativeGameplaySession_(?:service|reset)\s*\(", code),
                 "retired service/reset GNU ld alias source left in " + name)
         composed = tuple(sorted(COMPOSED.findall(code)))
         raw = tuple(sorted(CALL.findall(code)))
