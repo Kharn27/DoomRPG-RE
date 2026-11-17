@@ -162,6 +162,20 @@ def original_body_parity() -> None:
         if filename == "esp_native_resident_gameplay.c":
             from audio_menu_m1_history import restore_pre_menu_audio_resident
             current = restore_pre_menu_audio_resident(current.decode("utf-8")).encode("utf-8")
+        if filename == "esp_native_gameplay_gib_fx.c":
+            # RC8: reverse only the explicit turn hook/reset after resources.
+            added_header = b'#include "esp_native_gameplay_monster_turn.h"\n'
+            added_service = (b'    EspNativeGameplayPlayerResources_sessionService(doomRpg);\n'
+                             b'    EspNativeGameplayMonsterTurn_afterPlayerResourcesService(doomRpg);\n')
+            prior_service = b'    EspNativeGameplayPlayerResources_sessionService(doomRpg);\n'
+            added_reset = (b'    EspNativeGameplayMonsterTurn_reset();\n'
+                           b'    EspNativeGameplayPlayerResources_sessionReset();\n')
+            prior_reset = b'    EspNativeGameplayPlayerResources_sessionReset();\n'
+            assert current.count(added_header) == 1 and current.count(added_service) == 1
+            assert current.count(added_reset) == 1, "RC8 gibFX drift"
+            current = current.replace(added_header, b"", 1)
+            current = current.replace(added_service, prior_service, 1)
+            current = current.replace(added_reset, prior_reset, 1)
         restored = b"#include <SDL.h>\n" + current[len(marker):]
         assert git_blob(restored) == blob, (
             f"{filename}: original pre-F27 body not preserved exactly")

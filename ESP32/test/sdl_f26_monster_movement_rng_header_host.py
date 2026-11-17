@@ -48,6 +48,16 @@ def source_gate() -> None:
         else:
             assert current.startswith(guard), name
             before = b"#include <SDL.h>\n" + current[len(guard):]
+        if name == "esp_native_gameplay_monster_turn.c":
+            # RC8: exactly reverse only the two removed linker wrappers.
+            new_hook = "/* RC8: explicit post-resource leaf, even on resource/action fatal return.\n * Match the former wrapper's observation and fail-closed activation order. */\nvoid EspNativeGameplayMonsterTurn_afterPlayerResourcesService(struct DoomRPG_s* doomRpg) {\n    observeAndProbe((DoomRPG_t*)doomRpg);\n    (void)EspNativeGameplayMonsterActivation_serviceTurn();\n}\n".encode("utf-8")
+            old_wrappers = "/* Insert the turn owner immediately after the already-proven player-resource /\n * action-engine session leaf. The outer gib-FX session wrapper still runs after\n * this function and retains its independent presentation-expiry ownership. */\nvoid __wrap_EspNativeGameplayPlayerResources_sessionService(struct DoomRPG_s* doomRpg) {\n    __real_EspNativeGameplayPlayerResources_sessionService(doomRpg);\n    observeAndProbe((DoomRPG_t*)doomRpg);\n    (void)EspNativeGameplayMonsterActivation_serviceTurn();\n}\n\nvoid __wrap_EspNativeGameplayPlayerResources_sessionReset(void) {\n    EspNativeGameplayMonsterTurn_reset();\n    __real_EspNativeGameplayPlayerResources_sessionReset();\n}\n".encode("utf-8")
+            old_protos = "void __real_EspNativeGameplayPlayerResources_sessionService(struct DoomRPG_s* doomRpg);\nvoid __real_EspNativeGameplayPlayerResources_sessionReset(void);\n\n".encode("utf-8")
+            assert before.count(new_hook) == 1, "RC8 hook drift"
+            assert before.count(b"static uint8_t p1Health(") == 1
+            before = before.replace(new_hook, old_wrappers, 1)
+            before = before.replace(b"static uint8_t p1Health(",
+                                    old_protos + b"static uint8_t p1Health(", 1)
         assert git_blob(before) == sha, f"{name}: whole source body changed"
         assert current.count(b"#include <SDL.h>") == 1, name
         clean = re.sub(r"/\*[\s\S]*?\*/|//[^\n]*", "",

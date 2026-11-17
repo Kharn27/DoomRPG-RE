@@ -30,6 +30,7 @@
 #include "esp_native_gameplay_dog_blood.h"
 #include "esp_native_resident_gameplay.h"
 #include "esp_native_gameplay_monster_state.h"
+#include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_gameplay_monster_position.h"
 #include "esp_native_gameplay_player_resources.h"
 #include "esp_native_gameplay_player_state.h"
@@ -1242,6 +1243,7 @@ void __wrap_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg) {
      * border/arrow physical-present owner. No independent animation loop. */
     EspNativeGameplayActionEngine_setImpactPainter(decoratePlayerImpact);
     EspNativeGameplayPlayerResources_sessionService(doomRpg);
+    EspNativeGameplayMonsterTurn_afterPlayerResourcesService(doomRpg);
     EspNativeGameplayMonsterAttackVisual_service(doomRpg);
     /* The first 85ms damage-cue pulse must not begin before synchronous
      * ordered member processing (784ms on the sprite-157 CYD witness).
@@ -1262,6 +1264,7 @@ void __wrap_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg) {
 
 void __wrap_EspNativeGameplaySession_reset(void) {
     EspNativeGameplayActionEngine_setImpactPainter(NULL);
+    EspNativeGameplayMonsterTurn_reset();
     EspNativeGameplayPlayerResources_sessionReset();
     EspNativeGameplayMonsterAttackVisual_reset();
     EspNativeGameplayMonsterRetaliation_reset();

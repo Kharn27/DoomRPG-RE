@@ -142,9 +142,6 @@ typedef struct MonsterTurnOwner_s {
 
 static MonsterTurnOwner turnOwner;
 
-void __real_EspNativeGameplayPlayerResources_sessionService(struct DoomRPG_s* doomRpg);
-void __real_EspNativeGameplayPlayerResources_sessionReset(void);
-
 static uint8_t p1Health(uint32_t p) { return (uint8_t)(p & 0xffU); }
 static uint8_t p1Armor(uint32_t p) { return (uint8_t)((p >> 16) & 0xffU); }
 static uint8_t p2Defense(uint32_t p) { return (uint8_t)(p & 0xffU); }
@@ -1592,16 +1589,9 @@ const EspNativeGameplayMonsterTurnView* EspNativeGameplayMonsterTurn_view(void) 
     return syncOwner() ? &turnOwner.view : NULL;
 }
 
-/* Insert the turn owner immediately after the already-proven player-resource /
- * action-engine session leaf. The outer gib-FX session wrapper still runs after
- * this function and retains its independent presentation-expiry ownership. */
-void __wrap_EspNativeGameplayPlayerResources_sessionService(struct DoomRPG_s* doomRpg) {
-    __real_EspNativeGameplayPlayerResources_sessionService(doomRpg);
+/* RC8: explicit post-resource leaf, even on resource/action fatal return.
+ * Match the former wrapper's observation and fail-closed activation order. */
+void EspNativeGameplayMonsterTurn_afterPlayerResourcesService(struct DoomRPG_s* doomRpg) {
     observeAndProbe((DoomRPG_t*)doomRpg);
     (void)EspNativeGameplayMonsterActivation_serviceTurn();
-}
-
-void __wrap_EspNativeGameplayPlayerResources_sessionReset(void) {
-    EspNativeGameplayMonsterTurn_reset();
-    __real_EspNativeGameplayPlayerResources_sessionReset();
 }
