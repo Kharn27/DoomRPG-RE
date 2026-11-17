@@ -1168,14 +1168,14 @@ const EspNativeGameplayHudState* __wrap_EspNativeGameplayHud_view(void) {
     return &hudOverlay;
 }
 
-void __wrap_EspNativeGameplaySession_reset(void) {
+void EspNativeGameplayPlayerResources_sessionReset(void) {
     EspNativeGameplayActionEngine_reset();
     EspNativeGameplayPlayerResources_reset();
     EspNativeGameplayPickup_reset();
     EspNativeGameplaySession_reset();
 }
 
-void __wrap_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg) {
+void EspNativeGameplayPlayerResources_sessionService(struct DoomRPG_s* doomRpg) {
     if (resources.view.fatal != 0U) return;
     EspNativeGameplaySession_service(doomRpg);
     logCorpus();

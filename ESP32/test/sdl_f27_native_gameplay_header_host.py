@@ -203,6 +203,15 @@ def original_body_parity() -> None:
             current = current.replace(b"void EspNativeGameplaySessionCoordinator_reset(",
                                       b"void __wrap_EspNativeGameplaySession_reset(", 1)
         if filename == "esp_native_gameplay_player_resources.c":
+            # The old RC8 private leaves still used preprocessor __wrap
+            # source spellings, which RC9 now retires as well.
+            before_reset = b"void EspNativeGameplayPlayerResources_sessionReset(void) {"
+            before_service = b"void EspNativeGameplayPlayerResources_sessionService(struct DoomRPG_s* doomRpg) {"
+            assert current.count(before_reset) == 1 and current.count(before_service) == 1
+            current = current.replace(before_reset,
+                b"void __wrap_EspNativeGameplaySession_reset(void) {", 1)
+            current = current.replace(before_service,
+                b"void __wrap_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg) {", 1)
             # ARCH-RC9: direct raw leaf replaces GNU __real aliases. Undo
             # precisely two callsites and original declarations for F27 SHA.
             assert current.count(b"    EspNativeGameplaySession_service(doomRpg);") == 1
