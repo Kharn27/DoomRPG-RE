@@ -1,4 +1,4 @@
-# AUDIO-LOAD-L1 — Musique au READY du loading, AVANT première image gameplay (PENDING CYD)
+# AUDIO-LOAD-L1 — Musique au READY du loading, AVANT première image gameplay (PASS CYD borné : Entrance/HIT)
 
 **Base** : [PR #362](https://github.com/Kharn27/DoomRPG-RE/pull/362), branche `agent/audio-loading-l0-route-gap-probe`, fork du vrai `main=1e9c1268c30c1051836be6fb066e6d927064415e`. Ce jalon prolonge les mesures L0 de `MILESTONE_AUDIO_LOADING_L0_PENDING_CYD.md` sans remettre en cause la frontière BSP/flash.
 
@@ -39,4 +39,17 @@ La transition native possède exactement cette frontière dans `EspNativeGamepla
 
 CI : `ESP32/test/audio_loading_l1_ready_prestart_host.py` valide l'ordre EXACT depuis READY/HUD/SFX/lecteur jusqu'au premier present ; `audio_loading_l0_route_gap_host.py` conserve le routage C11 256 identifiants. Normal, inverted, bringup/trace et tests historiques des TU. **Pas de PASS matériel L1 avant ces logs.**
 
-**Statut : PENDING CI + CYD. Ne pas merger sans test matériel, respecter l'autorisation explicite.**
+**Statut initial ci-dessus : protocole avant la capture. Le résultat CYD L1 est détaillé ci-dessous ; ne pas fusionner sans autorisation explicite.**
+
+
+## Retour matériel du 17 novembre 2026 — PASS borné pour START / Entrance / flash HIT
+
+**Source testée :** commit `2ce72ea0a4b9262aa0f114ae9d68df1a439b2655`, deux CI complets SUCCESS (pull_request `43984597205` et push `43984589319`). Capture utilisateur `platformio-device-monitor-261117-013031.log`, SHA256 `952d8df08dd923eb806a2be66baed926041e29b43cbcdf3fdfcbbcc8bd679008`, 614 lignes Serial, démarrage ESP32-D0WD-V3 4Mo sans PSRAM. Le log n'inclut pas la ligne PlatformIO d'environnement ; `alternate-panel inversion=off` est cohérent avec `esp-cyd-inverted`, **sans prouver formellement quel environnement a été flashé**.
+
+- Intro : `M_IN_CIT.wav` démarre AVANT le premier frame intro (`INTROMUSIC PRESTART firstFrame=NOT_PRESENTED`), finit par `INTRO_EXIT_BEFORE_MAP` avec `underruns=0 recoveries=0 timer=OFF file=CLOSED`. En loading, `LOADAUDIO-L1 STOP_FOR_LOADING priorActive=0` confirme un état déjà fermé (ne prouve pas l'arrêt d'une musique active pendant CHANGEMAP).
+- L0 : `ROUTE map=1 track=M_STALKS.wav transport=deferred`; `MAPFLASH REUSE HIT rebuild=no`; `BUDGET elapsedMs=5424 frames=8 maxVisibleGapMs=3493 ringBudgetMs=743 flashCallbacks=0 checkpoints=7 pakClosedCheckpoints=7 playback=deferred`, et `TRANSITIONLOAD RELEASE elapsedMs=5446 progress=100`. `3493ms` mesure des présentations d'UI, **pas** une famine DAC.
+- Frontière L1 : `FRAME n=8 stage=READY overall=100` → `ENGINECACHE FINAL-READY` → `TRANSITIONLOAD RELEASE` → `SFXP0 END scanned=9 pcm=9` → `SFXP3 END scanned=83 pcm=83 totalOriginalWav=92` → `ENTRANCEMUSIC PLAY M_STALKS.wav gainDiv=15` → `LOADAUDIO-L1 PRESTART ready=1 elapsedMs=1092 beforeWorldPresent=1 queued=15784 ringBytes=16384 failClosed=0` → `ENGINESESSION FRESH-VISIBLE finalWorldPresent=yes` → `ENGINESESSION READY`. L'ordre est observé sur Serial ; l'absence de perception du palier 100 % reste subjective, non déclarée.
+- Audio après entrée : jusqu'à `STREAM elapsedMs=90289 frames=1988289`, `minQueued=11928`, `underflows=0`, `recoveries=0`, `maxSilentFrames=0`, `gapsOver90us=0`, `maxReadUs=4279`; `SFXP1 MIX 5060` deux fois pour deux pickups. Pas de panic, WDT ou backtrace dans la capture.
+- RAM : `RAMBUDGET HEADROOM_OK margin8=25028` avant préstart, puis `ALIVE heap8=60708 largest8=45044` constants pendant gameplay, et `shapeData=0x0 mediaTexels=0x0` au boot/résident. Aucun ZIP runtime ni nouvelle tâche audio témoigné.
+
+**Limites strictes :** seul chemin testé = nouveau jeu, SOUND ON, Entrance, flash REUSE HIT. Ni SOUND OFF, ni LOAD depuis sauvegarde, ni passage à une autre carte, ni flash MISS/SD→flash, ni fermeture de la musique du niveau au teardown ne sont enregistrés. La capture finit au bout de 118334ms uptime **en plein gameplay** ; aucun `ENTRANCEMUSIC FINAL` de la piste Entrance à revendiquer. Aucune comparaison visuelle de progression sur l'écran n'a été jointe. Le statut **PASS CYD borné** signifie que le comportement principal L1 et la continuité audio observée fonctionnent sur ce parcours, pas que toute la matrice du protocole est validée. Commit post-test strictement documentaire ; **pas de changement de code sans nouveau test CYD**.
