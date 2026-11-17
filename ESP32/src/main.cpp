@@ -5,6 +5,7 @@
 
 #include "board_config.h"
 #include "esp_asset_pack.h"
+#include "esp_native_boot_legals.h"
 #include "esp_audio_entrance_music.h"
 #include "esp_native_sfx_probe.h"
 #include "esp_legacy_asset_source.h"
@@ -53,6 +54,8 @@ namespace
     bool engineRenderStartupReady = false;
     bool engineConfigMappingsReady = false;
     bool engineMainMenuReady = false;
+    bool bootLegalsPending = false;
+    bool bootLegalsTouchDown = false;
     DoomRpgCoreInitReport coreReport{};
     DoomRpgLayoutReport layoutReport{};
     uint32_t lastTouchUpdate = 0;
@@ -362,6 +365,62 @@ namespace
 #endif
     }
 
+
+    /* Original 1994-2005 legal logos, before MENU_MAIN.  Keep bringup in its
+     * existing diagnostic path, and fail open to the title if g.bmp is absent
+     * or malformed. The native PAK lease is closed for every visible frame. */
+    bool initializeBootLegals()
+    {
+#if DOOMRPG_ESP32_BRINGUP_PROBES
+        return false;
+#else
+        if (!engineConfigMappingsReady || !assetPackReady || !videoReady)
+            return false;
+        if (!EspNativeBootLegals_begin(millis()))
+            return false;
+        if (!EspNativeBootLegals_draw(PlatformVideo_framebuffer(),
+                                     PlatformVideo_framebufferSizeBytes() /
+                                         sizeof(uint16_t)) ||
+            !PlatformVideo_present())
+        {
+            EspNativeBootLegals_cancel();
+            return false;
+        }
+        bootLegalsTouchDown = input.touched();
+        bootLegalsPending = true;
+        Serial.printf("[BOOTLEGALS] DISPLAY panel=1/5 heap8=%u largest8=%u\n",
+                      DoomRPG_getHeap8Free(), DoomRPG_getLargest8BitBlock());
+        return true;
+#endif
+    }
+
+    void serviceBootLegals()
+    {
+        const bool isDown = input.touched();
+        const int next = EspNativeBootLegals_advance(
+            millis(), isDown && !bootLegalsTouchDown ? 1 : 0);
+        bootLegalsTouchDown = isDown;
+        if (next == 0)
+            return;
+        if (next == 1 &&
+            EspNativeBootLegals_draw(PlatformVideo_framebuffer(),
+                                     PlatformVideo_framebufferSizeBytes() /
+                                         sizeof(uint16_t)) &&
+            PlatformVideo_present())
+        {
+            Serial.printf("[BOOTLEGALS] DISPLAY panel=%u/5 heap8=%u largest8=%u\n",
+                          EspNativeBootLegals_currentPanel(),
+                          DoomRPG_getHeap8Free(),
+                          DoomRPG_getLargest8BitBlock());
+            return;
+        }
+        if (next == 1)
+            EspNativeBootLegals_cancel();
+        bootLegalsPending = false;
+        Serial.println("[BOOTLEGALS] HANDOFF main-menu pack=closed");
+        initializeMainMenu();
+    }
+
     void printSystemInfo()
     {
         Serial.println();
@@ -483,12 +542,20 @@ void setup()
     initializeEngineLayout();
     initializeRenderStartup();
     initializeConfigMappings();
-    initializeMainMenu();
+    if (!initializeBootLegals())
+        initializeMainMenu();
     Serial.println("[READY] Bring-up alive; touch diagnostics are serial-only and TFT is reserved for the game framebuffer.");
 }
 
 void loop()
 {
+    if (bootLegalsPending)
+    {
+        serviceBootLegals();
+        printHeartbeat();
+        delay(5);
+        return;
+    }
     /* Release the one intro SD File/ring AFTER FINAL-CONTINUE has parked the
      * clock, but BEFORE the next clock service starts BSP/flash loading.
      * Preserve the native intro C files byte-exact (SDL-F8 regression). */
