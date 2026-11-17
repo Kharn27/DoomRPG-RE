@@ -43,6 +43,9 @@ typedef struct EspNativeGameplayMonsterTurnView_s {
     uint8_t active;
 } EspNativeGameplayMonsterTurnView;
 
+/* Explicit session-coordinator hook after the full player-resource leaf,
+ * including early fatal exits. Preserve legacy ordered monster admission. */
+void EspNativeGameplayMonsterTurn_afterPlayerResourcesService(struct DoomRPG_s* doomRpg);
 void EspNativeGameplayMonsterTurn_reset(void);
 /* Explicit semantic request for non-monster player attacks (for example
  * destructibles) that still call legacy Game_advanceTurn(). The request is
