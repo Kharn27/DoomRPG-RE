@@ -1,4 +1,4 @@
-# AUDIO-MENU-M1 — titre avant premier menu, sans boucle ni redémarrage (PENDING CYD)
+# AUDIO-MENU-M1 — titre avant premier menu, sans boucle ni redémarrage (PASS CYD borné)
 
 Base officielle : `main=174a22fed5a5d254fdeb6a9f576be8fd8d955953` après PR #363. Même branche PR #365 : `agent/audio-menu-m0-dm2ttl`. Corrige le prototype M0 d'après retour utilisateur sur vrai `esp-cyd-inverted`.
 
@@ -22,3 +22,8 @@ Le log Serial fourni par l'utilisateur démontre que MENU_MAIN était présenté
 Flasher le firmware normal `esp32-cyd` ou inverted (mentionner explicitement). Sur boot : `[MENUMUSIC] PRESTART ready=1 beforeMenuPresent=1` doit apparaître AVANT `[MAINOPAQUE] READY`. Écouter **au moins 20 secondes sans toucher**, vérifier **une seule** occurrence `ROUTE / PLAY track=MENU` et `END_ONCE`, sans `loops>0`. Ensuite HELP/BACK, OPTIONS/BACK, LOAD/slot/BACK : pas de `FINAL` ni nouveau `ROUTE` en changeant de page avant fin de piste. Confirmer START : titre fermé avant intro, puis Entrance après loading READY. Si sauvegarde valide, vérifier LOAD confirmé et fermeture avant restore; SOUND OFF doit rester silencieux. Surveiller heap8/largest8, underflows/recoveries, CPU watchdog/panic. Faire un retour sur absence de clic/pause lors des accès SD des sous-menus.
 
 **PENDING CI et PENDING validation CYD de M1.** Ne pas fusionner sur le seul test M0 ni sur CI ; fusion sur accord explicite.
+
+
+## Retour matériel final 17/11/2026 — PASS borné avec AUDIO-SFX-ALL
+
+Log CYD `platformio-device-monitor-261117-221926.log` (SHA256 `b0892983d52d6fba51f4fe455fad883fd2ae8c1a02b9f6465d14ca70fbf8ab83`) : `[MENUMUSIC] ROUTE track=M_DM2TTL.wav`, `[ENTRANCEMUSIC] PLAY track=MENU`, `[MENUMUSIC] PRESTART ready=1 ... beforeMenuPresent=1`, puis menu physique prêt. LOAD slot04 valide termine proprement `M_DM2TTL.wav` (`FINAL reason=MENU_ACTION_BEFORE_PAK frames=121734 loops=0 underruns=0 recoveries=0 timer=OFF file=CLOSED`), avant `M_STALKS.wav` puis retour menu. Re-test d'écoute positif par l'utilisateur. Ce log **n'atteste pas la fin naturelle des 16s de titre** ni HELP/BACK/OPTIONS/BACK, qui restent hors scénario observé. Logiciel audio testé sur `033617a3691b9384c1ec20acedf092783c9b644a`, rebasé sur BOOT-LEGALS en `30dd0f4f68bd79cd5ae16be78fe7b0795b460390` sans second test physique ; CI du rebase requise avant merge. Les PENDING historiques ci-dessus restent le compte rendu des étapes passées.
