@@ -69,3 +69,21 @@ def restore_pre_help_bottom_blue(source: str) -> str:
     assert "MAIN_HELP_BOTTOM_HUD_BAR_Y" in new_blue
     new_blue = new_blue.replace("MAIN_HELP_BOTTOM_HUD_BAR_Y", "MAIN_HELP_HUD_BAR_Y")
     return source[:start] + PRE_HELP_BOTTOM_BLUE + source[end:]
+
+
+def restore_pre_help_page2_tone(source: str) -> str:
+    """Undo only the later HELP 2/16 body ink for historic SDL blob oracles."""
+    later = """            /* Only HELP page 2 uses the first (light) theme tone for its
+             * body. Page titles keep their separate three-band gradient. */
+            const uint16_t bodyTone =
+                menuSystem->scrollIndex == MAIN_HELP_VISIBLE_LINES
+                    ? helpTitleTopTone() : helpBodyMiddleTone();
+            DoomRPG_setFontColor(doomRpg,
+                (menuSystem->scrollIndex == 0 && i == 5)
+                    ? 0xffffffffU : helpColor888(bodyTone));"""
+    earlier = """            /* John Carmack's tribute closes the cover. */
+            DoomRPG_setFontColor(doomRpg,
+                (menuSystem->scrollIndex == 0 && i == 5)
+                    ? 0xffffffffU : helpColor888(helpBodyMiddleTone()));"""
+    assert source.count(later) == 1, "HELP page 2 delta unexpectedly changed"
+    return source.replace(later, earlier, 1)
