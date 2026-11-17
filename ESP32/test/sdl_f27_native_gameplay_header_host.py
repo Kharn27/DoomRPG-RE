@@ -176,6 +176,48 @@ def original_body_parity() -> None:
             current = current.replace(added_header, b"", 1)
             current = current.replace(added_service, prior_service, 1)
             current = current.replace(added_reset, prior_reset, 1)
+
+        if filename == "esp_native_gameplay_gib_fx.c":
+            # ARCH-RC9: restore only outer wrapper symbols/comment/un-defs
+            # before ARCH-RC8's exact historical inverse below has run.
+            new_comment = (
+                b"/* RC9: explicit native session coordinator. Its service/reset choreography is\n"
+                b" * unchanged from the proven outer wrapper, including fatal/early leaf returns. */\n"
+            )
+            old_comment = (
+                b"/* This translation unit now owns the public session wrapper in front of the\n"
+                b" * proven player-resource chain. The resource implementation is renamed to the\n"
+                b" * private leaves declared by esp_native_gameplay_player_resources.h. */\n"
+                b"#undef __wrap_EspNativeGameplaySession_reset\n"
+                b"#undef __wrap_EspNativeGameplaySession_service\n"
+            )
+            assert current.count(new_comment) == 1, "RC9 coordinator comment/owner drift"
+            assert current.count(b"void EspNativeGameplaySessionCoordinator_service(") == 1
+            assert current.count(b"void EspNativeGameplaySessionCoordinator_reset(") == 1
+            current = current.replace(new_comment, old_comment, 1)
+            current = current.replace(b"void EspNativeGameplaySessionCoordinator_service(",
+                                      b"void __wrap_EspNativeGameplaySession_service(", 1)
+            current = current.replace(b"void EspNativeGameplaySessionCoordinator_reset(",
+                                      b"void __wrap_EspNativeGameplaySession_reset(", 1)
+        if filename == "esp_native_gameplay_player_resources.c":
+            # ARCH-RC9: direct raw leaf replaces GNU __real aliases. Undo
+            # precisely two callsites and original declarations for F27 SHA.
+            assert current.count(b"    EspNativeGameplaySession_service(doomRpg);") == 1
+            assert current.count(b"    EspNativeGameplaySession_reset();") == 1
+            current = current.replace(b"    EspNativeGameplaySession_service(doomRpg);",
+                                      b"    __real_EspNativeGameplaySession_service(doomRpg);", 1)
+            current = current.replace(b"    EspNativeGameplaySession_reset();",
+                                      b"    __real_EspNativeGameplaySession_reset();", 1)
+            anchor = b"    const EspPlayerViewState* preparedAfter);\n"
+            prototypes = (b"void __real_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg);\n"
+                          b"void __real_EspNativeGameplaySession_reset(void);\n")
+            assert current.count(anchor) == 1, "RC9 resource declarations anchor drift"
+            current = current.replace(anchor, anchor + prototypes, 1)
+        if filename == "esp_native_resident_gameplay.c":
+            # ARCH-RC9: the native EXIT route calls the explicit coordinator.
+            assert current.count(b"    EspNativeGameplaySessionCoordinator_reset();") == 1
+            current = current.replace(b"    EspNativeGameplaySessionCoordinator_reset();",
+                                      b"    EspNativeGameplaySession_reset();", 1)
         restored = b"#include <SDL.h>\n" + current[len(marker):]
         assert git_blob(restored) == blob, (
             f"{filename}: original pre-F27 body not preserved exactly")
