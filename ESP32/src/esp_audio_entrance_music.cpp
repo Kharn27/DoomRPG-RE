@@ -908,6 +908,11 @@ int EspEntranceMusic_prestartGameplayBeforeFirstFrame(uint8_t targetMapId) {
         view->targetMapId!=targetMapId ||
         view->gameplayLoadMapId!=targetMapId ||
         phase!=kSilent || ring!=nullptr || fileOpen || timerInit) {
+        /* Fail closed: never reopen the soundtrack late after the world
+         * appears if the READY boundary was not actually safe. */
+        if (phase!=kSilent || ring!=nullptr || fileOpen || timerInit)
+            closeMusic("LOAD_PRESTART_OWNER_NOT_READY");
+        attempted=true;
         printf("[LOADAUDIO-L1] PRESTART map=%u route=M_STALKS.wav ready=0 "
                "reason=owner_or_map_not_ready pakOpen=%u resident=%u "
                "flash=%u beforeWorldPresent=1\n",
