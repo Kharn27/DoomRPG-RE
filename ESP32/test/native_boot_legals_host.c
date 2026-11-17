@@ -118,11 +118,29 @@ int main(void) {
     assert(EspNativeBootLegals_advance(3102U, 0) == 0);
     assert(EspNativeBootLegals_advance(3103U, 0) == 1);
     checkPanel(3);
-    assert(EspNativeBootLegals_advance(4604U, 0) == 2);
+    assert(EspNativeBootLegals_advance(4604U, 0) == 1);
+    assert(EspNativeBootLegals_currentPanel() == 5U);
+    {
+        const unsigned int before = reads;
+        memset(fb, 0x7f, sizeof(fb));
+        assert(EspNativeBootLegals_draw(fb, 160U * 120U));
+        assert(!opened);
+        assert(reads == before); /* credit never opens or reads PAK */
+        /* Independent exact character, heart, and copyright raster probes. */
+        assert(fb[0] == 0U);
+        assert(fb[17 * 160 + 80] == 0x7324U);
+        assert(fb[28 * 160 + 38] == 0xe6a6U); /* E of ESP32 */
+        assert(fb[68 * 160 + 77] == 0xd964U); /* heart */
+        assert(fb[80 * 160 + 38] == 0xff2cU); /* K of Kharn27 */
+        assert(fb[105 * 160 + 55] == 0x8410U); /* (C) circle */
+        assert(fb[119 * 160 + 159] == 0U);
+    }
+    assert(EspNativeBootLegals_advance(6603U, 0) == 0); /* 1999ms */
+    assert(EspNativeBootLegals_advance(6604U, 0) == 2); /* 2000ms */
     assert(!EspNativeBootLegals_isActive());
     assert(EspNativeBootLegals_currentPanel() == 0);
     assert(!opened);
-    assert(reads == 2U + 4U * 16U); /* header, palette, 16 ranges/panel */
+    assert(reads == 2U + 4U * 16U); /* credit adds no PAK IO */
 
     fixture();
     assert(EspNativeBootLegals_begin(0U));
@@ -163,6 +181,16 @@ int main(void) {
     assert(!EspNativeBootLegals_isActive());
     assert(!opened);
 
-    printf("BOOTLEGALS HOST PASS frame=128x128 panels=4 1501ms touch=skip crop=160x120 pack=closed ranges=16/frame failure=closed\\n");
+    fixture();
+    assert(EspNativeBootLegals_begin(0U));
+    for (int i = 0; i < 4; ++i)
+        assert(EspNativeBootLegals_advance(1U, 1) == 1);
+    assert(EspNativeBootLegals_currentPanel() == 5U);
+    assert(EspNativeBootLegals_draw(fb, 160U * 120U));
+    assert(EspNativeBootLegals_advance(2U, 1) == 2); /* skip credit */
+    assert(!opened && !EspNativeBootLegals_isActive());
+    assert(reads == 2U); /* five touches did not read g.bmp pixels */
+
+    printf("BOOTLEGALS HOST PASS originals=4 credit=Kharn27 creditMs=2000 touch=skip crop=160x120 pack=closed ranges=16/frame failure=closed\\n");
     return 0;
 }
