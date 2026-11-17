@@ -927,10 +927,11 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
             helpPaintCopyrightMark(framebuffer, y, tone);
         }
         else if (line[0] != '\0') {
-            /* Only HELP page 2 uses the first (light) theme tone for its
-             * body. Page titles keep their separate three-band gradient. */
+            /* Only HELP pages 2, 3 and 4 use the first (light) theme
+             * tone for body text. Their titles keep the three-band gradient. */
             const uint16_t bodyTone =
-                menuSystem->scrollIndex == MAIN_HELP_VISIBLE_LINES
+                menuSystem->scrollIndex >= MAIN_HELP_VISIBLE_LINES &&
+                menuSystem->scrollIndex <= 3 * MAIN_HELP_VISIBLE_LINES
                     ? helpTitleTopTone() : helpBodyMiddleTone();
             DoomRPG_setFontColor(doomRpg,
                 (menuSystem->scrollIndex == 0 && i == 5)
