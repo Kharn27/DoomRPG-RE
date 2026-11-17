@@ -230,6 +230,19 @@ def original_body_parity() -> None:
             assert current.count(b"    EspNativeGameplaySessionCoordinator_reset();") == 1
             current = current.replace(b"    EspNativeGameplaySessionCoordinator_reset();",
                                       b"    EspNativeGameplaySession_reset();", 1)
+        if filename == "esp_native_gameplay_pickup.c":
+            # ARCH-RC9: the historical weapon-only pickup session leaves had
+            # no live caller after PlayerResources became canonical. Reconstruct
+            # the two exact dormant bodies and the obsolete GNU aliases solely
+            # inside this frozen pre-SDL-F27 full-blob oracle.
+            old_aliases = "void __real_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg);\nvoid __real_EspNativeGameplaySession_reset(void);\n\n".encode("utf-8")
+            old_leaves = "void __wrap_EspNativeGameplaySession_reset(void) {\n    EspNativeGameplayActionEngine_reset();\n    EspNativeGameplayPickup_reset();\n    __real_EspNativeGameplaySession_reset();\n}\n\nvoid __wrap_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg) {\n    if (pickup.fatal != 0U) return;\n    __real_EspNativeGameplaySession_service(doomRpg);\n    EspNativeGameplayPickup_logCorpus();\n    EspNativeGameplayInteractionInventory_log();\n    servicePendingMove(doomRpg);\n    if (!EspNativeGameplayActionEngine_service(doomRpg)) {\n        printf(\"[ACTIONENGINE] FAILED reason=service fatal=1\\n\");\n        pickup.fatal = 1U;\n    }\n}\n".encode("utf-8")
+            tile_anchor = b"static uint16_t tileForView(const EspPlayerViewState* view) {"
+            assert current.count(tile_anchor) == 1, "RC9 pickup tile anchor drift"
+            assert current.endswith(b"}\\n\\n"), "RC9 pickup tail drift"
+            assert b"__wrap_EspNativeGameplaySession_" not in current
+            current = current.replace(tile_anchor, old_aliases + tile_anchor, 1)
+            current += old_leaves
         restored = b"#include <SDL.h>\n" + current[len(marker):]
         assert git_blob(restored) == blob, (
             f"{filename}: original pre-F27 body not preserved exactly")
