@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 from audio_r2c_restore_menu_oracle import (restore_sound_options_action,
                                            restore_sound_options_back)
-from native_help_bottom_history import restore_pre_help_pages2to4_tone
+from native_help_bottom_history import restore_pre_help_light_body_pages
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCES = ROOT / "ESP32/src"
@@ -85,7 +85,7 @@ def original_body_parity() -> None:
             restored = restore_intro_i3_start(restored)
         elif filename == "native_main_menu_actions.c":
             # Undo only the later HELP page-2 ink before the frozen F29 blob.
-            restored = restore_pre_help_pages2to4_tone(restored)
+            restored = restore_pre_help_light_body_pages(restored)
         assert git_blob(restored.encode("utf-8")) == blob, (
             f"{filename}: original pre-F29 Git blob not preserved exactly")
         assert current.count(old_import) == expected, filename

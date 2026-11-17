@@ -159,19 +159,25 @@ assert "static uint16_t helpThirdTone(void)" in actions
 assert "EspMainMenuSkin_uiInk()" not in actions
 assert 'helpPaintCopyrightMark(framebuffer, y, tone);' in actions
 assert '"Kharn27"' in model
-# Only HELP pages 2/3/4 take the first/light tone for their body copy.
-# Their section headings retain the original three-band gradient, and page 1
-# (including its white Carmack tribute) and pages 5-16 keep prior colors.
-assert [lines[7], lines[14], lines[21]] == [
+# HELP pages 2-4 and 12-16 take the first/light tone for body copy.
+# The gradient headings, page-1 white tribute, and pages 5-11 stay intact.
+light_pages = (2, 3, 4, 12, 13, 14, 15, 16)
+assert [lines[(page - 1) * 7] for page in light_pages] == [
     "DOOM RPG: THE GAME", "MENU CONTROLS", "TURN-BASED GAME",
+    "ACTION / CENTER", "WEAPONS & STATUS", "SYSTEM / SAVE LOAD",
+    "TACTICAL TIPS", "ABOUT CYD PORT",
 ]
-assert [page for page in range(16)
-        if 7 <= page * 7 <= 3 * 7] == [1, 2, 3]
+assert [page for page in range(1, 17)
+        if (2 <= page <= 4) or (12 <= page <= 16)] == list(light_pages)
+assert all(lines[(page - 1) * 7] for page in light_pages)
 body_branch = actions.split("else if (line[0] != '\\0') {", 1)[1].split(
     "y += MAIN_HELP_LINE_HEIGHT;", 1
 )[0]
-assert "menuSystem->scrollIndex >= MAIN_HELP_VISIBLE_LINES &&" in body_branch
-assert "menuSystem->scrollIndex <= 3 * MAIN_HELP_VISIBLE_LINES" in body_branch
+assert "const int scroll = menuSystem->scrollIndex;" in body_branch
+assert "scroll >= MAIN_HELP_VISIBLE_LINES &&" in body_branch
+assert "scroll <= 3 * MAIN_HELP_VISIBLE_LINES" in body_branch
+assert "scroll >= 11 * MAIN_HELP_VISIBLE_LINES &&" in body_branch
+assert "scroll <= 15 * MAIN_HELP_VISIBLE_LINES" in body_branch
 assert "? helpTitleTopTone() : helpBodyMiddleTone();" in body_branch
 assert "helpColor888(bodyTone)" in body_branch
 assert "(menuSystem->scrollIndex == 0 && i == 5)" in body_branch

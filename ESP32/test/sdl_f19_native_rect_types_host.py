@@ -8,7 +8,7 @@ This is an ABI/type cleanup, NOT removal of the transitional legacy SDL header.
 from pathlib import Path
 from sdl_f21_zone_call_boundary_host import restore_pre_f21_engine
 from native_help_bottom_history import (restore_pre_help_bottom_blue,
-                                        restore_pre_help_pages2to4_tone)
+                                        restore_pre_help_light_body_pages)
 import hashlib
 import re
 import subprocess
@@ -52,7 +52,7 @@ for name, (sha, count) in BASELINE.items():
     # reconstruct its exact pre-blue block before verifying the immutable
     # F19 whole-file blob and native rectangle alias equivalence.
     if name == "native_main_menu_actions.c":
-        text = restore_pre_help_pages2to4_tone(text)
+        text = restore_pre_help_light_body_pages(text)
         text = restore_pre_help_bottom_blue(text)
     if name == "native_main_menu_options_action.c":
         # SOUND became functional after F19. Reconstruct the exact historic
