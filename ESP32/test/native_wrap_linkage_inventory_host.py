@@ -30,7 +30,7 @@ CALL = re.compile(
     r"\b(?:call0|call4|call8|call12|j)\s+[0-9a-fA-F]+\s+"
     r"<(__wrap_[A-Za-z_][A-Za-z0-9_]*)(?:\+[^>]*)?>")
 REQUIRED = {"EspNativeGameplayFrame_renderTurn",
-            "EspAssetPack_readRange", "DoomRPG_randNextByte",
+            "EspAssetPack_residentBegin", "DoomRPG_randNextByte",
             "Esp32PlatformVideo_present"}
 # Arduino/ESP-IDF log adapters are provided by the toolchain, not the
 # DoomRPG platformio.ini composition. Their exact linked symbols were
@@ -42,10 +42,11 @@ TOOLCHAIN_LOG_WRAPPERS = frozenset((
 RETIRED_BRINGUP_WRAPS = frozenset((
     "DoomRPG_probeNativeMenuSpriteFrame",
     "DoomRPG_probeNativeMainMenuOverlay"))
-# ARCH-RC2/RC3: production PAK reset/end instrumentation has become
+# ARCH-RC2/RC3/RC4: production PAK reset/end/read instrumentation has become
 # explicit native hooks. Neither linker interposition may return.
 RETIRED_NORMAL_WRAPS = frozenset((
-    "EspAssetPack_residentResetStats", "EspAssetPack_residentEnd"))
+    "EspAssetPack_residentResetStats", "EspAssetPack_residentEnd",
+    "EspAssetPack_readRange"))
 RETIRED_ALL_WRAPS = RETIRED_BRINGUP_WRAPS | RETIRED_NORMAL_WRAPS
 RETAINED_BRINGUP_WRAPS = frozenset((
     "EspNativeFirstFrame_route",
@@ -225,7 +226,7 @@ def compare_release(normal: dict, inverted: dict) -> None:
 
 def self_test() -> None:
     real = declarations((PROJECT / "platformio.ini").read_text())
-    require(len(real["env:esp32-cyd"]) == 43, "expected ARCH-RC3 43 normal wraps")
+    require(len(real["env:esp32-cyd"]) == 42, "expected ARCH-RC4 42 normal wraps")
     require(len(real["env:esp32-cyd-bringup"]) == 3,
             "expected 3 surviving diagnostic extras after ARCH-RC1")
     require(set(real["env:esp32-cyd-bringup"]) == RETAINED_BRINGUP_WRAPS,
@@ -248,7 +249,7 @@ def self_test() -> None:
             raise AssertionError(f"retired diagnostic wrap {name} accepted")
     for bad in (
         (PROJECT / "platformio.ini").read_text() +
-            "\n[env:unexpected]\n-Wl,--wrap=EspAssetPack_readRange\n"
+            "\n[env:unexpected]\n-Wl,--wrap=EspAssetPack_residentBegin\n"
             "-Wl,--wrap=EspAssetPack_readRange\n",
         (PROJECT / "platformio.ini").read_text() +
             "\n[env:unexpected]\n-Wl,--wrap=\n",
@@ -260,18 +261,18 @@ def self_test() -> None:
         else:
             raise AssertionError("invalid duplicate/malformed wrap accepted")
     fixture = (
-        "40000000 00000030 T __wrap_EspAssetPack_readRange\n"
+        "40000000 00000030 T __wrap_EspAssetPack_residentBegin\n"
         "40000100 00000010 T __wrap_Esp32PlatformVideo_present\n")
     parsed = parse_nm(fixture)
     require(len(TOOLCHAIN_LOG_WRAPPERS) == 3 and
             "__wrap_esp_log_write" in TOOLCHAIN_LOG_WRAPPERS and
-            "__wrap_EspAssetPack_readRange" not in TOOLCHAIN_LOG_WRAPPERS,
+            "__wrap_EspAssetPack_residentBegin" not in TOOLCHAIN_LOG_WRAPPERS,
             "unexpected native/toolchain wrapper allowlist")
-    require(parsed["__wrap_EspAssetPack_readRange"]["bytes"] == 48,
+    require(parsed["__wrap_EspAssetPack_residentBegin"]["bytes"] == 48,
             "nm symbol size incorrect")
     for bad in (
-        fixture + "40000200 00000008 T __wrap_EspAssetPack_readRange\n",
-        "40000000 00000030 B __wrap_EspAssetPack_readRange\n",
+        fixture + "40000200 00000008 T __wrap_EspAssetPack_residentBegin\n",
+        "40000000 00000030 B __wrap_EspAssetPack_residentBegin\n",
     ):
         try:
             parse_nm(bad)
@@ -280,10 +281,10 @@ def self_test() -> None:
         else:
             raise AssertionError("duplicate/non-code wrapper was accepted")
     assembly = ("40000120 <caller_one>:\n"
-                "  40000125: call8 40000000 <__wrap_EspAssetPack_readRange>\n"
+                "  40000125: call8 40000000 <__wrap_EspAssetPack_residentBegin>\n"
                 "40000220 <caller_two>:\n"
-                "  40000225: call0 40000004 <__wrap_EspAssetPack_readRange+0x4>\n")
-    require(direct_calls(assembly)["__wrap_EspAssetPack_readRange"] ==
+                "  40000225: call0 40000004 <__wrap_EspAssetPack_residentBegin+0x4>\n")
+    require(direct_calls(assembly)["__wrap_EspAssetPack_residentBegin"] ==
             ["caller_one", "caller_two"], "failed to attribute direct-call witnesses")
     def report(profile: str, linked: bool) -> dict:
         return {"profile": profile, "declaredProfileExtra": 0,
@@ -297,8 +298,8 @@ def self_test() -> None:
         pass
     else:
         raise AssertionError("release wrapper divergence accepted")
-    print("PASS ARCH-RC3 host self-test: 43+3 surviving declarations, 2 retired "
-          "bringup flags + 2 retired production PAK wraps blocked, "
+    print("PASS ARCH-RC4 host self-test: 42+3 surviving declarations, 2 retired "
+          "bringup flags + 3 retired production PAK wraps blocked, "
           "malformed/duplicate rejected, nm syntax, direct-call attribution, "
           "release mismatch rejected; linked != executed")
 
