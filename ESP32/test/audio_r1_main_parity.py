@@ -4,7 +4,11 @@ This function is deliberately fail-closed when the exact instrumented
 main.cpp changes; it does NOT remove native gameplay or any other features.
 """
 
+from native_boot_legals_history import restore_pre_boot_legals
+
+
 def restore_pre_audio_r1(text: str) -> str:
+    text = restore_pre_boot_legals(text)
     # SOUND-S1 and INTRO-I1 preserve the exact older Root-J2 main image by
     # reversing ONLY their two main-loop/boot insertions. Keep the historical
     # blob SHA, next R2a/R1 inverse and original ownership untouched.
