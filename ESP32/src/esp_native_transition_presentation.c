@@ -6,6 +6,8 @@
 #include <esp_timer.h>
 
 #include "esp_asset_pack.h"
+#include "esp_audio_loading_route.h" /* LOAD-L0: no transport or I/O */
+#include "esp_audio_entrance_music.h" /* LOAD-L1: stop old playback BEFORE loader */
 #include "esp_map_catalog.h"
 #include "esp_main_menu_skin.h"
 #include "esp_native_gameplay_hub_theme.h"
@@ -54,6 +56,15 @@ typedef struct EspNativeTransitionPresentationState_s {
     uint8_t lastPhase;
     uint8_t loadingActive;
     uint8_t flashDeferred;
+    /* LOAD-L0: static timing witnesses only, no playback or ring ownership. */
+    uint8_t audioRoute;
+    uint32_t audioLastPresentMs;
+    uint32_t audioMaxPresentGapMs;
+    uint32_t audioProgressCalls;
+    uint32_t audioCheckpoints;
+    uint32_t audioPakClosedCheckpoints;
+    uint32_t audioLastFlashCallbackMs;
+    uint32_t audioMaxFlashCallbackGapMs;
 } EspNativeTransitionPresentationState;
 
 typedef struct EspNativeTransitionPaintScratch_s {
@@ -70,6 +81,36 @@ int __real_Esp32PlatformVideo_present(void);
 
 static uint32_t nowMs(void) {
     return (uint32_t)(esp_timer_get_time() / 1000LL);
+}
+
+/* The 16KiB 8-bit playback ring stores 743 ms at 22050 Hz, but only the
+ * actual SD-owner pump may replenish it. UI and flash progress events alone
+ * are NOT proof of safe producer time. They are latency witnesses only. */
+#define LOAD_AUDIO_L0_RING_MS 743U
+
+static void loadAudioL0_report(const char* boundary) {
+    uint32_t lastGap;
+    uint32_t maxVisibleGap;
+    if (!presentation.loadingActive) return;
+    lastGap = nowMs() - presentation.audioLastPresentMs;
+    maxVisibleGap = presentation.audioMaxPresentGapMs;
+    if (lastGap > maxVisibleGap) maxVisibleGap = lastGap;
+    printf("[LOADAUDIO-L0] BUDGET map=%u route=%s boundary=%s "
+           "elapsedMs=%u frames=%u maxVisibleGapMs=%u ringBudgetMs=%u "
+           "flashCallbacks=%u maxFlashCallbackGapMs=%u "
+           "checkpoints=%u pakClosedCheckpoints=%u playback=deferred "
+           "owner=main-task/no-concurrent-SD\n",
+           (unsigned)presentation.targetMapId,
+           EspAudioLoadingRoute_trackName(
+               (EspAudioLoadingTrack)presentation.audioRoute),
+           boundary != NULL ? boundary : "unknown",
+           (unsigned)(nowMs() - presentation.loadingStartMs),
+           (unsigned)presentation.frames, (unsigned)maxVisibleGap,
+           (unsigned)LOAD_AUDIO_L0_RING_MS,
+           (unsigned)presentation.audioProgressCalls,
+           (unsigned)presentation.audioMaxFlashCallbackGapMs,
+           (unsigned)presentation.audioCheckpoints,
+           (unsigned)presentation.audioPakClosedCheckpoints);
 }
 
 static int framebufferReady(void) {
@@ -469,6 +510,13 @@ static void presentOverall(uint8_t percent,
 
         if (openedHere && EspAssetPack_isOpen()) EspAssetPack_close();
 
+        {
+            const uint32_t now = nowMs();
+            const uint32_t gap = now - presentation.audioLastPresentMs;
+            if (gap > presentation.audioMaxPresentGapMs)
+                presentation.audioMaxPresentGapMs = gap;
+            presentation.audioLastPresentMs = now;
+        }
         presentation.lastPercent = percent;
         ++presentation.frames;
         fnv = frameFNV();
@@ -607,6 +655,11 @@ int EspNativeTransitionPresentation_beginLoading(uint8_t targetMapId) {
         return 0;
     }
 
+    /* LOAD-L1: after validation but BEFORE any PAK/flash ownership,
+     * close the previous level's SD music. The intro handoff has already
+     * done so for ST_INTRO, making this an idempotent safety boundary. */
+    EspEntranceMusic_stopBeforeLoading();
+
     memset(&presentation, 0, sizeof(presentation));
     memset(&scratch, 0, sizeof(scratch));
 
@@ -629,6 +682,8 @@ int EspNativeTransitionPresentation_beginLoading(uint8_t targetMapId) {
     presentation.lastPhase = 0U;
     presentation.loadingActive = 1U;
     presentation.loadingStartMs = nowMs();
+    presentation.audioLastPresentMs = presentation.loadingStartMs;
+    presentation.audioRoute = (uint8_t)EspAudioLoadingRoute_forMap(targetMapId);
     presentation.frames = 1U;
 
     if (!__real_Esp32PlatformVideo_present()) goto done;
@@ -640,6 +695,15 @@ int EspNativeTransitionPresentation_beginLoading(uint8_t targetMapId) {
            (unsigned int)scratch.stats.packReads,
            (unsigned int)scratch.stats.bytesRead,
            (unsigned int)frameFNV());
+    /* Route selection is PURE and does not start the music timer. */
+    printf("[LOADAUDIO-L0] ROUTE map=%u track=%s choice=%s "
+           "transport=deferred reason=await-safe-SD-ownership ringBudgetMs=%u\n",
+           (unsigned)targetMapId,
+           EspAudioLoadingRoute_trackName(
+               (EspAudioLoadingTrack)presentation.audioRoute),
+           presentation.audioRoute == ESP_AUDIO_LOADING_TRACK_M_STALKS
+               ? "explicit" : "unconfigured",
+           (unsigned)LOAD_AUDIO_L0_RING_MS);
     ok = 1;
 
 done:
@@ -655,6 +719,16 @@ void EspNativeTransitionPresentation_progress(uint8_t phase,
     uint8_t phaseChanged;
 
     if (!presentation.loadingActive) return;
+    {
+        const uint32_t now = nowMs();
+        if (presentation.audioProgressCalls != 0U) {
+            const uint32_t gap = now - presentation.audioLastFlashCallbackMs;
+            if (gap > presentation.audioMaxFlashCallbackGapMs)
+                presentation.audioMaxFlashCallbackGapMs = gap;
+        }
+        presentation.audioLastFlashCallbackMs = now;
+        ++presentation.audioProgressCalls;
+    }
     percent = EspNativeLoadingProgress_flashPercent(
         phase, completed, total, presentation.flashDeferred);
     phaseChanged = phase != presentation.lastPhase ? 1U : 0U;
@@ -671,6 +745,8 @@ void EspNativeTransitionPresentation_progress(uint8_t phase,
 void EspNativeTransitionPresentation_checkpointProgress(uint8_t percent,
                                                         const char* stage) {
     if (!presentation.loadingActive) return;
+    ++presentation.audioCheckpoints;
+    if (!EspAssetPack_isOpen()) ++presentation.audioPakClosedCheckpoints;
     percent = EspNativeLoadingProgress_checkpointPercent(
         percent, presentation.flashDeferred);
     if (percent < 100U &&
@@ -702,6 +778,7 @@ void EspNativeTransitionPresentation_flashReady(void) {
 }
 
 void EspNativeTransitionPresentation_abortLoading(const char* reason) {
+    loadAudioL0_report("ABORT");
     if (presentation.loadingActive) {
         printf("[TRANSITIONLOAD] ABORT targetMap=%u frames=%u progress=%u reason=%s framebuffer=caller-owned\n",
                (unsigned int)presentation.targetMapId,
@@ -715,6 +792,7 @@ void EspNativeTransitionPresentation_abortLoading(const char* reason) {
 void EspNativeTransitionPresentation_releaseLoading(const char* reason) {
     uint32_t elapsed;
     if (!presentation.loadingActive) return;
+    loadAudioL0_report("RELEASE");
     elapsed = (uint32_t)(nowMs() - presentation.loadingStartMs);
     printf("[TRANSITIONLOAD] RELEASE targetMap=%u frames=%u elapsedMs=%u progress=%u background=fixed owner=gameplay-next-present reason=%s\n",
            (unsigned int)presentation.targetMapId,
@@ -734,6 +812,7 @@ void EspNativeTransitionPresentation_endLoading(void) {
     if (presentation.lastPercent < 100U) {
         presentOverall(100U, "READY", "completion");
     }
+    loadAudioL0_report("END");
     elapsed = (uint32_t)(nowMs() - presentation.loadingStartMs);
     printf("[TRANSITIONLOAD] END targetMap=%u frames=%u elapsedMs=%u progress=%u background=fixed assetReadsDuringProgress=0 framebuffer=retained-until-target-frame\n",
            (unsigned int)presentation.targetMapId,

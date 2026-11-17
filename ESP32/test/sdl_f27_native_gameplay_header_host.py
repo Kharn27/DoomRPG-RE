@@ -96,6 +96,35 @@ def original_body_parity() -> None:
             current = current.replace(audio_import, b"", 1)
             current = current.replace(audio_hook, b"", 1)
             current = strip_ra2b_probe(current)
+        if filename == "esp_native_gameplay_session.c":
+            # AUDIO-LOAD-L1 preserves the immutable pre-F27 session body.
+            # Reverse ONLY the four new imports and one pre-world audio
+            # boundary before comparing the exact historical Git blob.
+            l1_import = (
+                b'#include "esp_audio_entrance_music.h" /* LOAD-L1: after full loading, before gameplay present */\n'
+                b'#include "esp_audio_loading_route.h"\n'
+                b'#include "esp_native_audio_intent.h" /* SOUND OFF never scans PAK before first frame */\n'
+                b'#include "esp_native_sfx_probe.h" /* drain one-shot PAK metadata before music starts */\n'
+            )
+            l1_hook = (
+                b"                    /* LOAD-L1: the full 3D world and HUD are in the retained\n"
+                b"                     * logical framebuffer, but the physical screen is STILL\n"
+                b"                     * the final 100% READY loading card. No BSP/flash/cache\n"
+                b"                     * access remains. Finish the one-shot SFX PAK scan BEFORE\n"
+                b"                     * opening the music SD File; then start selected music\n"
+                b"                     * (with bounded clock guard) immediately before presenting\n"
+                b"                     * the world. Missing/unknown tracks fail silently. */\n"
+                b"                    if (EspAudioLoadingRoute_forMap(view->targetMapId) ==\n"
+                b"                            ESP_AUDIO_LOADING_TRACK_M_STALKS &&\n"
+                b"                        EspNativeAudioIntent_isSoundEnabled()) {\n"
+                b"                        EspNativeSfxProbe_service(true);\n"
+                b"                    }\n"
+                b"                    (void)EspEntranceMusic_prestartGameplayBeforeFirstFrame(\n"
+                b"                        view->targetMapId);\n"
+            )
+            assert current.count(l1_import)==1, "LOAD-L1 session includes drift"
+            assert current.count(l1_hook)==1, "LOAD-L1 session hook drift"
+            current=current.replace(l1_import,b"",1).replace(l1_hook,b"",1)
         # AUDIO-SFX-P1 publishes two *post-commit-only* native PCM intents.
         # Strictly undo exactly their imported header and bounded event hooks
         # before the frozen ten-source pre-F27 Git blob witness. No hashes

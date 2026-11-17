@@ -1,6 +1,7 @@
 #ifndef ESP_AUDIO_ENTRANCE_MUSIC_H
 #define ESP_AUDIO_ENTRANCE_MUSIC_H
 #include <stdbool.h>
+#include <stdint.h>
 /* AUDIO-R2d: Entrance SD music, 22.05kHz IMA-ADPCM -> DAC2/GPIO26.
  * One synchronous SD owner in Arduino gameplay task; IRAM ISR is DRAM-only.
  * The cooperative pump is ONLY for completed renderer-frame boundaries after
@@ -20,6 +21,14 @@ void EspEntranceMusic_stopIntroAtHandoff(void);
  * Returns 1 if music is already playing; 0 is a silent nonfatal fallback.
  * Never allocate a second ring, hold native PAK open or touch renderer. */
 int EspEntranceMusic_prestartIntroBeforeFirstFrame(void);
+/* LOAD-L1: stop any prior level music BEFORE the next loading screen/PACK
+ * reconfiguration. Main Arduino task only; no second SD owner or ISR. */
+void EspEntranceMusic_stopBeforeLoading(void);
+/* LOAD-L1: one-time bounded Entrance music prestart after all map/cache/HUD
+ * work, while the physical 100% READY loading frame is still visible.
+ * Invoked immediately before first gameplay present. No fallback track for
+ * unknown map IDs; 0 means silent/deferred safe fallback. */
+int EspEntranceMusic_prestartGameplayBeforeFirstFrame(uint8_t targetMapId);
 void EspEntranceMusic_service(bool gameplayActive,bool sdReady);
 void EspEntranceMusic_pumpGameplay(void);
 #ifdef __cplusplus

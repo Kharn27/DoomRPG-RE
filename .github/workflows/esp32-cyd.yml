@@ -71,6 +71,12 @@ jobs:
       - name: Test AUDIO-I4 subtle music headroom and reference decoder (host C11)
         run: python ESP32/test/audio_i4_music_headroom_host.py
 
+      - name: Test LOAD-AUDIO-L0 map route and loading callback gap probe (host C11)
+        run: python ESP32/test/audio_loading_l0_route_gap_host.py
+
+      - name: Test AUDIO-LOAD-L1 sound before first post-loading gameplay present
+        run: python ESP32/test/audio_loading_l1_ready_prestart_host.py
+
       - name: Test native process RNG owner and 132B root extraction (host C + ABI)
         run: python ESP32/test/native_process_rng_owner_host.py
 
