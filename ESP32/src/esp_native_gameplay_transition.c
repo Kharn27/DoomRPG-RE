@@ -45,8 +45,6 @@ static EspNativeGameplayTransitionDoorScratch transitionDoorScratch;
 static uint8_t junctionExitCensusDone;
 #endif
 
-void __real_EspNativeGameplayInput_reset(void);
-
 static int descriptorForSelect(const EspNativeGameplaySelectResult* select,
                                EspMapEventDescriptor* outDescriptor) {
     EspMapEventRef ref;
@@ -894,13 +892,6 @@ const char* EspNativeGameplayTransition_statusName(
     case ESP_NATIVE_GAMEPLAY_TRANSITION_HANDOFF_READY: return "HANDOFF_READY";
     default: return "UNKNOWN";
     }
-}
-
-/* Reset chaining keeps the transition owner scoped to the current native
- * gameplay input/session lifetime without modifying the large resident service. */
-void __wrap_EspNativeGameplayInput_reset(void) {
-    EspNativeGameplayTransition_reset();
-    __real_EspNativeGameplayInput_reset();
 }
 
 /* Public SELECT wrapper: transition event first, then the already-proven
