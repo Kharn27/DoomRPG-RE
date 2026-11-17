@@ -13,6 +13,7 @@
 #include "esp_native_menu_state.h"
 #include "Render.h"
 #include "esp_native_audio_intent.h"
+#include "esp_audio_entrance_music.h" /* MENU-M0: stop title before action */
 #include "esp_native_canvas_text.h"
 #include "esp_main_menu_skin.h"
 #include "esp_asset_pack.h"
@@ -1226,6 +1227,11 @@ DoomRPG_esp32MainMenuDispatchConfirmed(struct DoomRPG_s* doomRpgBase,
            EspNativeRootOwners_live()->menuSystem != NULL
                ? EspNativeRootOwners_live()->menuSystem->selectedIndex : -999);
 
+    /* Only confirmed START leaves the title immediately. HELP/OPTIONS
+     * and the LOAD slot picker are still the same music session. */
+    if (action == DOOMRPG_ESP32_MAIN_MENU_ACTION_START)
+        EspEntranceMusic_stopMenuBeforeAction();
+
     switch (action) {
         case DOOMRPG_ESP32_MAIN_MENU_ACTION_START:
             return DoomRPG_esp32ActivateMainMenuStart(doomRpg)
@@ -1380,6 +1386,9 @@ DoomRPG_esp32ActivateMainMenuLoad(struct DoomRPG_s* doomRpgBase) {
         return DOOMRPG_ESP32_MAIN_MENU_LOAD_NO_SAVE;
     }
 
+    /* A valid slot is now selected. Stop the single SD title owner only
+     * here, before checkpoint load and map/flash ownership. */
+    EspEntranceMusic_stopMenuBeforeAction();
     if (!DoomRPG_esp32ReleaseMainMenuMemory(doomRpg)) {
         printf("[MAINLOAD] FAILED menu runtime cleanup\n");
         return DOOMRPG_ESP32_MAIN_MENU_LOAD_FATAL;

@@ -14,7 +14,11 @@
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_monster_activation.h"
 #include "esp_native_gameplay_monster_attack_visual.h"
+#include "esp_native_audio_intent.h"
+#include "esp_native_monster_sfx_table.h"
 #include "esp_native_gameplay_monster_state.h"
+#include "esp_native_gameplay_monster_combat.h"
+#include "esp_native_monster_ambience.h"
 #include "esp_native_monster_projectile204_contract.h"
 #include "esp_map_sprite_topology.h"
 #include "esp_native_sprite_renderer.h"
@@ -56,6 +60,10 @@ static uint8_t activeAttackFrame;
 static uint8_t activeSequence;
 static uint8_t activeTotalLoops;
 static uint8_t activeCompletedLoops;
+static uint32_t painHoldLoggedProbe;
+static uint32_t sightHoldLoggedProbe;
+static uint16_t pendingAttackSoundId;
+static uint32_t pendingAttackSoundAtMs;
 static uint16_t activePhaseMs;
 static uint32_t projectileNextMs;
 static uint16_t projectileSourceTile;
@@ -166,6 +174,8 @@ static void clearSequence(void) {
     projectileEnabled = 0U;
     projectileSubtype = 0U;
     projectileShots = 0U;
+    pendingAttackSoundId=0U;
+    pendingAttackSoundAtMs=0U;
 }
 
 /* The final idle pose has already been presented and verified with exact
@@ -296,6 +306,20 @@ static void serviceTimeline(DoomRPG_t* runtime) {
     if (activeSequence == 0U || attackVisual.clearAtMs == 0U) return;
     now = DoomRPG_GetUpTimeMS();
     serviceMonsterProjectile(runtime, EspPlayerView_view(), now);
+    /* Legacy attack sound at +150ms from the successfully presented pose.
+     * No sound on render rollback. No gameplay RNG or PAK I/O here. */
+    if (pendingAttackSoundAtMs!=0U &&
+        (int32_t)(now-pendingAttackSoundAtMs)>=0) {
+        if (pendingAttackSoundId!=0U) {
+            (void)EspNativeAudioIntent_publish(pendingAttackSoundId,0U,3U);
+            printf("[MONSTERSFX] ATTACK probe=%u sprite=%u shot=%u/%u id=%u timing=pose+150ms\n",
+                   (unsigned)attackVisual.activeProbe,
+                   (unsigned)attackVisual.activeSpriteIndex,
+                   (unsigned)activeCompletedLoops,(unsigned)activeTotalLoops,
+                   (unsigned)pendingAttackSoundId);
+        }
+        pendingAttackSoundAtMs=0U;
+    }
     if ((int32_t)(now - attackVisual.clearAtMs) < 0) return;
 
     /* Touch feedback owns a bounded framebuffer snapshot.  A world redraw under
@@ -404,6 +428,7 @@ static void serviceTimeline(DoomRPG_t* runtime) {
         return;
     }
 
+    pendingAttackSoundAtMs=DoomRPG_GetUpTimeMS()+ATTACK_VISUAL_FRAME_MS;
     if (projectileShots > 1U) {
         /* Re-arm at the same 150 ms legacy launch point for each of the
          * remaining Malwrath shots, only after presentation succeeded. */
@@ -445,6 +470,10 @@ void EspNativeGameplayMonsterAttackVisual_reset(void) {
     projectileEnabled = 0U;
     projectileSubtype = 0U;
     projectileShots = 0U;
+    pendingAttackSoundId=0U;
+    pendingAttackSoundAtMs=0U;
+    painHoldLoggedProbe=0U;
+    sightHoldLoggedProbe=0U;
     attackVisual.activeSpriteIndex = ATTACK_VISUAL_NO_SPRITE;
 }
 
@@ -577,6 +606,40 @@ void EspNativeGameplayMonsterAttackVisual_service(struct DoomRPG_s* doomRpgBase)
         return;
     }
 
+    /* Let the first sight cry become audible before the first attack pose.
+     * This guard is only presentation time; the committed attack probe waits
+     * untouched, with world input blocked and gameplay RNG unchanged. */
+    if (EspNativeMonsterAmbience_sightSettling(
+            monster->spriteIndex,DoomRPG_GetUpTimeMS())) {
+        if (sightHoldLoggedProbe!=turn->attackProbes) {
+            sightHoldLoggedProbe=turn->attackProbes;
+            printf("[MONSTERSFX] SIGHT-HOLD probe=%u sprite=%u "
+                   "guardMs=350 turnMutation=no gameplayRng=untouched\n",
+                   (unsigned)turn->attackProbes,
+                   (unsigned)monster->spriteIndex);
+        }
+        return;
+    }
+
+    /* A confirmed hit owns pain6 for 250ms. Previously the monster's reply
+     * attack pose was admitted immediately after the player's settle frame,
+     * often BEFORE the queued pain sound became audible. Keep the existing
+     * delivered probe pending (and world input blocked) until that exact
+     * presentation deadline; no artificial turn, RNG draw or redraw loop. */
+    if (turn->lastReason==ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PLAYER_ATTACK &&
+        EspNativeGameplayMonsterCombat_painSettling(
+            monster->spriteIndex,DoomRPG_GetUpTimeMS())) {
+        if (painHoldLoggedProbe!=turn->attackProbes) {
+            painHoldLoggedProbe=turn->attackProbes;
+            printf("[MONSTERSFX] PAIN-HOLD probe=%u sprite=%u "
+                   "reason=committed-pain6/250ms next=existing-attack-probe "
+                   "turnMutation=no gameplayRng=untouched\n",
+                   (unsigned)turn->attackProbes,
+                   (unsigned)monster->spriteIndex);
+        }
+        return;
+    }
+
     visualFrame = monster->alternateAttack != 0U
                       ? ATTACK_VISUAL_ALTERNATE_FRAME
                       : ATTACK_VISUAL_PRIMARY_FRAME;
@@ -610,6 +673,10 @@ void EspNativeGameplayMonsterAttackVisual_service(struct DoomRPG_s* doomRpgBase)
                recoveryRngExact ? "yes" : "NO");
         return;
     }
+
+    pendingAttackSoundId=EspNativeMonsterSfx_lookup(monster->mType,
+        (uint8_t)(monster->alternateAttack!=0U ? 5U : 4U));
+    pendingAttackSoundAtMs=DoomRPG_GetUpTimeMS()+ATTACK_VISUAL_FRAME_MS;
 
     /* Weapon-15 sprite 204 is owned for primary Imp and Malwrath attacks.
      * Capture the live topology tile, not immutable BSP spawn coordinates.

@@ -9,7 +9,8 @@ music=(src/"esp_audio_entrance_music.cpp").read_text()
 header=(src/"esp_audio_entrance_adpcm.h").read_text()
 assert "kIntroGainDiv=33U;" in music
 assert "kEntranceGainDiv=15U;" in music
-assert "activeIntroTrack?kIntroGainDiv:kEntranceGainDiv" in music
+assert "activeIntroTrack ? kIntroGainDiv" in music
+assert "activeMenuTrack ? kMenuGainDiv : kEntranceGainDiv" in music
 assert "if (gainDiv==14U) return EspEntranceAdpcm_toDac(pcm,firstFrame);" in header
 assert "gainDiv!=15U && gainDiv!=32U && gainDiv!=33U" in header
 assert "if (gainDiv!=14U && gainDiv!=15U && gainDiv!=32U && gainDiv!=33U)" in header

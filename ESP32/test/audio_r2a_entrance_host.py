@@ -40,7 +40,13 @@ assert "SESSION_EXIT" in runtime and "FAIL-UNDERRUN-TIMEOUT" in runtime
 assert 'closeMusic("FAIL-UNDERRUN")' not in runtime
 assert "if (recovering && w-r>=kResumeFrames) recovering=0U" in runtime
 assert "maxSilentStreak" in runtime and "recoveryStarts" in runtime
-assert "for (uint32_t burst=0U;burst<2U;burst++)" in runtime
+# The original two-block service remains the default. Real-CYD gameplay
+# starvation can catch up with <=4 blocks only below the half-ring mark.
+assert "kNormalRefillBlocks=2U;" in runtime
+assert "kCatchUpRefillBlocks=4U;" in runtime
+assert "queued()<kPrimeFrames" in runtime
+assert "for (uint32_t burst=0U;burst<burstLimit;burst++)" in runtime
+assert "kCatchUpRefillBlocks*kMaxBlockSamples<kRingCapacity" in runtime
 assert "FAIL-CLOCK" in runtime and "FAIL-HEAP" in runtime
 assert "gapsOver90us" in runtime and "maxSdReadUs" in runtime
 assert "SD.open(" in runtime and "musicFile.read(raw,wav.blockAlign)" in runtime

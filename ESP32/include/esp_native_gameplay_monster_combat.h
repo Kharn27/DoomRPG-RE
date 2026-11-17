@@ -65,6 +65,11 @@ const EspNativeGameplayMonsterCombatView* EspNativeGameplayMonsterCombat_view(vo
  * The native pain pose lasts 250ms, so DO NOT brighten the full pose. */
 int EspNativeGameplayMonsterCombat_damageBlend(
     uint16_t spriteIndex, uint32_t nowMs);
+/* Read-only presentation admission: on a confirmed non-lethal hit, defer
+ * THAT monster's retaliation until its native pain6/250ms pose settles.
+ * Never advances gameplay RNG, combat state or monster turns. */
+int EspNativeGameplayMonsterCombat_painSettling(
+    uint16_t spriteIndex, uint32_t nowMs);
 
 #ifdef __cplusplus
 }

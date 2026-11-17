@@ -43,6 +43,8 @@ def source_gate() -> None:
         assert data.startswith(prefix), f"{name}: lost host/geometry include"
         assert data.count(b"#include <SDL.h>") == 1, name
         original = b"#include <SDL.h>\n" + data[len(prefix):]
+        from audio_monster_sfx_history import restore_pre_monster_sfx
+        original = restore_pre_monster_sfx(name, original.decode("utf-8")).encode("utf-8")
         if name == "esp_native_gameplay_monster_combat.c":
             # SDL-F25's historical identity remains checked byte-for-byte,
             # reversing ONLY the three intentional ARCH-RC7 call-boundary

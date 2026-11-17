@@ -81,6 +81,9 @@ typedef struct EspAssetPackMapFlashStats_s {
 int EspAssetPack_open(const char* path);
 void EspAssetPack_close(void);
 int EspAssetPack_isOpen(void);
+/* Music SD can run during a logical PAK lease ONLY when PAK reads are
+ * internally flash-backed and no physical SD source probe is active. */
+int EspAssetPack_musicSdSafe(void);
 uint32_t EspAssetPack_fileSize(void);
 int EspAssetPack_entryCount(void);
 uint32_t EspAssetPack_dataOffset(void);

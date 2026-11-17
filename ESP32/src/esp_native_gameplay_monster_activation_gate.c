@@ -32,6 +32,7 @@ typedef struct MonsterActivationGateOwner_s {
 } MonsterActivationGateOwner;
 
 static MonsterActivationGateOwner activationOwner;
+static uint32_t soundRestoreBaseline; /* no checkpoint ABI change */
 
 static uint32_t activationSnapshotFNV(
     const EspNativeGameplayMonsterActivationSnapshot* snapshot) {
@@ -66,6 +67,7 @@ static int isActivated(uint16_t spriteIndex) {
 }
 
 static void resetForArena(uint32_t arena) {
+    soundRestoreBaseline = 0U;
     memset(&activationOwner, 0, sizeof(activationOwner));
     activationOwner.sourceArenaFNV1a = arena;
     activationOwner.filtered.lastAttackerSpriteIndex =
@@ -139,6 +141,10 @@ uint32_t EspNativeGameplayMonsterActivation_count(void) {
     return activationOwner.active != 0U ? activationOwner.activatedCount : 0U;
 }
 
+uint32_t EspNativeGameplayMonsterActivation_soundRestoreBaseline(void) {
+    return activationOwner.active != 0U ? soundRestoreBaseline : 0U;
+}
+
 int EspNativeGameplayMonsterActivation_getOrdered(uint32_t ordinal,
                                                   uint16_t* outSpriteIndex) {
     if (outSpriteIndex == NULL || activationOwner.active == 0U ||
@@ -150,6 +156,7 @@ int EspNativeGameplayMonsterActivation_getOrdered(uint32_t ordinal,
 }
 
 void EspNativeGameplayMonsterActivation_reset(void) {
+    soundRestoreBaseline=0U;
     memset(&activationOwner, 0, sizeof(activationOwner));
     activationOwner.filtered.lastAttackerSpriteIndex =
         MONSTER_ACTIVATION_NO_SPRITE;
@@ -229,6 +236,7 @@ int EspNativeGameplayMonsterActivation_restoreSnapshot(
            sizeof(activationOwner.activeOrder));
     activationOwner.activatedCount = snapshot->activatedCount;
     activationOwner.activeOrderCount = snapshot->activeOrderCount;
+    soundRestoreBaseline = snapshot->activeOrderCount;
     activationOwner.active = 1U;
 
     printf("[MONSTERACT] RESTORE arena=%08x activeCount=%u orderCount=%u stateFNV=%08x source=checkpoint-v9 producerCounters=fresh selection=clear\n",

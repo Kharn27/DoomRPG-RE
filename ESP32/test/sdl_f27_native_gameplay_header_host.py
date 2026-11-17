@@ -159,6 +159,9 @@ def original_body_parity() -> None:
             assert current.count(p1_import) == 1, "SFX-P1 pickup import drift"
             assert current.count(p1_hook) == 1, "SFX-P1 pickup commit hook drift"
             current = current.replace(p1_import, b"", 1).replace(p1_hook, b"", 1)
+        if filename == "esp_native_resident_gameplay.c":
+            from audio_menu_m1_history import restore_pre_menu_audio_resident
+            current = restore_pre_menu_audio_resident(current.decode("utf-8")).encode("utf-8")
         if filename == "esp_native_gameplay_gib_fx.c":
             # RC8: reverse only the explicit turn hook/reset after resources.
             added_header = b'#include "esp_native_gameplay_monster_turn.h"\n'
