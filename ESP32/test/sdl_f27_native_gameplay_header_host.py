@@ -191,6 +191,9 @@ def original_body_parity() -> None:
                 b"#undef __wrap_EspNativeGameplaySession_reset\n"
                 b"#undef __wrap_EspNativeGameplaySession_service\n"
             )
+            coordinator_include = b'#include "esp_native_gameplay_session.h" /* RC9 coordinator declarations */\n'
+            assert current.count(coordinator_include) == 1, "RC9 coordinator header drift"
+            current = current.replace(coordinator_include, b"", 1)
             assert current.count(new_comment) == 1, "RC9 coordinator comment/owner drift"
             assert current.count(b"void EspNativeGameplaySessionCoordinator_service(") == 1
             assert current.count(b"void EspNativeGameplaySessionCoordinator_reset(") == 1

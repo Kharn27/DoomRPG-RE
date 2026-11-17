@@ -33,6 +33,7 @@
 #include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_gameplay_monster_position.h"
 #include "esp_native_gameplay_player_resources.h"
+#include "esp_native_gameplay_session.h" /* RC9 coordinator declarations */
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_transition_handoff.h"
 #include "esp_player_view_state.h"
