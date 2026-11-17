@@ -927,10 +927,14 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
             helpPaintCopyrightMark(framebuffer, y, tone);
         }
         else if (line[0] != '\0') {
-            /* John Carmack's tribute closes the cover. */
+            /* Only HELP page 2 uses the first (light) theme tone for its
+             * body. Page titles keep their separate three-band gradient. */
+            const uint16_t bodyTone =
+                menuSystem->scrollIndex == MAIN_HELP_VISIBLE_LINES
+                    ? helpTitleTopTone() : helpBodyMiddleTone();
             DoomRPG_setFontColor(doomRpg,
                 (menuSystem->scrollIndex == 0 && i == 5)
-                    ? 0xffffffffU : helpColor888(helpBodyMiddleTone()));
+                    ? 0xffffffffU : helpColor888(bodyTone));
             EspNativeCanvas_drawText(canvas, line, 12, y, 0);
         }
         y += MAIN_HELP_LINE_HEIGHT;
