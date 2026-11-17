@@ -46,6 +46,12 @@ PREFIX = r'''
 #include <stdint.h>
 #include <string.h>
 #include "esp_native_gameplay_input.h"
+/* In the single-TU mock-with-owner fixture GCC knows a weak function's
+ * definition and warns that its address cannot be NULL. Production code and
+ * the host-without-owner fixture retain full -Werror diagnostics. */
+#if !defined(ARDUINO_ARCH_ESP32) && defined(HAVE_TRANSITION_OWNER)
+#pragma GCC diagnostic ignored "-Waddress"
+#endif
 static EspNativeGameplayInputState inputState;
 #if defined(ARDUINO_ARCH_ESP32)
 extern void EspNativeGameplayTransition_reset(void);
