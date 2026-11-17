@@ -1,6 +1,14 @@
 #include <string.h>
 
 #include "esp_native_gameplay_input.h"
+/* ARCH-RC6: strong transition reset on ESP32, without the old GNU ld wrap.
+ * Tiny standalone input fixtures intentionally omit the transition owner.
+ * Their weak declaration is host-only; the firmware cannot silently omit it. */
+#if defined(ARDUINO_ARCH_ESP32)
+#include "esp_native_gameplay_transition.h"
+#else
+extern void EspNativeGameplayTransition_reset(void) __attribute__((weak));
+#endif
 #include "esp_native_gameplay_hud_weapon_button.h"
 #include "platform_video_config.h"
 
@@ -79,6 +87,15 @@ static void setHit(EspNativeGameplayTouchHit* hit,
 }
 
 void EspNativeGameplayInput_reset(void) {
+    /* Preserve the former linker wrapper's exact reset order:
+     * transition state first, then the compact input intent. */
+#if defined(ARDUINO_ARCH_ESP32)
+    EspNativeGameplayTransition_reset();
+#else
+    if (EspNativeGameplayTransition_reset != NULL) {
+        EspNativeGameplayTransition_reset();
+    }
+#endif
     memset(&inputState, 0, sizeof(inputState));
 }
 
