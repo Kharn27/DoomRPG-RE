@@ -17,8 +17,9 @@ enum {
     BOOT_LOGICAL_H = 120,
     BOOT_FRAME_X = (BOOT_LOGICAL_W - BOOT_FRAME_W) / 2,
     BOOT_FRAME_Y = (BOOT_LOGICAL_H - BOOT_FRAME_H) / 2,
-    BOOT_FRAME_MILLIS = 1501, /* legacy advances for elapsed > 1024+476 */
-    BOOT_CREDIT_MILLIS = 2000
+    /* CYD touch-to-skip: all five panels share the same readable 3s slot.
+     * Original legacy 1501ms timing is intentionally superseded here. */
+    BOOT_SCREEN_MILLIS = 3000
 };
 
 typedef struct EspBootLegalsState_s {
@@ -120,7 +121,7 @@ int EspNativeBootLegals_begin(uint32_t nowMs) {
     legals.panel = 0;
     legals.active = 1;
     EspAssetPack_close();
-    printf("[BOOTLEGALS] BEGIN asset=g.bmp sheet=128x512 bpp=4 palette=%u panels=4 durationMs=1501 credit=Kharn27 creditMs=2000 pack=closed\n",
+    printf("[BOOTLEGALS] BEGIN asset=g.bmp sheet=128x512 bpp=4 palette=%u panels=4 durationMs=3000 credit=Kharn27 creditMs=3000 pack=closed\n",
            (unsigned int)colorsUsed);
     return 1;
 
@@ -274,7 +275,7 @@ int EspNativeBootLegals_draw(uint16_t* framebuffer, size_t pixelCount) {
         goto fail;
     if (legals.panel == BOOT_FRAME_COUNT) {
         drawPortCredit(framebuffer, pixelCount);
-        printf("[BOOTLEGALS] FRAME 5/5 credit=Kharn27 ms=2000 pack=closed scratch=0 framebuffer=borrowed\n");
+        printf("[BOOTLEGALS] FRAME 5/5 credit=Kharn27 ms=3000 pack=closed scratch=0 framebuffer=borrowed\n");
         return 1;
     }
     if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH))
@@ -331,10 +332,8 @@ fail:
 
 int EspNativeBootLegals_advance(uint32_t nowMs, int touchPressedEdge) {
     if (!legals.active) return 0;
-    const uint32_t durationMs = legals.panel == BOOT_FRAME_COUNT
-        ? BOOT_CREDIT_MILLIS : BOOT_FRAME_MILLIS;
     if (!touchPressedEdge &&
-        (uint32_t)(nowMs - legals.frameStartedMs) < durationMs)
+        (uint32_t)(nowMs - legals.frameStartedMs) < BOOT_SCREEN_MILLIS)
         return 0;
 
     legals.frameStartedMs = nowMs;

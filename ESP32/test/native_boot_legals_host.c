@@ -109,16 +109,16 @@ int main(void) {
     assert(EspNativeBootLegals_begin(100U));
     assert(!opened);
     checkPanel(0);
-    assert(EspNativeBootLegals_advance(1599U, 0) == 0);
-    assert(EspNativeBootLegals_advance(1600U, 0) == 0);
-    assert(EspNativeBootLegals_advance(1601U, 0) == 1);
+    assert(EspNativeBootLegals_advance(3099U, 0) == 0); /* 2999ms */
+    assert(EspNativeBootLegals_advance(3100U, 0) == 1); /* 3000ms */
     checkPanel(1);
-    assert(EspNativeBootLegals_advance(1602U, 1) == 1);
+    assert(EspNativeBootLegals_advance(3101U, 1) == 1); /* touch skips */
     checkPanel(2);
-    assert(EspNativeBootLegals_advance(3102U, 0) == 0);
-    assert(EspNativeBootLegals_advance(3103U, 0) == 1);
+    assert(EspNativeBootLegals_advance(6100U, 0) == 0); /* 2999ms after touch */
+    assert(EspNativeBootLegals_advance(6101U, 0) == 1); /* 3000ms after touch */
     checkPanel(3);
-    assert(EspNativeBootLegals_advance(4604U, 0) == 1);
+    assert(EspNativeBootLegals_advance(9100U, 0) == 0);
+    assert(EspNativeBootLegals_advance(9101U, 0) == 1);
     assert(EspNativeBootLegals_currentPanel() == 5U);
     {
         const unsigned int before = reads;
@@ -135,8 +135,8 @@ int main(void) {
         assert(fb[105 * 160 + 55] == 0x8410U); /* (C) circle */
         assert(fb[119 * 160 + 159] == 0U);
     }
-    assert(EspNativeBootLegals_advance(6603U, 0) == 0); /* 1999ms */
-    assert(EspNativeBootLegals_advance(6604U, 0) == 2); /* 2000ms */
+    assert(EspNativeBootLegals_advance(12100U, 0) == 0); /* 2999ms on credit */
+    assert(EspNativeBootLegals_advance(12101U, 0) == 2); /* 3000ms on credit */
     assert(!EspNativeBootLegals_isActive());
     assert(EspNativeBootLegals_currentPanel() == 0);
     assert(!opened);
@@ -191,6 +191,6 @@ int main(void) {
     assert(!opened && !EspNativeBootLegals_isActive());
     assert(reads == 2U); /* five touches did not read g.bmp pixels */
 
-    printf("BOOTLEGALS HOST PASS originals=4 credit=Kharn27 creditMs=2000 touch=skip crop=160x120 pack=closed ranges=16/frame failure=closed\\n");
+    printf("BOOTLEGALS HOST PASS originals=4 credit=Kharn27 durationMs=3000 panels=5 touch=skip crop=160x120 pack=closed ranges=16/frame failure=closed\\n");
     return 0;
 }
