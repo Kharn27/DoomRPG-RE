@@ -189,7 +189,7 @@ def original_body_parity() -> None:
                 b" * proven player-resource chain. The resource implementation is renamed to the\n"
                 b" * private leaves declared by esp_native_gameplay_player_resources.h. */\n"
                 b"#undef __wrap_EspNativeGameplaySession_reset\n"
-                b"#undef __wrap_EspNativeGameplaySession_service\n"
+                b"#undef __wrap_EspNativeGameplaySession_service\n\n"
             )
             coordinator_include = b'#include "esp_native_gameplay_session.h" /* RC9 coordinator declarations */\n'
             assert current.count(coordinator_include) == 1, "RC9 coordinator header drift"
