@@ -46,7 +46,8 @@ RETIRED_BRINGUP_WRAPS = frozenset((
 # explicit native hooks. Neither linker interposition may return.
 RETIRED_NORMAL_WRAPS = frozenset((
     "EspAssetPack_residentResetStats", "EspAssetPack_residentEnd",
-    "EspAssetPack_readRange"))
+    "EspAssetPack_readRange",
+    "EspNativeGameplayHudDirection_render"))
 RETIRED_ALL_WRAPS = RETIRED_BRINGUP_WRAPS | RETIRED_NORMAL_WRAPS
 RETAINED_BRINGUP_WRAPS = frozenset((
     "EspNativeFirstFrame_route",
@@ -226,7 +227,7 @@ def compare_release(normal: dict, inverted: dict) -> None:
 
 def self_test() -> None:
     real = declarations((PROJECT / "platformio.ini").read_text())
-    require(len(real["env:esp32-cyd"]) == 42, "expected ARCH-RC4 42 normal wraps")
+    require(len(real["env:esp32-cyd"]) == 41, "expected ARCH-RC5 41 normal wraps")
     require(len(real["env:esp32-cyd-bringup"]) == 3,
             "expected 3 surviving diagnostic extras after ARCH-RC1")
     require(set(real["env:esp32-cyd-bringup"]) == RETAINED_BRINGUP_WRAPS,
@@ -298,8 +299,8 @@ def self_test() -> None:
         pass
     else:
         raise AssertionError("release wrapper divergence accepted")
-    print("PASS ARCH-RC4 host self-test: 42+3 surviving declarations, 2 retired "
-          "bringup flags + 3 retired production PAK wraps blocked, "
+    print("PASS ARCH-RC5 host self-test: 41+3 surviving declarations, 2 retired "
+          "bringup flags + 4 retired production/native wraps blocked, "
           "malformed/duplicate rejected, nm syntax, direct-call attribution, "
           "release mismatch rejected; linked != executed")
 

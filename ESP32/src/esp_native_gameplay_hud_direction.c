@@ -5,6 +5,7 @@
 
 #include "esp_asset_pack.h"
 #include "esp_native_gameplay_hud_direction.h"
+#include "esp_native_gameplay_projection_overlay.h"
 #include "esp_native_gameplay_status_message.h"
 #include "esp_native_indexed_bmp.h"
 #include "platform_video_c_bridge.h"
@@ -212,5 +213,10 @@ done:
     if (EspAssetPack_isOpen()) EspAssetPack_close();
     if (ok) *outStats = *stats;
     free(scratch);
-    return ok;
+    /* ARCH-RC5: the former linked wrapper appended this projection only after
+     * the compass owner closed its PAK lease and released transient scratch.
+     * Every early failure and the explicit done: failure remain fail-closed. */
+    if (!ok) return 0;
+    return EspNativeGameplayProjectionOverlay_afterHudDirectionRender(
+        angle, outStats);
 }

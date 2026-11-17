@@ -10,6 +10,7 @@
 #include "esp_native_gameplay_crate_state.h"
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_hud_direction.h"
+#include "esp_native_gameplay_projection_overlay.h"
 #include "esp_native_gameplay_monster_attack_visual.h"
 #include "esp_native_gameplay_player_resources.h"
 #include "esp_native_gameplay_player_state.h"
@@ -55,9 +56,6 @@ int __real_EspNativeGameplayActionEngine_getEntity(
     uint8_t* outSubType,
     uint16_t* outLinkState,
     uint16_t* outLinkOrder);
-int __real_EspNativeGameplayHudDirection_render(
-    uint8_t angle,
-    EspNativeGameplayHudDirectionStats* outStats);
 
 static uint16_t rgb565(uint32_t rgb888) {
     uint8_t red = (uint8_t)((rgb888 >> 16) & 0xffU);
@@ -449,10 +447,11 @@ int __wrap_EspNativeGameplayActionEngine_getEntity(
     return 1;
 }
 
-int __wrap_EspNativeGameplayHudDirection_render(
+/* ARCH-RC5: explicitly called by HudDirection after its complete PAK/heap
+ * cleanup. Preserve the previous projection and failure log byte-for-byte. */
+int EspNativeGameplayProjectionOverlay_afterHudDirectionRender(
     uint8_t angle,
     EspNativeGameplayHudDirectionStats* outStats) {
-    if (!__real_EspNativeGameplayHudDirection_render(angle, outStats)) return 0;
     if (!repaintPlayerHud(angle, outStats)) {
         printf("[PLAYERHUD] REFRESH-FAILED angle=%u playerFNV=%08x mutation=no\n",
                (unsigned int)angle,
