@@ -154,7 +154,7 @@ assert "static uint16_t helpBodyMiddleTone(void)" in actions
 assert "return EspMainMenuSkin_letterTone(1, 9);" in actions
 assert "return EspMainMenuSkin_letterTone(4, 9);" in actions
 assert "helpColor888(helpTitleTopTone())" in actions
-assert "helpColor888(helpBodyMiddleTone())" in actions
+assert "helpColor888(bodyTone)" in actions
 assert "static uint16_t helpThirdTone(void)" in actions
 assert "EspMainMenuSkin_uiInk()" not in actions
 assert 'helpPaintCopyrightMark(framebuffer, y, tone);' in actions
