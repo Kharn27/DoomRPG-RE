@@ -53,8 +53,8 @@ extern void EspNativeGameplayTransition_reset(void);
 extern void EspNativeGameplayTransition_reset(void) __attribute__((weak));
 #endif
 static int transitionResets = 0;
-static int originalPendingWitness = 0;
-static int expectedPending = 0;
+static int originalPendingWitness __attribute__((unused)) = 0;
+static int expectedPending __attribute__((unused)) = 0;
 '''
 MOCK = r'''
 void EspNativeGameplayTransition_reset(void) {
