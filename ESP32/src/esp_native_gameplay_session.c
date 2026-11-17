@@ -16,6 +16,7 @@
 #include "esp_asset_pack.h"
 #include "esp_audio_entrance_music.h" /* LOAD-L1: after full loading, before gameplay present */
 #include "esp_audio_loading_route.h"
+#include "esp_native_audio_intent.h" /* SOUND OFF never scans PAK before first frame */
 #include "esp_native_sfx_probe.h" /* drain one-shot PAK metadata before music starts */
 #include "esp_map_sprite_topology.h"
 #include "esp_native_first_frame.h"
@@ -812,7 +813,8 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                      * (with bounded clock guard) immediately before presenting
                      * the world. Missing/unknown tracks fail silently. */
                     if (EspAudioLoadingRoute_forMap(view->targetMapId) ==
-                        ESP_AUDIO_LOADING_TRACK_M_STALKS) {
+                            ESP_AUDIO_LOADING_TRACK_M_STALKS &&
+                        EspNativeAudioIntent_isSoundEnabled()) {
                         EspNativeSfxProbe_service(true);
                     }
                     (void)EspEntranceMusic_prestartGameplayBeforeFirstFrame(
