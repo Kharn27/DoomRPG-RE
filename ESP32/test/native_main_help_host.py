@@ -159,6 +159,21 @@ assert "static uint16_t helpThirdTone(void)" in actions
 assert "EspMainMenuSkin_uiInk()" not in actions
 assert 'helpPaintCopyrightMark(framebuffer, y, tone);' in actions
 assert '"Kharn27"' in model
+# Page 2 (scroll 7) is the only standard HELP page whose body takes the
+# first/light theme tone. Its title retains the original three-band painter;
+# all other body copy and the white page-1 tribute stay unchanged.
+assert lines[7:14] == [
+    "DOOM RPG: THE GAME", "On Mars, UAC labs", "are overrun by Hell.",
+    "As a lone marine,", "explore dark halls,", "fight turn by turn,",
+    "Find keys, secrets.",
+]
+body_branch = actions.split("else if (line[0] != '\\0') {", 1)[1].split(
+    "y += MAIN_HELP_LINE_HEIGHT;", 1
+)[0]
+assert "menuSystem->scrollIndex == MAIN_HELP_VISIBLE_LINES" in body_branch
+assert "? helpTitleTopTone() : helpBodyMiddleTone();" in body_branch
+assert "helpColor888(bodyTone)" in body_branch
+assert "(menuSystem->scrollIndex == 0 && i == 5)" in body_branch
 assert "helpDrawThemedPageTitle(doomRpg, canvas, line, 12, y);" in actions
 assert "EspMainMenuSkin_letterTone(band * 3 + 1, 9)" in actions
 assert "DoomRPG_setClipTrue(doomRpg, x, y + band * 4," in actions
