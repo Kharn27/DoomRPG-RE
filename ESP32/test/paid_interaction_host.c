@@ -52,9 +52,6 @@ static uint8_t textureBits;
 static EspNativePlaneRenderStats planes;
 static EspNativeGameplayHudState hud;
 
-EspNativeGameplayDialogResumeStatus __wrap_EspNativeGameplayDialog_resume(
-    const EspNativeGameplayDialogClose*, EspNativeGameplayDialogResumeResult*);
-int __wrap_EspNativeGameplayDialog_rollbackResume(const EspNativeGameplayDialogResumeResult*);
 const EspMapLineStateView* __wrap_EspMapLineState_view(void);
 int __wrap_EspMapRuntime_getLine(uint32_t index, EspMapLine* out);
 
@@ -191,7 +188,7 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_blit(
     (void)transparentMagenta;(void)stats;
     return ESP_NATIVE_INDEXED_BMP_UNSUPPORTED;
 }
-EspNativeGameplayDialogBeginStatus __real_EspNativeGameplayDialog_begin(
+EspNativeGameplayDialogBeginStatus EspNativeGameplayDialog_begin(
     uint16_t event, uint8_t offset, uint32_t flags) {
     assert(event == 67U && offset == 13U && flags == 0x500U);
     for (unsigned i = 14U; i < 23U; ++i) assert(removedBits[148U + i] == 1U);
@@ -360,7 +357,24 @@ static void closePaid(void) {
     close.sourceEventIndex = 67; close.resumeCommandOffset = 14;
     close.runFlags = 0x500; close.resumeRequested = 1;
     dialogActive = 0;
-    assert(__wrap_EspNativeGameplayDialog_resume(&close,&result) == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_PAUSED);
+    /* Invalid/forged continuation metadata must not advance the journal. */
+    {
+        EspNativeGameplayDialogClose wrong = close;
+        wrong.resumeRequested = 0;
+        assert(EspNativeGameplayEventChain_resumeDialog(&wrong, &result) ==
+               ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_INVALID);
+        wrong = close; ++wrong.resumeCommandOffset;
+        assert(EspNativeGameplayEventChain_resumeDialog(&wrong, &result) ==
+               ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_INVALID);
+        wrong = close; wrong.runFlags ^= 1U;
+        assert(EspNativeGameplayEventChain_resumeDialog(&wrong, &result) ==
+               ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_INVALID);
+        assert(!EspNativeGameplayEventChain_rollbackDialogResume(NULL));
+        memset(&result, 0, sizeof(result));
+        assert(!EspNativeGameplayEventChain_rollbackDialogResume(&result));
+        assert(!EspNativeGameplayEventChain_isWaiting());
+    }
+    assert(EspNativeGameplayEventChain_resumeDialog(&close,&result) == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_PAUSED);
     assert(EspNativeGameplayEventChain_isWaiting() && notes == 0 && shows == 0);
 }
 int main(void) {

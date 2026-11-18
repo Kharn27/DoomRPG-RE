@@ -76,6 +76,8 @@ for filename, (sha, aliases) in REFERENCES.items():
         restored = "#include <SDL.h>\n" + current
         restored = restored.replace("#include <SDL.h>\n#include <stdlib.h>\n",
                                    "#include <SDL.h>\n", 1)
+        from arch_rc12_history import restore_pre_rc12_note_prefix
+        restored = restore_pre_rc12_note_prefix(restored)
     else:
         if filename == "esp_native_gameplay_event_chain.c":
             # SDL-F24 now guards the historic SDL.h include for native builds.
