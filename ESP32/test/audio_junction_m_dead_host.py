@@ -58,9 +58,9 @@ int main(void) {
     /* Exhaustive global MUSIC volume 0..100: only Junction is trimmed.
      * Intro/Menu both use DEFERRED while active, so remain byte-identical.
      * Entrance M_STALKS is also byte-identical. */
-    assert(ESP_AUDIO_JUNCTION_TRACK_VOLUME_PERCENT==85U);
+    assert(ESP_AUDIO_JUNCTION_TRACK_VOLUME_PERCENT==75U);
     assert(EspAudioTrackVolume_trackPercent(
-        ESP_AUDIO_LOADING_TRACK_M_DEAD)==85U);
+        ESP_AUDIO_LOADING_TRACK_M_DEAD)==75U);
     for (unsigned master=0U;master<=100U;master++) {
         assert(EspAudioTrackVolume_effectivePercent(
             ESP_AUDIO_LOADING_TRACK_DEFERRED,(uint8_t)master)==master);
@@ -68,12 +68,12 @@ int main(void) {
             ESP_AUDIO_LOADING_TRACK_M_STALKS,(uint8_t)master)==master);
         assert(EspAudioTrackVolume_effectivePercent(
             ESP_AUDIO_LOADING_TRACK_M_DEAD,(uint8_t)master)
-            ==(master*85U)/100U);
+            ==(master*75U)/100U);
     }
     assert(EspAudioTrackVolume_effectivePercent(
         ESP_AUDIO_LOADING_TRACK_M_DEAD,101U)==0U);
     assert(EspAudioTrackVolume_effectivePercent(
-        ESP_AUDIO_LOADING_TRACK_M_DEAD,100U)==85U);
+        ESP_AUDIO_LOADING_TRACK_M_DEAD,100U)==75U);
     assert(EspAudioTrackVolume_effectivePercent(
         ESP_AUDIO_LOADING_TRACK_M_STALKS,100U)==100U);
     return 0;
@@ -129,7 +129,7 @@ assert "EspAudioLoadingRoute_forMap(targetMapId)" in loading
 assert "playback=deferred" in loading
 assert "SD.open" not in loading
 assert "Test Junction M_DEAD SD track route" in ci
-print("JUNCTION-M1 HOST PASS map9/bsp2=M_DEAD level=85% "
+print("JUNCTION-M1 HOST PASS map9/bsp2=M_DEAD level=75% "
       "map1/bsp1=M_STALKS=100% intro+menu=100% "
       "65536 route pairs tested, global music volume=0..100, "
       "one SD reader, 16KiB ring, ISR unchanged")

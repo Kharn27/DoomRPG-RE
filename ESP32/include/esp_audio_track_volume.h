@@ -4,12 +4,12 @@
 #include <stdint.h>
 #include "esp_audio_loading_route.h"
 
-/* Only M_DEAD.wav on Junction is 15% quieter. This is a local music-track
+/* Only M_DEAD.wav on Junction is 25% quieter. This is a local music-track
  * trim AFTER the existing ADPCM soft-knee, composed with the user's chosen
  * global MUSIC volume BEFORE publishing to the one SD music ring.
  * No effect on Intro, MENU, Entrance, SFX mixing or any DAC ISR work.
  * Keep this deterministic, bounded and allocation-free. */
-#define ESP_AUDIO_JUNCTION_TRACK_VOLUME_PERCENT 85U
+#define ESP_AUDIO_JUNCTION_TRACK_VOLUME_PERCENT 75U
 
 static inline uint8_t EspAudioTrackVolume_trackPercent(
     EspAudioLoadingTrack track) {
