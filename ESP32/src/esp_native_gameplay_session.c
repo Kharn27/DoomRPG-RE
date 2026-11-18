@@ -812,8 +812,8 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                      * opening the music SD File; then start selected music
                      * (with bounded clock guard) immediately before presenting
                      * the world. Missing/unknown tracks fail silently. */
-                    if (EspAudioLoadingRoute_forMap(view->targetMapId) ==
-                            ESP_AUDIO_LOADING_TRACK_M_STALKS &&
+                    if (EspAudioLoadingRoute_forMap(view->targetMapId) !=
+                            ESP_AUDIO_LOADING_TRACK_DEFERRED &&
                         EspNativeAudioIntent_isSoundEnabled()) {
                         EspNativeSfxProbe_service(true);
                     }
