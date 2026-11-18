@@ -478,6 +478,9 @@ jobs:
       - name: ARCH-RC11 explicit AMBIENT/COMPOSE dynamic-line scope and 14 mutants
         run: python ESP32/test/native_dynamic_ambient_compose_scope_host.py
 
+      - name: ARCH-RC12 three dialog wraps retired, actual NOTE begin and 11 mutants
+        run: python ESP32/test/native_dialog_chain_boundary_host.py
+
       - name: ARCH-RC2 resident stats reset explicit-hook parity and negative fixtures
         run: python ESP32/test/native_resident_stats_reset_boundary_host.py
 
