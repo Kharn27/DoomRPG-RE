@@ -286,6 +286,12 @@ jobs:
             -Wl,--gc-sections -o /tmp/doomrpg-damage-cue-timing-test
           /tmp/doomrpg-damage-cue-timing-test
 
+      - name: Test native pickup redraw coalescing and timer wrap (host C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+            ESP32/test/pickup_redraw_host.c -o /tmp/doomrpg-pickup-redraw-test
+          /tmp/doomrpg-pickup-redraw-test
+
       - name: Test nonblocking PAK pickup miniature FIFO and framebuffer lease (host C)
         run: |
           cc -O2 -std=c11 -Wall -Wextra -Werror \
