@@ -26,7 +26,9 @@ assert 'EspNativeAudioIntent_isSoundEnabled()' in audio
 assert 'EspAssetPack_isMapFlashActive()' in audio
 assert 'EspAssetPack_isResident()' in audio
 assert 'view->targetMapId!=targetMapId' in audio
-assert 'view->gameplayLoadMapId!=targetMapId' in audio
+assert 'view->gameplayLoadMapId!=targetMapId' not in audio
+assert 'EspAudioLoadingRoute_forView(view->targetMapId,' in audio
+assert 'view->gameplayLoadMapId)!=track' in audio
 assert 'closeMusic("LOAD_PRESTART_OWNER_NOT_READY");' in audio
 assert 'attempted=true;' in audio
 

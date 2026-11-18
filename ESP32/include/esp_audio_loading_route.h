@@ -24,6 +24,20 @@ static inline EspAudioLoadingTrack EspAudioLoadingRoute_forMap(uint8_t mapId) {
     }
 }
 
+/* BSP header loadMapId is NOT the native catalogue/map ID. This is the
+ * separate, recovered per-BSP gameplay load discriminator. Real Junction
+ * /junction.bsp declares loadMapId=2 while catalog map ID is 9.
+ * Select only explicitly validated (catalog, BSP header) pairs; never
+ * accept an unknown map or silently infer loadMapId from catalog ID. */
+static inline EspAudioLoadingTrack EspAudioLoadingRoute_forView(
+    uint8_t catalogMapId, uint8_t bspLoadMapId) {
+    if (catalogMapId == ESP_MAP_ID_INTRO && bspLoadMapId == 1U)
+        return ESP_AUDIO_LOADING_TRACK_M_STALKS;
+    if (catalogMapId == ESP_MAP_ID_JUNCTION && bspLoadMapId == 2U)
+        return ESP_AUDIO_LOADING_TRACK_M_DEAD;
+    return ESP_AUDIO_LOADING_TRACK_DEFERRED;
+}
+
 static inline const char* EspAudioLoadingRoute_trackName(
     EspAudioLoadingTrack track) {
     switch (track) {

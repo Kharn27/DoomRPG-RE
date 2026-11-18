@@ -1226,7 +1226,8 @@ int EspEntranceMusic_prestartGameplayBeforeFirstFrame(uint8_t targetMapId) {
         EspAssetPack_isOpen() || !EspAssetPack_isResident() ||
         !EspAssetPack_isMapFlashActive() || view==nullptr ||
         view->targetMapId!=targetMapId ||
-        view->gameplayLoadMapId!=targetMapId ||
+        EspAudioLoadingRoute_forView(view->targetMapId,
+                                      view->gameplayLoadMapId)!=track ||
         phase!=kSilent || ring!=nullptr || fileOpen || timerInit) {
         /* Fail closed: never reopen the soundtrack late after the world
          * appears if the READY boundary was not actually safe. */
@@ -1240,9 +1241,11 @@ int EspEntranceMusic_prestartGameplayBeforeFirstFrame(uint8_t targetMapId) {
         activeMenuTrack=false;
         activeGameplayTrack=track;
         printf("[LOADAUDIO-L1] PRESTART map=%u route=%s ready=0 "
-               "reason=owner_or_map_not_ready pakOpen=%u resident=%u "
-               "flash=%u beforeWorldPresent=1\n",
+               "reason=owner_or_map_not_ready viewMap=%u bspLoadMapId=%u "
+               "pakOpen=%u resident=%u flash=%u beforeWorldPresent=1\n",
                (unsigned)targetMapId,trackName,
+               view!=nullptr?(unsigned)view->targetMapId:0U,
+               view!=nullptr?(unsigned)view->gameplayLoadMapId:0U,
                (unsigned)EspAssetPack_isOpen(),
                (unsigned)EspAssetPack_isResident(),
                (unsigned)EspAssetPack_isMapFlashActive());
@@ -1318,10 +1321,13 @@ void EspEntranceMusic_stopIntroAtHandoff(void) {
 void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
     const EspPlayerViewState* view=gameplayActive?
                                    EspPlayerView_view():nullptr;
+    /* Native catalog map ID and BSP header loadMapId have separate ABI
+     * meanings (Junction is catalog=9, BSP=2). Validate the exact pair
+     * before selecting playback, including after a checkpoint LOAD. */
     const EspAudioLoadingTrack gameplayTrack=
-        gameplayActive&&sdReady&&view&&
-        view->targetMapId==view->gameplayLoadMapId
-            ? EspAudioLoadingRoute_forMap(view->targetMapId)
+        gameplayActive&&sdReady&&view
+            ? EspAudioLoadingRoute_forView(view->targetMapId,
+                                           view->gameplayLoadMapId)
             : ESP_AUDIO_LOADING_TRACK_DEFERRED;
     const bool configuredGameplay=
         gameplayTrack!=ESP_AUDIO_LOADING_TRACK_DEFERRED;
