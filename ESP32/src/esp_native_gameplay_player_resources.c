@@ -781,6 +781,7 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
     uint8_t firstWeaponDialogSubtype = 0xffU;
     int feedbackQueued = 0;
     int dialogOpened = 0;
+    int syncRedraw = 0;
 
     if (beforeView == NULL || afterView == NULL ||
         beforeView->active != 1U || afterView->active != 1U ||
@@ -937,13 +938,16 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
     /*
      * A normal MOVE has already published its canonical destination frame.
      * Re-rendering here adds a whole second BSP + LCD present for every item.
-     * Keep the old immediate automap transaction, but publish ordinary world
-     * resources immediately and coalesce their cosmetic redraw at idle.
+     * Keep immediate automap and first-weapon-help transactions (the latter
+     * opens a full-screen modal), but publish ordinary world resources
+     * immediately and coalesce their cosmetic redraw at idle.
      * A later settled world frame satisfies this lease automatically.
      */
-    if (!EspNativeResidentGameplay_isAutomapActive() ||
+    syncRedraw = EspNativeResidentGameplay_isAutomapActive() ||
+                 firstWeaponDialog != NULL;
+    if (!syncRedraw ||
         rerender(doomRpg, afterView, "RESOURCE-PICKUP")) {
-        if (!EspNativeResidentGameplay_isAutomapActive()) {
+        if (!syncRedraw) {
             const uint32_t nowMs =
                 (uint32_t)(esp_timer_get_time() / 1000LL);
             const unsigned int alreadyPending =
