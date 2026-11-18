@@ -15,6 +15,7 @@
 #include "esp_map_strings.h"
 #include "esp_map_ui_intent.h"
 #include "esp_native_door_animator.h"
+#include "esp_native_door_sfx.h"
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_move_events.h"
@@ -1846,6 +1847,48 @@ static int rollbackTransaction(void) {
     return 1;
 }
 
+/*
+ * MOVE can commit a single OPENLINE/CLOSELINE or a mixed native event batch
+ * containing several door commands. The static batch retains every step
+ * until the outer MOVE frame and any modal/message post-frame presenter have
+ * succeeded. Sound intents must be emitted exactly here, not in the line
+ * applier, which also executes during speculative mutations and rollbacks.
+ */
+static void publishCommittedMoveDoorPhase(
+    const EspNativeGameplayMoveEventResult* phase) {
+    uint8_t i;
+    if (phase == NULL) return;
+    if (phase->codeId == MOVE_MIXED_SENTINEL) {
+        if (mixedBatchOwner.active == 0U ||
+            mixedBatchOwner.eventIndex != phase->eventIndex ||
+            mixedBatchOwner.committedCount != mixedBatchOwner.count) {
+            return;
+        }
+        for (i = 0U; i < mixedBatchOwner.count; ++i) {
+            const MoveMixedStep* step = &mixedBatchOwner.step[i];
+            if (isDoorBatchCode(step->codeId) &&
+                step->handled != 0U && step->mutated != 0U) {
+                (void)EspNativeDoorSfx_publishCommitted(
+                    step->targetIndex, step->value0Before, step->value0After,
+                    step->value0After != 0U
+                        ? ESP_MAP_LINE_SOUND_OPEN : ESP_MAP_LINE_SOUND_CLOSE,
+                    ESP_MAP_LINE_EFFECT_PLAY_SOUND);
+            }
+        }
+    }
+    else if (isDoorBatchCode(phase->codeId) && phase->mutated != 0U) {
+        (void)EspNativeDoorSfx_publishCommitted(
+            phase->lineIndex, phase->openBefore, phase->openAfter,
+            phase->soundId, ESP_MAP_LINE_EFFECT_PLAY_SOUND);
+    }
+}
+
+static void publishCommittedMoveDoorSounds(void) {
+    /* Preserve exact legacy EXIT then ENTER event ordering. */
+    publishCommittedMoveDoorPhase(&transaction.exitResult);
+    publishCommittedMoveDoorPhase(&transaction.enterResult);
+}
+
 void EspNativeGameplayMoveEvents_onFrameResult(int renderOk) {
     if (!transaction.active) return;
     if (renderOk) {
@@ -1878,6 +1921,7 @@ void EspNativeGameplayMoveEvents_onFrameResult(int renderOk) {
                (unsigned int)transaction.sequence,
                (unsigned int)transaction.exitRollback,
                (unsigned int)transaction.enterRollback);
+        publishCommittedMoveDoorSounds();
         releaseShowBatchOwnerForTransaction("frame-commit");
         memset(&transaction, 0, sizeof(transaction));
     }
@@ -1923,6 +1967,7 @@ int EspNativeGameplayMoveEvents_finishPendingDialog(uint32_t sequence) {
            (unsigned int)transaction.enterResult.codeId,
            (unsigned int)transaction.enterResult.eventIndex,
            (unsigned int)transaction.enterResult.commandOffset);
+    publishCommittedMoveDoorSounds();
     releaseShowBatchOwnerForTransaction("dialog-finish");
     memset(&transaction, 0, sizeof(transaction));
     return 1;
@@ -2028,6 +2073,7 @@ int EspNativeGameplayMoveEvents_finishPendingMessage(uint32_t sequence) {
            (unsigned int)textLength,
            text,
            (unsigned int)transaction.enterResult.removeIfHandled);
+    publishCommittedMoveDoorSounds();
     releaseShowBatchOwnerForTransaction("message-finish");
     memset(&transaction, 0, sizeof(transaction));
     return 1;
