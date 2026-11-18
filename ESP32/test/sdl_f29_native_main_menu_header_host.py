@@ -60,6 +60,26 @@ def restore_intro_i3_start(text: str) -> str:
     return text.replace(include,"",1).replace(hook,"",1)
 
 
+def restore_pre_build_c1_options_present_header(text: str) -> str:
+    """Undo only BUILD-C1's unconditional C video bridge include for SDL-F29.
+
+    The real production Options owner must keep the prototype in every
+    profile. This inverse exists solely for the frozen pre-F29 Git blob SHA.
+    """
+    present_include = '#include "platform_video_c_bridge.h" /* present() in ALL build profiles */\\n'
+    old_conditional = (
+        '#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY\\n'
+        '#include "platform_video_c_bridge.h"\\n'
+        '#endif\\n\\n'
+    )
+    anchor = '#define OPTIONS_ITEM_COUNT DOOMRPG_ESP32_OPTIONS_CARD_COUNT\\n'
+    assert text.count(present_include) == 1, "BUILD-C1 present prototype drift"
+    assert text.count(anchor) == 1 and text.count(old_conditional) == 0
+    return text.replace(present_include, "", 1).replace(
+        anchor, old_conditional + anchor, 1
+    )
+
+
 def original_body_parity() -> None:
     marker = GUARD.encode("ascii")
     old_import = b"#include <SDL.h>\n"
@@ -84,6 +104,7 @@ def original_body_parity() -> None:
             restored = restore_sound_options_action(restored)
         elif filename == "native_main_menu_options_back.c":
             restored = restore_sound_options_back(restored)
+            restored = restore_pre_build_c1_options_present_header(restored)
         elif filename == "native_main_menu_start_action.c":
             restored = restore_intro_i3_start(restored)
         elif filename == "native_main_menu_actions.c":
