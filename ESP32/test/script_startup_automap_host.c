@@ -105,6 +105,11 @@ const char* EspNativeGameplayTransition_statusName(EspNativeGameplayTransitionSt
 int EspNativeGameplayMonsterTurn_requestSelectDoor(uint32_t seq) {
     (void)seq; assert(0); return 0;
 }
+/* The SCRIPT-startup harness never commits a door. The new post-commit
+ * audio leaf is linked but must stay unreachable in this isolated test. */
+int EspNativeAudioIntent_publish(uint16_t sound, uint8_t flags, uint8_t priority) {
+    (void)sound; (void)flags; (void)priority; assert(0); return 0;
+}
 const EspNativeDoorAnimatorView* EspNativeDoorAnimator_view(void) { assert(0); return NULL; }
 int EspNativeDoorAnimator_validateLineState(void) { assert(0); return 0; }
 int EspNativeDoorAnimator_prepareFrame(EspNativeDoorAnimationFrame* out) {
