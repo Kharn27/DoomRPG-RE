@@ -280,7 +280,7 @@ def main() -> None:
          "ok = NeverCallCompose("),
         ("compose wrong angle", OWN_COMPOSE,
          "render, angle, outStats);",
-         "render, 1, outStats);"),
+         "render, (uint8_t)(angle ^ 1U), outStats);"),
     ]
     for label, name, before, after in mutants:
         altered = dict(chunks)
