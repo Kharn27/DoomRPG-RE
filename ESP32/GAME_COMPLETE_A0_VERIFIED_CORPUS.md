@@ -41,6 +41,26 @@ Les compteurs ennemis (type 1) et destructibles (type 12) proviennent des **115 
 
 **Volumes :** plan immutable Sector 5 = **18 110 B**, Entrance = 14 095 B. La pression heap8 totale (audio, overlays, caches, monstres) n'est pas déductible de ces seules valeurs.
 
+### Détail complémentaire par carte : opcodes, interactions et complexité
+
+Les listes sont les **IDs réellement présents**, sans duplication. « NPC » désigne le type entité 2 ; « Items/équipements » agrège les types de définition 3,4,5,6,16 (des références de sprites, pas nécessairement ramassables) ; « verrouillées » et « door-lerp » sont des flags de lignes initiales. Ces classes proviennent du même décodage utilisé par les propriétaires natifs.
+
+| ID | Carte | IDs opcode | Max commandes/événement | Événements >12 | NPC | Items/équip. | Lignes verrouillées | Door-lerp |
+|---:|---|---|---:|---:|---:|---:|---:|---:|
+| 1 | intro | 2,7,8,9,10,11,13,15,16,18,19,24,26,27,40,41 | 14 | 2 | 15 | 114 | 7 | 24 |
+| 2 | level01 | 2,7,8,9,10,11,13,15,16,18,19,21,22,23,24,26,27,35,36,37,40,41,42 | 23 | 1 | 6 | 68 | 8 | 21 |
+| 3 | level02 | 2,4,7,8,9,10,11,13,15,16,18,19,22,23,24,25,26,27,29,30,31,34,37,40,41 | 33 | 4 | 3 | 75 | 5 | 17 |
+| 4 | level03 | 2,4,7,8,9,10,11,12,13,15,16,18,19,24,26,27,29,32,33,37,40,41,42 | 17 | 3 | 5 | 69 | 6 | 26 |
+| 5 | level04 | 2,7,8,9,10,11,12,13,15,16,18,19,24,26,27,35,36,37,40,41,42 | 20 | 2 | 10 | 94 | 10 | 19 |
+| 6 | level05 | 2,7,8,9,10,11,12,13,15,16,18,19,21,22,23,24,26,27,33,36,37,40,41 | 22 | 5 | 7 | 110 | 11 | 25 |
+| 7 | level06 | 2,3,7,8,9,10,11,12,13,15,16,18,19,24,26,27,29,33,34,35,36,37,40,42 | 29 | 4 | 30 | 103 | 9 | 36 |
+| 8 | level07 | 1,2,3,4,7,8,9,10,11,13,15,16,18,19,24,25,26,27,29,30,31,32,34,35,37,40,42 | 60 | 4 | 15 | 83 | 6 | 19 |
+| 9 | junction | 2,4,8,11,15,16,19,21,24,26,27,33,39,41,42 | 21 | 9 | 12 | 0 | 1 | 19 |
+| 10 | junction_destroyed | 2,4,7,8,10,11,13,15,16,18,19,21,24,26,27,29,33,34,35,36,37,40,41,42 | 35 | 7 | 7 | 54 | 2 | 20 |
+| 11 | items | aucun | 0 | 0 | 0 | 136 | 0 | 0 |
+| 12 | reactor | 1,2,7,8,9,11,12,13,15,16,18,19,24,25,26,29,30,31,35,36,37,38,40,42 | 55 | 6 | 2 | 70 | 4 | 11 |
+| 13 | endgame | aucun | 0 | 0 | 0 | 0 | 0 | 0 |
+
 ## 3. Graphe brut de campagne extrait des commandes de chaque BSP
 
 **25 CHANGEMAP (opcode 2), 23 SAVEGAME (opcode 27), 19 couples orientés source→destination.**
