@@ -47,6 +47,42 @@ def restore_pre_game_pickup_resources(source):
         "void EspNativeGameplayPlayerResources_sessionReset(void) {",
         "void EspNativeGameplayPlayerResources_sessionReset(void) {",
     )
+    # PR384 follow-up removes only high-rate pickup printf traffic from the
+    # normal 115200-baud CYD profile. The old body must remain reconstructible
+    # byte-for-byte in this historical test.
+    source = _remove(source, (
+        "        /* Keep normal CYD Serial output short: on a 115200-baud monitor,\n"
+        "         * a few KB per pickup can materially delay successive moves. The\n"
+        "         * full legacy diagnostic contract remains in DEBUG/TRACE builds. */\n"
+        "#if DOOMRPG_LOG_LEVEL < DOOMRPG_LOG_DEBUG\n"
+        "        printf(\"[PLAYERRES] COMMIT tile=%u count=%u player=%08x hp=%u/%u armor=%u/%u credits=%u rollback=closed\\n\",\n"
+        "               (unsigned int)afterTile,\n"
+        "               (unsigned int)appliedCount,\n"
+        "               (unsigned int)playerFNVAfter,\n"
+        "               (unsigned int)EspNativeGameplayPlayerState_health(),\n"
+        "               (unsigned int)EspNativeGameplayPlayerState_maxHealth(),\n"
+        "               (unsigned int)EspNativeGameplayPlayerState_armor(),\n"
+        "               (unsigned int)EspNativeGameplayPlayerState_maxArmor(),\n"
+        "               (unsigned int)EspNativeGameplayPlayerState_view()->credits);\n"
+        "#endif\n"
+    ))
+    source = _remove(source, (
+        "#if DOOMRPG_LOG_LEVEL < DOOMRPG_LOG_DEBUG\n"
+        "        printf(\"[PLAYERRES] FEEDBACK tile=%u message=\\\"%s\\\"\\n\",\n"
+        "               (unsigned int)afterTile, pickupMessages[0]);\n"
+        "        (void)dialogOpened;\n"
+        "        (void)pickupMessageStart;\n"
+        "        (void)legacyMessagesShifted;\n"
+        "#endif\n"
+    ))
+    for prefix in (
+        "        DRPG_LOGD(\"[PLAYERRES] PREPARE",
+        "            DRPG_LOGD(\"[PICKUPMINI] SOURCE",
+        "        DRPG_LOGD(\"[PLAYERRES] COMMIT",
+        "        DRPG_LOGD(\"[PLAYERRES] FEEDBACK tile=%u message",
+    ):
+        assert source.count(prefix) == 1, ("GAME-PICKUP diagnostic drift", prefix)
+        source = source.replace(prefix, prefix.replace("DRPG_LOGD", "printf"), 1)
     return _restore_type(source, binary)
 
 def restore_pre_game_pickup_resident(source):
