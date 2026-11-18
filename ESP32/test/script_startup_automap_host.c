@@ -52,7 +52,7 @@ int EspNativeGameplayActionEngine_queueTextFeedback(EspNativeGameplayActionFeedb
 int EspNativeGameplayActionEngine_cancelQueuedFeedback(EspNativeGameplayActionFeedback kind) {
     (void)kind; assert(0); return 0;
 }
-int EspNativeGameplayDialog_rollbackResume(const EspNativeGameplayDialogResumeResult* result) {
+int EspNativeGameplayEventChain_rollbackDialogResume(const EspNativeGameplayDialogResumeResult* result) {
     (void)result; assert(0); return 0;
 }
 int EspNativeGameplayEventChain_commit(const EspNativeGameplayDialogResumeResult* result) {
@@ -69,7 +69,7 @@ EspNativeGameplayPasswordBeginStatus EspNativeGameplayPassword_begin(
 const char* EspNativeGameplayPassword_beginStatusName(EspNativeGameplayPasswordBeginStatus status) {
     (void)status; assert(0); return "unreachable";
 }
-EspNativeGameplayDialogBeginStatus EspNativeGameplayDialog_begin(
+EspNativeGameplayDialogBeginStatus EspNativeGameplayNotePrefix_beginDialog(
     uint16_t event, uint8_t offset, uint32_t flags) {
     (void)event; (void)offset; (void)flags; assert(0);
     return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_INVALID;
