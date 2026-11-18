@@ -34,6 +34,10 @@ def fake_bsp():
             bytes(256) + bytes(2048))
 
 
+def fake_entities_db():
+    return struct.pack('<H',1)+struct.pack('<HBBi16s',87,1,0,294,b'Fixture enemy')
+
+
 def write_pack(path, assets):
     records = sorted((mod.fnv_name(n),d) for n,d in assets.items())
     with path.open('wb') as f:
@@ -55,7 +59,8 @@ class Tests(unittest.TestCase):
         self.catalog.write_text('static const char* const mapNames[ESP_MAP_CATALOG_COUNT] = {\n'
                                 '"/intro.bsp", "/level01.bsp"\n};\n')
         self.pak=self.root/'DoomRPG-ESP32.pak'
-        self.assets={'intro.bsp':fake_bsp(), 'level01.bsp':fake_bsp()}
+        self.assets={'intro.bsp':fake_bsp(), 'level01.bsp':fake_bsp(),
+                     'entities.db':fake_entities_db()}
         write_pack(self.pak,self.assets)
 
     def test_parser_and_graph(self):
@@ -108,13 +113,34 @@ class Tests(unittest.TestCase):
         parsed=mod.parse_bsp(fake_bsp(),['/intro.bsp'])
         self.assertTrue(any('target outside map catalog' in w for w in parsed['warnings']))
 
+
+    def test_special_bsp_and_capacity_census(self):
+        raw=bytearray(fake_bsp())
+        raw[27]=0
+        special=mod.parse_bsp(bytes(raw),['/items.bsp','/endgame.bsp'],
+                              '/endgame.bsp',mod.parse_entity_defs(fake_entities_db()))
+        self.assertEqual(special['map_role'],'special-non-gameplay')
+        self.assertFalse(any('loadMapId outside' in w for w in special['warnings']))
+        ordinary=mod.parse_bsp(bytes(raw),['/intro.bsp'],'/intro.bsp')
+        self.assertTrue(any('loadMapId outside' in w for w in ordinary['warnings']))
+        a=mod.classify_initial_entities([b'\\0\\0\\x57\\0\\0']*101,
+                                         {87:(1,0)})
+        self.assertEqual(a['enemies'],101)
+        self.assertEqual(a['topology_snapshot_tracked'],101)
+        self.assertTrue(a['topology_snapshot_overflow'])
+        # Raw type classification cannot be excused by an inactive sprite flag.
+        no_entity=mod.classify_initial_entities([b'\\0\\0\\x57\\0\\x01'],{87:(1,0)})
+        self.assertEqual(no_entity['enemies'],0)
+
+
     def test_pack_index_and_crc(self):
         idx,head=mod.index_pack(self.pak)
-        self.assertEqual(head['entry_count'],2)
+        self.assertEqual(head['entry_count'],3)
         with self.pak.open('rb') as f:
             d=mod.read_entry(f,idx[mod.fnv_name('/intro.bsp')])
         self.assertEqual(d,fake_bsp())
-        damaged=bytearray(self.pak.read_bytes());damaged[-1]^=255
+        damaged=bytearray(self.pak.read_bytes())
+        damaged[idx[mod.fnv_name('level01.bsp')]['offset']] ^= 255
         self.pak.write_bytes(damaged)
         idx,_=mod.index_pack(self.pak)
         with self.pak.open('rb') as f:
@@ -136,6 +162,8 @@ class Tests(unittest.TestCase):
         result=json.loads(output.read_text())
         self.assertEqual(result['maps'][0]['counts']['bytecodes'],2)
         self.assertEqual(result['zip_comparison']['zip_pak_mismatches'],[])
+        self.assertEqual(result['zip_comparison']['zip_pak_payload_mismatches'],[])
+        self.assertEqual(result['maps'][0]['initial_entities']['enemies'],1)
         self.assertEqual(result['zip_comparison']['pak_hashes_unmatched_by_zip'],[])
         with zipfile.ZipFile(zpath,'a') as z:z.writestr('unexpected.bsp',b'abcd')
         self.assertEqual(subprocess.run(cmd,capture_output=True,text=True).returncode,2)
