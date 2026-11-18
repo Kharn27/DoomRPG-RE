@@ -47,9 +47,19 @@ EspNativeGameplayDestructible_preflightLineDeath(uint16_t eventTile,
                                                  EspNativeGameplayDestructibleResult* outResult);
 
 EspNativeGameplayDestructibleStatus
+EspNativeGameplayDestructible_executeLineDeathBase(uint16_t eventTile,
+                                               uint16_t expectedLineIndex,
+                                               EspNativeGameplayDestructibleResult* outResult);
+
+/* Public composition requests a monster-turn only after a successful,
+ * rollback-capable jammed-door line death; flush remains deferred. */
+EspNativeGameplayDestructibleStatus
 EspNativeGameplayDestructible_executeLineDeath(uint16_t eventTile,
                                                uint16_t expectedLineIndex,
                                                EspNativeGameplayDestructibleResult* outResult);
+
+int EspNativeGameplayDestructible_rollbackLineDeathBase(
+    const EspNativeGameplayDestructibleResult* result);
 
 int EspNativeGameplayDestructible_rollbackLineDeath(
     const EspNativeGameplayDestructibleResult* result);
