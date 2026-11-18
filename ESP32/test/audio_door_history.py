@@ -17,6 +17,6 @@ def restore_pre_audio_door_resident(source):
     source = source.replace(include, "", 1)
     # The new SFX block was inserted after an extra separator newline;
     # remove that separator too to reconstruct the *exact* old Git blob.
-    assert source.count("
-" + _SELECT_POST_COMMIT) == 1, "AUDIO-DOOR separator drift"\n    source = source.replace("\n" + _SELECT_POST_COMMIT, "", 1)
+    assert source.count("\n" + _SELECT_POST_COMMIT) == 1, "AUDIO-DOOR separator drift"
+    source = source.replace("\n" + _SELECT_POST_COMMIT, "", 1)
     return source.encode("utf-8") if binary else source
