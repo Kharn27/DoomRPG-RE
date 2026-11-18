@@ -31,11 +31,6 @@ typedef char EspNativeDoorAnimatorState_must_be_76_bytes[
 
 static EspNativeDoorAnimatorState animator;
 
-EspMapLineDoorStatus __real_EspMapLineState_applyDoorCommand(
-    const EspMapEventDescriptor* descriptor,
-    uint32_t commandOffset,
-    EspMapLineDoorResult* outResult);
-
 static void clearBatchPreserveCounters(void) {
     uint32_t scheduled = animator.view.scheduledTransitions;
     uint32_t completed = animator.view.completedTransitions;
@@ -321,12 +316,14 @@ const EspNativeDoorAnimatorView* EspNativeDoorAnimator_view(void) {
     return &animator.view;
 }
 
-EspMapLineDoorStatus __wrap_EspMapLineState_applyDoorCommand(
+/* Public door transaction; apply the exact raw line mutation before optional
+ * presentation scheduling, retaining rollback on an invalid animation. */
+EspMapLineDoorStatus EspMapLineState_applyDoorCommand(
     const EspMapEventDescriptor* descriptor,
     uint32_t commandOffset,
     EspMapLineDoorResult* outResult) {
     EspMapLineDoorStatus status =
-        __real_EspMapLineState_applyDoorCommand(descriptor,
+        EspMapLineState_applyDoorCommandBase(descriptor,
                                                 commandOffset,
                                                 outResult);
     EspNativeDoorAnimationStatus animationStatus;
