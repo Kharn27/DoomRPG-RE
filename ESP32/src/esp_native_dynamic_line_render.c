@@ -14,6 +14,7 @@
 #include "esp_map_runtime.h"
 #include "esp_native_door_animator.h"
 #include "esp_native_gameplay_frame.h"
+#include "esp_native_dynamic_line_render.h"
 #include "esp_native_gameplay_move_events.h"
 #include "esp_render_geometry_primitives.h"
 #include "esp_native_dynamic_clip.h"
@@ -86,18 +87,6 @@ int __real_EspNativeGameplayFrame_renderAmbient(
 int __real_EspNativeGameplayFrame_composeTurn(
     struct Render_s* render,
     uint8_t angle,
-    EspNativeGameplayFrameStats* outStats);
-int __real_EspNativeGameplayFrame_renderVisualPose(
-    struct Render_s* render,
-    const struct EspPlayerViewState_s* visual,
-    uint8_t settledAngle,
-    EspNativeGameplayFrameStats* outStats);
-int __real_EspNativeGameplayFrame_renderVisualMove(
-    struct Render_s* render,
-    const struct EspPlayerViewState_s* before,
-    const struct EspPlayerViewState_s* after,
-    uint8_t step,
-    uint8_t denominator,
     EspNativeGameplayFrameStats* outStats);
 int __real_EspMapRuntime_getLine(uint32_t index, EspMapLine* outLine);
 const EspMapLineStateView* __real_EspMapLineState_view(void);
@@ -397,19 +386,19 @@ int __wrap_EspNativeGameplayFrame_composeTurn(
     return endDynamicPreview(ok, "compose");
 }
 
-int __wrap_EspNativeGameplayFrame_renderVisualPose(
+int EspNativeDynamicLineRender_renderVisualPose(
     struct Render_s* render,
     const struct EspPlayerViewState_s* visual,
     uint8_t settledAngle,
     EspNativeGameplayFrameStats* outStats) {
     int ok;
     if (!beginDynamicPreview()) return 0;
-    ok = __real_EspNativeGameplayFrame_renderVisualPose(
+    ok = EspNativeGameplayFrame_renderVisualPose(
         render, visual, settledAngle, outStats);
     return endDynamicPreview(ok, "rotate");
 }
 
-int __wrap_EspNativeGameplayFrame_renderVisualMove(
+int EspNativeDynamicLineRender_renderVisualMove(
     struct Render_s* render,
     const struct EspPlayerViewState_s* before,
     const struct EspPlayerViewState_s* after,
@@ -418,7 +407,7 @@ int __wrap_EspNativeGameplayFrame_renderVisualMove(
     EspNativeGameplayFrameStats* outStats) {
     int ok;
     if (!beginDynamicPreview()) return 0;
-    ok = __real_EspNativeGameplayFrame_renderVisualMove(
+    ok = EspNativeGameplayFrame_renderVisualMove(
         render, before, after, step, denominator, outStats);
     return endDynamicPreview(ok, "move");
 }
