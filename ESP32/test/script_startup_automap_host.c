@@ -119,6 +119,10 @@ const EspNativeGameplayPlayerState* EspNativeGameplayPlayerState_view(void) {
     return &testPlayer;
 }
 int EspNativeGameplayFacingLabel_refresh(const char* reason) { (void)reason; return 1; }
+/* This fixture owns automap restore, not the resource pickup publisher.
+ * Its mocked render returns no successful presented frame; the cosmetic
+ * acknowledgement must therefore remain unreachable. */
+void EspNativeGameplayPlayerResources_noteWorldPresented(void) { assert(0); }
 int EspNativeGameplayFrame_renderTurn(Render_t* render, uint8_t angle,
                                      EspNativeGameplayFrameStats* out) {
     assert(render == &testRender && angle == testView.viewAngle);

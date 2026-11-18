@@ -79,6 +79,9 @@ for filename, (sha, aliases) in REFERENCES.items():
         from arch_rc12_history import restore_pre_rc12_note_prefix
         restored = restore_pre_rc12_note_prefix(restored)
     else:
+        if filename == "esp_native_resident_gameplay.c":
+            from game_pickup_redraw_history import restore_pre_game_pickup_resident
+            current = restore_pre_game_pickup_resident(current)
         if filename == "esp_native_gameplay_event_chain.c":
             # SDL-F24 now guards the historic SDL.h include for native builds.
             # First undo only that later header gate, then reconstruct the

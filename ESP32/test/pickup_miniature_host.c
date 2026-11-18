@@ -12,6 +12,10 @@ static uint16_t buffer[160U * 120U + 2U];
 static unsigned decodeCount;
 static unsigned busyPak;
 static unsigned absentLogical = 255U;
+static EspNativeGameplayInputState testInput;
+const EspNativeGameplayInputState* EspNativeGameplayInput_peek(void) {
+    return &testInput;
+}
 
 void* Esp32PlatformVideo_framebuffer(void) { return buffer + 1U; }
 size_t Esp32PlatformVideo_framebufferSizeBytes(void) {
@@ -125,15 +129,15 @@ int main(void) {
     EspPickupMini_reset();
     assert(!EspPickupMini_due(100U));
     EspPickupMini_enqueue(80U);
-    EspPickupMini_enqueue(81U); /* Already collected while first still pending. */
-    assert(state.count == 2U && !state.active);
+    /* Test the isolated 500ms stable icon first, then a separate backlog. */
+    assert(state.count == 1U && !state.active);
     busyPak = 1U;
     EspPickupMini_beforePresent(100U);
-    assert(state.count == 2U && !state.active && !decodeCount);
+    assert(state.count == 1U && !state.active && !decodeCount);
     busyPak = 0U;
     assert(EspPickupMini_due(100U));
     EspPickupMini_beforePresent(100U);
-    assert(state.active && state.count == 1U && state.first);
+    assert(state.active && state.count == 0U && state.first);
     assert(pixel(MINI_X, MINI_Y) == (uint16_t)(0x4000U | 80U));
     assert(pixel(MINI_X + ESP_PICKUP_MINI_SIZE - 1U,
                  MINI_Y + ESP_PICKUP_MINI_SIZE - 1U) ==
@@ -144,43 +148,87 @@ int main(void) {
     assert(!EspPickupMini_due(104U));
     assert(decodeCount == 1U);
 
+    /* Original visual cadence: 105ms ON / 60ms OFF, three pulses.
+     * Cosmetic-only presents are still skipped when a gameplay input
+     * is pending; this fixture drives the exact transitions directly. */
+    assert(!EspPickupMini_due(204U));
     assert(EspPickupMini_due(205U));
     EspPickupMini_beforePresent(205U);
-    EspPickupMini_afterPresent(205U);
-    assert(!state.lit);
+    assert(!state.lit && decodeCount == 1U);
     entireBackground(0x1234U);
-    assert(decodeCount == 1U);
+    assert(!EspPickupMini_due(264U));
     assert(EspPickupMini_due(265U));
     EspPickupMini_beforePresent(265U);
-    EspPickupMini_afterPresent(265U);
-    assert(state.lit && decodeCount == 1U);
+    assert(state.lit);
     assert(pixel(MINI_X, MINI_Y) == (uint16_t)(0x4000U | 80U));
 
-    /* New camera frame during lit interval: its NEW underlay wins. */
+    /* A new camera frame must discard the old background, then restore
+     * the NEW underlay, never a stale world pixel. */
     fill(0x5678U);
     EspPickupMini_markFreshFrame();
     EspPickupMini_beforePresent(275U);
     EspPickupMini_afterPresent(275U);
     assert(state.lit && pixel(MINI_X, MINI_Y) == (uint16_t)(0x4000U | 80U));
     assert(decodeCount == 1U);
-    assert(EspPickupMini_due(370U)); /* 270ms elapsed => OFF. */
+    assert(EspPickupMini_due(370U));
     EspPickupMini_beforePresent(370U);
     assert(!state.lit);
     entireBackground(0x5678U);
+    assert(!EspPickupMini_due(429U));
+    assert(EspPickupMini_due(430U));
+    EspPickupMini_beforePresent(430U);
+    assert(state.lit);
+    assert(pixel(MINI_X, MINI_Y) == (uint16_t)(0x4000U | 80U));
+    assert(EspPickupMini_due(535U));
+    EspPickupMini_beforePresent(535U);
+    assert(!state.lit);
+    entireBackground(0x5678U);
+
+    /* Elapsed 500ms: isolated icon expires after all three pulses.
+     * Pending gameplay input prevents an optional, standalone LCD flush. */
+    testInput.pending = 1U;
+    assert(!EspPickupMini_due(600U));
+    testInput.pending = 0U;
+    assert(EspPickupMini_due(600U));
+    /* A gameplay-owned normal world frame retires the expired icon. */
+    fill(0x5678U);
+    EspPickupMini_markFreshFrame();
+    EspPickupMini_beforePresent(600U);
+    EspPickupMini_afterPresent(600U);
+    assert(!state.active && state.count == 0U);
+    assert(decodeCount == 1U);
+    entireBackground(0x5678U);
+    assert(!EspPickupMini_due(600U));
     unchangedHudAndGuard(0x5678U);
 
-    /* Elapsed 500ms: next visual begins without game/input gating. */
-    assert(EspPickupMini_due(600U));
-    EspPickupMini_beforePresent(600U);
-    assert(state.active && state.first && !state.count);
-    assert(pixel(MINI_X, MINI_Y) == (uint16_t)(0x4000U | 81U));
-    assert(decodeCount == 2U);
-    EspPickupMini_afterPresent(600U);
-    EspPickupMini_beforePresent(1100U);
+    /* A second pickup does not wait for an old icon to finish all 500ms.
+     * The first has at least 160ms of visibility, then next FIFO item starts
+     * on the same presentation (zero extra gameplay turn or framebuffer). */
+    EspPickupMini_enqueue(120U);
+    EspPickupMini_beforePresent(2000U);
+    EspPickupMini_afterPresent(2000U);
+    assert(state.active && state.count == 0U);
+    EspPickupMini_enqueue(121U);
+    /* Preemption of a backlogged miniature stays bounded; its first
+     * 105ms ON pulse and 55ms OFF lease remain observable. */
+    assert(!EspPickupMini_due(2104U));
+    assert(EspPickupMini_due(2105U));
+    EspPickupMini_beforePresent(2105U);
+    assert(!state.lit);
+    entireBackground(0x5678U);
+    assert(!EspPickupMini_due(2159U));
+    assert(EspPickupMini_due(2160U));
+    fill(0x5678U);
+    EspPickupMini_markFreshFrame();
+    EspPickupMini_beforePresent(2160U);
+    EspPickupMini_afterPresent(2160U);
+    assert(state.active && state.count == 0U);
+    assert(pixel(MINI_X, MINI_Y) == (uint16_t)(0x4000U | 121U));
+    unchangedHudAndGuard(0x5678U);
+    assert(!EspPickupMini_due(2161U));
+    EspPickupMini_beforePresent(2660U);
     assert(!state.active);
     entireBackground(0x5678U);
-    assert(!EspPickupMini_due(1100U));
-    unchangedHudAndGuard(0x5678U);
 
     /* Absent source does not poison queue, and waits for PAK unlock. */
     EspPickupMini_enqueue(255U);
@@ -206,6 +254,6 @@ int main(void) {
     assert(pixel(MINI_X, MINI_Y) == (uint16_t)(0x4000U | 101U));
     unchangedHudAndGuard(0x2222U);
 
-    puts("pickup_miniature_host: PASS 24px actual up/downscale, aspect-safe, bottom-anchored, full HUD/world guards, exact underlay restore, crate-loot, CROSS, RGB565, FIFO, 500ms, PAK lease, cosmetic-only");
+    puts("pickup_miniature_host: PASS 24px actual up/downscale, aspect-safe, bottom-anchored, full HUD/world guards, exact underlay restore, crate-loot, CROSS, RGB565, FIFO, original 3x105ms blink/500ms, 160ms backlog, priority input, PAK lease, cosmetic-only");
     return 0;
 }

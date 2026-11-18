@@ -5,6 +5,7 @@
 
 #include "esp_asset_pack.h"
 #include "esp_native_gameplay_pickup_miniature.h"
+#include "esp_native_gameplay_input.h"
 #include "esp_native_sprite_renderer.h"
 #include "platform_video_c_bridge.h"
 #include "platform_video_config.h"
@@ -24,10 +25,17 @@ _Static_assert(MINI_Y >= 20U && MINI_BOTTOM_EXCLUSIVE <= 100U,
                "Pickup miniature must stay inside the 3D viewport");
 _Static_assert(MINI_X >= 13U && MINI_X + ESP_PICKUP_MINI_SIZE <= 160U,
                "Pickup miniature must stay clear of the left cue and framebuffer edge");
+/* Preserve the original visual: 3x105ms ON and 65ms OFF in a 500ms
+ * nonblocking miniature lease. Gameplay input retains priority over
+ * miniature-only screen presents; normal movement frames can carry the
+ * visual transitions without an extra render pass. */
 #define MINI_DURATION 500U
 #define MINI_ON 105U
 #define MINI_PERIOD 165U
 #define MINI_PULSES 3U
+/* With queued pickups, do not hold the previous icon for another 500ms.
+ * Give it a short, bounded visible lease before advancing the FIFO. */
+#define MINI_BACKLOG_MIN_MS 160U
 
 typedef struct PickupMini_s {
     uint16_t pending[ESP_PICKUP_MINI_FIFO_CAP];
@@ -135,7 +143,7 @@ static void startNext(void) {
         state.shownMs = 0U;
         state.captured = 0U;
         state.lit = 0U;
-        printf("[PICKUPMINI] START logical=%u at=%u,%u size=%ux%u blink=3x105ms/500ms fifo=%u input=unblocked\n",
+        printf("[PICKUPMINI] START logical=%u at=%u,%u size=%ux%u blink=3x105ms/500ms backlogMin=160ms fifo=%u input=unblocked\n",
                (unsigned)logical, (unsigned)MINI_X, (unsigned)MINI_Y,
                (unsigned)ESP_PICKUP_MINI_SIZE, (unsigned)ESP_PICKUP_MINI_SIZE,
                (unsigned)state.count);
@@ -152,12 +160,17 @@ void EspPickupMini_beforePresent(uint32_t nowMs) {
         state.fresh = 0U;
     }
     if (state.active && !state.first &&
-        nowMs - state.shownMs >= MINI_DURATION) {
+        (nowMs - state.shownMs >= MINI_DURATION ||
+         (state.count != 0U &&
+          nowMs - state.shownMs >= MINI_BACKLOG_MIN_MS))) {
+        const uint32_t shownForMs = nowMs - state.shownMs;
+        const int shortened = shownForMs < MINI_DURATION;
         restore();
         state.active = 0U;
         state.captured = 0U;
-        printf("[PICKUPMINI] END elapsedMs=%u pending=%u input=unblocked\n",
-               (unsigned)(nowMs - state.shownMs), (unsigned)state.count);
+        printf("[PICKUPMINI] END elapsedMs=%u pending=%u mode=%s input=unblocked\n",
+               (unsigned)shownForMs, (unsigned)state.count,
+               shortened ? "backlog" : "normal");
     }
     if (!state.active) startNext();
     if (!state.active) return;
@@ -177,8 +190,15 @@ void EspPickupMini_afterPresent(uint32_t nowMs) {
 }
 
 int EspPickupMini_due(uint32_t nowMs) {
+    const EspNativeGameplayInputState* input = EspNativeGameplayInput_peek();
+    /* Do not seize the physical LCD for a cosmetic expiry/start when a
+     * player action is already queued. Its normal frame will call
+     * beforePresent, so pixels remain consistent without a second flush. */
+    if (input != NULL && input->pending != 0U) return 0;
     if (!state.active) return state.count != 0U;
     if (state.first) return 1;
     if (nowMs - state.shownMs >= MINI_DURATION) return 1;
+    if (state.count != 0U &&
+        nowMs - state.shownMs >= MINI_BACKLOG_MIN_MS) return 1;
     return litAt(nowMs - state.shownMs) != (state.lit != 0U);
 }

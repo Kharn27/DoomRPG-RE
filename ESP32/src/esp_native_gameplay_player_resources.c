@@ -11,6 +11,7 @@
 #include "Render.h"
 
 #include <esp_heap_caps.h>
+#include <esp_timer.h>
 
 #include "doomrpg_log.h"
 #include "esp_entity_def_type_catalog.h"
@@ -29,6 +30,7 @@
 #include "esp_native_gameplay_interaction_inventory.h"
 #include "esp_native_gameplay_player_resources.h"
 #include "esp_native_gameplay_pickup_miniature.h"
+#include "esp_native_gameplay_pickup_redraw.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_session.h"
 #include "esp_native_resident_gameplay.h"
@@ -95,6 +97,7 @@ typedef struct ResourceOwner_s {
     EspPlayerViewState pendingBefore;
     EspPlayerViewState pendingAfter;
     uint8_t corpusLogged;
+    EspPickupRedraw redraw;
 } ResourceOwner;
 
 static ResourceOwner resources;
@@ -211,6 +214,7 @@ static int ensureOwner(uint8_t targetMapId) {
         resources.view.active = 1U;
         resources.view.fatal = 0U;
         resources.corpusLogged = 0U;
+        memset(&resources.redraw, 0, sizeof(resources.redraw));
         memset(&resources.pendingBefore, 0, sizeof(resources.pendingBefore));
         memset(&resources.pendingAfter, 0, sizeof(resources.pendingAfter));
         printf("[PLAYERRES] READY map=%u arena=%08x sprites=%u consumedBytes=%u playerBytes=%u playerFNV=%08x entityDefCache=%uB families=3/4/5/6/16\n",
@@ -778,6 +782,7 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
     uint8_t firstWeaponDialogSubtype = 0xffU;
     int feedbackQueued = 0;
     int dialogOpened = 0;
+    int syncRedraw = 0;
 
     if (beforeView == NULL || afterView == NULL ||
         beforeView->active != 1U || afterView->active != 1U ||
@@ -847,7 +852,7 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
                    (unsigned int)candidates[i].dropSlot);
             return 1;
         }
-        printf("[PLAYERRES] PREPARE tile=%u sprite=%u defTile=%u type=%u subtype=%u parm=%ld action=%s value=%u->%u slot=%s%u worldRemove=%s rollback=armed\n",
+        DRPG_LOGD("[PLAYERRES] PREPARE tile=%u sprite=%u defTile=%u type=%u subtype=%u parm=%ld action=%s value=%u->%u slot=%s%u worldRemove=%s rollback=armed\n",
                (unsigned int)afterTile,
                (unsigned int)candidates[i].spriteIndex,
                (unsigned int)candidates[i].defTile,
@@ -931,8 +936,32 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
     playerFNVAfter = EspNativeGameplayPlayerState_fingerprint();
     resources.view.playerFNV1a = playerFNVAfter;
 
-    if (rerender(doomRpg, afterView, "RESOURCE-PICKUP")) {
-        /* Cosmetic FIFO is committed AFTER the required world redraw.
+    /*
+     * A normal MOVE has already published its canonical destination frame.
+     * Re-rendering here adds a whole second BSP + LCD present for every item.
+     * Keep immediate automap and first-weapon-help transactions (the latter
+     * opens a full-screen modal), but publish ordinary world resources
+     * immediately and coalesce their cosmetic redraw at idle.
+     * A later settled world frame satisfies this lease automatically.
+     */
+    syncRedraw = EspNativeResidentGameplay_isAutomapActive() ||
+                 firstWeaponDialog != NULL;
+    if (!syncRedraw ||
+        rerender(doomRpg, afterView, "RESOURCE-PICKUP")) {
+        if (!syncRedraw) {
+            const uint32_t nowMs =
+                (uint32_t)(esp_timer_get_time() / 1000LL);
+            const unsigned int alreadyPending =
+                (unsigned int)resources.redraw.pending;
+            EspPickupRedraw_schedule(&resources.redraw, nowMs);
+            DRPG_LOGD("[PLAYERRES] REDRAW-QUEUE tile=%u pendingBefore=%u quietMs=%u commit=immediate worldPaint=deferred input=unblocked\n",
+                   (unsigned int)afterTile,
+                   alreadyPending,
+                   (unsigned int)ESP_PICKUP_REDRAW_QUIET_MS);
+            printf("[PLAYERRES] REDRAW-QUEUE tile=%u pending=%u\n",
+                   (unsigned int)afterTile, alreadyPending);
+        }
+        /* Cosmetic FIFO is committed AFTER the semantic world transaction.
          * Raw BSP sprite info is only correct for unchanged world items:
          * a smashed crate retains its immutable crate art, while the
          * crate-state overlay changes the visual to its effective loot tile.
@@ -969,7 +998,7 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
                        (unsigned int)applied[i].defTile);
                 continue;
             }
-            printf("[PICKUPMINI] SOURCE sprite=%u defTile=%u original=%u logical=%u origin=%s\n",
+            DRPG_LOGD("[PICKUPMINI] SOURCE sprite=%u defTile=%u original=%u logical=%u origin=%s\n",
                    (unsigned int)applied[i].spriteIndex,
                    (unsigned int)applied[i].defTile,
                    (unsigned int)sourceLogical,
@@ -999,7 +1028,7 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
                        EspNativeGameplayDialog_beginStatusName(dialogStatus));
             }
         }
-        printf("[PLAYERRES] COMMIT tile=%u candidates=%u consumed=%u totalConsumed=%u playerFNV=%08x->%08x hp=%u/%u armor=%u/%u weapon=%u weapons=%04x ammo0=%u ammo1=%u ammo2=%u ammo3=%u ammo4=%u keys=%08x credits=%u sound=deferred message=%s visual=pak-mini-500ms nonblocking=yes gotFace=deferred rollback=closed\n",
+        DRPG_LOGD("[PLAYERRES] COMMIT tile=%u candidates=%u consumed=%u totalConsumed=%u playerFNV=%08x->%08x hp=%u/%u armor=%u/%u weapon=%u weapons=%04x ammo0=%u ammo1=%u ammo2=%u ammo3=%u ammo4=%u keys=%08x credits=%u sound=deferred message=%s visual=pak-mini-500ms nonblocking=yes gotFace=deferred rollback=closed\n",
                (unsigned int)afterTile,
                (unsigned int)candidateCount,
                (unsigned int)appliedCount,
@@ -1020,10 +1049,25 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
                (unsigned int)EspNativeGameplayPlayerState_view()->keys,
                (unsigned int)EspNativeGameplayPlayerState_view()->credits,
                feedbackQueued ? "pickup-live" : "skipped-busy");
+        /* Keep normal CYD Serial output short: on a 115200-baud monitor,
+         * a few KB per pickup can materially delay successive moves. The
+         * full legacy diagnostic contract remains in DEBUG/TRACE builds. */
+#if DOOMRPG_LOG_LEVEL < DOOMRPG_LOG_DEBUG
+        printf("[PLAYERRES] COMMIT tile=%u count=%u action=%s player=%08x hp=%u/%u armor=%u/%u credits=%u rollback=closed\n",
+               (unsigned int)afterTile,
+               (unsigned int)appliedCount,
+               actionName(applied[0].action),
+               (unsigned int)playerFNVAfter,
+               (unsigned int)EspNativeGameplayPlayerState_health(),
+               (unsigned int)EspNativeGameplayPlayerState_maxHealth(),
+               (unsigned int)EspNativeGameplayPlayerState_armor(),
+               (unsigned int)EspNativeGameplayPlayerState_maxArmor(),
+               (unsigned int)EspNativeGameplayPlayerState_view()->credits);
+#endif
         /* SFX-P1: only after irreversible resource/player/world commit.
          * Original desktop generic pickup cue 5060; no PAK access here. */
         (void)EspNativeAudioIntent_publish(5060U,0U,3U);
-        printf("[PLAYERRES] FEEDBACK tile=%u message=\"%s\" sourceDefTile=%u flash=none miniature=PAK-24x24/500ms position=13,72 gotFace=deferred weaponHelp=%s messages=%u additionalMessages=%u-queued legacyCap=%u shifted=%u\n",
+        DRPG_LOGD("[PLAYERRES] FEEDBACK tile=%u message=\"%s\" sourceDefTile=%u flash=none miniature=PAK-24x24/500ms position=13,72 gotFace=deferred weaponHelp=%s messages=%u additionalMessages=%u-queued legacyCap=%u shifted=%u\n",
                (unsigned int)afterTile,
                pickupMessages[0],
                (unsigned int)applied[pickupMessageStart].defTile,
@@ -1033,6 +1077,13 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
                                   ? pickupMessageCount - 1U : 0U),
                (unsigned int)RESOURCE_PICKUP_MESSAGE_MAX,
                (unsigned int)legacyMessagesShifted);
+#if DOOMRPG_LOG_LEVEL < DOOMRPG_LOG_DEBUG
+        printf("[PLAYERRES] FEEDBACK tile=%u message=\"%s\"\n",
+               (unsigned int)afterTile, pickupMessages[0]);
+        (void)dialogOpened;
+        (void)pickupMessageStart;
+        (void)legacyMessagesShifted;
+#endif
         return 1;
     }
 
@@ -1167,6 +1218,57 @@ const EspNativeGameplayHudState* __wrap_EspNativeGameplayHud_view(void) {
         hudOverlay.model.ammo = player->ammo[weapon->ammoType];
     }
     return &hudOverlay;
+}
+
+/*
+ * A successful full settled WORLD frame is authoritative. Any pending
+ * pickup redraw was already represented by its latest player/consumed state.
+ * Previews are intentionally excluded by the caller (frame compositor).
+ */
+void EspNativeGameplayPlayerResources_noteWorldPresented(void) {
+    const EspPlayerViewState* view = EspPlayerView_view();
+    if (resources.view.active != 1U || resources.view.fatal != 0U ||
+        view == NULL || view->active != 1U ||
+        view->targetMapId != resources.view.targetMapId ||
+        !EspPickupRedraw_satisfy(&resources.redraw)) {
+        return;
+    }
+    printf("[PLAYERRES] REDRAW-SATISFIED reason=settled-world-frame extraFrame=no input=unblocked\n");
+}
+
+int EspNativeGameplayPlayerResources_redrawDue(uint32_t nowMs) {
+    return resources.view.active == 1U && resources.view.fatal == 0U &&
+           EspPickupRedraw_due(&resources.redraw, nowMs);
+}
+
+/* Only resident WORLD idle may call this. Never block an admitted command,
+ * create another game turn or borrow the automap/modal/PAK screen lease.
+ * Failed presentation stays cosmetic and retries after another quiet window:
+ * a committed resource must not be rolled back after subsequent moves.
+ */
+int EspNativeGameplayPlayerResources_flushIdle(struct DoomRPG_s* doomRpg,
+                                                uint32_t nowMs) {
+    const EspPlayerViewState* view = EspPlayerView_view();
+    if (!EspNativeGameplayPlayerResources_redrawDue(nowMs)) return 1;
+    if (doomRpg == NULL || view == NULL || view->active != 1U ||
+        view->targetMapId != resources.view.targetMapId ||
+        view->viewX != view->destX || view->viewY != view->destY ||
+        view->viewAngle != view->destAngle ||
+        (view->viewAngle & 63) != 0 ||
+        EspNativeResidentGameplay_isAutomapActive() ||
+        !EspNativeGameplaySession_canService()) {
+        return 1;
+    }
+
+    if (rerender((DoomRPG_t*)doomRpg, view, "RESOURCE-PICKUP-IDLE")) {
+        /* renderTurn's settled-frame publication already clears the lease. */
+        (void)EspPickupRedraw_satisfy(&resources.redraw);
+        printf("[PLAYERRES] REDRAW-IDLE result=presented turn=no playerMutation=no\n");
+        return 1;
+    }
+    EspPickupRedraw_schedule(&resources.redraw, nowMs);
+    printf("[PLAYERRES] REDRAW-IDLE result=retry-after-quiet gameplay=committed input=unblocked\n");
+    return 0;
 }
 
 void EspNativeGameplayPlayerResources_sessionReset(void) {
