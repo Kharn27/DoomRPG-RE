@@ -71,18 +71,10 @@ int EspNativeGameplayMonsterState_stageRestore(
 int EspNativeGameplayMonsterState_restoreInPlace(
     const EspNativeGameplayMonsterStateSnapshot* snapshot);
 
-/*
- * The monster-state lifecycle historically owned the linker wrappers around
- * the action-engine service/reset. Keep those implementations as private chain
- * leaves so generic monster combat can compose its pending transaction in front
- * without duplicating map initialization or the proven action-engine service.
- */
+/* Explicit MonsterState service/reset leaves called by MonsterCombat; retain
+ * zero-enemy/no-allocation admission and the original ensure/RNG ordering. */
 int EspNativeGameplayMonsterState_actionService(struct DoomRPG_s* doomRpg);
 void EspNativeGameplayMonsterState_actionReset(void);
-#define __wrap_EspNativeGameplayActionEngine_service \
-    EspNativeGameplayMonsterState_actionService
-#define __wrap_EspNativeGameplayActionEngine_reset \
-    EspNativeGameplayMonsterState_actionReset
 
 #ifdef __cplusplus
 }
