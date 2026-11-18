@@ -20,6 +20,7 @@ code=r"""
 #include <stdint.h>
 #include <string.h>
 #include "esp_audio_loading_route.h"
+#include "esp_audio_track_volume.h"
 int main(void) {
     assert(ESP_MAP_ID_INTRO==1U && ESP_MAP_ID_JUNCTION==9U);
     assert(strcmp(EspMapCatalog_nameForId(9U),"/junction.bsp")==0);
@@ -54,6 +55,27 @@ int main(void) {
     }
     assert(strcmp(EspAudioLoadingRoute_trackName(
         (EspAudioLoadingTrack)255),"none")==0);
+    /* Exhaustive global MUSIC volume 0..100: only Junction is trimmed.
+     * Intro/Menu both use DEFERRED while active, so remain byte-identical.
+     * Entrance M_STALKS is also byte-identical. */
+    assert(ESP_AUDIO_JUNCTION_TRACK_VOLUME_PERCENT==85U);
+    assert(EspAudioTrackVolume_trackPercent(
+        ESP_AUDIO_LOADING_TRACK_M_DEAD)==85U);
+    for (unsigned master=0U;master<=100U;master++) {
+        assert(EspAudioTrackVolume_effectivePercent(
+            ESP_AUDIO_LOADING_TRACK_DEFERRED,(uint8_t)master)==master);
+        assert(EspAudioTrackVolume_effectivePercent(
+            ESP_AUDIO_LOADING_TRACK_M_STALKS,(uint8_t)master)==master);
+        assert(EspAudioTrackVolume_effectivePercent(
+            ESP_AUDIO_LOADING_TRACK_M_DEAD,(uint8_t)master)
+            ==(master*85U)/100U);
+    }
+    assert(EspAudioTrackVolume_effectivePercent(
+        ESP_AUDIO_LOADING_TRACK_M_DEAD,101U)==0U);
+    assert(EspAudioTrackVolume_effectivePercent(
+        ESP_AUDIO_LOADING_TRACK_M_DEAD,100U)==85U);
+    assert(EspAudioTrackVolume_effectivePercent(
+        ESP_AUDIO_LOADING_TRACK_M_STALKS,100U)==100U);
     return 0;
 }
 """
@@ -88,6 +110,15 @@ assert "activeGameplayTrack=ESP_AUDIO_LOADING_TRACK_DEFERRED;" in music
 assert music.count("static File musicFile;")==1
 assert music.count("static uint8_t* ring;")==1
 assert "kRingCapacity=16384U" in music
+assert '#include "esp_audio_track_volume.h"' in music
+assert "const uint8_t masterVolume=EspNativeAudioIntent_musicVolumePercent();" in music
+assert "EspAudioTrackVolume_effectivePercent(\n        activeGameplayTrack,masterVolume);" in music
+assert "trackVolumePct=%u effectiveVolumePct=%u" in music
+assert "(diff*(int32_t)volume)/100" in music
+assert "activeGameplayTrack=(!intro&&!menu) ? gameplayTrack" in music
+isr=music[music.index("static bool IRAM_ATTR onAudioTick"):
+          music.index("static uint32_t queued()")]
+assert "EspAudioTrackVolume_" not in isr and "SD." not in isr
 assert "DAC_CHANNEL_2" in music
 assert "EspAudioLoadingRoute_forMap(view->targetMapId)" in session
 assert "ESP_AUDIO_LOADING_TRACK_DEFERRED &&" in session
@@ -98,6 +129,7 @@ assert "EspAudioLoadingRoute_forMap(targetMapId)" in loading
 assert "playback=deferred" in loading
 assert "SD.open" not in loading
 assert "Test Junction M_DEAD SD track route" in ci
-print("JUNCTION-M1 HOST PASS map9/bsp2=M_DEAD map1/bsp1=M_STALKS "
-      "65536 route pairs tested, malformed pairs deferred incl map10, "
-      "one SD reader, 16KiB ring, pre-world audio")
+print("JUNCTION-M1 HOST PASS map9/bsp2=M_DEAD level=85% "
+      "map1/bsp1=M_STALKS=100% intro+menu=100% "
+      "65536 route pairs tested, global music volume=0..100, "
+      "one SD reader, 16KiB ring, ISR unchanged")

@@ -18,6 +18,7 @@
 #include "esp_native_sfx_wav.h"
 #include "esp_asset_pack.h"
 #include "esp_audio_loading_route.h" /* explicit map track, one SD producer */
+#include "esp_audio_track_volume.h" /* Junction-only producer-side attenuation */
 #include "esp_audio_entrance_music.h"
 #include "esp_native_audio_intent.h"
 #include "esp_native_monster_ambience.h"
@@ -378,8 +379,13 @@ static bool refill() {
                activeTrackName());
     }
     const uint32_t start=__atomic_load_n(&wr,__ATOMIC_RELAXED);
-    const uint8_t volume=EspNativeAudioIntent_musicVolumePercent();
-    if (volume>100U) {failure="invalid_volume";return false;}
+    const uint8_t masterVolume=EspNativeAudioIntent_musicVolumePercent();
+    if (masterVolume>100U) {failure="invalid_volume";return false;}
+    /* Track trim is composited with the user's global music volume once
+     * per decoded block, not in the DAC ISR. Only Junction/M_DEAD gets 85%.
+     * Intro, menu and Entrance retain byte-identical DAC output. */
+    const uint8_t volume=EspAudioTrackVolume_effectivePercent(
+        activeGameplayTrack,masterVolume);
     for (uint32_t i=0U;i<samples;i++) {
         /* Main-loop only: never run volume scaling in the 22050Hz ISR. */
         const int32_t diff=(int32_t)decoded[i]-128;
@@ -979,11 +985,15 @@ static bool startPlaying() {
     printf("[ENTRANCEMUSIC] PLAY path=%s backend=timer-DAC2 "
            "format=IMA-ADPCM monoHz=22050 ring=%u primed=%u "
            "dacPeakCodes=112 gainDiv=%u track=%s softKneeAt=96 masterVolume=%u witness=none source=SD-ring "
-           "dacEnabled=yes gpio25=untouched noI2S=yes noPSRAM=yes\n",
+           "dacEnabled=yes gpio25=untouched noI2S=yes noPSRAM=yes "
+           "trackVolumePct=%u effectiveVolumePct=%u\n",
            path,(unsigned)kRingCapacity,(unsigned)queued(),
            (unsigned)activeGainDiv(),
            activeTrackName(),
-           (unsigned)EspNativeAudioIntent_musicVolumePercent());
+           (unsigned)EspNativeAudioIntent_musicVolumePercent(),
+           (unsigned)EspAudioTrackVolume_trackPercent(activeGameplayTrack),
+           (unsigned)EspAudioTrackVolume_effectivePercent(
+               activeGameplayTrack,EspNativeAudioIntent_musicVolumePercent()));
     return true;
 }
 static void begin(bool intro,bool menu,EspAudioLoadingTrack gameplayTrack) {
