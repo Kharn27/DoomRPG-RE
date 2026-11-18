@@ -101,6 +101,9 @@ for filename, (sha, aliases) in REFERENCES.items():
         assert current.startswith("#include <SDL.h>\n#include <stdlib.h>\n"), filename
         restored = current.replace("#include <SDL.h>\n#include <stdlib.h>\n",
                                    "#include <SDL.h>\n", 1)
+    if filename == "esp_native_gameplay_event_chain.c":
+        from arch_rc11_history import restore_pre_rc11_event_chain
+        restored = restore_pre_rc11_event_chain(restored)
     if filename == "esp_native_resident_gameplay.c":
         from arch_rc11_history import restore_pre_rc11_resident
         from arch_rc10_history import restore_pre_rc10_resident
