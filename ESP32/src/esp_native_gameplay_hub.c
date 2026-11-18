@@ -6,6 +6,9 @@
 #include "esp_asset_pack.h"
 #include "esp_main_menu_skin.h"
 #include "esp_native_gameplay_hub.h"
+
+/* Native raw HUB leaf: internal close paths intentionally bypass SAVE routing. */
+EspNativeGameplayHubStatus EspNativeGameplayHub_handleActionBase(uint8_t action);
 #include "esp_native_gameplay_hub_content.h"
 #include "esp_native_gameplay_hub_nonweapon.h"
 #include "esp_native_gameplay_note_prefix.h"
@@ -887,7 +890,7 @@ static EspNativeGameplayHubStatus handleInventorySelect(void) {
     /* Close the full-screen HUB before requesting the one original gameplay
      * turn. No stale inventory list or stale HUD remains visible. */
     hub.lastPlayerFNV = fnvAfter;
-    closeStatus = EspNativeGameplayHub_handleAction(
+    closeStatus = EspNativeGameplayHub_handleActionBase(
         ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN);
     if (closeStatus != ESP_NATIVE_GAMEPLAY_HUB_CLOSED) {
         const int restored = EspNativeGameplayPlayerState_restore(&before) &&
@@ -970,7 +973,7 @@ static EspNativeGameplayHubStatus handleWeaponGridSelect(void) {
     beforeRow = hub.selectedRow;
     hub.selectedRow = target;
     hub.lastPlayerFNV = fnvAfter;
-    status = EspNativeGameplayHub_handleAction(
+    status = EspNativeGameplayHub_handleActionBase(
         ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN);
     if (status != ESP_NATIVE_GAMEPLAY_HUB_CLOSED) {
         const int restored = EspNativeGameplayPlayerState_restore(&before) &&
@@ -991,7 +994,7 @@ static EspNativeGameplayHubStatus handleWeaponGridSelect(void) {
     return ESP_NATIVE_GAMEPLAY_HUB_CLOSED;
 }
 
-EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
+EspNativeGameplayHubStatus EspNativeGameplayHub_handleActionBase(uint8_t action) {
     EspNativeGameplayHubStatus status;
     EspNativeGameplayPlayerState player;
     uint16_t* framebuffer;

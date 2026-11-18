@@ -12,12 +12,12 @@ static const char* targetName(uint8_t target) {
            target == ESP_NATIVE_SYS_LOAD ? "LOAD" : "EXIT";
 }
 
-int __real_EspNativeGameplayHubTouchUi_classify(
+int EspNativeGameplayHubTouchUi_classifyBase(
     int logicalX,
     int logicalY,
     struct EspNativeGameplayTouchHit_s* outHit);
 
-EspNativeGameplayInputStatus __real_EspNativeGameplayInput_consume(
+EspNativeGameplayInputStatus EspNativeGameplayInput_consumeBase(
     EspNativeGameplayInputState* outIntent);
 
 static int targetForPoint(int logicalX,
@@ -44,7 +44,7 @@ static int targetForPoint(int logicalX,
     return 0;
 }
 
-int __wrap_EspNativeGameplayHubTouchUi_classify(
+int EspNativeGameplayHubTouchUi_classify(
     int logicalX,
     int logicalY,
     struct EspNativeGameplayTouchHit_s* outHitBase) {
@@ -57,7 +57,7 @@ int __wrap_EspNativeGameplayHubTouchUi_classify(
 
     if (hub == NULL || hub->active == 0U ||
         hub->page != ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM) {
-        return __real_EspNativeGameplayHubTouchUi_classify(
+        return EspNativeGameplayHubTouchUi_classifyBase(
             logicalX, logicalY, outHitBase);
     }
 
@@ -92,14 +92,14 @@ int __wrap_EspNativeGameplayHubTouchUi_classify(
     /* Preserve tabs/header Back, but never let blank SYS content synthesize a
      * generic SELECT that could confirm Exit outside its own button. */
     if (logicalY >= 21 && logicalY < 120) return -1;
-    return __real_EspNativeGameplayHubTouchUi_classify(
+    return EspNativeGameplayHubTouchUi_classifyBase(
         logicalX, logicalY, outHitBase);
 }
 
-EspNativeGameplayInputStatus __wrap_EspNativeGameplayInput_consume(
+EspNativeGameplayInputStatus EspNativeGameplayInput_consume(
     EspNativeGameplayInputState* outIntent) {
     EspNativeGameplayInputStatus inputStatus =
-        __real_EspNativeGameplayInput_consume(outIntent);
+        EspNativeGameplayInput_consumeBase(outIntent);
     const EspNativeGameplayHubView* hub;
     uint8_t target;
     uint8_t top;

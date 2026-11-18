@@ -262,7 +262,8 @@ static int configureSession(const EspNativeGameplaySessionConfig* config,
     return 1;
 }
 
-int EspNativeGameplaySession_configure(
+/* Raw session configuration leaf: SAVE reprime owner calls this once. */
+int EspNativeGameplaySession_configureBase(
     const EspNativeGameplaySessionConfig* config) {
     return configureSession(config, 0U);
 }

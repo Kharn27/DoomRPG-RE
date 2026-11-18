@@ -233,7 +233,8 @@ const EspNativeGameplayInputState* EspNativeGameplayInput_peek(void) {
     return &inputState;
 }
 
-EspNativeGameplayInputStatus EspNativeGameplayInput_consume(
+/* Raw one-slot input leaf; SAVE consumes once then adjusts SYS semantics. */
+EspNativeGameplayInputStatus EspNativeGameplayInput_consumeBase(
     EspNativeGameplayInputState* outIntent) {
     int dialogActive = 0;
 
