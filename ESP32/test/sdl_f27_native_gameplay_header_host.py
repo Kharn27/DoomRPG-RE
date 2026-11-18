@@ -77,10 +77,7 @@ def original_body_parity() -> None:
             f"{filename}: expected bounded host/geometry-only SDL guard")
         # GAME-PICKUP is a post-F27 presentation optimization. Restore only
         # its exact additive source delta before any older historical inverse.
-        if filename == "esp_native_gameplay_frame.c":
-            from game_pickup_redraw_history import restore_pre_game_pickup_frame
-            current = restore_pre_game_pickup_frame(current)
-        elif filename == "esp_native_gameplay_player_resources.c":
+        if filename == "esp_native_gameplay_player_resources.c":
             from game_pickup_redraw_history import restore_pre_game_pickup_resources
             current = restore_pre_game_pickup_resources(current)
         elif filename == "esp_native_resident_gameplay.c":
