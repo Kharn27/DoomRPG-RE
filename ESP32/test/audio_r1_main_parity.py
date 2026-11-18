@@ -8,6 +8,12 @@ from native_boot_legals_history import restore_pre_boot_legals
 
 
 def restore_pre_audio_r1(text: str) -> str:
+    # ARCH-RC9: main loop uses the explicit session coordinator. The
+    # historical Root-J2 SHA still describes the original raw public call.
+    live = "EspNativeGameplaySessionCoordinator_service(doomRpg);"
+    old = "EspNativeGameplaySession_service(doomRpg);"
+    assert text.count(live) == 1, "RC9 main loop direct-call drift"
+    text = text.replace(live, old, 1)
     text = restore_pre_boot_legals(text)
     # MENU-M1 adds a bounded title prestart between model creation and first
     # dashboard present. Reverse ONLY that exact later insertion for Root-J2's

@@ -2019,7 +2019,7 @@ void EspNativeResidentGameplay_serviceMenuExit(struct DoomRPG_s* doomRpgBase) {
     EspAssetPack_mapFlashSetProgressCallback(NULL);
     EspNativeTransitionPresentation_reset();
     EspNativeGameplayPresentGate_cancel();
-    EspNativeGameplaySession_reset();
+    EspNativeGameplaySessionCoordinator_reset();
     EspMapResidentLifecycle_resetAll();
     EspPlayerView_reset();
     EspHudRefresh_reset();

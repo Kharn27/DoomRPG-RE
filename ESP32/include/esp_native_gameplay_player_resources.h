@@ -60,17 +60,11 @@ int EspNativeGameplayPlayerResources_restore(
     const EspNativeGameplayPlayerResourcesSnapshot* snapshot);
 
 /*
- * Player resources historically own the public native gameplay-session wrappers.
- * Keep those implementations as private chain leaves so bounded presentation
- * owners can service expiry/redraw work after the already-proven gameplay chain
- * without duplicating or bypassing resource/action/session ownership.
+ * Native resource/action/session leaves. The explicit session coordinator
+ * calls these exactly once; no GNU __wrap macro aliases remain.
  */
 void EspNativeGameplayPlayerResources_sessionReset(void);
 void EspNativeGameplayPlayerResources_sessionService(struct DoomRPG_s* doomRpg);
-#define __wrap_EspNativeGameplaySession_reset \
-    EspNativeGameplayPlayerResources_sessionReset
-#define __wrap_EspNativeGameplaySession_service \
-    EspNativeGameplayPlayerResources_sessionService
 
 #ifdef __cplusplus
 }

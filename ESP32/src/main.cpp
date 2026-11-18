@@ -571,7 +571,7 @@ void loop()
     DoomRPG_esp32MainMenuHelpService();
     if (EspNativeGameplaySession_canService())
     {
-        EspNativeGameplaySession_service(doomRpg);
+        EspNativeGameplaySessionCoordinator_service(doomRpg);
     }
     EspNativeResidentGameplay_serviceMenuExit(doomRpg);
     EspNativeStartup_serviceDeathRoute(doomRpg);

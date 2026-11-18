@@ -105,8 +105,6 @@ const EspNativeGameplayHudState* __real_EspNativeGameplayHud_view(void);
 EspPlayerViewMoveStatus __real_EspPlayerView_commitPreparedMove(
     const EspPlayerViewState* expectedBefore,
     const EspPlayerViewState* preparedAfter);
-void __real_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg);
-void __real_EspNativeGameplaySession_reset(void);
 
 /* Historical bring-up owner is now dormant, but reset it defensively so a
  * branch/session transition can never retain stale compatibility state. */
@@ -1170,16 +1168,16 @@ const EspNativeGameplayHudState* __wrap_EspNativeGameplayHud_view(void) {
     return &hudOverlay;
 }
 
-void __wrap_EspNativeGameplaySession_reset(void) {
+void EspNativeGameplayPlayerResources_sessionReset(void) {
     EspNativeGameplayActionEngine_reset();
     EspNativeGameplayPlayerResources_reset();
     EspNativeGameplayPickup_reset();
-    __real_EspNativeGameplaySession_reset();
+    EspNativeGameplaySession_reset();
 }
 
-void __wrap_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg) {
+void EspNativeGameplayPlayerResources_sessionService(struct DoomRPG_s* doomRpg) {
     if (resources.view.fatal != 0U) return;
-    __real_EspNativeGameplaySession_service(doomRpg);
+    EspNativeGameplaySession_service(doomRpg);
     logCorpus();
 #if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_DEBUG
     EspNativeGameplayInteractionInventory_log();

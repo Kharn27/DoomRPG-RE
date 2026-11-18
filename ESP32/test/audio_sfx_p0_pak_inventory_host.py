@@ -32,7 +32,7 @@ assert "EspAssetPack_close();" in probe
 assert "readZipFileEntry" not in probe and "SD.open" not in probe
 assert "Mix_" not in probe and "malloc(" not in probe.lower()
 assert "EspNativeSfxProbe_service(EspNativeGameplaySession_isActive());" in main
-assert main.index("EspNativeGameplaySession_service(doomRpg);") < main.index(
+assert main.index("EspNativeGameplaySessionCoordinator_service(doomRpg);") < main.index(
     "EspNativeSfxProbe_service(EspNativeGameplaySession_isActive());"
 ) < main.index(
     "EspEntranceMusic_service(EspNativeGameplaySession_isActive(), sdReady);"
