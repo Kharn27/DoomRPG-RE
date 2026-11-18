@@ -262,8 +262,11 @@ def exercise(body):
         c.write_text(STUBS + "\n" + body + "\n" + CHECKS,
                      encoding="utf-8")
         compile_run = subprocess.run(
+            # Mutants deliberately orphan some isolated mock functions; keep
+            # every other warning fatal so rejection depends on runtime parity.
             ["cc", "-std=c11", "-O0", "-Wall", "-Wextra", "-Werror",
-             str(c), "-o", str(exe)], capture_output=True, text=True)
+             "-Wno-unused-function", str(c), "-o", str(exe)],
+            capture_output=True, text=True)
         need(compile_run.returncode == 0,
              "RC13 actual C failed compile:\n" + compile_run.stderr[:3500])
         run = subprocess.run([str(exe)], capture_output=True, text=True,
