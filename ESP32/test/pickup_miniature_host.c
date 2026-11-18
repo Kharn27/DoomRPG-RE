@@ -129,15 +129,15 @@ int main(void) {
     EspPickupMini_reset();
     assert(!EspPickupMini_due(100U));
     EspPickupMini_enqueue(80U);
-    EspPickupMini_enqueue(81U); /* Already collected while first still pending. */
-    assert(state.count == 2U && !state.active);
+    /* Test the isolated 500ms stable icon first, then a separate backlog. */
+    assert(state.count == 1U && !state.active);
     busyPak = 1U;
     EspPickupMini_beforePresent(100U);
-    assert(state.count == 2U && !state.active && !decodeCount);
+    assert(state.count == 1U && !state.active && !decodeCount);
     busyPak = 0U;
     assert(EspPickupMini_due(100U));
     EspPickupMini_beforePresent(100U);
-    assert(state.active && state.count == 1U && state.first);
+    assert(state.active && state.count == 0U && state.first);
     assert(pixel(MINI_X, MINI_Y) == (uint16_t)(0x4000U | 80U));
     assert(pixel(MINI_X + ESP_PICKUP_MINI_SIZE - 1U,
                  MINI_Y + ESP_PICKUP_MINI_SIZE - 1U) ==
@@ -168,27 +168,21 @@ int main(void) {
     assert(!EspPickupMini_due(370U));
     assert(state.lit);
 
-    /* Elapsed 500ms: next visual begins without game/input gating. A
-     * queued movement takes priority over idle miniature presentation. */
+    /* Elapsed 500ms: isolated icon expires without another full blink.
+     * Pending gameplay input prevents an optional, standalone LCD flush. */
     testInput.pending = 1U;
     assert(!EspPickupMini_due(600U));
     testInput.pending = 0U;
     assert(EspPickupMini_due(600U));
-    EspPickupMini_beforePresent(600U);
-    assert(state.active && state.first && !state.count);
-    assert(pixel(MINI_X, MINI_Y) == (uint16_t)(0x4000U | 81U));
-    assert(decodeCount == 2U);
-    EspPickupMini_afterPresent(600U);
-    testInput.pending = 1U;
-    assert(!EspPickupMini_due(1100U));
-    /* A gameplay-owned normal world frame still retires the expired icon. */
+    /* A gameplay-owned normal world frame retires the expired icon. */
     fill(0x5678U);
     EspPickupMini_markFreshFrame();
-    EspPickupMini_beforePresent(1100U);
-    assert(!state.active);
-    testInput.pending = 0U;
+    EspPickupMini_beforePresent(600U);
+    EspPickupMini_afterPresent(600U);
+    assert(!state.active && state.count == 0U);
+    assert(decodeCount == 1U);
     entireBackground(0x5678U);
-    assert(!EspPickupMini_due(1100U));
+    assert(!EspPickupMini_due(600U));
     unchangedHudAndGuard(0x5678U);
 
     /* A second pickup does not wait for an old icon to finish all 500ms.
