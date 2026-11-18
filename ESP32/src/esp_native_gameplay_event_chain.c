@@ -123,7 +123,7 @@ static EspNativeGameplayDialogResumeStatus beginInteraction(uint16_t eventIndex,
     uint8_t offset, uint32_t runFlags, EspNativeGameplayDialogResumeResult* result);
 static EspNativeGameplayDialogResumeStatus resumeInteraction(uint16_t eventIndex,
     uint8_t offset, uint32_t runFlags, EspNativeGameplayDialogResumeResult* result);
-int __wrap_EspNativeGameplayDialog_rollbackResume(
+int EspNativeGameplayEventChain_rollbackDialogResume(
     const EspNativeGameplayDialogResumeResult* result);
 extern int __real_Esp32PlatformVideo_present(void);
 
@@ -219,7 +219,7 @@ static int interactionOwns(uint16_t eventIndex) {
 }
 
 extern EspNativeGameplayDialogBeginStatus
-__real_EspNativeGameplayDialog_begin(uint16_t eventIndex,
+EspNativeGameplayDialog_begin(uint16_t eventIndex,
                                      uint8_t commandOffset,
                                      uint32_t runFlags);
 
@@ -547,7 +547,7 @@ EspNativeGameplayEventChain_beginDialogCommand(
                    : ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_UNSUPPORTED_RESUME;
     }
 
-    dialogStatus = __real_EspNativeGameplayDialog_begin(eventIndex,
+    dialogStatus = EspNativeGameplayDialog_begin(eventIndex,
                                                         commandOffset,
                                                         runFlags);
     if (!EspNativeGameplayEventChain_restoreDialogMask(&mask)) {
@@ -1181,7 +1181,7 @@ int EspNativeGameplayEventChain_serviceWait(struct Render_s* render) {
     (void)EspNativeGameplayFacingLabel_refresh("SCRIPT-WAIT-CLOSE");
     memset(&frame, 0, sizeof(frame));
     if (!EspNativeGameplayFrame_renderTurn(render, (uint8_t)view->viewAngle, &frame)) {
-        if (result.rollbackAvailable && __wrap_EspNativeGameplayDialog_rollbackResume(&result)) {
+        if (result.rollbackAvailable && EspNativeGameplayEventChain_rollbackDialogResume(&result)) {
             transaction.continuation.finished = 0U;
             transaction.continuation.retry = 1U;
             transaction.continuation.lastPaintMs = now;
@@ -1234,7 +1234,7 @@ EspNativeGameplayEventChain_executeRange(
     return executeChain(&close, endCommandOffsetExclusive, outResult);
 }
 
-EspNativeGameplayDialogResumeStatus __wrap_EspNativeGameplayDialog_resume(
+EspNativeGameplayDialogResumeStatus EspNativeGameplayEventChain_resumeDialog(
     const EspNativeGameplayDialogClose* close,
     EspNativeGameplayDialogResumeResult* outResult) {
     if (close != NULL && interactionOwns(close->sourceEventIndex)) {
@@ -1249,7 +1249,7 @@ EspNativeGameplayDialogResumeStatus __wrap_EspNativeGameplayDialog_resume(
     return executeChain(close, UINT16_MAX, outResult);
 }
 
-int __wrap_EspNativeGameplayDialog_rollbackResume(
+int EspNativeGameplayEventChain_rollbackDialogResume(
     const EspNativeGameplayDialogResumeResult* result) {
     int ok;
     if (result == NULL || result->rollbackAvailable != 1U ||

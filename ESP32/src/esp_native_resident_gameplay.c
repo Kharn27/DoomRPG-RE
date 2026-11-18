@@ -32,6 +32,7 @@
 #include "esp_native_gameplay_controls.h"
 #include "esp_native_gameplay_dialog.h"
 #include "esp_native_gameplay_event_chain.h"
+#include "esp_native_gameplay_note_prefix.h"
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_facing_label.h"
 #include "esp_native_gameplay_frame.h"
@@ -710,7 +711,7 @@ static void serviceMove(Render_t* render,
             return;
         }
 
-        dialogStatus = EspNativeGameplayDialog_begin(
+        dialogStatus = EspNativeGameplayNotePrefix_beginDialog(
                 moveDialog.eventIndex,
                 moveDialog.commandOffset,
                 moveDialog.runFlags);
@@ -1069,7 +1070,7 @@ static void serviceSelect(DoomRPG_t* doomRpg,
                                  "SELECT-CHAIN")) {
             if (chainStatus == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK &&
                 chain.rollbackAvailable != 0U &&
-                EspNativeGameplayDialog_rollbackResume(&chain) &&
+                EspNativeGameplayEventChain_rollbackDialogResume(&chain) &&
                 renderActionCurrent(render, (uint8_t)view->viewAngle,
                                     "SELECT-CHAIN-ROLLBACK")) {
                 printf("[RESIDENTGAMEPLAY] SELECT-CHAIN ROLLBACK seq=%u event=%u restored=yes\n",
@@ -1189,7 +1190,7 @@ static void serviceSelect(DoomRPG_t* doomRpg,
             return;
         }
 
-        dialogStatus = EspNativeGameplayDialog_begin(
+        dialogStatus = EspNativeGameplayNotePrefix_beginDialog(
                 result.eventIndex,
                 result.commandOffset,
                 ESP_NATIVE_GAMEPLAY_SELECT_RUN_FLAGS);
@@ -1527,7 +1528,7 @@ static void serviceDialogAction(Render_t* render,
         return;
     }
 
-    resumeStatus = EspNativeGameplayDialog_resume(&close, &resume);
+    resumeStatus = EspNativeGameplayEventChain_resumeDialog(&close, &resume);
     if (resumeStatus == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_PAUSED) {
         ++gameplayState.dialogResumes;
         return;
@@ -1546,7 +1547,7 @@ static void serviceDialogAction(Render_t* render,
     if (!renderCurrent(render, (uint8_t)view->viewAngle, "DIALOG-RESUME")) {
         if (resumeStatus == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK &&
             resume.rollbackAvailable != 0U &&
-            EspNativeGameplayDialog_rollbackResume(&resume) &&
+            EspNativeGameplayEventChain_rollbackDialogResume(&resume) &&
             renderCurrent(render, (uint8_t)view->viewAngle,
                           "DIALOG-RESUME-ROLLBACK")) {
             printf("[RESIDENTGAMEPLAY] DIALOG ROLLBACK seq=%u event=%u opcode=%u restored=yes\n",
@@ -1659,7 +1660,7 @@ static void servicePasswordCompletion(
         }
         else {
             resumeStatus =
-                EspNativeGameplayDialog_resume(&completion->close, &resume);
+                EspNativeGameplayEventChain_resumeDialog(&completion->close, &resume);
             if (resumeStatus != ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK &&
                 resumeStatus != ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_NO_COMMAND) {
                 printf("[RESIDENTGAMEPLAY] PASSWORD-RESUME-FAILED event=%u offset=%u status=%s\n",
@@ -1684,7 +1685,7 @@ static void servicePasswordCompletion(
         if (completion->correct != 0U &&
             resumeStatus == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK &&
             resume.rollbackAvailable != 0U &&
-            EspNativeGameplayDialog_rollbackResume(&resume) &&
+            EspNativeGameplayEventChain_rollbackDialogResume(&resume) &&
             renderCurrent(render, (uint8_t)view->viewAngle,
                           resumeIntoDialog
                               ? "PASSWORD-PREFIX-ROLLBACK"
@@ -1709,7 +1710,7 @@ static void servicePasswordCompletion(
             if (resumeStatus == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK &&
                 resume.rollbackAvailable != 0U) {
                 rollbackOk =
-                    EspNativeGameplayDialog_rollbackResume(&resume);
+                    EspNativeGameplayEventChain_rollbackDialogResume(&resume);
             }
             if (rollbackOk &&
                 renderCurrent(render, (uint8_t)view->viewAngle,

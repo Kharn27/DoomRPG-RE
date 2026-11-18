@@ -7,6 +7,8 @@ must find its unique RC11 addition before the older RC10 oracle runs.
 def restore_pre_rc11_resident(source):
     binary = isinstance(source, bytes)
     if binary: source = source.decode("utf-8")
+    from arch_rc12_history import restore_pre_rc12_resident
+    source = restore_pre_rc12_resident(source)
     new = "int painted=EspNativeDynamicLineRender_renderAmbient("
     old = "int painted=EspNativeGameplayFrame_renderAmbient("
     assert source.count(new) == 1, "ARCH-RC11 resident ambient oracle anchor"
@@ -16,6 +18,8 @@ def restore_pre_rc11_resident(source):
 def restore_pre_rc11_event_chain(source):
     binary = isinstance(source, bytes)
     if binary: source = source.decode("utf-8")
+    from arch_rc12_history import restore_pre_rc12_event_chain
+    source = restore_pre_rc12_event_chain(source)
     imports = '#include "esp_native_dynamic_line_render.h"\n'
     new = "if (!EspNativeDynamicLineRender_composeTurn("
     old = "if (!EspNativeGameplayFrame_composeTurn("

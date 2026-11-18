@@ -100,6 +100,17 @@ EspNativeGameplayEventChain_executeRange(
     uint32_t runFlags,
     EspNativeGameplayDialogResumeResult* outResult);
 
+/* Explicit transaction boundary: Dialog owns visible modal state while
+ * EventChain owns multi-command continuation, interaction pauses and the
+ * exact mutation/rollback journal. Never fall through to Dialog_resume or
+ * its single-command rollback leaf for a production scripted continuation.
+ */
+EspNativeGameplayDialogResumeStatus EspNativeGameplayEventChain_resumeDialog(
+    const EspNativeGameplayDialogClose* close,
+    EspNativeGameplayDialogResumeResult* outResult);
+int EspNativeGameplayEventChain_rollbackDialogResume(
+    const EspNativeGameplayDialogResumeResult* result);
+
 /* Session-lifetime owner teardown. Call after native gameplay consumers have
  * returned and the resident gameplay/dialog owners have been reset. Releases
  * both the lazy rollback journal and its optional topology snapshot; safe to

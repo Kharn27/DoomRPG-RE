@@ -3,9 +3,18 @@
 
 #include <stdint.h>
 
+#include "esp_native_gameplay_dialog.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* Production entry for MOVE/SELECT modal dialogs. Runs the original NOTE
+ * prefix admission/apply/rollback, then the full EventChain begin preflight.
+ * Do not call the raw Dialog_begin leaf from gameplay.
+ */
+EspNativeGameplayDialogBeginStatus EspNativeGameplayNotePrefix_beginDialog(
+    uint16_t eventIndex, uint8_t commandOffset, uint32_t runFlags);
 
 /* Read-only view of the lazily owned current-map NOTE corpus. Returns an
  * empty string when no notes have been committed. Borrowed pointer: never

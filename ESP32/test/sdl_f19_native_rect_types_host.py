@@ -81,7 +81,8 @@ note = (SRC / "esp_native_gameplay_note_prefix.c").read_text(encoding="utf-8")
 assert note.startswith("#include <stdlib.h>\n"), "explicit C allocator include"
 assert "#include <SDL.h>" not in note, "NOTE must not depend on SDL compatibility"
 assert not re.search(r"\bSDL_[A-Za-z0-9_]+\b", note), "no SDL identifier"
-assert git_blob("#include <SDL.h>\n" + note) == NOTE_SHA
+from arch_rc12_history import restore_pre_rc12_note_prefix
+assert git_blob("#include <SDL.h>\n" + restore_pre_rc12_note_prefix(note)) == NOTE_SHA
 
 header = (ROOT / "ESP32/test/oracles/SDL.h").read_text(encoding="utf-8")
 native = (ROOT / "ESP32/include/esp_native_texture.h").read_text(encoding="utf-8")
