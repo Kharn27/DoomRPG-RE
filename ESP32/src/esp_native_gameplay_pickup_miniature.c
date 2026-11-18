@@ -25,12 +25,14 @@ _Static_assert(MINI_Y >= 20U && MINI_BOTTOM_EXCLUSIVE <= 100U,
                "Pickup miniature must stay inside the 3D viewport");
 _Static_assert(MINI_X >= 13U && MINI_X + ESP_PICKUP_MINI_SIZE <= 160U,
                "Pickup miniature must stay clear of the left cue and framebuffer edge");
-/* Keep the original 500ms opportunity to see each icon, but eliminate
- * the 3x ON/OFF cycles: each blink previously forced another full 320x240
- * TFT flush (~40ms on real classic CYD). A stationary icon needs at most
- * one start and one expiry present, or zero additional presents when a
- * normal gameplay frame already services that transition. */
+/* Preserve the original visual: 3x105ms ON and 65ms OFF in a 500ms
+ * nonblocking miniature lease. Gameplay input retains priority over
+ * miniature-only screen presents; normal movement frames can carry the
+ * visual transitions without an extra render pass. */
 #define MINI_DURATION 500U
+#define MINI_ON 105U
+#define MINI_PERIOD 165U
+#define MINI_PULSES 3U
 /* With queued pickups, do not hold the previous icon for another 500ms.
  * Give it a short, bounded visible lease before advancing the FIFO. */
 #define MINI_BACKLOG_MIN_MS 160U
@@ -59,7 +61,9 @@ static uint16_t* fb(void) {
 }
 
 static int litAt(uint32_t elapsed) {
-    return elapsed < MINI_DURATION;
+    return elapsed < MINI_DURATION &&
+           elapsed / MINI_PERIOD < MINI_PULSES &&
+           elapsed % MINI_PERIOD < MINI_ON;
 }
 
 void EspPickupMini_reset(void) {
@@ -139,7 +143,7 @@ static void startNext(void) {
         state.shownMs = 0U;
         state.captured = 0U;
         state.lit = 0U;
-        printf("[PICKUPMINI] START logical=%u at=%u,%u size=%ux%u hold=500ms backlogMin=160ms fifo=%u input=unblocked\n",
+        printf("[PICKUPMINI] START logical=%u at=%u,%u size=%ux%u blink=3x105ms/500ms backlogMin=160ms fifo=%u input=unblocked\n",
                (unsigned)logical, (unsigned)MINI_X, (unsigned)MINI_Y,
                (unsigned)ESP_PICKUP_MINI_SIZE, (unsigned)ESP_PICKUP_MINI_SIZE,
                (unsigned)state.count);
