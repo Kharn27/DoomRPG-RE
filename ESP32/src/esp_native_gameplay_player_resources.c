@@ -11,6 +11,7 @@
 #include "Render.h"
 
 #include <esp_heap_caps.h>
+#include <esp_timer.h>
 
 #include "doomrpg_log.h"
 #include "esp_entity_def_type_catalog.h"
@@ -28,6 +29,7 @@
 #include "esp_native_gameplay_interaction_inventory.h"
 #include "esp_native_gameplay_player_resources.h"
 #include "esp_native_gameplay_pickup_miniature.h"
+#include "esp_native_gameplay_pickup_redraw.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_session.h"
 #include "esp_native_resident_gameplay.h"
@@ -94,6 +96,7 @@ typedef struct ResourceOwner_s {
     EspPlayerViewState pendingBefore;
     EspPlayerViewState pendingAfter;
     uint8_t corpusLogged;
+    EspPickupRedraw redraw;
 } ResourceOwner;
 
 static ResourceOwner resources;
@@ -210,6 +213,7 @@ static int ensureOwner(uint8_t targetMapId) {
         resources.view.active = 1U;
         resources.view.fatal = 0U;
         resources.corpusLogged = 0U;
+        memset(&resources.redraw, 0, sizeof(resources.redraw));
         memset(&resources.pendingBefore, 0, sizeof(resources.pendingBefore));
         memset(&resources.pendingAfter, 0, sizeof(resources.pendingAfter));
         printf("[PLAYERRES] READY map=%u arena=%08x sprites=%u consumedBytes=%u playerBytes=%u playerFNV=%08x entityDefCache=%uB families=3/4/5/6/16\n",
@@ -930,8 +934,27 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
     playerFNVAfter = EspNativeGameplayPlayerState_fingerprint();
     resources.view.playerFNV1a = playerFNVAfter;
 
-    if (rerender(doomRpg, afterView, "RESOURCE-PICKUP")) {
-        /* Cosmetic FIFO is committed AFTER the required world redraw.
+    /*
+     * A normal MOVE has already published its canonical destination frame.
+     * Re-rendering here adds a whole second BSP + LCD present for every item.
+     * Keep the old immediate automap transaction, but publish ordinary world
+     * resources immediately and coalesce their cosmetic redraw at idle.
+     * A later settled world frame satisfies this lease automatically.
+     */
+    if (!EspNativeResidentGameplay_isAutomapActive() ||
+        rerender(doomRpg, afterView, "RESOURCE-PICKUP")) {
+        if (!EspNativeResidentGameplay_isAutomapActive()) {
+            const uint32_t nowMs =
+                (uint32_t)(esp_timer_get_time() / 1000LL);
+            const unsigned int alreadyPending =
+                (unsigned int)resources.redraw.pending;
+            EspPickupRedraw_schedule(&resources.redraw, nowMs);
+            printf("[PLAYERRES] REDRAW-QUEUE tile=%u pendingBefore=%u quietMs=%u commit=immediate worldPaint=deferred input=unblocked\n",
+                   (unsigned int)afterTile,
+                   alreadyPending,
+                   (unsigned int)ESP_PICKUP_REDRAW_QUIET_MS);
+        }
+        /* Cosmetic FIFO is committed AFTER the semantic world transaction.
          * Raw BSP sprite info is only correct for unchanged world items:
          * a smashed crate retains its immutable crate art, while the
          * crate-state overlay changes the visual to its effective loot tile.
@@ -1166,6 +1189,57 @@ const EspNativeGameplayHudState* __wrap_EspNativeGameplayHud_view(void) {
         hudOverlay.model.ammo = player->ammo[weapon->ammoType];
     }
     return &hudOverlay;
+}
+
+/*
+ * A successful full settled WORLD frame is authoritative. Any pending
+ * pickup redraw was already represented by its latest player/consumed state.
+ * Previews are intentionally excluded by the caller (frame compositor).
+ */
+void EspNativeGameplayPlayerResources_noteWorldPresented(void) {
+    const EspPlayerViewState* view = EspPlayerView_view();
+    if (resources.view.active != 1U || resources.view.fatal != 0U ||
+        view == NULL || view->active != 1U ||
+        view->targetMapId != resources.view.targetMapId ||
+        !EspPickupRedraw_satisfy(&resources.redraw)) {
+        return;
+    }
+    printf("[PLAYERRES] REDRAW-SATISFIED reason=settled-world-frame extraFrame=no input=unblocked\n");
+}
+
+int EspNativeGameplayPlayerResources_redrawDue(uint32_t nowMs) {
+    return resources.view.active == 1U && resources.view.fatal == 0U &&
+           EspPickupRedraw_due(&resources.redraw, nowMs);
+}
+
+/* Only resident WORLD idle may call this. Never block an admitted command,
+ * create another game turn or borrow the automap/modal/PAK screen lease.
+ * Failed presentation stays cosmetic and retries after another quiet window:
+ * a committed resource must not be rolled back after subsequent moves.
+ */
+int EspNativeGameplayPlayerResources_flushIdle(struct DoomRPG_s* doomRpg,
+                                                uint32_t nowMs) {
+    const EspPlayerViewState* view = EspPlayerView_view();
+    if (!EspNativeGameplayPlayerResources_redrawDue(nowMs)) return 1;
+    if (doomRpg == NULL || view == NULL || view->active != 1U ||
+        view->targetMapId != resources.view.targetMapId ||
+        view->viewX != view->destX || view->viewY != view->destY ||
+        view->viewAngle != view->destAngle ||
+        (view->viewAngle & 63) != 0 ||
+        EspNativeResidentGameplay_isAutomapActive() ||
+        !EspNativeGameplaySession_canService()) {
+        return 1;
+    }
+
+    if (rerender((DoomRPG_t*)doomRpg, view, "RESOURCE-PICKUP-IDLE")) {
+        /* renderTurn's settled-frame publication already clears the lease. */
+        (void)EspPickupRedraw_satisfy(&resources.redraw);
+        printf("[PLAYERRES] REDRAW-IDLE result=presented turn=no playerMutation=no\n");
+        return 1;
+    }
+    EspPickupRedraw_schedule(&resources.redraw, nowMs);
+    printf("[PLAYERRES] REDRAW-IDLE result=retry-after-quiet gameplay=committed input=unblocked\n");
+    return 0;
 }
 
 void EspNativeGameplayPlayerResources_sessionReset(void) {
