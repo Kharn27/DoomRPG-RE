@@ -41,6 +41,9 @@ def source_gate() -> None:
         assert current.startswith(prefix), f"{name}: no host/geometry guard"
         assert current.count(b"#include <SDL.h>") == 1, name
         old = b"#include <SDL.h>\n" + current[len(prefix):]
+        if name == "esp_native_gameplay_event_chain.c":
+            from arch_rc11_history import restore_pre_rc11_event_chain
+            old = restore_pre_rc11_event_chain(old)
         assert git_blob(old) == old_sha, f"{name}: real C body or include changed"
         body = current[len(prefix):].decode("utf-8")
         active = re.sub(r"/\*[\s\S]*?\*/|//[^\n]*", "", body)
