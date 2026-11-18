@@ -148,13 +148,18 @@ int main(void) {
     assert(!EspPickupMini_due(104U));
     assert(decodeCount == 1U);
 
-    /* A stable 500ms miniature replaces three blink cycles and avoids
-     * four extra 40ms full-screen LCD flushes per item. */
-    assert(!EspPickupMini_due(205U));
+    /* Original visual cadence: 105ms ON / 60ms OFF, three pulses.
+     * Cosmetic-only presents are still skipped when a gameplay input
+     * is pending; this fixture drives the exact transitions directly. */
+    assert(!EspPickupMini_due(204U));
+    assert(EspPickupMini_due(205U));
     EspPickupMini_beforePresent(205U);
-    assert(state.lit && decodeCount == 1U);
-    assert(!EspPickupMini_due(265U));
+    assert(!state.lit && decodeCount == 1U);
+    entireBackground(0x1234U);
+    assert(!EspPickupMini_due(264U));
+    assert(EspPickupMini_due(265U));
     EspPickupMini_beforePresent(265U);
+    assert(state.lit);
     assert(pixel(MINI_X, MINI_Y) == (uint16_t)(0x4000U | 80U));
 
     /* A new camera frame must discard the old background, then restore
@@ -165,10 +170,21 @@ int main(void) {
     EspPickupMini_afterPresent(275U);
     assert(state.lit && pixel(MINI_X, MINI_Y) == (uint16_t)(0x4000U | 80U));
     assert(decodeCount == 1U);
-    assert(!EspPickupMini_due(370U));
+    assert(EspPickupMini_due(370U));
+    EspPickupMini_beforePresent(370U);
+    assert(!state.lit);
+    entireBackground(0x5678U);
+    assert(!EspPickupMini_due(429U));
+    assert(EspPickupMini_due(430U));
+    EspPickupMini_beforePresent(430U);
     assert(state.lit);
+    assert(pixel(MINI_X, MINI_Y) == (uint16_t)(0x4000U | 80U));
+    assert(EspPickupMini_due(535U));
+    EspPickupMini_beforePresent(535U);
+    assert(!state.lit);
+    entireBackground(0x5678U);
 
-    /* Elapsed 500ms: isolated icon expires without another full blink.
+    /* Elapsed 500ms: isolated icon expires after all three pulses.
      * Pending gameplay input prevents an optional, standalone LCD flush. */
     testInput.pending = 1U;
     assert(!EspPickupMini_due(600U));
@@ -193,6 +209,13 @@ int main(void) {
     EspPickupMini_afterPresent(2000U);
     assert(state.active && state.count == 0U);
     EspPickupMini_enqueue(121U);
+    /* Preemption of a backlogged miniature stays bounded; its first
+     * 105ms ON pulse and 55ms OFF lease remain observable. */
+    assert(!EspPickupMini_due(2104U));
+    assert(EspPickupMini_due(2105U));
+    EspPickupMini_beforePresent(2105U);
+    assert(!state.lit);
+    entireBackground(0x5678U);
     assert(!EspPickupMini_due(2159U));
     assert(EspPickupMini_due(2160U));
     fill(0x5678U);
@@ -231,6 +254,6 @@ int main(void) {
     assert(pixel(MINI_X, MINI_Y) == (uint16_t)(0x4000U | 101U));
     unchangedHudAndGuard(0x2222U);
 
-    puts("pickup_miniature_host: PASS 24px actual up/downscale, aspect-safe, bottom-anchored, full HUD/world guards, exact underlay restore, crate-loot, CROSS, RGB565, FIFO, stable 500ms, 160ms backlog, priority input, fewer full LCD presents, PAK lease, cosmetic-only");
+    puts("pickup_miniature_host: PASS 24px actual up/downscale, aspect-safe, bottom-anchored, full HUD/world guards, exact underlay restore, crate-loot, CROSS, RGB565, FIFO, original 3x105ms blink/500ms, 160ms backlog, priority input, PAK lease, cosmetic-only");
     return 0;
 }
