@@ -6,10 +6,10 @@
 #include "esp_native_gameplay_session.h"
 #include "esp_player_view_state.h"
 
-int __real_EspNativeGameplaySession_configure(
+int EspNativeGameplaySession_configureBase(
     const EspNativeGameplaySessionConfig* config);
 
-int __wrap_EspNativeGameplaySession_configure(
+int EspNativeGameplaySession_configure(
     const EspNativeGameplaySessionConfig* config) {
     const EspPlayerViewState* view = EspPlayerView_view();
 
@@ -54,5 +54,5 @@ int __wrap_EspNativeGameplaySession_configure(
                (long)view->viewAngle);
     }
 
-    return __real_EspNativeGameplaySession_configure(config);
+    return EspNativeGameplaySession_configureBase(config);
 }

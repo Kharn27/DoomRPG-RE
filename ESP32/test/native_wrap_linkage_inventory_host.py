@@ -63,7 +63,11 @@ RETIRED_NORMAL_WRAPS = frozenset((
     "EspNativeGameplayAction_executeSelect",
     "EspNativeGameplayActionEngine_executeSelect",
     "EspNativeGameplayActionEngine_service",
-    "EspNativeGameplayActionEngine_reset"))
+    "EspNativeGameplayActionEngine_reset",
+    "EspNativeGameplayHub_handleAction",
+    "EspNativeGameplayHubTouchUi_classify",
+    "EspNativeGameplayInput_consume",
+    "EspNativeGameplaySession_configure"))
 RETIRED_ALL_WRAPS = RETIRED_BRINGUP_WRAPS | RETIRED_NORMAL_WRAPS
 RETAINED_BRINGUP_WRAPS = frozenset((
     "EspNativeFirstFrame_route",
@@ -99,7 +103,7 @@ def declarations(config: str) -> dict[str, list[str]]:
                     f"duplicate ld --wrap in {section}: {symbol}")
             sections[section].append(symbol)
     base = sections.get("env:esp32-cyd")
-    require(base is not None and len(base) >= 23,
+    require(base is not None and len(base) >= 19,
             "missing canonical normal build or unexpectedly small --wrap inventory")
     require(REQUIRED.issubset(base), "missing required native boundary")
     require(len(sections.get("env:esp32-cyd-bringup", [])) >= 3,
@@ -243,7 +247,7 @@ def compare_release(normal: dict, inverted: dict) -> None:
 
 def self_test() -> None:
     real = declarations((PROJECT / "platformio.ini").read_text())
-    require(len(real["env:esp32-cyd"]) == 23, "expected ARCH-RC13 23 normal wraps")
+    require(len(real["env:esp32-cyd"]) == 19, "expected ARCH-RC14 19 normal wraps")
     require(len(real["env:esp32-cyd-bringup"]) == 3,
             "expected 3 surviving diagnostic extras after ARCH-RC1")
     require(set(real["env:esp32-cyd-bringup"]) == RETAINED_BRINGUP_WRAPS,
