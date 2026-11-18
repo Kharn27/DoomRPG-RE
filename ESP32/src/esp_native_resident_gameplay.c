@@ -2508,7 +2508,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
                 v->viewAngle==v->destAngle) {
                 EspNativeGameplayFrameStats frame;
                 const Random_t rngBefore=(*EspNativeProcessRng_live());
-                int painted=EspNativeGameplayFrame_renderAmbient(
+                int painted=EspNativeDynamicLineRender_renderAmbient(
                     EspNativeRootOwners_live()->render,&frame);
                 int rngExact=memcmp(&rngBefore,EspNativeProcessRng_live(),
                                     sizeof(rngBefore))==0;

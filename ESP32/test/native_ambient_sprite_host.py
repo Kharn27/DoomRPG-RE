@@ -22,7 +22,8 @@ assert "++stats->ambientCandidates;" in sprite
 assert "++stats->ambientRapidCandidates;" in sprite
 assert "ambientRapidCandidates" in sprite
 assert "EspNativeSpriteRenderer_ambientDue(nowMs)" in resident
-assert "EspNativeGameplayFrame_renderAmbient(" in resident
+assert "EspNativeDynamicLineRender_renderAmbient(" in resident
+assert "EspNativeGameplayFrame_renderAmbient(" not in resident
 assert "EspNativeSpriteRenderer_resetAmbient()" in resident
 assert "EspNativeGameplayPresentGate_isArmed()" in resident
 assert "renderComposed(render,v,(uint8_t)v->viewAngle,1,1,stats)" in frame
@@ -38,11 +39,13 @@ assert "if (ok) {" in wall
 assert "EspNativeFirstFrame_indicatorDue(uint32_t nowMs)" in wall
 assert "EspNativeWallIndicator_changed(indicatorVisible," in wall
 assert "logical == 9U || logical == 10U" in wall_policy
-assert "-Wl,--wrap=EspNativeGameplayFrame_renderAmbient" in platformio
-assert "int __wrap_EspNativeGameplayFrame_renderAmbient(" in dynamic
+assert "-Wl,--wrap=EspNativeGameplayFrame_renderAmbient" not in platformio
+assert "int EspNativeDynamicLineRender_renderAmbient(" in dynamic
+assert "int __wrap_EspNativeGameplayFrame_renderAmbient(" not in dynamic
 assert "beginDynamicPreview()" in dynamic
 assert 'endDynamicPreview(ok, "ambient")' in dynamic
-assert "__real_EspNativeGameplayFrame_renderAmbient(render, outStats)" in dynamic
+assert "ok = EspNativeGameplayFrame_renderAmbient(render, outStats);" in dynamic
+assert "__real_EspNativeGameplayFrame_renderAmbient(render, outStats)" not in dynamic
 assert "if (open == 0U) return 1;" in dynamic
 assert "resolveDynamicTexture(index, outLine->texture" in dynamic
 code=r"""
