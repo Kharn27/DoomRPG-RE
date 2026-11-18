@@ -71,7 +71,7 @@ def scan() -> None:
             header.count("int " + OWN_COMPOSE + "(") == 1,
             "native ownership API missing/duplicate")
     require('#include "esp_native_dynamic_line_render.h"' in
-            files["esp_native_gameplay_event_chain.c"],
+            (SRC / "esp_native_gameplay_event_chain.c").read_text(encoding="utf-8"),
             "unpublished script capture missing owner import")
 
     dynamic = DYNAMIC.read_text(encoding="utf-8")
