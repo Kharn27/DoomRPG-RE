@@ -81,6 +81,33 @@ class Tests(unittest.TestCase):
         result=mod.parse_bsp(bytes(damaged),['/intro.bsp'])
         self.assertIn('exceeds bytecode table',result['warnings'][0])
 
+    def test_preflight_id_bounds_and_strict_invalid_references(self):
+        # esp_map_transition_preflight.h admits gameplay load IDs 1..32,
+        # distinct from catalog resource IDs 1..13.
+        raw=bytearray(fake_bsp())
+        for load_id in (12,32):
+            raw[27]=load_id
+            parsed=mod.parse_bsp(bytes(raw),['/intro.bsp','/level01.bsp'])
+            self.assertFalse(any('loadMapId outside' in w for w in parsed['warnings']))
+        raw[27]=33
+        parsed=mod.parse_bsp(bytes(raw),['/intro.bsp','/level01.bsp'])
+        self.assertTrue(any('loadMapId outside native transition preflight 1..32' in w
+                            for w in parsed['warnings']))
+        raw[27]=1
+        code_start=33+2+(2+10)+(2+5)+(2+4)+2
+        struct.pack_into('<I',raw,code_start+1,99) # EV_DIALOG invalid string
+        struct.pack_into('<I',raw,code_start+mod.BYTECODE.size+1,254) # CHANGEMAP invalid string
+        parsed=mod.parse_bsp(bytes(raw),['/intro.bsp','/level01.bsp'])
+        self.assertTrue(any('missing text string 99' in w for w in parsed['warnings']))
+        self.assertTrue(any('missing map string 254' in w for w in parsed['warnings']))
+        self.assets['intro.bsp']=bytes(raw)
+        write_pack(self.pak,self.assets)
+        cmd=[sys.executable,str(SCRIPT),'--pak',str(self.pak),
+             '--catalog',str(self.catalog),'--output',str(self.root/'bad.json'),'--strict']
+        self.assertEqual(subprocess.run(cmd,capture_output=True,text=True).returncode,2)
+        parsed=mod.parse_bsp(fake_bsp(),['/intro.bsp'])
+        self.assertTrue(any('target outside map catalog' in w for w in parsed['warnings']))
+
     def test_pack_index_and_crc(self):
         idx,head=mod.index_pack(self.pak)
         self.assertEqual(head['entry_count'],2)
