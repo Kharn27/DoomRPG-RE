@@ -26,14 +26,11 @@
 #include "native_sprite_lru_cache.h"
 #include "native_wall_lru_cache.h"
 #include "platform_touch_events.h"
+#include "platform_video_c_bridge.h" /* present() in ALL build profiles */
 #include "platform_video_config.h"
 
 #ifndef DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
 #define DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY 0
-#endif
-
-#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
-#include "platform_video_c_bridge.h"
 #endif
 
 #define OPTIONS_ITEM_COUNT DOOMRPG_ESP32_OPTIONS_CARD_COUNT

@@ -5,6 +5,12 @@ import shutil
 from os.path import join
 
 
+def audit_detail(message):
+    """Retired-ABI evidence stays available without spamming each build."""
+    if os.environ.get("DOOMRPG_BUILD_AUDIT_VERBOSE") == "1":
+        print(message)
+
+
 project_dir = env.subst("$PROJECT_DIR")
 build_dir = env.subst("$BUILD_DIR")
 project_src_dir = join(project_dir, "src")
@@ -62,7 +68,7 @@ if ("void EspNativeMainMenu_transitionCanvasState(" not in native_menu_state_own
     raise RuntimeError("Retired desktop Canvas state ABI revived or native menu owner absent")
 if "DoomCanvas_run(" in native_canvas_text or "DoomCanvas_loadMap(" in native_canvas_text:
     raise RuntimeError("Desktop Canvas state-machine/map ownership revived")
-print("[ESP32] Desktop DoomCanvas.c and lifecycle bridge retired; "
+audit_detail("[ESP32] Desktop DoomCanvas.c and lifecycle bridge retired; "
       "desktopCanvasABI=0 nativeCanvasText=1 nativeRootLifecycle=1")
 
 # Render.c is no longer generated or compiled in any CYD profile. The
@@ -70,7 +76,7 @@ print("[ESP32] Desktop DoomCanvas.c and lifecycle bridge retired; "
 # primitives for normal AND bringup. Startup/palette/mapping/teardown owners
 # remain unchanged; retired desktop BSP/shape/texel functions are not admitted.
 # Desktop reference parity is checked by host tests, not build-time rewriting.
-print("[ESP32] Desktop Render.c retired; geometry=esp-render-geometry-primitives "
+audit_detail("[ESP32] Desktop Render.c retired; geometry=esp-render-geometry-primitives "
       "profiles=normal+trace+bringup generated=no")
 
 # The former production Render reject TU is now empty of legitimate owners.
@@ -78,7 +84,7 @@ print("[ESP32] Desktop Render.c retired; geometry=esp-render-geometry-primitives
 # belong to compact native modules, not desktop-shaped safety stubs.
 if os.path.isfile(join(project_src_dir, "esp_legacy_render_reject.c")):
     raise RuntimeError("Legacy Render reject translation unit revived")
-print("[ESP32] Legacy Render reject TU retired nativeBSP+planes=owned")
+audit_detail("[ESP32] Legacy Render reject TU retired nativeBSP+planes=owned")
 
 # Render_setup is private to native layout; guard the exclusive ownership.
 with open(join(project_src_dir, "render_startup_bridge.c"), "r", encoding="utf-8") as f:
@@ -88,7 +94,7 @@ if ("void Render_setup(" in native_render_startup or
         "EspNativeEngineLayout_setupRender(EspNativeRootOwners_live()->render, &screenRect);" not in native_layout_owner or
         "Render_setup(doomRpg->render" in native_layout_owner):
     raise RuntimeError("Retired Render_setup ABI revived or private native layout absent")
-print("[ESP32] Render_setup retired nativeLayout=private")
+audit_detail("[ESP32] Render_setup retired nativeLayout=private")
 
 # Legacy Render_startup is now implementation-private inside the native owner;
 # the source-body parity and error-path semantics are tested using real C.
@@ -97,7 +103,7 @@ if ("int Render_startup(Render_t* render) {" in native_render_startup or
         "result = EspNativeRenderStartup_initialize(render);" not in native_render_startup or
         "result = Render_startup(render);" in native_render_startup):
     raise RuntimeError("Render_startup desktop ABI revived or native initializer absent")
-print("[ESP32] Render_startup retired nativeRenderStartup=private")
+audit_detail("[ESP32] Render_startup retired nativeRenderStartup=private")
 
 # Render_free is private to the fatal process-root teardown. The legacy
 # cleanup slots now have a separate native-named two-caller API.
@@ -106,7 +112,7 @@ if ("void Render_free(Render_t* render, boolean freePtr)" in native_render_start
         "EspNativeEngineRoot_releaseRender(EspNativeRootOwners_live()->render, true);" not in native_layout_owner or
         "Render_free(doomrpg->render" in native_layout_owner):
     raise RuntimeError("Retired Render_free ABI revived or private root teardown absent")
-print("[ESP32] Render_free retired nativeRenderTeardown=private runtimeSlots=separate")
+audit_detail("[ESP32] Render_free retired nativeRenderTeardown=private runtimeSlots=separate")
 
 # Two native callers share compatibility Render cleanup. Reject the desktop
 # Render_freeRuntime ABI without accidentally privatizing MENU_MAIN START.
@@ -115,7 +121,7 @@ if ("void Render_freeRuntime(Render_t* render)" in native_render_startup or
         "EspNativeRenderRuntime_releaseCompatibility(render);" not in native_layout_owner or
         "Render_freeRuntime(render);" in native_layout_owner):
     raise RuntimeError("Retired Render_freeRuntime ABI revived or native dual-lifetime cleanup absent")
-print("[ESP32] Render_freeRuntime retired nativeRenderRuntimeCleanup=shared-native-two-callers")
+audit_detail("[ESP32] Render_freeRuntime retired nativeRenderRuntimeCleanup=shared-native-two-callers")
 
 # The palette loader is only a private Render startup phase. The existing
 # RGB565 conversion helpers remain independent public compatibility APIs.
@@ -124,14 +130,14 @@ if ("void Render_loadPalettes(Render_t* render)" in native_render_startup or
         "EspNativeRenderStartup_loadPalettes(render);" not in native_render_startup or
         "Render_loadPalettes(render);" in native_render_startup):
     raise RuntimeError("Retired Render_loadPalettes ABI revived or native startup owner absent")
-print("[ESP32] Render_loadPalettes retired nativePaletteLoader=private")
+audit_detail("[ESP32] Render_loadPalettes retired nativePaletteLoader=private")
 
 # The legacy Render_setGrayPalettes mutator has no native owner or caller.
 # Native grayscale effects, if ever required, must own their own small color
 # state and must not mutate map-wide texture arrays from desktop Render.
 if "void Render_setGrayPalettes(Render_t* render)" in native_render_startup:
     raise RuntimeError("Unused Render_setGrayPalettes legacy ABI revived")
-print("[ESP32] Render_setGrayPalettes retired nativeGrayPaletteOwner=none")
+audit_detail("[ESP32] Render_setGrayPalettes retired nativeGrayPaletteOwner=none")
 
 # No Render_loadMappings compatibility symbol may remain: CONFIGMAP must call
 # the existing native PAK/framebuffer-scratch mapping owner directly.
@@ -148,12 +154,12 @@ if os.path.isfile(native_mapping_path):
             "mappingsResult = EspLegacyMappings_load(render) ? true : false;" not in native_mapping_owner or
             "mappingsResult = Render_loadMappings(render);" in native_mapping_owner):
         raise RuntimeError("Retired Render_loadMappings ABI revived or direct native mapping owner missing")
-print("[ESP32] Render_loadMappings retired nativeMappings=direct-PAK-owned")
+audit_detail("[ESP32] Render_loadMappings retired nativeMappings=direct-PAK-owned")
 
 # No Game.c provider, generated or native bridge, is compiled on ESP32.
 # Game_t is not allocated, the compatibility root pointer stays NULL, and
 # Game_* calls are intentionally unavailable at link time.
-print("[ESP32] Desktop Game.c retired; bridge=absent Game_init=retired "
+audit_detail("[ESP32] Desktop Game.c retired; bridge=absent Game_init=retired "
       "gameObject=NULL originalC=uncompiled")
 
 # The original DoomRPG.c is a behavioral reference, never a firmware or
@@ -169,7 +175,7 @@ for stale_name in ("DoomRPG.c", "esp32_sdl.cpp"):
 stale_sdl_objects = join(build_dir, "doomrpg_esp32_sdl_patched")
 if os.path.isdir(stale_sdl_objects):
     shutil.rmtree(stale_sdl_objects)
-print("[ESP32] DoomRPG C oracle generation retired; reference=src/DoomRPG.c "
+audit_detail("[ESP32] DoomRPG C oracle generation retired; reference=src/DoomRPG.c "
       "compiledPatchedC=0 nativeProviders=yes")
 
 # SDL-F33: the byte-exact F3 SDL shim is a test-only reference under
@@ -195,14 +201,14 @@ if os.path.isfile(join(project_dir, "include", "SDL_mixer.h")):
     raise RuntimeError("Retired SDL mixer header returned to production includes")
 if not os.path.isfile(join(project_dir, "test", "oracles", "SDL_mixer.h")):
     raise RuntimeError("Missing host-only SDL mixer header oracle")
-print("[ESP32] SDL shim host-only; compiledFirmware=no oracle=ESP32/test/oracles/esp32_sdl.cpp platformHeader=test-only")
-print("[ESP32] SDL-F35 mixer header=host-only nativeSound=opaque")
+audit_detail("[ESP32] SDL shim host-only; compiledFirmware=no oracle=ESP32/test/oracles/esp32_sdl.cpp platformHeader=test-only")
+audit_detail("[ESP32] SDL-F35 mixer header=host-only nativeSound=opaque")
 # SDL-F36: SDL.h now belongs exclusively to executable host oracles.
 if os.path.isfile(join(project_dir, "include", "SDL.h")):
     raise RuntimeError("Retired SDL core header returned to production includes")
 if not os.path.isfile(join(project_dir, "test", "oracles", "SDL.h")):
     raise RuntimeError("Missing host-only SDL core header oracle")
-print("[ESP32] SDL-F36 core header=host-only nativeSDL=none")
+audit_detail("[ESP32] SDL-F36 core header=host-only nativeSDL=none")
 
 # The original desktop C and uncompiled SDL shim are host-only references;
 # all firmware owners live in ESP32/src; no generated SDL source remains.
@@ -249,8 +255,13 @@ if present_desktop_units != retired_desktop_units:
         "native-vs-patched ownership before updating build_engine.py: "
         + repr(sorted(present_desktop_units ^ retired_desktop_units))
     )
-print("[ESP32] Desktop original source registration retired; "
+audit_detail("[ESP32] Desktop original source registration retired; "
       "originalC=%u compiledOriginal=0 compiledPatchedC=0" %
       len(retired_desktop_units))
 
 # No legacy C source is admitted: singleton/root owners stay in ESP32/src.
+
+# The guards above always run; detailed historical retirement messages are
+# available with DOOMRPG_BUILD_AUDIT_VERBOSE=1 for diagnosis.
+print("[ESP32] Native source audit PASS: desktopC=0 generatedC=0 SDL=0 "
+      "Canvas/Render/Game=native; verbose=DOOMRPG_BUILD_AUDIT_VERBOSE=1")
