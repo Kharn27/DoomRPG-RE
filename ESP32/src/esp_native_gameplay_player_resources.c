@@ -851,7 +851,7 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
                    (unsigned int)candidates[i].dropSlot);
             return 1;
         }
-        printf("[PLAYERRES] PREPARE tile=%u sprite=%u defTile=%u type=%u subtype=%u parm=%ld action=%s value=%u->%u slot=%s%u worldRemove=%s rollback=armed\n",
+        DRPG_LOGD("[PLAYERRES] PREPARE tile=%u sprite=%u defTile=%u type=%u subtype=%u parm=%ld action=%s value=%u->%u slot=%s%u worldRemove=%s rollback=armed\n",
                (unsigned int)afterTile,
                (unsigned int)candidates[i].spriteIndex,
                (unsigned int)candidates[i].defTile,
@@ -953,10 +953,12 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
             const unsigned int alreadyPending =
                 (unsigned int)resources.redraw.pending;
             EspPickupRedraw_schedule(&resources.redraw, nowMs);
-            printf("[PLAYERRES] REDRAW-QUEUE tile=%u pendingBefore=%u quietMs=%u commit=immediate worldPaint=deferred input=unblocked\n",
+            DRPG_LOGD("[PLAYERRES] REDRAW-QUEUE tile=%u pendingBefore=%u quietMs=%u commit=immediate worldPaint=deferred input=unblocked\n",
                    (unsigned int)afterTile,
                    alreadyPending,
                    (unsigned int)ESP_PICKUP_REDRAW_QUIET_MS);
+            printf("[PLAYERRES] REDRAW-QUEUE tile=%u pending=%u\n",
+                   (unsigned int)afterTile, alreadyPending);
         }
         /* Cosmetic FIFO is committed AFTER the semantic world transaction.
          * Raw BSP sprite info is only correct for unchanged world items:
@@ -995,7 +997,7 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
                        (unsigned int)applied[i].defTile);
                 continue;
             }
-            printf("[PICKUPMINI] SOURCE sprite=%u defTile=%u original=%u logical=%u origin=%s\n",
+            DRPG_LOGD("[PICKUPMINI] SOURCE sprite=%u defTile=%u original=%u logical=%u origin=%s\n",
                    (unsigned int)applied[i].spriteIndex,
                    (unsigned int)applied[i].defTile,
                    (unsigned int)sourceLogical,
@@ -1025,7 +1027,7 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
                        EspNativeGameplayDialog_beginStatusName(dialogStatus));
             }
         }
-        printf("[PLAYERRES] COMMIT tile=%u candidates=%u consumed=%u totalConsumed=%u playerFNV=%08x->%08x hp=%u/%u armor=%u/%u weapon=%u weapons=%04x ammo0=%u ammo1=%u ammo2=%u ammo3=%u ammo4=%u keys=%08x credits=%u sound=deferred message=%s visual=pak-mini-500ms nonblocking=yes gotFace=deferred rollback=closed\n",
+        DRPG_LOGD("[PLAYERRES] COMMIT tile=%u candidates=%u consumed=%u totalConsumed=%u playerFNV=%08x->%08x hp=%u/%u armor=%u/%u weapon=%u weapons=%04x ammo0=%u ammo1=%u ammo2=%u ammo3=%u ammo4=%u keys=%08x credits=%u sound=deferred message=%s visual=pak-mini-500ms nonblocking=yes gotFace=deferred rollback=closed\n",
                (unsigned int)afterTile,
                (unsigned int)candidateCount,
                (unsigned int)appliedCount,
@@ -1046,10 +1048,24 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
                (unsigned int)EspNativeGameplayPlayerState_view()->keys,
                (unsigned int)EspNativeGameplayPlayerState_view()->credits,
                feedbackQueued ? "pickup-live" : "skipped-busy");
+        /* Keep normal CYD Serial output short: on a 115200-baud monitor,
+         * a few KB per pickup can materially delay successive moves. The
+         * full legacy diagnostic contract remains in DEBUG/TRACE builds. */
+#if DOOMRPG_LOG_LEVEL < DOOMRPG_LOG_DEBUG
+        printf("[PLAYERRES] COMMIT tile=%u count=%u player=%08x hp=%u/%u armor=%u/%u credits=%u rollback=closed\n",
+               (unsigned int)afterTile,
+               (unsigned int)appliedCount,
+               (unsigned int)playerFNVAfter,
+               (unsigned int)EspNativeGameplayPlayerState_health(),
+               (unsigned int)EspNativeGameplayPlayerState_maxHealth(),
+               (unsigned int)EspNativeGameplayPlayerState_armor(),
+               (unsigned int)EspNativeGameplayPlayerState_maxArmor(),
+               (unsigned int)EspNativeGameplayPlayerState_view()->credits);
+#endif
         /* SFX-P1: only after irreversible resource/player/world commit.
          * Original desktop generic pickup cue 5060; no PAK access here. */
         (void)EspNativeAudioIntent_publish(5060U,0U,3U);
-        printf("[PLAYERRES] FEEDBACK tile=%u message=\"%s\" sourceDefTile=%u flash=none miniature=PAK-24x24/500ms position=13,72 gotFace=deferred weaponHelp=%s messages=%u additionalMessages=%u-queued legacyCap=%u shifted=%u\n",
+        DRPG_LOGD("[PLAYERRES] FEEDBACK tile=%u message=\"%s\" sourceDefTile=%u flash=none miniature=PAK-24x24/500ms position=13,72 gotFace=deferred weaponHelp=%s messages=%u additionalMessages=%u-queued legacyCap=%u shifted=%u\n",
                (unsigned int)afterTile,
                pickupMessages[0],
                (unsigned int)applied[pickupMessageStart].defTile,
@@ -1059,6 +1075,13 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
                                   ? pickupMessageCount - 1U : 0U),
                (unsigned int)RESOURCE_PICKUP_MESSAGE_MAX,
                (unsigned int)legacyMessagesShifted);
+#if DOOMRPG_LOG_LEVEL < DOOMRPG_LOG_DEBUG
+        printf("[PLAYERRES] FEEDBACK tile=%u message=\"%s\"\n",
+               (unsigned int)afterTile, pickupMessages[0]);
+        (void)dialogOpened;
+        (void)pickupMessageStart;
+        (void)legacyMessagesShifted;
+#endif
         return 1;
     }
 
