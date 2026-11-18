@@ -34,6 +34,38 @@ def git_blob(data: bytes) -> str:
 
 
 
+# RC11: reverse only ambient/compose wrapper retirement before the RC10
+# inverse; the SHA of the historical F28 renderer still has to match exactly.
+RC11_RETIRED_PROTO = (
+    "int __real_EspNativeGameplayFrame_renderAmbient(\n"
+    "    struct Render_s* render,\n"
+    "    EspNativeGameplayFrameStats* outStats);\n"
+    "int __real_EspNativeGameplayFrame_composeTurn(\n"
+    "    struct Render_s* render,\n"
+    "    uint8_t angle,\n"
+    "    EspNativeGameplayFrameStats* outStats);\n"
+).encode("utf-8")
+
+
+def restore_rc11_dynamic(value: bytes) -> bytes:
+    edits = (
+        (b'int EspNativeDynamicLineRender_renderAmbient(',
+         b'int __wrap_EspNativeGameplayFrame_renderAmbient('),
+        (b'int EspNativeDynamicLineRender_composeTurn(',
+         b'int __wrap_EspNativeGameplayFrame_composeTurn('),
+        (b'ok = EspNativeGameplayFrame_renderAmbient(',
+         b'ok = __real_EspNativeGameplayFrame_renderAmbient('),
+        (b'ok = EspNativeGameplayFrame_composeTurn(',
+         b'ok = __real_EspNativeGameplayFrame_composeTurn('),
+    )
+    for newer, old in edits:
+        assert value.count(newer) == 1, ("RC11 inverse anchor", newer)
+        value = value.replace(newer, old, 1)
+    marker = b'int __real_EspMapRuntime_getLine('
+    assert value.count(marker) == 1, "RC11 original prototypes anchor"
+    return value.replace(marker, RC11_RETIRED_PROTO + marker, 1)
+
+
 # RC10: restore the original F28 body precisely; verify the frozen Git blob.
 RC10_RETIRED_PROTO = "int __real_EspNativeGameplayFrame_renderVisualPose(\n    struct Render_s* render,\n    const struct EspPlayerViewState_s* visual,\n    uint8_t settledAngle,\n    EspNativeGameplayFrameStats* outStats);\nint __real_EspNativeGameplayFrame_renderVisualMove(\n    struct Render_s* render,\n    const struct EspPlayerViewState_s* before,\n    const struct EspPlayerViewState_s* after,\n    uint8_t step,\n    uint8_t denominator,\n    EspNativeGameplayFrameStats* outStats);\n".encode("utf-8")
 
@@ -62,7 +94,7 @@ def original_body_parity() -> None:
     marker = GUARD.encode("ascii")
     for filename, blob in BEFORE.items():
         current = (SOURCES / filename).read_bytes()
-        historical = restore_rc10_dynamic(current) if filename == "esp_native_dynamic_line_render.c" else current
+        historical = restore_rc10_dynamic(restore_rc11_dynamic(current)) if filename == "esp_native_dynamic_line_render.c" else current
         if filename == "esp_render_geometry_primitives.c":
             # Unlike the five other TUs, SDL.h originally follows stdint.
             assert current.startswith(b"#include <stdint.h>\n\n" + marker), filename
