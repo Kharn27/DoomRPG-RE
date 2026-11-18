@@ -26,6 +26,7 @@
 #include "esp_native_gameplay_event_chain.h"
 #include "esp_native_gameplay_facing_label.h"
 #include "esp_native_gameplay_frame.h"
+#include "esp_native_dynamic_line_render.h"
 #include "esp_native_gameplay_gib_fx.h"
 #include "esp_native_gameplay_note_prefix.h"
 #include "esp_native_gameplay_player_state.h"
@@ -1143,7 +1144,7 @@ int EspNativeGameplayEventChain_serviceWait(struct Render_s* render) {
         if (transaction.continuation.waitPresented &&
             now - transaction.continuation.lastPaintMs < 50U) return 1;
         memset(&frame, 0, sizeof(frame));
-        if (!EspNativeGameplayFrame_composeTurn(render, (uint8_t)view->viewAngle, &frame)) {
+        if (!EspNativeDynamicLineRender_composeTurn(render, (uint8_t)view->viewAngle, &frame)) {
             return 1; /* Retain/retry the unpublished visual, never complete it. */
         }
         if (!EspNativeGameplayGibFx_paintCapture(transaction.continuation.particles,
