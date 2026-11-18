@@ -1052,9 +1052,10 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
          * a few KB per pickup can materially delay successive moves. The
          * full legacy diagnostic contract remains in DEBUG/TRACE builds. */
 #if DOOMRPG_LOG_LEVEL < DOOMRPG_LOG_DEBUG
-        printf("[PLAYERRES] COMMIT tile=%u count=%u player=%08x hp=%u/%u armor=%u/%u credits=%u rollback=closed\n",
+        printf("[PLAYERRES] COMMIT tile=%u count=%u action=%s player=%08x hp=%u/%u armor=%u/%u credits=%u rollback=closed\n",
                (unsigned int)afterTile,
                (unsigned int)appliedCount,
+               actionName(applied[0].action),
                (unsigned int)playerFNVAfter,
                (unsigned int)EspNativeGameplayPlayerState_health(),
                (unsigned int)EspNativeGameplayPlayerState_maxHealth(),
