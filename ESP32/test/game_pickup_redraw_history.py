@@ -49,21 +49,18 @@ def restore_pre_game_pickup_resources(source):
     )
     return _restore_type(source, binary)
 
-def restore_pre_game_pickup_frame(source):
-    source, binary = _as_text(source)
-    source = _remove(source, '#include "esp_native_gameplay_player_resources.h"\n')
-    source = _span(
-        source,
-        "        if (!preview && !EspNativeResidentGameplay_isAutomapActive()) {\n"
-        "            /* A new settled world image",
-        "    }\n    stats->active = 1U;",
-        "    }\n    stats->active = 1U;",
-    )
-    return _restore_type(source, binary)
-
 def restore_pre_game_pickup_resident(source):
     source, binary = _as_text(source)
     source = _remove(source, '#include "esp_native_gameplay_player_resources.h"\n')
+    source = _remove(source, (
+        "    /* Only the resident settled WORLD publisher can acknowledge that its\n"
+        "     * canonical image already contains the latest committed pickups. This\n"
+        "     * avoids linking PlayerResources into standalone compositor host tests. */\n"
+        "    if (frame.active == 1U && frame.finalPresented == 1U &&\n"
+        "        !automapActive()) {\n"
+        "        EspNativeGameplayPlayerResources_noteWorldPresented();\n"
+        "    }\n\n"
+    ))
     settled = (
         "        if (!EspNativeGameplayControls_isActive() &&\n"
         "            !EspNativeGameplayPresentGate_isArmed() &&\n"
