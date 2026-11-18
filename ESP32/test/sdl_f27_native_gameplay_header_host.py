@@ -122,10 +122,8 @@ def original_body_parity() -> None:
                 b"                    (void)EspEntranceMusic_prestartGameplayBeforeFirstFrame(\n"
                 b"                        view->targetMapId);\n"
             )
-            # Junction-M1 widens ONLY the map-route predicate before the
-            # existing SFX scan and pre-world audio prestart. Reverse that
-            # precise predicate for the frozen SDL-F27 source SHA; do not
-            # rebaseline the historical blob or relax the order witness.
+            # Junction-M1 changes only the map-route predicate of this
+            # pre-world SFX/music boundary; preserve the immutable F27 blob.
             junction_hook = l1_hook.replace(
                 b"EspAudioLoadingRoute_forMap(view->targetMapId) ==",
                 b"EspAudioLoadingRoute_forMap(view->targetMapId) !="
@@ -237,6 +235,8 @@ def original_body_parity() -> None:
             assert current.count(anchor) == 1, "RC9 resource declarations anchor drift"
             current = current.replace(anchor, anchor + prototypes, 1)
         if filename == "esp_native_resident_gameplay.c":
+            from arch_rc10_history import restore_pre_rc10_resident
+            current = restore_pre_rc10_resident(current)
             # ARCH-RC9: the native EXIT route calls the explicit coordinator.
             assert current.count(b"    EspNativeGameplaySessionCoordinator_reset();") == 1
             current = current.replace(b"    EspNativeGameplaySessionCoordinator_reset();",

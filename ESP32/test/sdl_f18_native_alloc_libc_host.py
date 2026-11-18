@@ -102,6 +102,8 @@ for filename, (sha, aliases) in REFERENCES.items():
         restored = current.replace("#include <SDL.h>\n#include <stdlib.h>\n",
                                    "#include <SDL.h>\n", 1)
     if filename == "esp_native_resident_gameplay.c":
+        from arch_rc10_history import restore_pre_rc10_resident
+        restored = restore_pre_rc10_resident(restored)
         # ARCH-RC9 renames the one resident EXIT teardown call. Reverse only
         # that exact routing token before the historical pre-F18 hash check.
         new_call = "    EspNativeGameplaySessionCoordinator_reset();"
