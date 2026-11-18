@@ -166,8 +166,8 @@ def parse_bsp(data: bytes, catalog: list[str]) -> dict:
       events=[], transitions=[], text_references=[], warnings=[])
     if trailing:
         result['warnings'].append('trailing BSP bytes; native committed spawn may reject')
-    if load_id < 1 or load_id > 11:
-        result['warnings'].append('gameplay loadMapId outside native transition preflight 1..11')
+    if load_id < 1 or load_id > 32:
+        result['warnings'].append('gameplay loadMapId outside native transition preflight 1..32')
     if spawn >= 1024:
         result['warnings'].append('header spawn tile is out of map bounds')
 
@@ -206,11 +206,20 @@ def parse_bsp(data: bytes, catalog: list[str]) -> dict:
                     link.update(show_stats=bool(arg1 & 0x80000000),
                                 spawn_param=((arg1 << 1)&0xffffffff)>>9)
                 result['transitions'].append(link)
+                if not raw_target:
+                    result['warnings'].append(
+                        f'event {i} command {j} {cmd["name"]} missing map string {idx}')
+                elif target_id is None:
+                    result['warnings'].append(
+                        f'event {i} command {j} {cmd["name"]} target outside map catalog {raw_target!r}')
             if opcode in TEXT_OPS or opcode == 39:
                 idx = arg1 if opcode in TEXT_OPS else arg1 & 0xffff
                 result['text_references'].append(dict(event=i, code_index=j,
                        opcode=cmd['name'], string_index=idx,
                        exists=idx<len(strings), bytes=len(strings[idx]) if idx<len(strings) else None))
+                if idx >= len(strings):
+                    result['warnings'].append(
+                        f'event {i} command {j} {cmd["name"]} missing text string {idx}')
         result['events'].append(ev)
     result['unlinked_bytecode_indexes'] = sorted(set(range(codes_n))-linked)
     return result
