@@ -123,13 +123,13 @@ class Tests(unittest.TestCase):
         self.assertFalse(any('loadMapId outside' in w for w in special['warnings']))
         ordinary=mod.parse_bsp(bytes(raw),['/intro.bsp'],'/intro.bsp')
         self.assertTrue(any('loadMapId outside' in w for w in ordinary['warnings']))
-        a=mod.classify_initial_entities([b'\\0\\0\\x57\\0\\0']*101,
+        a=mod.classify_initial_entities([b'\0\0\x57\0\0']*101,
                                          {87:(1,0)})
         self.assertEqual(a['enemies'],101)
         self.assertEqual(a['topology_snapshot_tracked'],101)
         self.assertTrue(a['topology_snapshot_overflow'])
         # Raw type classification cannot be excused by an inactive sprite flag.
-        no_entity=mod.classify_initial_entities([b'\\0\\0\\x57\\0\\x01'],{87:(1,0)})
+        no_entity=mod.classify_initial_entities([b'\0\0\x57\0\x01'],{87:(1,0)})
         self.assertEqual(no_entity['enemies'],0)
 
 
