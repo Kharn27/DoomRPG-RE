@@ -33,7 +33,31 @@ def git_blob(data: bytes) -> str:
     ).hexdigest()
 
 
-\n# RC10 retires two preview wrappers without changing the historical SDL-F28\n# body contract. Reverse ONLY the audited source transform before hashing.\nRC10_RETIRED_PROTO = "int __real_EspNativeGameplayFrame_renderVisualPose(\n    struct Render_s* render,\n    const struct EspPlayerViewState_s* visual,\n    uint8_t settledAngle,\n    EspNativeGameplayFrameStats* outStats);\nint __real_EspNativeGameplayFrame_renderVisualMove(\n    struct Render_s* render,\n    const struct EspPlayerViewState_s* before,\n    const struct EspPlayerViewState_s* after,\n    uint8_t step,\n    uint8_t denominator,\n    EspNativeGameplayFrameStats* outStats);\n".encode("utf-8")\n\ndef restore_rc10_dynamic(value: bytes) -> bytes:\n    edits = (\n        (b'#include "esp_native_dynamic_line_render.h"\\n', b''),\n        (b'int EspNativeDynamicLineRender_renderVisualPose(',\n         b'int __wrap_EspNativeGameplayFrame_renderVisualPose('),\n        (b'int EspNativeDynamicLineRender_renderVisualMove(',\n         b'int __wrap_EspNativeGameplayFrame_renderVisualMove('),\n        (b'ok = EspNativeGameplayFrame_renderVisualPose(',\n         b'ok = __real_EspNativeGameplayFrame_renderVisualPose('),\n        (b'ok = EspNativeGameplayFrame_renderVisualMove(',\n         b'ok = __real_EspNativeGameplayFrame_renderVisualMove('),\n    )\n    for newer, older in edits:\n        assert value.count(newer) == 1, ("RC10 inverse anchor", newer)\n        value = value.replace(newer, older, 1)\n    marker = b'int __real_EspMapRuntime_getLine('\n    assert value.count(marker) == 1, "RC10 original prototypes anchor"\n    return value.replace(marker, RC10_RETIRED_PROTO + marker, 1)\n
+
+# RC10: restore the original F28 body precisely; verify the frozen Git blob.
+RC10_RETIRED_PROTO = "int __real_EspNativeGameplayFrame_renderVisualPose(\n    struct Render_s* render,\n    const struct EspPlayerViewState_s* visual,\n    uint8_t settledAngle,\n    EspNativeGameplayFrameStats* outStats);\nint __real_EspNativeGameplayFrame_renderVisualMove(\n    struct Render_s* render,\n    const struct EspPlayerViewState_s* before,\n    const struct EspPlayerViewState_s* after,\n    uint8_t step,\n    uint8_t denominator,\n    EspNativeGameplayFrameStats* outStats);\n".encode("utf-8")
+
+
+def restore_rc10_dynamic(value: bytes) -> bytes:
+    edits = (
+        (b'#include "esp_native_dynamic_line_render.h"\n', b''),
+        (b'int EspNativeDynamicLineRender_renderVisualPose(',
+         b'int __wrap_EspNativeGameplayFrame_renderVisualPose('),
+        (b'int EspNativeDynamicLineRender_renderVisualMove(',
+         b'int __wrap_EspNativeGameplayFrame_renderVisualMove('),
+        (b'ok = EspNativeGameplayFrame_renderVisualPose(',
+         b'ok = __real_EspNativeGameplayFrame_renderVisualPose('),
+        (b'ok = EspNativeGameplayFrame_renderVisualMove(',
+         b'ok = __real_EspNativeGameplayFrame_renderVisualMove('),
+    )
+    for newer, older in edits:
+        assert value.count(newer) == 1, ("RC10 inverse anchor", newer)
+        value = value.replace(newer, older, 1)
+    marker = b'int __real_EspMapRuntime_getLine('
+    assert value.count(marker) == 1, "RC10 original prototypes anchor"
+    return value.replace(marker, RC10_RETIRED_PROTO + marker, 1)
+
+
 def original_body_parity() -> None:
     marker = GUARD.encode("ascii")
     for filename, blob in BEFORE.items():
