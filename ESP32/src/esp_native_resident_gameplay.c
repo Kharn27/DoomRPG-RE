@@ -389,6 +389,14 @@ static int renderCurrent(Render_t* render,
         return 0;
     }
 
+    /* Only the resident settled WORLD publisher can acknowledge that its
+     * canonical image already contains the latest committed pickups. This
+     * avoids linking PlayerResources into standalone compositor host tests. */
+    if (frame.active == 1U && frame.finalPresented == 1U &&
+        !automapActive()) {
+        EspNativeGameplayPlayerResources_noteWorldPresented();
+    }
+
     DRPG_LOGT("[RESIDENTGAMEPLAY] FRAME reason=%s angle=%u frame=%08x sprites=%u/%u walls=%u pixels=%u totalUs=%u presented=%u controls=idle-invisible\n",
            reason != NULL ? reason : "action",
            (unsigned int)frame.angle,
