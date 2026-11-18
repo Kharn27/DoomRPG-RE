@@ -22,11 +22,11 @@ def restore_pre_rc13(name, source):
              "EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(", 1),
             ("EspNativeGameplayAction_executeSelect(intent, outResult)",
              "__real_EspNativeGameplayAction_executeSelect(intent, outResult)", 1),
-            ("static uint32_t actionNowMs(void) {",
+            ("int __real_EspMapRuntime_getMapSprite(uint32_t index, EspMapSprite* outSprite);",
              "EspNativeGameplayActionStatus __real_EspNativeGameplayAction_executeSelect(\n"
              "    const EspNativeGameplayInputState* intent,\n"
-             "    EspNativeGameplayActionResult* outResult);\n\n"
-             "static uint32_t actionNowMs(void) {", 1),
+             "    EspNativeGameplayActionResult* outResult);\n"
+             "int __real_EspMapRuntime_getMapSprite(uint32_t index, EspMapSprite* outSprite);", 1),
         ),
         "esp_native_gameplay_monster_combat.c": (
             ("/* Explicit MonsterCombat SELECT/service/reset owner; the sprite topology\n"
