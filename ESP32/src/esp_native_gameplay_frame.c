@@ -22,7 +22,6 @@
 #include "esp_native_gameplay_hud_direction.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_pickup_miniature.h"
-#include "esp_native_gameplay_player_resources.h"
 #include "esp_native_gameplay_player_pain_visual.h"
 #include "esp_native_gameplay_present_gate.h"
 #include "esp_native_resident_gameplay.h"
@@ -546,12 +545,6 @@ static int renderComposed(
         }
         stats->presentMicros = elapsedMicros(phaseStart);
         stats->finalPresented = 1U;
-        if (!preview && !EspNativeResidentGameplay_isAutomapActive()) {
-            /* A new settled world image includes every committed pickup;
-             * release any pending redundant idle redraw. Never acknowledge
-             * intermediate camera previews or unpublished compositions. */
-            EspNativeGameplayPlayerResources_noteWorldPresented();
-        }
     }
     stats->active = 1U;
     ok = 1;
