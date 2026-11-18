@@ -26,6 +26,7 @@
 #include "esp_native_first_frame.h"
 #include "esp_native_bsp_visibility.h"
 #include "esp_native_door_animator.h"
+#include "esp_native_door_sfx.h"
 #include "esp_native_gameplay_action.h"
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_automap.h"
@@ -1419,6 +1420,21 @@ static void serviceSelect(DoomRPG_t* doomRpg,
             disableGameplay("select-door-monster-turn-request");
             return;
         }
+
+        /* All selective rollback paths (secret, frame, CHANGEMAP door) are
+         * closed. Publish exactly one original SFX per successfully changed
+         * line, never during an optimistic apply or failed animation frame. */
+        {
+            uint8_t doorIndex;
+            for (doorIndex = 0U; doorIndex < result.doorCount; ++doorIndex) {
+                const EspNativeGameplayActionDoorStep* step =
+                    &result.doors[doorIndex];
+                (void)EspNativeDoorSfx_publishCommitted(
+                    step->lineIndex, step->openBefore, step->openAfter,
+                    step->soundId, step->effectFlags);
+            }
+        }
+
         printf("[RESIDENTGAMEPLAY] SELECT n=%u seq=%u doors=%u firstDoor=%u committed=yes redraw=yes collision=live animation=bounded-batch secret=%s sound=%s entityRelink=deferred turnAdvance=%s\n",
                (unsigned int)gameplayState.selects,
                (unsigned int)intent->sequence,
