@@ -45,6 +45,8 @@ def source_gate() -> None:
             replacement = b"\n" + guard + b"#include \"DoomRPG.h\""
             assert current.count(replacement) == 1, name
             before = current.replace(replacement, anchor, 1)
+            from arch_rc13_history import restore_pre_rc13
+            before = restore_pre_rc13(name, before)
         else:
             assert current.startswith(guard), name
             before = b"#include <SDL.h>\n" + current[len(guard):]

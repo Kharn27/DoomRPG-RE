@@ -59,7 +59,11 @@ RETIRED_NORMAL_WRAPS = frozenset((
     "EspNativeGameplayFrame_renderAmbient",
     "EspNativeGameplayFrame_composeTurn",
     "EspNativeGameplayDialog_begin", "EspNativeGameplayDialog_resume",
-    "EspNativeGameplayDialog_rollbackResume"))
+    "EspNativeGameplayDialog_rollbackResume",
+    "EspNativeGameplayAction_executeSelect",
+    "EspNativeGameplayActionEngine_executeSelect",
+    "EspNativeGameplayActionEngine_service",
+    "EspNativeGameplayActionEngine_reset"))
 RETIRED_ALL_WRAPS = RETIRED_BRINGUP_WRAPS | RETIRED_NORMAL_WRAPS
 RETAINED_BRINGUP_WRAPS = frozenset((
     "EspNativeFirstFrame_route",
@@ -95,7 +99,7 @@ def declarations(config: str) -> dict[str, list[str]]:
                     f"duplicate ld --wrap in {section}: {symbol}")
             sections[section].append(symbol)
     base = sections.get("env:esp32-cyd")
-    require(base is not None and len(base) >= 27,
+    require(base is not None and len(base) >= 23,
             "missing canonical normal build or unexpectedly small --wrap inventory")
     require(REQUIRED.issubset(base), "missing required native boundary")
     require(len(sections.get("env:esp32-cyd-bringup", [])) >= 3,
@@ -239,7 +243,7 @@ def compare_release(normal: dict, inverted: dict) -> None:
 
 def self_test() -> None:
     real = declarations((PROJECT / "platformio.ini").read_text())
-    require(len(real["env:esp32-cyd"]) == 27, "expected ARCH-RC12 27 normal wraps")
+    require(len(real["env:esp32-cyd"]) == 23, "expected ARCH-RC13 23 normal wraps")
     require(len(real["env:esp32-cyd-bringup"]) == 3,
             "expected 3 surviving diagnostic extras after ARCH-RC1")
     require(set(real["env:esp32-cyd-bringup"]) == RETAINED_BRINGUP_WRAPS,
@@ -312,7 +316,7 @@ def self_test() -> None:
     else:
         raise AssertionError("release wrapper divergence accepted")
     print("PASS ARCH-RC11 host self-test: 30+3 surviving declarations, 2 retired "
-          "bringup flags + 15 retired production/native wraps blocked, "
+          "bringup flags + 19 retired production/native wraps blocked, "
           "malformed/duplicate rejected, nm syntax, direct-call attribution, "
           "release mismatch rejected; linked != executed")
 

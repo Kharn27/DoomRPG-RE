@@ -30,12 +30,10 @@
 #include "esp_native_gameplay_weapon.h"
 #include "esp_player_view_state.h"
 
-/* This translation unit is the public linker-wrapper owner. The older action
- * and monster-state wrappers are private chain leaves renamed by their headers. */
+/* Explicit MonsterCombat SELECT/service/reset owner; the sprite topology
+ * linker wrappers remain unchanged in RC13. */
 #undef __wrap_EspMapSpriteTopology_getEntity
 #undef __wrap_EspMapSpriteTopology_getVisualState
-#undef __wrap_EspNativeGameplayActionEngine_service
-#undef __wrap_EspNativeGameplayActionEngine_reset
 
 #define MONSTER_TYPE_ENEMY 1U
 #define MONSTER_SUBTYPE_COUNT 14U
@@ -129,10 +127,6 @@ static uint8_t splashSequenceActive;
 static uint32_t splashSequenceNumber;
 _Static_assert(sizeof(MonsterCombatOwner) <= 384U,
                "monster combat rollback owner must remain small and bounded");
-
-EspNativeGameplayActionStatus __real_EspNativeGameplayActionEngine_executeSelect(
-    const EspNativeGameplayInputState* intent,
-    EspNativeGameplayActionResult* outResult);
 
 static uint8_t p1Health(uint32_t p) { return (uint8_t)(p & 0xffU); }
 static uint8_t p1MaxHealth(uint32_t p) { return (uint8_t)((p >> 8) & 0xffU); }
@@ -1168,7 +1162,7 @@ int EspNativeGameplayMonsterCombat_finishSplashPresentation(
     return 1;
 }
 
-EspNativeGameplayActionStatus __wrap_EspNativeGameplayActionEngine_executeSelect(
+EspNativeGameplayActionStatus EspNativeGameplayMonsterCombat_executeSelect(
     const EspNativeGameplayInputState* intent,
     EspNativeGameplayActionResult* outResult) {
     EspNativeGameplayActionStatus status;
@@ -1183,7 +1177,7 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayActionEngine_executeSelect
     uint8_t weaponIndex;
     int genericEnemy;
 
-    status = __real_EspNativeGameplayActionEngine_executeSelect(intent, outResult);
+    status = EspNativeGameplayActionEngine_executeSelect(intent, outResult);
     genericEnemy = intent != NULL &&
         EspNativeGameplayActionEngine_deferredMonsterTarget(
             intent->sequence, &genericSprite, &genericTile, &genericSubtype);
@@ -1365,7 +1359,7 @@ int __wrap_EspMapSpriteTopology_getEntity(uint32_t spriteIndex,
     return 1;
 }
 
-int __wrap_EspNativeGameplayActionEngine_service(DoomRPG_t* runtime) {
+int EspNativeGameplayMonsterCombat_actionService(DoomRPG_t* runtime) {
     const EspMapSpriteTopologyView* topology = EspMapSpriteTopology_view();
 
     if (!EspNativeGameplayHubActionGate_service(runtime)) return 0;
@@ -1386,7 +1380,7 @@ int __wrap_EspNativeGameplayActionEngine_service(DoomRPG_t* runtime) {
     return serviceVisualRedraw(runtime);
 }
 
-void __wrap_EspNativeGameplayActionEngine_reset(void) {
+void EspNativeGameplayMonsterCombat_actionReset(void) {
     /* PlayerState is session-permanent and intentionally survives map resets.
      * A later native new-game owner will reset it exactly once per new game. */
     EspNativeGameplayMonsterCombat_reset();

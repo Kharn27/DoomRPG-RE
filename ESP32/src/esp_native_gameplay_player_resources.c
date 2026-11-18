@@ -18,6 +18,7 @@
 #include "esp_map_runtime.h"
 #include "esp_map_sprite_topology.h"
 #include "esp_native_gameplay_action_engine.h"
+#include "esp_native_gameplay_monster_combat.h"
 #include "esp_native_gameplay_combat_math.h"
 #include "esp_native_gameplay_crate_state.h"
 #include "esp_native_gameplay_dialog.h"
@@ -1169,7 +1170,7 @@ const EspNativeGameplayHudState* __wrap_EspNativeGameplayHud_view(void) {
 }
 
 void EspNativeGameplayPlayerResources_sessionReset(void) {
-    EspNativeGameplayActionEngine_reset();
+    EspNativeGameplayMonsterCombat_actionReset();
     EspNativeGameplayPlayerResources_reset();
     EspNativeGameplayPickup_reset();
     EspNativeGameplaySession_reset();
@@ -1183,7 +1184,7 @@ void EspNativeGameplayPlayerResources_sessionService(struct DoomRPG_s* doomRpg) 
     EspNativeGameplayInteractionInventory_log();
 #endif
     servicePendingMove(doomRpg);
-    if (!EspNativeGameplayActionEngine_service(doomRpg)) {
+    if (!EspNativeGameplayMonsterCombat_actionService(doomRpg)) {
         printf("[ACTIONENGINE] FAILED reason=service fatal=1\n");
         resources.view.fatal = 1U;
     }

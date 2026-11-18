@@ -169,12 +169,8 @@ int EspNativeGameplayActionEngine_restoreRemoved(
     const EspNativeGameplayActionRemovedSnapshot* snapshot);
 uint32_t EspNativeGameplayActionEngine_removedFingerprint(void);
 
-/*
- * The linker has one public --wrap owner for EspNativeGameplayAction_executeSelect.
- * Keep the existing action-engine layer as a private chain leaf so bounded
- * event families (currently native map transition) can run before the generic
- * entity trace without duplicating or bypassing the proven fallback.
- */
+/* Explicit ActionEngine SELECT leaf: after Transition and MonsterCombat, run
+ * raw event SELECT before the generic entity trace. No linker indirection. */
 EspNativeGameplayActionStatus EspNativeGameplayActionEngine_executeSelect(
     const EspNativeGameplayInputState* intent,
     EspNativeGameplayActionResult* outResult);
@@ -185,8 +181,6 @@ EspNativeGameplayActionStatus EspNativeGameplayActionEngine_executeSelect(
 int EspNativeGameplayActionEngine_deferredMonsterTarget(
     uint32_t sequence, uint16_t* outSprite, uint16_t* outTile,
     uint8_t* outSubtype);
-#define __wrap_EspNativeGameplayAction_executeSelect \
-    EspNativeGameplayActionEngine_executeSelect
 
 /*
  * The action engine already owns the older fire/destructible topology overlay.

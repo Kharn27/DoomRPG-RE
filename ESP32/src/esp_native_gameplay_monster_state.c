@@ -685,10 +685,7 @@ const EspNativeGameplayMonsterRecord* EspNativeGameplayMonsterState_find(
     return EspNativeGameplayMonsterState_findMutable(spriteIndex);
 }
 
-int __real_EspNativeGameplayActionEngine_service(DoomRPG_t* doomRpg);
-void __real_EspNativeGameplayActionEngine_reset(void);
-
-int __wrap_EspNativeGameplayActionEngine_service(DoomRPG_t* doomRpg) {
+int EspNativeGameplayMonsterState_actionService(DoomRPG_t* doomRpg) {
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
     const EspMapSpriteTopologyView* topology = EspMapSpriteTopology_view();
 
@@ -705,14 +702,14 @@ int __wrap_EspNativeGameplayActionEngine_service(DoomRPG_t* doomRpg) {
             printf("[MONSTERSTATE] EMPTY arena=%08x enemies=0 ownerBytes=0 rngCalls=0 actionBackend=generic noAllocation=yes\n",
                    (unsigned int)runtime->arenaFNV1a);
         }
-        return __real_EspNativeGameplayActionEngine_service(doomRpg);
+        return EspNativeGameplayActionEngine_service(doomRpg);
     }
 
     if (!EspNativeGameplayMonsterState_ensure(doomRpg)) return 0;
-    return __real_EspNativeGameplayActionEngine_service(doomRpg);
+    return EspNativeGameplayActionEngine_service(doomRpg);
 }
 
-void __wrap_EspNativeGameplayActionEngine_reset(void) {
+void EspNativeGameplayMonsterState_actionReset(void) {
     EspNativeGameplayMonsterState_reset();
-    __real_EspNativeGameplayActionEngine_reset();
+    EspNativeGameplayActionEngine_reset();
 }

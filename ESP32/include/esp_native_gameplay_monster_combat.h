@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#include "esp_native_gameplay_action.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -55,6 +57,16 @@ int EspNativeGameplayMonsterCombat_applySplash(
  * final settle frame; never let the action renderer overwrite the modal. */
 int EspNativeGameplayMonsterCombat_finishSplashPresentation(
     uint32_t sequence);
+
+/* Explicit SELECT/feedback service/reset chain; old GNU wrappers retired.
+ * SELECT: Transition -> MonsterCombat -> ActionEngine -> raw event leaf.
+ * Service: HUB gate -> MonsterState -> raw ActionEngine -> pending/redraw.
+ * Reset: Combat -> MonsterState -> raw ActionEngine. */
+EspNativeGameplayActionStatus EspNativeGameplayMonsterCombat_executeSelect(
+    const EspNativeGameplayInputState* intent,
+    EspNativeGameplayActionResult* outResult);
+int EspNativeGameplayMonsterCombat_actionService(struct DoomRPG_s* runtime);
+void EspNativeGameplayMonsterCombat_actionReset(void);
 
 void EspNativeGameplayMonsterCombat_reset(void);
 int EspNativeGameplayMonsterCombat_isReady(void);
