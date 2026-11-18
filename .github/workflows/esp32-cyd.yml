@@ -97,6 +97,9 @@ jobs:
           python -m py_compile ESP32/tools/playtest_watch.py
           python ESP32/tools/playtest_watch.py --self-test
 
+      - name: Test clean native build diagnostics and C video present ABI
+        run: python ESP32/test/native_build_diagnostics_hygiene_host.py
+
       - name: Test original four-panel g.bmp boot splash PAK crop/timing (host C)
         run: |
           cc -std=c11 -Wall -Wextra -Werror -IESP32/include \
