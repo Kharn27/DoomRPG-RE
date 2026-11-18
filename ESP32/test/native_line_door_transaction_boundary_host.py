@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """ARCH-RC15: real-C native line mutation/animation/line-death composition.
 
-Compile the FOUR original production C bodies, not Python reimplementations:
+Compile the FIVE original production C bodies, not Python reimplementations:
 raw line-command apply, public door animation, destructible-turn execute and
-rollback (plus its real flush). Negative fixture mutates 11 exact contract
+rollback (plus its real flush). Negative fixture mutates 12 exact contract
 expressions and requires every mutated implementation to fail its same oracle.
 No hardware/SD/map-specific claim: CYD Serial remains the final witness.
 """
@@ -40,7 +40,7 @@ def require(ok, msg):
 
 
 def strip_comments(s):
-    return re.sub(r"/\\*[\\s\\S]*?\\*/|//[^\\n]*", "", s)
+    return re.sub(r"/\*[\s\S]*?\*/|//[^\n]*", "", s)
 
 
 def extract(source, signature):
@@ -65,12 +65,12 @@ def source_scan():
     require(len(all_src) >= 178, "unexpectedly small production corpus")
     config = (ROOT / "platformio.ini").read_text()
     normal = config.split("[env:esp32-cyd]", 1)[1].split("[env:esp-cyd-inverted]", 1)[0]
-    require(len(re.findall(r"^\\s+-Wl,--wrap=", normal, re.M)) == 16,
+    require(len(re.findall(r"^\s+-Wl,--wrap=", normal, re.M)) == 16,
             "expected exact 16 production wrappers, 19 before RC15")
     for symbol in RETIRED:
         require("-Wl,--wrap=" + symbol not in config, "retired flag " + symbol)
         for name, text in all_src.items():
-            require(not re.search(r"\\b__(?:wrap|real)_" + symbol + r"\\b", text),
+            require(not re.search(r"\b__(?:wrap|real)_" + symbol + r"\b", text),
                     "GNU alias survives in " + name)
     for name in ("EspNativeGameplayFrame_renderTurn", "EspMapRuntime_getLine",
                  "EspMapLineState_view", "Esp32PlatformVideo_present"):
