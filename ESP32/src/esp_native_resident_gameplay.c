@@ -35,6 +35,7 @@
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_facing_label.h"
 #include "esp_native_gameplay_frame.h"
+#include "esp_native_dynamic_line_render.h"
 #include "esp_native_sprite_renderer.h"
 #include "esp_native_gameplay_hub.h"
 #include "esp_native_gameplay_hud.h"
@@ -484,7 +485,7 @@ static void serviceTurn(Render_t* render,
             visual.viewAngle = interpolated;
             visual.destAngle = interpolated;
             memset(&intermediate, 0, sizeof(intermediate));
-            if (!EspNativeGameplayFrame_renderVisualPose(
+            if (!EspNativeDynamicLineRender_renderVisualPose(
                     render, &visual, (uint8_t)afterView.viewAngle,
                     &intermediate)) {
                 printf("[VIEWANIM] FALLBACK mode=rotate step=%u angle=%d completed=%u finalCardinal=required gameplayStable=yes\n",
@@ -621,7 +622,7 @@ static void serviceMove(Render_t* render,
             const int32_t cameraY =
                 beforeView.viewY + result.deltaY * (int32_t)step / denominator;
             memset(&intermediate, 0, sizeof(intermediate));
-            if (!EspNativeGameplayFrame_renderVisualMove(
+            if (!EspNativeDynamicLineRender_renderVisualMove(
                     render, &beforeView, &afterView, step, denominator,
                     &intermediate)) {
                 printf("[VIEWANIM] FALLBACK mode=move profile=%s seq=%u step=%u/%u camera=%d,%d completed=%u finalCardinal=required gameplayStable=yes\n",
