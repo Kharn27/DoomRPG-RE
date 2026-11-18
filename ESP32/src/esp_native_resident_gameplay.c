@@ -995,7 +995,7 @@ static void serviceSelect(DoomRPG_t* doomRpg,
         return;
     }
 
-    status = EspNativeGameplayAction_executeSelect(intent, &result);
+    status = EspNativeGameplayTransition_executeSelect(intent, &result);
     printf("[ACTION] SELECT seq=%u status=%s tile=%u event=%u eligible=%u unsupported=%u\n",
            (unsigned int)intent->sequence,
            EspNativeGameplayAction_statusName(status),

@@ -9,6 +9,7 @@
 #include "esp_map_save_route.h"
 #include "esp_map_transition_preflight.h"
 #include "esp_native_gameplay_input.h"
+#include "esp_native_gameplay_action.h"
 #include "esp_stats_menu_intent.h"
 
 #ifdef __cplusplus
@@ -106,6 +107,11 @@ int EspNativeGameplayTransition_probeJunctionExitCensus(void);
  * begin. This milestone supports only showStats transitions and stops at
  * WAIT_STATS with the source map still resident and the PAK logically closed.
  */
+/* Permanent SELECT composition entrypoint: transition before entity. */
+EspNativeGameplayActionStatus EspNativeGameplayTransition_executeSelect(
+    const EspNativeGameplayInputState* intent,
+    EspNativeGameplayActionResult* outResult);
+
 EspNativeGameplayTransitionStatus EspNativeGameplayTransition_trySelect(
     const EspNativeGameplayInputState* intent,
     EspNativeGameplayTransitionSelectResult* outResult);

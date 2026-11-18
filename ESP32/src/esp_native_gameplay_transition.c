@@ -16,15 +16,11 @@
 #include "esp_map_strings.h"
 #include "esp_native_door_animator.h"
 #include "esp_native_gameplay_action_engine.h"
+#include "esp_native_gameplay_monster_combat.h"
 #include "esp_native_gameplay_select.h"
 #include "esp_native_gameplay_transition.h"
 #include "esp_player_view_state.h"
 #include "platform_touch_events.h"
-
-/* action_engine.h deliberately renames the historical SELECT wrapper into the
- * private fallback leaf. This translation unit owns the one public linker
- * wrapper and therefore restores the real wrapper token here. */
-#undef __wrap_EspNativeGameplayAction_executeSelect
 
 #define TRANSITION_NAME_CAPACITY ESP_MAP_SAVE_ROUTE_NAME_CAPACITY
 #define TRANSITION_MIN_ELIGIBLE 2U
@@ -894,11 +890,9 @@ const char* EspNativeGameplayTransition_statusName(
     }
 }
 
-/* Public SELECT wrapper: transition event first, then the already-proven
- * tile-event/action-engine chain. This preserves legacy event-before-entity
- * ordering while keeping non-transition SELECT behavior byte-for-byte in the
- * existing private leaf. */
-EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
+/* Explicit SELECT entrypoint: transition event first, then MonsterCombat,
+ * generic ActionEngine and the raw event action, in the original order. */
+EspNativeGameplayActionStatus EspNativeGameplayTransition_executeSelect(
     const EspNativeGameplayInputState* intent,
     EspNativeGameplayActionResult* outResult) {
     EspNativeGameplayTransitionSelectResult transition;
@@ -909,7 +903,7 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
     memset(&transition, 0, sizeof(transition));
     status = EspNativeGameplayTransition_trySelect(intent, &transition);
     if (status == ESP_NATIVE_GAMEPLAY_TRANSITION_NOT_APPLICABLE) {
-        return EspNativeGameplayActionEngine_executeSelect(intent, outResult);
+        return EspNativeGameplayMonsterCombat_executeSelect(intent, outResult);
     }
 
     if (status == ESP_NATIVE_GAMEPLAY_TRANSITION_DOOR_READY) {
@@ -1012,5 +1006,5 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
                EspNativeGameplayTransition_statusName(status),
                (unsigned int)transition.eligibleCount);
     }
-    return EspNativeGameplayActionEngine_executeSelect(intent, outResult);
+    return EspNativeGameplayMonsterCombat_executeSelect(intent, outResult);
 }

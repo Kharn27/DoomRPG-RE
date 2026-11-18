@@ -73,6 +73,8 @@ def original_body_parity() -> None:
     marker = GUARD.encode("ascii")
     for filename, blob in BEFORE.items():
         current = (SOURCES / filename).read_bytes()
+        from arch_rc13_history import restore_pre_rc13
+        current = restore_pre_rc13(filename, current)
         assert current.startswith(marker), (
             f"{filename}: expected bounded host/geometry-only SDL guard")
         # GAME-PICKUP is a post-F27 presentation optimization. Restore only

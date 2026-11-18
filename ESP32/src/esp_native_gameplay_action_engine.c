@@ -266,9 +266,6 @@ static uint16_t directionCueSnapshot[DAMAGE_BORDER_INNER_MAX_PIXELS];
 _Static_assert(DAMAGE_BORDER_INNER_MAX_PIXELS == 1560U,
                "directional tint snapshot must stay within 3.2 KB BSS");
 
-EspNativeGameplayActionStatus __real_EspNativeGameplayAction_executeSelect(
-    const EspNativeGameplayInputState* intent,
-    EspNativeGameplayActionResult* outResult);
 int __real_EspMapRuntime_getMapSprite(uint32_t index, EspMapSprite* outSprite);
 int __real_EspMapSpriteTopology_getVisualState(uint32_t spriteIndex,
                                                uint8_t* outVisualState);
@@ -2248,11 +2245,11 @@ static int serviceFeedbackExpiry(void) {
     return 1;
 }
 
-EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
+EspNativeGameplayActionStatus EspNativeGameplayActionEngine_executeSelect(
     const EspNativeGameplayInputState* intent,
     EspNativeGameplayActionResult* outResult) {
     EspNativeGameplayActionStatus status =
-        __real_EspNativeGameplayAction_executeSelect(intent, outResult);
+        EspNativeGameplayAction_executeSelect(intent, outResult);
     ActionTarget target;
     ActionRoute route;
     const EspNativeGameplayHudState* hud;

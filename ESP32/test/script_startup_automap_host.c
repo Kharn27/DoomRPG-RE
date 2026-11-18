@@ -147,7 +147,7 @@ EspNativeGameplayHudStatus EspNativeGameplayHud_repaintLive(
     memset(out, 0, sizeof(*out));
     return ESP_NATIVE_GAMEPLAY_HUD_OK;
 }
-EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
+EspNativeGameplayActionStatus EspNativeGameplayTransition_executeSelect(
     const EspNativeGameplayInputState* intent, EspNativeGameplayActionResult* out) {
     assert(intent == &testIntent);
     memset(out, 0, sizeof(*out));

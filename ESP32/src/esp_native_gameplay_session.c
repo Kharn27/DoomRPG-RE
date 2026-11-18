@@ -21,6 +21,7 @@
 #include "esp_map_sprite_topology.h"
 #include "esp_native_first_frame.h"
 #include "esp_native_gameplay_action_engine.h"
+#include "esp_native_gameplay_monster_combat.h"
 #include "esp_native_gameplay_event_chain.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud.h"
@@ -214,7 +215,7 @@ void EspNativeGameplaySession_reset(void) {
      * interpret the old offset against the target BSP and fail the first
      * target-frame top-bar composition. ActionEngine also owns timed feedback,
      * framebufferFresh and transient sprite/weapon state tied to that world. */
-    EspNativeGameplayActionEngine_reset();
+    EspNativeGameplayMonsterCombat_actionReset();
     /*
      * These two spatial owners are map-session state. Explicitly clear them
      * here so an in-game LOAD of the same arena cannot inherit position or
