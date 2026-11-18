@@ -1234,7 +1234,10 @@ int EspEntranceMusic_prestartGameplayBeforeFirstFrame(uint8_t targetMapId) {
             closeMusic("LOAD_PRESTART_OWNER_NOT_READY");
         attempted=true;
         /* Failed map prestart must not be retried after the first world
-         * present, even if the permanent music service still runs. */
+         * present, even if the permanent music service still runs.
+         * Clear a hypothetical previous intro/menu track's state too. */
+        activeIntroTrack=false;
+        activeMenuTrack=false;
         activeGameplayTrack=track;
         printf("[LOADAUDIO-L1] PRESTART map=%u route=%s ready=0 "
                "reason=owner_or_map_not_ready pakOpen=%u resident=%u "

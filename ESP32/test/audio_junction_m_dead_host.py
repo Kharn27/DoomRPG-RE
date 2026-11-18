@@ -56,6 +56,7 @@ assert "activeGameplayTrack!=gameplayTrack" in music
 assert "view->targetMapId==view->gameplayLoadMapId" in music
 assert "activeGameplayTrack=track;" in music
 assert "LOAD_PRESTART_OWNER_NOT_READY" in music
+assert "activeIntroTrack=false;\n        activeMenuTrack=false;\n        activeGameplayTrack=track;" in music
 assert "!activeMenuTrack && activeGameplayTrack==track" in music
 assert "route=%s ready=" in music
 assert "EspEntranceMusic_service(true,true);" in music
