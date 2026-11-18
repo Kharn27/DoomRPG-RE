@@ -191,7 +191,7 @@ int main(void) {
                        syncCount==1 && visualCount==1 && pendingCount==0);
   seed(); topo.enemyCount = 0;
   assert(EspNativeGameplayMonsterCombat_actionService(&game) == 1);
-  path("HACV"); assert(ensureCount==0 && actionCount==1 && syncCount==1);
+  path("HA"); assert(ensureCount==0 && actionCount==1 && syncCount==0 && visualCount==0);
   seed(); topo.enemyCount=0; allowAction=0;
   assert(EspNativeGameplayMonsterCombat_actionService(&game) == 0);
   path("HA"); assert(syncCount==0);
