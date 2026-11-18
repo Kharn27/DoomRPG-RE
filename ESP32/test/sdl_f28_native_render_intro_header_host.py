@@ -33,18 +33,20 @@ def git_blob(data: bytes) -> str:
     ).hexdigest()
 
 
+\n# RC10 retires two preview wrappers without changing the historical SDL-F28\n# body contract. Reverse ONLY the audited source transform before hashing.\nRC10_RETIRED_PROTO = "int __real_EspNativeGameplayFrame_renderVisualPose(\n    struct Render_s* render,\n    const struct EspPlayerViewState_s* visual,\n    uint8_t settledAngle,\n    EspNativeGameplayFrameStats* outStats);\nint __real_EspNativeGameplayFrame_renderVisualMove(\n    struct Render_s* render,\n    const struct EspPlayerViewState_s* before,\n    const struct EspPlayerViewState_s* after,\n    uint8_t step,\n    uint8_t denominator,\n    EspNativeGameplayFrameStats* outStats);\n".encode("utf-8")\n\ndef restore_rc10_dynamic(value: bytes) -> bytes:\n    edits = (\n        (b'#include "esp_native_dynamic_line_render.h"\\n', b''),\n        (b'int EspNativeDynamicLineRender_renderVisualPose(',\n         b'int __wrap_EspNativeGameplayFrame_renderVisualPose('),\n        (b'int EspNativeDynamicLineRender_renderVisualMove(',\n         b'int __wrap_EspNativeGameplayFrame_renderVisualMove('),\n        (b'ok = EspNativeGameplayFrame_renderVisualPose(',\n         b'ok = __real_EspNativeGameplayFrame_renderVisualPose('),\n        (b'ok = EspNativeGameplayFrame_renderVisualMove(',\n         b'ok = __real_EspNativeGameplayFrame_renderVisualMove('),\n    )\n    for newer, older in edits:\n        assert value.count(newer) == 1, ("RC10 inverse anchor", newer)\n        value = value.replace(newer, older, 1)\n    marker = b'int __real_EspMapRuntime_getLine('\n    assert value.count(marker) == 1, "RC10 original prototypes anchor"\n    return value.replace(marker, RC10_RETIRED_PROTO + marker, 1)\n
 def original_body_parity() -> None:
     marker = GUARD.encode("ascii")
     for filename, blob in BEFORE.items():
         current = (SOURCES / filename).read_bytes()
+        historical = restore_rc10_dynamic(current) if filename == "esp_native_dynamic_line_render.c" else current
         if filename == "esp_render_geometry_primitives.c":
             # Unlike the five other TUs, SDL.h originally follows stdint.
             assert current.startswith(b"#include <stdint.h>\n\n" + marker), filename
-            restored = current.replace(marker, b"#include <SDL.h>\n", 1)
+            restored = historical.replace(marker, b"#include <SDL.h>\n", 1)
         else:
             assert current.startswith(marker), (
                 f"{filename}: expected bounded host/geometry-only SDL guard")
-            restored = b"#include <SDL.h>\n" + current[len(marker):]
+            restored = b"#include <SDL.h>\n" + historical[len(marker):]
         assert git_blob(restored) == blob, (
             f"{filename}: original pre-F28 body not preserved exactly")
         assert current.count(b"#include <SDL.h>") == 1, filename
