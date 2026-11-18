@@ -3689,10 +3689,10 @@ extern "C" int EspNativeGameplaySave_loadCheckpoint(void) {
 }
 
 extern "C" EspNativeGameplayHubStatus
-__real_EspNativeGameplayHub_handleAction(uint8_t action);
+EspNativeGameplayHub_handleActionBase(uint8_t action);
 
 extern "C" EspNativeGameplayHubStatus
-__wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
+EspNativeGameplayHub_handleAction(uint8_t action) {
     const EspNativeGameplayHubView* before = EspNativeGameplayHub_view();
     const uint8_t beforePage = before != nullptr ? before->page : 0xffU;
     EspNativeGameplayHubStatus status;
@@ -3809,7 +3809,7 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
                  * by that redraw and, on expiry, recomposes the current
                  * FORCE_MESSAGE/facing-label fallback instead of restoring a
                  * stale pre-HUB framebuffer snapshot. */
-                status = __real_EspNativeGameplayHub_handleAction(
+                status = EspNativeGameplayHub_handleActionBase(
                     ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN);
                 if (status != ESP_NATIVE_GAMEPLAY_HUB_CLOSED) return status;
                 if (!EspNativeGameplayActionEngine_queueTextFeedback(
@@ -3866,7 +3866,7 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
         if (!paintSaveOverlay()) return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
         return ESP_NATIVE_GAMEPLAY_HUB_REDRAWN;
     }
-    status = __real_EspNativeGameplayHub_handleAction(action);
+    status = EspNativeGameplayHub_handleActionBase(action);
     {
         const EspNativeGameplayHubView* after = EspNativeGameplayHub_view();
         if (after != nullptr && after->active == 1U &&

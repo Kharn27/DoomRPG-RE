@@ -10,6 +10,18 @@
 #include "esp_native_gameplay_hub_weapon_grid.h"
 #include "esp_native_gameplay_hub_theme.h"
 #include "esp_native_gameplay_input.h"
+/* Isolated host links the raw input TU without SAVE's public compositor. */
+EspNativeGameplayInputStatus EspNativeGameplayInput_consumeBase(
+    EspNativeGameplayInputState* outIntent);
+/* The standalone HUB fixture omits save_touch.c. Route its public classifier
+ * through the real HUB base leaf exactly as the SAVE compositor does on
+ * non-System pages; the exhaustive SYS overlay has its own real-C fixture. */
+int EspNativeGameplayHubTouchUi_classifyBase(
+    int x, int y, struct EspNativeGameplayTouchHit_s* outHit);
+int EspNativeGameplayHubTouchUi_classify(
+    int x, int y, struct EspNativeGameplayTouchHit_s* outHit) {
+    return EspNativeGameplayHubTouchUi_classifyBase(x, y, outHit);
+}
 
 #define WIDTH 160
 #define HEIGHT 120
@@ -95,7 +107,7 @@ int main(void) {
                 EspNativeGameplayInput_reset();
                 assert(EspNativeGameplayInput_route(&hit,x,y)==
                        ESP_NATIVE_GAMEPLAY_INPUT_OK);
-                assert(EspNativeGameplayInput_consume(&intent)==
+                assert(EspNativeGameplayInput_consumeBase(&intent)==
                        ESP_NATIVE_GAMEPLAY_INPUT_OK);
                 uint8_t target=255;
                 assert(EspNativeGameplayHubTouchUi_consumedPageTarget(&target));

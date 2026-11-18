@@ -2,6 +2,9 @@
 #include <stdint.h>
 #include <stdio.h>
 #include "esp_native_gameplay_input.h"
+/* Unit host compiles the raw input leaf without the SAVE compositor. */
+EspNativeGameplayInputStatus EspNativeGameplayInput_consumeBase(
+    EspNativeGameplayInputState* intent);
 #include "esp_native_gameplay_hud_weapon_button.h"
 
 static void check(int x, int y, EspNativeGameplayInputStatus expected,
@@ -42,11 +45,11 @@ int main(void) {
            ESP_NATIVE_GAMEPLAY_INPUT_OK);
     assert(EspNativeGameplayInput_route(&hit, 140, 110) ==
            ESP_NATIVE_GAMEPLAY_INPUT_BUSY);
-    assert(EspNativeGameplayInput_consume(&intent) ==
+    assert(EspNativeGameplayInput_consumeBase(&intent) ==
            ESP_NATIVE_GAMEPLAY_INPUT_OK);
     assert(intent.action == ESP_NATIVE_GAMEPLAY_ACTION_WEAPON_MENU);
     assert(intent.zone == ESP_NATIVE_GAMEPLAY_ZONE_WEAPON_MENU);
-    assert(EspNativeGameplayInput_consume(&intent) ==
+    assert(EspNativeGameplayInput_consumeBase(&intent) ==
            ESP_NATIVE_GAMEPLAY_INPUT_EMPTY);
     puts("PASS HUD weapons touch routing 100..159/100..119, world/top unchanged");
     return 0;

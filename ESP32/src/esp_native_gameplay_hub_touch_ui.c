@@ -858,7 +858,8 @@ static int classifyTab(const EspNativeGameplayHubView* view,
     return 1;
 }
 
-int EspNativeGameplayHubTouchUi_classify(
+/* Raw HUB classifier; SAVE System-row overlay is the public composition. */
+int EspNativeGameplayHubTouchUi_classifyBase(
     int logicalX,
     int logicalY,
     struct EspNativeGameplayTouchHit_s* outHitBase) {
