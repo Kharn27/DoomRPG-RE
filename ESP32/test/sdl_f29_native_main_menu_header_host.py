@@ -66,13 +66,13 @@ def restore_pre_build_c1_options_present_header(text: str) -> str:
     The real production Options owner must keep the prototype in every
     profile. This inverse exists solely for the frozen pre-F29 Git blob SHA.
     """
-    present_include = '#include "platform_video_c_bridge.h" /* present() in ALL build profiles */\\n'
+    present_include = '#include "platform_video_c_bridge.h" /* present() in ALL build profiles */\n'
     old_conditional = (
-        '#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY\\n'
-        '#include "platform_video_c_bridge.h"\\n'
-        '#endif\\n\\n'
+        '#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY\n'
+        '#include "platform_video_c_bridge.h"\n'
+        '#endif\n\n'
     )
-    anchor = '#define OPTIONS_ITEM_COUNT DOOMRPG_ESP32_OPTIONS_CARD_COUNT\\n'
+    anchor = '#define OPTIONS_ITEM_COUNT DOOMRPG_ESP32_OPTIONS_CARD_COUNT\n'
     assert text.count(present_include) == 1, "BUILD-C1 present prototype drift"
     assert text.count(anchor) == 1 and text.count(old_conditional) == 0
     return text.replace(present_include, "", 1).replace(
