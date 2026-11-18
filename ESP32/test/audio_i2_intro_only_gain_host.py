@@ -17,7 +17,10 @@ assert "activeMenuTrack ? kMenuGainDiv : kEntranceGainDiv" in music
 assert "EspEntranceAdpcm_decodeBlockObservedGain(raw,wav.blockAlign," in music
 assert "gainDiv,&stats)" in music
 assert "gainDiv=%u track=%s" in music
-assert '(activeMenuTrack ? "MENU" : "ENTRANCE")' in music
+assert '(activeMenuTrack ? "MENU" :' in music
+assert 'activeGameplayTrack==ESP_AUDIO_LOADING_TRACK_M_DEAD' in music
+assert '? "JUNCTION" : "ENTRANCE"' in music
+assert 'activeIntroTrack ? "INTRO"' in music
 assert "EspNativeAudioIntent_musicVolumePercent()" in music
 assert "kRingCapacity=16384U" in music
 assert "static inline uint8_t EspEntranceAdpcm_limitedDac" in header

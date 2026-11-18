@@ -8,24 +8,43 @@
 extern "C" {
 #endif
 
-/* L0: compile-time, allocation-free selection ONLY.
- * The loading screen is not yet an audio producer. An unconfigured map must
- * remain deferred instead of falling back to Entrance or the previous song. */
+/* Allocation-free map soundtrack selection. Loading never opens SD; maps
+ * without an explicitly assigned track remain deferred (including map 10). */
 typedef enum EspAudioLoadingTrack_e {
     ESP_AUDIO_LOADING_TRACK_DEFERRED = 0,
-    ESP_AUDIO_LOADING_TRACK_M_STALKS = 1
+    ESP_AUDIO_LOADING_TRACK_M_STALKS = 1,
+    ESP_AUDIO_LOADING_TRACK_M_DEAD = 2
 } EspAudioLoadingTrack;
 
 static inline EspAudioLoadingTrack EspAudioLoadingRoute_forMap(uint8_t mapId) {
-    return mapId == ESP_MAP_ID_INTRO
-        ? ESP_AUDIO_LOADING_TRACK_M_STALKS
-        : ESP_AUDIO_LOADING_TRACK_DEFERRED;
+    switch (mapId) {
+        case ESP_MAP_ID_INTRO: return ESP_AUDIO_LOADING_TRACK_M_STALKS;
+        case ESP_MAP_ID_JUNCTION: return ESP_AUDIO_LOADING_TRACK_M_DEAD;
+        default: return ESP_AUDIO_LOADING_TRACK_DEFERRED;
+    }
+}
+
+/* BSP header loadMapId is NOT the native catalogue/map ID. This is the
+ * separate, recovered per-BSP gameplay load discriminator. Real Junction
+ * /junction.bsp declares loadMapId=2 while catalog map ID is 9.
+ * Select only explicitly validated (catalog, BSP header) pairs; never
+ * accept an unknown map or silently infer loadMapId from catalog ID. */
+static inline EspAudioLoadingTrack EspAudioLoadingRoute_forView(
+    uint8_t catalogMapId, uint8_t bspLoadMapId) {
+    if (catalogMapId == ESP_MAP_ID_INTRO && bspLoadMapId == 1U)
+        return ESP_AUDIO_LOADING_TRACK_M_STALKS;
+    if (catalogMapId == ESP_MAP_ID_JUNCTION && bspLoadMapId == 2U)
+        return ESP_AUDIO_LOADING_TRACK_M_DEAD;
+    return ESP_AUDIO_LOADING_TRACK_DEFERRED;
 }
 
 static inline const char* EspAudioLoadingRoute_trackName(
     EspAudioLoadingTrack track) {
-    return track == ESP_AUDIO_LOADING_TRACK_M_STALKS
-        ? "M_STALKS.wav" : "none";
+    switch (track) {
+        case ESP_AUDIO_LOADING_TRACK_M_STALKS: return "M_STALKS.wav";
+        case ESP_AUDIO_LOADING_TRACK_M_DEAD: return "M_DEAD.wav";
+        default: return "none";
+    }
 }
 
 #ifdef __cplusplus

@@ -26,14 +26,15 @@ assert 'EspNativeAudioIntent_setSoundEnabled' in menu
 assert 'EspNativeAudioIntent_setMusicVolumePercent' in menu
 assert "EspEntranceMusic_syncIdleOutput();" in main
 assert main.index("EspEntranceMusic_syncIdleOutput();") < main.index("initializeGameAssets();")
-assert 'if ((!entrance && !intro && !menu) || !soundOn ||' in music
+assert 'if ((!configuredGameplay && !intro && !menu) || !soundOn ||' in music
+assert 'activeGameplayTrack!=gameplayTrack' in music
 assert 'closeMusic(!soundOn?"SOUND_OFF":"TRACK_OR_SESSION_EXIT")' in music
 assert 'EspEntranceMusic_syncIdleOutput(); /* SOUND ON' in music
 assert "phase!=kSilent || timerInit || ring!=nullptr" in music
 assert "dac_output_voltage(DAC_CHANNEL_2,128U)" in music
 assert "if (dacEnabled)" in music and "dac_output_disable(DAC_CHANNEL_2)" in music
 assert 'kRingCapacity=16384U' in music and 'kPrimeFrames=8192U' in music
-assert 'begin(intro,menu);' in music
+assert 'begin(intro,menu,gameplayTrack);' in music
 assert 'activeMenuTrack=false;' in music
 assert "malloc" not in sound and "SD." not in sound
 isr=music[music.index("static bool IRAM_ATTR onAudioTick"):music.index("static uint32_t queued()")]

@@ -2,7 +2,8 @@
 #define ESP_AUDIO_ENTRANCE_MUSIC_H
 #include <stdbool.h>
 #include <stdint.h>
-/* AUDIO-R2d: Entrance SD music, 22.05kHz IMA-ADPCM -> DAC2/GPIO26.
+/* AUDIO-R2d: native SD music (Entrance/Junction), 22.05kHz IMA-ADPCM
+ * -> DAC2/GPIO26.
  * One synchronous SD owner in Arduino gameplay task; IRAM ISR is DRAM-only.
  * The cooperative pump is ONLY for completed renderer-frame boundaries after
  * native PAK has closed. It never owns gameplay, input, video or the bus. */
@@ -28,7 +29,7 @@ void EspEntranceMusic_stopBeforeLoading(void);
 void EspEntranceMusic_stopMenuBeforeAction(void);
 /* MENU-M1: synchronous bounded prestart before FIRST physical title present. */
 int EspEntranceMusic_prestartMenuBeforeFirstFrame(void);
-/* LOAD-L1: one-time bounded Entrance music prestart after all map/cache/HUD
+/* LOAD-L1: one-time bounded configured-map music prestart after map/cache/HUD
  * work, while the physical 100% READY loading frame is still visible.
  * Invoked immediately before first gameplay present. No fallback track for
  * unknown map IDs; 0 means silent/deferred safe fallback. */
