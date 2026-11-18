@@ -17,7 +17,7 @@
 #include "esp_native_sfx_pcm_mix.h"
 #include "esp_native_sfx_wav.h"
 #include "esp_asset_pack.h"
-#include "esp_audio_loading_route.h" /* L1: strict Entrance-only music selection */
+#include "esp_audio_loading_route.h" /* explicit map track, one SD producer */
 #include "esp_audio_entrance_music.h"
 #include "esp_native_audio_intent.h"
 #include "esp_native_monster_ambience.h"
@@ -39,6 +39,8 @@
 namespace {
 constexpr char kPrimary[]="/doomrpg/music/opl/M_STALKS.wav";
 constexpr char kRootFallback[]="/M_STALKS.wav";
+constexpr char kJunctionPrimary[]="/doomrpg/music/opl/M_DEAD.wav";
+constexpr char kJunctionFallback[]="/M_DEAD.wav";
 constexpr char kIntroPrimary[]="/doomrpg/music/opl/M_IN_CIT.wav";
 constexpr char kIntroFallback[]="/M_IN_CIT.wav";
 constexpr char kMenuPrimary[]="/doomrpg/music/opl/M_DM2TTL.wav";
@@ -119,6 +121,7 @@ static const char* failure="none";
 static bool attempted;
 static bool activeIntroTrack;
 static bool activeMenuTrack; /* same one SD File/ring, title session */
+static EspAudioLoadingTrack activeGameplayTrack=ESP_AUDIO_LOADING_TRACK_DEFERRED;
 static bool menuSessionLatched; /* one attempt per title-session, survives submenus */
 static bool introPrestartWindow; /* main-task only, prior to ST_INTRO clock arm */
 static bool fileOpen;
@@ -244,7 +247,9 @@ static uint32_t queued() {
 /* Route/gain stay on the main-task producer, never in ISR. */
 static const char* activeTrackName() {
     return activeIntroTrack ? "INTRO" :
-           (activeMenuTrack ? "MENU" : "ENTRANCE");
+           (activeMenuTrack ? "MENU" :
+            (activeGameplayTrack==ESP_AUDIO_LOADING_TRACK_M_DEAD
+                 ? "JUNCTION" : "ENTRANCE"));
 }
 static uint16_t activeGainDiv() {
     return activeIntroTrack ? kIntroGainDiv :
@@ -981,10 +986,12 @@ static bool startPlaying() {
            (unsigned)EspNativeAudioIntent_musicVolumePercent());
     return true;
 }
-static void begin(bool intro,bool menu) {
+static void begin(bool intro,bool menu,EspAudioLoadingTrack gameplayTrack) {
     attempted=true;
     activeIntroTrack=intro;
     activeMenuTrack=!intro&&menu;
+    activeGameplayTrack=(!intro&&!menu) ? gameplayTrack :
+                        ESP_AUDIO_LOADING_TRACK_DEFERRED;
     failure="none";
     heapBefore=heap_caps_get_free_size(MALLOC_CAP_8BIT);
     const uint32_t largest=heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
@@ -994,10 +1001,15 @@ static void begin(bool intro,bool menu) {
                (unsigned)heapBefore,(unsigned)largest);
         return;
     }
+    /* One reader, one ring, one DAC timer; only the target file differs. */
     const char* requested=activeIntroTrack?kIntroPrimary:
-                          (activeMenuTrack?kMenuPrimary:kPrimary);
+                          (activeMenuTrack?kMenuPrimary:
+                           (activeGameplayTrack==ESP_AUDIO_LOADING_TRACK_M_DEAD
+                                ? kJunctionPrimary:kPrimary));
     const char* fallback=activeIntroTrack?kIntroFallback:
-                         (activeMenuTrack?kMenuFallback:kRootFallback);
+                         (activeMenuTrack?kMenuFallback:
+                          (activeGameplayTrack==ESP_AUDIO_LOADING_TRACK_M_DEAD
+                                ? kJunctionFallback:kRootFallback));
     path=requested;
     printf("[ENTRANCEMUSIC] OPEN path=%s fallback=%s "
            "expected=WAV-IMA-ADPCM-mono-22050\n",requested,fallback);
@@ -1184,6 +1196,7 @@ void EspEntranceMusic_stopBeforeLoading(void) {
     attempted=false;
     activeIntroTrack=false;
     activeMenuTrack=false;
+    activeGameplayTrack=ESP_AUDIO_LOADING_TRACK_DEFERRED;
     menuSessionLatched=false;
     introPrestartWindow=false;
     EspEntranceMusic_syncIdleOutput();
@@ -1196,14 +1209,16 @@ int EspEntranceMusic_prestartGameplayBeforeFirstFrame(uint8_t targetMapId) {
      * never during BSP / flash staging. Physical loading READY is still shown.
      * A target without an explicit soundtrack always stays deferred. */
     const EspAudioLoadingTrack track=EspAudioLoadingRoute_forMap(targetMapId);
+    const char* trackName=EspAudioLoadingRoute_trackName(track);
     if (track==ESP_AUDIO_LOADING_TRACK_DEFERRED) {
         printf("[LOADAUDIO-L1] PRESTART map=%u route=deferred reason=unknown_track "
                "beforeWorldPresent=1\n",(unsigned)targetMapId);
         return 0;
     }
     if (!EspNativeAudioIntent_isSoundEnabled()) {
-        printf("[LOADAUDIO-L1] PRESTART map=%u route=M_STALKS.wav ready=0 "
-               "reason=SOUND_OFF beforeWorldPresent=1\n",(unsigned)targetMapId);
+        printf("[LOADAUDIO-L1] PRESTART map=%u route=%s ready=0 "
+               "reason=SOUND_OFF beforeWorldPresent=1\n",
+               (unsigned)targetMapId,trackName);
         return 0;
     }
     const EspPlayerViewState* view=EspPlayerView_view();
@@ -1218,10 +1233,14 @@ int EspEntranceMusic_prestartGameplayBeforeFirstFrame(uint8_t targetMapId) {
         if (phase!=kSilent || ring!=nullptr || fileOpen || timerInit)
             closeMusic("LOAD_PRESTART_OWNER_NOT_READY");
         attempted=true;
-        printf("[LOADAUDIO-L1] PRESTART map=%u route=M_STALKS.wav ready=0 "
+        /* Failed map prestart must not be retried after the first world
+         * present, even if the permanent music service still runs. */
+        activeGameplayTrack=track;
+        printf("[LOADAUDIO-L1] PRESTART map=%u route=%s ready=0 "
                "reason=owner_or_map_not_ready pakOpen=%u resident=%u "
                "flash=%u beforeWorldPresent=1\n",
-               (unsigned)targetMapId,(unsigned)EspAssetPack_isOpen(),
+               (unsigned)targetMapId,trackName,
+               (unsigned)EspAssetPack_isOpen(),
                (unsigned)EspAssetPack_isResident(),
                (unsigned)EspAssetPack_isMapFlashActive());
         return 0;
@@ -1236,15 +1255,16 @@ int EspEntranceMusic_prestartGameplayBeforeFirstFrame(uint8_t targetMapId) {
         if (phase==kSilent && attempted) break;
         delay(1);
     }
-    const int ready=(phase==kPlay && !activeIntroTrack) ? 1 : 0;
+    const int ready=(phase==kPlay && !activeIntroTrack &&
+                     !activeMenuTrack && activeGameplayTrack==track) ? 1 : 0;
     if (!ready && (ring!=nullptr || fileOpen || timerInit))
         closeMusic("LOAD_PRESTART_TIMEOUT");
     /* Failure may not cause an unexpected late restart AFTER world present. */
     if (!ready) attempted=true;
-    printf("[LOADAUDIO-L1] PRESTART map=%u route=M_STALKS.wav ready=%d "
+    printf("[LOADAUDIO-L1] PRESTART map=%u route=%s ready=%d "
            "elapsedMs=%u beforeWorldPresent=1 phase=%u queued=%u "
            "ringBytes=%u failClosed=%u\n",
-           (unsigned)targetMapId,ready,
+           (unsigned)targetMapId,trackName,ready,
            (unsigned)(millis()-startMs),(unsigned)phase,
            (unsigned)(ring!=nullptr?queued():0U),
            (unsigned)(ring!=nullptr?kRingCapacity:0U),
@@ -1295,8 +1315,13 @@ void EspEntranceMusic_stopIntroAtHandoff(void) {
 void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
     const EspPlayerViewState* view=gameplayActive?
                                    EspPlayerView_view():nullptr;
-    const bool entrance=gameplayActive&&sdReady&&view&&
-                        view->targetMapId==1U&&view->gameplayLoadMapId==1U;
+    const EspAudioLoadingTrack gameplayTrack=
+        gameplayActive&&sdReady&&view&&
+        view->targetMapId==view->gameplayLoadMapId
+            ? EspAudioLoadingRoute_forMap(view->targetMapId)
+            : ESP_AUDIO_LOADING_TRACK_DEFERRED;
+    const bool configuredGameplay=
+        gameplayTrack!=ESP_AUDIO_LOADING_TRACK_DEFERRED;
     const bool intro=Esp32IntroClock_isActive()!=0||introPrestartWindow;
     const bool soundOn=EspNativeAudioIntent_isSoundEnabled()!=0;
     /* Audio-owned native sight/idle lifecycle: this service is already
@@ -1313,16 +1338,18 @@ void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
     /* A title visit is an explicit owner lifetime. Do not restart when the
      * UI changes to HELP/OPTIONS/LOAD or when the finite WAV completes. */
     const bool menu=sdReady&&!gameplayActive&&!intro&&menuSessionLatched;
-    /* Intro, MENU_MAIN and Entrance share one reader/ISR/ring, never coexist.
-     * Only the confirmed intro handoff closes M_IN_CIT before map load. */
-    if ((!entrance && !intro && !menu) || !soundOn ||
-        (attempted && (activeIntroTrack!=intro || activeMenuTrack!=menu))) {
+    /* Intro, menu and both configured maps share one reader/ISR/ring.
+     * A different map must not inherit the previous SD music stream. */
+    if ((!configuredGameplay && !intro && !menu) || !soundOn ||
+        (attempted && (activeIntroTrack!=intro || activeMenuTrack!=menu ||
+            (!intro && !menu && activeGameplayTrack!=gameplayTrack)))) {
         if (phase!=kSilent||ring||timerInit||fileOpen)
             closeMusic(!soundOn?"SOUND_OFF":"TRACK_OR_SESSION_EXIT");
         EspEntranceMusic_syncIdleOutput(); /* SOUND ON -> 128, OFF -> disabled */
         attempted=false;
         activeIntroTrack=false;
         activeMenuTrack=false;
+        activeGameplayTrack=ESP_AUDIO_LOADING_TRACK_DEFERRED;
         if (!menu) menuSessionLatched=false;
         return;
     }
@@ -1334,7 +1361,7 @@ void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
         if (menu)
             printf("[MENUMUSIC] ROUTE track=M_DM2TTL.wav "
                    "source=SD one-reader=yes sound=ON\n");
-        begin(intro,menu);
+        begin(intro,menu,gameplayTrack);
     }
     if (phase==kSilent) return;
     if (__atomic_load_n(&silentStreak,__ATOMIC_ACQUIRE)>kMaxSilentFrames) {

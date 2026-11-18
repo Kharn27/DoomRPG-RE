@@ -8,24 +8,29 @@
 extern "C" {
 #endif
 
-/* L0: compile-time, allocation-free selection ONLY.
- * The loading screen is not yet an audio producer. An unconfigured map must
- * remain deferred instead of falling back to Entrance or the previous song. */
+/* Allocation-free map soundtrack selection. Loading never opens SD; maps
+ * without an explicitly assigned track remain deferred (including map 10). */
 typedef enum EspAudioLoadingTrack_e {
     ESP_AUDIO_LOADING_TRACK_DEFERRED = 0,
-    ESP_AUDIO_LOADING_TRACK_M_STALKS = 1
+    ESP_AUDIO_LOADING_TRACK_M_STALKS = 1,
+    ESP_AUDIO_LOADING_TRACK_M_DEAD = 2
 } EspAudioLoadingTrack;
 
 static inline EspAudioLoadingTrack EspAudioLoadingRoute_forMap(uint8_t mapId) {
-    return mapId == ESP_MAP_ID_INTRO
-        ? ESP_AUDIO_LOADING_TRACK_M_STALKS
-        : ESP_AUDIO_LOADING_TRACK_DEFERRED;
+    switch (mapId) {
+        case ESP_MAP_ID_INTRO: return ESP_AUDIO_LOADING_TRACK_M_STALKS;
+        case ESP_MAP_ID_JUNCTION: return ESP_AUDIO_LOADING_TRACK_M_DEAD;
+        default: return ESP_AUDIO_LOADING_TRACK_DEFERRED;
+    }
 }
 
 static inline const char* EspAudioLoadingRoute_trackName(
     EspAudioLoadingTrack track) {
-    return track == ESP_AUDIO_LOADING_TRACK_M_STALKS
-        ? "M_STALKS.wav" : "none";
+    switch (track) {
+        case ESP_AUDIO_LOADING_TRACK_M_STALKS: return "M_STALKS.wav";
+        case ESP_AUDIO_LOADING_TRACK_M_DEAD: return "M_DEAD.wav";
+        default: return "none";
+    }
 }
 
 #ifdef __cplusplus

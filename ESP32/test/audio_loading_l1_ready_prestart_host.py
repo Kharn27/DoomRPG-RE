@@ -70,12 +70,14 @@ assert (active.index('EspNativeTransitionPresentation_checkpointProgress(100U, "
         active.index('if (!Esp32PlatformVideo_present())'))
 assert 'EspAudioLoadingRoute_forMap(view->targetMapId)' in active
 assert 'EspNativeAudioIntent_isSoundEnabled()' in active
-assert 'ESP_AUDIO_LOADING_TRACK_M_STALKS' in active
+assert 'ESP_AUDIO_LOADING_TRACK_DEFERRED' in active
 assert 'EspNativeTransitionPresentation_isLoadingActive()' in active
 assert 'EspNativeSfxProbe_service(true);' in active
 
-# No map-wide music: only Entrance ID 1 has a known title.
-assert 'mapId == ESP_MAP_ID_INTRO' in policy
+# Exact map selection: Entrance and Junction only; map 10 stays deferred.
+assert 'case ESP_MAP_ID_INTRO:' in policy
+assert 'case ESP_MAP_ID_JUNCTION:' in policy
+assert 'ESP_AUDIO_LOADING_TRACK_M_DEAD' in policy
 assert 'ESP_AUDIO_LOADING_TRACK_DEFERRED' in policy
 assert 'Test AUDIO-LOAD-L1' in ci
 isr=audio[audio.index('static bool IRAM_ATTR onAudioTick'):
