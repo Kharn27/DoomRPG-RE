@@ -34,6 +34,9 @@ OPCODE_NAMES = {1:'GOTO',2:'CHANGEMAP',3:'TRIGGER',4:'MESSAGE',5:'PAIN',
  39:'CHECK_COMPLETED_LEVEL',40:'NOTE',41:'CHECK_KEY',42:'PLAYSOUND'}
 TEXT_OPS = {4,8,24,26,40}
 TRANSITION_OPS = {2,27}
+SPECIAL_NON_GAMEPLAY_BSPS = {'/items.bsp', '/endgame.bsp'}
+NATIVE_TOPOLOGY_SNAPSHOT_CAPACITY = 100  # esp_map_sprite_topology.h
+
 
 
 def norm(name: str) -> str:
@@ -121,7 +124,61 @@ class Cursor:
         return COUNT.unpack(self.take(2))[0]
 
 
-def parse_bsp(data: bytes, catalog: list[str]) -> dict:
+
+def parse_entity_defs(data: bytes) -> dict[int, tuple[int, int]]:
+    """Mirror esp_map_sprite_topology.c first-wins 24-byte entities.db records."""
+    if len(data) < 2:
+        raise ValueError('truncated entities.db header')
+    count = int.from_bytes(data[:2], 'little')
+    if count == 0 or count > 1024 or len(data) != 2 + count * 24:
+        raise ValueError('invalid entities.db record count/length')
+    defs: dict[int, tuple[int, int]] = {}
+    for i in range(count):
+        raw = data[2 + i * 24:2 + (i + 1) * 24]
+        tile = int.from_bytes(raw[:2], 'little')
+        if tile < 1024 and tile not in defs:
+            defs[tile] = (raw[2], raw[3] & 15)
+    return defs
+
+
+def classify_initial_entities(
+        sprites: list[bytes],
+        defs: dict[int, tuple[int, int]]) -> dict:
+    """Mirror native sprite.info lookup; counts initial definitions, not live actors."""
+    by_type = Counter()
+    by_destructible_subtype = Counter()
+    no_entity_flags = 0
+    undecoded = 0
+    for raw in sprites:
+        info = raw[2] | (raw[3] << 16) | (raw[4] << 24)
+        if info & 0x01000000:
+            no_entity_flags += 1
+            continue
+        lookup = (info & 511) + (305 if info & 0x00040000 else 0)
+        if lookup in defs:
+            kind, subtype = defs[lookup]
+            by_type[kind] += 1
+            if kind == 12:
+                by_destructible_subtype[subtype] += 1
+        elif info & 0x00020000:
+            by_type[15 if lookup == 216 else 14] += 1
+        else:
+            undecoded += 1
+    tracked = by_type[1] + by_type[12]
+    return dict(by_type={str(k): v for k, v in sorted(by_type.items())},
+                destructible_subtypes={str(k): v for k,v in
+                                       sorted(by_destructible_subtype.items())},
+                enemies=by_type[1], destructibles=by_type[12],
+                topology_snapshot_tracked=tracked,
+                topology_snapshot_capacity=NATIVE_TOPOLOGY_SNAPSHOT_CAPACITY,
+                topology_snapshot_overflow=tracked > NATIVE_TOPOLOGY_SNAPSHOT_CAPACITY,
+                no_entity_flag_sprites=no_entity_flags,
+                no_definition_sprites=undecoded)
+
+
+def parse_bsp(data: bytes, catalog: list[str],
+              resource_name: str | None = None,
+              entity_defs: dict[int, tuple[int, int]] | None = None) -> dict:
     cur = Cursor(data)
     name = cur.take(16).split(b'\0',1)[0].decode('latin-1')
     floor_rgb = list(cur.take(3)); ceiling_rgb = list(cur.take(3))
@@ -149,7 +206,18 @@ def parse_bsp(data: bytes, catalog: list[str]) -> dict:
     sprite_ids = Counter(x[2] for x in sprites)
     line_textures = Counter(struct.unpack_from('<H', x, 4)[0] for x in lines)
     opcodes = Counter(x[0] for x in codes)
+    resource = resource_name or ''
+    special = resource in SPECIAL_NON_GAMEPLAY_BSPS
     result = dict(name=name, load_map_id=load_id,
+      map_role='special-non-gameplay' if special else 'gameplay-candidate',
+      line_flags_initial=dict(open=sum(bool(struct.unpack_from('<I', x, 6)[0] & 64)
+                                       for x in lines),
+                              locked=sum(bool(struct.unpack_from('<I', x, 6)[0] & 1024)
+                                         for x in lines),
+                              door_lerp=sum(bool(struct.unpack_from('<I', x, 6)[0] & 4)
+                                            for x in lines)),
+      initial_entities=(classify_initial_entities(sprites, entity_defs)
+                        if entity_defs is not None else None),
       spawn=dict(tile=spawn, direction=direction, camera_tile=camera),
       colors=dict(floor_rgb=floor_rgb, ceiling_rgb=ceiling_rgb, intro_rgb=intro_rgb,
                   floor_texture=floor_tex, ceiling_texture=ceiling_tex),
@@ -166,7 +234,10 @@ def parse_bsp(data: bytes, catalog: list[str]) -> dict:
       events=[], transitions=[], text_references=[], warnings=[])
     if trailing:
         result['warnings'].append('trailing BSP bytes; native committed spawn may reject')
-    if load_id < 1 or load_id > 32:
+    if special:
+        if load_id != 0:
+            result['warnings'].append('special non-gameplay BSP unexpectedly has nonzero loadMapId')
+    elif load_id < 1 or load_id > 32:
         result['warnings'].append('gameplay loadMapId outside native transition preflight 1..32')
     if spawn >= 1024:
         result['warnings'].append('header spawn tile is out of map bounds')
@@ -221,12 +292,14 @@ def parse_bsp(data: bytes, catalog: list[str]) -> dict:
                     result['warnings'].append(
                         f'event {i} command {j} {cmd["name"]} missing text string {idx}')
         result['events'].append(ev)
+    result['max_event_commands'] = max((e['command_count'] for e in result['events']), default=0)
+    result['events_over_12_commands'] = sum(e['command_count'] > 12 for e in result['events'])
     result['unlinked_bytecode_indexes'] = sorted(set(range(codes_n))-linked)
     return result
 
 
 def compare_zip(path: Path, entries: dict[int,dict], names: list[str], f) -> dict:
-    extra = []; missed=[]; differences=[]; zip_files=[]
+    extra = []; missed=[]; differences=[]; payload_differences=[]; zip_files=[]
     with zipfile.ZipFile(path) as z:
         for info in z.infolist():
             name = norm(info.filename)
@@ -238,6 +311,11 @@ def compare_zip(path: Path, entries: dict[int,dict], names: list[str], f) -> dic
             elif (e['size']!=info.file_size or e['crc32']!=f'{info.CRC:08x}' or
                   e['flags']!=int(info.is_dir())):
                 differences.append(name)
+            if e is not None and not info.is_dir():
+                f.seek(e['offset'])
+                data = f.read(e['size'])
+                if data != z.read(info):
+                    payload_differences.append(name)
             if name.endswith('.bsp') and '/'+name not in names:
                 extra.append(name)
         zip_hashes = {h for _, h in zip_files}
@@ -247,6 +325,7 @@ def compare_zip(path: Path, entries: dict[int,dict], names: list[str], f) -> dic
             if arc not in [p for p,_ in zip_files]:
                 missed.append('original-zip:'+arc)
     return dict(zip_entry_count=len(zip_files), named_original_bsp_extra=sorted(extra),
+                zip_pak_payload_mismatches=sorted(payload_differences),
                 zip_unmatched_names=sorted(set(missed)), zip_pak_mismatches=sorted(set(differences)),
                 pak_hashes_unmatched_by_zip=unknown_hashes)
 
@@ -266,6 +345,11 @@ def main() -> int:
                     source_pak=str(args.pak),pak=meta, maps=[],
                     zip_comparison=None, note='Raw opcode presence is not reachability or runtime PASS')
         with args.pak.open('rb') as f:
+            defs_entry = entries.get(fnv_name('entities.db'))
+            if defs_entry is None or defs_entry['flags'] != 0:
+                raise ValueError('native PAK is missing entities.db for semantic census')
+            defs = parse_entity_defs(read_entry(f, defs_entry))
+            report['entity_definitions'] = len(defs)
             if args.zip:
                 report['zip_comparison']=compare_zip(args.zip,entries,catalog,f)
             for map_id,name in enumerate(catalog,1):
@@ -274,7 +358,7 @@ def main() -> int:
                 if h in entries:
                     record['pak_entry']=entries[h]
                     try:
-                        payload=read_entry(f,entries[h]);record.update(parse_bsp(payload,catalog))
+                        payload=read_entry(f,entries[h]);record.update(parse_bsp(payload,catalog,name,defs))
                         record['source_sha256']=hashlib.sha256(payload).hexdigest()
                     except ValueError as exc:
                         record['parse_error']=str(exc)
@@ -291,9 +375,11 @@ def main() -> int:
                   f'opcodes={",".join(m.get("opcode_counts",{}))}')
         if z: print(f'[GAME-A0] ZIP compare unmatched={len(z["zip_unmatched_names"])} '
                     f'indexMismatch={len(z["zip_pak_mismatches"])} '
+                    f'payloadMismatch={len(z["zip_pak_payload_mismatches"])} '
                     f'extraBSP={len(z["named_original_bsp_extra"])}')
         if args.strict and (bad or (z and any(z[k] for k in ('zip_unmatched_names',
-                               'zip_pak_mismatches','pak_hashes_unmatched_by_zip')))):
+                               'zip_pak_mismatches','zip_pak_payload_mismatches',
+                               'pak_hashes_unmatched_by_zip')))):
             return 2
         return 0
     except (OSError,ValueError,struct.error,zipfile.BadZipFile) as exc:
