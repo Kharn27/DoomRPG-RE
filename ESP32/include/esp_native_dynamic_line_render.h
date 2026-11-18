@@ -11,10 +11,20 @@ extern "C" {
 struct Render_s;
 struct EspPlayerViewState_s;
 
-/* RC10: explicit preview composition owner. Scope dynamic door-line reads
+/* RC10/RC11: explicit render-only composition owner. Scope dynamic door-line reads
  * around the *unaltered* render-only camera leaf; reject nested scopes and
  * close the scope on both success and failure. No animation frame consumed,
  * gameplay/event mutation, automap or monster activation publication. */
+/* RC11: redraw and unpublished effect composition use the same scoped
+ * dynamic-line view. Neither path may leak a scope or advance a turn. */
+int EspNativeDynamicLineRender_renderAmbient(
+    struct Render_s* render,
+    EspNativeGameplayFrameStats* outStats);
+int EspNativeDynamicLineRender_composeTurn(
+    struct Render_s* render,
+    uint8_t angle,
+    EspNativeGameplayFrameStats* outStats);
+
 int EspNativeDynamicLineRender_renderVisualPose(
     struct Render_s* render,
     const struct EspPlayerViewState_s* visual,
