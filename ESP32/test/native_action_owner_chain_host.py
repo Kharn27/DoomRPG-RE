@@ -276,7 +276,8 @@ def main():
     need(exercise(BODY), "RC13 actual service/reset C body failed assertions")
     for label, before, after in MUTANTS:
         need(BODY.count(before) == 1 or
-             (label == "raw action skipped" and BODY.count(before) == 2),
+             (label in ("raw action skipped", "empty-enemy inversion")
+              and BODY.count(before) == 2),
              "mutant source drift: " + label)
         mutated = BODY.replace(before, after, 1)
         need(not exercise(mutated), "adversarial C mutant escaped: " + label)
