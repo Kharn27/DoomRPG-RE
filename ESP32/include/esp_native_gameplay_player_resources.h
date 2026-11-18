@@ -63,6 +63,12 @@ int EspNativeGameplayPlayerResources_restore(
  * Native resource/action/session leaves. The explicit session coordinator
  * calls these exactly once; no GNU __wrap macro aliases remain.
  */
+/* Cosmetic single-slot redraw, never part of checkpoint or gameplay state. */
+void EspNativeGameplayPlayerResources_noteWorldPresented(void);
+int EspNativeGameplayPlayerResources_redrawDue(uint32_t nowMs);
+int EspNativeGameplayPlayerResources_flushIdle(struct DoomRPG_s* doomRpg,
+                                               uint32_t nowMs);
+
 void EspNativeGameplayPlayerResources_sessionReset(void);
 void EspNativeGameplayPlayerResources_sessionService(struct DoomRPG_s* doomRpg);
 

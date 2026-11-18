@@ -79,6 +79,15 @@ def original_body_parity() -> None:
         current = restore_pre_rc13(filename, current)
         assert current.startswith(marker), (
             f"{filename}: expected bounded host/geometry-only SDL guard")
+        # GAME-PICKUP is a post-F27 presentation optimization. Restore only
+        # its exact additive source delta before any older historical inverse.
+        if filename == "esp_native_gameplay_player_resources.c":
+            from game_pickup_redraw_history import restore_pre_game_pickup_resources
+            current = restore_pre_game_pickup_resources(current)
+        elif filename == "esp_native_resident_gameplay.c":
+            from game_pickup_redraw_history import restore_pre_game_pickup_resident
+            current = restore_pre_game_pickup_resident(current)
+
         if filename == "esp_native_gameplay_frame.c":
             # AUDIO-R2d adds a single synchronous SD pump after a successful
             # frame. Reverse ONLY these two additions before checking the
