@@ -51,6 +51,7 @@
 #include "esp_native_gameplay_password.h"
 #include "esp_native_gameplay_store.h"
 #include "esp_native_gameplay_player_state.h"
+#include "esp_native_gameplay_player_resources.h"
 #include "esp_native_gameplay_select.h"
 #include "esp_native_gameplay_session.h"
 #include "esp_native_gameplay_save_ui.h"
@@ -2499,6 +2500,16 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
 
     if (pending == NULL || pending->pending == 0U) {
         const uint32_t nowMs=(uint32_t)(esp_timer_get_time()/1000LL);
+        /* The pickup has already committed its resource/world transaction.
+         * While tapping, ordinary MOVE renders cover it for free; only an
+         * actually idle WORLD view needs one cosmetic catch-up redraw. */
+        if (!EspNativeGameplayControls_isActive() &&
+            !EspNativeGameplayPresentGate_isArmed() &&
+            !EspAssetPack_isOpen() &&
+            EspNativeGameplayPlayerResources_redrawDue(nowMs)) {
+            (void)EspNativeGameplayPlayerResources_flushIdle(doomRpg, nowMs);
+            return;
+        }
         if (!EspNativeGameplayControls_isActive() &&
             !EspNativeGameplayPresentGate_isArmed() &&
             !EspAssetPack_isOpen() &&
