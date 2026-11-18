@@ -9,6 +9,7 @@ This test verifies pre-script ownership and stale cleanup, not ELF or hardware p
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
+import os
 import shutil
 import tempfile
 
@@ -100,8 +101,11 @@ def main():
         (stale_objects / "esp32_sdl.cpp.o").write_text("stale object\n")
         env = FakeEnv(project, build)
         log = execute_build_script(env)
-        assert "C oracle generation retired" in log
-        assert "compiledOriginal=0 compiledPatchedC=0" in log
+        # Build logs are quiet by default; the hard-fail owner checks and
+        # stale generated C cleanup remain active on every invocation.
+        assert "Native source audit PASS" in log
+        assert "desktopC=0 generatedC=0 SDL=0" in log
+        assert "C oracle generation retired" not in log
         assert not obsolete.exists(), "stale generated root was not retired"
 
         # The exact SDL-A/F3 packed oracle was relocated outside the firmware
@@ -133,6 +137,22 @@ def main():
         assert env.sources == [], "generated sources unexpectedly registered"
         assert not stale_shim.exists() and not stale_objects.exists()
         assert len(env.includes) == 3
+
+        # The same exact retirement evidence is still available when explicitly
+        # requested for diagnosis; restore the env so following negative tests
+        # retain the production's quiet default.
+        previous_verbose = os.environ.get("DOOMRPG_BUILD_AUDIT_VERBOSE")
+        os.environ["DOOMRPG_BUILD_AUDIT_VERBOSE"] = "1"
+        try:
+            verbose_log = execute_build_script(FakeEnv(project, build))
+        finally:
+            if previous_verbose is None:
+                os.environ.pop("DOOMRPG_BUILD_AUDIT_VERBOSE", None)
+            else:
+                os.environ["DOOMRPG_BUILD_AUDIT_VERBOSE"] = previous_verbose
+        assert "C oracle generation retired" in verbose_log
+        assert "compiledOriginal=0 compiledPatchedC=0" in verbose_log
+        assert "Native source audit PASS" in verbose_log
 
         # A second build must not write or mutate the host-only oracle source.
         env2 = FakeEnv(project, build)
