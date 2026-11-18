@@ -10,6 +10,9 @@
 #include "esp_native_gameplay_hub_weapon_grid.h"
 #include "esp_native_gameplay_hub_theme.h"
 #include "esp_native_gameplay_input.h"
+/* Isolated host links the raw input TU without SAVE's public compositor. */
+EspNativeGameplayInputStatus EspNativeGameplayInput_consumeBase(
+    EspNativeGameplayInputState* outIntent);
 
 #define WIDTH 160
 #define HEIGHT 120
@@ -95,7 +98,7 @@ int main(void) {
                 EspNativeGameplayInput_reset();
                 assert(EspNativeGameplayInput_route(&hit,x,y)==
                        ESP_NATIVE_GAMEPLAY_INPUT_OK);
-                assert(EspNativeGameplayInput_consume(&intent)==
+                assert(EspNativeGameplayInput_consumeBase(&intent)==
                        ESP_NATIVE_GAMEPLAY_INPUT_OK);
                 uint8_t target=255;
                 assert(EspNativeGameplayHubTouchUi_consumedPageTarget(&target));
