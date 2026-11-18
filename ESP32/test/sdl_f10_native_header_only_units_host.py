@@ -44,6 +44,13 @@ def main() -> None:
         # Normalize *only* that exact additive line for the frozen SDL-F10
         # historical byte oracle; all surrounding original bytes remain pinned.
         if file == "esp_native_startup.c":
+            # ARCH-RC9: reverse only two native coordinator reset routes for
+            # the frozen pre-SDL-F10 startup-source fingerprint. Runtime
+            # START/death reset order stays unchanged.
+            coordinator = "    EspNativeGameplaySessionCoordinator_reset();"
+            previous = "    EspNativeGameplaySession_reset();"
+            assert source.count(coordinator) == 2, "RC9 startup reset route drift"
+            source = source.replace(coordinator, previous)
             addition = "            EspNativeTransitionPresentation_deferFlashUntilCache();\n"
             assert source.count(addition) == 1, "loading progression hook missing"
             source = source.replace(addition, "", 1)

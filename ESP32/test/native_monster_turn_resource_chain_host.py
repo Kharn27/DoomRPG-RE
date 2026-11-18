@@ -96,23 +96,23 @@ int main(void) {
         "|impact0|turnReset|resReset|visReset|retReset|painReset|moveReset|fxReset";
 
     clearTrace();
-    __wrap_EspNativeGameplaySession_service(&owner);
+    EspNativeGameplaySessionCoordinator_service(&owner);
     assert(strcmp(trace, expectedService) == 0);
     clearTrace();
     activationOk = 0; /* failed admission is not retried or reordered */
-    __wrap_EspNativeGameplaySession_service(&owner);
+    EspNativeGameplaySessionCoordinator_service(&owner);
     assert(strcmp(trace, expectedService) == 0);
     clearTrace();
-    __wrap_EspNativeGameplaySession_service(NULL);
+    EspNativeGameplaySessionCoordinator_service(NULL);
     assert(strcmp(trace, expectedService) == 0);
     clearTrace();
     impactLoggedProbe = 5U; impactLoggedFrame = 2U; impactUnavailableProbe = 6U;
-    __wrap_EspNativeGameplaySession_reset();
+    EspNativeGameplaySessionCoordinator_reset();
     assert(strcmp(trace, expectedReset) == 0);
     assert(impactLoggedProbe == 0U && impactLoggedFrame == 0xffU &&
            impactUnavailableProbe == 0U);
     clearTrace();
-    __wrap_EspNativeGameplaySession_reset();
+    EspNativeGameplaySessionCoordinator_reset();
     assert(strcmp(trace, expectedReset) == 0);
     puts("PASS ARCH-RC8 compiled real C session lifecycle, 5 scenarios");
     return 0;
@@ -151,8 +151,8 @@ def main():
 
     hook = extract(turn,
         "void EspNativeGameplayMonsterTurn_afterPlayerResourcesService(")
-    service = extract(fx, "void __wrap_EspNativeGameplaySession_service(")
-    reset = extract(fx, "void __wrap_EspNativeGameplaySession_reset(")
+    service = extract(fx, "void EspNativeGameplaySessionCoordinator_service(")
+    reset = extract(fx, "void EspNativeGameplaySessionCoordinator_reset(")
     source = PREFIX + hook + "\n" + service + "\n" + reset + "\n" + CHECKS
     success, detail = build_and_run(source)
     require(success, "real C failed: " + detail)

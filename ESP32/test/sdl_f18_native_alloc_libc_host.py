@@ -102,6 +102,12 @@ for filename, (sha, aliases) in REFERENCES.items():
         restored = current.replace("#include <SDL.h>\n#include <stdlib.h>\n",
                                    "#include <SDL.h>\n", 1)
     if filename == "esp_native_resident_gameplay.c":
+        # ARCH-RC9 renames the one resident EXIT teardown call. Reverse only
+        # that exact routing token before the historical pre-F18 hash check.
+        new_call = "    EspNativeGameplaySessionCoordinator_reset();"
+        old_call = "    EspNativeGameplaySession_reset();"
+        assert restored.count(new_call) == 1, "ARCH-RC9 resident reset drift"
+        restored = restored.replace(new_call, old_call, 1)
         from audio_menu_m1_history import restore_pre_menu_audio_resident
         restored = restore_pre_menu_audio_resident(restored)
     assert not re.search(r"\bSDL_[A-Za-z_][A-Za-z_0-9]*\b", current), filename
