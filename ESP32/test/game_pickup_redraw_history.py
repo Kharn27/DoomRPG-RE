@@ -1,0 +1,78 @@
+"""GAME-PICKUP: strict inverse for frozen SDL Git-blob history oracles.
+
+These helpers operate only on in-memory test sources. They are deliberately
+anchored to the exact additive pickup-redraw change. Production source, SHA
+baselines, asset ownership and gameplay are never rewritten.
+"""
+
+def _as_text(source):
+    binary = isinstance(source, bytes)
+    return (source.decode("utf-8") if binary else source), binary
+
+def _restore_type(source, binary):
+    return source.encode("utf-8") if binary else source
+
+def _remove(source, value):
+    assert source.count(value) == 1, ("GAME-PICKUP history token drift", value)
+    return source.replace(value, "", 1)
+
+def _span(source, first, last, replacement):
+    assert source.count(first) == 1 and source.count(last) == 1, (
+        "GAME-PICKUP historical span drift", first, last)
+    a = source.index(first)
+    b = source.index(last, a)
+    assert a < b, ("GAME-PICKUP historical span order", first, last)
+    return source[:a] + replacement + source[b + len(last):]
+
+def restore_pre_game_pickup_resources(source):
+    source, binary = _as_text(source)
+    for addition in (
+        "#include <esp_timer.h>\n",
+        '#include "esp_native_gameplay_pickup_redraw.h"\n',
+        "    EspPickupRedraw redraw;\n",
+        "        memset(&resources.redraw, 0, sizeof(resources.redraw));\n",
+        "    int syncRedraw = 0;\n",
+    ):
+        source = _remove(source, addition)
+    source = _span(
+        source,
+        "    /*\n     * A normal MOVE has already published its canonical destination frame.",
+        "        /* Cosmetic FIFO is committed AFTER the semantic world transaction.",
+        '    if (rerender(doomRpg, afterView, "RESOURCE-PICKUP")) {\n'
+        '        /* Cosmetic FIFO is committed AFTER the required world redraw.',
+    )
+    source = _span(
+        source,
+        "/*\n * A successful full settled WORLD frame is authoritative.",
+        "void EspNativeGameplayPlayerResources_sessionReset(void) {",
+        "void EspNativeGameplayPlayerResources_sessionReset(void) {",
+    )
+    return _restore_type(source, binary)
+
+def restore_pre_game_pickup_frame(source):
+    source, binary = _as_text(source)
+    source = _remove(source, '#include "esp_native_gameplay_player_resources.h"\n')
+    source = _span(
+        source,
+        "        if (!preview && !EspNativeResidentGameplay_isAutomapActive()) {\n"
+        "            /* A new settled world image",
+        "    }\n    stats->active = 1U;",
+        "    }\n    stats->active = 1U;",
+    )
+    return _restore_type(source, binary)
+
+def restore_pre_game_pickup_resident(source):
+    source, binary = _as_text(source)
+    source = _remove(source, '#include "esp_native_gameplay_player_resources.h"\n')
+    settled = (
+        "        if (!EspNativeGameplayControls_isActive() &&\n"
+        "            !EspNativeGameplayPresentGate_isArmed() &&\n"
+        "            !EspAssetPack_isOpen() &&\n"
+        "            EspNativeSpriteRenderer_ambientDue(nowMs)) {"
+    )
+    source = _span(
+        source,
+        "        /* The pickup has already committed its resource/world transaction.",
+        settled, settled,
+    )
+    return _restore_type(source, binary)
