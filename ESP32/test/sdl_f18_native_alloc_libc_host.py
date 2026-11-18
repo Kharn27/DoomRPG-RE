@@ -107,6 +107,8 @@ for filename, (sha, aliases) in REFERENCES.items():
         from arch_rc11_history import restore_pre_rc11_event_chain
         restored = restore_pre_rc11_event_chain(restored)
     if filename == "esp_native_resident_gameplay.c":
+        from arch_rc13_history import restore_pre_rc13
+        restored = restore_pre_rc13(filename, restored)
         from arch_rc11_history import restore_pre_rc11_resident
         from arch_rc10_history import restore_pre_rc10_resident
         restored = restore_pre_rc11_resident(restored)
