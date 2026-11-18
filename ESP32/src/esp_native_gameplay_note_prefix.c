@@ -144,11 +144,6 @@ int EspNativeGameplayModalScratch_release(uint8_t owner, void* storage) {
     return 1;
 }
 
-extern EspNativeGameplayDialogBeginStatus
-__real_EspNativeGameplayDialog_begin(uint16_t eventIndex,
-                                     uint8_t commandOffset,
-                                     uint32_t runFlags);
-
 static int eventDescriptorForIndex(uint16_t eventIndex,
                                    EspMapEventDescriptor* outDescriptor) {
     EspMapEventRef ref;
@@ -308,7 +303,7 @@ static int prepareNotePrefix(uint16_t eventIndex,
 }
 
 EspNativeGameplayDialogBeginStatus
-__wrap_EspNativeGameplayDialog_begin(uint16_t eventIndex,
+EspNativeGameplayNotePrefix_beginDialog(uint16_t eventIndex,
                                      uint8_t commandOffset,
                                      uint32_t runFlags) {
     const EspPlayerViewState* view = EspPlayerView_view();
