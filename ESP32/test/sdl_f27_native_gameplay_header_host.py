@@ -122,9 +122,20 @@ def original_body_parity() -> None:
                 b"                    (void)EspEntranceMusic_prestartGameplayBeforeFirstFrame(\n"
                 b"                        view->targetMapId);\n"
             )
+            # Junction-M1 widens ONLY the map-route predicate before the
+            # existing SFX scan and pre-world audio prestart. Reverse that
+            # precise predicate for the frozen SDL-F27 source SHA; do not
+            # rebaseline the historical blob or relax the order witness.
+            junction_hook = l1_hook.replace(
+                b"EspAudioLoadingRoute_forMap(view->targetMapId) ==",
+                b"EspAudioLoadingRoute_forMap(view->targetMapId) !="
+            ).replace(
+                b"ESP_AUDIO_LOADING_TRACK_M_STALKS &&",
+                b"ESP_AUDIO_LOADING_TRACK_DEFERRED &&"
+            )
             assert current.count(l1_import)==1, "LOAD-L1 session includes drift"
-            assert current.count(l1_hook)==1, "LOAD-L1 session hook drift"
-            current=current.replace(l1_import,b"",1).replace(l1_hook,b"",1)
+            assert current.count(junction_hook)==1, "JUNCTION-M1 LOAD-L1 session hook drift"
+            current=current.replace(l1_import,b"",1).replace(junction_hook,b"",1)
         # AUDIO-SFX-P1 publishes two *post-commit-only* native PCM intents.
         # Strictly undo exactly their imported header and bounded event hooks
         # before the frozen ten-source pre-F27 Git blob witness. No hashes
