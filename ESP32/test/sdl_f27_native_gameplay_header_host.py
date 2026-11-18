@@ -226,7 +226,9 @@ def original_body_parity() -> None:
             assert current.count(anchor) == 1, "RC9 resource declarations anchor drift"
             current = current.replace(anchor, anchor + prototypes, 1)
         if filename == "esp_native_resident_gameplay.c":
+            from arch_rc11_history import restore_pre_rc11_resident
             from arch_rc10_history import restore_pre_rc10_resident
+            current = restore_pre_rc11_resident(current)
             current = restore_pre_rc10_resident(current)
             # ARCH-RC9: the native EXIT route calls the explicit coordinator.
             assert current.count(b"    EspNativeGameplaySessionCoordinator_reset();") == 1

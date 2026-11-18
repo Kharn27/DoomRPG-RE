@@ -81,13 +81,6 @@ int __real_EspNativeGameplayFrame_renderTurn(
     struct Render_s* render,
     uint8_t angle,
     EspNativeGameplayFrameStats* outStats);
-int __real_EspNativeGameplayFrame_renderAmbient(
-    struct Render_s* render,
-    EspNativeGameplayFrameStats* outStats);
-int __real_EspNativeGameplayFrame_composeTurn(
-    struct Render_s* render,
-    uint8_t angle,
-    EspNativeGameplayFrameStats* outStats);
 int __real_EspMapRuntime_getLine(uint32_t index, EspMapLine* outLine);
 const EspMapLineStateView* __real_EspMapLineState_view(void);
 
@@ -367,22 +360,22 @@ static int endDynamicPreview(int rendered, const char* kind) {
  * Without this scope, EV_UNLOCK textures fall back to immutable red and any
  * opened door trips the old first-frame closed-only witness. Never bypass the
  * line-state + texture-state overlays, even for presentation-only redraws. */
-int __wrap_EspNativeGameplayFrame_renderAmbient(
+int EspNativeDynamicLineRender_renderAmbient(
     struct Render_s* render,
     EspNativeGameplayFrameStats* outStats) {
     int ok;
     if (!beginDynamicPreview()) return 0;
-    ok = __real_EspNativeGameplayFrame_renderAmbient(render, outStats);
+    ok = EspNativeGameplayFrame_renderAmbient(render, outStats);
     return endDynamicPreview(ok, "ambient");
 }
 
-int __wrap_EspNativeGameplayFrame_composeTurn(
+int EspNativeDynamicLineRender_composeTurn(
     struct Render_s* render,
     uint8_t angle,
     EspNativeGameplayFrameStats* outStats) {
     int ok;
     if (!beginDynamicPreview()) return 0;
-    ok = __real_EspNativeGameplayFrame_composeTurn(render, angle, outStats);
+    ok = EspNativeGameplayFrame_composeTurn(render, angle, outStats);
     return endDynamicPreview(ok, "compose");
 }
 

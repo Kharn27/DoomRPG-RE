@@ -15,6 +15,7 @@
 #include "esp_map_ui_intent.h"
 #include "esp_native_gameplay_event_chain.h"
 #include "esp_native_gameplay_frame.h"
+#include "esp_native_dynamic_line_render.h"
 #include "esp_native_indexed_bmp.h"
 #include "esp_native_first_frame.h"
 #include "esp_native_plane_renderer.h"
@@ -220,8 +221,6 @@ int Esp32PlatformVideo_present(void) {
     ++presents; return presentOk;
 }
 int __real_Esp32PlatformVideo_present(void);
-int __wrap_EspNativeGameplayFrame_renderAmbient(
-    struct Render_s* render, EspNativeGameplayFrameStats* outStats);
 int __wrap_EspNativeGameplayActionEngine_present(void) {
     ++decoratedPresents;
     return __real_Esp32PlatformVideo_present();
@@ -373,10 +372,10 @@ int main(void) {
     /* Regression witness: renderTurn MUST refuse a pre-armed gate. The old
      * WAIT implementation hit exactly this guard forever, before any raster. */
     assert(!EspNativeGameplayFrame_renderTurn(render, 0, &frame));
-    assert(!EspNativeGameplayFrame_composeTurn(render, 0, &frame));
+    assert(!EspNativeDynamicLineRender_composeTurn(render, 0, &frame));
     assert(presents == 0 && renderCalls == 0);
     EspNativeGameplayPresentGate_cancel();
-    assert(EspNativeGameplayFrame_composeTurn(render, 0, &frame));
+    assert(EspNativeDynamicLineRender_composeTurn(render, 0, &frame));
     assert(frame.active && !frame.finalPresented && !frame.presentMicros);
     assert(presents == 0 && freshFrames == 0 && moveFrameResults == 1);
     assert(spritePublications == 0);
@@ -398,7 +397,7 @@ int main(void) {
     /* Even an ambient/preview publication is not allowed to reveal 3D
      * while a modal map owns the screen. */
     seed(10); automapOwned = 1;
-    assert(__wrap_EspNativeGameplayFrame_renderAmbient(render, &frame));
+    assert(EspNativeDynamicLineRender_renderAmbient(render, &frame));
     assert(frame.active && frame.finalPresented);
     assert(automapRenders == 1 && presents == 1 && freshFrames == 0);
     for (size_t i = 0U; i < 160U * 120U; ++i)
