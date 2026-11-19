@@ -70,13 +70,13 @@ static void reset(void) {
     crateTransformed = 0; initialVisual = 0x30U;
     rawType = 1U; rawSubtype = 2U; rawLink = 0x341aU; rawOrder = 7U;
 }
-int __real_EspMapSpriteTopology_getVisualState(uint32_t i, uint8_t* out) {
+int EspMapSpriteTopology_getVisualStateBase(uint32_t i, uint8_t* out) {
     mark('V');
     if (!rawReady || i != 2U || !out) return 0;
     *out = initialVisual;
     return 1;
 }
-int __real_EspMapSpriteTopology_getEntity(uint32_t i, uint8_t* type,
+int EspMapSpriteTopology_getEntityBase(uint32_t i, uint8_t* type,
                                            uint8_t* subtype, uint16_t* link,
                                            uint16_t* order) {
     mark('B');
@@ -272,23 +272,28 @@ def main() -> None:
     require("EspNativeGameplayActionEngine_getVisualState(" not in combat and
             "EspNativeGameplayActionEngine_getEntity(" not in combat,
             "old implicit combat interposition revived")
-    require("__wrap_EspMapSpriteTopology_getVisualState" in action and
-            "__wrap_EspMapSpriteTopology_getEntity" in action,
-            "ActionEngine's still-retained topology chain disappeared")
+    require("int EspNativeGameplayActionEngine_getVisualState(" in action and
+            "int EspNativeGameplayActionEngine_getEntity(" in action,
+            "ActionEngine private public-read layer was lost")
+    for name in ("EspMapSpriteTopology_getVisualState",
+                 "EspMapSpriteTopology_getEntity"):
+        require("-Wl,--wrap=" + name not in ini,
+                "RC20 topology GNU wrapper resurrected: " + name)
+        for source in (action, combat):
+            require("__wrap_" + name not in source and
+                    "__real_" + name not in source,
+                    "RC20 topology GNU alias resurrected: " + name)
+    require("EspMapSpriteTopology_getVisualStateBase(" in action and
+            "EspMapSpriteTopology_getEntityBase(" in action,
+            "RC20 ActionEngine must read canonical Base leaves")
 
     a_entity_leaf = extract(action, "static int actionGetEntity(")
-    a_visual = extract(action, "int __wrap_EspMapSpriteTopology_getVisualState(")
-    a_entity = extract(action, "int __wrap_EspMapSpriteTopology_getEntity(")
+    a_visual = extract(action, "int EspNativeGameplayActionEngine_getVisualState(")
+    a_entity = extract(action, "int EspNativeGameplayActionEngine_getEntity(")
     p_visual = extract(projection,
                        "int EspNativeGameplayProjectionOverlay_getVisualState(")
     p_entity = extract(projection,
                        "int EspNativeGameplayProjectionOverlay_getEntity(")
-    a_visual = a_visual.replace(
-        "int __wrap_EspMapSpriteTopology_getVisualState(",
-        "int EspNativeGameplayActionEngine_getVisualState(", 1)
-    a_entity = a_entity.replace(
-        "int __wrap_EspMapSpriteTopology_getEntity(",
-        "int EspNativeGameplayActionEngine_getEntity(", 1)
     original = [a_entity_leaf, a_visual, a_entity, p_visual, p_entity]
     run(compose(original), True)
 
