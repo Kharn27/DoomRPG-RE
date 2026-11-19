@@ -73,8 +73,9 @@ def scan():
                         ("EspMapLineState_viewBase", "esp_map_line_state.c")):
         bodies = {}
         for path, source in source_files.items():
-            count = len(re.findall(r"\b" + name + r"\s*\([^;]*?\)\s*\{",
-                                   source, re.S))
+            count = len(re.findall(r"^(?:int|const EspMapLineStateView\*)\s+" +
+                                   name + r"\s*\([^;]*?\)\s*\{",
+                                   source, re.S | re.M))
             if count:
                 bodies[path] = count
         require(bodies == {owner: 1}, "duplicate/bypass owner " + name + " " + str(bodies))
