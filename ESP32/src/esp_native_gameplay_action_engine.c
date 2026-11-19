@@ -267,9 +267,9 @@ _Static_assert(DAMAGE_BORDER_INNER_MAX_PIXELS == 1560U,
                "directional tint snapshot must stay within 3.2 KB BSS");
 
 int __real_EspMapRuntime_getMapSprite(uint32_t index, EspMapSprite* outSprite);
-int __real_EspMapSpriteTopology_getVisualState(uint32_t spriteIndex,
+int EspMapSpriteTopology_getVisualStateBase(uint32_t spriteIndex,
                                                uint8_t* outVisualState);
-int __real_EspMapSpriteTopology_getEntity(uint32_t spriteIndex,
+int EspMapSpriteTopology_getEntityBase(uint32_t spriteIndex,
                                           uint8_t* outType,
                                           uint8_t* outSubType,
                                           uint16_t* outLinkState,
@@ -425,7 +425,7 @@ static int actionGetEntity(uint32_t spriteIndex,
                            uint8_t* outSubType,
                            uint16_t* outLinkState,
                            uint16_t* outLinkOrder) {
-    if (!__real_EspMapSpriteTopology_getEntity(spriteIndex, outType, outSubType,
+    if (!EspMapSpriteTopology_getEntityBase(spriteIndex, outType, outSubType,
                                                outLinkState, outLinkOrder)) {
         return 0;
     }
@@ -678,9 +678,9 @@ void EspNativeGameplayActionEngine_markFreshFrame(void) {
     actionState.framebufferFresh = 1U;
 }
 
-int __wrap_EspMapSpriteTopology_getVisualState(uint32_t spriteIndex,
+int EspNativeGameplayActionEngine_getVisualState(uint32_t spriteIndex,
                                                uint8_t* outVisualState) {
-    if (!__real_EspMapSpriteTopology_getVisualState(spriteIndex,
+    if (!EspMapSpriteTopology_getVisualStateBase(spriteIndex,
                                                     outVisualState)) {
         return 0;
     }
@@ -690,7 +690,7 @@ int __wrap_EspMapSpriteTopology_getVisualState(uint32_t spriteIndex,
     return 1;
 }
 
-int __wrap_EspMapSpriteTopology_getEntity(uint32_t spriteIndex,
+int EspNativeGameplayActionEngine_getEntity(uint32_t spriteIndex,
                                           uint8_t* outType,
                                           uint8_t* outSubType,
                                           uint16_t* outLinkState,
