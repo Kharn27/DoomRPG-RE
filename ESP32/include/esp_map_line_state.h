@@ -71,7 +71,10 @@ typedef struct EspMapLineDoorResult_s {
 void EspMapLineState_reset(void);
 int EspMapLineState_buildFromRuntime(void);
 int EspMapLineState_isReady(void);
+/* Public view owns the temporary render-scope openCount compatibility copy. */
 const EspMapLineStateView* EspMapLineState_view(void);
+/* Canonical mutable overlay, independent of any active rendering scope. */
+const EspMapLineStateView* EspMapLineState_viewBase(void);
 int EspMapLineState_getOpen(uint32_t lineIndex, uint8_t* outOpen);
 int EspMapLineState_getLocked(uint32_t lineIndex, uint8_t* outLocked);
 

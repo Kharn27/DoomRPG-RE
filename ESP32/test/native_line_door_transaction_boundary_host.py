@@ -65,15 +65,14 @@ def source_scan():
     require(len(all_src) >= 178, "unexpectedly small production corpus")
     config = (ROOT / "platformio.ini").read_text()
     normal = config.split("[env:esp32-cyd]", 1)[1].split("[env:esp-cyd-inverted]", 1)[0]
-    require(len(re.findall(r"^\s+-Wl,--wrap=", normal, re.M)) == 10,
-            "expected 10 production wrappers after RC18")
+    require(len(re.findall(r"^\s+-Wl,--wrap=", normal, re.M)) == 8,
+            "expected 8 production wrappers after RC19")
     for symbol in RETIRED:
         require("-Wl,--wrap=" + symbol not in config, "retired flag " + symbol)
         for name, text in all_src.items():
             require(not re.search(r"\b__(?:wrap|real)_" + symbol + r"\b", text),
                     "GNU alias survives in " + name)
-    for name in ("EspNativeGameplayFrame_renderTurn", "EspMapRuntime_getLine",
-                 "EspMapLineState_view", "Esp32PlatformVideo_present"):
+    for name in ("EspNativeGameplayFrame_renderTurn", "Esp32PlatformVideo_present"):
         require("-Wl,--wrap=" + name in config, "protected wrapper lost: " + name)
     require("EspMapLineState_applyDoorCommand(" not in all_src["esp_map_line_state.c"],
             "core door leaf must not bypass public animation")

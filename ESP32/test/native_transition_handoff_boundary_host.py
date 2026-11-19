@@ -46,8 +46,8 @@ config = INI.read_text()
 normal = config.split("[env:esp32-cyd]", 1)[1].split(
     "[env:esp-cyd-inverted]", 1)[0]
 
-require(len(re.findall(r"^\s+-Wl,--wrap=", normal, re.M)) == 10,
-        "ARCH-RC18 expects ten genuine release GNU wrappers")
+require(len(re.findall(r"^\s+-Wl,--wrap=", normal, re.M)) == 8,
+        "ARCH-RC19 expects eight genuine release GNU wrappers")
 for name in ("EspAssetPack_residentBegin", "PlatformInput_setTapCallback"):
     require("-Wl,--wrap=" + name not in config,
             "old linker interposition resurrected: " + name)
@@ -212,4 +212,4 @@ with tempfile.TemporaryDirectory(prefix="rc18-native-handoff-") as dirname:
         require(witness in result.stdout, "missing real-body witness " + name)
         print(result.stdout.strip())
 
-print("PASS ARCH-RC18: two real production transaction facades + raw callback leaf, 10+3 GNU wraps")
+print("PASS ARCH-RC18: two real production transaction facades + raw callback leaf, 8+3 GNU wraps")

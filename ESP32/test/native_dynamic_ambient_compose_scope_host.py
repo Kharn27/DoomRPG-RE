@@ -43,10 +43,9 @@ def scan() -> None:
         require(not any(f"__real_{name}(" in src or f"__wrap_{name}(" in src
                         for src in files.values()),
                 "obsolete GNU alias body/prototype present " + name)
-    for left in ("EspNativeGameplayFrame_renderTurn", "EspMapRuntime_getLine",
-                 "EspMapLineState_view"):
+    for left in ("EspNativeGameplayFrame_renderTurn",):
         require(f"-Wl,--wrap={left}" in flags,
-                "RC11 must not retire cardinal/door line read " + left)
+                "RC19 must not retire the cardinal door transaction " + left)
 
     expected = {
         RAW_AMBIENT: {"esp_native_dynamic_line_render.c": 1,

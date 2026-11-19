@@ -168,7 +168,7 @@ int EspMapLineState_isReady(void) {
            lineStateView.storageBytes == lineStateView.bitsetBytes * 2U;
 }
 
-const EspMapLineStateView* EspMapLineState_view(void) {
+const EspMapLineStateView* EspMapLineState_viewBase(void) {
     return EspMapLineState_isReady() ? &lineStateView : NULL;
 }
 
