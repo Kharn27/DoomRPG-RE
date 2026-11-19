@@ -1,30 +1,30 @@
-# Atelier graphique du menu UAC — PR #399
+# Atelier graphique du menu UAC — rééquilibrage 118 px (P2)
 
 **Voir les compositions et les 16 boutons directement dans GitHub.**
 Ces images sont assemblées depuis les **18 vrais BMP finaux** du dépôt.
-Aucune retouche ou reconstitution manuelle des boutons dans les preuves.
+Les 16 boutons sont conservés octet pour octet depuis la PR #399 ; seule la largeur des deux cadres change. Les preuves sont reconstruites exclusivement depuis les 18 BMP finaux.
 
 ## Cadre 120 px — quatre boutons et quatre sélections
 
-Cadre **79 × 120**, boutons **55 × 20**. Sur la composition suivante,
+Cadre **59 × 120**, boutons **55 × 20**. Sur la composition suivante,
 START est actif ; LOAD, OPTIONS et HELP sont inactifs.
 
-![Cadre UAC natif 79x120 avec START actif, LOAD OPTIONS HELP inactifs](previews/composition_120_start.png)
+![Cadre UAC natif 59x120 avec START actif, LOAD OPTIONS HELP inactifs](previews/composition_120_start.png)
 
 **Preuve de composition des quatre états de sélection :**
 
 ![Preuve du cadre 120px avec quatre montages START LOAD OPTIONS HELP actifs tour à tour](previews/proof_120_selections.png)
 
-Chaque colonne assemble le cadre et ses quatre boutons avec **un seul
+Chaque colonne (de gauche à droite : START, LOAD, OPTIONS, HELP) assemble le cadre et ses quatre boutons avec **un seul
 bouton actif**. La planche 120 est agrandie **×2 nearest-neighbor**
-pour rester lisible. Le calcul de composition se fait à **79 × 120 natifs**.
+pour rester lisible. Le calcul de composition se fait à **59 × 120 natifs**.
 
 ## Cadre 240 px — quatre boutons et quatre sélections
 
-Cadre **158 × 240**, boutons **110 × 40**. START est actif dans la
+Cadre **118 × 240**, boutons **110 × 40**. START est actif dans la
 composition de référence :
 
-![Cadre UAC natif 158x240 avec START actif, LOAD OPTIONS HELP inactifs](previews/composition_240_start.png)
+![Cadre UAC natif 118x240 avec START actif, LOAD OPTIONS HELP inactifs](previews/composition_240_start.png)
 
 **Preuve de composition des quatre états de sélection à taille native :**
 
@@ -60,8 +60,8 @@ ensuite régénérées **exclusivement à partir des BMP du dépôt Git**.
 
 Le chemin SD cible est **/doomrpg/img/** : le répertoire nommé
 sdroot n'est **pas** lui-même à copier comme un dossier sur la carte.
-Les images de menu sont actuellement des assets **non utilisés par le
-firmware** ; les copier n'active pas leur affichage. Aucun fichier
+Les images de menu sont chargées uniquement par l'aperçu expérimental UAC
+(PR #400 et sa branche de retest P2) ; elles ne remplacent pas le menu classique. Aucun fichier
 Markdown, Python ou PNG de travail ne reste dans sdroot/doomrpg/img/.
 
 ## Preuve de composition et reproductibilité
@@ -72,8 +72,8 @@ reflets métalliques passent par-dessus leurs bordures.
 
 | Cadre | Dimensions des boutons | START | LOAD | OPTIONS | HELP |
 |:--|:--|:--|:--|:--|:--|
-| 120 | 55 × 20 | (12, 10) | (12, 37) | (12, 64) | (12, 91) |
-| 240 | 110 × 40 | (24, 20) | (24, 74) | (24, 128) | (24, 182) |
+| 120 | 55 × 20 | (2, 10) | (2, 37) | (2, 64) | (2, 91) |
+| 240 | 110 × 40 | (4, 20) | (4, 74) | (4, 128) | (4, 182) |
 
 **Ordre des couches :** fond sombre simulé → quatre BMP du menu
 avec transparence → BMP métallique du cadre avec transparence.
@@ -90,12 +90,13 @@ Pillow 11.3.0) :
     python artwork/menu-uac/tools/render_previews.py --check
 
 L'[outil de composition](tools/render_previews.py) contrôle les
-**18 SHA-256 d'origine** stockés dans
+**18 SHA-256 des BMP finaux** stockés dans
 [SHA256SUMS.txt](SHA256SUMS.txt), les dimensions, les masques de
 transparence BMP V4 32 bits BI_BITFIELDS et la géométrie des découpes.
 Il génère **16 aperçus de boutons**, **2 compositions START** et
 **2 planches de preuves avec les quatre sélections**, soit 20 PNG.
-La vérification reconstruit les 20 PNG **octet pour octet**.
+La vérification reconstruit les 20 PNG et compare leurs pixels RGB
+(tolérance d'arrondi maximale 2/255 par canal, indépendamment de la compression PNG).
 
 ### Traçabilité
 
@@ -112,8 +113,16 @@ Actions GitHub qui ont généré et vérifié les BMP :
 Preuve de composition dérivée de ces BMP :
 [CI générateur — SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/44575761589).
 
-**Limites :** aucune implémentation BMP32 alpha dans le runtime,
-aucun changement au menu, au rendu, à la gestion des touches ou au
-firmware ESP32. Le décodeur SD par lignes (sans grosse allocation),
-l'intégration menu et le test matériel normal esp32-cyd restent
-des jalons séparés.
+**P2 corrigé après nouveau retour CYD :** le cadre est désormais **118 px**
+sur 240 physiques et **59 px** dans le mode 120 (×2). Les 16 boutons
+restent **rigoureusement les BMP d'origine #399**, soit 110 × 40 ou 55 × 20.
+Le bord du cadre n'ajoute plus que **4 px physiques** de chaque côté
+(2 px locaux en 120), en préservant **à l'identique le noyau central
+110/55 px** du cadre original : seules ses bandes latérales sont repliées.
+Le logo gauche dispose de **202 px** contre 162 initialement et 192
+dans la première tentative P2. La zone tactile exacte est x206..315.
+La version 240 reste physiquement native, le 120 reste nearest-neighbor ×2.
+
+Ces images sont des preuves logicielles, pas un PASS matériel. Le firmware
+expérimental PR #400 avec la correction P2 (PR #402) est à retester sur le
+vrai classic CYD. Les anciennes notes de la PR #399 sont conservées.
