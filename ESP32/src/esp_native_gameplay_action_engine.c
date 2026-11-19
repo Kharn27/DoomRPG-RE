@@ -266,7 +266,7 @@ static uint16_t directionCueSnapshot[DAMAGE_BORDER_INNER_MAX_PIXELS];
 _Static_assert(DAMAGE_BORDER_INNER_MAX_PIXELS == 1560U,
                "directional tint snapshot must stay within 3.2 KB BSS");
 
-int __real_EspMapRuntime_getMapSprite(uint32_t index, EspMapSprite* outSprite);
+int EspMapRuntime_getMapSpriteBase(uint32_t index, EspMapSprite* outSprite);
 int EspMapSpriteTopology_getVisualStateBase(uint32_t spriteIndex,
                                                uint8_t* outVisualState);
 int EspMapSpriteTopology_getEntityBase(uint32_t spriteIndex,
@@ -1063,7 +1063,7 @@ static int barrelChainPreflight(uint16_t primarySprite,
         uint16_t linkOrder;
         uint8_t n;
 
-        if (!__real_EspMapRuntime_getMapSprite(chain[cursor], &source) ||
+        if (!EspMapRuntime_getMapSpriteBase(chain[cursor], &source) ||
             !actionGetEntity(chain[cursor], &type, &subtype,
                              &linkState, &linkOrder) ||
             type != ACTION_ENTITY_DESTRUCTIBLE ||
@@ -1156,7 +1156,7 @@ static int barrelTriggerNeighbors(uint16_t sourceSprite,
         outTriggered == NULL || outPlayerHits == NULL ||
         outPlayerMessageDamage == NULL || outLethal == NULL ||
         blastDamage == 0U ||
-        !__real_EspMapRuntime_getMapSprite(sourceSprite, &source)) {
+        !EspMapRuntime_getMapSpriteBase(sourceSprite, &source)) {
         return 0;
     }
 
@@ -1351,7 +1351,7 @@ static int spriteDefinition(uint16_t spriteIndex,
                             int32_t* outParm) {
     EspMapSprite sprite;
     uint32_t lookup;
-    if (!__real_EspMapRuntime_getMapSprite(spriteIndex, &sprite)) return 0;
+    if (!EspMapRuntime_getMapSpriteBase(spriteIndex, &sprite)) return 0;
     lookup = sprite.info & ACTION_SPRITE_DEF_MASK;
     if ((sprite.info & ACTION_SPRITE_DEF_TILE_FLAG) != 0U) {
         lookup += ACTION_SPRITE_DEF_TILE_BASE;
@@ -1397,7 +1397,7 @@ static int targetWorldDistance(const ActionTarget* target,
     if (target == NULL || view == NULL || outWorldDistance == NULL ||
         target->isLine != 0U ||
         target->spriteIndex == ESP_MAP_SPRITE_TOPOLOGY_NO_SPRITE ||
-        !__real_EspMapRuntime_getMapSprite(target->spriteIndex, &sprite)) {
+        !EspMapRuntime_getMapSpriteBase(target->spriteIndex, &sprite)) {
         return 0;
     }
     dx = (int64_t)(int32_t)sprite.x - (int64_t)view->viewX;
@@ -2946,7 +2946,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 player == NULL || player->active != 1U ||
                 removed(pending.spriteIndex) ||
                 !targetWorldDistance(&barrelTarget, view, &crateWorldDistance) ||
-                !__real_EspMapRuntime_getMapSprite(
+                !EspMapRuntime_getMapSpriteBase(
                     pending.spriteIndex, &barrelSprite) ||
                 !EspNativeGameplayPlayerState_snapshot(&playerBefore)) {
                 EspNativeGameplayWeapon_cancelAttack();
@@ -3649,7 +3649,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     EspMapSprite explodingSprite;
                     uint16_t spriteIndex =
                         barrelChain[(uint8_t)(waveStart + waveItem)];
-                    if (!__real_EspMapRuntime_getMapSprite(
+                    if (!EspMapRuntime_getMapSpriteBase(
                             spriteIndex, &explodingSprite)) {
                         int rollbackOk = 1;
                         if (barrelTurnRequested != 0U &&
@@ -4492,7 +4492,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                              i < ACTION_BARREL_CHAIN_MAX; ++i) {
                     EspMapSprite blast;
                     EspNativeGameplayDamageSide side;
-                    if (!__real_EspMapRuntime_getMapSprite(
+                    if (!EspMapRuntime_getMapSpriteBase(
                             barrelPlayerHitSources[i], &blast)) continue;
                     side = EspNativeGameplayDamageSide_fromWorld(
                         view->viewX, view->viewY, stepX, stepY,
