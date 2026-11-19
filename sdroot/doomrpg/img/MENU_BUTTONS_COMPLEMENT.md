@@ -35,3 +35,25 @@ aucune lecture ZIP, aucun changement firmware/menu/renderer.
 Le lecteur BMP32 alpha SD et la validation CYD sont des étapes
 séparées. Un import CI vérifie dimensions, canal alpha, round-trip
 RGBA pixel à pixel et distinction actif/inactif.
+
+## Vérification CI des 12 BMP
+
+[Import CI GitHub Actions — SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/44572105162).
+Vérifications automatisées : dimensions, BMP V4 alpha 0..255, comparaison
+RGBA à l'identique du PNG Adobe après encodage, état actif distinct de l'inactif,
+12 fichiers présents et importeur éphémère supprimé.
+
+| Asset | SHA-256 |
+|---|---|
+| `menu_load_active_120.bmp` | `9fa5bf484ba8d3f213a9626454ee5596ad0c315587de87e322ad9edf3b1fad80` |
+| `menu_load_active_240.bmp` | `8913ded7eb69e951d6f4176418916b398e14fa6623c9af2651b586826d165abc` |
+| `menu_load_inactive_120.bmp` | `37716377cd3bf9f1bd773835b49eab9c4296066d749be82343ad20ec31015a5b` |
+| `menu_load_inactive_240.bmp` | `0b8e30a1e1dfcd48d2248d306bd111598404cecd417bbb832b06b67a55020062` |
+| `menu_options_active_120.bmp` | `8ad4bf03bae92326239ac44869b90ba9eb85a5ae1d2064d87849c7e5650df9aa` |
+| `menu_options_active_240.bmp` | `c8b2bdd076218897c8159be80e7b54fc6e3548dce583955a4dead2d354900463` |
+| `menu_options_inactive_120.bmp` | `0874fb1781b704d4e03fa0c6067cf84294de8a196d22a2a344ad68d8da566fb2` |
+| `menu_options_inactive_240.bmp` | `af772df03205a770822434814e8940939cfbbe9f232208313c59c37ede6e4709` |
+| `menu_help_active_120.bmp` | `3e07d8ea55520cbb47c6a73e5f01e0aac78a351738e7bac05afabacd1d86cc81` |
+| `menu_help_active_240.bmp` | `63054b67f2c7c6024e4e1392dd34cb165e074eef6f810b518fca0804ad9ecb55` |
+| `menu_help_inactive_120.bmp` | `c70c02fe8e8565ebc38460b924a8080d9c10f16057356faa74813d04a3936274` |
+| `menu_help_inactive_240.bmp` | `a3aae4fb6f2f8de23ca4914110b980b1f2a12a6d47ede24786039f74a329d03d` |
