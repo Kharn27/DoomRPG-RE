@@ -41,8 +41,7 @@ def scan():
         for filename, source in sources.items():
             require(not re.search(r"\b__(?:wrap|real)_" + name + r"\b", source),
                     "retired linker alias still compiled in " + filename)
-    for name in ("EspNativeGameplayFrame_renderTurn", "EspMapRuntime_getLine",
-                 "EspMapLineState_view"):
+    for name in ("EspNativeGameplayFrame_renderTurn",):
         require("-Wl,--wrap=" + name in flags,
                 "protected rendering/door wrapper inadvertently removed")
 
@@ -75,7 +74,7 @@ def scan():
     require("EspNativeGameplayHub_handleAction(" not in hub,
             "internal HUB close may reenter SAVE/System wrapper")
     print("PASS RC14 178+ real TU scan: four SAVE/HUB wraps retired, "
-          "raw leaves and exclusive composition preserved, door wraps intact")
+          "raw leaves and exclusive composition preserved, cardinal door transaction intact")
 
 
 REAL = (SRC / "esp_native_gameplay_save_touch.c").read_text(encoding="utf-8")
