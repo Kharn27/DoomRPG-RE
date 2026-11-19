@@ -17,7 +17,7 @@ Le point de couplage ancien était `__real_EspMapRuntime_getMapSprite` dans la f
 
 ## Protections logicielles
 
-- `ESP32/test/native_sprite_visibility_reads_boundary_host.py` : compilation de **5 vrais corps C**, 14 mutations adversariales (getters raw, crate, consumed, move index/tile, pain/corpse sort, admission pure, activation), oracle des sorties et side effects ; aucune création monde ni allocation.
+- `ESP32/test/native_sprite_visibility_reads_boundary_host.py` : compilation de **6 vrais corps C**, 14 mutations adversariales (getters raw, crate, consumed, move index/tile, pain/corpse sort, admission pure, activation), oracle des sorties et side effects ; inclut la vraie fonction utilitaire `readLe16` (aucun re-code de ce décodage) ; aucune création monde ni allocation.
 - Inventaire `ESP32/test/native_wrap_linkage_inventory_host.py` : symbole GNU retiré à la fois de `platformio.ini` et des quatre vrais ELF, 4+3 attendus. Les oracles RC7 visibilité Pinkie, RC20 topologie et RC19 vues dynamiques restent exécutés dans le CI.
 - **Deux workflows SUCCESS sur HEAD final** et quatre compilations `esp-cyd-inverted`, `esp32-cyd`, `esp32-cyd-bringup`, `esp32-cyd-trace` exigés avant essai.
 
