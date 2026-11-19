@@ -36,6 +36,11 @@ int EspEntranceMusic_prestartMenuBeforeFirstFrame(void);
 int EspEntranceMusic_prestartGameplayBeforeFirstFrame(uint8_t targetMapId);
 void EspEntranceMusic_service(bool gameplayActive,bool sdReady);
 void EspEntranceMusic_pumpGameplay(void);
+/* Only the currently playing MENU soundtrack, on the main Arduino task.
+ * May be called between completed SD/TFT menu strips or SHA chunks.
+ * No bus lock, ISR I/O, SFX, gameplay owner or new audio buffer.
+ * Returns count of bounded ADPCM blocks published (0 when not playing). */
+uint32_t EspEntranceMusic_pumpMenuPreview(void);
 #ifdef __cplusplus
 }
 #endif

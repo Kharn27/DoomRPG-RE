@@ -164,6 +164,8 @@ static void EspNativeMainMenu_transitionCanvasState(Canvas* canvas, void* root, 
 static void DoomRPG_esp32MainMenuTouchOnTap(int16_t,int16_t,uint16_t,uint16_t,uint16_t) {}
 static void gatedTap(int16_t,int16_t,uint16_t,uint16_t,uint16_t) {}
 static void otherTap(int16_t,int16_t,uint16_t,uint16_t,uint16_t) {}
+static int uacResets = 0;
+static void EspUacMenuPreview_reset() { ++uacResets; }
 static int EspNativeGameplayTransitionHandoff_tryArmNullCallback() {
     ++armAttempts; return busy ? 1 : 0;
 }

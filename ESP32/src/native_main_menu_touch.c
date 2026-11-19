@@ -17,6 +17,8 @@
 #include "native_main_menu_model.h"
 #include "native_main_menu_present.h"
 #include "native_main_menu_touch_layout.h"
+#include "esp_uac_menu_preview.h"
+#include "esp_uac_bmp32.h"
 #include "native_sprite_lru_cache.h"
 #include "native_wall_lru_cache.h"
 #include "platform_touch_events.h"
@@ -165,6 +167,13 @@ int DoomRPG_esp32MainMenuTouchActivate(struct DoomRPG_s* doomRpgBase,
 
 int DoomRPG_esp32MainMenuTouchIsActive(void) {
     return touchActive;
+}
+
+/* Query ONLY the proven main-menu selection owner, not an independent index. */
+int EspUacMenuPreview_selectedIndex(void) {
+    if (!touchActive || EspNativeRootOwners_live()->menuSystem == NULL ||
+        EspNativeRootOwners_live()->menuSystem->menu != MENU_MAIN) return -1;
+    return EspNativeRootOwners_live()->menuSystem->selectedIndex;
 }
 
 int DoomRPG_esp32MainMenuTouchArmSelected(int itemIndex) {
@@ -451,6 +460,9 @@ static void executeConfirmedAction(int item) {
         return;
     }
 
+    /* A transition or LOAD modal must never inherit the physical SD overlay. */
+    EspUacMenuPreview_reset();
+
     /* LOAD can fail closed while intentionally leaving MENU_MAIN active (for
      * example the hardware-tested NO SAVE feedback). Other actions leave the
      * dashboard on success, so retire its callback before changing ownership.
@@ -498,13 +510,28 @@ static void gatedTap(int16_t screenX,
             (void)DoomRPG_esp32MainMenuRecover(touchDoomRpg, "slot-selector-back");
         return;
     }
-    hit = gateHitItem(screenX, screenY);
-
-    if (hit < 0) {
+    /* The original logo was a no-op tap area. Here it is the reversible
+     * preview switch: classic -> 120 -> 240 decimated -> 240 direct -> classic.
+     * Disabled when LOAD's slot selector is open (handled above). */
+    if (screenX >= 0 && screenX < ESP_UAC_PANEL_LEFT && screenY >= 0 && screenY < 240) {
         lastTappedItem = -1;
-        downstreamTapCallback(screenX, screenY, pressure, rawX, rawY);
+        (void)EspUacMenuPreview_cycle();
+        (void)Esp32PlatformVideo_present();
         return;
     }
+    hit = EspUacMenuPreview_mode() != 0
+        ? EspUacMenu_hitPhysical(screenX, screenY)
+        : gateHitItem(screenX, screenY);
+    if (hit < 0) {
+        lastTappedItem = -1;
+        /* Invisible legacy rail MUST NOT accept touches behind UAC. */
+        if (EspUacMenuPreview_mode() == 0)
+            downstreamTapCallback(screenX, screenY, pressure, rawX, rawY);
+        return;
+    }
+    if (EspUacMenuPreview_mode() != 0)
+        printf("[UAC] TAP physical=%d,%d selected=%d hit=%d\n",
+               screenX, screenY, gateSelectedItem, hit);
 
     if (hit != gateSelectedItem) {
         printf("[MENUTOUCH] GATE tap=%u SELECT-ARM current=%d hit=%d\n",
@@ -512,7 +539,14 @@ static void gatedTap(int16_t screenX,
                gateSelectedItem,
                hit);
         lastTappedItem = hit;
-        downstreamTapCallback(screenX, screenY, pressure, rawX, rawY);
+        /* Feed the EXISTING selection/paint/hash owner a point in its
+         * matching old 54x24 card. Original physical touch is logged above.
+         * Never fork the MENU_MAIN model, action or double-tap contract. */
+        if (EspUacMenuPreview_mode() != 0)
+            downstreamTapCallback(260, (int16_t)(40 + 54 * hit),
+                                  pressure, rawX, rawY);
+        else
+            downstreamTapCallback(screenX, screenY, pressure, rawX, rawY);
         gateSelectedItem = hit;
         return;
     }
@@ -581,6 +615,7 @@ void PlatformInput_setTapCallback(PlatformTapCallback callback) {
         printf("[MENUTOUCH] GATE READY initialSelected=0 dashboard=2x2 firstTap=bright-arm secondReleasedSameTap=confirm startAction=enabled loadAction=enabled optionsAction=enabled helpAction=enabled\n");
     }
     else {
+        EspUacMenuPreview_reset();
         downstreamTapCallback = callback;
         PlatformInput_setTapCallbackBase(callback);
     }
