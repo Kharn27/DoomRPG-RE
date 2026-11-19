@@ -1,3 +1,9 @@
+> **Archive de conception (PR #399).** Ce document décrit une étape
+> intermédiaire avant la composition des quatre boutons. Les mentions
+> « à faire » sont historiques et ne reflètent plus l'inventaire actuel.
+> Lire le [README visuel](../README.md) pour les preuves finales,
+> le dossier de livraison et l'état de validation.
+
 # Boutons START (cadre UAC)
 
 Quatre assets distincts pour le premier emplacement du cadre UAC ajouté en
