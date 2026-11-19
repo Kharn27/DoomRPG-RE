@@ -113,6 +113,7 @@ typedef struct {
   uint16_t eventIndex;
   uint8_t rollbackAvailable;
   uint8_t codeId;
+  uint8_t commandOffset;
   uint8_t showBatchCount;
 } EspNativeGameplayMoveEventResult;
 typedef struct { uint8_t active; uint16_t eventIndex; uint8_t count; }
