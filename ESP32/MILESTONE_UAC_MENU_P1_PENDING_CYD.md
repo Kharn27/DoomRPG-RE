@@ -68,3 +68,14 @@ Rebase du code UAC sur main `f04f16ba73a8f9532f0bffdae8ed459f6711626a`, tests AR
 BMP modifiés localement sur SD : `kStrictSha256=false` pour la phase graphique ; parser BMP V4 BGRA32, dimensions, extent et bornes restent obligatoires, CI conserve les 18 empreintes des BMP versionnés. Rétablir le SHA strict après choix des assets définitifs.
 
 Le log `platformio-device-monitor-261119-231018.log` : `PREFLIGHT FAIL menu_frame_120.bmp` sur fichiers SD modifiés, aucun rendu du nouveau mode. Ancien log `261119-224913.log` : 240 ~800ms en redraw complet avec sous-alimentation audio ; patch partiel + pump encore en attente de preuve hardware. Retester 3 visuels, cycle, sons, actions, `paint=BUTTONS`, `underruns=0`, `recoveries=0`, heap8, échec sans asset. **Ne pas fusionner sans PASS matériel.**
+
+
+## UAC MENU HOT-CACHE — 20 novembre 2026 (PENDING CYD)
+
+Retour utilisateur `platformio-device-monitor-261120-002906.log` : **mode 240 direct préféré visuellement**, 120/240→120/240 direct tous présentés `result=OK` ; FULL 505/709/717ms, sélection 198/284/286ms dont SD 174/261/261ms et LCD 4ms pour les deux boutons. Deux activations OPTIONS et retours Back fonctionnels, `shapeData/mediaTexels=NULL`. Musique `MENU_END_ONCE` terminée à ~30s, **avant** premiers taps UAC (~75s) ; aucun underrun/recovery mesuré, mais pas de test audio pendant refresh. Pas de PASS audio-UAC sous musique revendiqué.
+
+Conception : cache transitoire de **8 patches RGB565 complets (4 boutons × inactive/active × 110×40 × 2 = 70 400 B)**, *après* composition du matte/bouton/frame. Huit allocations bornées individuelles `MALLOC_CAP_8BIT` de 8 800 B évitent la fragmentation du plus grand bloc (~65KB avec WAV ouvert) ; garde-fou ≥20 480B de heap8 disponible et fallback SD pour chaque slot indisponible. Les quatre états visibles sont capturés lors du FULL ; les états alternatifs sont précomposés une seule fois en petits batches SD, audio pump coopératif, **sans écriture LCD supplémentaire**. Après échauffement, sélection ancien/inactif + nouveau/actif = deux transferts TFT 110×40 depuis RAM, sans nouveaux descripteurs SD, allocations ni modification framebuffer 160×120.
+
+Le cache est relâché **avant** préflight de changement de mode, retour CLASSIC, START/LOAD/OPTIONS/HELP et tout `EspUacMenuPreview_reset` sur sortie ; log `CACHE FREE ... heap8` pour preuve. Échec de précomposition SD : reste fail-closed et retourne au classic. Le jeu et le ring music ne gardent aucun cache UAC. Tester sur vrai `esp32-cyd` `CACHE ALLOC` 8/8, `CACHE WARM`, `PRESENT paint=BUTTONS cache=HIT sdMs=0`, `CACHE FREE` et mêmes heap8 après sortie, surtout **pendant** le morceau titre. Le premier FULL peut prendre plus de temps, du fait de l'échauffement volontaire ; mesurer `warmMs` séparément.
+
+**PENDING matériel** : pas d'estimation de gain prétendue sur hardware avant test ; vérifier latence tactile, qualité pixel à chaque état, absence d'audio underrun et headroom/FD.

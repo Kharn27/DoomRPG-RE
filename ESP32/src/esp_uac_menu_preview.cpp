@@ -3,6 +3,8 @@
 #include <SD.h>
 #include <TFT_eSPI.h>
 #include <stdio.h>
+#include <string.h>
+#include <esp_heap_caps.h>
 #include <mbedtls/sha256.h>
 #include "esp_uac_bmp32.h"
 #include "esp_audio_entrance_music.h"
@@ -58,8 +60,92 @@ static uint16_t outRows[kRows*kWidth];
 static uint8_t frameRows[kRows*118*4];
 static uint8_t buttonRows[kRows*110*4];
 static uint8_t pixels[118*4];
-struct DrawStats {uint32_t sdUs,lcdUs;unsigned batches,buttonOpens,rowsSent,audioPumps,audioBlocks;};
+struct DrawStats {
+    uint32_t sdUs,lcdUs;
+    unsigned batches,buttonOpens,rowsSent,audioPumps,audioBlocks,cacheHits;
+};
 struct OpenImage { File file; EspUacBmp32 bmp; };
+
+/* Menu-scoped hot RGB565 patches, two states per button, 110*40*2=8800B.
+ * Eight independent 8-bit heap allocations avoid requiring a contiguous
+ * 70.4KB block: the title music can leave <66KB as its largest free block.
+ * Keep 20KB 8-bit heap headroom while music/SD is alive; missing cache
+ * slots are allowed and use the original bounded SD paint path. */
+constexpr uint32_t kCacheSlotBytes=(uint32_t)ESP_UAC_BUTTON_WIDTH*40U*2U;
+constexpr uint32_t kCacheReserve8=20U*1024U;
+static uint16_t* cachePixels[4][2]={};
+static uint8_t cacheReady[4][2]={};
+static unsigned cacheSlots=0,cacheBytes=0;
+static int cacheMode=0;
+
+static void freeCache(const char* reason) {
+    const unsigned bytes=cacheBytes,slots=cacheSlots;
+    const int previous=cacheMode;
+    const uint32_t before=heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    for(int i=0;i<4;++i)for(int s=0;s<2;++s){
+        if(cachePixels[i][s])heap_caps_free(cachePixels[i][s]);
+        cachePixels[i][s]=nullptr;
+        cacheReady[i][s]=0;
+    }
+    cacheMode=0;cacheSlots=0;cacheBytes=0;
+    if(slots)Serial.printf(
+        "[UAC] CACHE FREE reason=%s mode=%d slots=%u bytes=%u heap8=%lu->%lu largest8=%lu\\n",
+        reason,previous,slots,bytes,
+        (unsigned long)before,
+        (unsigned long)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+        (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+}
+
+static void allocateCache(int m){
+    cacheMode=m;
+    const uint32_t before=heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    for(int s=0;s<2;++s)for(int i=0;i<4;++i){
+        const uint32_t free8=heap_caps_get_free_size(MALLOC_CAP_8BIT);
+        const uint32_t largest8=heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+        if(free8<kCacheSlotBytes+kCacheReserve8||largest8<kCacheSlotBytes)
+            continue;
+        uint16_t* ptr=(uint16_t*)heap_caps_malloc(kCacheSlotBytes,MALLOC_CAP_8BIT);
+        if(!ptr)continue;
+        cachePixels[i][s]=ptr;
+        ++cacheSlots;
+        cacheBytes+=(unsigned)kCacheSlotBytes;
+    }
+    Serial.printf(
+        "[UAC] CACHE ALLOC mode=%d slots=%u/8 bytes=%u reserve8=%lu heap8=%lu->%lu largest8=%lu fallback=SD\\n",
+        m,cacheSlots,cacheBytes,(unsigned long)kCacheReserve8,
+        (unsigned long)before,
+        (unsigned long)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+        (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+}
+
+/* The cached patches are the exact LCD-bound output AFTER matte + active/
+ * inactive button alpha + frame alpha. No SD or per-touch allocation. */
+static bool renderCachedSelection(TFT_eSPI* lcd,int m,int selected,int previous,
+                                  DrawStats* stats){
+    if(!lcd||!stats||m!=cacheMode||selected<0||selected>=4||
+       previous<0||previous>=4||previous==selected||
+       !cacheReady[previous][0]||!cacheReady[selected][1])return false;
+    const uint32_t t=micros();
+    lcd->startWrite();
+    const int targets[2]={previous,selected};
+    const int states[2]={0,1};
+    for(int k=0;k<2;++k){
+        const int item=targets[k];
+        const uint16_t* pixels=cachePixels[item][states[k]];
+        if(!pixels){lcd->endWrite();return false;}
+        lcd->setAddrWindow(kPanelX+ESP_UAC_BUTTON_INSET,kTop[item],
+                           ESP_UAC_BUTTON_WIDTH,40);
+        for(int row=0;row<40;++row)
+            lcd->pushPixels(const_cast<uint16_t*>(
+                pixels+row*ESP_UAC_BUTTON_WIDTH),ESP_UAC_BUTTON_WIDTH);
+    }
+    lcd->endWrite();
+    stats->lcdUs+=(uint32_t)(micros()-t);
+    stats->rowsSent+=80;stats->batches+=2;stats->cacheHits+=2;
+    ++stats->audioPumps;
+    stats->audioBlocks+=(unsigned)EspEntranceMusic_pumpMenuPreview();
+    return true;
+}
 
 static int readAt(void* ctx,uint32_t offset,void* dst,size_t n){
     File* f=static_cast<File*>(ctx);
@@ -144,7 +230,8 @@ static bool preflight(int m){
  * button BMP and fixed frame overlay are reproduced pixel-for-pixel there.
  * Preserve the original 160x120 framebuffer and all native input owners. */
 static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
-                 int m,int selected,int previous,DrawStats* stats){
+                 int m,int selected,int previous,DrawStats* stats,
+                 int warmTarget=-1){
     OpenImage frame{},button{};
     char path[72];
     const int scale=m==kDirect240?1:2;
@@ -153,19 +240,34 @@ static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
         EspUacBmp32_blendRow240As120:EspUacBmp32_blendRow;
     const uint16_t fw=m==1?59U:118U,fh=m==1?120U:240U;
     const uint16_t bw=m==1?55U:110U,bh=m==1?20U:40U;
-    const bool patch=previous>=0&&previous<4&&previous!=selected;
-    const int regions=patch?2:1;
+    const bool warming=warmTarget>=0&&warmTarget<4;
+    const bool patch=warming||(previous>=0&&previous<4&&previous!=selected);
+    const int regions=warming?1:(patch?2:1);
     int openedButton=-1;
     auto finish=[&](bool ok,const char* stage)->bool{
         if(!ok)Serial.printf("[UAC] DRAW FAIL mode=%d stage=%s path=%s\n",m,stage,path);
         if(button.file)button.file.close();
         if(frame.file)frame.file.close();
+        if(ok&&cacheMode==m){
+            if(warming){
+                if(cachePixels[warmTarget][selected==warmTarget])
+                    cacheReady[warmTarget][selected==warmTarget]=1;
+            }else if(patch){
+                if(cachePixels[previous][0])cacheReady[previous][0]=1;
+                if(cachePixels[selected][1])cacheReady[selected][1]=1;
+            }else{
+                for(int i=0;i<4;++i)
+                    if(cachePixels[i][selected==i])
+                        cacheReady[i][selected==i]=1;
+            }
+        }
         return ok;
     };
     framePath(path,sizeof(path),m);
     if(!openBmp(frame,path,fw,fh))return finish(false,"frame-open");
     for(int region=0;region<regions;++region){
-        const int target=patch?(region==0?previous:selected):-1;
+        const int target=warming?warmTarget:
+                         patch?(region==0?previous:selected):-1;
         const int firstY=target>=0?kTop[target]:0;
         const int finalY=target>=0?kTop[target]+40:kHeight;
         const int outputX=target>=0?kPanelX+ESP_UAC_BUTTON_INSET:0;
@@ -229,17 +331,25 @@ static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
                         patch?-ESP_UAC_BUTTON_INSET:kPanelX,(uint8_t)scale,
                         out,(uint16_t)outputW,pixels,
                         sizeof(pixels)))return finish(false,"frame-blend");
+                if(active>=0&&cacheMode==m){
+                    uint16_t* dst=cachePixels[active][selected==active];
+                    if(dst)memcpy(dst+(py-kTop[active])*ESP_UAC_BUTTON_WIDTH,
+                                  out+(patch?0:kPanelX+ESP_UAC_BUTTON_INSET),
+                                  ESP_UAC_BUTTON_WIDTH*sizeof(uint16_t));
+                }
             }
-            /* The audio pump may read SD, so invoke it ONLY AFTER TFT
-             * endWrite and after this strip's BMP reads have completed. */
-            const uint32_t lcdStart=micros();
-            lcd->startWrite();
-            lcd->setAddrWindow(outputX,y,outputW,count);
-            for(int row=0;row<count;++row)
-                lcd->pushPixels(outRows+row*kWidth,outputW);
-            lcd->endWrite();
-            stats->lcdUs+=(uint32_t)(micros()-lcdStart);
-            stats->rowsSent+=(unsigned)count;
+            /* Finish SD work before any TFT transaction or audio pump. In
+             * warm-only mode the LCD keeps its current image untouched. */
+            if(!warming){
+                const uint32_t lcdStart=micros();
+                lcd->startWrite();
+                lcd->setAddrWindow(outputX,y,outputW,count);
+                for(int row=0;row<count;++row)
+                    lcd->pushPixels(outRows+row*kWidth,outputW);
+                lcd->endWrite();
+                stats->lcdUs+=(uint32_t)(micros()-lcdStart);
+                stats->rowsSent+=(unsigned)count;
+            }
             ++stats->batches;
             ++stats->audioPumps;
             stats->audioBlocks+=(unsigned)EspEntranceMusic_pumpMenuPreview();
@@ -249,15 +359,42 @@ static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
     }
     return finish(true,"OK");
 }
+
+/* One-time warmup per mode: after the first FULL LCD paint, fill all
+ * affordable alternate button states. Avoid returning to input while cache
+ * is half-built; retain menu music service after each bounded SD strip. */
+static bool warmCache(const uint16_t* fb,uint16_t stride,int m){
+    if(cacheMode!=m||cacheSlots==0)return true;
+    const uint32_t begin=millis();
+    unsigned filled=0,reads=0;
+    for(int item=0;item<4;++item)for(int state=0;state<2;++state){
+        if(!cachePixels[item][state]||cacheReady[item][state])continue;
+        DrawStats stats{};
+        if(!draw(fb,stride,nullptr,m,state?item:-1,-1,&stats,item))
+            return false;  /* SD failure is still fail-closed */
+        ++filled;
+        reads+=stats.batches;
+    }
+    unsigned ready=0;
+    for(int i=0;i<4;++i)for(int s=0;s<2;++s)ready+=cacheReady[i][s]?1U:0U;
+    Serial.printf(
+        "[UAC] CACHE WARM mode=%d filled=%u ready=%u/%u batches=%u ms=%lu heap8=%lu largest8=%lu\\n",
+        m,filled,ready,cacheSlots,reads,(unsigned long)(millis()-begin),
+        (unsigned long)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+        (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    return true;
+}
 } // namespace
 
 extern "C" int EspUacMenuPreview_mode(void){return mode;}
 extern "C" void EspUacMenuPreview_reset(void){
     if(mode)Serial.printf("[UAC] RESET mode=%d fallback=classic\n",mode);
+    freeCache("menu-exit");
     mode=0;paintedMode=0;paintedSelection=-1;
 }
 extern "C" int EspUacMenuPreview_cycle(void){
     const int next=(mode+1)%4;
+    freeCache(next==0?"return-classic":"mode-change");
     if(next!=0&&!preflight(next)){
         mode=0;
         Serial.println("[UAC] FALLBACK SD missing/invalid -> original MENU_MAIN");
@@ -265,6 +402,7 @@ extern "C" int EspUacMenuPreview_cycle(void){
     }
     mode=next;
     paintedMode=0;paintedSelection=-1;
+    if(mode!=kClassic)allocateCache(mode);
     Serial.printf("[UAC] MODE %s source=%s physical=320x240 buttons=110x40 RAM=6680B-BSS\n",
                   mode==kClassic?"CLASSIC":mode==kNative120?"120":
                     mode==k240As120?"240->120":"240",
@@ -283,15 +421,27 @@ bool EspUacMenuPreview_draw(TFT_eSPI* lcd,const uint16_t* fb,uint16_t stride){
     const int previous=current==paintedMode?paintedSelection:-1;
     const uint32_t start=millis();
     DrawStats stats{};
-    const bool ok=draw(fb,stride,lcd,current,sel,previous,&stats);
+    bool fromCache=false;
+    if(previous>=0)
+        fromCache=renderCachedSelection(lcd,current,sel,previous,&stats);
+    const bool painted=fromCache||
+                     draw(fb,stride,lcd,current,sel,previous,&stats);
+    const uint32_t paintMs=millis()-start;
+    bool warmed=true;
+    if(painted&&previous<0)warmed=warmCache(fb,stride,current);
+    const bool ok=painted&&warmed;
     if(ok){paintedMode=current;paintedSelection=sel;}
-    Serial.printf("[UAC] PRESENT mode=%d selected=%d prior=%d paint=%s result=%s ms=%lu sdMs=%lu lcdMs=%lu batches=%u rows=%u buttonOpens=%u audioPumps=%u audioBlocks=%u heap=%u framebuffer=unchanged\n",
+    Serial.printf("[UAC] PRESENT mode=%d selected=%d prior=%d paint=%s result=%s ms=%lu sdMs=%lu lcdMs=%lu batches=%u rows=%u buttonOpens=%u audioPumps=%u audioBlocks=%u cache=%s cacheSlots=%u cacheBytes=%u warmMs=%lu heap=%u heap8=%lu framebuffer=unchanged\n",
                   current,sel,previous,previous>=0?"BUTTONS":"FULL",
-                  ok?"OK":"FAIL",static_cast<unsigned long>(millis()-start),
+                  ok?"OK":"FAIL",static_cast<unsigned long>(paintMs),
                   static_cast<unsigned long>(stats.sdUs/1000U),
                   static_cast<unsigned long>(stats.lcdUs/1000U),
                   stats.batches,stats.rowsSent,stats.buttonOpens,
                   stats.audioPumps,stats.audioBlocks,
-                  static_cast<unsigned>(ESP.getFreeHeap()));
+                  fromCache?"HIT":previous>=0?"MISS-SD":"INITIAL",
+                  cacheSlots,cacheBytes,
+                  static_cast<unsigned long>((millis()-start)-paintMs),
+                  static_cast<unsigned>(ESP.getFreeHeap()),
+                  (unsigned long)heap_caps_get_free_size(MALLOC_CAP_8BIT));
     return ok;
 }
