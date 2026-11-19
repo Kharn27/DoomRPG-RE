@@ -71,8 +71,8 @@ void Legacy_Random_SetSeed(unsigned int);
 unsigned int Legacy_Random_Get(void);
 void Legacy_Random_getRand(byte*, int);
 void Legacy_DoomRPG_setRand(Random_t*);
-byte __wrap_DoomRPG_randNextByte(Random_t*);
-int __wrap_DoomRPG_randNextInt(Random_t*);
+byte DoomRPG_randNextByte(Random_t*);
+int DoomRPG_randNextInt(Random_t*);
 
 static uint32_t prng = 0x41ba3c37U;
 static uint32_t next(void) {
@@ -152,7 +152,7 @@ int main(int argc, char** argv) {
     match(&actual, &expected);
     assert(EspNativeRngReplayGuard_endProbeBoundary(&actual, &snapshot, prepared));
     match(&actual, &before);
-    uint8_t value = __wrap_DoomRPG_randNextByte(&actual);
+    uint8_t value = DoomRPG_randNextByte(&actual);
     assert(value == expected.randTable[0]);
     expected.nextRand = 1;
     match(&actual, &expected);
@@ -164,13 +164,13 @@ int main(int argc, char** argv) {
     actual.nextRand = expected.nextRand = 127;
     before = actual;
     assert(EspNativeRngReplayGuard_beginAttackProbe(&actual));
-    value = __wrap_DoomRPG_randNextByte(&actual);
+    value = DoomRPG_randNextByte(&actual);
     Legacy_DoomRPG_setRand(&expected);
     assert(value == expected.randTable[0]);
     actual = before;
     assert(EspNativeRngReplayGuard_endAttackProbe(&actual, &before));
     fake_tick += 4000U; /* beyond ordinary 1-second lease */
-    value = __wrap_DoomRPG_randNextByte(&actual);
+    value = DoomRPG_randNextByte(&actual);
     assert(value == expected.randTable[0]);
     expected.nextRand = 1;
     match(&actual, &expected);
@@ -180,7 +180,7 @@ int main(int argc, char** argv) {
        advance the exact same refill ONCE, and preserve little-endian offset. */
     EspNativeRngReplayGuard_reset();
     actual.nextRand = expected.nextRand = 126;
-    int word = __wrap_DoomRPG_randNextInt(&actual);
+    int word = DoomRPG_randNextInt(&actual);
     Legacy_DoomRPG_setRand(&expected);
     uint32_t expectedWord = (uint32_t)expected.randTable[0] |
         ((uint32_t)expected.randTable[1] << 8) |
@@ -191,22 +191,71 @@ int main(int argc, char** argv) {
     match(&actual, &expected);
     match_refill_after_probe(&actual, &expected);
 
+    /* RC17: same rollback/replay lease MUST work for a 4-byte WORD consumer,
+       not just for the one-byte draw. A second hidden refill would corrupt
+       the output and the original generator's seed on the next draw. */
+    EspNativeRngReplayGuard_reset();
+    actual.nextRand = expected.nextRand = 126;
+    before = actual;
+    word = DoomRPG_randNextInt(&actual);
+    Legacy_DoomRPG_setRand(&expected);
+    expectedWord = (uint32_t)expected.randTable[0] |
+        ((uint32_t)expected.randTable[1] << 8) |
+        ((uint32_t)expected.randTable[2] << 16) |
+        ((uint32_t)expected.randTable[3] << 24);
+    assert((uint32_t)word == expectedWord);
+    actual = before;
+    assert((uint32_t)DoomRPG_randNextInt(&actual) == expectedWord);
+    expected.nextRand = 4;
+    match(&actual, &expected);
+    match_refill_after_probe(&actual, &expected);
+
     /* An immediate speculative rollback replays the same table from the
        time-limited lease. This checks the hidden generator did NOT move twice. */
     EspNativeRngReplayGuard_reset();
     actual.nextRand = expected.nextRand = 127;
     before = actual;
-    value = __wrap_DoomRPG_randNextByte(&actual);
+    value = DoomRPG_randNextByte(&actual);
     Legacy_DoomRPG_setRand(&expected);
     assert(value == expected.randTable[0]);
     actual = before;
-    assert(__wrap_DoomRPG_randNextByte(&actual) == expected.randTable[0]);
+    assert(DoomRPG_randNextByte(&actual) == expected.randTable[0]);
     expected.nextRand = 1;
     match(&actual, &expected);
     match_refill_after_probe(&actual, &expected);
 
     EspNativeRngReplayGuard_reset(); /* must NOT reset _seed/resetRand */
     match_refill_after_probe(&actual, &expected);
+
+    /* RC17 public owner: exercise BOTH real exported draw bodies interleaved,
+       across many 128-byte boundaries. Expected words always use the byte
+       offset and original little-endian sequence; hidden refill cadence must
+       remain exactly identical to the immutable desktop setRand generator. */
+    EspNativeRngReplayGuard_reset();
+    direct_refill(&actual, &expected);
+    for (int step=0; step<1024; ++step) {
+        int wantWord = (step % 7 == 2 || step % 7 == 6);
+        int bytes = wantWord ? 4 : 1;
+        if (expected.nextRand + bytes >= RANDTABLESIZE) {
+            Legacy_DoomRPG_setRand(&expected);
+        }
+        if (wantWord) {
+            int n = expected.nextRand;
+            uint32_t valueExpected =
+                (uint32_t)expected.randTable[n] |
+                ((uint32_t)expected.randTable[n + 1] << 8) |
+                ((uint32_t)expected.randTable[n + 2] << 16) |
+                ((uint32_t)expected.randTable[n + 3] << 24);
+            uint32_t valueActual = (uint32_t)DoomRPG_randNextInt(&actual);
+            assert(valueActual == valueExpected);
+        } else {
+            assert(DoomRPG_randNextByte(&actual) ==
+                   expected.randTable[expected.nextRand]);
+        }
+        expected.nextRand += bytes;
+        match(&actual, &expected);
+    }
+    match_hidden();
     printf("PASS RNG source/state/refill/replay 12000 steps tick=%u\n",
            (unsigned)fake_tick);
     return 0;
