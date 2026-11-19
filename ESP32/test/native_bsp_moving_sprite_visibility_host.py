@@ -80,7 +80,7 @@ static uint16_t movedX = 64U, rawX = 64U;
 static uint32_t spriteReads, nodeReads, projectionChecks;
 
 static const EspMapRuntimeView* EspMapRuntime_view(void) { return &map; }
-static int EspNativeGameplayMonsterMovementPublish_isProjected(uint16_t index) {
+int EspNativeGameplayMonsterMovementPublish_isProjected(uint16_t index) {
     ++projectionChecks;
     return index == 279U && projected;
 }
