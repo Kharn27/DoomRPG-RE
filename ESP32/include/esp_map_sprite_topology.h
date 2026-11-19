@@ -177,6 +177,19 @@ int EspMapSpriteTopology_monsterSnapshotShapeValid(
 int EspMapSpriteTopology_restoreMonsterSnapshot(
     const EspMapSpriteTopologyMonsterSnapshot* snapshot);
 
+/* Canonical map-local topology getters. Read only the compact owner, without
+ * action, resource, crate or monster projection; no allocation or mutation.
+ * These Base leaves are deliberately used only by the ActionEngine layer. */
+int EspMapSpriteTopology_getVisualStateBase(uint32_t spriteIndex,
+                                            uint8_t* outVisualState);
+int EspMapSpriteTopology_getEntityBase(uint32_t spriteIndex,
+                                       uint8_t* outType,
+                                       uint8_t* outSubType,
+                                       uint16_t* outLinkState,
+                                       uint16_t* outLinkOrder);
+/* Public read is the existing composed ActionEngine -> resource/crate ->
+ * monster-liveness and pain/death projection, now called directly (RC20).
+ * The immutable BSP and mutable topology owner are never rewritten. */
 int EspMapSpriteTopology_getVisualState(uint32_t spriteIndex,
                                         uint8_t* outVisualState);
 int EspMapSpriteTopology_getEntity(uint32_t spriteIndex,
