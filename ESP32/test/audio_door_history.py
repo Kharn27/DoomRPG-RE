@@ -10,13 +10,38 @@ def restore_pre_audio_door_resident(source):
     binary = isinstance(source, bytes)
     if binary:
         source = source.decode("utf-8")
-    include = '#include "esp_native_door_sfx.h"\n'
-    assert source.count(include) == 1, ("AUDIO-DOOR history include drift", source.count(include))
-    assert source.count(_SELECT_POST_COMMIT) == 1, (
-        "AUDIO-DOOR history post-commit span drift", source.count(_SELECT_POST_COMMIT))
-    source = source.replace(include, "", 1)
-    # The new SFX block was inserted after an extra separator newline;
-    # remove that separator too to reconstruct the *exact* old Git blob.
-    assert source.count("\n" + _SELECT_POST_COMMIT) == 1, "AUDIO-DOOR separator drift"
-    source = source.replace("\n" + _SELECT_POST_COMMIT, "", 1)
+
+    def undo(new, old, label):
+        nonlocal source
+        assert source.count(new) == 1, (
+            "AUDIO-DOOR historical exact inverse drift", label, source.count(new))
+        source = source.replace(new, old, 1)
+
+    undo('#include "esp_native_door_sfx.h"\n', "", "include")
+    undo(
+        "        /* Stage only accepted 0->1 SELECT cues. The actual audio publication\n"
+        "         * waits for the FIRST successfully presented animation image, not the\n"
+        "         * full four-frame settle; no early cue on failed first frame. */\n"
+        "        EspNativeDoorSfx_stageSelectOpenings(&result);\n",
+        "", "select-stage")
+    undo(
+        '                                 "SELECT-DOOR")) {\n'
+        "            EspNativeDoorSfx_cancelSelect();\n",
+        '                                 "SELECT-DOOR")) {\n',
+        "select-render-failure")
+    undo(
+        "                EspNativeDoorSfx_cancelSelect();\n"
+        "                const int rolledBack =",
+        "                const int rolledBack =",
+        "select-changemap-failure")
+    undo(
+        "            EspNativeDoorSfx_cancelSelect();\n"
+        '            disableGameplay("select-door-monster-turn-request");',
+        '            disableGameplay("select-door-monster-turn-request");',
+        "select-turn-failure")
+    undo(
+        "\n        /* Keep previous late commit for CLOSE and unanimated opens, but do\n"
+        "         * not repeat an OPEN already emitted at its first visual frame. */\n"
+        "        EspNativeDoorSfx_finishSelect(&result);\n\n",
+        "", "select-final")
     return source.encode("utf-8") if binary else source
