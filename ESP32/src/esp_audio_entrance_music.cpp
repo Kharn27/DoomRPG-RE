@@ -288,6 +288,10 @@ static void closeMusic(const char* reason) {
     for (uint8_t i=0U;i<kGenericSfxVoiceCount;++i)
         genericSfx[i].active=false;
     sfxDeferredSequence=0U;
+    /* No SFX from a prior track may replay across EXIT/LOAD/MENU.
+     * These explicit discards never count as PCM playback failures. */
+    sfxSeenSequence=EspNativeAudioIntent_count();
+    EspNativeAudioIntent_discardThrough(sfxSeenSequence);
     if (timerInit) (void)timer_pause(kGroup,kTimer);
     if (callbackAdded) (void)timer_isr_callback_remove(kGroup,kTimer);
     callbackAdded=false;
@@ -322,6 +326,18 @@ static void closeMusic(const char* reason) {
            (unsigned)heapBefore,
            (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
            (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    EspNativeAudioIntentStats audit={};
+    EspNativeAudioIntent_getStats(&audit);
+    printf("[AUDIOINTENT] AUDIT reason=%s queueOverflow=%u "
+           "consumerCursorGap=%u audibleSfxDropped=%u "
+           "consumed=%u handoffDiscarded=%u pending=%u "
+           "sfxPlayedTrack=%u sfxRejectedTrack=%u\n",
+           reason,(unsigned)audit.queueOverflow,
+           (unsigned)audit.consumerCursorGap,
+           (unsigned)audit.audibleSfxDropped,
+           (unsigned)audit.consumed,(unsigned)audit.handoffDiscarded,
+           (unsigned)audit.pending,(unsigned)sfxPlayedCount,
+           (unsigned)sfxRejectedCount);
 }
 /* A single compressed block per main-loop iteration, <=1024 bytes.
  * One decoding operation yields at most 2041 DAC samples. The renderer,
@@ -432,7 +448,7 @@ static void mixFireSfx() {
     const uint32_t budget=available<remain?available:remain;
     if ((int32_t)(at-reader)<(int32_t)kSfxMinLead) {
         fireSfx.active=false;
-        ++sfxRejectedCount;
+        ++sfxRejectedCount; EspNativeAudioIntent_notePlaybackDrop();
         printf("[SFXP2] PARTIAL id=5045 reason=reader-caught-up totalMixed=%u\n",
                (unsigned)fireSfx.next);
         return;
@@ -442,7 +458,7 @@ static void mixFireSfx() {
         !EspAssetPack_isResident() ||
         !EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
         fireSfx.active=false;
-        ++sfxRejectedCount;
+        ++sfxRejectedCount; EspNativeAudioIntent_notePlaybackDrop();
         printf("[SFXP2] PARTIAL id=5045 reason=pak-unavailable totalMixed=%u\n",
                (unsigned)fireSfx.next);
         return;
@@ -499,7 +515,7 @@ static void mixFireSfx() {
         ++sfxPlayedCount;
     } else if (failure!=nullptr) {
         fireSfx.active=false;
-        ++sfxRejectedCount;
+        ++sfxRejectedCount; EspNativeAudioIntent_notePlaybackDrop();
     }
     printf("[SFXP2] %s id=5045 format=PCM16-mono-8000 "
            "outputFrames=%u mixed=%u totalMixed=%u gainDiv=%u "
@@ -525,7 +541,7 @@ static void startFireSfx(uint32_t reader,uint32_t writer) {
         !EspAssetPack_isMapFlashActive() ||
         !EspAssetPack_isResident() ||
         !EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
-        ++sfxRejectedCount;
+        ++sfxRejectedCount; EspNativeAudioIntent_notePlaybackDrop();
         printf("[SFXP2] DROP id=5045 reason=pak-or-ring-not-ready\n");
         return;
     }
@@ -560,7 +576,7 @@ static void startFireSfx(uint32_t reader,uint32_t writer) {
         fireSfx.active=true;
         sfxBusyUntil=fireSfx.start+fireSfx.output;
     } else {
-        ++sfxRejectedCount;
+        ++sfxRejectedCount; EspNativeAudioIntent_notePlaybackDrop();
         printf("[SFXP2] DROP id=5045 reason=invalid-original-pcm\n");
     }
     EspAssetPack_close();
@@ -577,7 +593,7 @@ static bool startGenericSfx(uint16_t id) {
         if (!genericSfx[i].active) { v=&genericSfx[i];break; }
     if (v==nullptr) {
         printf("[SFXGEN] DROP id=%u reason=three-voices-busy\n",(unsigned)id);
-        ++sfxRejectedCount;return false;
+        ++sfxRejectedCount; EspNativeAudioIntent_notePlaybackDrop();return false;
     }
     const uint32_t rdNow=__atomic_load_n(&rd,__ATOMIC_ACQUIRE);
     const uint32_t wrNow=__atomic_load_n(&wr,__ATOMIC_ACQUIRE);
@@ -585,10 +601,10 @@ static bool startGenericSfx(uint16_t id) {
         wrNow-rdNow<kSfxLeadFrames+kSfxMinLead) {
         printf("[SFXGEN] DROP id=%u reason=ring-not-ready queued=%u\n",
                (unsigned)id,(unsigned)(wrNow-rdNow));
-        ++sfxRejectedCount;return false;
+        ++sfxRejectedCount; EspNativeAudioIntent_notePlaybackDrop();return false;
     }
     if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
-        ++sfxRejectedCount;return false;
+        ++sfxRejectedCount; EspNativeAudioIntent_notePlaybackDrop();return false;
     }
     char filename[16];
     (void)snprintf(filename,sizeof(filename),"%04u.wav",(unsigned)id);
@@ -615,7 +631,7 @@ static bool startGenericSfx(uint16_t id) {
     if (!valid || output==0U) {
         printf("[SFXGEN] DROP id=%u reason=invalid-original-pcm\n",
                (unsigned)id);
-        ++sfxRejectedCount;return false;
+        ++sfxRejectedCount; EspNativeAudioIntent_notePlaybackDrop();return false;
     }
     *v=GenericSfxVoice{};
     v->entry=entry;
@@ -640,7 +656,7 @@ static void mixGenericSfx(GenericSfxVoice* v) {
     if ((int32_t)(first-rdNow)<(int32_t)kSfxMinLead) {
         printf("[SFXGEN] DROP id=%u reason=reader-caught-up mixed=%u/%u\n",
                (unsigned)v->id,(unsigned)v->next,(unsigned)v->output);
-        v->active=false;++sfxRejectedCount;return;
+        v->active=false;++sfxRejectedCount; EspNativeAudioIntent_notePlaybackDrop();return;
     }
     if (first>=wrNow) return;
     uint32_t n=wrNow-first;
@@ -690,7 +706,7 @@ static void mixGenericSfx(GenericSfxVoice* v) {
         printf("[SFXGEN] DROP id=%u reason=%s mixed=%u/%u\n",
                (unsigned)v->id,failed,(unsigned)v->next,
                (unsigned)v->output);
-        v->active=false;++sfxRejectedCount;
+        v->active=false;++sfxRejectedCount; EspNativeAudioIntent_notePlaybackDrop();
     } else if (v->next==v->output) {
         printf("[SFXGEN] END id=%u outputFrames=%u reads=%u "
                "timer=unchanged heapAlloc=0\n",
@@ -709,7 +725,9 @@ static void mixPendingSfxOne() {
     const EspNativeAudioIntent* intent=&next;
     const uint16_t id=intent->resourceId;
     if ((intent->flags&ESP_NATIVE_AUDIO_STOP_ALL_FLAG)!=0U) {
+        EspNativeAudioIntent_noteConsumerGap(sfxSeenSequence,intent->sequence);
         sfxSeenSequence=intent->sequence;
+        EspNativeAudioIntent_acknowledgeThrough(sfxSeenSequence);
         fireSfx.active=false;
         for (uint8_t i=0U;i<kGenericSfxVoiceCount;++i)
             genericSfx[i].active=false;
@@ -717,7 +735,9 @@ static void mixPendingSfxOne() {
     }
     if (id!=5045U && id!=5046U && id!=5060U) {
         if (EspAssetPack_isOpen()) return;
+        EspNativeAudioIntent_noteConsumerGap(sfxSeenSequence,intent->sequence);
         sfxSeenSequence=intent->sequence;
+        EspNativeAudioIntent_acknowledgeThrough(sfxSeenSequence);
         if (startGenericSfx(id))
             for (uint8_t i=0U;i<kGenericSfxVoiceCount;++i)
                 if (genericSfx[i].active) mixGenericSfx(&genericSfx[i]);
@@ -732,7 +752,9 @@ static void mixPendingSfxOne() {
         return;
     }
     sfxDeferredSequence=0U;
+    EspNativeAudioIntent_noteConsumerGap(sfxSeenSequence,intent->sequence);
     sfxSeenSequence=intent->sequence;
+    EspNativeAudioIntent_acknowledgeThrough(sfxSeenSequence);
     const uint32_t reader=__atomic_load_n(&rd,__ATOMIC_ACQUIRE);
     const uint32_t writer=__atomic_load_n(&wr,__ATOMIC_ACQUIRE);
     if (id==5045U) {
@@ -759,13 +781,13 @@ static void mixPendingSfxOne() {
     }
     if (writer-reader>kRingCapacity || !EspAssetPack_isMapFlashActive() ||
         !EspAssetPack_isResident() || EspAssetPack_isOpen()) {
-        ++sfxRejectedCount;
+        ++sfxRejectedCount; EspNativeAudioIntent_notePlaybackDrop();
         printf("[SFXP1] DROP id=%u reason=pack-lease-or-ring-not-ready\n",
                (unsigned)id);
         return;
     }
     if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
-        ++sfxRejectedCount;
+        ++sfxRejectedCount; EspNativeAudioIntent_notePlaybackDrop();
         printf("[SFXP1] DROP id=%u reason=pak-open-failed\n",(unsigned)id);
         return;
     }
@@ -808,7 +830,7 @@ static void mixPendingSfxOne() {
                     mixGenericSfx(&genericSfx[i]);
             return;
         }
-        ++sfxRejectedCount;
+        ++sfxRejectedCount; EspNativeAudioIntent_notePlaybackDrop();
         printf("[SFXP1] DROP id=%u reason=%s sourceFrames=%u "
                "outputFrames=%u queued=%u\n",
                (unsigned)id,valid?"progressive-unavailable":"invalid-pcm16",
@@ -876,8 +898,12 @@ static void mixPendingSfxOne() {
     }
     EspAssetPack_close();
     if (mixed!=0U) sfxBusyUntil=start+mixed;
-    if (failed!=nullptr || mixed!=output) ++sfxRejectedCount;
-    else ++sfxPlayedCount;
+    if (failed!=nullptr || mixed!=output) {
+        ++sfxRejectedCount;
+        EspNativeAudioIntent_notePlaybackDrop();
+    } else {
+        ++sfxPlayedCount;
+    }
     printf("[SFXP1] %s id=%u name=%s source=verified-flash-pak "
            "format=PCM16-mono-8000 sampleFrames=%u outputFrames=%u "
            "mixed=%u leadFrames=%u reads=%u pcmMinMax=%d..%d "
@@ -1094,6 +1120,7 @@ static void begin(bool intro,bool menu,EspAudioLoadingTrack gameplayTrack) {
     for (uint8_t i=0U;i<kGenericSfxVoiceCount;++i)
         genericSfx[i].active=false;
     sfxSeenSequence=EspNativeAudioIntent_count();
+    EspNativeAudioIntent_discardThrough(sfxSeenSequence);
     sfxDeferredSequence=0U;
     sfxPlayedCount=0U;
     sfxRejectedCount=0U;

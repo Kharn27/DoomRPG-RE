@@ -28,6 +28,26 @@ const EspNativeAudioIntent* EspNativeAudioIntent_last(void);
 int EspNativeAudioIntent_nextAfter(uint32_t sequence,
                                    EspNativeAudioIntent* outIntent);
 uint32_t EspNativeAudioIntent_count(void);
+
+/* One playback consumer owns the cursor. A peek never removes a record.
+ * ACK only AFTER processing the intent, so a PAK/SD lease deferral cannot
+ * accidentally consume it; batch order and STOP_ALL remain unchanged. */
+void EspNativeAudioIntent_acknowledgeThrough(uint32_t sequence);
+/* Intents from a prior soundtrack/session must not replay on the next map.
+ * Record these explicit skips separately from SFX playback failures. */
+void EspNativeAudioIntent_discardThrough(uint32_t sequence);
+void EspNativeAudioIntent_noteConsumerGap(uint32_t before, uint32_t received);
+void EspNativeAudioIntent_notePlaybackDrop(void);
+typedef struct EspNativeAudioIntentStats_s {
+    uint32_t queueOverflow;       /* evicted while still pending, never hidden */
+    uint32_t consumerCursorGap;   /* sequence IDs skipped by active consumer */
+    uint32_t audibleSfxDropped;   /* rejected/partial PCM mixes, not DAC proof */
+    uint32_t consumed;            /* acknowledged by the playback consumer */
+    uint32_t handoffDiscarded;    /* intentionally skipped at track boundary */
+    uint8_t pending;
+} EspNativeAudioIntentStats;
+void EspNativeAudioIntent_getStats(EspNativeAudioIntentStats* out);
+
 /* Shared compact music volume owner: 0/25/50/75/100, boot default 100.
  * C UI sets it; native ADPCM producer reads it. No ISR or SD writes.
  * This is explicitly runtime-only, no silent V3 config schema change. */

@@ -9,11 +9,21 @@ static uint32_t intentCount;
 static EspNativeAudioIntent intentQueue[ESP_NATIVE_AUDIO_QUEUE_CAP];
 static uint8_t intentQueueFirst;
 static uint8_t intentQueueCount;
+static EspNativeAudioIntentStats intentStats;
+static void addCount(uint32_t* value,uint32_t amount) {
+    if (*value>UINT32_MAX-amount) *value=UINT32_MAX;
+    else *value+=amount;
+}
 static void retainIntent(void) {
     if (intentQueueCount==ESP_NATIVE_AUDIO_QUEUE_CAP) {
         intentQueueFirst=(uint8_t)((intentQueueFirst+1U)%ESP_NATIVE_AUDIO_QUEUE_CAP);
         --intentQueueCount;
-        printf("[AUDIOINTENT] OVERFLOW drop=oldest capacity=16\n");
+        addCount(&intentStats.queueOverflow,1U);
+        printf("[AUDIOINTENT] OVERFLOW drop=oldest capacity=16 "
+               "evictedSeq=%u queueOverflow=%u\n",
+               (unsigned)intentQueue[(intentQueueFirst+
+                   ESP_NATIVE_AUDIO_QUEUE_CAP-1U)%ESP_NATIVE_AUDIO_QUEUE_CAP].sequence,
+               (unsigned)intentStats.queueOverflow);
     }
     intentQueue[(intentQueueFirst+intentQueueCount)%ESP_NATIVE_AUDIO_QUEUE_CAP]=lastIntent;
     ++intentQueueCount;
@@ -28,6 +38,7 @@ void EspNativeAudioIntent_reset(void) {
     intentCount = 0U;
     intentQueueFirst=0U;
     intentQueueCount=0U;
+    memset(&intentStats,0,sizeof(intentStats));
 }
 
 int EspNativeAudioIntent_publish(uint16_t resourceId,
@@ -85,6 +96,50 @@ int EspNativeAudioIntent_nextAfter(uint32_t sequence,
 
 uint32_t EspNativeAudioIntent_count(void) {
     return intentCount;
+}
+
+/* The producer and its sole consumer execute on the Arduino main task.
+ * Reading nextAfter() is intentionally side-effect-free: the consumer may
+ * defer for a PAK lease and must not lose its cursor until actually handled. */
+static void releaseThrough(uint32_t sequence,int handoff) {
+    uint32_t cleared=0U;
+    while (intentQueueCount!=0U &&
+           intentQueue[intentQueueFirst].sequence<=sequence) {
+        intentQueueFirst=(uint8_t)((intentQueueFirst+1U)%
+                                     ESP_NATIVE_AUDIO_QUEUE_CAP);
+        --intentQueueCount;
+        ++cleared;
+    }
+    if (handoff) addCount(&intentStats.handoffDiscarded,cleared);
+    else addCount(&intentStats.consumed,cleared);
+}
+
+void EspNativeAudioIntent_acknowledgeThrough(uint32_t sequence) {
+    releaseThrough(sequence,0);
+}
+
+void EspNativeAudioIntent_discardThrough(uint32_t sequence) {
+    releaseThrough(sequence,1);
+}
+
+void EspNativeAudioIntent_noteConsumerGap(uint32_t before,
+                                          uint32_t received) {
+    if (received<=before || received-before<=1U) return;
+    const uint32_t missed=received-before-1U;
+    addCount(&intentStats.consumerCursorGap,missed);
+    printf("[AUDIOINTENT] CURSOR-GAP after=%u next=%u missed=%u "
+           "consumerCursorGap=%u\n",(unsigned)before,(unsigned)received,
+           (unsigned)missed,(unsigned)intentStats.consumerCursorGap);
+}
+
+void EspNativeAudioIntent_notePlaybackDrop(void) {
+    addCount(&intentStats.audibleSfxDropped,1U);
+}
+
+void EspNativeAudioIntent_getStats(EspNativeAudioIntentStats* out) {
+    if (out==NULL) return;
+    *out=intentStats;
+    out->pending=intentQueueCount;
 }
 
 uint8_t EspNativeAudioIntent_musicVolumePercent(void) {
