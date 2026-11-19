@@ -112,9 +112,10 @@ void reportIoSample(const char* reason)
 
 extern "C" {
 
-int __real_EspAssetPack_residentBegin(void);
+int EspAssetPack_residentBeginBase(void);
 
-int __wrap_EspAssetPack_residentBegin(void)
+/* ARCH-RC18: public transaction, no GNU ld interposition. */
+int EspAssetPack_residentBegin(void)
 {
     const EspPlayerViewState* view = EspPlayerView_view();
     const int64_t prepareStart = esp_timer_get_time();
@@ -143,7 +144,7 @@ int __wrap_EspAssetPack_residentBegin(void)
     const uint32_t prepareUs =
         elapsedMicros(prepareStart, esp_timer_get_time());
 
-    const int result = __real_EspAssetPack_residentBegin();
+    const int result = EspAssetPack_residentBeginBase();
     if (!result) {
         DRPG_LOGE("[MAPFLASH] ARM failed map=%u reason=resident-cache-begin\n",
                (unsigned int)view->targetMapId);

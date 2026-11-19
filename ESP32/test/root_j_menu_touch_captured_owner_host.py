@@ -69,7 +69,8 @@ restore = [
 # and the 4096-cycle production dispatch check intact.
 from sdl_f29_native_main_menu_header_host import GUARD, COUNTS
 assert source.count(GUARD) == COUNTS["native_main_menu_touch.c"]
-normalized = source.replace(GUARD, "#include <SDL.h>\n")
+from arch_rc18_history import restore_pre_rc18_menu_touch
+normalized = restore_pre_rc18_menu_touch(source.replace(GUARD, "#include <SDL.h>\n"))
 for old, new in restore:
     if normalized.count(old) != 1:
         raise AssertionError(f"Expected one Root-J replacement: {old[:80]!r}")

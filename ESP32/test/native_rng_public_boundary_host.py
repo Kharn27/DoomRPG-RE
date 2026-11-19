@@ -83,8 +83,8 @@ def source_scan(source):
     cfg = INI.read_text()
     normal = cfg.split("[env:esp32-cyd]", 1)[1].split(
         "[env:esp-cyd-inverted]", 1)[0]
-    require(len(re.findall(r"^\s+-Wl,--wrap=", normal, re.M)) == 12,
-            "expected exact 12 normal GNU wrappers after RC17")
+    require(len(re.findall(r"^\s+-Wl,--wrap=", normal, re.M)) == 10,
+            "expected exact 10 normal GNU wrappers after RC18")
     require(BYTE in source and WORD in source,
             "permanent native RNG definitions absent")
     for symbol in ("DoomRPG_randNextByte", "DoomRPG_randNextInt"):
@@ -105,7 +105,7 @@ def source_scan(source):
     require(count >= 178, "firmware source census incomplete")
     for sig in (BYTE, WORD):
         extract(source, sig)
-    print("PASS ARCH-RC17 source: public byte/word owner, 12 wraps, desktop C absent")
+    print("PASS ARCH-RC17 source: public byte/word owner, 10 wraps, desktop C absent")
 
 
 def with_mutation(source, signature, before, after, name):

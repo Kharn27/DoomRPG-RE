@@ -15,7 +15,7 @@ static int busy;
 static int missing;
 static int failRead;
 static unsigned int reads;
-/* Optional SD reader mock (no Arduino framework in the host harness). */
+/* Host-only mock of removable SD, 128x640 BMP V5. */
 enum { SD_OFFSET = 138, SD_BYTES = SD_OFFSET + 128 * 640 * 3 };
 static uint8_t sdBmp[SD_BYTES];
 static int sdPresent, sdOpened, sdFailRead;
@@ -90,7 +90,6 @@ int EspAssetPack_readRange(const EspAssetPackEntry* entry, uint32_t offset,
     ++reads;
     return 1;
 }
-
 
 int EspNativeBootLegalsSd_open(uint32_t* outSize) {
     assert(!opened); /* No simultaneous SD override and PAK owner. */
@@ -175,31 +174,11 @@ int main(void) {
     assert(EspNativeBootLegals_advance(6101U, 0) == 1); /* 3000ms after touch */
     checkPanel(3);
     assert(EspNativeBootLegals_advance(9100U, 0) == 0);
-    assert(EspNativeBootLegals_advance(9101U, 0) == 1);
-    assert(EspNativeBootLegals_currentPanel() == 5U);
-    {
-        const unsigned int before = reads;
-        memset(fb, 0x7f, sizeof(fb));
-        assert(EspNativeBootLegals_draw(fb, 160U * 120U));
-        assert(!opened);
-        assert(reads == before); /* credit never opens or reads PAK */
-        /* Independent exact character, heart, and copyright raster probes. */
-        assert(fb[0] == 0U);
-        assert(fb[17 * 160 + 80] == 0x7324U);
-        assert(fb[28 * 160 + 38] == 0xe6a6U); /* E of ESP32 */
-        assert(fb[68 * 160 + 77] == 0xd964U); /* heart */
-        assert(fb[56 * 160 + 38] == 0xc638U); /* m: made with love */
-        assert(fb[80 * 160 + 38] == 0U); /* duplicated large name gone */
-        assert(fb[90 * 160 + 55] == 0x8410U); /* copyright circle */
-        assert(fb[91 * 160 + 65] == 0x8410U); /* © Kharn27, only name */
-        assert(fb[119 * 160 + 159] == 0U);
-    }
-    assert(EspNativeBootLegals_advance(12100U, 0) == 0); /* 2999ms on credit */
-    assert(EspNativeBootLegals_advance(12101U, 0) == 2); /* 3000ms on credit */
-    assert(!EspNativeBootLegals_isActive());
-    assert(EspNativeBootLegals_currentPanel() == 0);
+    assert(EspNativeBootLegals_advance(9101U, 0) == 2); /* fourth is last */
+    assert(!EspNativeBootLegals_isActive()); /* no fifth credit panel */
+    assert(EspNativeBootLegals_currentPanel() == 0U);
     assert(!opened);
-    assert(reads == 2U + 4U * 16U); /* credit adds no PAK IO */
+    assert(reads == 2U + 4U * 16U); /* only the four g.bmp frames */
 
     fixture();
     assert(EspNativeBootLegals_begin(0U));
@@ -242,16 +221,15 @@ int main(void) {
 
     fixture();
     assert(EspNativeBootLegals_begin(0U));
-    for (int i = 0; i < 4; ++i)
+    for (int i = 0; i < 3; ++i)
         assert(EspNativeBootLegals_advance(1U, 1) == 1);
-    assert(EspNativeBootLegals_currentPanel() == 5U);
-    assert(EspNativeBootLegals_draw(fb, 160U * 120U));
-    assert(EspNativeBootLegals_advance(2U, 1) == 2); /* skip credit */
+    assert(EspNativeBootLegals_currentPanel() == 4U);
+    assert(EspNativeBootLegals_advance(2U, 1) == 2); /* skip fourth */
     assert(!opened && !EspNativeBootLegals_isActive());
-    assert(reads == 2U); /* five touches did not read g.bmp pixels */
+    assert(EspNativeBootLegals_currentPanel() == 0U);
+    assert(reads == 2U); /* four touches need no g.bmp pixel reads */
 
-
-    /* Valid SD BMP: five panels replace g.bmp+ROM, no PAK pixel reads. */
+    /* Valid SD BMP: five panels replace the four g.bmp panels, no PAK pixel reads. */
     fixture(); sdFixture();
     assert(EspNativeBootLegals_begin(0U) && !opened && !sdOpened);
     assert(reads == 2U && sdReads == 1U); /* Only header preflights. */
@@ -282,7 +260,7 @@ int main(void) {
     assert(fb[60U*160U+16U] == 0xf800U);
     assert(!sdOpened && !opened);
 
-    /* Invalid format: fall back to original four frames and ROM fifth. */
+    /* Invalid format: fall back to original four frames. */
     fixture(); sdFixture();
     sdBmp[28] = 8U; /* Not 24bpp. */
     assert(EspNativeBootLegals_begin(0U));
@@ -314,6 +292,28 @@ int main(void) {
     assert(EspNativeBootLegals_begin(0U));
     checkPanel(0);
 
-    printf("BOOTLEGALS HOST PASS optional-bmp24=128x640 sd-five-frames exact-crop/no-pak-pixel-reads invalid/truncated/failing-sd-fallback originals=4 credit=Kharn27 durationMs=3000 panels=5 touch=skip crop=160x120 pack=closed ranges=16/frame failure=closed\\n");
+    /* Valid file disappearing after rendering the 5th panel: no original
+     * fifth panel exists, so abandon the stage safely without PAK overread. */
+    fixture(); sdFixture();
+    assert(EspNativeBootLegals_begin(0U));
+    for (int i = 0; i < 4; ++i)
+        assert(EspNativeBootLegals_advance(1U, 1) == 1);
+    assert(EspNativeBootLegals_currentPanel() == 5U);
+    sdFailRead = 1;
+    assert(!EspNativeBootLegals_draw(fb, 160U*120U));
+    assert(!EspNativeBootLegals_isActive());
+    assert(!opened && !sdOpened);
+    assert(reads == 2U);
+    
+    /* Missing custom BMP must stop after fourth original panel, not revive
+     * the removed 'ESP32 CYD PORT' credit screen. */
+    fixture();
+    assert(EspNativeBootLegals_begin(0U));
+    for (int i = 0; i < 3; ++i)
+        assert(EspNativeBootLegals_advance(1U, 1) == 1);
+    assert(EspNativeBootLegals_advance(2U, 1) == 2);
+    assert(!EspNativeBootLegals_isActive());
+
+    printf("BOOTLEGALS HOST PASS originals=4 custom=5 durationMs=3000 panels=4 credit=none touch=skip crop=160x120 pack=closed ranges=16/frame failure=closed\\n");
     return 0;
 }
