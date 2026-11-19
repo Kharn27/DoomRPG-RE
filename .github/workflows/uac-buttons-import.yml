@@ -1,0 +1,105 @@
+name: Import UAC LOAD OPTIONS HELP transparent BMP buttons (one shot)
+
+on:
+  push:
+    branches:
+      - agent/menu-uac-frame-bmp-assets
+
+permissions:
+  contents: write
+
+jobs:
+  import-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download 12 Adobe-edited transparent PNGs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/uac-buttons
+          curl --fail --location --silent --show-error --retry 4 --max-time 120 "https://photoshop-api.adobe.io/v2/short-url/urn:aaid:ps:US:69a54b11-7acd-45f0-aad9-69756202ed1b" -o "/tmp/uac-buttons/menu_load_active_120.png"
+          curl --fail --location --silent --show-error --retry 4 --max-time 120 "https://photoshop-api.adobe.io/v2/short-url/urn:aaid:ps:US:866e1bd1-2eff-4fe8-958d-201cb3463ad0" -o "/tmp/uac-buttons/menu_load_inactive_120.png"
+          curl --fail --location --silent --show-error --retry 4 --max-time 120 "https://photoshop-api.adobe.io/v2/short-url/urn:aaid:ps:US:76cf1ee1-105f-4694-94e5-e18be7148d15" -o "/tmp/uac-buttons/menu_load_active_240.png"
+          curl --fail --location --silent --show-error --retry 4 --max-time 120 "https://photoshop-api.adobe.io/v2/short-url/urn:aaid:ps:US:028f4258-d489-4e86-98d4-8a50fa08302a" -o "/tmp/uac-buttons/menu_load_inactive_240.png"
+          curl --fail --location --silent --show-error --retry 4 --max-time 120 "https://photoshop-api.adobe.io/v2/short-url/urn:aaid:ps:US:d417341b-fc7b-46df-927d-50e8fe15960c" -o "/tmp/uac-buttons/menu_options_active_120.png"
+          curl --fail --location --silent --show-error --retry 4 --max-time 120 "https://photoshop-api.adobe.io/v2/short-url/urn:aaid:ps:US:ebfaba6d-3885-495d-b477-f14119992e74" -o "/tmp/uac-buttons/menu_options_inactive_120.png"
+          curl --fail --location --silent --show-error --retry 4 --max-time 120 "https://photoshop-api.adobe.io/v2/short-url/urn:aaid:ps:US:93f203f8-eeb7-40e3-89d0-3c8d7ccc61c7" -o "/tmp/uac-buttons/menu_options_active_240.png"
+          curl --fail --location --silent --show-error --retry 4 --max-time 120 "https://photoshop-api.adobe.io/v2/short-url/urn:aaid:ps:US:748d2481-7aeb-4287-b1a2-cb0f2fa0e44c" -o "/tmp/uac-buttons/menu_options_inactive_240.png"
+          curl --fail --location --silent --show-error --retry 4 --max-time 120 "https://photoshop-api.adobe.io/v2/short-url/urn:aaid:ps:US:5f8df6ac-faf0-44c1-8c28-bb5d3a935f03" -o "/tmp/uac-buttons/menu_help_active_120.png"
+          curl --fail --location --silent --show-error --retry 4 --max-time 120 "https://photoshop-api.adobe.io/v2/short-url/urn:aaid:ps:US:ffdf3c1d-1cf9-4c55-9685-845e344320b7" -o "/tmp/uac-buttons/menu_help_inactive_120.png"
+          curl --fail --location --silent --show-error --retry 4 --max-time 120 "https://photoshop-api.adobe.io/v2/short-url/urn:aaid:ps:US:e694aa11-8cc5-4a3b-a6b6-c8c4b03a8be9" -o "/tmp/uac-buttons/menu_help_active_240.png"
+          curl --fail --location --silent --show-error --retry 4 --max-time 120 "https://photoshop-api.adobe.io/v2/short-url/urn:aaid:ps:US:4dd1ea25-c33d-41e7-a403-fea7b46f19be" -o "/tmp/uac-buttons/menu_help_inactive_240.png"
+      - name: Encode transparent BMP V4 and verify lossless RGBA
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check pillow==11.3.0
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          import hashlib, struct
+
+          root = Path('sdroot/doomrpg/img')
+          root.mkdir(parents=True, exist_ok=True)
+          variants = [
+              f'menu_{button}_{state}_{sz}'
+              for button in ('load', 'options', 'help')
+              for state in ('active', 'inactive')
+              for sz in (120, 240)
+          ]
+          digest = {}
+          for name in variants:
+              size = int(name.rsplit('_',1)[-1])
+              w, h = (55,20) if size == 120 else (110,40)
+              path = Path('/tmp/uac-buttons') / (name + '.png')
+              im = Image.open(path)
+              im.load()
+              assert im.size == (w,h), (name,im.size)
+              im = im.convert('RGBA')
+              amin,amax = im.getchannel('A').getextrema()
+              assert amin == 0 and amax == 255, (name,amin,amax)
+              opaque=sum(1 for alpha in im.getchannel('A').getdata() if alpha > 0)
+              assert opaque > (w*h)//3, (name,opaque)
+              pixels=b''.join(
+                  im.crop((0,y,w,y+1)).tobytes('raw','BGRA')
+                  for y in range(h-1,-1,-1))
+              assert len(pixels)==w*h*4
+              dib=(struct.pack('<IiiHHIIiiII',108,w,h,1,32,3,len(pixels),2835,2835,0,0)
+                   +struct.pack('<IIIII',0x00FF0000,0x0000FF00,0x000000FF,0xFF000000,0x73524742)
+                   +bytes(36)
+                   +struct.pack('<III',0,0,0))
+              assert len(dib)==108
+              blob=struct.pack('<2sIHHI',b'BM',122+len(pixels),0,0,122)+dib+pixels
+              out=root/(name+'.bmp')
+              out.write_bytes(blob)
+              verify=Image.open(out).convert('RGBA')
+              assert verify.size == (w,h)
+              assert verify.tobytes() == im.tobytes(), name
+              digest[name]=hashlib.sha256(blob).hexdigest()
+              print(f'{out}: {w}x{h}, {len(blob)} bytes, alpha {amin}..{amax}, '
+                    f'nontransparent {opaque}/{w*h}, SHA256 {digest[name]}',flush=True)
+          for button in ('load','options','help'):
+              for sz in (120,240):
+                  a=f'menu_{button}_active_{sz}'
+                  b=f'menu_{button}_inactive_{sz}'
+                  assert digest[a]!=digest[b],(a,b)
+          print('PASS: all 12 distinct expected BMPs, lossless RGBA, transparency, dimensions')
+          PY
+      - name: Commit 12 BMPs and remove one-shot importer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add sdroot/doomrpg/img/menu_{load,options,help}_{active,inactive}_{120,240}.bmp
+          git rm .github/workflows/uac-buttons-import.yml
+          git diff --cached --stat
+          git commit -m "ASSETS: add 12 LOAD OPTIONS HELP buttons in alpha BMP V4"
+          git push origin HEAD:refs/heads/agent/menu-uac-frame-bmp-assets
