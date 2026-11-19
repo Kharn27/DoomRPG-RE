@@ -16,7 +16,7 @@ static int missing;
 static int failRead;
 static unsigned int reads;
 /* Optional SD reader mock (no Arduino framework in the host harness). */
-enum { SD_OFFSET = 54, SD_BYTES = SD_OFFSET + 128 * 640 * 3 };
+enum { SD_OFFSET = 138, SD_BYTES = SD_OFFSET + 128 * 640 * 3 };
 static uint8_t sdBmp[SD_BYTES];
 static int sdPresent, sdOpened, sdFailRead;
 static unsigned int sdReads;
@@ -121,7 +121,7 @@ static void sdFixture(void) {
     for (int i = 0; i < 4; ++i) {
         sdBmp[2+i] = (uint8_t)((uint32_t)SD_BYTES >> (i*8));
         sdBmp[10+i] = (uint8_t)((uint32_t)SD_OFFSET >> (i*8));
-        sdBmp[14+i] = (uint8_t)(40U >> (i*8));
+        sdBmp[14+i] = (uint8_t)(124U >> (i*8));
         sdBmp[18+i] = (uint8_t)(128U >> (i*8));
         sdBmp[22+i] = (uint8_t)(640U >> (i*8));
         sdBmp[34+i] = (uint8_t)((128U*640U*3U) >> (i*8));
@@ -273,6 +273,15 @@ int main(void) {
     assert(EspNativeBootLegals_advance(1U, 1) == 2);
     assert(!sdOpened && !opened);
 
+    /* Compatibility: classic DIB40 is valid as well, including padded
+     * headers before the pixel array. */
+    fixture(); sdFixture();
+    sdBmp[14] = 40U;
+    assert(EspNativeBootLegals_begin(0U));
+    assert(EspNativeBootLegals_draw(fb, 160U*120U));
+    assert(fb[60U*160U+16U] == 0xf800U);
+    assert(!sdOpened && !opened);
+
     /* Invalid format: fall back to original four frames and ROM fifth. */
     fixture(); sdFixture();
     sdBmp[28] = 8U; /* Not 24bpp. */
@@ -292,6 +301,12 @@ int main(void) {
     assert(EspNativeBootLegals_advance(1U, 1) == 1);
     checkPanel(1);
     assert(reads == 2U + 2U*16U);
+
+    /* V5 DIB file offset must actually follow the 124-byte DIB header. */
+    fixture(); sdFixture();
+    sdBmp[10] = 54U;
+    assert(EspNativeBootLegals_begin(0U));
+    checkPanel(0);
 
     /* Truncated payload is rejected by the strict file-size/pixel bounds. */
     fixture(); sdFixture();

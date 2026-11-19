@@ -93,16 +93,17 @@ static int preflightSdOverride(uint32_t* outOffset) {
     if (size >= sizeof(header) && EspNativeBootLegalsSd_read(0U, header, sizeof(header))) {
         const uint32_t pixelOffset = read32(header + 10);
         const uint32_t imageBytes = read32(header + 34);
+        const uint32_t dibSize = read32(header + 14);
         if (header[0] == 'B' && header[1] == 'M' &&
             read32(header + 2) == size &&
-            read32(header + 14) == 40U &&
+            (dibSize == 40U || dibSize == 124U) &&
             read32(header + 18) == BOOT_FRAME_W &&
             read32(header + 22) == BOOT_SD_SHEET_H &&
             read16(header + 26) == 1U &&
             read16(header + 28) == 24U &&
             read32(header + 30) == 0U &&
             (imageBytes == 0U || imageBytes == BOOT_SD_PIXEL_BYTES) &&
-            pixelOffset >= sizeof(header) && pixelOffset <= size &&
+            pixelOffset >= 14U + dibSize && pixelOffset <= size &&
             BOOT_SD_PIXEL_BYTES <= size - pixelOffset) {
             if (outOffset != NULL) *outOffset = pixelOffset;
             ok = 1;

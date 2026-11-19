@@ -1,31 +1,28 @@
-# Optional boot credits image (classic CYD)
+# Crédits de démarrage — classic CYD
 
-To replace the startup legal/credits sequence, put **credits.bmp** on your SD
-card at exactly:
+Le firmware essaie de lire **`/doomrpg/img/credits.bmp`** sur la carte
+microSD au démarrage. Copier le fichier de ce dépôt :
 
-`/doomrpg/img/credits.bmp`
+`sdroot/doomrpg/img/credits.bmp`
 
-It must be an **uncompressed 24-bit RGB BMP, 128 × 640** (five vertically
-stacked 128 × 128 panels, top to bottom). Every panel shows for 3 seconds or
-until the next touch, just like the original startup screens.
+vers le dossier `doomrpg/img/` **à la racine** de la carte SD
+(sans dossier `sdroot/` sur la carte).
 
-The repository also keeps **credits.png** (128 × 640) as the editable/source
-image. The classic CYD has no PSRAM, so the firmware deliberately reads bounded
-BMP ranges instead of decoding a large PNG. Convert on your computer:
+Le fichier fourni fait **128 × 640 pixels**, BMP **RGB 24 bits sans
+compression**, en-tête Windows V5 (DIB 124 octets), **245 898 octets**.
+SHA-256 : `d1fe400eb1d7200da604fc1315a43ce1fb6fbc63493768de6b4f730719912c43`.
 
-```shell
-python -m pip install pillow
-python ESP32/tools/credits_png_to_bmp.py
-```
+Il contient cinq panneaux de 128 × 128 pixels empilés de haut en bas.
+Chaque panneau s'affiche **3 secondes**, avec possibilité de passer par
+un toucher, comme avant.
 
-Copy the generated `sdroot/doomrpg/img/credits.bmp` to the SD card. The
-`sdroot/` prefix models the SD card's root; **do not** create a literal
-`sdroot` directory on the card.
+La carte SD reste facultative pour ces crédits : en l'absence du fichier,
+avec un BMP invalide, ou en cas de lecture SD interrompue, le firmware
+retrace automatiquement les **4 panneaux originaux de `g.bmp` (PAK)**
+puis le crédit natif intégré au firmware. Le PAK reste intact ; aucune
+allocation image complète ni décodeur PNG n'est ajouté au CYD sans PSRAM.
 
-Without `credits.bmp`, with an invalid BMP header/size, or if a SD read
-fails, the firmware automatically uses the original four `g.bmp` panels from
-`DoomRPG-ESP32.pak` plus the built-in Kharn27 panel. The game never needs the
-override to boot. Neither the PAK nor its legacy image is modified.
-
-The pre-title display is **not** a gameplay texture, and no PNG decoder has
-been added to the firmware.
+Test matériel de référence : `esp32-cyd`, attendre les cinq panneaux
+sans toucher, puis refaire le démarrage après renommage de
+`credits.bmp` pour vérifier le fallback. Les logs `[BOOTLEGALS]`
+permettent de distinguer `source=sd-bmp24` et `g.bmp+port-credit`.

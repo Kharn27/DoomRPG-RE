@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-/* Optional /doomrpg/img/credits.bmp (RGB24, 128x640) replaces all five
+/* Optional /doomrpg/img/credits.bmp (RGB24, 128x640, DIB40 or DIB124) replaces all five
  * startup panels. Missing/invalid/read-error falls back to the originals:
  * four original 128x128 g.bmp panels, followed by an author-credit screen.
  * All five show for 3s, or advance immediately on a touch edge. The shared
