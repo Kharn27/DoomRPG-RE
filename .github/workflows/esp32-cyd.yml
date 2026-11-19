@@ -53,6 +53,17 @@ jobs:
       - name: Test AUDIO-SFX-P3 complete original WAV catalog and enemy references
         run: python ESP32/test/audio_sfx_p3_native_catalog_host.py
 
+      - name: Test held MOVE-close 5064 after first visible frame, not during monster turn (real C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -Wno-unused-variable \
+            -ffunction-sections -fdata-sections \
+            -IESP32/test/oracles -IESP32/include -IESP32/src -Isrc \
+            ESP32/src/esp_native_door_animator.c \
+            ESP32/src/esp_native_door_sfx.c \
+            ESP32/test/native_door_held_close_sfx_host.c \
+            -Wl,--gc-sections -o /tmp/doomrpg-held-close-sfx
+          /tmp/doomrpg-held-close-sfx
+
       - name: Test AUDIO-DOOR original open-close sounds after native committed SELECT and MOVE (host C)
         run: python ESP32/test/audio_door_sfx_host.py
 
