@@ -39,7 +39,7 @@ typedef struct CrateStateOwner_s {
 static CrateStateOwner* crateState;
 
 int __real_EspMapRuntime_getMapSprite(uint32_t index, EspMapSprite* outSprite);
-int __real_EspMapSpriteTopology_getEntity(uint32_t spriteIndex,
+int EspMapSpriteTopology_getEntityBase(uint32_t spriteIndex,
                                           uint8_t* outType,
                                           uint8_t* outSubType,
                                           uint16_t* outLinkState,
@@ -257,7 +257,7 @@ int EspNativeGameplayCrateState_ensure(void) {
         uint8_t subtype;
         uint16_t linkState;
         uint16_t linkOrder;
-        if (!__real_EspMapSpriteTopology_getEntity(
+        if (!EspMapSpriteTopology_getEntityBase(
                 i, &type, &subtype, &linkState, &linkOrder)) {
             crateState->view.fatal = 1U;
             break;
