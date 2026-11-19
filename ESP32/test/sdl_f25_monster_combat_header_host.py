@@ -43,6 +43,8 @@ def source_gate() -> None:
         assert data.startswith(prefix), f"{name}: lost host/geometry include"
         assert data.count(b"#include <SDL.h>") == 1, name
         original = b"#include <SDL.h>\n" + data[len(prefix):]
+        from arch_rc20_history import restore_pre_rc20
+        original = restore_pre_rc20(name, original)
         from arch_rc13_history import restore_pre_rc13
         original = restore_pre_rc13(name, original)
         from audio_monster_sfx_history import restore_pre_monster_sfx
