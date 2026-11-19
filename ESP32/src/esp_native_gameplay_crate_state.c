@@ -38,7 +38,7 @@ typedef struct CrateStateOwner_s {
  * while a native map/player context exists and is freed on map reset. */
 static CrateStateOwner* crateState;
 
-int __real_EspMapRuntime_getMapSprite(uint32_t index, EspMapSprite* outSprite);
+int EspMapRuntime_getMapSpriteBase(uint32_t index, EspMapSprite* outSprite);
 int EspMapSpriteTopology_getEntityBase(uint32_t spriteIndex,
                                           uint8_t* outType,
                                           uint8_t* outSubType,
@@ -52,7 +52,7 @@ static int rawDefinition(uint32_t spriteIndex,
                          int32_t* outParm) {
     EspMapSprite sprite;
     uint32_t lookup;
-    if (!__real_EspMapRuntime_getMapSprite(spriteIndex, &sprite)) return 0;
+    if (!EspMapRuntime_getMapSpriteBase(spriteIndex, &sprite)) return 0;
     lookup = sprite.info & CRATE_DEF_MASK;
     if ((sprite.info & CRATE_DEF_TILE_FLAG) != 0U) {
         lookup += CRATE_DEF_TILE_BASE;
@@ -271,7 +271,7 @@ int EspNativeGameplayCrateState_ensure(void) {
             uint8_t defType = 0U;
             uint8_t defSubtype = 0U;
             ++crates;
-            if (!__real_EspMapRuntime_getMapSprite(i, &sprite) ||
+            if (!EspMapRuntime_getMapSpriteBase(i, &sprite) ||
                 !rawDefinition(i, &defTile, &defType, &defSubtype, &parm) ||
                 defType != CRATE_ENTITY_TYPE ||
                 defSubtype != CRATE_ENTITY_SUBTYPE) {
