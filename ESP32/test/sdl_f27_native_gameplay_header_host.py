@@ -85,6 +85,8 @@ def original_body_parity() -> None:
             from game_pickup_redraw_history import restore_pre_game_pickup_resources
             current = restore_pre_game_pickup_resources(current)
         elif filename == "esp_native_resident_gameplay.c":
+            from audio_door_history import restore_pre_audio_door_resident
+            current = restore_pre_audio_door_resident(current)
             from game_pickup_redraw_history import restore_pre_game_pickup_resident
             current = restore_pre_game_pickup_resident(current)
 

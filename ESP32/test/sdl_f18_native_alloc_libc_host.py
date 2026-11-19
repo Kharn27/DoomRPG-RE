@@ -80,6 +80,8 @@ for filename, (sha, aliases) in REFERENCES.items():
         restored = restore_pre_rc12_note_prefix(restored)
     else:
         if filename == "esp_native_resident_gameplay.c":
+            from audio_door_history import restore_pre_audio_door_resident
+            current = restore_pre_audio_door_resident(current)
             from game_pickup_redraw_history import restore_pre_game_pickup_resident
             current = restore_pre_game_pickup_resident(current)
         if filename == "esp_native_gameplay_event_chain.c":
