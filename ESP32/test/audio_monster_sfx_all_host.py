@@ -42,6 +42,14 @@ assert "if (n>8192U) n=8192U;" in music
 assert "if (!EspAssetPack_musicSdSafe()) return;" in music
 assert "return !openReady || (physicalUsesMapFlash && !sourceProbeReady);" in pack
 assert "retainIntent();" in intent
+# AUDIO #377: real producer/consumer ownership is distinct from PCM mixing.
+assert music.count("EspNativeAudioIntent_acknowledgeThrough(sfxSeenSequence);") == 3
+assert music.count("EspNativeAudioIntent_discardThrough(sfxSeenSequence);") == 2
+assert music.count("EspNativeAudioIntent_noteConsumerGap(sfxSeenSequence,intent->sequence);") == 3
+assert "EspNativeAudioIntent_notePlaybackDrop();" in music
+assert "[AUDIOINTENT] AUDIT reason=%s queueOverflow=%u" in music
+assert "EspNativeAudioIntent_noteConsumerGap(uint32_t before," in intent
+assert "static EspNativeAudioIntentStats intentStats;" in intent
 assert "static void mixPendingSfxOne()" in music
 assert "static void mixPendingSfx()" in music
 assert "for (uint8_t i=0U;i<4U;++i)" in music
