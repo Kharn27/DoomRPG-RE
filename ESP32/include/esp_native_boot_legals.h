@@ -8,8 +8,8 @@
 extern "C" {
 #endif
 
-/* Four original 128x128 g.bmp panels, followed by an author-credit screen.
- * All five show for 3s, or advance immediately on a touch edge. The shared
+/* Four original 128x128 g.bmp panels, each shown for 3s or skipped on a
+ * touch edge. After panel four, hand off directly to MENU_MAIN. The shared
  * 160x120 framebuffer is the sole pixel destination: no image-wide
  * allocation, new PAK asset, or resident PAK lease. */
 int EspNativeBootLegals_begin(uint32_t nowMs);
