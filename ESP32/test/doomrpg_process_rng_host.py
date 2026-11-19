@@ -207,6 +207,36 @@ int main(int argc, char** argv) {
 
     EspNativeRngReplayGuard_reset(); /* must NOT reset _seed/resetRand */
     match_refill_after_probe(&actual, &expected);
+
+    /* RC17 public owner: exercise BOTH real exported draw bodies interleaved,
+       across many 128-byte boundaries. Expected words always use the byte
+       offset and original little-endian sequence; hidden refill cadence must
+       remain exactly identical to the immutable desktop setRand generator. */
+    EspNativeRngReplayGuard_reset();
+    direct_refill(&actual, &expected);
+    for (int step=0; step<1024; ++step) {
+        int wantWord = (step % 7 == 2 || step % 7 == 6);
+        int bytes = wantWord ? 4 : 1;
+        if (expected.nextRand + bytes >= RANDTABLESIZE) {
+            Legacy_DoomRPG_setRand(&expected);
+        }
+        if (wantWord) {
+            int n = expected.nextRand;
+            uint32_t valueExpected =
+                (uint32_t)expected.randTable[n] |
+                ((uint32_t)expected.randTable[n + 1] << 8) |
+                ((uint32_t)expected.randTable[n + 2] << 16) |
+                ((uint32_t)expected.randTable[n + 3] << 24);
+            uint32_t valueActual = (uint32_t)DoomRPG_randNextInt(&actual);
+            assert(valueActual == valueExpected);
+        } else {
+            assert(DoomRPG_randNextByte(&actual) ==
+                   expected.randTable[expected.nextRand]);
+        }
+        expected.nextRand += bytes;
+        match(&actual, &expected);
+    }
+    match_hidden();
     printf("PASS RNG source/state/refill/replay 12000 steps tick=%u\n",
            (unsigned)fake_tick);
     return 0;
