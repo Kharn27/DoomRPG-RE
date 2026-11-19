@@ -13,6 +13,10 @@
 #include "esp_map_line_texture_state.h"
 #include "esp_map_runtime.h"
 #include "esp_native_door_animator.h"
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+#include "esp_native_door_sfx.h"
+#include "esp_audio_entrance_music.h"
+#endif
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_dynamic_line_render.h"
 #include "esp_native_gameplay_move_events.h"
@@ -465,6 +469,21 @@ int __wrap_EspNativeGameplayFrame_renderTurn(
                 EspNativeDoorAnimator_reset();
                 return 0;
             }
+
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+            /*
+             * The frame has just been physically presented and the PAK
+             * lease released. OPEN 5063 must start HERE, not after all four
+             * ~100ms frames. The usual render-compositor audio pump has
+             * already run, so service the new SFX immediately at this safe
+             * boundary. CLOSE and MOVE publications retain their original
+             * rollback-aware timing.
+             */
+            if (animationFrame.ordinal == 1U &&
+                EspNativeDoorSfx_onFirstPresentedOpeningFrame() != 0U) {
+                EspEntranceMusic_pumpGameplay();
+            }
+#endif
         }
 
         EspNativeGameplayMoveEvents_onFrameResult(1);
