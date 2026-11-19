@@ -103,7 +103,7 @@ typedef struct ResourceOwner_s {
 static ResourceOwner resources;
 static EspNativeGameplayHudState hudOverlay;
 
-int __real_EspMapRuntime_getMapSprite(uint32_t index,
+int EspMapRuntime_getMapSpriteBase(uint32_t index,
                                       EspMapSprite* outSprite);
 const EspNativeGameplayHudState* __real_EspNativeGameplayHud_view(void);
 EspPlayerViewMoveStatus __real_EspPlayerView_commitPreparedMove(
@@ -360,7 +360,7 @@ static int rawDefTile(uint32_t spriteIndex, uint16_t* outDefTile) {
     if (EspNativeGameplayCrateState_effectiveDefTile(spriteIndex, outDefTile)) {
         return 1;
     }
-    if (!__real_EspMapRuntime_getMapSprite(spriteIndex, &sprite)) return 0;
+    if (!EspMapRuntime_getMapSpriteBase(spriteIndex, &sprite)) return 0;
     lookup = sprite.info & RESOURCE_DEF_MASK;
     if ((sprite.info & RESOURCE_DEF_TILE_FLAG) != 0U) {
         lookup += RESOURCE_DEF_TILE_BASE;
@@ -976,7 +976,7 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
             if (applied[i].dynamicDrop == 0U) {
                 EspMapSprite source;
                 if (applied[i].spriteIndex == UINT16_MAX ||
-                    !__real_EspMapRuntime_getMapSprite(
+                    !EspMapRuntime_getMapSpriteBase(
                         applied[i].spriteIndex, &source)) {
                     printf("[PICKUPMINI] SKIP sprite=%u reason=source-unavailable cosmetic=yes\n",
                            (unsigned int)applied[i].spriteIndex);
