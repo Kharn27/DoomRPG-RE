@@ -358,21 +358,14 @@ def main():
         (4,"type != ACTIVESEQ_TYPE_ENEMY","type == ACTIVESEQ_TYPE_ENEMY"),
         (4,"(sprite.info & ACTIVESEQ_SPRITE_NO_ACTIVATE) != 0U",
              "(sprite.info & ACTIVESEQ_SPRITE_NO_ACTIVATE) == 0U"),
-        (4,"EspNativeGameplayMonsterActivation_observeVisible(",
-             "EspNativeGameplayMonsterActivation_observeVisibleFake("),
+        (4,"tile = (uint16_t)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK);",
+             "tile = 0U;"),
     )
     for which,original,changed in mutations:
         text=bodies[which]
         require(text.count(original)==1,"mutant anchor drift: "+original)
         variant=list(bodies)
         variant[which]=text.replace(original,changed,1)
-        # Mutation replacing the final activation call with a deliberately
-        # non-existent function must fail at build, not merely at runtime:
-        # apply a semantically valid null-effect instead.
-        if "observeVisibleFake(" in variant[which]:
-            variant[which]=variant[which].replace(
-                "(void)EspNativeGameplayMonsterActivation_observeVisibleFake(",
-                "(void)0 && EspNativeGameplayMonsterActivation_observeVisible(")
         run(variant,False)
     print("PASS RC21: five real C bodies, 14 adversarial mutants rejected")
 
