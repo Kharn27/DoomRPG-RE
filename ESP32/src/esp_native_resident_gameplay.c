@@ -1293,8 +1293,13 @@ static void serviceSelect(DoomRPG_t* doomRpg,
             secretFeedbackQueued = 1U;
         }
 
+        /* Stage only accepted 0->1 SELECT cues. The actual audio publication
+         * waits for the FIRST successfully presented animation image, not the
+         * full four-frame settle; no early cue on failed first frame. */
+        EspNativeDoorSfx_stageSelectOpenings(&result);
         if (!renderActionCurrent(render, (uint8_t)view->viewAngle,
                                  "SELECT-DOOR")) {
+            EspNativeDoorSfx_cancelSelect();
             int feedbackRestored = 1;
             int playerRestored = 1;
             int actionRestored;
@@ -1354,6 +1359,7 @@ static void serviceSelect(DoomRPG_t* doomRpg,
                     intent->sequence, result.eventIndex, result.lineIndex);
             if (transitionStatus != ESP_NATIVE_GAMEPLAY_TRANSITION_WAIT_STATS &&
                 transitionStatus != ESP_NATIVE_GAMEPLAY_TRANSITION_HANDOFF_READY) {
+                EspNativeDoorSfx_cancelSelect();
                 const int rolledBack =
                     EspNativeGameplayAction_rollbackSelect(&result);
                 const int ownerReset =
@@ -1417,23 +1423,14 @@ static void serviceSelect(DoomRPG_t* doomRpg,
         }
         if (transitionDoor == 0U &&
             !EspNativeGameplayMonsterTurn_requestSelectDoor(intent->sequence)) {
+            EspNativeDoorSfx_cancelSelect();
             disableGameplay("select-door-monster-turn-request");
             return;
         }
 
-        /* All selective rollback paths (secret, frame, CHANGEMAP door) are
-         * closed. Publish exactly one original SFX per successfully changed
-         * line, never during an optimistic apply or failed animation frame. */
-        {
-            uint8_t doorIndex;
-            for (doorIndex = 0U; doorIndex < result.doorCount; ++doorIndex) {
-                const EspNativeGameplayActionDoorStep* step =
-                    &result.doors[doorIndex];
-                (void)EspNativeDoorSfx_publishCommitted(
-                    step->lineIndex, step->openBefore, step->openAfter,
-                    step->soundId, step->effectFlags);
-            }
-        }
+        /* Keep previous late commit for CLOSE and unanimated opens, but do
+         * not repeat an OPEN already emitted at its first visual frame. */
+        EspNativeDoorSfx_finishSelect(&result);
 
         printf("[RESIDENTGAMEPLAY] SELECT n=%u seq=%u doors=%u firstDoor=%u committed=yes redraw=yes collision=live animation=bounded-batch secret=%s sound=%s entityRelink=deferred turnAdvance=%s\n",
                (unsigned int)gameplayState.selects,
