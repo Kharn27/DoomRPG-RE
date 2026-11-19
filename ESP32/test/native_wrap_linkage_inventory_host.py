@@ -70,7 +70,9 @@ RETIRED_NORMAL_WRAPS = frozenset((
     "EspNativeGameplaySession_configure",
     "EspMapLineState_applyDoorCommand",
     "EspNativeGameplayDestructible_executeLineDeath",
-    "EspNativeGameplayDestructible_rollbackLineDeath"))
+    "EspNativeGameplayDestructible_rollbackLineDeath",
+    "EspNativeGameplayDispatch_commitMove",
+    "EspNativeGameplayDispatch_rollbackMove"))
 RETIRED_ALL_WRAPS = RETIRED_BRINGUP_WRAPS | RETIRED_NORMAL_WRAPS
 RETAINED_BRINGUP_WRAPS = frozenset((
     "EspNativeFirstFrame_route",
@@ -106,7 +108,7 @@ def declarations(config: str) -> dict[str, list[str]]:
                     f"duplicate ld --wrap in {section}: {symbol}")
             sections[section].append(symbol)
     base = sections.get("env:esp32-cyd")
-    require(base is not None and len(base) >= 16,
+    require(base is not None and len(base) >= 14,
             "missing canonical normal build or unexpectedly small --wrap inventory")
     require(REQUIRED.issubset(base), "missing required native boundary")
     require(len(sections.get("env:esp32-cyd-bringup", [])) >= 3,
@@ -250,7 +252,7 @@ def compare_release(normal: dict, inverted: dict) -> None:
 
 def self_test() -> None:
     real = declarations((PROJECT / "platformio.ini").read_text())
-    require(len(real["env:esp32-cyd"]) == 16, "expected ARCH-RC15 16 normal wraps")
+    require(len(real["env:esp32-cyd"]) == 14, "expected ARCH-RC16 14 normal wraps")
     require(len(real["env:esp32-cyd-bringup"]) == 3,
             "expected 3 surviving diagnostic extras after ARCH-RC1")
     require(set(real["env:esp32-cyd-bringup"]) == RETAINED_BRINGUP_WRAPS,
@@ -322,8 +324,9 @@ def self_test() -> None:
         pass
     else:
         raise AssertionError("release wrapper divergence accepted")
-    print("PASS ARCH-RC11 host self-test: 30+3 surviving declarations, 2 retired "
-          "bringup flags + 19 retired production/native wraps blocked, "
+    print(f"PASS ARCH-RC16 host self-test: {len(real['env:esp32-cyd'])}+"
+          f"{len(real['env:esp32-cyd-bringup'])} native GNU wraps; "
+          f"{len(RETIRED_ALL_WRAPS)} retired boundaries blocked, "
           "malformed/duplicate rejected, nm syntax, direct-call attribution, "
           "release mismatch rejected; linked != executed")
 

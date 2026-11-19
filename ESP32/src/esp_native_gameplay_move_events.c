@@ -114,11 +114,11 @@ static MoveMixedBatchOwner mixedBatchOwner;
 static uint8_t showBatchOwnerLogged;
 static uint8_t mixedBatchOwnerLogged;
 
-EspNativeGameplayDispatchStatus __real_EspNativeGameplayDispatch_commitMove(
+EspNativeGameplayDispatchStatus EspNativeGameplayDispatch_commitMoveBase(
     const EspPlayerViewState* expectedBeforeView,
     const EspPlayerViewState* preparedAfterView,
     EspNativeGameplayMoveResult* ioResult);
-EspNativeGameplayDispatchStatus __real_EspNativeGameplayDispatch_rollbackMove(
+EspNativeGameplayDispatchStatus EspNativeGameplayDispatch_rollbackMoveBase(
     const EspPlayerViewState* expectedAfterView,
     const EspPlayerViewState* restoreBeforeView,
     EspNativeGameplayMoveResult* ioResult);
@@ -2079,7 +2079,7 @@ int EspNativeGameplayMoveEvents_finishPendingMessage(uint32_t sequence) {
     return 1;
 }
 
-EspNativeGameplayDispatchStatus __wrap_EspNativeGameplayDispatch_commitMove(
+EspNativeGameplayDispatchStatus EspNativeGameplayDispatch_commitMove(
     const EspPlayerViewState* expectedBeforeView,
     const EspPlayerViewState* preparedAfterView,
     EspNativeGameplayMoveResult* ioResult) {
@@ -2160,7 +2160,7 @@ EspNativeGameplayDispatchStatus __wrap_EspNativeGameplayDispatch_commitMove(
         return ESP_NATIVE_GAMEPLAY_DISPATCH_COMMIT_FAILED;
     }
 
-    dispatchStatus = __real_EspNativeGameplayDispatch_commitMove(
+    dispatchStatus = EspNativeGameplayDispatch_commitMoveBase(
         expectedBeforeView, preparedAfterView, ioResult);
     if (dispatchStatus != ESP_NATIVE_GAMEPLAY_DISPATCH_OK) {
         if (exitResult.rollbackAvailable != 0U &&
@@ -2176,7 +2176,7 @@ EspNativeGameplayDispatchStatus __wrap_EspNativeGameplayDispatch_commitMove(
     logPhase("ENTER", ioResult->sequence, enterStatus, &enterResult);
     if (phaseUnsafe(enterStatus)) {
         EspNativeGameplayDispatchStatus rollbackStatus =
-            __real_EspNativeGameplayDispatch_rollbackMove(
+            EspNativeGameplayDispatch_rollbackMoveBase(
                 preparedAfterView, expectedBeforeView, ioResult);
         if (rollbackStatus != ESP_NATIVE_GAMEPLAY_DISPATCH_ROLLED_BACK ||
             (exitResult.rollbackAvailable != 0U &&
@@ -2222,7 +2222,7 @@ EspNativeGameplayDispatchStatus __wrap_EspNativeGameplayDispatch_commitMove(
     return ESP_NATIVE_GAMEPLAY_DISPATCH_OK;
 }
 
-EspNativeGameplayDispatchStatus __wrap_EspNativeGameplayDispatch_rollbackMove(
+EspNativeGameplayDispatchStatus EspNativeGameplayDispatch_rollbackMove(
     const EspPlayerViewState* expectedAfterView,
     const EspPlayerViewState* restoreBeforeView,
     EspNativeGameplayMoveResult* ioResult) {
@@ -2233,7 +2233,7 @@ EspNativeGameplayDispatchStatus __wrap_EspNativeGameplayDispatch_rollbackMove(
         return ESP_NATIVE_GAMEPLAY_DISPATCH_INVALID;
     }
 
-    status = __real_EspNativeGameplayDispatch_rollbackMove(
+    status = EspNativeGameplayDispatch_rollbackMoveBase(
         expectedAfterView, restoreBeforeView, ioResult);
     if (status != ESP_NATIVE_GAMEPLAY_DISPATCH_ROLLED_BACK) return status;
 

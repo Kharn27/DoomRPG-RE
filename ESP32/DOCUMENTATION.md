@@ -1,3 +1,9 @@
+## ARCH-RC16 — MOVE transaction native sans GNU --wrap, PASS CYD borné (PR #389)
+
+[Rapport RC16](MILESTONE_PR389_ARCH_RC16_MOVE_TRANSACTIONS_CYD_PASS.md) : 2 wrappers `Dispatch_commitMove/rollbackMove` remplacés par façades `MoveEvents` appelant des feuilles `Base` du dispatcher ; `PlayerView_commitPreparedMove` reste wrap (ramassages différés). Inventaire 14 production/17 bringup, quatre builds CI code SUCCESS, 4 vraies fonctions C compilées + 15 mutants rejetés. Capture CYD 3701 lignes : 83 déplacements commit, dialogue MOVE opcode26, 14 portes complètes, 7 HOLD/RELEASE, EXIT → LOAD V11 → décès → MAIN, 2 nettoyages empty, RAM HEADROOM_OK. 99 overflows AudioIntent antérieurs à #390 hors scope, rollback fautif non injecté, Serial sans SHA firmware. **PASS matériel strictement borné**, rapport ajouté docs-only après test.
+
+---
+
 ## AUDIO #377 — FIFO d'intentions réellement consommée : **PASS CYD borné** (19 novembre 2026)
 
 [PR #390](https://github.com/Kharn27/DoomRPG-RE/pull/390), [rapport de validation](MILESTONE_PR390_AUDIO_INTENT_FIFO_CYD_PASS.md), [#377](https://github.com/Kharn27/DoomRPG-RE/issues/377). Le propriétaire unique `EspEntranceMusic` traite `EspNativeAudioIntent_nextAfter`, puis ACK l'intent réellement consommé ; un defer PAK n'ACK pas et les transitions MENU/INTRO/LOAD écartent distinctement les anciens intents. FIFO 16×8B inchangée, vrai overflow non masqué, compteurs séparés overflow / cursor-gap / rejet PCM et trace finale `[AUDIOINTENT] AUDIT`. Code matériel `81a93de01c755491f26f6a1346d6f33e9fca17a0`, double CI initiale [push](https://github.com/Kharn27/DoomRPG-RE/actions/runs/44439414707) / [PR](https://github.com/Kharn27/DoomRPG-RE/actions/runs/44439421061) SUCCESS.
