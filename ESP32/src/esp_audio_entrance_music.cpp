@@ -722,11 +722,10 @@ static void mixPendingSfxOne() {
         if (genericSfx[i].active) mixGenericSfx(&genericSfx[i]);
     EspNativeAudioIntent next={};
     if (!EspNativeAudioIntent_nextAfter(sfxSeenSequence,&next)) return;
-    /* Unread burst sequence gaps are distinct from actual PCM mix failures. */
-    EspNativeAudioIntent_noteConsumerGap(sfxSeenSequence,next.sequence);
     const EspNativeAudioIntent* intent=&next;
     const uint16_t id=intent->resourceId;
     if ((intent->flags&ESP_NATIVE_AUDIO_STOP_ALL_FLAG)!=0U) {
+        EspNativeAudioIntent_noteConsumerGap(sfxSeenSequence,intent->sequence);
         sfxSeenSequence=intent->sequence;
         EspNativeAudioIntent_acknowledgeThrough(sfxSeenSequence);
         fireSfx.active=false;
@@ -736,6 +735,7 @@ static void mixPendingSfxOne() {
     }
     if (id!=5045U && id!=5046U && id!=5060U) {
         if (EspAssetPack_isOpen()) return;
+        EspNativeAudioIntent_noteConsumerGap(sfxSeenSequence,intent->sequence);
         sfxSeenSequence=intent->sequence;
         EspNativeAudioIntent_acknowledgeThrough(sfxSeenSequence);
         if (startGenericSfx(id))
@@ -752,6 +752,7 @@ static void mixPendingSfxOne() {
         return;
     }
     sfxDeferredSequence=0U;
+    EspNativeAudioIntent_noteConsumerGap(sfxSeenSequence,intent->sequence);
     sfxSeenSequence=intent->sequence;
     EspNativeAudioIntent_acknowledgeThrough(sfxSeenSequence);
     const uint32_t reader=__atomic_load_n(&rd,__ATOMIC_ACQUIRE);
