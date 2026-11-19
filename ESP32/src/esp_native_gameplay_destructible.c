@@ -9,15 +9,11 @@
 #include "esp_map_script_state.h"
 #include "esp_native_gameplay_destructible.h"
 
-/* Regular OPENLINE gameplay goes through the global door-animation wrapper.
+/* Regular OPENLINE gameplay goes through the public door-animation owner.
  * Legacy eType=12/eSubType=3 death does not animate the line: Entity_died()
  * reports "Door cleared!" and Game_remove()s the destructible.  Keep the same
- * OPENLINE mutation/rollback semantics here, but deliberately bypass only the
- * presentation wrapper for this bounded death route. */
-EspMapLineDoorStatus __real_EspMapLineState_applyDoorCommand(
-    const EspMapEventDescriptor* descriptor,
-    uint32_t commandOffset,
-    EspMapLineDoorResult* outResult);
+ * OPENLINE mutation/rollback semantics here, but deliberately call only the
+ * Base line-state leaf for this bounded death route. */
 
 static int descriptorForTile(uint16_t tile,
                              EspMapEventDescriptor* outDescriptor) {
@@ -144,7 +140,7 @@ EspNativeGameplayDestructible_preflightLineDeath(
 }
 
 EspNativeGameplayDestructibleStatus
-EspNativeGameplayDestructible_executeLineDeath(
+EspNativeGameplayDestructible_executeLineDeathBase(
     uint16_t eventTile,
     uint16_t expectedLineIndex,
     EspNativeGameplayDestructibleResult* outResult) {
@@ -163,7 +159,7 @@ EspNativeGameplayDestructible_executeLineDeath(
     if (status != ESP_NATIVE_GAMEPLAY_DESTRUCTIBLE_OK) return status;
 
     memset(&door, 0, sizeof(door));
-    if (__real_EspMapLineState_applyDoorCommand(&descriptor, commandOffset, &door) !=
+    if (EspMapLineState_applyDoorCommandBase(&descriptor, commandOffset, &door) !=
             ESP_MAP_LINE_DOOR_OK ||
         door.mutated != 1U || door.codeId != ESP_MAP_OPCODE_OPENLINE ||
         door.lineIndex != expectedLineIndex ||
@@ -197,7 +193,7 @@ EspNativeGameplayDestructible_executeLineDeath(
     return ESP_NATIVE_GAMEPLAY_DESTRUCTIBLE_OK;
 }
 
-int EspNativeGameplayDestructible_rollbackLineDeath(
+int EspNativeGameplayDestructible_rollbackLineDeathBase(
     const EspNativeGameplayDestructibleResult* result) {
     uint8_t openNow;
     uint8_t removedNow;

@@ -490,6 +490,9 @@ jobs:
       - name: ARCH-RC14 four SAVE HUB/input/session GNU wraps retired and 11 C mutants
         run: python ESP32/test/native_save_wrapper_boundary_host.py
 
+      - name: ARCH-RC15 raw OPENLINE, animated doors and destructible rollback (12 real-C mutants)
+        run: python ESP32/test/native_line_door_transaction_boundary_host.py
+
       - name: ARCH-RC13 four SELECT/service/reset GNU wraps retired, actual owner C and 11 mutants
         run: python ESP32/test/native_action_owner_chain_host.py
 
