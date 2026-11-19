@@ -294,6 +294,7 @@ def scan():
         "[env:esp-cyd-inverted]",1)[0]
     require(len(re.findall(r"^\s+-Wl,--wrap=",base,re.M))==4,
             "RC21 requires exactly 4 production GNU wrappers")
+    old_aliases = []
     for symbol in ("EspMapRuntime_getMapSprite",
                    "EspNativeBspVisibility_mapSpriteVisible"):
         require("-Wl,--wrap="+symbol not in config,
@@ -301,9 +302,11 @@ def scan():
         for file in SRC.iterdir():
             if file.suffix not in (".c",".cpp"):
                 continue
-            require(not re.search(r"\b__(?:real|wrap)_"+symbol+r"\b",
-                                  file.read_text()),
-                    "obsolete linker alias in "+file.name)
+            if re.search(r"\\b__(?:real|wrap)_"+symbol+r"\\b",
+                         file.read_text()):
+                old_aliases.append(file.name+":"+symbol)
+    require(not old_aliases,
+            "obsolete linker aliases: "+repr(sorted(old_aliases)))
     require("EspMapRuntime_getMapSpriteBase(" in SOURCES["activation"],
             "activation must inspect immutable source sprite (no recursion)")
     require("EspNativeBspVisibility_mapSpriteVisibleBase(" in SOURCES["activation"],
