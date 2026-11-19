@@ -58,7 +58,7 @@ def scan():
     require(len(source_files) >= 178, "incomplete production source inventory")
     normal = CONFIG.split("[env:esp32-cyd]", 1)[1].split(
         "[env:esp-cyd-inverted]", 1)[0]
-    require(len(re.findall(r"^\s+-Wl,--wrap=", normal, re.M)) == 8,
+    require(len(re.findall(r"^\s+-Wl,--wrap=", normal, re.M)) == 6,
             "expected exactly eight remaining production GNU wrappers")
     for name in RETIRED:
         require("-Wl,--wrap=" + name not in CONFIG, "retired flag " + name)
@@ -92,7 +92,7 @@ def scan():
                          ("include/esp_map_line_state.h", "EspMapLineState_viewBase")):
         require(symbol + "(" in (ROOT / path).read_text(),
                 "raw native leaf API not exposed: " + symbol)
-    print("PASS RC19 scan: 178+ real C/C++ units, 8+3 GNU wraps, "
+    print("PASS RC19 scan: 178+ real C/C++ units, 6+3 GNU wraps, "
           "two exclusive public adapters and two explicit Base leaves")
 
 

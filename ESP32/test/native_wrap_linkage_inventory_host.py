@@ -77,7 +77,9 @@ RETIRED_NORMAL_WRAPS = frozenset((
     "EspAssetPack_residentBegin",
     "PlatformInput_setTapCallback",
     "EspMapRuntime_getLine",
-    "EspMapLineState_view"))
+    "EspMapLineState_view",
+    "EspMapSpriteTopology_getEntity",
+    "EspMapSpriteTopology_getVisualState"))
 RETIRED_ALL_WRAPS = RETIRED_BRINGUP_WRAPS | RETIRED_NORMAL_WRAPS
 RETAINED_BRINGUP_WRAPS = frozenset((
     "EspNativeFirstFrame_route",
@@ -113,7 +115,7 @@ def declarations(config: str) -> dict[str, list[str]]:
                     f"duplicate ld --wrap in {section}: {symbol}")
             sections[section].append(symbol)
     base = sections.get("env:esp32-cyd")
-    require(base is not None and len(base) >= 8,
+    require(base is not None and len(base) >= 6,
             "missing canonical normal build or unexpectedly small --wrap inventory")
     require(REQUIRED.issubset(base), "missing required native boundary")
     require(len(sections.get("env:esp32-cyd-bringup", [])) >= 3,
@@ -257,7 +259,7 @@ def compare_release(normal: dict, inverted: dict) -> None:
 
 def self_test() -> None:
     real = declarations((PROJECT / "platformio.ini").read_text())
-    require(len(real["env:esp32-cyd"]) == 8, "expected ARCH-RC19 8 normal wraps")
+    require(len(real["env:esp32-cyd"]) == 6, "expected ARCH-RC20 6 normal wraps")
     require(len(real["env:esp32-cyd-bringup"]) == 3,
             "expected 3 surviving diagnostic extras after ARCH-RC1")
     require(set(real["env:esp32-cyd-bringup"]) == RETAINED_BRINGUP_WRAPS,
@@ -329,7 +331,7 @@ def self_test() -> None:
         pass
     else:
         raise AssertionError("release wrapper divergence accepted")
-    print(f"PASS ARCH-RC19 host self-test: {len(real['env:esp32-cyd'])}+"
+    print(f"PASS ARCH-RC20 host self-test: {len(real['env:esp32-cyd'])}+"
           f"{len(real['env:esp32-cyd-bringup'])} native GNU wraps; "
           f"{len(RETIRED_ALL_WRAPS)} retired boundaries blocked, "
           "malformed/duplicate rejected, nm syntax, direct-call attribution, "

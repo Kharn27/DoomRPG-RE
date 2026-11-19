@@ -1,3 +1,11 @@
+## ARCH-RC20 — lectures topologiques directes et confirmation SFX legacy
+
+[PR #403](https://github.com/Kharn27/DoomRPG-RE/pull/403) ; [rapport et trace CYD](MILESTONE_ARCH_RC20_TOPOLOGY_READS.md). Les getters canoniques `EspMapSpriteTopology_getEntityBase/getVisualStateBase` n'appellent jamais les projections ; ActionEngine applique la suppression et les caisses, ProjectionOverlay applique les ressources/consommés et l'attaque, puis MonsterCombat exporte les noms publics inchangés avec mort/cadavre/gib/pain. **6 wrappers production, 9 bringup**. CrateState doit lire `getEntityBase` pour éviter la récursion ; `renderTurn` et ses transactions restent protégés. Double CI code SUCCESS (push #44630600220, PR #44630615163), 9 corps C réels/14 mutants + 4 ELFs.
+
+Test vrai classic CYD `platformio-device-monitor-261119-235308.log` : 79 previews, 10 portes complètes dont 5 différées, 8 dialogues clos, 40 séquences monstres, combats/morts/drops, chargement V11, 2 resets/menu propres et RAM HEADROOM_OK, AUDIOINTENT audits zéro overflow/drop, aucune musique underrun/recovery. **Zombie `alt=1 weapon=3` → SFX 5047** : correct dans `EntityMonster.c` (`Attack2`) et `Combat.c` (son associé au bit d'attaque alternative), pistolet `Attack1=5046` seulement si `alt=0`. Aucun changement audio, aucun bug RC20. Une mesure `gapsOver500Ms=1` sans underrun ; ne pas la masquer. Après capture : modifications docs-only, attribution du SHA code par contexte, intégration/CI final à vérifier avant mise en revue.
+
+---
+
 ## ARCH-RC19 — lectures BSP dynamiques sans GNU wrappers
 
 [PR #398](https://github.com/Kharn27/DoomRPG-RE/pull/398) ; [preuve hardware et limites](MILESTONE_PR398_ARCH_RC19_DYNAMIC_LINE_READS_CYD_PASS.md). Les getters publics `EspMapRuntime_getLine` / `EspMapLineState_view` conservent la composition scoped renderer ; les feuilles immuables/mutables `Base` remplacent les `__real_` sans refaire la mécanique `renderTurn`. **8 wrappers production, 11 bringup** ; vrai CYD : NEW GAME + LOAD V11, 44 previews, 4 portes complètes, 2 HOLD→RELEASE, 2 resets propres, 2 HEADROOM_OK, 5 audits FIFO sans overflow, zéro underrun/recovery, une seule mesure `gapsOver90us=1`. Premier CI échoué sur le harnais historique périmé et corrigé sans changer le firmware : final CI à confirmer avant merge. Attribution firmware par contexte seulement, pas SHA dans Serial.
