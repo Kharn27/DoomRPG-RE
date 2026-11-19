@@ -303,7 +303,7 @@ def scan():
         for file in SRC.iterdir():
             if file.suffix not in (".c",".cpp"):
                 continue
-            if re.search(r"\\b__(?:real|wrap)_"+symbol+r"\\b",
+            if re.search(r"\b__(?:real|wrap)_"+symbol+r"\b",
                          file.read_text()):
                 old_aliases.append(file.name+":"+symbol)
     require(not old_aliases,
