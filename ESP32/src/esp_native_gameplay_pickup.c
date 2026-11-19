@@ -147,7 +147,7 @@ void EspNativeGameplayPickup_reset(void) {
     memset(&hudOverlay, 0, sizeof(hudOverlay));
 }
 
-int __wrap_EspMapRuntime_getMapSprite(uint32_t index,
+int EspNativeGameplayPickup_getMapSprite(uint32_t index,
                                      EspMapSprite* outSprite) {
     if (!EspMapRuntime_getMapSpriteBase(index, outSprite)) return 0;
     if (outSprite != NULL && consumed(index)) {
