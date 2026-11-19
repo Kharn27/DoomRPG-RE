@@ -26,3 +26,7 @@ Test matériel de référence : `esp32-cyd`, attendre les cinq panneaux
 sans toucher, puis refaire le démarrage après renommage de
 `credits.bmp` pour vérifier le fallback. Les logs `[BOOTLEGALS]`
 permettent de distinguer `source=sd-bmp24` et `g.bmp+port-credit`.
+
+Le PNG de travail ne fait plus partie de la branche : le dépôt contient
+uniquement le BMP final fourni par l'utilisateur. La validation sur vrai CYD
+reste nécessaire avant fusion de la PR.
