@@ -326,7 +326,7 @@ def run(bodies,good):
         exe=Path(d)/"real"
         src.write_text(full)
         p=subprocess.run(["cc","-std=c11","-O0","-Wall","-Wextra",
-                          "-Werror",str(src),"-o",str(exe)],
+                          "-Werror","-Wno-unused-function",str(src),"-o",str(exe)],
                          capture_output=True,text=True)
         require(p.returncode==0,"host C fixture failed to compile: "+p.stderr)
         q=subprocess.run([str(exe)],capture_output=True,text=True)
