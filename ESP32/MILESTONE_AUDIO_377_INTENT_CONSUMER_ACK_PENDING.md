@@ -1,4 +1,11 @@
-# AUDIO #377 — AudioIntent FIFO consumer ACK (awaiting CYD validation)
+# AUDIO #377 — AudioIntent FIFO consumer ACK (pre-hardware design)
+
+**STATUS: CYD SERIAL PASS — superseded by the actual hardware report**
+[MILESTONE_PR390_AUDIO_INTENT_FIFO_CYD_PASS.md](MILESTONE_PR390_AUDIO_INTENT_FIFO_CYD_PASS.md),
+test `platformio-device-monitor-261119-111849.log`. Original acceptance
+checklist below is kept as the immutable **pre-test plan**, not as current
+pending status. The tested code HEAD is `81a93de01c755491f26f6a1346d6f33e9fca17a0`;
+this file is modified documentation-only after the hardware test.
 
 ## Evidence and baseline (real hardware, not this code)
 
