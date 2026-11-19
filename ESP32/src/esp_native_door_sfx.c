@@ -80,6 +80,28 @@ uint8_t EspNativeDoorSfx_onFirstPresentedOpeningFrame(void) {
     return queued;
 }
 
+/*
+ * MOVE close 5064: the canonical mutation / rollback lease is already
+ * committed, but the first visible close may be delayed by a monster turn.
+ * Drain only after a successfully presented first animation frame. Each
+ * 8-byte door slot consumes its cue exactly once; reset/rollback discards it.
+ */
+uint8_t EspNativeDoorSfx_onFirstPresentedHeldClosingFrame(void) {
+    uint8_t queued = 0U;
+    uint16_t lineIndex;
+
+    while (EspNativeDoorAnimator_takePresentedDeferredCloseSound(&lineIndex)) {
+        if (EspNativeDoorSfx_publishCommitted(
+                lineIndex, 1U, 0U, ESP_MAP_LINE_SOUND_CLOSE,
+                ESP_MAP_LINE_EFFECT_PLAY_SOUND)) {
+            ++queued;
+            printf("[DOORSFX] CLOSE-START line=%u open=1->0 sound=5064 priority=2 queued=yes phase=first-visible-frame after-monster-turn=yes\n",
+                   (unsigned int)lineIndex);
+        }
+    }
+    return queued;
+}
+
 void EspNativeDoorSfx_finishSelect(
     const EspNativeGameplayActionResult* result) {
     uint8_t i;
