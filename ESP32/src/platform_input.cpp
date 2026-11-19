@@ -25,7 +25,9 @@ extern "C" void PlatformInput_requireFreshTapAfterRelease(void) {
     gFreshReleaseSince = 0;
 }
 
-extern "C" void PlatformInput_setTapCallback(PlatformTapCallback callback) {
+/* ARCH-RC18: low-level native callback leaf. The public registration facade
+ * owns MENU_MAIN gating; NULL WAIT_STATS refusal remains local and unchanged. */
+extern "C" void PlatformInput_setTapCallbackBase(PlatformTapCallback callback) {
     /* WAIT_STATS deliberately requests the normal gameplay tap consumer to be
      * removed. Give the bounded native map-transition bridge first refusal on
      * that NULL handoff; every other caller keeps the historical setter
