@@ -45,3 +45,39 @@ def restore_pre_audio_door_resident(source):
         "        EspNativeDoorSfx_finishSelect(&result);\n\n",
         "", "select-final")
     return source.encode("utf-8") if binary else source
+
+
+def restore_pre_audio_door_dynamic(source):
+    """Restore exact old dynamic-door C for frozen SDL-F28 SHA test only."""
+    binary = isinstance(source, bytes)
+    if binary:
+        source = source.decode("utf-8")
+    imports = (
+        "#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n"
+        '#include "esp_native_door_sfx.h"\n'
+        '#include "esp_audio_entrance_music.h"\n'
+        "#endif\n"
+    )
+    first_visual = (
+        "\n#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n"
+        "            /*\n"
+        "             * The frame has just been physically presented and the PAK\n"
+        "             * lease released. OPEN 5063 must start HERE, not after all four\n"
+        "             * ~100ms frames. The usual render-compositor audio pump has\n"
+        "             * already run, so service the new SFX immediately at this safe\n"
+        "             * boundary. CLOSE and MOVE publications retain their original\n"
+        "             * rollback-aware timing.\n"
+        "             */\n"
+        "            if (animationFrame.ordinal == 1U &&\n"
+        "                EspNativeDoorSfx_onFirstPresentedOpeningFrame() != 0U) {\n"
+        "                EspEntranceMusic_pumpGameplay();\n"
+        "            }\n"
+        "#endif\n"
+    )
+    for exact, label in (
+        (imports, "bounded imports"),
+        (first_visual, "first-frame SFX hook"),
+    ):
+        assert source.count(exact) == 1, ("AUDIO-DOOR dynamic inverse drift", label, source.count(exact))
+        source = source.replace(exact, "", 1)
+    return source.encode("utf-8") if binary else source
