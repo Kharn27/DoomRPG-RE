@@ -58,19 +58,28 @@ def restore_pre_audio_door_dynamic(source):
         '#include "esp_audio_entrance_music.h"\n'
         "#endif\n"
     )
+    # The post-AUDIO-DOOR hook now also admits held MOVE-close 5064
+    # after its first physically presented frame. Historical SDL-F28
+    # reconstruction still removes this one exact, reviewed hook and
+    # verifies the original whole source against the unchanged Git SHA.
     first_visual = (
         "\n#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n"
         "            /*\n"
-        "             * The frame has just been physically presented and the PAK\n"
-        "             * lease released. OPEN 5063 must start HERE, not after all four\n"
-        "             * ~100ms frames. The usual render-compositor audio pump has\n"
-        "             * already run, so service the new SFX immediately at this safe\n"
-        "             * boundary. CLOSE and MOVE publications retain their original\n"
-        "             * rollback-aware timing.\n"
+        "             * Both door cues follow physical presentation, with the PAK\n"
+        "             * lease closed. OPEN 5063 is emitted after its first opening\n"
+        "             * frame; held MOVE-close 5064 is staged at MOVE commit and\n"
+        "             * emitted only after the first visible closing frame FOLLOWING\n"
+        "             * the monster turn. Other closes keep their commit timing.\n"
+        "             * This hook never runs on failed/held/unpresented frames.\n"
         "             */\n"
-        "            if (animationFrame.ordinal == 1U &&\n"
-        "                EspNativeDoorSfx_onFirstPresentedOpeningFrame() != 0U) {\n"
-        "                EspEntranceMusic_pumpGameplay();\n"
+        "            if (animationFrame.ordinal == 1U) {\n"
+        "                const uint8_t opened =\n"
+        "                    EspNativeDoorSfx_onFirstPresentedOpeningFrame();\n"
+        "                const uint8_t closed =\n"
+        "                    EspNativeDoorSfx_onFirstPresentedHeldClosingFrame();\n"
+        "                if (opened != 0U || closed != 0U) {\n"
+        "                    EspEntranceMusic_pumpGameplay();\n"
+        "                }\n"
         "            }\n"
         "#endif\n"
     )
