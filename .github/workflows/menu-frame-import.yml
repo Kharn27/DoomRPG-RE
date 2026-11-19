@@ -1,0 +1,42 @@
+name: Import UAC frame BMP assets (one shot)
+
+on:
+  push:
+    branches:
+      - agent/menu-uac-frame-bmp-assets
+
+permissions:
+  contents: write
+
+jobs:
+  install-two-exact-bmps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Download the two exact generated BMPs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p sdroot/doomrpg/img
+          curl --fail --location --silent --show-error --retry 3 --max-time 120 \
+            "https://at.adobe.com/vHkO1w1AglnYq3ea" \
+            -o sdroot/doomrpg/img/menu_frame_120.bmp
+          curl --fail --location --silent --show-error --retry 3 --max-time 120 \
+            "https://at.adobe.com/6Y1APf7y5dQSYFYe" \
+            -o sdroot/doomrpg/img/menu_frame_240.bmp
+          echo "3ed326faf1ab8617b6ddcea788b29f7d7bcf181964b7a8032d0325c981a8aa69  sdroot/doomrpg/img/menu_frame_120.bmp" | sha256sum -c -
+          echo "e202155218f2ba917f011a3eebf6f28f9f251f77325d5d8f8d9a2d0f70f87609  sdroot/doomrpg/img/menu_frame_240.bmp" | sha256sum -c -
+          file sdroot/doomrpg/img/menu_frame_*.bmp
+      - name: Commit assets and remove this temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add sdroot/doomrpg/img/menu_frame_120.bmp sdroot/doomrpg/img/menu_frame_240.bmp
+          git rm .github/workflows/menu-frame-import.yml
+          git commit -m "ASSETS: add 120px and 240px UAC menu frame BMPs"
+          git push origin HEAD:refs/heads/agent/menu-uac-frame-bmp-assets
