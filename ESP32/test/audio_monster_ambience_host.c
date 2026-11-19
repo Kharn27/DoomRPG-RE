@@ -9,9 +9,9 @@
 #include "esp_native_audio_intent.h"
 #include "esp_native_monster_ambience.h"
 
-static EspNativeGameplayMonsterRecord fakeRecords[4];
+static EspNativeGameplayMonsterRecord fakeRecords[6];
 static EspNativeGameplayMonsterView fakeView;
-static uint16_t order[4];
+static uint16_t order[6];
 static uint32_t activeCount,restored;
 static int soundOn=1;
 static uint32_t published;
@@ -23,7 +23,7 @@ const EspNativeGameplayMonsterView* EspNativeGameplayMonsterState_view(void) {
     return fakeView.sourceArenaFNV1a!=0U ? &fakeView : NULL;
 }
 const EspNativeGameplayMonsterRecord* EspNativeGameplayMonsterState_find(uint16_t sprite) {
-    for (unsigned i=0;i<4U;++i)
+    for (unsigned i=0;i<6U;++i)
         if (fakeRecords[i].spriteIndex==sprite) return &fakeRecords[i];
     return NULL;
 }
@@ -48,9 +48,9 @@ static void setup(uint32_t arena) {
     memset(fakeRecords,0,sizeof(fakeRecords));
     memset(&fakeView,0,sizeof(fakeView));
     fakeView.sourceArenaFNV1a=arena;
-    fakeView.count=4U;
+    fakeView.count=6U;
     fakeView.records=fakeRecords;
-    for (unsigned i=0;i<4U;++i) {
+    for (unsigned i=0;i<6U;++i) {
         fakeRecords[i].spriteIndex=(uint16_t)(100U+i);
         fakeRecords[i].alive=1U;
         order[i]=(uint16_t)(100U+i);
@@ -72,7 +72,12 @@ int main(void) {
     assert(EspNativeMonsterAmbience_sightSettling(101U,150U));
     assert(EspNativeMonsterAmbience_sightSettling(101U,499U));
     assert(!EspNativeMonsterAmbience_sightSettling(101U,500U));
-    assert(!EspNativeMonsterAmbience_sightSettling(100U,151U));
+    /* A same-frame Imp must wait even though the Pinky won the ONE sight
+     * sound: this is the exact zombie+other-monster field regression. */
+    assert(EspNativeMonsterAmbience_sightSettling(100U,151U));
+    assert(EspNativeMonsterAmbience_sightSettling(100U,499U));
+    assert(!EspNativeMonsterAmbience_sightSettling(100U,500U));
+    assert(!EspNativeMonsterAmbience_sightSettling(102U,151U));
     /* A confirmed first door frame pumps sight while idle is disabled.
      * Subsequent animation frames and the later main-loop tick are deduped. */
     EspNativeMonsterAmbience_service(250U,1,0);
@@ -83,6 +88,7 @@ int main(void) {
     EspNativeMonsterAmbience_service(1200U,1,1);
     assert(sightCount==2U && lastId==5097U); /* only new Malwrath */
     assert(EspNativeMonsterAmbience_sightSettling(102U,1549U));
+    assert(!EspNativeMonsterAmbience_sightSettling(100U,1201U));
     assert(!EspNativeMonsterAmbience_sightSettling(102U,1550U));
     /* Initial timer 8100ms from first gameplay tick. */
     EspNativeMonsterAmbience_service(8100U,1,0);
@@ -110,10 +116,54 @@ int main(void) {
     activeCount=4U;
     EspNativeMonsterAmbience_service(15001U,1,1);
     assert(sightCount==1U && lastId==5087U);
-    /* New map arena restarts the 8-second initial idle timer. */
+    /* New map arena restarts the 8-second initial idle timer and guard. */
     fakeView.sourceArenaFNV1a=0xaabbccddU;activeCount=1U;restored=0U;
     EspNativeMonsterAmbience_service(16000U,1,1);
     assert(sightCount==2U);
-    puts("[MONSTERAMBIENT-HOST] PASS sight highest subtype, once, idle timer, sound OFF, LOAD baseline, arena swap");
+    assert(!EspNativeMonsterAmbience_sightSettling(103U,16000U));
+
+    /* Reproduction from CYD: a Zombie subtype 0 (sprite 100) and Imp
+     * subtype 3 (sprite 101) activate in one render batch. Only one Imp
+     * cry is played, but BOTH attack poses must wait until t=500. */
+    setup(0x87654321U);
+    fakeRecords[0].mType=0U;fakeRecords[0].subtype=0U; /* Zombie */
+    fakeRecords[1].mType=3U;fakeRecords[1].subtype=3U; /* Imp */
+    fakeRecords[2].mType=5U;fakeRecords[2].subtype=5U; /* Pinky */
+    EspNativeMonsterAmbience_service(100U,1,0);
+    activeCount=2U;
+    EspNativeMonsterAmbience_service(150U,1,0);
+    assert(sightCount==1U && (lastId==5070U || lastId==5071U));
+    assert(EspNativeMonsterAmbience_sightSettling(100U,150U));
+    assert(EspNativeMonsterAmbience_sightSettling(101U,499U));
+    assert(!EspNativeMonsterAmbience_sightSettling(100U,500U));
+    assert(!EspNativeMonsterAmbience_sightSettling(102U,200U));
+    /* A second newly visible group arrives DURING the first 350ms hold.
+     * The earlier cohort still expires on schedule, independently. */
+    activeCount=3U;
+    EspNativeMonsterAmbience_service(300U,1,0);
+    assert(sightCount==2U && lastId==5093U);
+    assert(EspNativeMonsterAmbience_sightSettling(100U,499U));
+    assert(!EspNativeMonsterAmbience_sightSettling(100U,500U));
+    assert(EspNativeMonsterAmbience_sightSettling(102U,649U));
+    assert(!EspNativeMonsterAmbience_sightSettling(102U,650U));
+
+    /* Four overlapping cohorts fit in fixed slots; the fifth must safely
+     * merge with the latest, NEVER evict a live earlier sight hold. */
+    setup(0x55667788U);
+    EspNativeMonsterAmbience_service(50U,1,0);
+    for (uint32_t i=0U;i<5U;++i) {
+        activeCount=i+1U;
+        EspNativeMonsterAmbience_service(100U+i*50U,1,0);
+    }
+    assert(sightCount==5U);
+    assert(EspNativeMonsterAmbience_sightSettling(100U,449U));
+    assert(!EspNativeMonsterAmbience_sightSettling(100U,450U));
+    assert(EspNativeMonsterAmbience_sightSettling(103U,649U));
+    assert(EspNativeMonsterAmbience_sightSettling(104U,649U));
+    assert(!EspNativeMonsterAmbience_sightSettling(103U,650U));
+    assert(!EspNativeMonsterAmbience_sightSettling(104U,650U));
+    EspNativeMonsterAmbience_service(700U,0,0);
+    assert(!EspNativeMonsterAmbience_sightSettling(104U,700U));
+    puts("[MONSTERAMBIENT-HOST] PASS one winner sound, all sight-cohort guards, independent overlap, bounded saturation, idle, SOUND OFF, LOAD and arena reset");
     return 0;
 }

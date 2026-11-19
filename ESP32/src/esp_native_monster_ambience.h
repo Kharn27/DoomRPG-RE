@@ -9,7 +9,7 @@ extern "C" {
  * one event per newly observed frame group (legacy Game_activate/soundMonster).
  * Idle: one active living monster at a legacy-like sparse random interval.
  * Restored activation prefix does not replay old sight cries. */
-/* Presentation-only first-sight guard: no enemy-turn or RNG mutation. */
+/* Presentation-only 350ms guard for EVERY newly activated member of the\n * one-sight-cry render cohort (not only the highest-subtype cry winner).\n * A restored activation prefix and SOUND OFF never arm a new guard.\n * No enemy-turn, renderer, save ABI, heap or gameplay RNG mutation. */
 int EspNativeMonsterAmbience_sightSettling(uint16_t spriteIndex,
                                           uint32_t nowMs);
 void EspNativeMonsterAmbience_service(uint32_t nowMs,
