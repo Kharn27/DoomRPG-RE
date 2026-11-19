@@ -252,7 +252,7 @@ MUTANTS = (
      "if (dynamicFrameActive) return 1;"),
     ("lose-overlay-fail-closed", "line",
      "if (!EspMapLineState_getOpen(index, &open)) return 0;",
-     "if (0) return 0;"),
+     "if (!EspMapLineState_getOpen(index, &open)) { open = 0U; return 1; }"),
     ("wrong-open-flag", "line",
      "outLine->flags |= RENDER_LINE_FLAG_SPRITE_SPAN;",
      "outLine->flags &= RENDER_LINE_FLAG_SPRITE_SPAN;"),
