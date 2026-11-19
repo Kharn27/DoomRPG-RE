@@ -129,7 +129,7 @@ static uint32_t dynamicOpenLineReads, dynamicAnimatedLineReads;
 static uint32_t dynamicTextureVariantReads;
 static int ready=1, lineReady=1, open=0, failOpen=0, textures=0;
 static int failTexture=0, moveLine=0, failAnimate=0;
-static int rawCalls=0, viewCalls=0, openCalls=0, textureCalls=0;
+static int openCalls=0, textureCalls=0;
 static int animateCalls=0, displacementCalls=0;
 const EspMapRuntimeView* EspMapRuntime_view(void) {
     return ready ? &runtime : NULL;
