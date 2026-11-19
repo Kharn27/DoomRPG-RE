@@ -45,6 +45,8 @@ def restore_pre_rc21(filename, original):
         edits = (
             ("EspMapRuntime_getMapSpriteBase(",
              "__real_EspMapRuntime_getMapSprite(", 2),
+            ("int EspNativeGameplayPickup_getMapSprite(",
+             "int __wrap_EspMapRuntime_getMapSprite(", 1),
         )
     elif filename == "esp_native_gameplay_player_resources.c":
         edits = (
