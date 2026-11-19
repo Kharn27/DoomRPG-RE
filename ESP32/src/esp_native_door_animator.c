@@ -212,10 +212,12 @@ int EspNativeDoorAnimator_stageCommittedDeferredCloseSound(
     slot = &animator.slots[index];
     if (slot->active == 0U || slot->openBefore != 1U ||
         slot->targetOpen != 0U ||
-        slot->reserved[0] == 0U || slot->reserved[1] != 0U ||
+        slot->reserved[0] == 0U ||
         slot->position != ESP_NATIVE_DOOR_ANIMATION_MOVING_FRAMES) {
         return 0;
     }
+    /* Replayed commit notification for the same held line is idempotent:
+     * never fall through to the immediate 5064 publisher. */
     slot->reserved[1] = 1U;
     return 1;
 }
