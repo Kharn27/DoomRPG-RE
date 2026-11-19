@@ -329,8 +329,8 @@ def main():
          "*outVisualState |= 0x40U;"),
         (7, "MONSTER_PAIN_VISUAL", "MONSTER_CORPSE_VISUAL"),
         (8, "*outLinkOrder = 0U;", "*outLinkOrder = 7U;"),
-        (8, "outLinkState &= (uint16_t)~",
-         "outLinkState &= (uint16_t)"),
+        (8, "~(ESP_MAP_SPRITE_TOPOLOGY_LINKED |",
+         "~(0U |"),
     )
     for i, (body_index, original, changed) in enumerate(changes):
         altered = list(bodies)
