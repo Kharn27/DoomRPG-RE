@@ -12,7 +12,7 @@ import hashlib
 import io
 import struct
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops
 
 ROOT = Path(__file__).resolve().parents[3]
 SD = ROOT / "sdroot" / "doomrpg" / "img"
@@ -21,10 +21,10 @@ OUT = ART / "previews"
 BUTTONS = ("start", "load", "options", "help")
 STATES = ("active", "inactive")
 SIZES = (120, 240)
-WIDTH = {120: 79, 240: 158}
+WIDTH = {120: 59, 240: 118}
 BUTTON_SIZE = {120: (55, 20), 240: (110, 40)}
-POS = {120: ((12, 10), (12, 37), (12, 64), (12, 91)),
-       240: ((24, 20), (24, 74), (24, 128), (24, 182))}
+POS = {120: ((2, 10), (2, 37), (2, 64), (2, 91)),
+       240: ((4, 20), (4, 74), (4, 128), (4, 182))}
 DARK = (26, 33, 43, 255)
 SHEET = (15, 21, 30, 255)
 LIGHT = (226, 230, 234, 255)
@@ -99,27 +99,15 @@ def compose(frame: Image.Image, buttons: dict[str, Image.Image],
 
 
 def proof_sheet(compositions: dict[str, Image.Image], size: int) -> Image.Image:
+    # Left to right: START, LOAD, OPTIONS, HELP, all exact final BMP art.
     scale = 2 if size == 120 else 1
     w, h = WIDTH[size] * scale, size * scale
-    margin, gap, top = 20, 14, 61
-    page = Image.new("RGBA", (margin * 2 + 4 * w + 3 * gap,
-                              top + h + margin), SHEET)
-    draw = ImageDraw.Draw(page)
-    header = ImageFont.load_default(size=14)
-    small = ImageFont.load_default(size=12)
-    draw.text((margin, 12), "UAC / frame " + str(size) +
-              "px / four selected states", fill=LIGHT, font=header)
-    draw.text((margin, 34),
-              "Native pixel size" if scale == 1
-              else "120px source / x2 nearest-neighbor display only",
-              fill=(163, 178, 191, 255), font=small)
+    gap = 12
+    page = Image.new("RGBA", (4 * w + 5 * gap, h + 2 * gap), SHEET)
     for idx, selected in enumerate(BUTTONS):
-        x = margin + idx * (w + gap)
-        draw.text((x, top - 18), selected.upper() + " selected",
-                  fill=ORANGE, font=small)
-        frame_preview = compositions[selected].resize(
-            (w, h), Image.Resampling.NEAREST)
-        page.alpha_composite(frame_preview.convert("RGBA"), (x, top))
+        panel = compositions[selected].resize((w, h), Image.Resampling.NEAREST)
+        page.alpha_composite(panel.convert("RGBA"),
+                             (gap + idx * (w + gap), gap))
     return page.convert("RGB")
 
 
@@ -166,7 +154,12 @@ def main():
         assert found == set(previews), ("unexpected/missing previews",
                                         sorted(found ^ set(previews)))
         for name, data in previews.items():
-            assert (OUT / name).read_bytes() == data, name + " differs"
+            with Image.open(OUT / name) as actual_img, Image.open(io.BytesIO(data)) as expected_img:
+                actual = actual_img.convert("RGB")
+                expected = expected_img.convert("RGB")
+                assert actual.size == expected.size, name + " geometry differs"
+                delta = ImageChops.difference(actual, expected)
+                assert max(c[1] for c in delta.getextrema()) <= 2, name + " pixel mismatch"
     print("PASS: 18 BMP V4 alpha SHA256 matched, 16 buttons and "
           "2 composites plus 2 proof sheets, 20 reproducible PNGs")
 

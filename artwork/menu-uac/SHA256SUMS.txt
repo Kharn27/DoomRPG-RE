@@ -1,6 +1,6 @@
-# SHA256: 18 final UAC BMPs in sdroot/doomrpg/img/ (PR #399)
-3ed326faf1ab8617b6ddcea788b29f7d7bcf181964b7a8032d0325c981a8aa69  sdroot/doomrpg/img/menu_frame_120.bmp
-e202155218f2ba917f011a3eebf6f28f9f251f77325d5d8f8d9a2d0f70f87609  sdroot/doomrpg/img/menu_frame_240.bmp
+# SHA256: UAC tight bezel P2 118px; original 16 button pixels preserved
+694e9ae29169adf731f85195bb581bff6f2b6cdb84b4a92feddd46c34f0ea260  sdroot/doomrpg/img/menu_frame_120.bmp
+343b29a61a665d4a92335bf0155d0686f807687fdeb2240776fa4b83ab7f58a7  sdroot/doomrpg/img/menu_frame_240.bmp
 3e07d8ea55520cbb47c6a73e5f01e0aac78a351738e7bac05afabacd1d86cc81  sdroot/doomrpg/img/menu_help_active_120.bmp
 63054b67f2c7c6024e4e1392dd34cb165e074eef6f810b518fca0804ad9ecb55  sdroot/doomrpg/img/menu_help_active_240.bmp
 c70c02fe8e8565ebc38460b924a8080d9c10f16057356faa74813d04a3936274  sdroot/doomrpg/img/menu_help_inactive_120.bmp
