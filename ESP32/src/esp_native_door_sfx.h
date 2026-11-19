@@ -41,4 +41,24 @@ static inline int EspNativeDoorSfx_publishCommitted(
     return published != 0;
 }
 
+/*
+ * SELECT open-only first-visual-frame audio lease.
+ * A completed line mutation is staged before rendering but NOT enqueued.
+ * The animation owner publishes after the first real frame succeeds; the
+ * existing safe main-task music pump is then invoked immediately.
+ * Ordinary late publication remains the fallback for non-animated doors.
+ * Closing SFX (5064) retain their proven existing commit point.
+ *
+ * A visible first animation frame cannot be rolled back acoustically if
+ * a later frame fails; the sound represents the already observed motion.
+ * No sound is emitted for an unpresented/failed FIRST frame.
+ */
+struct EspNativeGameplayActionResult_s;
+void EspNativeDoorSfx_stageSelectOpenings(
+    const struct EspNativeGameplayActionResult_s* result);
+uint8_t EspNativeDoorSfx_onFirstPresentedOpeningFrame(void);
+void EspNativeDoorSfx_cancelSelect(void);
+void EspNativeDoorSfx_finishSelect(
+    const struct EspNativeGameplayActionResult_s* result);
+
 #endif
