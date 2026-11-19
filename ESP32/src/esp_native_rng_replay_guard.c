@@ -244,7 +244,7 @@ int EspNativeRngReplayGuard_commitProbeBoundary(Random_t* liveRandom,
  * speculative consumer can still roll Random_t back and have its immediate
  * live commit replay the exact same post-refill table.
  */
-byte __wrap_DoomRPG_randNextByte(Random_t* rand) {
+byte DoomRPG_randNextByte(Random_t* rand) {
     int next;
 
     if (rand == NULL) return 0U;
@@ -349,7 +349,7 @@ byte __wrap_DoomRPG_randNextByte(Random_t* rand) {
  * the hidden DoomRPG_setRand() generator when a transactional word draw crosses
  * its legacy refill boundary.
  */
-int __wrap_DoomRPG_randNextInt(Random_t* rand) {
+int DoomRPG_randNextInt(Random_t* rand) {
     int next;
     uint32_t word;
 
