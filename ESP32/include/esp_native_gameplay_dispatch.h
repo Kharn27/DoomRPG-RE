@@ -125,6 +125,22 @@ EspNativeGameplayDispatchStatus EspNativeGameplayDispatch_rollbackMove(
     const EspPlayerViewState* restoreBeforeView,
     EspNativeGameplayMoveResult* ioResult);
 
+/*
+ * ARCH-RC16: raw dispatcher position leaves. Only the native MOVE event
+ * transaction owner calls these; gameplay callers must use the public
+ * commitMove/rollbackMove pair above to preserve EXIT/ENTER effects,
+ * rollback leases, BUSY rejection and fail-closed preflights.
+ * No additional state and no legacy mutation in either leaf.
+ */
+EspNativeGameplayDispatchStatus EspNativeGameplayDispatch_commitMoveBase(
+    const EspPlayerViewState* expectedBeforeView,
+    const EspPlayerViewState* preparedAfterView,
+    EspNativeGameplayMoveResult* ioResult);
+EspNativeGameplayDispatchStatus EspNativeGameplayDispatch_rollbackMoveBase(
+    const EspPlayerViewState* expectedAfterView,
+    const EspPlayerViewState* restoreBeforeView,
+    EspNativeGameplayMoveResult* ioResult);
+
 #ifdef __cplusplus
 }
 #endif
