@@ -37,7 +37,7 @@ static inline int EspNativeDoorSfx_publishCommitted(
      * the existing animation slot and publish at first visible close frame. */
     if (openBefore == 1U && openAfter == 0U &&
         EspNativeDoorAnimator_stageCommittedDeferredCloseSound(lineIndex)) {
-        printf("[DOORSFX] CLOSE-STAGED line=%u open=1->0 sound=5064 priority=2 queued=no phase=held-before-monster-turn rollback=closed\\n",
+        printf("[DOORSFX] CLOSE-STAGED line=%u open=1->0 sound=5064 priority=2 queued=no phase=held-before-monster-turn rollback=closed\n",
                (unsigned int)lineIndex);
         return 1;
     }
