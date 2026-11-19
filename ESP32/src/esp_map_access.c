@@ -49,7 +49,7 @@ int EspMapRuntime_getNode(uint32_t index, EspMapNode* outNode) {
     return 1;
 }
 
-int EspMapRuntime_getLine(uint32_t index, EspMapLine* outLine) {
+int EspMapRuntime_getLineBase(uint32_t index, EspMapLine* outLine) {
     const EspMapRuntimeView* view = EspMapRuntime_view();
     const uint8_t* raw;
 

@@ -52,8 +52,8 @@ static uint8_t textureBits;
 static EspNativePlaneRenderStats planes;
 static EspNativeGameplayHudState hud;
 
-const EspMapLineStateView* __wrap_EspMapLineState_view(void);
-int __wrap_EspMapRuntime_getLine(uint32_t index, EspMapLine* out);
+/* RC19 uses public getters; this harness only supplies raw Base leaves. */
+
 
 size_t heap_caps_get_free_size(unsigned int caps) { (void)caps; return 100000U; }
 unsigned int DoomRPG_GetUpTimeMS(void) { return clockMs; }
@@ -110,12 +110,12 @@ EspMapSpriteTopologyStatus EspMapSpriteTopology_applyHide(
 }
 int EspMapLineState_isReady(void) { return 1; }
 int EspMapLineTextureState_isReady(void) { return 1; }
-const EspMapLineStateView* EspMapLineState_view(void) { return &lineView; }
+const EspMapLineStateView* EspMapLineState_viewBase(void) { return &lineView; }
 const EspMapLineTextureStateView* EspMapLineTextureState_view(void) { return &textureView; }
 int EspMapLineState_getOpen(uint32_t index, uint8_t* open) {
     assert(index == 0U); *open = 1; return 1;
 }
-int EspMapRuntime_getLine(uint32_t index, EspMapLine* out) {
+int EspMapRuntime_getLineBase(uint32_t index, EspMapLine* out) {
     assert(index == 0U); memset(out, 0, sizeof(*out));
     out->flags = 0x20000000U; out->texture = 9U; return 1;
 }
@@ -237,7 +237,7 @@ int EspNativeResidentGameplay_redrawAutomap(struct Render_s* render, const char*
      * the immutable BSP line rather than the transient opened-door adapter. */
     {
         EspMapLine originalLine;
-        assert(__wrap_EspMapRuntime_getLine(0U, &originalLine));
+        assert(EspMapRuntime_getLine(0U, &originalLine));
         assert(originalLine.texture == 9U);
         assert((originalLine.flags & 0x20000000U) != 0U);
     }
@@ -291,8 +291,8 @@ EspNativeFirstFrameStatus EspNativeFirstFrame_renderGameplayViewport(
     memset(out, 0, sizeof(*out));
     if (!frameOk) return ESP_NATIVE_FIRST_FRAME_RENDER_FAILED;
     /* The REAL dynamic scope must keep an opened door/texture variant usable. */
-    assert(__wrap_EspMapLineState_view()->openCount == 0U);
-    assert(__wrap_EspMapRuntime_getLine(0, &line) && line.texture == 10U);
+    assert(EspMapLineState_view()->openCount == 0U);
+    assert(EspMapRuntime_getLine(0, &line) && line.texture == 10U);
     assert((line.flags & 0x20000000U) == 0U && (line.flags & 2U));
     for (unsigned y = 20; y < 100; ++y) for (unsigned x = 0; x < 160; ++x)
         pixels[1 + y * 160 + x] = 0;

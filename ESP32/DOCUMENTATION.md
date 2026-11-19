@@ -1,3 +1,9 @@
+## ARCH-RC19 — lectures BSP dynamiques sans GNU wrappers
+
+[PR #398](https://github.com/Kharn27/DoomRPG-RE/pull/398) ; [preuve hardware et limites](MILESTONE_PR398_ARCH_RC19_DYNAMIC_LINE_READS_CYD_PASS.md). Les getters publics `EspMapRuntime_getLine` / `EspMapLineState_view` conservent la composition scoped renderer ; les feuilles immuables/mutables `Base` remplacent les `__real_` sans refaire la mécanique `renderTurn`. **8 wrappers production, 11 bringup** ; vrai CYD : NEW GAME + LOAD V11, 44 previews, 4 portes complètes, 2 HOLD→RELEASE, 2 resets propres, 2 HEADROOM_OK, 5 audits FIFO sans overflow, zéro underrun/recovery, une seule mesure `gapsOver90us=1`. Premier CI échoué sur le harnais historique périmé et corrigé sans changer le firmware : final CI à confirmer avant merge. Attribution firmware par contexte seulement, pas SHA dans Serial.
+
+---
+
 ## ARCH-RC18 — PAK/flash et callback tactile sans wrappers : **double CI + PASS matériel CYD borné** (19 novembre 2026)
 
 [PR #395](https://github.com/Kharn27/DoomRPG-RE/pull/395), [rapport CYD](MILESTONE_PR395_ARCH_RC18_TRANSITION_HANDOFFS_CYD_PASS.md). Base initiale `95ba27cfd486639f8a03e324aedd380956b21388`, HEAD code `69158c99ce63c24f95de940641bc88b4f81e52ca` ; retrait de `--wrap=EspAssetPack_residentBegin` et `--wrap=PlatformInput_setTapCallback` : **12→10 production, 15→13 bringup**. Façades propriétaires explicites → feuilles `Base`, oracle host vrais corps C++, branche refus/rollback PAK et gate WAIT_STATS ; double CI code [push 44533381922](https://github.com/Kharn27/DoomRPG-RE/actions/runs/44533381922) / [PR 44533391533](https://github.com/Kharn27/DoomRPG-RE/actions/runs/44533391533), **SUCCESS 218/218 chacune**.

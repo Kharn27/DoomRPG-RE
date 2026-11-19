@@ -85,8 +85,8 @@ int __real_EspNativeGameplayFrame_renderTurn(
     struct Render_s* render,
     uint8_t angle,
     EspNativeGameplayFrameStats* outStats);
-int __real_EspMapRuntime_getLine(uint32_t index, EspMapLine* outLine);
-const EspMapLineStateView* __real_EspMapLineState_view(void);
+int EspMapRuntime_getLineBase(uint32_t index, EspMapLine* outLine);
+const EspMapLineStateView* EspMapLineState_viewBase(void);
 
 static void compactLineZ(const EspMapLine* line,
                          int32_t* outZ1,
@@ -192,13 +192,13 @@ static int resolveDynamicTexture(uint32_t index,
     return 1;
 }
 
-int __wrap_EspMapRuntime_getLine(uint32_t index, EspMapLine* outLine) {
+int EspMapRuntime_getLine(uint32_t index, EspMapLine* outLine) {
     uint8_t open;
     uint16_t effectiveTexture;
     int16_t displacement;
 
     animatedClip.valid = 0U;
-    if (!__real_EspMapRuntime_getLine(index, outLine)) return 0;
+    if (!EspMapRuntime_getLineBase(index, outLine)) return 0;
     if (!dynamicFrameActive) return 1;
     if (!EspMapLineState_getOpen(index, &open)) return 0;
 
@@ -265,8 +265,8 @@ int EspNativeDynamicLineRender_clipLine(struct Line_s* lineBase) {
     return EspNativeRenderGeometry_clipLine(line);
 }
 
-const EspMapLineStateView* __wrap_EspMapLineState_view(void) {
-    const EspMapLineStateView* real = __real_EspMapLineState_view();
+const EspMapLineStateView* EspMapLineState_view(void) {
+    const EspMapLineStateView* real = EspMapLineState_viewBase();
 
     if (!dynamicFrameActive || real == NULL) return real;
     renderLineStateView = *real;
@@ -280,7 +280,7 @@ static int renderDynamicFrame(struct Render_s* render,
                               uint8_t angle,
                               EspNativeGameplayFrameStats* outStats,
                               const EspNativeDoorAnimationFrame* animationFrame) {
-    const EspMapLineStateView* realBefore = __real_EspMapLineState_view();
+    const EspMapLineStateView* realBefore = EspMapLineState_viewBase();
     uint32_t openCount = realBefore != NULL ? realBefore->openCount : 0U;
     int ok;
 
