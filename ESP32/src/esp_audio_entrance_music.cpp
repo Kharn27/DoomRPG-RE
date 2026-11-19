@@ -1554,3 +1554,27 @@ void EspEntranceMusic_pumpGameplay(void) {
      * the prior early return, a full ring must not starve active SFX. */
     if (phase==kPlay) mixPendingSfx();
 }
+
+/* UAC-P1: lengthy optional SD BMP read/render must not starve the 16KiB
+ * title-music ring (~743ms). This is NOT a background thread; callers are
+ * already on the same Arduino task, after closing the TFT write transaction.
+ * A two-handle BMP renderer + the single existing WAV reader stays inside
+ * the FAT descriptor budget. No sound/file open/close or SFX dispatch here. */
+uint32_t EspEntranceMusic_pumpMenuPreview(void) {
+    if (phase!=kPlay || !activeMenuTrack || !fileOpen ||
+        ring==nullptr || !EspAssetPack_musicSdSafe()) return 0U;
+    const uint32_t q=queued();
+    if (q>kRingCapacity || q>kRingCapacity-kMaxBlockSamples) return 0U;
+    const uint32_t before=reads;
+    const uint32_t limit=q<kPrimeFrames?
+        kCatchUpRefillBlocks:kNormalRefillBlocks;
+    ++pumpCalls;
+    if (q<kPrimeFrames) ++catchUpBursts;
+    for (uint32_t burst=0U;burst<limit;++burst) {
+        if (!refill()) { closeMusic(failure);break; }
+        if (queued()>kRingCapacity-kMaxBlockSamples) break;
+    }
+    const uint32_t added=reads-before;
+    pumpBlockReads+=added;
+    return added;
+}

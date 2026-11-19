@@ -116,6 +116,7 @@ static DoomRPG_t* lastRecoveryOwner;
 
 static Owners* EspNativeRootOwners_live(void) { return &owners; }
 static void disableMainMenuTouchForTransition(void) { ++disabledCount; }
+static void EspUacMenuPreview_reset(void) { /* host-only no-op: optional preview */ }
 static DoomRpgEsp32MainMenuDispatchResult
 DoomRPG_esp32MainMenuDispatchConfirmed(DoomRPG_t* root, int item) {
     assert(root != NULL);

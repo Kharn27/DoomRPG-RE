@@ -8,6 +8,7 @@
 #include "platform_video_config.h"
 #include "esp_native_backlight.h"
 #include "esp_native_orientation.h"
+#include "esp_uac_menu_preview.h"
 #include "doomrpg_log.h"
 
 namespace {
@@ -346,6 +347,16 @@ void PlatformVideo_clear(uint16_t color) {
 bool PlatformVideo_present() {
     if (platformDisplay == nullptr || framebuffer == nullptr) {
         return false;
+    }
+
+    /* Experimental UAC owns the *physical* scanout only while MENU_MAIN is
+     * active. Do not briefly display the old dashboard before every UAC
+     * selection (flicker/two SPI frame writes). The proven normal presenter
+     * below remains entirely unchanged for classic and gameplay. */
+    if (EspUacMenuPreview_mode() != 0) {
+        if (EspUacMenuPreview_draw(platformDisplay, framebuffer,
+                                   DOOMRPG_LOGICAL_WIDTH)) return true;
+        EspUacMenuPreview_reset(); /* on any SD error, full classic repaint */
     }
 
     uint16_t outputRow[DOOMRPG_PHYSICAL_WIDTH];

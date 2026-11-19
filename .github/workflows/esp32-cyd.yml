@@ -32,6 +32,12 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: UAC-P1 bounded BMP32 alpha decoder, corruption and touch (host C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/src/esp_uac_bmp32.c ESP32/test/uac_bmp32_host.c -o /tmp/doomrpg-uac-bmp32
+          /tmp/doomrpg-uac-bmp32
+          python ESP32/test/uac_sha256_manifest_host.py
+
       - name: Test AUDIO-R1 bounded PCM, DAC GPIO26 and game handoff (host C)
         run: python ESP32/test/audio_r1_analog_pcm_host.py
 
