@@ -89,7 +89,7 @@ static void freeCache(const char* reason) {
     }
     cacheMode=0;cacheSlots=0;cacheBytes=0;
     if(slots)Serial.printf(
-        "[UAC] CACHE FREE reason=%s mode=%d slots=%u bytes=%u heap8=%lu->%lu largest8=%lu\\n",
+        "[UAC] CACHE FREE reason=%s mode=%d slots=%u bytes=%u heap8=%lu->%lu largest8=%lu\n",
         reason,previous,slots,bytes,
         (unsigned long)before,
         (unsigned long)heap_caps_get_free_size(MALLOC_CAP_8BIT),
@@ -111,7 +111,7 @@ static void allocateCache(int m){
         cacheBytes+=(unsigned)kCacheSlotBytes;
     }
     Serial.printf(
-        "[UAC] CACHE ALLOC mode=%d slots=%u/8 bytes=%u reserve8=%lu heap8=%lu->%lu largest8=%lu fallback=SD\\n",
+        "[UAC] CACHE ALLOC mode=%d slots=%u/8 bytes=%u reserve8=%lu heap8=%lu->%lu largest8=%lu fallback=SD\n",
         m,cacheSlots,cacheBytes,(unsigned long)kCacheReserve8,
         (unsigned long)before,
         (unsigned long)heap_caps_get_free_size(MALLOC_CAP_8BIT),
@@ -378,7 +378,7 @@ static bool warmCache(const uint16_t* fb,uint16_t stride,int m){
     unsigned ready=0;
     for(int i=0;i<4;++i)for(int s=0;s<2;++s)ready+=cacheReady[i][s]?1U:0U;
     Serial.printf(
-        "[UAC] CACHE WARM mode=%d filled=%u ready=%u/%u batches=%u ms=%lu heap8=%lu largest8=%lu\\n",
+        "[UAC] CACHE WARM mode=%d filled=%u ready=%u/%u batches=%u ms=%lu heap8=%lu largest8=%lu\n",
         m,filled,ready,cacheSlots,reads,(unsigned long)(millis()-begin),
         (unsigned long)heap_caps_get_free_size(MALLOC_CAP_8BIT),
         (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
