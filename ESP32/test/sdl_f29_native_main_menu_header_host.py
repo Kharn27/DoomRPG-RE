@@ -95,6 +95,12 @@ def original_body_parity() -> None:
         # former .c modules, each with its own original SDL.h include.
         # Restore every one of those original imports before whole-blob SHA.
         restored = current.replace(marker, old_import).decode("utf-8")
+        # ARCH-RC18 changed only the public menu callback handoff names.
+        # Restore those exact pre-RC18 aliases before the frozen F29 Git SHA,
+        # without updating, weakening, or replacing any historical SHA.
+        if filename == "native_main_menu_touch.c":
+            from arch_rc18_history import restore_pre_rc18_menu_touch
+            restored = restore_pre_rc18_menu_touch(restored)
         # Sound activation is the only later intentional menu behavior delta.
         # Reverse it exactly without changing the historical frozen blobs.
         if filename == "native_main_menu_actions.c":

@@ -410,7 +410,7 @@ static int gateSelectedItem = 0;
 static int lastTappedItem = -1;
 static uint32_t gateTapCount = 0;
 
-void __real_PlatformInput_setTapCallback(PlatformTapCallback callback);
+void PlatformInput_setTapCallbackBase(PlatformTapCallback callback);
 
 static int gateHitItem(int16_t screenX, int16_t screenY) {
     /* The gate and the painter use exactly the same four rectangles. */
@@ -435,7 +435,7 @@ static void registerMainMenuHitboxOverlay(void) {
 
 static void disableMainMenuTouchForTransition(void) {
     downstreamTapCallback = NULL;
-    __real_PlatformInput_setTapCallback(NULL);
+    PlatformInput_setTapCallbackBase(NULL);
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
     Esp32PlatformVideo_debugOverlayClear();
 #endif
@@ -543,7 +543,9 @@ static void gatedTap(int16_t screenX,
  * validated select/confirm gate; other callbacks (currently bounded Options/Help Back owners)
  * pass through unchanged.
  */
-void __wrap_PlatformInput_setTapCallback(PlatformTapCallback callback) {
+/* ARCH-RC18: explicit native facade for menu-gated registration.
+ * Generic sampling remains in PlatformInput_setTapCallbackBase(). */
+void PlatformInput_setTapCallback(PlatformTapCallback callback) {
     gateSelectedItem = 0;
     lastTappedItem = -1;
     gateTapCount = 0;
@@ -575,11 +577,11 @@ void __wrap_PlatformInput_setTapCallback(PlatformTapCallback callback) {
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
         registerMainMenuHitboxOverlay();
 #endif
-        __real_PlatformInput_setTapCallback(gatedTap);
+        PlatformInput_setTapCallbackBase(gatedTap);
         printf("[MENUTOUCH] GATE READY initialSelected=0 dashboard=2x2 firstTap=bright-arm secondReleasedSameTap=confirm startAction=enabled loadAction=enabled optionsAction=enabled helpAction=enabled\n");
     }
     else {
         downstreamTapCallback = callback;
-        __real_PlatformInput_setTapCallback(callback);
+        PlatformInput_setTapCallbackBase(callback);
     }
 }

@@ -1780,7 +1780,9 @@ uint8_t EspAssetPack_mapFlashCachedMapId(void)
     return cached.currentMapId;
 }
 
-int EspAssetPack_residentBegin(void)
+/* ARCH-RC18: raw resident-cache leaf; the public begin transaction lives in
+ * esp_asset_pack_perf_probe.cpp and stages verified map flash first. */
+extern "C" int EspAssetPack_residentBeginBase(void)
 {
     if (openReady) {
         return 0;
