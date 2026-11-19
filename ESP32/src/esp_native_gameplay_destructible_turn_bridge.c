@@ -19,27 +19,19 @@ typedef struct DestructibleTurnBridge_s {
 
 static DestructibleTurnBridge destructibleTurn;
 
-EspNativeGameplayDestructibleStatus
-__real_EspNativeGameplayDestructible_executeLineDeath(
-    uint16_t eventTile,
-    uint16_t expectedLineIndex,
-    EspNativeGameplayDestructibleResult* outResult);
-int __real_EspNativeGameplayDestructible_rollbackLineDeath(
-    const EspNativeGameplayDestructibleResult* result);
-
 /* A successful line-death transaction is still rollback-capable while the
  * action engine composes its remaining presentation/commit work. Arm only a
  * tiny intent here. The intent is converted into a monster-turn request later,
  * when the downstream MonsterTurn view is first observed after action service.
- * If action composition rolls the line death back first, the rollback wrapper
+ * If action composition rolls the line death back first, the rollback owner
  * cancels the intent exactly. */
 EspNativeGameplayDestructibleStatus
-__wrap_EspNativeGameplayDestructible_executeLineDeath(
+EspNativeGameplayDestructible_executeLineDeath(
     uint16_t eventTile,
     uint16_t expectedLineIndex,
     EspNativeGameplayDestructibleResult* outResult) {
     EspNativeGameplayDestructibleStatus status =
-        __real_EspNativeGameplayDestructible_executeLineDeath(
+        EspNativeGameplayDestructible_executeLineDeathBase(
             eventTile, expectedLineIndex, outResult);
 
     if (status == ESP_NATIVE_GAMEPLAY_DESTRUCTIBLE_OK && outResult != NULL &&
@@ -56,9 +48,9 @@ __wrap_EspNativeGameplayDestructible_executeLineDeath(
     return status;
 }
 
-int __wrap_EspNativeGameplayDestructible_rollbackLineDeath(
+int EspNativeGameplayDestructible_rollbackLineDeath(
     const EspNativeGameplayDestructibleResult* result) {
-    int rolledBack = __real_EspNativeGameplayDestructible_rollbackLineDeath(result);
+    int rolledBack = EspNativeGameplayDestructible_rollbackLineDeathBase(result);
     if (rolledBack && destructibleTurn.pending != 0U && result != NULL &&
         result->lineIndex == destructibleTurn.lineIndex) {
         destructibleTurn.pending = 0U;

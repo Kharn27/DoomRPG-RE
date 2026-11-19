@@ -327,7 +327,9 @@ EspMapLineDoorStatus EspMapLineState_previewDoorCommand(
     return prepareDoorCommand(descriptor, commandOffset, outResult, &targetOpen);
 }
 
-EspMapLineDoorStatus EspMapLineState_applyDoorCommand(
+/* Raw line-state mutation leaf. The native door animator is the sole public
+ * composition owner and destructible line death deliberately calls Base. */
+EspMapLineDoorStatus EspMapLineState_applyDoorCommandBase(
     const EspMapEventDescriptor* descriptor,
     uint32_t commandOffset,
     EspMapLineDoorResult* outResult) {

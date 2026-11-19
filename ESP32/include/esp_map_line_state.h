@@ -103,6 +103,14 @@ EspMapLineDoorStatus EspMapLineState_previewDoorCommand(
     uint32_t commandOffset,
     EspMapLineDoorResult* outResult);
 
+/* Immutable command decode + mutable line-state write only. Internal bypass
+ * for jammed-door death: no regular door presentation/animation is scheduled. */
+EspMapLineDoorStatus EspMapLineState_applyDoorCommandBase(
+    const EspMapEventDescriptor* descriptor,
+    uint32_t commandOffset,
+    EspMapLineDoorResult* outResult);
+
+/* Permanent public owner: regular door scheduling after Base succeeds. */
 EspMapLineDoorStatus EspMapLineState_applyDoorCommand(
     const EspMapEventDescriptor* descriptor,
     uint32_t commandOffset,
