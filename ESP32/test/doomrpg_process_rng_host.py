@@ -191,6 +191,25 @@ int main(int argc, char** argv) {
     match(&actual, &expected);
     match_refill_after_probe(&actual, &expected);
 
+    /* RC17: same rollback/replay lease MUST work for a 4-byte WORD consumer,
+       not just for the one-byte draw. A second hidden refill would corrupt
+       the output and the original generator's seed on the next draw. */
+    EspNativeRngReplayGuard_reset();
+    actual.nextRand = expected.nextRand = 126;
+    before = actual;
+    word = DoomRPG_randNextInt(&actual);
+    Legacy_DoomRPG_setRand(&expected);
+    expectedWord = (uint32_t)expected.randTable[0] |
+        ((uint32_t)expected.randTable[1] << 8) |
+        ((uint32_t)expected.randTable[2] << 16) |
+        ((uint32_t)expected.randTable[3] << 24);
+    assert((uint32_t)word == expectedWord);
+    actual = before;
+    assert((uint32_t)DoomRPG_randNextInt(&actual) == expectedWord);
+    expected.nextRand = 4;
+    match(&actual, &expected);
+    match_refill_after_probe(&actual, &expected);
+
     /* An immediate speculative rollback replays the same table from the
        time-limited lease. This checks the hidden generator did NOT move twice. */
     EspNativeRngReplayGuard_reset();
