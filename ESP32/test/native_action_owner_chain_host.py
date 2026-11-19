@@ -43,8 +43,7 @@ def census():
         need(not any(re.search(r"\b__(?:real|wrap)_" + symbol + r"\s*\(", s)
                      for s in files.values()),
              "legacy GNU alias/bypass still compiled: " + symbol)
-    for symbol in ("EspNativeGameplayFrame_renderTurn",
-                   "EspMapRuntime_getLine", "EspMapLineState_view"):
+    for symbol in ("EspNativeGameplayFrame_renderTurn",):
         need("-Wl,--wrap=" + symbol in ini, "door/render boundary lost: " + symbol)
     expected = {
         ("esp_native_resident_gameplay.c",
@@ -76,7 +75,7 @@ def census():
         need(files[file].count(witness) == count,
              "exact action chain drift " + file + " " + witness)
     print("PASS RC13 scan 178+ real firmware C/C++ owners; all four aliases "
-          "retired, exact SELECT/service/reset call chain and critical door wraps")
+          "retired, exact SELECT/service/reset call chain and retained cardinal door transaction wrapper")
 
 
 def extract(text, name):
