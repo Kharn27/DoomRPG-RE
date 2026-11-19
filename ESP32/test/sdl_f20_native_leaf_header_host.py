@@ -42,7 +42,12 @@ for name, old_sha in BASELINE.items():
     assert current.count("#include <SDL.h>") == 1, name
     assert not re.search(r"\bSDL_[A-Za-z0-9_]+\b",
                          current[len(host_header):]), name
-    restored = "#include <SDL.h>\n" + current[len(host_header):]
+    # RC17 retired only the two RNG linker entry-name aliases. Rebuild the
+    # pre-RC17 bytes for this ONE frozen historical Git SHA; never move SHA
+    # targets or apply a permissive source comparison.
+    from arch_rc17_history import restore_pre_rc17
+    historical = restore_pre_rc17(name, current)
+    restored = "#include <SDL.h>\n" + historical[len(host_header):]
     assert git_blob(restored) == old_sha, name
     assert '#include "DoomRPG.h"' in current, name
 
