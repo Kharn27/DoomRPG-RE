@@ -1,4 +1,5 @@
 #include "esp_native_boot_legals.h"
+#include "esp_native_boot_legals_sd.h"
 #include "esp_asset_pack.h"
 
 #include <stdint.h>
@@ -9,15 +10,19 @@ enum {
     BOOT_FRAME_W = 128,
     BOOT_FRAME_H = 128,
     BOOT_FRAME_COUNT = 4, /* original g.bmp panels, unchanged */
-    BOOT_TOTAL_PANELS = BOOT_FRAME_COUNT + 1, /* native port credit */
     BOOT_SHEET_H = BOOT_FRAME_H * BOOT_FRAME_COUNT,
     BOOT_ROW_BYTES = BOOT_FRAME_W / 2,
     BOOT_ROW_BLOCK = 8,
+    BOOT_SD_FRAME_COUNT = 5,
+    BOOT_SD_SHEET_H = BOOT_FRAME_H * BOOT_SD_FRAME_COUNT,
+    BOOT_SD_ROW_BYTES = BOOT_FRAME_W * 3,
+    BOOT_SD_ROW_BLOCK = 4,
+    BOOT_SD_PIXEL_BYTES = BOOT_SD_ROW_BYTES * BOOT_SD_SHEET_H,
     BOOT_LOGICAL_W = 160,
     BOOT_LOGICAL_H = 120,
     BOOT_FRAME_X = (BOOT_LOGICAL_W - BOOT_FRAME_W) / 2,
     BOOT_FRAME_Y = (BOOT_LOGICAL_H - BOOT_FRAME_H) / 2,
-    /* CYD touch-to-skip: all five panels share the same readable 3s slot.
+    /* CYD touch-to-skip: all four original panels share the same 3s slot.
      * Original legacy 1501ms timing is intentionally superseded here. */
     BOOT_SCREEN_MILLIS = 3000
 };
@@ -26,9 +31,11 @@ typedef struct EspBootLegalsState_s {
     EspAssetPackEntry entry;
     uint16_t palette[16];
     uint32_t pixelOffset;
+    uint32_t sdPixelOffset;
     uint32_t frameStartedMs;
     uint8_t panel;
     uint8_t active;
+    uint8_t sdCustom;
 } EspBootLegalsState;
 
 static EspBootLegalsState legals;
@@ -58,6 +65,7 @@ static int sameEntry(const EspAssetPackEntry* a,
 }
 
 void EspNativeBootLegals_cancel(void) {
+    EspNativeBootLegalsSd_close();
     memset(&legals, 0, sizeof(legals));
 }
 
@@ -67,6 +75,41 @@ int EspNativeBootLegals_isActive(void) {
 
 unsigned int EspNativeBootLegals_currentPanel(void) {
     return legals.active ? (unsigned int)legals.panel + 1U : 0U;
+}
+
+/* A PNG decoder would need tens of KiB of temporary RAM on this no-PSRAM
+ * board. The user-facing PNG stays as the artwork source; the removable SD
+ * override uses an equivalent uncompressed RGB24 BMP with just 1.5 KiB of
+ * stack scratch. This is strictly an optional boot-time file. */
+static int preflightSdOverride(uint32_t* outOffset) {
+    uint8_t header[54];
+    uint32_t size = 0U;
+    int ok = 0;
+    if (outOffset != NULL) *outOffset = 0U;
+    if (EspAssetPack_isOpen() || !EspNativeBootLegalsSd_open(&size))
+        return 0;
+
+    if (size >= sizeof(header) && EspNativeBootLegalsSd_read(0U, header, sizeof(header))) {
+        const uint32_t pixelOffset = read32(header + 10);
+        const uint32_t imageBytes = read32(header + 34);
+        const uint32_t dibSize = read32(header + 14);
+        if (header[0] == 'B' && header[1] == 'M' &&
+            read32(header + 2) == size &&
+            (dibSize == 40U || dibSize == 124U) &&
+            read32(header + 18) == BOOT_FRAME_W &&
+            read32(header + 22) == BOOT_SD_SHEET_H &&
+            read16(header + 26) == 1U &&
+            read16(header + 28) == 24U &&
+            read32(header + 30) == 0U &&
+            (imageBytes == 0U || imageBytes == BOOT_SD_PIXEL_BYTES) &&
+            pixelOffset >= 14U + dibSize && pixelOffset <= size &&
+            BOOT_SD_PIXEL_BYTES <= size - pixelOffset) {
+            if (outOffset != NULL) *outOffset = pixelOffset;
+            ok = 1;
+        }
+    }
+    EspNativeBootLegalsSd_close();
+    return ok;
 }
 
 int EspNativeBootLegals_begin(uint32_t nowMs) {
@@ -121,7 +164,11 @@ int EspNativeBootLegals_begin(uint32_t nowMs) {
     legals.panel = 0;
     legals.active = 1;
     EspAssetPack_close();
-    printf("[BOOTLEGALS] BEGIN asset=g.bmp sheet=128x512 bpp=4 palette=%u panels=4 durationMs=3000 credit=Kharn27 creditMs=3000 pack=closed\n",
+    legals.sdCustom = (uint8_t)preflightSdOverride(&legals.sdPixelOffset);
+    printf("[BOOTLEGALS] OVERRIDE path=%s status=%s fallback=g.bmp panels=4 format=bmp24 pack=closed\n",
+           ESP_NATIVE_BOOT_LEGALS_SD_PATH,
+           legals.sdCustom ? "valid" : "missing-or-invalid");
+    printf("[BOOTLEGALS] BEGIN asset=g.bmp sheet=128x512 bpp=4 palette=%u panels=4 durationMs=3000 pack=closed\n",
            (unsigned int)colorsUsed);
     return 1;
 
@@ -132,134 +179,55 @@ fail:
     return 0;
 }
 
-/* Fifth screen: compact ROM-only 5x7 glyphs for the exact author credit.
- * Only letters used here are compiled; no bitmap asset, second framebuffer,
- * heap allocation, UI state owner, or SD/PAK read is introduced. */
-typedef struct BootCreditGlyph_s {
-    char ch;
-    uint8_t row[7];
-} BootCreditGlyph;
+/* Every panel is independent: open SD, seek/read four bottom-up rows,
+ * paint into the borrowed framebuffer, close SD. No resident image buffer.
+ * On ANY SD read/open failure the caller repaints this same panel from the
+ * original PAK (or ROM author-credit) and keeps the boot sequence alive. */
+static int drawSdPanel(uint16_t* framebuffer, size_t pixelCount) {
+    uint8_t packedRows[BOOT_SD_ROW_BYTES * BOOT_SD_ROW_BLOCK];
+    uint32_t size = 0U;
+    unsigned int blockY;
+    int ok = 0;
 
-static const BootCreditGlyph creditGlyphs[] = {
-    { 'E', {31,16,16,30,16,16,31} },
-    { 'S', {15,16,16,14, 1, 1,30} },
-    { 'P', {30,17,17,30,16,16,16} },
-    { '3', {30, 1, 1,14, 1, 1,30} },
-    { '2', {14,17, 1, 2, 4, 8,31} },
-    { 'C', {15,16,16,16,16,16,15} },
-    { 'Y', {17,17,10, 4, 4, 4, 4} },
-    { 'D', {30,17,17,17,17,17,30} },
-    { 'O', {14,17,17,17,17,17,14} },
-    { 'R', {30,17,17,30,20,18,17} },
-    { 'T', {31, 4, 4, 4, 4, 4, 4} },
-    { 'K', {17,18,20,24,20,18,17} },
-    { '7', {31, 1, 2, 4, 8, 8, 8} },
-    { 'm', { 0, 0,26,21,21,21,21} },
-    { 'a', { 0, 0,14, 1,15,17,15} },
-    { 'd', { 1, 1,13,19,17,19,13} },
-    { 'e', { 0, 0,14,17,31,16,14} },
-    { 'w', { 0, 0,17,17,21,21,10} },
-    { 'i', { 4, 0,12, 4, 4, 4,14} },
-    { 't', { 4, 4,31, 4, 4, 5, 2} },
-    { 'h', {16,16,22,25,17,17,17} },
-    { 'l', {12, 4, 4, 4, 4, 4,14} },
-    { 'o', { 0, 0,14,17,17,17,14} },
-    { 'v', { 0, 0,17,17,17,10, 4} },
-    { 'b', {16,16,22,25,17,25,22} },
-    { 'y', { 0, 0,17,17,15, 1,14} },
-    { 'n', { 0, 0,22,25,17,17,17} },
-    { 'r', { 0, 0,22,25,16,16,16} }
-};
+    if (EspAssetPack_isOpen() || !EspNativeBootLegalsSd_open(&size))
+        return 0;
+    if (legals.sdPixelOffset > size ||
+        BOOT_SD_PIXEL_BYTES > size - legals.sdPixelOffset)
+        goto close;
 
-static void creditPixel(uint16_t* framebuffer, int x, int y,
-                        uint16_t color) {
-    if (x >= 0 && x < BOOT_LOGICAL_W &&
-        y >= 0 && y < BOOT_LOGICAL_H)
-        framebuffer[y * BOOT_LOGICAL_W + x] = color;
-}
-
-static const uint8_t* creditRows(char ch) {
-    size_t i;
-    for (i = 0; i < sizeof(creditGlyphs) / sizeof(creditGlyphs[0]); ++i) {
-        if (creditGlyphs[i].ch == ch)
-            return creditGlyphs[i].row;
-    }
-    return NULL; /* space, or unsupported: fail visibly blank, no memory IO */
-}
-
-static void creditText(uint16_t* framebuffer, const char* text,
-                       int top, int scale, uint16_t ink) {
-    const int width = (int)strlen(text) * 6 * scale;
-    int cursor = (BOOT_LOGICAL_W - width) / 2;
-    for (; *text != '\0'; ++text, cursor += 6 * scale) {
-        const uint8_t* rows = creditRows(*text);
-        int y, x, sy, sx;
-        if (rows == NULL) continue;
-        for (y = 0; y < 7; ++y) {
-            for (x = 0; x < 5; ++x) {
-                if (!(rows[y] & (1U << (4 - x)))) continue;
-                for (sy = 0; sy < scale; ++sy) {
-                    for (sx = 0; sx < scale; ++sx)
-                        creditPixel(framebuffer, cursor + x * scale + sx,
-                                    top + y * scale + sy, ink);
-                }
-            }
-        }
-    }
-}
-
-static void creditMark(uint16_t* framebuffer) {
-    /* A tiny hand-rastered copyright symbol, not a claim on Doom RPG.
-     * The author credit applies solely to this independent CYD port. */
-    static const uint16_t circleC[9] = {
-        0x7c,0x82,0x139,0x141,0x141,0x141,0x139,0x82,0x7c
-    };
-    const uint16_t ink = 0x8410U;
-    const int left = (BOOT_LOGICAL_W - (9 + 3 + 7 * 6)) / 2;
-    int y, x;
-    for (y = 0; y < 9; ++y) {
-        for (x = 0; x < 9; ++x) {
-            if (circleC[y] & (1U << (8 - x)))
-                creditPixel(framebuffer, left + x, 90 + y, ink);
-        }
-    }
-    /* Keep the real copyright mark separate from ASCII text raster. */
-    {
-        const char* tail = "Kharn27";
-        int cursor = left + 12;
-        for (; *tail; ++tail, cursor += 6) {
-            const uint8_t* rows = creditRows(*tail);
-            if (rows != NULL) {
-                for (y = 0; y < 7; ++y) {
-                    for (x = 0; x < 5; ++x) {
-                        if (rows[y] & (1U << (4 - x)))
-                            creditPixel(framebuffer, cursor + x, 91 + y,
-                                        ink);
-                    }
-                }
-            }
-        }
-    }
-}
-
-static void drawPortCredit(uint16_t* framebuffer, size_t pixelCount) {
-    static const uint8_t heart[7] = {
-        0x66U,0xffU,0xffU,0x7eU,0x3cU,0x18U,0x00U
-    };
-    int x, y;
     memset(framebuffer, 0, pixelCount * sizeof(uint16_t));
-    /* Quiet retro splash: monochrome palette, one warm accent, no animation. */
-    for (x = 39; x <= 120; ++x)
-        creditPixel(framebuffer, x, 17, 0x7324U);
-    creditText(framebuffer, "ESP32 CYD PORT", 28, 1, 0xe6a6U);
-    creditText(framebuffer, "made with love", 54, 1, 0xc638U);
-    for (y = 0; y < 7; ++y) {
-        for (x = 0; x < 8; ++x) {
-            if (heart[y] & (1U << (7 - x)))
-                creditPixel(framebuffer, 76 + x, 68 + y, 0xd964U);
+    for (blockY = 0U; blockY < BOOT_FRAME_H; blockY += BOOT_SD_ROW_BLOCK) {
+        const uint32_t fileY = BOOT_SD_SHEET_H -
+            ((uint32_t)legals.panel * BOOT_FRAME_H + blockY +
+             BOOT_SD_ROW_BLOCK);
+        const uint32_t offset = legals.sdPixelOffset +
+            fileY * BOOT_SD_ROW_BYTES;
+        unsigned int y;
+        if (!EspNativeBootLegalsSd_read(offset, packedRows,
+                                         sizeof(packedRows))) goto close;
+        for (y = 0U; y < BOOT_SD_ROW_BLOCK; ++y) {
+            const int outY = (int)(blockY + y) + BOOT_FRAME_Y;
+            const uint8_t* src = packedRows +
+                (BOOT_SD_ROW_BLOCK - 1U - y) * BOOT_SD_ROW_BYTES;
+            uint16_t* dst;
+            unsigned int x;
+            if (outY < 0 || outY >= BOOT_LOGICAL_H) continue;
+            dst = framebuffer + outY * BOOT_LOGICAL_W + BOOT_FRAME_X;
+            for (x = 0U; x < BOOT_FRAME_W; ++x) {
+                const uint8_t* bgr = src + x * 3U;
+                dst[x] = rgb565(bgr[2], bgr[1], bgr[0]);
+            }
         }
     }
-    creditMark(framebuffer);
+    ok = 1;
+
+close:
+    EspNativeBootLegalsSd_close();
+    if (ok) {
+        printf("[BOOTLEGALS] FRAME %u/5 source=sd-bmp24 pack=closed sd=closed scratch=1536 framebuffer=borrowed\n",
+               (unsigned int)legals.panel + 1U);
+    }
+    return ok;
 }
 
 int EspNativeBootLegals_draw(uint16_t* framebuffer, size_t pixelCount) {
@@ -272,10 +240,17 @@ int EspNativeBootLegals_draw(uint16_t* framebuffer, size_t pixelCount) {
         pixelCount != (size_t)BOOT_LOGICAL_W * BOOT_LOGICAL_H ||
         EspAssetPack_isOpen())
         goto fail;
-    if (legals.panel == BOOT_FRAME_COUNT) {
-        drawPortCredit(framebuffer, pixelCount);
-        printf("[BOOTLEGALS] FRAME 5/5 credit=Kharn27 ms=3000 pack=closed scratch=0 framebuffer=borrowed\n");
-        return 1;
+    if (legals.sdCustom) {
+        if (drawSdPanel(framebuffer, pixelCount)) return 1;
+        legals.sdCustom = 0U;
+        printf("[BOOTLEGALS] OVERRIDE read-failed panel=%u fallback=g.bmp pack=closed sd=closed\n",
+               (unsigned int)legals.panel + 1U);
+        if (legals.panel >= BOOT_FRAME_COUNT) {
+            /* No fifth ROM panel on current main: hand off to main menu.
+             * Do not read past the end of the original g.bmp sheet. */
+            EspNativeBootLegals_cancel();
+            return 0;
+        }
     }
     if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH))
         goto fail;
@@ -336,9 +311,11 @@ int EspNativeBootLegals_advance(uint32_t nowMs, int touchPressedEdge) {
         return 0;
 
     legals.frameStartedMs = nowMs;
-    if (++legals.panel == BOOT_TOTAL_PANELS) {
-        printf("[BOOTLEGALS] COMPLETE reason=%s panels=5 originals=4 credit=Kharn27 pack=closed\n",
-               touchPressedEdge ? "touch" : "timer");
+    const unsigned int count = legals.sdCustom ? BOOT_SD_FRAME_COUNT : BOOT_FRAME_COUNT;
+    if (++legals.panel == count) {
+        printf("[BOOTLEGALS] COMPLETE reason=%s panels=%u source=%s pack=closed\n",
+               touchPressedEdge ? "touch" : "timer", count,
+               legals.sdCustom ? "sd-bmp24" : "g.bmp");
         EspNativeBootLegals_cancel();
         return 2;
     }

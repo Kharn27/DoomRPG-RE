@@ -395,7 +395,7 @@ namespace
         }
         bootLegalsTouchDown = input.touched();
         bootLegalsPending = true;
-        Serial.printf("[BOOTLEGALS] DISPLAY panel=1/5 heap8=%u largest8=%u\n",
+        Serial.printf("[BOOTLEGALS] DISPLAY panel=1/4 heap8=%u largest8=%u\n",
                       DoomRPG_getHeap8Free(), DoomRPG_getLargest8BitBlock());
         return true;
 #endif
@@ -415,7 +415,7 @@ namespace
                                          sizeof(uint16_t)) &&
             PlatformVideo_present())
         {
-            Serial.printf("[BOOTLEGALS] DISPLAY panel=%u/5 heap8=%u largest8=%u\n",
+            Serial.printf("[BOOTLEGALS] DISPLAY panel=%u/4 heap8=%u largest8=%u\n",
                           EspNativeBootLegals_currentPanel(),
                           DoomRPG_getHeap8Free(),
                           DoomRPG_getLargest8BitBlock());
