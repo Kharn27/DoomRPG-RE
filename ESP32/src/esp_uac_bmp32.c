@@ -124,7 +124,9 @@ int EspUacBmp32_blendRow240As120(const EspUacBmp32* bmp,
 int EspUacMenu_hitPhysical(int x,int y){
     const int top[4]={20,74,128,182};
     int i;
-    if(x<186||x>=296)return -1;
+    if(x<ESP_UAC_PANEL_LEFT+ESP_UAC_BUTTON_INSET||
+       x>=ESP_UAC_PANEL_LEFT+ESP_UAC_BUTTON_INSET+ESP_UAC_BUTTON_WIDTH)
+        return -1;
     for(i=0;i<4;++i)if(y>=top[i]&&y<top[i]+40)return i;
     return -1;
 }

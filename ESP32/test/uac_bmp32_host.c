@@ -75,7 +75,7 @@ static void parser(void){
     assert(!EspUacBmp32_open(&info,readAt,&b,b.length,2,2));
     put32(b.bytes+22,2);
     assert(!EspUacBmp32_open(&info,readAt,&b,b.length-1,2,2));
-    assert(!EspUacBmp32_open(&info,readAt,&b,b.length,158,240));
+    assert(!EspUacBmp32_open(&info,readAt,&b,b.length,118,240));
     put32(b.bytes+2,0xffffffffU);
     assert(!EspUacBmp32_open(&info,readAt,&b,b.length,2,2));
     destroy(&b);
@@ -206,16 +206,18 @@ static void decimationParity(void){
     destroy(&odd);destroy(&hi);destroy(&lo);
 }
 static void geometry(void){
+    assert(ESP_UAC_PANEL_LEFT+ESP_UAC_PANEL_WIDTH==320);
+    assert(ESP_UAC_BUTTON_WIDTH+2*ESP_UAC_BUTTON_INSET==ESP_UAC_PANEL_WIDTH);
     const int tops[4]={20,74,128,182};
     for(int i=0;i<4;++i){
-        assert(EspUacMenu_hitPhysical(186,tops[i])==i);
-        assert(EspUacMenu_hitPhysical(295,tops[i]+39)==i);
-        assert(EspUacMenu_hitPhysical(185,tops[i])==-1);
-        assert(EspUacMenu_hitPhysical(296,tops[i])==-1);
-        assert(EspUacMenu_hitPhysical(200,tops[i]+40)==-1);
+        assert(EspUacMenu_hitPhysical(206,tops[i])==i);
+        assert(EspUacMenu_hitPhysical(315,tops[i]+39)==i);
+        assert(EspUacMenu_hitPhysical(205,tops[i])==-1);
+        assert(EspUacMenu_hitPhysical(316,tops[i])==-1);
+        assert(EspUacMenu_hitPhysical(220,tops[i]+40)==-1);
     }
     assert(EspUacMenu_hitPhysical(-1,20)==-1);
-    assert(EspUacMenu_hitPhysical(200,240)==-1);
+    assert(EspUacMenu_hitPhysical(220,240)==-1);
 }
 /* Same 9-file preflight acquire/release discipline as C++ SD adapter.
  * Failure at any one slot must never leave a file open. */
@@ -225,19 +227,19 @@ static void failures(void){
         opens=closes=0;
         for(int i=0;i<9;++i){
             if(i==missing)break;
-            Blob b=make(i==0?79:55,i==0?120:20);
+            Blob b=make(i==0?59:55,i==0?120:20);
             ++opens;
             EspUacBmp32 desc;
             assert(EspUacBmp32_open(&desc,readAt,&b,b.length,
-                                     i==0?79:55,i==0?120:20));
+                                     i==0?59:55,i==0?120:20));
             destroy(&b);++closes;
         }
         assert(opens==closes);
         if(missing==-1)assert(opens==9);
         else assert(opens==(unsigned)missing);
     }
-    Blob large=make(158,240);EspUacBmp32 info;
-    assert(EspUacBmp32_open(&info,readAt,&large,large.length,158,240));
+    Blob large=make(118,240);EspUacBmp32 info;
+    assert(EspUacBmp32_open(&info,readAt,&large,large.length,118,240));
     destroy(&large);
     Blob button=make(110,40);
     assert(EspUacBmp32_open(&info,readAt,&button,button.length,110,40));

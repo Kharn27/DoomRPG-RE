@@ -8,7 +8,11 @@
 #include "esp_audio_entrance_music.h"
 
 namespace {
-constexpr int kPanelX=162,kWidth=320,kHeight=240;
+constexpr int kPanelX=ESP_UAC_PANEL_LEFT,kWidth=320,kHeight=240;
+static_assert(ESP_UAC_PANEL_LEFT+ESP_UAC_PANEL_WIDTH==kWidth,
+              "panel must reach physical display right edge");
+static_assert(ESP_UAC_PANEL_WIDTH==ESP_UAC_BUTTON_WIDTH+2*ESP_UAC_BUTTON_INSET,
+              "button bezel must be symmetric");
 constexpr uint16_t kMatte=0x1925U;
 const char* const kButtons[4]={"start","load","options","help"};
 const int kTop[4]={20,74,128,182};
@@ -18,7 +22,7 @@ const int kTop[4]={20,74,128,182};
  * dependency: corrupted payloads fail closed even at unchanged file size. */
 const char* const kSha256[2][9] = {
   {
-    "3ed326faf1ab8617b6ddcea788b29f7d7bcf181964b7a8032d0325c981a8aa69",
+    "694e9ae29169adf731f85195bb581bff6f2b6cdb84b4a92feddd46c34f0ea260",
     "101b13334059f448586bf0e0e5cdc60d476d80380e3300142d2bf68a4499548e",
     "2a4967a80b7accb57e8481ebaaa27c86006fbff53cb512a96d8f7c9a1bef8a56",
     "37716377cd3bf9f1bd773835b49eab9c4296066d749be82343ad20ec31015a5b",
@@ -29,7 +33,7 @@ const char* const kSha256[2][9] = {
     "3e07d8ea55520cbb47c6a73e5f01e0aac78a351738e7bac05afabacd1d86cc81"
   },
   {
-    "e202155218f2ba917f011a3eebf6f28f9f251f77325d5d8f8d9a2d0f70f87609",
+    "343b29a61a665d4a92335bf0155d0686f807687fdeb2240776fa4b83ab7f58a7",
     "c70c56e7cf9f050c1eeb1f0698a96ecd1f1beace8499894807f94e3b55755319",
     "91fd666bde662870c6d1d3934158b0c535ca7919d3df19df7ff6a6704fde9c5a",
     "0b8e30a1e1dfcd48d2248d306bd111598404cecd417bbb832b06b67a55020062",
@@ -47,13 +51,13 @@ constexpr bool kStrictSha256=false;
 static int assetTier(int m){return m==kNative120?120:240;}
 int mode=kClassic;
 int paintedMode=0,paintedSelection=-1;
-/* Four physical rows per TFT write: 7480B BSS, no frame allocation.
+/* Four physical rows per TFT write: 6680B BSS, no frame allocation.
  * Only frame plus current button can have live BMP handles. */
 constexpr int kRows=4;
 static uint16_t outRows[kRows*kWidth];
-static uint8_t frameRows[kRows*158*4];
+static uint8_t frameRows[kRows*118*4];
 static uint8_t buttonRows[kRows*110*4];
-static uint8_t pixels[158*4];
+static uint8_t pixels[118*4];
 struct DrawStats {uint32_t sdUs,lcdUs;unsigned batches,buttonOpens,rowsSent,audioPumps,audioBlocks;};
 struct OpenImage { File file; EspUacBmp32 bmp; };
 
@@ -115,7 +119,7 @@ static void buttonPath(char* p,size_t n,int m,int index,bool active){
 static bool preflight(int m){
     OpenImage img{};
     char p[72];
-    const uint16_t fw=m==1?79U:158U,fh=m==1?120U:240U;
+    const uint16_t fw=m==1?59U:118U,fh=m==1?120U:240U;
     const uint16_t bw=m==1?55U:110U,bh=m==1?20U:40U;
     framePath(p,sizeof(p),m);
     bool valid=openBmp(img,p,fw,fh);
@@ -147,7 +151,7 @@ static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
     const int sourceStep=m==k240As120?2:1;
     const auto blendRow=m==k240As120?
         EspUacBmp32_blendRow240As120:EspUacBmp32_blendRow;
-    const uint16_t fw=m==1?79U:158U,fh=m==1?120U:240U;
+    const uint16_t fw=m==1?59U:118U,fh=m==1?120U:240U;
     const uint16_t bw=m==1?55U:110U,bh=m==1?20U:40U;
     const bool patch=previous>=0&&previous<4&&previous!=selected;
     const int regions=patch?2:1;
@@ -164,8 +168,8 @@ static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
         const int target=patch?(region==0?previous:selected):-1;
         const int firstY=target>=0?kTop[target]:0;
         const int finalY=target>=0?kTop[target]+40:kHeight;
-        const int outputX=target>=0?kPanelX+24:0;
-        const int outputW=target>=0?110:kWidth;
+        const int outputX=target>=0?kPanelX+ESP_UAC_BUTTON_INSET:0;
+        const int outputW=target>=0?ESP_UAC_BUTTON_WIDTH:kWidth;
         for(int y=firstY;y<finalY;){
             int active=target,until=finalY;
             if(!patch){
@@ -217,12 +221,12 @@ static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
                 if(active>=0&&!blendRow(&button.bmp,
                         EspUacBmp32_readBatch,&buttonBatch,
                         (uint16_t)((py-kTop[active])/scale),
-                        patch?0:kPanelX+24,(uint8_t)scale,
+                        patch?0:kPanelX+ESP_UAC_BUTTON_INSET,(uint8_t)scale,
                         out,(uint16_t)outputW,pixels,sizeof(pixels)))
                     return finish(false,"button-blend");
                 if(!blendRow(&frame.bmp,
                         EspUacBmp32_readBatch,&frameBatch,(uint16_t)(py/scale),
-                        patch?-24:kPanelX,(uint8_t)scale,
+                        patch?-ESP_UAC_BUTTON_INSET:kPanelX,(uint8_t)scale,
                         out,(uint16_t)outputW,pixels,
                         sizeof(pixels)))return finish(false,"frame-blend");
             }
@@ -261,12 +265,12 @@ extern "C" int EspUacMenuPreview_cycle(void){
     }
     mode=next;
     paintedMode=0;paintedSelection=-1;
-    Serial.printf("[UAC] MODE %s source=%s physical=320x240 buttons=110x40 RAM=7480B-BSS\n",
+    Serial.printf("[UAC] MODE %s source=%s physical=320x240 buttons=110x40 RAM=6680B-BSS\n",
                   mode==kClassic?"CLASSIC":mode==kNative120?"120":
                     mode==k240As120?"240->120":"240",
                   mode==kClassic?"original":mode==kNative120?
-                    "79x120 nearest-x2":mode==k240As120?
-                    "158x240 decimate2x+nearest-x2":"158x240 DIRECT");
+                    "59x120 nearest-x2":mode==k240As120?
+                    "118x240 decimate2x+nearest-x2":"118x240 DIRECT");
     return mode;
 }
 bool EspUacMenuPreview_draw(TFT_eSPI* lcd,const uint16_t* fb,uint16_t stride){

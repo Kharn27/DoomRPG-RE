@@ -37,6 +37,11 @@ int EspUacBmp32_loadBatch(const EspUacBmp32* bmp,EspUacBmpReadAt reader,
                           EspUacBmpRowBatch* out);
 int EspUacBmp32_readBatch(void* context,uint32_t offset,void* dst,size_t n);
 /* Same physical hitboxes at both resolutions. */
+enum {
+    ESP_UAC_PANEL_LEFT=202, ESP_UAC_PANEL_WIDTH=118,
+    ESP_UAC_BUTTON_INSET=4, ESP_UAC_BUTTON_WIDTH=110
+};
+/* One geometry contract for touch, native compositor and tests. */
 int EspUacMenu_hitPhysical(int x,int y);
 #ifdef __cplusplus
 }
