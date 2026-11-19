@@ -70,7 +70,9 @@ RETIRED_NORMAL_WRAPS = frozenset((
     "EspNativeGameplaySession_configure",
     "EspMapLineState_applyDoorCommand",
     "EspNativeGameplayDestructible_executeLineDeath",
-    "EspNativeGameplayDestructible_rollbackLineDeath"))
+    "EspNativeGameplayDestructible_rollbackLineDeath",
+    "EspNativeGameplayDispatch_commitMove",
+    "EspNativeGameplayDispatch_rollbackMove"))
 RETIRED_ALL_WRAPS = RETIRED_BRINGUP_WRAPS | RETIRED_NORMAL_WRAPS
 RETAINED_BRINGUP_WRAPS = frozenset((
     "EspNativeFirstFrame_route",
@@ -106,7 +108,7 @@ def declarations(config: str) -> dict[str, list[str]]:
                     f"duplicate ld --wrap in {section}: {symbol}")
             sections[section].append(symbol)
     base = sections.get("env:esp32-cyd")
-    require(base is not None and len(base) >= 16,
+    require(base is not None and len(base) >= 14,
             "missing canonical normal build or unexpectedly small --wrap inventory")
     require(REQUIRED.issubset(base), "missing required native boundary")
     require(len(sections.get("env:esp32-cyd-bringup", [])) >= 3,

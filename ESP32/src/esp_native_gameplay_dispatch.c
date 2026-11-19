@@ -399,7 +399,7 @@ EspNativeGameplayDispatchStatus EspNativeGameplayDispatch_prepareMove(
     return ESP_NATIVE_GAMEPLAY_DISPATCH_PREPARED;
 }
 
-EspNativeGameplayDispatchStatus EspNativeGameplayDispatch_commitMove(
+EspNativeGameplayDispatchStatus EspNativeGameplayDispatch_commitMoveBase(
     const EspPlayerViewState* expectedBeforeView,
     const EspPlayerViewState* preparedAfterView,
     EspNativeGameplayMoveResult* ioResult) {
@@ -424,7 +424,7 @@ EspNativeGameplayDispatchStatus EspNativeGameplayDispatch_commitMove(
     return ESP_NATIVE_GAMEPLAY_DISPATCH_OK;
 }
 
-EspNativeGameplayDispatchStatus EspNativeGameplayDispatch_rollbackMove(
+EspNativeGameplayDispatchStatus EspNativeGameplayDispatch_rollbackMoveBase(
     const EspPlayerViewState* expectedAfterView,
     const EspPlayerViewState* restoreBeforeView,
     EspNativeGameplayMoveResult* ioResult) {
