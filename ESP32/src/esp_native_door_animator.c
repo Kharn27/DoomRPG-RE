@@ -193,6 +193,58 @@ uint8_t EspNativeDoorAnimator_releaseDeferredCloses(void) {
     return released;
 }
 
+/*
+ * MOVE commits can finish while the animation remains held visibly open.
+ * Retain the 5064 cue in slot.reserved[1], not in the audio FIFO. This is
+ * allocated already (76B total animator), and disappears with a canceled
+ * animation or a new map/session reset.
+ */
+int EspNativeDoorAnimator_stageCommittedDeferredCloseSound(
+    uint16_t lineIndex) {
+    int index = slotForLine(lineIndex);
+    EspNativeDoorAnimationSlot* slot;
+    uint8_t openNow;
+
+    if (index < 0 || animator.view.framePrepared != 0U ||
+        animator.view.completedFrames != 0U ||
+        !EspMapLineState_getOpen(lineIndex, &openNow) ||
+        openNow != 0U) return 0;
+    slot = &animator.slots[index];
+    if (slot->active == 0U || slot->openBefore != 1U ||
+        slot->targetOpen != 0U ||
+        slot->reserved[0] == 0U || slot->reserved[1] != 0U ||
+        slot->position != ESP_NATIVE_DOOR_ANIMATION_MOVING_FRAMES) {
+        return 0;
+    }
+    slot->reserved[1] = 1U;
+    return 1;
+}
+
+int EspNativeDoorAnimator_takePresentedDeferredCloseSound(
+    uint16_t* outLineIndex) {
+    uint32_t i;
+
+    if (outLineIndex == NULL || animator.view.framePrepared != 0U ||
+        animator.view.completedFrames != 1U) return 0;
+    for (i = 0U; i < ESP_NATIVE_DOOR_ANIMATION_MAX_LINES; ++i) {
+        EspNativeDoorAnimationSlot* slot = &animator.slots[i];
+        uint8_t openNow;
+        if (slot->active == 0U || slot->reserved[1] == 0U) continue;
+        /* Never publish while visually held, including on a failed frame.
+         * A mismatching line state cancels a stale cue fail-closed. */
+        if (slot->reserved[0] != 0U) continue;
+        slot->reserved[1] = 0U;
+        if (slot->openBefore != 1U || slot->targetOpen != 0U ||
+            !EspMapLineState_getOpen(slot->lineIndex, &openNow) ||
+            openNow != 0U) {
+            continue;
+        }
+        *outLineIndex = slot->lineIndex;
+        return 1;
+    }
+    return 0;
+}
+
 int EspNativeDoorAnimator_validateLineState(void) {
     uint32_t i;
 
