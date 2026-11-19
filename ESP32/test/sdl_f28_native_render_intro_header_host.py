@@ -94,7 +94,15 @@ def original_body_parity() -> None:
     marker = GUARD.encode("ascii")
     for filename, blob in BEFORE.items():
         current = (SOURCES / filename).read_bytes()
-        historical = restore_rc10_dynamic(restore_rc11_dynamic(current)) if filename == "esp_native_dynamic_line_render.c" else current
+        if filename == "esp_native_dynamic_line_render.c":
+            # AUDIO-DOOR only adds a post-first-successful-door-frame SFX hook.
+            # Undo its exact additive bytes before testing the immutable
+            # original SDL-F28 Git blob; keep all frozen hashes unchanged.
+            from audio_door_history import restore_pre_audio_door_dynamic
+            historical = restore_rc10_dynamic(restore_rc11_dynamic(
+                restore_pre_audio_door_dynamic(current)))
+        else:
+            historical = current
         if filename == "esp_render_geometry_primitives.c":
             # Unlike the five other TUs, SDL.h originally follows stdint.
             assert current.startswith(b"#include <stdint.h>\n\n" + marker), filename
