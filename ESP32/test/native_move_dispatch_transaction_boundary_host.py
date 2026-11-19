@@ -53,8 +53,8 @@ def source_scan():
     require(len(all_src) >= 178, "production corpus unexpectedly small")
     ini = (ROOT / "platformio.ini").read_text()
     normal = ini.split("[env:esp32-cyd]", 1)[1].split("[env:esp-cyd-inverted]", 1)[0]
-    require(len(re.findall(r"^\s+-Wl,--wrap=", normal, re.M)) == 14,
-            "RC16 expects exactly 14 normal GNU wraps")
+    require(len(re.findall(r"^\s+-Wl,--wrap=", normal, re.M)) == 12,
+            "RC17 expects exactly 12 normal GNU wraps")
     for name in RETIRED:
         require("-Wl,--wrap=" + name not in ini, "retired flag: " + name)
         for filename, source in all_src.items():

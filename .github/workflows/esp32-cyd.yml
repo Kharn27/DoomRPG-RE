@@ -106,6 +106,9 @@ jobs:
       - name: Test native process RNG owner and 132B root extraction (host C + ABI)
         run: python ESP32/test/native_process_rng_owner_host.py
 
+      - name: ARCH-RC17 public RNG byte/word draws, real-C legacy stream parity and 12 adversarial mutants
+        run: python ESP32/test/native_rng_public_boundary_host.py
+
       - name: Inventory native process RNG root owners and replay guards
         run: python ESP32/test/native_root_rng_ownership_inventory.py
 

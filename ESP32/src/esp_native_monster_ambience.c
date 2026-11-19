@@ -8,13 +8,28 @@
 #include "esp_native_monster_ambience.h"
 #include "esp_native_monster_sfx_table.h"
 
+/* A render can activate several enemies at once, but the original game emits
+ * one highest-subtype sight cry for the whole newly visible group. Every member
+ * of that group must settle before its first attack pose, not just the winner.
+ * Keep independent short-lived ordinal ranges: no heap, sprite-wide bitset,
+ * world mutation or gameplay RNG. A fifth overlapping group coalesces with
+ * the newest guard instead of silently releasing any still-live group. */
+#define MONSTER_SIGHT_HOLD_MS 350U
+#define MONSTER_SIGHT_GUARD_SLOTS 4U
+
+typedef struct MonsterSightGuard_s {
+    uint32_t firstOrdinal;
+    uint32_t endOrdinal;
+    uint32_t untilMs;
+} MonsterSightGuard;
+
 typedef struct MonsterAmbientOwner_s {
     uint32_t arena;
     uint32_t seenCount;
     uint32_t nextIdleMs;
     uint32_t rng;
-    uint32_t sightHoldUntilMs;
-    uint16_t sightSprite;
+    MonsterSightGuard sightGuards[MONSTER_SIGHT_GUARD_SLOTS];
+    uint8_t sightGuardCount;
     uint8_t active;
 } MonsterAmbientOwner;
 
@@ -49,11 +64,56 @@ static void resetOwner(void) {
     memset(&ambient,0,sizeof(ambient));
 }
 
+static void retainSightGuard(uint32_t firstOrdinal, uint32_t endOrdinal,
+                             uint32_t nowMs) {
+    MonsterSightGuard* guard = NULL;
+    uint32_t i;
+    if (firstOrdinal >= endOrdinal) return;
+    for (i=0U;i<ambient.sightGuardCount;++i) {
+        if ((int32_t)(nowMs-ambient.sightGuards[i].untilMs)>=0) {
+            guard=&ambient.sightGuards[i];
+            break;
+        }
+    }
+    if (guard==NULL && ambient.sightGuardCount<MONSTER_SIGHT_GUARD_SLOTS) {
+        guard=&ambient.sightGuards[ambient.sightGuardCount++];
+    }
+    if (guard==NULL) {
+        /* Every slot is still settling. Extend the most recent activation
+         * range; older guards retain their original deadline. This may
+         * conservatively hold the merged cohort longer, never release it
+         * early or create another attack/gameplay turn. */
+        uint32_t newest=0U;
+        for (i=1U;i<ambient.sightGuardCount;++i) {
+            if (ambient.sightGuards[i].endOrdinal >
+                ambient.sightGuards[newest].endOrdinal)
+                newest=i;
+        }
+        guard=&ambient.sightGuards[newest];
+        if (firstOrdinal<guard->firstOrdinal)
+            guard->firstOrdinal=firstOrdinal;
+    } else {
+        guard->firstOrdinal=firstOrdinal;
+    }
+    guard->endOrdinal=endOrdinal;
+    guard->untilMs=nowMs+MONSTER_SIGHT_HOLD_MS;
+}
+
 int EspNativeMonsterAmbience_sightSettling(uint16_t spriteIndex,
                                           uint32_t nowMs) {
-    return ambient.active && ambient.sightHoldUntilMs != 0U &&
-           ambient.sightSprite == spriteIndex &&
-           (int32_t)(nowMs-ambient.sightHoldUntilMs) < 0;
+    if (!ambient.active) return 0;
+    for (uint32_t i=0U;i<ambient.sightGuardCount;++i) {
+        const MonsterSightGuard* guard=&ambient.sightGuards[i];
+        if ((int32_t)(nowMs-guard->untilMs)>=0) continue;
+        for (uint32_t ordinal=guard->firstOrdinal;
+             ordinal<guard->endOrdinal;++ordinal) {
+            uint16_t member=0xffffU;
+            if (EspNativeGameplayMonsterActivation_getOrdered(
+                    ordinal,&member) && member==spriteIndex)
+                return 1;
+        }
+    }
+    return 0;
 }
 
 void EspNativeMonsterAmbience_service(uint32_t nowMs,
@@ -112,14 +172,16 @@ void EspNativeMonsterAmbience_service(uint32_t nowMs,
             const uint16_t sound=randomizedSound(winner->mType,1U);
             if (sound!=0U) {
                 (void)EspNativeAudioIntent_publish(sound,0U,3U);
-                ambient.sightSprite=winningSprite;
-                ambient.sightHoldUntilMs=nowMs+350U;
+                retainSightGuard(previous,count,nowMs);
                 printf("[MONSTERAMBIENT] SIGHT sprite=%u subtype=%u mType=%u "
                        "id=%u newlyActive=%u activation=once "
+                       "guardOrdinals=%u..%u guardMs=%u "
                        "gameplayRng=untouched\n",
                        (unsigned)winningSprite,(unsigned)winner->subtype,
                        (unsigned)winner->mType,(unsigned)sound,
-                       (unsigned)(count-previous));
+                       (unsigned)(count-previous),
+                       (unsigned)previous,(unsigned)(count-1U),
+                       (unsigned)MONSTER_SIGHT_HOLD_MS);
             }
         }
     }
