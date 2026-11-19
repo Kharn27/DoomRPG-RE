@@ -435,10 +435,21 @@ def main():
     source_scan()
     require(exercise(SOURCES), "production MOVE owner violated its real C oracle")
     for name, owner, before, after in MUTANTS:
-        require(SOURCES[owner].count(before) == 1,
-                "mutant anchor drift: " + name)
         changed = dict(SOURCES)
-        changed[owner] = changed[owner].replace(before, after, 1)
+        if owner == "dispatch":
+            # The dispatcher has earlier TURN commit/rollback functions with
+            # similar state flags. Mutate only the named, actual MOVE leaf.
+            signature = (BODIES[1][1] if name == "drop-position-rollback-bit"
+                         else BODIES[0][1])
+            original_body = extract(SOURCES[owner], signature)
+            require(original_body.count(before) == 1,
+                    "move-only mutant anchor drift: " + name)
+            changed[owner] = SOURCES[owner].replace(
+                original_body, original_body.replace(before, after, 1), 1)
+        else:
+            require(SOURCES[owner].count(before) == 1,
+                    "event owner mutant anchor drift: " + name)
+            changed[owner] = changed[owner].replace(before, after, 1)
         require(not exercise(changed), "semantic mutant survived: " + name)
     print("PASS ARCH-RC16: four actual C bodies, 15 compiled adversarial mutants")
 
