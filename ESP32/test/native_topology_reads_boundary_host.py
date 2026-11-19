@@ -20,6 +20,7 @@ FILES = {
     "action": (SRC / "esp_native_gameplay_action_engine.c").read_text(),
     "projection": (SRC / "esp_native_gameplay_projection_overlay.c").read_text(),
     "combat": (SRC / "esp_native_gameplay_monster_combat.c").read_text(),
+    "crate": (SRC / "esp_native_gameplay_crate_state.c").read_text(),
 }
 SIGS = (
     ("raw", "int EspMapSpriteTopology_getVisualStateBase("),
@@ -270,6 +271,9 @@ def source_scan():
     require("EspMapSpriteTopology_getEntityBase(" in FILES["action"] and
             "EspMapSpriteTopology_getVisualStateBase(" in FILES["action"],
             "ActionEngine must read the raw topology leaves")
+    require("EspMapSpriteTopology_getEntityBase(" in FILES["crate"] and
+            "EspMapSpriteTopology_getEntity(" not in FILES["crate"],
+            "CrateState lazy ensure must read raw Base to avoid recursive projection")
     require("EspNativeGameplayProjectionOverlay_getEntity(" in FILES["combat"] and
             "EspNativeGameplayProjectionOverlay_getVisualState(" in FILES["combat"],
             "public owner lost complete projection")
