@@ -30,10 +30,8 @@
 #include "esp_native_gameplay_weapon.h"
 #include "esp_player_view_state.h"
 
-/* Explicit MonsterCombat SELECT/service/reset owner; the sprite topology
- * linker wrappers remain unchanged in RC13. */
-#undef __wrap_EspMapSpriteTopology_getEntity
-#undef __wrap_EspMapSpriteTopology_getVisualState
+/* RC20: public composed topology projection is explicitly owned here.
+ * ActionEngine and raw map topology remain private read layers. */
 
 #define MONSTER_TYPE_ENEMY 1U
 #define MONSTER_SUBTYPE_COUNT 14U
@@ -1306,7 +1304,7 @@ EspNativeGameplayActionStatus EspNativeGameplayMonsterCombat_executeSelect(
     return status;
 }
 
-int __wrap_EspMapSpriteTopology_getVisualState(uint32_t spriteIndex,
+int EspMapSpriteTopology_getVisualState(uint32_t spriteIndex,
                                                uint8_t* outVisualState) {
     const EspNativeGameplayMonsterRecord* monster;
     if (!EspNativeGameplayProjectionOverlay_getVisualState(spriteIndex,
@@ -1335,7 +1333,7 @@ int __wrap_EspMapSpriteTopology_getVisualState(uint32_t spriteIndex,
     return 1;
 }
 
-int __wrap_EspMapSpriteTopology_getEntity(uint32_t spriteIndex,
+int EspMapSpriteTopology_getEntity(uint32_t spriteIndex,
                                           uint8_t* outType,
                                           uint8_t* outSubType,
                                           uint16_t* outLinkState,
