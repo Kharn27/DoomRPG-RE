@@ -54,12 +54,6 @@ int EspNativeGameplayMonsterActiveSequence_isBusy(void) {
     return activeSeq.active == 1U && activeSeq.turnInProgress != 0U;
 }
 
-int __real_EspNativeBspVisibility_mapSpriteVisible(
-    const EspNativeBspVisibilityState* state,
-    uint32_t mapSpriteIndex,
-    uint32_t* outLeafIndex);
-int __real_EspMapRuntime_getMapSprite(uint32_t index, EspMapSprite* outSprite);
-
 static uint16_t read16le(const uint8_t* bytes) {
     if (bytes == NULL) return 0U;
     return (uint16_t)((uint16_t)bytes[0] | ((uint16_t)bytes[1] << 8U));
@@ -70,7 +64,7 @@ static uint16_t read16le(const uint8_t* bytes) {
  * near-plane/column clipping. The native BSP-visible admission point is the
  * equivalent permanent boundary, so activation is observed here rather than by
  * the old center-ray approximation. */
-int __wrap_EspNativeBspVisibility_mapSpriteVisible(
+int EspNativeBspVisibility_mapSpriteVisible(
     const EspNativeBspVisibilityState* state,
     uint32_t mapSpriteIndex,
     uint32_t* outLeafIndex) {
@@ -80,7 +74,7 @@ int __wrap_EspNativeBspVisibility_mapSpriteVisible(
     uint16_t tile;
     uint8_t type;
     uint8_t subtype;
-    int visible = __real_EspNativeBspVisibility_mapSpriteVisible(
+    int visible = EspNativeBspVisibility_mapSpriteVisibleBase(
         state, mapSpriteIndex, outLeafIndex);
 
     if (!visible || mapSpriteIndex > 0xffffU) return visible;
@@ -99,7 +93,7 @@ int __wrap_EspNativeBspVisibility_mapSpriteVisible(
                       ESP_MAP_SPRITE_TOPOLOGY_ALIVE)) !=
             (ESP_MAP_SPRITE_TOPOLOGY_LINKED |
              ESP_MAP_SPRITE_TOPOLOGY_ALIVE) ||
-        !__real_EspMapRuntime_getMapSprite(mapSpriteIndex, &sprite) ||
+        !EspMapRuntime_getMapSpriteBase(mapSpriteIndex, &sprite) ||
         (sprite.info & ACTIVESEQ_SPRITE_NO_ACTIVATE) != 0U) {
         return visible;
     }
