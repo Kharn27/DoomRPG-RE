@@ -66,11 +66,76 @@ static int readAt(void* ctx,uint32_t offset,void* dst,size_t n){
     return f&&*f&&dst&&offset<=f->size()&&n<=f->size()-offset&&
            f->seek(offset)&&f->read(static_cast<uint8_t*>(dst),n)==n;
 }
+/* Failure-only diagnostic. The production decoder is still the sole
+ * acceptance authority: this reads at most the 122-byte BMP V4 header
+ * through the existing File handle and never allocates/open a second file.
+ * Artists changing files on SD can identify export geometry/format drift. */
+static uint16_t bmpLe16(const uint8_t* p){
+    return (uint16_t)((uint16_t)p[0]|((uint16_t)p[1]<<8));
+}
+static uint32_t bmpLe32(const uint8_t* p){
+    return (uint32_t)p[0]|((uint32_t)p[1]<<8)|
+           ((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24);
+}
+static void reportBmpReject(File& file,const char* path,uint16_t w,uint16_t h){
+    const uint32_t fileBytes=(uint32_t)file.size();
+    const uint32_t expectedBytes=122U+(uint32_t)w*h*4U;
+    uint8_t header[122];
+    if(!readAt(&file,0U,header,sizeof(header))){
+        Serial.printf("[UAC] BMP REJECT path=%s reason=header-read fileBytes=%lu expected=%ux%u expectedBytes=%lu headerBytes=122\n",
+                      path,(unsigned long)fileBytes,(unsigned)w,(unsigned)h,
+                      (unsigned long)expectedBytes);
+        return;
+    }
+    const uint32_t actualW=bmpLe32(header+18),actualH=bmpLe32(header+22);
+    const uint32_t dib=bmpLe32(header+14),offset=bmpLe32(header+10);
+    const uint32_t declared=bmpLe32(header+2),imageBytes=bmpLe32(header+34);
+    const uint16_t planes=bmpLe16(header+26),bpp=bmpLe16(header+28);
+    const uint32_t compression=bmpLe32(header+30);
+    const uint32_t red=bmpLe32(header+54),green=bmpLe32(header+58);
+    const uint32_t blue=bmpLe32(header+62),alpha=bmpLe32(header+66);
+    const char* reason="unknown-parser-reject";
+    if(header[0]!='B'||header[1]!='M')reason="magic";
+    else if(dib!=108U)reason="dib-header-not-V4";
+    else if(actualW!=w||actualH!=h)reason="dimensions";
+    else if(planes!=1U||bpp!=32U)reason="pixel-depth";
+    else if(compression!=3U)reason="compression";
+    else if(red!=0x00ff0000U||green!=0x0000ff00U||
+            blue!=0x000000ffU||alpha!=0xff000000U)reason="channel-masks";
+    else if(offset!=122U)reason="pixel-offset";
+    else if(declared!=fileBytes||fileBytes!=expectedBytes)reason="file-size";
+    else if(imageBytes!=0U&&imageBytes!=(uint32_t)w*h*4U)
+        reason="image-size";
+    Serial.printf("[UAC] BMP REJECT path=%s reason=%s expected=%ux%u expectedBytes=%lu actual=%lux%lu fileBytes=%lu declared=%lu dib=%lu planes=%u bpp=%u compression=%lu offset=%lu imageBytes=%lu masks=%08lx/%08lx/%08lx/%08lx magic=%02x%02x\n",
+                  path,reason,(unsigned)w,(unsigned)h,
+                  (unsigned long)expectedBytes,
+                  (unsigned long)actualW,(unsigned long)actualH,
+                  (unsigned long)fileBytes,(unsigned long)declared,
+                  (unsigned long)dib,(unsigned)planes,(unsigned)bpp,
+                  (unsigned long)compression,(unsigned long)offset,
+                  (unsigned long)imageBytes,
+                  (unsigned long)red,(unsigned long)green,
+                  (unsigned long)blue,(unsigned long)alpha,
+                  (unsigned)header[0],(unsigned)header[1]);
+}
 static bool openBmp(OpenImage& i,const char* path,uint16_t w,uint16_t h){
     i.file=SD.open(path,FILE_READ);
-    if(!i.file||i.file.isDirectory()||i.file.size()>UINT32_MAX)return false;
-    return EspUacBmp32_open(&i.bmp,readAt,&i.file,
-                            static_cast<uint32_t>(i.file.size()),w,h)!=0;
+    if(!i.file){
+        Serial.printf("[UAC] BMP REJECT path=%s reason=sd-open expected=%ux%u\n",
+                      path,(unsigned)w,(unsigned)h);
+        return false;
+    }
+    if(i.file.isDirectory()||i.file.size()>UINT32_MAX){
+        Serial.printf("[UAC] BMP REJECT path=%s reason=%s expected=%ux%u fileBytes=%llu\n",
+                      path,i.file.isDirectory()?"directory":"oversized",
+                      (unsigned)w,(unsigned)h,
+                      (unsigned long long)i.file.size());
+        return false;
+    }
+    const bool valid=EspUacBmp32_open(&i.bmp,readAt,&i.file,
+                                  (uint32_t)i.file.size(),w,h)!=0;
+    if(!valid)reportBmpReject(i.file,path,w,h);
+    return valid;
 }
 static int hexDigit(char c) {
     if(c>='0'&&c<='9')return c-'0';

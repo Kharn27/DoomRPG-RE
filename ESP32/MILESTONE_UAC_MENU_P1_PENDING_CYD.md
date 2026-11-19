@@ -68,3 +68,12 @@ Rebase du code UAC sur main `f04f16ba73a8f9532f0bffdae8ed459f6711626a`, tests AR
 BMP modifiés localement sur SD : `kStrictSha256=false` pour la phase graphique ; parser BMP V4 BGRA32, dimensions, extent et bornes restent obligatoires, CI conserve les 18 empreintes des BMP versionnés. Rétablir le SHA strict après choix des assets définitifs.
 
 Le log `platformio-device-monitor-261119-231018.log` : `PREFLIGHT FAIL menu_frame_120.bmp` sur fichiers SD modifiés, aucun rendu du nouveau mode. Ancien log `261119-224913.log` : 240 ~800ms en redraw complet avec sous-alimentation audio ; patch partiel + pump encore en attente de preuve hardware. Retester 3 visuels, cycle, sons, actions, `paint=BUTTONS`, `underruns=0`, `recoveries=0`, heap8, échec sans asset. **Ne pas fusionner sans PASS matériel.**
+
+
+## UAC BMP preflight forensic diagnostics — 20 novembre 2026 (PENDING CYD)
+
+Nouveau retour matériel utilisateur après changements de BMP : `[UAC] PREFLIGHT FAIL /doomrpg/img/menu_frame_120.bmp` répété ; aucun `MODE` ni `PRESENT` UAC, tandis que la musique MENU remonte `underruns=0 recoveryStarts=0` et `underflows=0`. Ce log n'est **pas** une preuve de validation de l'UI/UAC/audio sous dessin. Le `main` fusionné (#400) attend un **cadre 59×120 / 118×240** (fichiers V4 BGRA32 28 442 / 113 402 octets), à distinguer de la première génération 79×120 / 158×240. Boutons 55×20 / 110×40 inchangés. SHA volontairement désactivé pour la phase graphique.
+
+Nouvelle instrumentation **échec uniquement**, sans changer le décodage ni le refus strict : `[UAC] BMP REJECT reason=sd-open|header-read|dimensions|dib-header-not-V4|pixel-depth|compression|channel-masks|pixel-offset|file-size|image-size` + dimensions, tailles, DIB/bit-depth, masques. Réutilise le même handle File, lit au plus 122B de l'en-tête BMP **uniquement si le parseur refuse**. Aucun changement de mémoire persistante, d'accès SD en succès, d'ISR audio ou de compositor.
+
+**PENDING matériel :** test normal `esp32-cyd` avec SD d'images modifiées ; collecter le premier `[UAC] BMP REJECT` et corriger l'export à la source. Le fallback menu classique doit rester opérationnel. Ne pas déclarer le menu validé avant son affichage réel et les mesures de son/latence.
