@@ -129,7 +129,7 @@ jobs:
       - name: ARCH-RC20 nine real topology/overlay C getters, fail-stop and 14 mutants
         run: python ESP32/test/native_topology_reads_boundary_host.py
 
-      - name: ARCH-RC21 packed sprite, projected sprite, BSP admission and activation (5 real C, 14 mutants)
+      - name: ARCH-RC21 packed sprite, projected sprite, BSP admission and activation (6 real C, 14 mutants)
         run: python ESP32/test/native_sprite_visibility_reads_boundary_host.py
 
       - name: Inventory native process RNG root owners and replay guards
