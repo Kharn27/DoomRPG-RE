@@ -45,7 +45,7 @@ assert "retainIntent();" in intent
 # AUDIO #377: real producer/consumer ownership is distinct from PCM mixing.
 assert music.count("EspNativeAudioIntent_acknowledgeThrough(sfxSeenSequence);") == 3
 assert music.count("EspNativeAudioIntent_discardThrough(sfxSeenSequence);") == 2
-assert "EspNativeAudioIntent_noteConsumerGap(sfxSeenSequence,next.sequence);" in music
+assert music.count("EspNativeAudioIntent_noteConsumerGap(sfxSeenSequence,intent->sequence);") == 3
 assert "EspNativeAudioIntent_notePlaybackDrop();" in music
 assert "[AUDIOINTENT] AUDIT reason=%s queueOverflow=%u" in music
 assert "EspNativeAudioIntent_noteConsumerGap(uint32_t before," in intent
