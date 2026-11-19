@@ -38,8 +38,7 @@ def scan():
         require("-Wl,--wrap=" + name not in flags, "retired linker flag: " + name)
         require(not any("__wrap_" + name in f or "__real_" + name in f
                         for f in files.values()), "GNU alias retained: " + name)
-    for name in ("EspNativeGameplayFrame_renderTurn",
-                 "EspMapRuntime_getLine", "EspMapLineState_view"):
+    for name in ("EspNativeGameplayFrame_renderTurn",):
         require("-Wl,--wrap=" + name in flags, "door/render guard retired: " + name)
     expected = {
         "EspNativeGameplayDialog_begin":
@@ -77,7 +76,7 @@ def scan():
     require(note_header.count("EspNativeGameplayNotePrefix_beginDialog(") == 1,
             "NOTE permanent API changed")
     print("PASS RC12 firmware census 178+ real TUs: three wraps retired, "
-          "raw leaves private, NOTE/CHAIN callsites exact, door wraps intact")
+          "raw leaves private, NOTE/CHAIN callsites exact, cardinal door transaction wrapper intact")
 
 
 def extract_actual_note_body(text):
