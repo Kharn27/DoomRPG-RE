@@ -27,8 +27,8 @@ assert "(effectFlags & ESP_MAP_LINE_EFFECT_PLAY_SOUND) == 0U" in door
 
 assert '#include "esp_native_door_sfx.h"' in select
 assert '#include "esp_native_door_sfx.h"' in move
-# SELECT 5063 is now a bounded audio lease. No intent before an actual
-# *visible* opening frame; CLOSE remains in the original final-commit path.
+# SELECT 5063 is a bounded first-frame lease. Committed MOVE 5064 uses
+# a separate held-close bit and waits until the first displayed closing frame.
 owner = (src / "esp_native_door_sfx.c").read_text()
 dynamic = (src / "esp_native_dynamic_line_render.c").read_text()
 sel = select.split("if (status == ESP_NATIVE_GAMEPLAY_ACTION_DOOR_OK) {", 1)[1]
@@ -45,11 +45,17 @@ assert sel.count("EspNativeDoorSfx_cancelSelect()") == 3
 assert "step->openBefore != 0U || step->openAfter != 1U" in owner
 assert "openingLease.firstFrameSeen" in owner
 assert "EspNativeAudioIntent_publish(ESP_MAP_LINE_SOUND_OPEN, 0U, 2U)" in owner
+assert "EspNativeDoorSfx_onFirstPresentedHeldClosingFrame(void)" in owner
+assert "EspNativeDoorAnimator_stageCommittedDeferredCloseSound(lineIndex)" in door
+assert "EspNativeDoorAnimator_takePresentedDeferredCloseSound(&lineIndex)" in owner
 assert "EspNativeDoorSfx_publishCommitted(" in owner # late fallback
 assert "EspNativeDoorSfx_cancelSelect();" in owner
 assert "malloc(" not in owner and "EspAssetPack_open(" not in owner
 assert '#include "esp_native_door_sfx.h"' in dynamic
 assert "animationFrame.ordinal == 1U" in dynamic
+assert "EspNativeDoorSfx_onFirstPresentedHeldClosingFrame();" in dynamic
+assert dynamic.index("EspNativeDoorSfx_onFirstPresentedOpeningFrame();") < dynamic.index(
+    "EspNativeDoorSfx_onFirstPresentedHeldClosingFrame();")
 assert dynamic.index('if (!ok) {\n                EspNativeGameplayMoveEvents_onFrameResult(0);') < dynamic.index(
     "EspNativeDoorSfx_onFirstPresentedOpeningFrame()")
 assert dynamic.index("EspNativeDoorSfx_onFirstPresentedOpeningFrame()") < dynamic.index(
@@ -92,6 +98,10 @@ code = r'''
 #include <stdio.h>
 #include "esp_native_door_sfx.h"
 
+int EspNativeDoorAnimator_stageCommittedDeferredCloseSound(uint16_t lineIndex) {
+    (void)lineIndex;
+    return 0; /* immutable/SELECT fixture: no held closing animation */
+}
 static uint16_t ids[16];
 static uint8_t priorities[16], flags[16];
 static uint8_t n;
@@ -154,9 +164,18 @@ lease_code = r'''
 #include "esp_native_gameplay_action.h"
 #include "esp_native_door_sfx.h"
 
+int EspNativeDoorAnimator_stageCommittedDeferredCloseSound(uint16_t lineIndex) {
+    (void)lineIndex;
+    return 0; /* immutable/SELECT fixture: no held closing animation */
+}
 static uint16_t ids[16];
 static uint8_t flags[16], priorities[16], n;
 static uint8_t states[64];
+
+int EspNativeDoorAnimator_takePresentedDeferredCloseSound(uint16_t* outLine) {
+    (void)outLine;
+    return 0; /* close lease exercised by dedicated real-animator oracle */
+}
 
 int EspNativeAudioIntent_publish(uint16_t id, uint8_t f, uint8_t p) {
     assert(n < 16);
@@ -235,4 +254,4 @@ with tempfile.TemporaryDirectory(prefix="doom-audio-open-timing-") as td:
         str(src / "esp_native_door_sfx.c"), "-o", str(binary)
     ], check=True, cwd=root)
     subprocess.run([str(binary)], check=True, cwd=root)
-print("PASS AUDIO-DOOR timing: opening at first successfully presented frame, no late duplicate, close untouched")
+print("PASS AUDIO-DOOR timing: SELECT open first frame, MOVE held-close separate first-frame lease")

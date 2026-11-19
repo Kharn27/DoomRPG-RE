@@ -15,6 +15,11 @@ static int busy;
 static int missing;
 static int failRead;
 static unsigned int reads;
+/* Optional SD reader mock (no Arduino framework in the host harness). */
+enum { SD_OFFSET = 54, SD_BYTES = SD_OFFSET + 128 * 640 * 3 };
+static uint8_t sdBmp[SD_BYTES];
+static int sdPresent, sdOpened, sdFailRead;
+static unsigned int sdReads;
 
 static void put16(int at, uint16_t v) {
     bmp[at] = (uint8_t)v;
@@ -54,6 +59,9 @@ static void fixture(void) {
     missing = 0;
     failRead = 0;
     reads = 0;
+    sdPresent = 0;
+    sdFailRead = 0;
+    sdReads = 0U;
     EspNativeBootLegals_cancel();
 }
 
@@ -81,6 +89,55 @@ int EspAssetPack_readRange(const EspAssetPackEntry* entry, uint32_t offset,
     memcpy(dest, bmp + offset, length);
     ++reads;
     return 1;
+}
+
+
+int EspNativeBootLegalsSd_open(uint32_t* outSize) {
+    assert(!opened); /* No simultaneous SD override and PAK owner. */
+    if (outSize != NULL) *outSize = 0U;
+    if (!sdPresent) return 0;
+    assert(!sdOpened);
+    sdOpened = 1;
+    if (outSize != NULL) *outSize = sizeof(sdBmp);
+    return 1;
+}
+int EspNativeBootLegalsSd_read(uint32_t offset, void* dest, size_t len) {
+    if (!sdOpened || sdFailRead || dest == NULL ||
+        offset > sizeof(sdBmp) || len > sizeof(sdBmp) - offset)
+        return 0;
+    memcpy(dest, sdBmp + offset, len);
+    ++sdReads;
+    return 1;
+}
+void EspNativeBootLegalsSd_close(void) { sdOpened = 0; }
+
+static void sdFixture(void) {
+    static const uint8_t colors[5][3] = {
+        {248U, 0U, 0U}, {0U, 252U, 0U}, {0U, 0U, 248U},
+        {248U, 252U, 248U}, {248U, 0U, 248U}
+    };
+    memset(sdBmp, 0, sizeof(sdBmp));
+    sdBmp[0] = 'B'; sdBmp[1] = 'M';
+    for (int i = 0; i < 4; ++i) {
+        sdBmp[2+i] = (uint8_t)((uint32_t)SD_BYTES >> (i*8));
+        sdBmp[10+i] = (uint8_t)((uint32_t)SD_OFFSET >> (i*8));
+        sdBmp[14+i] = (uint8_t)(40U >> (i*8));
+        sdBmp[18+i] = (uint8_t)(128U >> (i*8));
+        sdBmp[22+i] = (uint8_t)(640U >> (i*8));
+        sdBmp[34+i] = (uint8_t)((128U*640U*3U) >> (i*8));
+    }
+    sdBmp[26] = 1U;
+    sdBmp[28] = 24U;
+    for (unsigned int y = 0; y < 640U; ++y) {
+        const unsigned int panel = (639U - y) / 128U;
+        for (unsigned int x = 0; x < 128U; ++x) {
+            const size_t pos = SD_OFFSET + y*384U + x*3U;
+            sdBmp[pos+0] = colors[panel][2]; /* BGR */
+            sdBmp[pos+1] = colors[panel][1];
+            sdBmp[pos+2] = colors[panel][0];
+        }
+    }
+    sdPresent = 1;
 }
 
 static uint16_t fb[160 * 120];
@@ -193,6 +250,55 @@ int main(void) {
     assert(!opened && !EspNativeBootLegals_isActive());
     assert(reads == 2U); /* five touches did not read g.bmp pixels */
 
-    printf("BOOTLEGALS HOST PASS originals=4 credit=Kharn27 durationMs=3000 panels=5 touch=skip crop=160x120 pack=closed ranges=16/frame failure=closed\\n");
+
+    /* Valid SD BMP: five panels replace g.bmp+ROM, no PAK pixel reads. */
+    fixture(); sdFixture();
+    assert(EspNativeBootLegals_begin(0U) && !opened && !sdOpened);
+    assert(reads == 2U && sdReads == 1U); /* Only header preflights. */
+    for (unsigned int panel = 0; panel < 5U; ++panel) {
+        static const uint16_t expected[] = {
+            0xf800U, 0x07e0U, 0x001fU, 0xffffU, 0xf81fU
+        };
+        assert(EspNativeBootLegals_currentPanel() == panel + 1U);
+        memset(fb, 0x7f, sizeof(fb));
+        assert(EspNativeBootLegals_draw(fb, 160U*120U));
+        assert(!opened && !sdOpened);
+        assert(fb[60U*160U+15U] == 0U);
+        assert(fb[60U*160U+16U] == expected[panel]);
+        assert(fb[60U*160U+143U] == expected[panel]);
+        assert(fb[60U*160U+144U] == 0U);
+        if (panel != 4U) assert(EspNativeBootLegals_advance(1U, 1) == 1);
+    }
+    assert(reads == 2U);
+    assert(EspNativeBootLegals_advance(1U, 1) == 2);
+    assert(!sdOpened && !opened);
+
+    /* Invalid format: fall back to original four frames and ROM fifth. */
+    fixture(); sdFixture();
+    sdBmp[28] = 8U; /* Not 24bpp. */
+    assert(EspNativeBootLegals_begin(0U));
+    checkPanel(0);
+    assert(sdReads == 1U);
+    assert(!sdOpened && !opened);
+
+    /* A valid override that starts failing must repaint the same panel from
+     * original g.bmp, then stay on original for every later panel. */
+    fixture(); sdFixture();
+    assert(EspNativeBootLegals_begin(0U));
+    sdFailRead = 1;
+    checkPanel(0);
+    assert(!sdOpened && !opened);
+    sdFailRead = 0;
+    assert(EspNativeBootLegals_advance(1U, 1) == 1);
+    checkPanel(1);
+    assert(reads == 2U + 2U*16U);
+
+    /* Truncated payload is rejected by the strict file-size/pixel bounds. */
+    fixture(); sdFixture();
+    sdBmp[2] -= 1U; /* BMP file-size header no longer matches SD size. */
+    assert(EspNativeBootLegals_begin(0U));
+    checkPanel(0);
+
+    printf("BOOTLEGALS HOST PASS optional-bmp24=128x640 sd-five-frames exact-crop/no-pak-pixel-reads invalid/truncated/failing-sd-fallback originals=4 credit=Kharn27 durationMs=3000 panels=5 touch=skip crop=160x120 pack=closed ranges=16/frame failure=closed\\n");
     return 0;
 }

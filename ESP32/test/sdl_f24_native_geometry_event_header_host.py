@@ -34,6 +34,22 @@ def git_blob(data: bytes) -> str:
     ).hexdigest()
 
 
+def restore_pre_moving_monster_bsp_leaf(original: bytes) -> bytes:
+    """SDL-F24 historical identity, reversing ONLY the reviewed monster-leaf fix.
+
+    The new include and cache branch must match exactly or the reconstruction
+    fails. The original unchanged source then still has to match SDL-F24's
+    original full Git blob SHA, so unrelated drift is never accepted.
+    """
+    extra = b'#include "esp_native_gameplay_monster_movement_publish.h"\n'
+    assert original.count(extra) == 1, "moving-monster projection include drifted"
+    original = original.replace(extra, b"", 1)
+    updated = "/* The 2 KB cache is valid only for immutable sprite positions. A monster\n * with a committed native move is projected through the map-sprite accessor,\n * so its BSP leaf must follow its CURRENT coordinates, not the spawn leaf.\n * Checking the existing projected bitset avoids allocations and preserves\n * the original caching behavior for every untouched sprite. */\nstatic int cachedSpriteLeaf(const EspMapRuntimeView* runtime,\n                            uint32_t spriteIndex,\n                            uint32_t* outLeaf) {\n    EspMapSprite sprite;\n    uint32_t leaf;\n\n    if (runtime == NULL || outLeaf == NULL ||\n        spriteIndex >= runtime->mapSpriteCount) return 0;\n\n    /* The projection owner is set before the movement's first render and\n     * restored for checkpoint monsters. Do not cache the old leaf when\n     * a monster crosses a BSP partition (e.g. through a closing door).\n     * The getter's existing wrapper supplies the committed position.\n     * Rollback/reverse movement is likewise observed on the next query. */\n    if (runtime->mapSpriteCount > MAX_CACHED_SPRITE_LEAVES ||\n        (spriteIndex <= UINT16_MAX &&\n         EspNativeGameplayMonsterMovementPublish_isProjected(\n             (uint16_t)spriteIndex))) {\n        return EspMapRuntime_getMapSprite(spriteIndex, &sprite) &&\n               spriteLeaf(runtime, &sprite, outLeaf);\n    }\n\n".encode("utf-8")
+    historical = "/* Lazy cache, invalidated by compact arena identity. The mapping derives\n * exclusively from the immutable 5-byte source sprite and 10-byte BSP nodes.\n * In particular, a relink/move/animation never changes the original source\n * leaf query used by the desktop-derived visibility contract. */\nstatic int cachedSpriteLeaf(const EspMapRuntimeView* runtime,\n                            uint32_t spriteIndex,\n                            uint32_t* outLeaf) {\n    EspMapSprite sprite;\n    uint32_t leaf;\n\n    if (runtime == NULL || outLeaf == NULL ||\n        spriteIndex >= runtime->mapSpriteCount) return 0;\n\n    if (runtime->mapSpriteCount > MAX_CACHED_SPRITE_LEAVES) {\n        return EspMapRuntime_getMapSprite(spriteIndex, &sprite) &&\n               spriteLeaf(runtime, &sprite, outLeaf);\n    }\n\n".encode("utf-8")
+    assert original.count(updated) == 1, "moving-monster BSP cache fix drifted"
+    return original.replace(updated, historical, 1)
+
+
 def source_gate() -> None:
     for name, old_sha in BEFORE.items():
         current = (SRC / name).read_bytes()
@@ -41,6 +57,8 @@ def source_gate() -> None:
         assert current.startswith(prefix), f"{name}: no host/geometry guard"
         assert current.count(b"#include <SDL.h>") == 1, name
         old = b"#include <SDL.h>\n" + current[len(prefix):]
+        if name == "esp_native_bsp_visibility.c":
+            old = restore_pre_moving_monster_bsp_leaf(old)
         if name == "esp_native_gameplay_event_chain.c":
             from arch_rc11_history import restore_pre_rc11_event_chain
             old = restore_pre_rc11_event_chain(old)

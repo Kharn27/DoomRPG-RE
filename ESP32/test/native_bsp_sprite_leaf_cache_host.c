@@ -17,6 +17,14 @@ static unsigned nodeReads;
 
 const EspMapRuntimeView* EspMapRuntime_view(void) { return &view; }
 
+/* Immutable-only oracle: none of these two fixture sprites has committed a
+ * MonsterPosition move. The dynamic leaf branch is covered separately by
+ * native_bsp_moving_sprite_visibility_host.py with the real production bodies. */
+int EspNativeGameplayMonsterMovementPublish_isProjected(uint16_t spriteIndex) {
+    (void)spriteIndex;
+    return 0;
+}
+
 int EspMapRuntime_getMapSprite(uint32_t index, EspMapSprite* out) {
     if (out == NULL || index >= view.mapSpriteCount) return 0;
     ++spriteReads;

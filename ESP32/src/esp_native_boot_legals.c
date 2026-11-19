@@ -1,4 +1,5 @@
 #include "esp_native_boot_legals.h"
+#include "esp_native_boot_legals_sd.h"
 #include "esp_asset_pack.h"
 
 #include <stdint.h>
@@ -13,6 +14,11 @@ enum {
     BOOT_SHEET_H = BOOT_FRAME_H * BOOT_FRAME_COUNT,
     BOOT_ROW_BYTES = BOOT_FRAME_W / 2,
     BOOT_ROW_BLOCK = 8,
+    /* External 24-bit BMP: five 128x128 panels, lossless from credits.png. */
+    BOOT_SD_SHEET_H = BOOT_FRAME_H * BOOT_TOTAL_PANELS,
+    BOOT_SD_ROW_BYTES = BOOT_FRAME_W * 3,
+    BOOT_SD_ROW_BLOCK = 4,
+    BOOT_SD_PIXEL_BYTES = BOOT_SD_ROW_BYTES * BOOT_SD_SHEET_H,
     BOOT_LOGICAL_W = 160,
     BOOT_LOGICAL_H = 120,
     BOOT_FRAME_X = (BOOT_LOGICAL_W - BOOT_FRAME_W) / 2,
@@ -26,9 +32,11 @@ typedef struct EspBootLegalsState_s {
     EspAssetPackEntry entry;
     uint16_t palette[16];
     uint32_t pixelOffset;
+    uint32_t sdPixelOffset;
     uint32_t frameStartedMs;
     uint8_t panel;
     uint8_t active;
+    uint8_t sdCustom;
 } EspBootLegalsState;
 
 static EspBootLegalsState legals;
@@ -58,6 +66,7 @@ static int sameEntry(const EspAssetPackEntry* a,
 }
 
 void EspNativeBootLegals_cancel(void) {
+    EspNativeBootLegalsSd_close();
     memset(&legals, 0, sizeof(legals));
 }
 
@@ -67,6 +76,40 @@ int EspNativeBootLegals_isActive(void) {
 
 unsigned int EspNativeBootLegals_currentPanel(void) {
     return legals.active ? (unsigned int)legals.panel + 1U : 0U;
+}
+
+/* A PNG decoder would need tens of KiB of temporary RAM on this no-PSRAM
+ * board. The user-facing PNG stays as the artwork source; the removable SD
+ * override uses an equivalent uncompressed RGB24 BMP with just 1.5 KiB of
+ * stack scratch. This is strictly an optional boot-time file. */
+static int preflightSdOverride(uint32_t* outOffset) {
+    uint8_t header[54];
+    uint32_t size = 0U;
+    int ok = 0;
+    if (outOffset != NULL) *outOffset = 0U;
+    if (EspAssetPack_isOpen() || !EspNativeBootLegalsSd_open(&size))
+        return 0;
+
+    if (size >= sizeof(header) && EspNativeBootLegalsSd_read(0U, header, sizeof(header))) {
+        const uint32_t pixelOffset = read32(header + 10);
+        const uint32_t imageBytes = read32(header + 34);
+        if (header[0] == 'B' && header[1] == 'M' &&
+            read32(header + 2) == size &&
+            read32(header + 14) == 40U &&
+            read32(header + 18) == BOOT_FRAME_W &&
+            read32(header + 22) == BOOT_SD_SHEET_H &&
+            read16(header + 26) == 1U &&
+            read16(header + 28) == 24U &&
+            read32(header + 30) == 0U &&
+            (imageBytes == 0U || imageBytes == BOOT_SD_PIXEL_BYTES) &&
+            pixelOffset >= sizeof(header) && pixelOffset <= size &&
+            BOOT_SD_PIXEL_BYTES <= size - pixelOffset) {
+            if (outOffset != NULL) *outOffset = pixelOffset;
+            ok = 1;
+        }
+    }
+    EspNativeBootLegalsSd_close();
+    return ok;
 }
 
 int EspNativeBootLegals_begin(uint32_t nowMs) {
@@ -121,6 +164,10 @@ int EspNativeBootLegals_begin(uint32_t nowMs) {
     legals.panel = 0;
     legals.active = 1;
     EspAssetPack_close();
+    legals.sdCustom = (uint8_t)preflightSdOverride(&legals.sdPixelOffset);
+    printf("[BOOTLEGALS] OVERRIDE path=%s status=%s fallback=g.bmp+port-credit pixels=128x640 format=bmp24 pack=closed\\n",
+           ESP_NATIVE_BOOT_LEGALS_SD_PATH,
+           legals.sdCustom ? "valid" : "missing-or-invalid");
     printf("[BOOTLEGALS] BEGIN asset=g.bmp sheet=128x512 bpp=4 palette=%u panels=4 durationMs=3000 credit=Kharn27 creditMs=3000 pack=closed\n",
            (unsigned int)colorsUsed);
     return 1;
@@ -262,6 +309,57 @@ static void drawPortCredit(uint16_t* framebuffer, size_t pixelCount) {
     creditMark(framebuffer);
 }
 
+/* Every panel is independent: open SD, seek/read four bottom-up rows,
+ * paint into the borrowed framebuffer, close SD. No resident image buffer.
+ * On ANY SD read/open failure the caller repaints this same panel from the
+ * original PAK (or ROM author-credit) and keeps the boot sequence alive. */
+static int drawSdPanel(uint16_t* framebuffer, size_t pixelCount) {
+    uint8_t packedRows[BOOT_SD_ROW_BYTES * BOOT_SD_ROW_BLOCK];
+    uint32_t size = 0U;
+    unsigned int blockY;
+    int ok = 0;
+
+    if (EspAssetPack_isOpen() || !EspNativeBootLegalsSd_open(&size))
+        return 0;
+    if (legals.sdPixelOffset > size ||
+        BOOT_SD_PIXEL_BYTES > size - legals.sdPixelOffset)
+        goto close;
+
+    memset(framebuffer, 0, pixelCount * sizeof(uint16_t));
+    for (blockY = 0U; blockY < BOOT_FRAME_H; blockY += BOOT_SD_ROW_BLOCK) {
+        const uint32_t fileY = BOOT_SD_SHEET_H -
+            ((uint32_t)legals.panel * BOOT_FRAME_H + blockY +
+             BOOT_SD_ROW_BLOCK);
+        const uint32_t offset = legals.sdPixelOffset +
+            fileY * BOOT_SD_ROW_BYTES;
+        unsigned int y;
+        if (!EspNativeBootLegalsSd_read(offset, packedRows,
+                                         sizeof(packedRows))) goto close;
+        for (y = 0U; y < BOOT_SD_ROW_BLOCK; ++y) {
+            const int outY = (int)(blockY + y) + BOOT_FRAME_Y;
+            const uint8_t* src = packedRows +
+                (BOOT_SD_ROW_BLOCK - 1U - y) * BOOT_SD_ROW_BYTES;
+            uint16_t* dst;
+            unsigned int x;
+            if (outY < 0 || outY >= BOOT_LOGICAL_H) continue;
+            dst = framebuffer + outY * BOOT_LOGICAL_W + BOOT_FRAME_X;
+            for (x = 0U; x < BOOT_FRAME_W; ++x) {
+                const uint8_t* bgr = src + x * 3U;
+                dst[x] = rgb565(bgr[2], bgr[1], bgr[0]);
+            }
+        }
+    }
+    ok = 1;
+
+close:
+    EspNativeBootLegalsSd_close();
+    if (ok) {
+        printf("[BOOTLEGALS] FRAME %u/5 source=sd-bmp24 pack=closed sd=closed scratch=1536 framebuffer=borrowed\\n",
+               (unsigned int)legals.panel + 1U);
+    }
+    return ok;
+}
+
 int EspNativeBootLegals_draw(uint16_t* framebuffer, size_t pixelCount) {
     EspAssetPackEntry entry;
     uint8_t packedRows[BOOT_ROW_BYTES * BOOT_ROW_BLOCK];
@@ -272,6 +370,12 @@ int EspNativeBootLegals_draw(uint16_t* framebuffer, size_t pixelCount) {
         pixelCount != (size_t)BOOT_LOGICAL_W * BOOT_LOGICAL_H ||
         EspAssetPack_isOpen())
         goto fail;
+    if (legals.sdCustom) {
+        if (drawSdPanel(framebuffer, pixelCount)) return 1;
+        legals.sdCustom = 0U;
+        printf("[BOOTLEGALS] OVERRIDE read-failed panel=%u fallback=original pack=closed sd=closed\\n",
+               (unsigned int)legals.panel + 1U);
+    }
     if (legals.panel == BOOT_FRAME_COUNT) {
         drawPortCredit(framebuffer, pixelCount);
         printf("[BOOTLEGALS] FRAME 5/5 credit=Kharn27 ms=3000 pack=closed scratch=0 framebuffer=borrowed\n");
