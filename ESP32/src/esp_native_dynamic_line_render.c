@@ -472,16 +472,21 @@ int __wrap_EspNativeGameplayFrame_renderTurn(
 
 #if defined(ARDUINO) && defined(DOOMRPG_ESP32)
             /*
-             * The frame has just been physically presented and the PAK
-             * lease released. OPEN 5063 must start HERE, not after all four
-             * ~100ms frames. The usual render-compositor audio pump has
-             * already run, so service the new SFX immediately at this safe
-             * boundary. CLOSE and MOVE publications retain their original
-             * rollback-aware timing.
+             * Both door cues follow physical presentation, with the PAK
+             * lease closed. OPEN 5063 is emitted after its first opening
+             * frame; held MOVE-close 5064 is staged at MOVE commit and
+             * emitted only after the first visible closing frame FOLLOWING
+             * the monster turn. Other closes keep their commit timing.
+             * This hook never runs on failed/held/unpresented frames.
              */
-            if (animationFrame.ordinal == 1U &&
-                EspNativeDoorSfx_onFirstPresentedOpeningFrame() != 0U) {
-                EspEntranceMusic_pumpGameplay();
+            if (animationFrame.ordinal == 1U) {
+                const uint8_t opened =
+                    EspNativeDoorSfx_onFirstPresentedOpeningFrame();
+                const uint8_t closed =
+                    EspNativeDoorSfx_onFirstPresentedHeldClosingFrame();
+                if (opened != 0U || closed != 0U) {
+                    EspEntranceMusic_pumpGameplay();
+                }
             }
 #endif
         }

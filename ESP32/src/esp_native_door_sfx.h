@@ -6,6 +6,7 @@
 
 #include "esp_map_line_state.h"
 #include "esp_native_audio_intent.h"
+#include "esp_native_door_animator.h"
 
 /*
  * Door sound is a POST-COMMIT side effect, never part of the line applier,
@@ -31,6 +32,16 @@ static inline int EspNativeDoorSfx_publishCommitted(
         return 0;
     }
 
+    /* MOVE closes are transactionally committed before the monster turn,
+     * but HELD animation has not moved onscreen yet. Reserve its 5064 in
+     * the existing animation slot and publish at first visible close frame. */
+    if (openBefore == 1U && openAfter == 0U &&
+        EspNativeDoorAnimator_stageCommittedDeferredCloseSound(lineIndex)) {
+        printf("[DOORSFX] CLOSE-STAGED line=%u open=1->0 sound=5064 priority=2 queued=no phase=held-before-monster-turn rollback=closed\n",
+               (unsigned int)lineIndex);
+        return 1;
+    }
+
     published = EspNativeAudioIntent_publish(soundId, 0U, 2U);
     printf("[DOORSFX] COMMIT line=%u open=%u->%u sound=%u priority=2 queued=%s rollback=closed\n",
            (unsigned int)lineIndex,
@@ -47,7 +58,9 @@ static inline int EspNativeDoorSfx_publishCommitted(
  * The animation owner publishes after the first real frame succeeds; the
  * existing safe main-task music pump is then invoked immediately.
  * Ordinary late publication remains the fallback for non-animated doors.
- * Closing SFX (5064) retain their proven existing commit point.
+ * Held MOVE-close 5064 is staged at commit and published after the first
+ * visible moving frame, following the monster turn; other CLOSEs still
+ * follow the ordinary post-commit path.
  *
  * A visible first animation frame cannot be rolled back acoustically if
  * a later frame fails; the sound represents the already observed motion.
@@ -57,6 +70,7 @@ struct EspNativeGameplayActionResult_s;
 void EspNativeDoorSfx_stageSelectOpenings(
     const struct EspNativeGameplayActionResult_s* result);
 uint8_t EspNativeDoorSfx_onFirstPresentedOpeningFrame(void);
+uint8_t EspNativeDoorSfx_onFirstPresentedHeldClosingFrame(void);
 void EspNativeDoorSfx_cancelSelect(void);
 void EspNativeDoorSfx_finishSelect(
     const struct EspNativeGameplayActionResult_s* result);

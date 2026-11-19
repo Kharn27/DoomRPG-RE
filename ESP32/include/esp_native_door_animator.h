@@ -68,6 +68,16 @@ int EspNativeDoorAnimator_isHoldingDeferredClose(void);
 uint8_t EspNativeDoorAnimator_deferredCloseCount(void);
 uint8_t EspNativeDoorAnimator_releaseDeferredCloses(void);
 
+/* Sound is committed only after a successful MOVE frame, but a held 1->0
+ * door has not started visibly closing yet. Reuse one reserved byte per
+ * 8-byte slot; no new allocation or sound ownership in the animator.
+ * Stage only a committed close still held at position 3. Following the
+ * monster turn, take each cue once after a successfully rendered first
+ * moving frame (completedFrames == 1). Aborted/reset slots discard cues. */
+int EspNativeDoorAnimator_stageCommittedDeferredCloseSound(uint16_t lineIndex);
+int EspNativeDoorAnimator_takePresentedDeferredCloseSound(
+    uint16_t* outLineIndex);
+
 /* Cancel a stale visual lease if its already-committed line state was rolled
  * back by an outer transaction before rendering. Returns 1 when the current
  * batch is still coherent or no batch exists, 0 when a stale batch was reset. */
