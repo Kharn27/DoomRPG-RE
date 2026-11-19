@@ -643,7 +643,7 @@ int EspMapSpriteTopology_restoreMonsterSnapshot(
     return 1;
 }
 
-int EspMapSpriteTopology_getVisualState(uint32_t spriteIndex,
+int EspMapSpriteTopology_getVisualStateBase(uint32_t spriteIndex,
                                         uint8_t* outVisualState) {
     if (!EspMapSpriteTopology_isReady() || outVisualState == NULL ||
         spriteIndex >= topologyView.spriteCount) return 0;
@@ -651,7 +651,7 @@ int EspMapSpriteTopology_getVisualState(uint32_t spriteIndex,
     return 1;
 }
 
-int EspMapSpriteTopology_getEntity(uint32_t spriteIndex,
+int EspMapSpriteTopology_getEntityBase(uint32_t spriteIndex,
                                    uint8_t* outType,
                                    uint8_t* outSubType,
                                    uint16_t* outLinkState,
