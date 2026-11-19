@@ -1,0 +1,36 @@
+name: One-shot UAC composition proof build
+on:
+  push:
+    branches:
+      - agent/menu-uac-frame-bmp-assets
+permissions:
+  contents: write
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Generate and verify 20 previews from 18 final BMPs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check Pillow==11.3.0
+          python artwork/menu-uac/tools/render_previews.py --write
+          python artwork/menu-uac/tools/render_previews.py --check
+      - name: Commit previews; delete this one-shot importer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add artwork/menu-uac/previews/
+          git rm .github/workflows/menu-uac-preview-import.yml
+          git diff --cached --stat
+          git commit -m "ASSETS: attach 120/240 frame composition evidence from final BMP"
+          git push origin HEAD:refs/heads/agent/menu-uac-frame-bmp-assets
