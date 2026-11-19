@@ -11,6 +11,7 @@
 
 #include "esp_map_automap_state.h"
 #include "esp_map_runtime.h"
+#include "esp_native_gameplay_monster_movement_publish.h"
 #include "esp_native_bsp_visibility.h"
 #include "esp_render_geometry_primitives.h"
 #include "esp_native_dynamic_clip.h"
@@ -394,10 +395,11 @@ static int spriteLeaf(const EspMapRuntimeView* runtime,
     return 0;
 }
 
-/* Lazy cache, invalidated by compact arena identity. The mapping derives
- * exclusively from the immutable 5-byte source sprite and 10-byte BSP nodes.
- * In particular, a relink/move/animation never changes the original source
- * leaf query used by the desktop-derived visibility contract. */
+/* The 2 KB cache is valid only for immutable sprite positions. A monster
+ * with a committed native move is projected through the map-sprite accessor,
+ * so its BSP leaf must follow its CURRENT coordinates, not the spawn leaf.
+ * Checking the existing projected bitset avoids allocations and preserves
+ * the original caching behavior for every untouched sprite. */
 static int cachedSpriteLeaf(const EspMapRuntimeView* runtime,
                             uint32_t spriteIndex,
                             uint32_t* outLeaf) {
@@ -407,7 +409,15 @@ static int cachedSpriteLeaf(const EspMapRuntimeView* runtime,
     if (runtime == NULL || outLeaf == NULL ||
         spriteIndex >= runtime->mapSpriteCount) return 0;
 
-    if (runtime->mapSpriteCount > MAX_CACHED_SPRITE_LEAVES) {
+    /* The projection owner is set before the movement's first render and
+     * restored for checkpoint monsters. Do not cache the old leaf when
+     * a monster crosses a BSP partition (e.g. through a closing door).
+     * The getter's existing wrapper supplies the committed position.
+     * Rollback/reverse movement is likewise observed on the next query. */
+    if (runtime->mapSpriteCount > MAX_CACHED_SPRITE_LEAVES ||
+        (spriteIndex <= UINT16_MAX &&
+         EspNativeGameplayMonsterMovementPublish_isProjected(
+             (uint16_t)spriteIndex))) {
         return EspMapRuntime_getMapSprite(spriteIndex, &sprite) &&
                spriteLeaf(runtime, &sprite, outLeaf);
     }
