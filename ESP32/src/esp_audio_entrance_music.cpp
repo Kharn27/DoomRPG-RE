@@ -898,8 +898,12 @@ static void mixPendingSfxOne() {
     }
     EspAssetPack_close();
     if (mixed!=0U) sfxBusyUntil=start+mixed;
-    if (failed!=nullptr || mixed!=output) ++sfxRejectedCount; EspNativeAudioIntent_notePlaybackDrop();
-    else ++sfxPlayedCount;
+    if (failed!=nullptr || mixed!=output) {
+        ++sfxRejectedCount;
+        EspNativeAudioIntent_notePlaybackDrop();
+    } else {
+        ++sfxPlayedCount;
+    }
     printf("[SFXP1] %s id=%u name=%s source=verified-flash-pak "
            "format=PCM16-mono-8000 sampleFrames=%u outputFrames=%u "
            "mixed=%u leadFrames=%u reads=%u pcmMinMax=%d..%d "
