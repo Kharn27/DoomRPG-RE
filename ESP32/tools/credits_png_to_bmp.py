@@ -28,7 +28,7 @@ def convert(source: Path, target: Path) -> None:
             raise ValueError("Alpha PNG not supported: supply a flattened RGB image")
         image.save(target, format="BMP")
     bmp = target.read_bytes()
-    if len(bmp) != 245814 or bmp[:2] != b"BM" or bmp[28:30] != b"\\x18\\x00":
+    if len(bmp) != 245814 or bmp[:2] != b"BM" or bmp[28:30] != b"\x18\x00":
         raise ValueError("Unexpected BMP layout; expected uncompressed RGB24")
     print(f"{target}: 128x640 RGB24, {len(bmp)} bytes, exact RGB pixels preserved")
 

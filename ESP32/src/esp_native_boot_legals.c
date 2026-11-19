@@ -165,7 +165,7 @@ int EspNativeBootLegals_begin(uint32_t nowMs) {
     legals.active = 1;
     EspAssetPack_close();
     legals.sdCustom = (uint8_t)preflightSdOverride(&legals.sdPixelOffset);
-    printf("[BOOTLEGALS] OVERRIDE path=%s status=%s fallback=g.bmp+port-credit pixels=128x640 format=bmp24 pack=closed\\n",
+    printf("[BOOTLEGALS] OVERRIDE path=%s status=%s fallback=g.bmp+port-credit pixels=128x640 format=bmp24 pack=closed\n",
            ESP_NATIVE_BOOT_LEGALS_SD_PATH,
            legals.sdCustom ? "valid" : "missing-or-invalid");
     printf("[BOOTLEGALS] BEGIN asset=g.bmp sheet=128x512 bpp=4 palette=%u panels=4 durationMs=3000 credit=Kharn27 creditMs=3000 pack=closed\n",
@@ -354,7 +354,7 @@ static int drawSdPanel(uint16_t* framebuffer, size_t pixelCount) {
 close:
     EspNativeBootLegalsSd_close();
     if (ok) {
-        printf("[BOOTLEGALS] FRAME %u/5 source=sd-bmp24 pack=closed sd=closed scratch=1536 framebuffer=borrowed\\n",
+        printf("[BOOTLEGALS] FRAME %u/5 source=sd-bmp24 pack=closed sd=closed scratch=1536 framebuffer=borrowed\n",
                (unsigned int)legals.panel + 1U);
     }
     return ok;
@@ -373,7 +373,7 @@ int EspNativeBootLegals_draw(uint16_t* framebuffer, size_t pixelCount) {
     if (legals.sdCustom) {
         if (drawSdPanel(framebuffer, pixelCount)) return 1;
         legals.sdCustom = 0U;
-        printf("[BOOTLEGALS] OVERRIDE read-failed panel=%u fallback=original pack=closed sd=closed\\n",
+        printf("[BOOTLEGALS] OVERRIDE read-failed panel=%u fallback=original pack=closed sd=closed\n",
                (unsigned int)legals.panel + 1U);
     }
     if (legals.panel == BOOT_FRAME_COUNT) {
@@ -441,8 +441,9 @@ int EspNativeBootLegals_advance(uint32_t nowMs, int touchPressedEdge) {
 
     legals.frameStartedMs = nowMs;
     if (++legals.panel == BOOT_TOTAL_PANELS) {
-        printf("[BOOTLEGALS] COMPLETE reason=%s panels=5 originals=4 credit=Kharn27 pack=closed\n",
-               touchPressedEdge ? "touch" : "timer");
+        printf("[BOOTLEGALS] COMPLETE reason=%s panels=5 source=%s originals=4 credit=Kharn27 pack=closed\n",
+               touchPressedEdge ? "touch" : "timer",
+               legals.sdCustom ? "sd-bmp24" : "g.bmp+port-credit");
         EspNativeBootLegals_cancel();
         return 2;
     }
