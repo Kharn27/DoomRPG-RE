@@ -21,6 +21,7 @@ SOURCES = {
 }
 SIGNATURES = (
     ("activation", "static uint16_t read16le("),
+    ("raw", "static uint16_t readLe16("),
     ("raw", "int EspMapRuntime_getMapSpriteBase("),
     ("projection", "int EspMapRuntime_getMapSprite("),
     ("bsp", "int EspNativeBspVisibility_mapSpriteVisibleBase("),
@@ -281,7 +282,7 @@ int main(void) {
     assert(!EspNativeBspVisibility_mapSpriteVisible(&state,3U,&leaf));
     assert(leaf==UINT32_MAX&&activationCalls==0);
 
-    puts("PASS RC21 five real C bodies: raw sprite, rendered sprite, "
+    puts("PASS RC21 six real C bodies: raw sprite, rendered sprite, "
          "BSP pure admission and single post-visible monster activation");
     return 0;
 }
@@ -339,29 +340,29 @@ def main():
     bodies=[extract(SOURCES[k],sig) for k,sig in SIGNATURES]
     run(bodies,True)
     mutations=(
-        (1,"(uint16_t)raw[0] << 3","(uint16_t)raw[0] << 2"),
-        (1,"(uint16_t)raw[1] << 3","(uint16_t)raw[1] << 2"),
-        (1,"(uint32_t)raw[2]","(uint32_t)raw[3]"),
-        (2,"!EspNativeGameplayCrateState_applyMapSprite(index, outSprite)",
+        (2,"(uint16_t)raw[0] << 3","(uint16_t)raw[0] << 2"),
+        (2,"(uint16_t)raw[1] << 3","(uint16_t)raw[1] << 2"),
+        (2,"(uint32_t)raw[2]","(uint32_t)raw[3]"),
+        (3,"!EspNativeGameplayCrateState_applyMapSprite(index, outSprite)",
              "0"),
-        (2,"outSprite->info |= SPRITE_HIDDEN;",
+        (3,"outSprite->info |= SPRITE_HIDDEN;",
              "outSprite->info &= ~SPRITE_HIDDEN;"),
-        (2,"EspNativeGameplayMonsterMovementPublish_isProjected((uint16_t)index)",
+        (3,"EspNativeGameplayMonsterMovementPublish_isProjected((uint16_t)index)",
              "0"),
-        (2,"monsterPosition->tileIndex ==",
+        (3,"monsterPosition->tileIndex ==",
              "monsterPosition->tileIndex !="),
-        (2,"EspNativeGameplayMonsterAttackVisual_isPoseSprite(index)",
+        (3,"EspNativeGameplayMonsterAttackVisual_isPoseSprite(index)",
              "0"),
-        (2,"outSprite->info |= SPRITE_SORT_BIAS;",
+        (3,"outSprite->info |= SPRITE_SORT_BIAS;",
              "outSprite->info &= ~SPRITE_SORT_BIAS;"),
-        (3,"EspNativeBspVisibility_mapSpriteVisibleReadOnly(",
+        (4,"EspNativeBspVisibility_mapSpriteVisibleReadOnly(",
              "EspNativeBspVisibility_mapSpriteVisible("),
-        (4,"if (!visible || mapSpriteIndex > 0xffffU)",
+        (5,"if (!visible || mapSpriteIndex > 0xffffU)",
              "if (visible || mapSpriteIndex > 0xffffU)"),
-        (4,"type != ACTIVESEQ_TYPE_ENEMY","type == ACTIVESEQ_TYPE_ENEMY"),
-        (4,"(sprite.info & ACTIVESEQ_SPRITE_NO_ACTIVATE) != 0U",
+        (5,"type != ACTIVESEQ_TYPE_ENEMY","type == ACTIVESEQ_TYPE_ENEMY"),
+        (5,"(sprite.info & ACTIVESEQ_SPRITE_NO_ACTIVATE) != 0U",
              "(sprite.info & ACTIVESEQ_SPRITE_NO_ACTIVATE) == 0U"),
-        (4,"tile = (uint16_t)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK);",
+        (5,"tile = (uint16_t)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK);",
              "tile = 0U;"),
     )
     for which,original,changed in mutations:
@@ -370,7 +371,7 @@ def main():
         variant=list(bodies)
         variant[which]=text.replace(original,changed,1)
         run(variant,False)
-    print("PASS RC21: five real C bodies, 14 adversarial mutants rejected")
+    print("PASS RC21: six real C bodies, 14 adversarial mutants rejected")
 
 
 if __name__=="__main__":
