@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compile and execute the REAL UAC cached-patch scanout body with TFT mocks.
 
-No SD, no sound ISR: checks the two exact 110x40 rectangles and states,
+No SD, no sound ISR: checks two exact 110x40 rectangles, channel-wise dim,
 resource lifecycle/static guards in the firmware owner. Hardware still required.
 """
 from pathlib import Path
@@ -23,7 +23,18 @@ def body(signature):
             if level==0:return src[i:j+1]
     raise AssertionError("unbalanced C++ body")
 
+dim=body("static uint16_t dimRgb565(uint16_t pixel)")
 real=body("static bool renderCachedSelection(TFT_eSPI* lcd,int m,int selected,int previous,")
+preflight=body("static bool preflight(void)")
+draw=body("static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,")
+require("buttonPath(p,sizeof(p),i,true);" in preflight,
+        "five-BMP preflight must require only active labelled sources")
+require("buttonPath(path,sizeof(path),active,true);" in draw,
+        "cold paint should use the same bright source as hot paint")
+require("bright[x]=dimRgb565(bright[x]);" in draw,
+        "cold paint missing pixel-identical software dimming")
+require(draw.index("memcpy(dst+")<draw.index("bright[x]=dimRgb565(bright[x]);"),
+        "bright surface must be cached BEFORE dimming")
 require("freeCache(\"menu-exit\")" in src,"cache leaked on menu exit")
 require("EspUacMenuPreview_cycle" not in src,"comparison mode switch survived")
 require("freeCache(\"menu-activate\")" in src,"fresh MENU_MAIN must discard retired assets")
@@ -34,7 +45,12 @@ require("assetTier(" not in src and "k240As120" not in src,"experimental modes s
 require("allocateCache(mode)" in src,"mode cache must be transient")
 require("warmCache(fb,stride,current)" in src,"no one-time precomposition")
 require("MALLOC_CAP_8BIT" in src and "kCacheReserve8=20U*1024U" in src,"no heap8 headroom guard")
-require("cachePixels[active][selected==active]" in src,"full/patch capture must use rendered state")
+require("cachePixels[active]" in src,"full/patch capture must use bright state")
+require("static uint16_t* cachePixels[4]={};" in src,"only four RGB565 patches permitted")
+require("slots=%u/4 bytes=%u" in src,"cache allocation cap must be four patches")
+require("cacheReady[4]" in src and "cachePixels[4][2]" not in src,"old 8-slot cache survived")
+require("for(int i=0;i<4;++i)ready+=cacheReady[i]?1U:0U;" in src,
+        "no second-state warmup permitted")
 require("if(!warming){" in src,"warming must not touch TFT")
 require("return false;  /* SD failure is still fail-closed */" in src,"cache must not mask SD corruption")
 
@@ -76,7 +92,7 @@ struct MockSerial {
     void println(const char*) {}
 } Serial;
 bool preflight(){++sdCalls;return assetsValid;}
-void allocateCache(int){++allocCalls;heap-=70400;}
+void allocateCache(int){++allocCalls;heap-=35200;}
 void freeCache(const char*){++freeCalls;heap=94008;}
 __MODE__
 __ACTIVATE__
@@ -88,7 +104,7 @@ int main(){
     assert(EspUacMenuPreview_mode()==3);
     assert(heap==before && sdCalls==0 && allocCalls==0 && freeCalls==0);
     assert(activateOnFirstPresent());
-    assert(sdCalls==1 && allocCalls==1 && heap==before-70400);
+    assert(sdCalls==1 && allocCalls==1 && heap==before-35200);
     EspUacMenuPreview_reset();
     assert(heap==before && mode==0 && !activationPending);
     assetsValid=false;sdCalls=0;allocCalls=0;freeCalls=0;
@@ -117,9 +133,9 @@ enum { ESP_UAC_BUTTON_WIDTH=110, ESP_UAC_BUTTON_INSET=4 };
 enum { kPanelX=202 };
 int kTop[4]={20,74,128,182};
 int cacheMode=3;
-uint16_t all[4][2][110*40]{};
-uint16_t* cachePixels[4][2]{};
-uint8_t cacheReady[4][2]{};
+uint16_t all[4][110*40]{};
+uint16_t* cachePixels[4]{};
+uint8_t cacheReady[4]{};
 struct DrawStats {
     uint32_t sdUs=0,lcdUs=0;
     unsigned batches=0,buttonOpens=0,rowsSent=0,audioPumps=0,audioBlocks=0,cacheHits=0;
@@ -141,32 +157,34 @@ struct TFT_eSPI {
         pos+=n;
     }
 };
+__DIM__
 __BODY__
 int main(){
     TFT_eSPI lcd;
     DrawStats stats;
-    for(int i=0;i<4;++i)for(int s=0;s<2;++s){
-        cachePixels[i][s]=all[i][s];
-        for(int p=0;p<110*40;++p)all[i][s][p]=(uint16_t)(1000+i*100+s*30+(p%17));
+    for(int i=0;i<4;++i){
+        cachePixels[i]=all[i];
+        for(int p=0;p<110*40;++p)all[i][p]=(uint16_t)(1000+i*100+(p%17));
     }
     assert(!renderCachedSelection(&lcd,3,2,0,&stats));
     assert(stats.batches==0 && lcd.windows==0);
-    cacheReady[0][0]=cacheReady[2][1]=1;
+    cacheReady[0]=cacheReady[2]=1;
     assert(renderCachedSelection(&lcd,3,2,0,&stats));
     assert(lcd.starts==1 && lcd.ends==1 && lcd.windows==2);
     assert(stats.rowsSent==80 && stats.batches==2 && stats.cacheHits==2);
     assert(stats.sdUs==0 && stats.audioPumps==1);
     for(int row=0;row<40;++row)for(int col=0;col<110;++col){
-        assert(lcd.framebuffer[(20+row)*320+206+col]==all[0][0][row*110+col]);
-        assert(lcd.framebuffer[(128+row)*320+206+col]==all[2][1][row*110+col]);
+        assert(lcd.framebuffer[(20+row)*320+206+col]==
+               dimRgb565(all[0][row*110+col]));
+        assert(lcd.framebuffer[(128+row)*320+206+col]==all[2][row*110+col]);
     }
     assert(lcd.framebuffer[19*320+206]==0 && lcd.framebuffer[20*320+205]==0);
     assert(!renderCachedSelection(&lcd,3,0,0,&stats)); /* no redraw */
     assert(!renderCachedSelection(&lcd,2,2,0,&stats)); /* wrong asset tier */
     assert(!renderCachedSelection(&lcd,3,3,2,&stats)); /* missing states */
-    puts("UAC CACHE PASS: real two 110x40 RGB565 windows, exact states, SD=0, mode guard, reset/heap policies");
+    puts("UAC CACHE PASS: 4 bright patches, dim inactive before TFT, exact 110x40 pixels, SD=0, 35.2KB heap");
 }
-""".replace("__BODY__",real)
+""".replace("__DIM__",dim).replace("__BODY__",real)
 with tempfile.TemporaryDirectory(prefix="uac-hot-cache-") as dirname:
     root=Path(dirname); source=root/"test.cpp"; exe=root/"test"
     source.write_text(test)
