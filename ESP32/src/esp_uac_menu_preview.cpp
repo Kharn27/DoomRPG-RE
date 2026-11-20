@@ -51,6 +51,7 @@ const char* const kSha256[2][9] = {
 enum { kClassic=0,kUac240=3 };
 constexpr bool kStrictSha256=false;
 int mode=kClassic;
+bool activationPending=false; /* no heap/SD work inside MENU_MAIN owner's check */
 int paintedMode=0,paintedSelection=-1;
 /* Four physical rows per TFT write: 6680B BSS, no frame allocation.
  * Only frame plus current button can have live BMP handles. */
@@ -382,35 +383,46 @@ static bool warmCache(const uint16_t* fb,uint16_t stride,int m){
 }
 } // namespace
 
-extern "C" int EspUacMenuPreview_mode(void){return mode;}
-extern "C" void EspUacMenuPreview_reset(void){
-    if(mode)Serial.printf("[UAC] RESET mode=%d fallback=classic\n",mode);
-    freeCache("menu-exit");
-    mode=0;paintedMode=0;paintedSelection=-1;
+/* Registration into MENU_MAIN MUST be allocation-/SD-free. The software
+ * compositor verifies its framebuffer hashes AND identical heap8 before it
+ * makes the first physical present(). Defer every UAC SD check/allocation
+ * to that present() or Options->Back will fail even with valid bitmaps. */
+extern "C" int EspUacMenuPreview_mode(void){
+    return mode==kUac240||activationPending?kUac240:kClassic;
 }
-/* Called once on each MENU_MAIN input-owner activation, before first paint.
- * A missing/broken BMP is never promoted to UAC: stay on the normal
- * software dashboard with its existing touch and double-confirm behavior.
- * Re-entrant activation is idempotent to preserve a valid hot cache. */
+extern "C" void EspUacMenuPreview_reset(void){
+    if(mode||activationPending)
+        Serial.printf("[UAC] RESET mode=%d pending=%u fallback=classic\n",
+                      mode,activationPending?1U:0U);
+    activationPending=false;
+    freeCache("menu-exit");
+    mode=kClassic;paintedMode=kClassic;paintedSelection=-1;
+}
 extern "C" int EspUacMenuPreview_activate(void){
     if(mode==kUac240)return 1;
+    activationPending=true; /* never preflight or malloc here */
+    return 1;
+}
+static bool activateOnFirstPresent(void){
+    if(!activationPending)return mode==kUac240;
+    activationPending=false;
     freeCache("menu-activate");
     if(!preflight()){
-        mode=kClassic;
-        paintedMode=kClassic;paintedSelection=-1;
+        mode=kClassic;paintedMode=kClassic;paintedSelection=-1;
         Serial.println("[UAC] FALLBACK SD missing/invalid -> original MENU_MAIN");
-        return 0;
+        return false;
     }
     mode=kUac240;
     paintedMode=kClassic;paintedSelection=-1;
     allocateCache(mode);
     Serial.printf("[UAC] MODE 240 source=118x240 DIRECT physical=320x240 buttons=110x40 RAM=6680B-BSS default=yes\n");
-    return 1;
+    return true;
 }
 bool EspUacMenuPreview_draw(TFT_eSPI* lcd,const uint16_t* fb,uint16_t stride){
+    if(!lcd||!fb||stride<160U)return false;
+    if(activationPending&&!activateOnFirstPresent())return false;
     const int current=mode;
     if(!current)return true;
-    if(!lcd||!fb||stride<160U)return false;
     const int sel=EspUacMenuPreview_selectedIndex();
     if(sel<0||sel>3)return false;
     if(current==paintedMode && sel==paintedSelection)return true;
