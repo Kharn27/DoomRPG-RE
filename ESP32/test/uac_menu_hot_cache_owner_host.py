@@ -25,7 +25,12 @@ def body(signature):
 
 real=body("static bool renderCachedSelection(TFT_eSPI* lcd,int m,int selected,int previous,")
 require("freeCache(\"menu-exit\")" in src,"cache leaked on menu exit")
-require("freeCache(next==0?" in src,"mode cycle did not drop old assets")
+require("EspUacMenuPreview_cycle" not in src,"comparison mode switch survived")
+require("freeCache(\"menu-activate\")" in src,"fresh MENU_MAIN must discard retired assets")
+require("if(!preflight())" in src,"invalid SD BMP must fail closed")
+require("mode=kClassic;" in src,"procedural fallback lost")
+require("const int scale=1;" in src,"renderer must use native 240 pixels")
+require("assetTier(" not in src and "k240As120" not in src,"experimental modes survived")
 require("allocateCache(mode)" in src,"mode cache must be transient")
 require("warmCache(fb,stride,current)" in src,"no one-time precomposition")
 require("MALLOC_CAP_8BIT" in src and "kCacheReserve8=20U*1024U" in src,"no heap8 headroom guard")

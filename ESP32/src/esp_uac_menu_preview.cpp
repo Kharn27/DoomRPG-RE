@@ -46,11 +46,10 @@ const char* const kSha256[2][9] = {
     "63054b67f2c7c6024e4e1392dd34cb165e074eef6f810b518fca0804ad9ecb55"
   }
 };
-/* Reversible comparison: 0 CLASSIC, 1 native-120, 2 sampled 240->120,
- * 3 direct-240. P1 accepts artist-updated SD BMP with strict V4 geometry. */
-enum { kClassic=0,kNative120=1,k240As120=2,kDirect240=3 };
+/* Normal menu: native 240 assets; only the procedural original is fallback.
+ * No logo switch or experimental 120 modes. Keep exact V4 BGRA32 preflight. */
+enum { kClassic=0,kUac240=3 };
 constexpr bool kStrictSha256=false;
-static int assetTier(int m){return m==kNative120?120:240;}
 int mode=kClassic;
 int paintedMode=0,paintedSelection=-1;
 /* Four physical rows per TFT write: 6680B BSS, no frame allocation.
@@ -195,34 +194,33 @@ static bool verifySha256(File& file,const char* expected){
     }
     return true;
 }
-static void framePath(char* p,size_t n,int m){
-    snprintf(p,n,"/doomrpg/img/menu_frame_%d.bmp",assetTier(m));
+static void framePath(char* p,size_t n){
+    snprintf(p,n,"/doomrpg/img/menu_frame_240.bmp");
 }
-static void buttonPath(char* p,size_t n,int m,int index,bool active){
-    snprintf(p,n,"/doomrpg/img/menu_%s_%s_%d.bmp",kButtons[index],
-             active?"active":"inactive",assetTier(m));
+static void buttonPath(char* p,size_t n,int index,bool active){
+    snprintf(p,n,"/doomrpg/img/menu_%s_%s_240.bmp",kButtons[index],
+             active?"active":"inactive");
 }
-static bool preflight(int m){
+static bool preflight(void){
     OpenImage img{};
     char p[72];
-    const uint16_t fw=m==1?59U:118U,fh=m==1?120U:240U;
-    const uint16_t bw=m==1?55U:110U,bh=m==1?20U:40U;
-    framePath(p,sizeof(p),m);
+    const uint16_t fw=118U,fh=240U,bw=110U,bh=40U;
+    framePath(p,sizeof(p));
     bool valid=openBmp(img,p,fw,fh);
-    if(valid&&kStrictSha256)valid=verifySha256(img.file,kSha256[assetTier(m)==120?0:1][0]);
+    if(valid&&kStrictSha256)valid=verifySha256(img.file,kSha256[1][0]);
     if(img.file)img.file.close();
     (void)EspEntranceMusic_pumpMenuPreview();
     if(!valid){Serial.printf("[UAC] PREFLIGHT FAIL %s\n",p);return false;}
     for(int i=0;i<4;++i)for(int s=0;s<2;++s){
-        buttonPath(p,sizeof(p),m,i,s==1);
+        buttonPath(p,sizeof(p),i,s==1);
         valid=openBmp(img,p,bw,bh);
-        if(valid&&kStrictSha256)valid=verifySha256(img.file,kSha256[assetTier(m)==120?0:1][1+i*2+s]);
+        if(valid&&kStrictSha256)valid=verifySha256(img.file,kSha256[1][1+i*2+s]);
         if(img.file)img.file.close();
         (void)EspEntranceMusic_pumpMenuPreview();
         if(!valid){Serial.printf("[UAC] PREFLIGHT FAIL %s\n",p);return false;}
     }
-    Serial.printf("[UAC] PREFLIGHT OK mode=%d tier=%d integrity=%s bmpV4=valid\n",
-                  m,assetTier(m),kStrictSha256?"strict-sha256":"structure+dimensions");
+    Serial.printf("[UAC] PREFLIGHT OK mode=3 tier=240 integrity=%s bmpV4=valid\n",
+                  kStrictSha256?"strict-sha256":"structure+dimensions");
     return true;
 }
 /* Full paint only on mode entry. On selection changes the physical
@@ -234,12 +232,10 @@ static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
                  int warmTarget=-1){
     OpenImage frame{},button{};
     char path[72];
-    const int scale=m==kDirect240?1:2;
-    const int sourceStep=m==k240As120?2:1;
-    const auto blendRow=m==k240As120?
-        EspUacBmp32_blendRow240As120:EspUacBmp32_blendRow;
-    const uint16_t fw=m==1?59U:118U,fh=m==1?120U:240U;
-    const uint16_t bw=m==1?55U:110U,bh=m==1?20U:40U;
+    const int scale=1; /* Only direct physical pixels survive this milestone. */
+    const int sourceStep=1;
+    const auto blendRow=EspUacBmp32_blendRow;
+    const uint16_t fw=118U,fh=240U,bw=110U,bh=40U;
     const bool warming=warmTarget>=0&&warmTarget<4;
     const bool patch=warming||(previous>=0&&previous<4&&previous!=selected);
     const int regions=warming?1:(patch?2:1);
@@ -263,7 +259,7 @@ static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
         }
         return ok;
     };
-    framePath(path,sizeof(path),m);
+    framePath(path,sizeof(path));
     if(!openBmp(frame,path,fw,fh))return finish(false,"frame-open");
     for(int region=0;region<regions;++region){
         const int target=warming?warmTarget:
@@ -290,7 +286,7 @@ static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
                 if(button.file)button.file.close();
                 openedButton=active;
                 if(active>=0){
-                    buttonPath(path,sizeof(path),m,active,selected==active);
+                    buttonPath(path,sizeof(path),active,selected==active);
                     if(!openBmp(button,path,bw,bh))return finish(false,"button-open");
                     ++stats->buttonOpens;
                 }
@@ -392,24 +388,24 @@ extern "C" void EspUacMenuPreview_reset(void){
     freeCache("menu-exit");
     mode=0;paintedMode=0;paintedSelection=-1;
 }
-extern "C" int EspUacMenuPreview_cycle(void){
-    const int next=(mode+1)%4;
-    freeCache(next==0?"return-classic":"mode-change");
-    if(next!=0&&!preflight(next)){
-        mode=0;
+/* Called once on each MENU_MAIN input-owner activation, before first paint.
+ * A missing/broken BMP is never promoted to UAC: stay on the normal
+ * software dashboard with its existing touch and double-confirm behavior.
+ * Re-entrant activation is idempotent to preserve a valid hot cache. */
+extern "C" int EspUacMenuPreview_activate(void){
+    if(mode==kUac240)return 1;
+    freeCache("menu-activate");
+    if(!preflight()){
+        mode=kClassic;
+        paintedMode=kClassic;paintedSelection=-1;
         Serial.println("[UAC] FALLBACK SD missing/invalid -> original MENU_MAIN");
         return 0;
     }
-    mode=next;
-    paintedMode=0;paintedSelection=-1;
-    if(mode!=kClassic)allocateCache(mode);
-    Serial.printf("[UAC] MODE %s source=%s physical=320x240 buttons=110x40 RAM=6680B-BSS\n",
-                  mode==kClassic?"CLASSIC":mode==kNative120?"120":
-                    mode==k240As120?"240->120":"240",
-                  mode==kClassic?"original":mode==kNative120?
-                    "59x120 nearest-x2":mode==k240As120?
-                    "118x240 decimate2x+nearest-x2":"118x240 DIRECT");
-    return mode;
+    mode=kUac240;
+    paintedMode=kClassic;paintedSelection=-1;
+    allocateCache(mode);
+    Serial.printf("[UAC] MODE 240 source=118x240 DIRECT physical=320x240 buttons=110x40 RAM=6680B-BSS default=yes\n");
+    return 1;
 }
 bool EspUacMenuPreview_draw(TFT_eSPI* lcd,const uint16_t* fb,uint16_t stride){
     const int current=mode;
