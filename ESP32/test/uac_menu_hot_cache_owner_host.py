@@ -37,6 +37,77 @@ require("MALLOC_CAP_8BIT" in src and "kCacheReserve8=20U*1024U" in src,"no heap8
 require("cachePixels[active][selected==active]" in src,"full/patch capture must use rendered state")
 require("if(!warming){" in src,"warming must not touch TFT")
 require("return false;  /* SD failure is still fail-closed */" in src,"cache must not mask SD corruption")
+
+# Verify the real C++ mode/activation/reset bodies against MAINOPAQUE's
+# invariant: MENU_MAIN callback activation must NOT read SD or allocate RAM.
+menu_layout=(ROOT/"ESP32/src/native_main_menu_touch_layout.c").read_text()
+menu_touch=(ROOT/"ESP32/src/native_main_menu_touch.c").read_text()
+mode_body=body('extern "C" int EspUacMenuPreview_mode(void)')
+activate_body=body('extern "C" int EspUacMenuPreview_activate(void)')
+present_activation=body('static bool activateOnFirstPresent(void)')
+reset_body=body('extern "C" void EspUacMenuPreview_reset(void)')
+paint_body=body('bool EspUacMenuPreview_draw(TFT_eSPI* lcd,const uint16_t* fb,uint16_t stride)')
+require('activationPending=true;' in activate_body,"activation must be deferred")
+for forbidden in ("preflight(", "allocateCache(", "freeCache(", "SD.", "heap_caps_"):
+    require(forbidden not in activate_body,
+            "heap/SD touched during software menu invariant: "+forbidden)
+require('if(activationPending&&!activateOnFirstPresent())return false;' in paint_body,
+        "first physical present must resolve deferred activation")
+require('if(!preflight())' in present_activation and 'allocateCache(mode)' in present_activation,
+        "SD validation and allocation must occur on first present")
+require('activationPending=false;' in reset_body,"reset must cancel pending activation")
+require(menu_touch.count('EspUacMenuPreview_activate();')==1,
+        "MENU_MAIN input owner must issue one activation")
+start=menu_layout.index('if (!DoomRPG_esp32MainMenuTouchActivate(doomRpg, finalHash))')
+heap_check=menu_layout.index('if (heapAfter != heapBefore || largestAfter != largestBefore)',start)
+actual_present=menu_layout.index('(void)Esp32PlatformVideo_present();',heap_check)
+require(start<heap_check<actual_present,"heap invariant must precede the UAC first present")
+
+mock=r"""
+#include <cassert>
+#include <cstdio>
+enum { kClassic=0,kUac240=3 };
+int mode=kClassic,paintedMode=0,paintedSelection=-1;
+bool activationPending=false;
+int sdCalls=0,allocCalls=0,freeCalls=0,heap=94008;
+bool assetsValid=true;
+struct MockSerial {
+    template <typename... Args> void printf(const char*,Args...) {}
+    void println(const char*) {}
+} Serial;
+bool preflight(){++sdCalls;return assetsValid;}
+void allocateCache(int){++allocCalls;heap-=70400;}
+void freeCache(const char*){++freeCalls;heap=94008;}
+__MODE__
+__ACTIVATE__
+__FIRST__
+__RESET__
+int main(){
+    const int before=heap;
+    assert(EspUacMenuPreview_activate()==1);
+    assert(EspUacMenuPreview_mode()==3);
+    assert(heap==before && sdCalls==0 && allocCalls==0 && freeCalls==0);
+    assert(activateOnFirstPresent());
+    assert(sdCalls==1 && allocCalls==1 && heap==before-70400);
+    EspUacMenuPreview_reset();
+    assert(heap==before && mode==0 && !activationPending);
+    assetsValid=false;sdCalls=0;allocCalls=0;freeCalls=0;
+    assert(EspUacMenuPreview_activate()==1);
+    assert(heap==before && sdCalls==0);
+    assert(!activateOnFirstPresent());
+    assert(mode==0 && sdCalls==1 && allocCalls==0);
+    EspUacMenuPreview_reset();
+    assert(heap==before);
+    puts("UAC DEFER PASS: owner activation heap/SD-free; physical present alloc+fallback");
+}
+""".replace("__MODE__",mode_body).replace("__ACTIVATE__",activate_body).replace("__FIRST__",present_activation).replace("__RESET__",reset_body)
+with tempfile.TemporaryDirectory(prefix="uac-defer-") as dirname:
+    root=Path(dirname); cpp=root/"defer.cpp";exe=root/"defer"
+    cpp.write_text(mock)
+    subprocess.run(["c++","-O2","-std=c++17","-Wall","-Wextra","-Werror",
+                    str(cpp),"-o",str(exe)],check=True)
+    subprocess.run([str(exe)],check=True)
+
 test=r"""
 #include <cassert>
 #include <cstdint>
