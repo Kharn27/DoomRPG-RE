@@ -72,3 +72,21 @@ non compressés 1, 4 ou 8 bits ; la palette magenta est la clé transparente.
 Le runtime garde un framebuffer logique 160 × 120 et des lecteurs bornés,
 sans chargement d'un BMP24 de 63 Ko en RAM. Les thèmes, le code du moteur,
 les autres glyphes et le gameplay ne sont pas modifiés par cette retouche.
+
+## Gain de lisibilité de la teinte sur les glyphes SD (moteur)
+
+Dans le chemin Canvas, `fontColor` module chaque composante de la palette
+métallique. Pour éviter qu'une couleur de thème assombrisse trop le caractère,
+la texture indique dorénavant explicitement si elle a été décodée **depuis
+la SD**. Seulement lorsque cette texture est effectivement teintée,
+`EspNativeFontTint_apply` relève les canaux RGB565 modulés d'environ 25 %,
+avec saturation bornée. Noir, contours et canaux nuls demeurent noirs/nuls,
+et la clé de transparence reste inchangée. Une police blanche/non teintée
+et les textures PAK conservent exactement leur rendu historique.
+
+La retouche ne modifie **aucun BMP** et ne s'applique **pas** aux autres
+surfaces du thème, ni aux blits indexés directs du HUD/dialogue/HUB qui ne
+passent pas par `EspNativeTexture_setColorMod`. Les chemins de recoloration
+sont volontairement conservés distincts. Effet précis à vérifier sur CYD
+avec les différentes couleurs de thème ; pas de validation matérielle
+du gain de luminosité encore revendiquée.

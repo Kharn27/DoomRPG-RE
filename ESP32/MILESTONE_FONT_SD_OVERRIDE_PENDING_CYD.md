@@ -55,3 +55,53 @@ Log utilisateur `platformio-device-monitor-261121-110206.log` :
 La session a montré la vraie source SD `[FONTSD] ACTIVE name=a.bmp source=SD indexed=4 palette=16 bytes=5302`, puis l'affichage Help/About (`[MAINMODEL] HELP-NATIVE lines=112`), la pagination et le retour au menu. Aucun panic/WDT n'est visible dans cet extrait ; `larger_font.bmp` n'y est **pas** attestée chargée. L'utilisateur confirme l'attrait des effets de coloration, mais signale des `a`/`o` malformés.
 
 **Suite ciblée, PENDING vrai CYD :** seuls les quatre glyphes `a/o` des deux BMP sont remplacés (fond/placement et 94 autres glyphes inchangés), ainsi que les variantes `_doom` strictement identiques ; RGB24 de 63 702 o retiré ; aucune retouche au code du moteur ni aux thèmes. Contrôle hôte attendu : 94 empreintes de glyphes inchangées par planche, deux nouveaux glyphes complets et BMP indexés valides. **Le log ci-dessus ne valide pas les nouveaux pixels ; un nouveau test visuel hardware est nécessaire** (Help, HUD, dialogues, et un trajet faisant réellement charger `larger_font.bmp`).
+
+## Retour matériel approfondi et éclaircissement thématique (21 novembre, PENDING nouveau firmware)
+
+Le vrai test `platformio-device-monitor-261121-121000.log` comporte
+**1312 lignes**, SHA-256
+`827674016d701b7ff4ca0ce94a9435334564fc6dc18005768baf4dd69e3c1b8b`.
+Thème persistant `theme=2`, **165** annonces
+`[FONTSD] ACTIVE name=a.bmp source=SD indexed=4 palette=16 bytes=5302`,
+mais aucune annonce `larger_font.bmp`. Help/About, HUD, dialogues événements
+88/89/79/69, HUB et EXIT SYS sont exercés ; 4 dialogues sont fermés,
+`[RAMBUDGET] ... HEADROOM_OK margin8=12828`, puis
+`[RESIDENTRESET] released=18008 empty=1` et
+`[SYSEXIT] MENU-READY`. Aucun panic/WDT dans ce log.
+
+**Observation visuelle utilisateur** : police Doom appréciée mais glyphes teintés
+un peu trop sombres sous le thème ; les lettres corrigées conviennent.
+Point audio **hors scope** à suivre séparément si reproductible :
+le générique menu lors de `MENU_END_ONCE` rapporte
+`underruns=674 recoveries=1 maxSilentFrames=674`, tandis que les finales
+`INTRO_EXIT_BEFORE_MAP` et `MENU_ENTRY_REPLACE_PRIOR` n'ont aucun underrun.
+Ne pas attribuer cette observation au rendu de police en l'absence de preuve.
+
+### Correction de rendu proposée : SD font themed lift
+
+- Les **deux BMP 4 bits réparés ne changent pas** (source d'art et palettes).
+- Origine explicitement marquée lors d'un **décodage SD validé** :
+  `EspNativeIndexedImage.sdFont`, puis `EspNativeTexture.sdFont`.
+  **PAK = 0**, tout autre BMP = 0.
+- `EspNativeFontTint_apply` conserve à l'identique la modulation RGB565
+  précédente lorsque source PAK/texture ordinaire ou couleur de modération
+  **blanche (255,255,255)**. Pour **police SD effectivement teintée**,
+  canal par canal : `min(max565, (ancien_canal*5+2)/4)`.
+  Cela représente un gain borné d'environ **25 %**, laissant le noir noir
+  et les canaux de thème nuls à zéro, sans blanchir le fond ni dégrader
+  la clé magenta (éliminée **avant** modulation).
+- Ne pas retoucher `EspNativeIndexedBmp_blit` : HUD/dialog/HUB à palette
+  directe n'appliquent pas la même multiplication RGB que
+  `EspNativeTexture_blit` de la Canvas. Leurs palettes SD et le filtrage
+  PAK historique restent intacts ; aucun changement global de thème.
+- Test hôte dédié : **65 536 couleurs RGB565** vérifiées pour les chemins
+  PAK et SD sans modulation, teintes multiples/contraste/black, saturation,
+  plus contrôle de propagation de source dans les décodeurs C existants.
+  Aucune allocation, LUT, copie de palette ou nouveau buffer framebuffer.
+
+**Nouveau changement de code** après le test utilisateur :
+la branche requiert à nouveau **double CI SUCCESS puis un test du firmware
+normal `esp32-cyd` sur le vrai CYD** avant de passer merge-ready. Les logs
+hardware précédents attestent la base et le défaut visuel mais **pas**
+la nouvelle luminosité. L'utilisateur n'a pas besoin de remplacer les BMP
+une nouvelle fois : ce correctif est intégralement dans le moteur.

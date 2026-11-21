@@ -181,6 +181,7 @@ EspNativeImageStatus EspNativeImage_loadPack(const char* name,
                     ? output->width == 144 && output->height == 72
                     : output->width == 208 && output->height == 102;
             if (result == ESP_NATIVE_IMAGE_OK && geometryMatches) {
+                output->sdFont = source; /* Persist source for font-only tint. */
                 printf("[FONTSD] ACTIVE name=%s source=SD indexed=%u palette=%u bytes=%lu\n",
                        name, (unsigned)output->bitsPerPixel,
                        (unsigned)output->paletteSize, (unsigned long)sdSize);

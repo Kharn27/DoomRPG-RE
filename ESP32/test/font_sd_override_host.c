@@ -163,7 +163,8 @@ int main(void) {
     assert(EspNativeImage_loadPack("a.bmp", 1, &image) ==
            ESP_NATIVE_IMAGE_OK);
     assert(image.width == 144 && image.height == 72 &&
-           image.bitsPerPixel == 4 && image.paletteSize == 16);
+           image.bitsPerPixel == 4 && image.paletteSize == 16 &&
+           image.sdFont == ESP_NATIVE_FONT_SD_STANDARD);
     assert(pakReads == prior && !pakOpen);
     EspNativeImage_dispose(&image);
 
@@ -171,13 +172,15 @@ int main(void) {
     le16(sdA + 28, 24U);
     assert(EspNativeImage_loadPack("a.bmp", 1, &image) ==
            ESP_NATIVE_IMAGE_OK);
-    assert(image.paletteSize == 3 && !pakOpen && rejects == 3U);
+    assert(image.paletteSize == 3 && image.sdFont == 0U &&
+           !pakOpen && rejects == 3U);
     EspNativeImage_dispose(&image);
 
     /* Large font is also supported as a compact texture. */
     assert(EspNativeImage_loadPack("larger_font.bmp", 1, &image) ==
            ESP_NATIVE_IMAGE_OK);
-    assert(image.width == 208 && image.height == 102 && !pakOpen);
+    assert(image.width == 208 && image.height == 102 &&
+           image.sdFont == ESP_NATIVE_FONT_SD_LARGER && !pakOpen);
     EspNativeImage_dispose(&image);
 
     puts("FONT-SD HOST PASS: missing/valid/corrupt geometry/24bpp, "
