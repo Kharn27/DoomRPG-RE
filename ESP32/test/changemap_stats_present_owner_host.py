@@ -24,7 +24,7 @@ world = resident[start:]
 assert "if (EspNativeGameplayTransition_isWaitingStats()) return;" in world
 assert world.index("if (EspNativeGameplayTransition_isWaitingStats()) return;") < world.index("if (!gameplayState.active)")
 assert "EspNativeTransitionPresentation_showStats(transition)" in handoff
-assert "__real_Esp32PlatformVideo_present()" in presentation
+assert "Esp32PlatformVideo_presentBase()" in presentation
 assert "void EspNativeTransitionPresentation_reset(void)" in presentation
 stats_ui = presentation.split("int EspNativeTransitionPresentation_showStats(", 1)[1].split(
     "int EspNativeTransitionPresentation_beginLoading(", 1)[0]
@@ -71,7 +71,7 @@ int EspNativeGameplayActionEngine_present(void) {
     ++actionPresents;
     return 1;
 }
-int __wrap_Esp32PlatformVideo_present(void);
+int Esp32PlatformVideo_present(void);
 int EspNativeGameplayPresentGate_armOne(void);
 unsigned int EspNativeGameplayPresentGate_suppressedCount(void);
 int main(void) {
@@ -79,39 +79,39 @@ int main(void) {
         stats = loading = levelUp = 0;
         actionPresents = levelRepaints = 0;
         /* Before the source map exit: normal gameplay is preserved. */
-        assert(__wrap_Esp32PlatformVideo_present() == 1);
+        assert(Esp32PlatformVideo_present() == 1);
         assert(actionPresents == 1 && levelRepaints == 0);
 
         /* Exit screen won on the direct physical path. The old source-world
          * compositor MUST NOT reach the physical screen during WAIT_STATS. */
         stats = 1;
         for (int n = 0; n < 10; ++n) {
-            assert(__wrap_Esp32PlatformVideo_present() == 1);
+            assert(Esp32PlatformVideo_present() == 1);
         }
         assert(actionPresents == 1 && levelRepaints == 0);
 
         /* Stats acknowledgement begins loading, then source session resets. */
         loading = 1;
-        assert(__wrap_Esp32PlatformVideo_present() == 1);
+        assert(Esp32PlatformVideo_present() == 1);
         stats = 0;
-        assert(__wrap_Esp32PlatformVideo_present() == 1);
+        assert(Esp32PlatformVideo_present() == 1);
         assert(actionPresents == 1);
 
         /* Target gameplay owns physical present again after loading. */
         loading = 0;
-        assert(__wrap_Esp32PlatformVideo_present() == 1);
+        assert(Esp32PlatformVideo_present() == 1);
         assert(actionPresents == 2);
 
         /* Unrelated LEVEL UP modal retains its prior precedence. */
         levelUp = 1;
-        assert(__wrap_Esp32PlatformVideo_present() == 1);
+        assert(Esp32PlatformVideo_present() == 1);
         assert(levelRepaints == 1 && actionPresents == 2);
         levelUp = 0;
 
         /* Existing one-shot suppression contract also remains unchanged. */
         const unsigned before = EspNativeGameplayPresentGate_suppressedCount();
         assert(EspNativeGameplayPresentGate_armOne() == 1);
-        assert(__wrap_Esp32PlatformVideo_present() == 1);
+        assert(Esp32PlatformVideo_present() == 1);
         assert(EspNativeGameplayPresentGate_suppressedCount() == before + 1U);
         assert(actionPresents == 2);
     }
