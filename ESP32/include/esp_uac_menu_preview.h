@@ -4,9 +4,12 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-/* MENU_MAIN only: classic=0, 120 exact nearest x2=1, physical 240 native=2.
- * Removable SD assets are OPTIONAL: missing or malformed -> classic. */
+/* MENU_MAIN only: generic-120 is the default, classic=0 is fail-closed
+ * fallback when SD assets, SD/PAK font or physical scanout are unusable.
+ * Optional logo comparison cycles modes 1,2,3; never enters classic. */
 int EspUacMenuPreview_mode(void);
+/* Call after root MENU_MAIN RAM/FNV/touch invariants, just before first present. */
+int EspUacMenuPreview_enterDefault(void);
 int EspUacMenuPreview_cycle(void);
 void EspUacMenuPreview_reset(void);
 int EspUacMenuPreview_selectedIndex(void);
