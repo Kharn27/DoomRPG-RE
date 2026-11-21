@@ -98,6 +98,8 @@ def original_body_parity() -> None:
             # AUDIO-DOOR only adds a post-first-successful-door-frame SFX hook.
             # Undo its exact additive bytes before testing the immutable
             # original SDL-F28 Git blob; keep all frozen hashes unchanged.
+            from arch_rc23_history import restore_pre_rc23
+            current = restore_pre_rc23(filename, current)
             from audio_door_history import restore_pre_audio_door_dynamic
             from arch_rc19_history import restore_pre_rc19_dynamic
             historical = restore_rc10_dynamic(restore_rc11_dynamic(

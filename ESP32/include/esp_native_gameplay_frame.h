@@ -60,7 +60,14 @@ typedef char EspNativeGameplayFrameStats_must_be_104_bytes[
  * merely takes logical PAK leases through its world/sprite/weapon/HUD children,
  * so it remains valid in normal or resident PAK mode.
  */
+/* Public cardinal/door facade is implemented by the native dynamic-line owner.
+ * The raw Base leaf only composes/presents; it must not bypass animator,
+ * movement-result publication or fail-closed scope admission. */
 int EspNativeGameplayFrame_renderTurn(
+    struct Render_s* render,
+    uint8_t angle,
+    EspNativeGameplayFrameStats* outStats);
+int EspNativeGameplayFrame_renderTurnBase(
     struct Render_s* render,
     uint8_t angle,
     EspNativeGameplayFrameStats* outStats);

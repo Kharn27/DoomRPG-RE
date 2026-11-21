@@ -38,8 +38,10 @@ def scan():
         require("-Wl,--wrap=" + name not in flags, "retired linker flag: " + name)
         require(not any("__wrap_" + name in f or "__real_" + name in f
                         for f in files.values()), "GNU alias retained: " + name)
-    for name in ("EspNativeGameplayFrame_renderTurn",):
-        require("-Wl,--wrap=" + name in flags, "door/render guard retired: " + name)
+    require("-Wl,--wrap=EspNativeGameplayFrame_renderTurn" not in flags,
+            "RC23 retired cardinal render interposition resurrected")
+    require("-Wl,--wrap=Esp32PlatformVideo_present" in flags,
+            "remaining physical present interposition missing")
     expected = {
         "EspNativeGameplayDialog_begin":
             {"esp_native_gameplay_dialog.c": 1,

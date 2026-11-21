@@ -3,7 +3,7 @@
 
 The host fixture compiles and executes the actual begin/end + rotate/move
 scopes extracted from the firmware source, not a model reimplementation.
-Other frame, map-state, and door-animation interpositions remain untouched.
+The cardinal frame now composes through its explicit RC23 native facade.
 """
 from pathlib import Path
 import re
@@ -44,8 +44,8 @@ def scan() -> None:
                         f"__real_{raw}(" in text
                         for text in all_source.values()),
                 f"retired GNU ld alias remains: {raw}")
-    require("-Wl,--wrap=EspNativeGameplayFrame_renderTurn" in flags,
-            "must not retire the cardinal/door-anim wrapper with previews")
+    require("-Wl,--wrap=EspNativeGameplayFrame_renderTurn" not in flags,
+            "RC23 cardinal door interposition resurrected")
     expected = {
         POSE: {"esp_native_dynamic_line_render.c": 1,
                "esp_native_gameplay_frame.c": 1},
@@ -75,7 +75,7 @@ def scan() -> None:
     require(dyn.count('return endDynamicPreview(ok, "move");') == 1,
             "move scope may leak")
     print(f"PASS ARCH-RC10: {len(all_source)} real C/C++ units, "
-          "2 scoped exports, exclusive callsites, cardinal wrapper retained")
+          "2 scoped exports, exclusive callsites, cardinal facade retained")
 
 
 def extract(source: str, name: str) -> str:
