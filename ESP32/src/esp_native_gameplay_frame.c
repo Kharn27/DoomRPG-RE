@@ -614,7 +614,7 @@ done:
     return ok;
 }
 
-int EspNativeGameplayFrame_renderTurn(
+int EspNativeGameplayFrame_renderTurnBase(
     struct Render_s* render,
     uint8_t angle,
     EspNativeGameplayFrameStats* outStats) {
