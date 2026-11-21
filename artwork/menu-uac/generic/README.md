@@ -74,9 +74,11 @@ est recalculé à partir du BMP indexé final, non de la version provisoire.
 
 ## UAC natif 120 comme menu d'accueil par défaut (PR #413, PENDING CYD)
 
-À l'issue de `DoomRPG_esp32RepaintOpaqueMainMenu`, **après** les
+L'activation tactile de MENU_MAIN marque `EspUacMenuPreview_armDefault()`
+sans aucune allocation. Au premier `PlatformVideo_present()`, **après** les
 contrôles invariants du modèle, FNV framebuffer, activation tactile,
-`heap8` et `largest8`, `EspUacMenuPreview_enterDefault()` vérifie
+`heap8` et `largest8` de `DoomRPG_esp32RepaintOpaqueMainMenu`,
+`EspUacMenuPreview_enterDefault()` vérifie
 `menu_frame_120.bmp`, `menu_generic_120.bmp` et la grande police
 indexée (SD d'abord, PAK natif en repli). Il peint le menu 120 au
 premier `PlatformVideo_present()` et à chaque retour au menu principal
