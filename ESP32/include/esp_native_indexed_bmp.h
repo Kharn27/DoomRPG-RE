@@ -29,9 +29,9 @@ typedef struct EspNativeIndexedBmpStats_s {
 } EspNativeIndexedBmpStats;
 
 /*
- * Stack-friendly metadata for one uncompressed indexed BMP stored inside the
- * native PAK. Pixel payload is never retained: blits seek/read one bounded file
- * row at a time. The palette is converted once to the framebuffer's permanent
+ * Stack-friendly metadata for an uncompressed indexed BMP from the native PAK
+ * or an exact SD font override. Pixel payload is never retained: blits
+ * seek/read bounded row ranges on demand. The palette is converted once to the framebuffer's permanent
  * RGB565 representation.
  */
 typedef struct EspNativeIndexedBmp_s {
@@ -44,6 +44,8 @@ typedef struct EspNativeIndexedBmp_s {
     uint16_t paletteCount;
     uint8_t bitsPerPixel;
     uint8_t topDown;
+    uint8_t sdFontSource; /* 0 = PAK, 1/2 = optional SD font (no retained pixels). */
+    uint8_t reserved;
     uint16_t paletteRgb565[ESP_NATIVE_INDEXED_BMP_MAX_PALETTE];
 } EspNativeIndexedBmp;
 
