@@ -90,6 +90,36 @@ def restore_rc10_dynamic(value: bytes) -> bytes:
     return value.replace(marker, RC10_RETIRED_PROTO + marker, 1)
 
 
+
+def restore_pre_fire_vis_sprite(value: bytes) -> bytes:
+    """Invert only FIRE-VIS-P1 renderer bytes before the frozen SDL-F28 blob.
+
+    Historical SHA expectations remain immutable. The running firmware keeps
+    the native additive fire routing and its new include as normal.
+    """
+    inverse = (
+        (b'#include "esp_native_sprite_renderer.h"\\n'
+         b'#include "esp_native_fire_visual.h"\\n',
+         b'#include "esp_native_sprite_renderer.h"\\n'),
+        (b'if (EspNativeFireVisual_mapMode(\\n'
+         b'                spriteRenderMode(resourceLogical), type, info) ==\\n'
+         b'            RENDER_MODE_ADD) {',
+         b'if (spriteRenderMode(resourceLogical) == RENDER_MODE_ADD) {'),
+        (b'    /* Legacy Entity_initspawn: only actual non-CROSS fire map entities\\n'
+         b'     * use additive mode 7. Preserve independent glow/CROSS/transient modes,\\n'
+         b'     * resource lookup, depth, masking and draw order unchanged. */\\n'
+         b'    if (!glow) {\\n'
+         b'        renderMode = EspNativeFireVisual_mapMode(\\n'
+         b'            renderMode, entityType, parent->info);\\n'
+         b'    }\\n',
+         b''),
+    )
+    for added, previous in inverse:
+        assert value.count(added) == 1, "FIRE-VIS-P1 inverse anchor"
+        value = value.replace(added, previous, 1)
+    return value
+
+
 def original_body_parity() -> None:
     marker = GUARD.encode("ascii")
     for filename, blob in BEFORE.items():
@@ -104,6 +134,8 @@ def original_body_parity() -> None:
             from arch_rc19_history import restore_pre_rc19_dynamic
             historical = restore_rc10_dynamic(restore_rc11_dynamic(
                 restore_pre_audio_door_dynamic(restore_pre_rc19_dynamic(current))))
+        elif filename == "esp_native_sprite_renderer.c":
+            historical = restore_pre_fire_vis_sprite(current)
         else:
             historical = current
         if filename == "esp_render_geometry_primitives.c":
