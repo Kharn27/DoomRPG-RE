@@ -122,3 +122,41 @@ est appliquée en menu 120, mais **ce fallback ne possède pas la nouvelle
 reconstruction des 94 glyphes** ; ne pas annoncer une équivalence
 pixel parfaite avec l'atlas SD. Logs Serial + photos requis ; aucun
 PASS CYD revendiqué à ce stade.
+
+## Harmonisation finale des minuscules `a` et `o` — re-test CYD
+
+**Retour utilisateur après revue de la reconstruction complète :** les
+**94 autres lettres/caractères sont jugés parfaits**, mais les minuscules
+`a` et `o` dénotent car elles étaient volontairement préservées depuis
+l'ancien atlas. C'était une erreur de cohérence stylistique, malgré leur
+ancienne qualité intrinsèque.
+
+**Correctif final borné :** suppression de l'exception `KEEP` dans
+`artwork/fonts/preview_full_repair.py`. Les 96 cellules de 13×17
+sont désormais générées par **un seul algorithme** à partir des 96 cellules
+9×12 de `a.bmp` ; interpolation bicubique, seuil transparent et
+quantification dans la palette métallisée inchangés.
+
+Écart calculé par le vrai générateur de BMP :
+- `a` minuscule : **90 pixels modifiés** par rapport au master précédent ;
+- `o` minuscule : **71 pixels modifiés** ;
+- **94 autres glyphes strictement identiques**, oracle SHA256 des 94
+  `b4a46914a75ce8daee36f290c80f66fa5766e1a6887e87a47856d338b56b2bed` ;
+- Total 96 cellules modifiées depuis l'ancien atlas historique :
+  **10 814 pixels**. Pas de changement de format, header, palette,
+  magenta, RAM, firmware, audio ou autres modes de menu.
+- BMP SD final SHA256
+  `9e16011cc6a6755bad5226143c342ec7339e47088f0c0dbdf3340518858f5350`.
+
+Les preuves `artwork/fonts/previews/larger_font_clean_zoom.png`
+et `artwork/menu-uac/generic/previews/proof_120_four_selections.png`
+sont recalculées depuis le même BMP. Le menu est visuellement inchangé
+par ce dernier ajustement car il n'utilise que des **majuscules**.
+Les minuscules doivent être contrôlées dans l'aide, les dialogues ou
+tout écran utilisant cette grande police.
+
+**Statut matériel du correctif `a`/`o` : PENDING CYD.** Le jugement
+utilisateur sur les 94 caractères est pris en compte ; aucun nouveau
+PASS visuel n'est revendiqué pour les deux minuscules. Remplacer seulement
+`/doomrpg/img/larger_font.bmp` sur SD suffit si les boutons génériques
+corrigés sont déjà installés. Aucun merge sans validation utilisateur.
