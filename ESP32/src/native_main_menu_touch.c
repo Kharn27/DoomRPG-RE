@@ -510,15 +510,8 @@ static void gatedTap(int16_t screenX,
             (void)DoomRPG_esp32MainMenuRecover(touchDoomRpg, "slot-selector-back");
         return;
     }
-    /* The original logo was a no-op tap area. Here it is the reversible
-     * preview switch: classic -> 120 -> 240 decimated -> 240 direct -> classic.
-     * Disabled when LOAD's slot selector is open (handled above). */
-    if (screenX >= 0 && screenX < ESP_UAC_PANEL_LEFT && screenY >= 0 && screenY < 240) {
-        lastTappedItem = -1;
-        (void)EspUacMenuPreview_cycle();
-        (void)Esp32PlatformVideo_present();
-        return;
-    }
+    /* Native 240 button hitboxes when available; procedural card hitboxes
+     * unchanged on any SD/asset fallback. Logo is never a mode switch. */
     hit = EspUacMenuPreview_mode() != 0
         ? EspUacMenu_hitPhysical(screenX, screenY)
         : gateHitItem(screenX, screenY);
@@ -613,6 +606,7 @@ void PlatformInput_setTapCallback(PlatformTapCallback callback) {
 #endif
         PlatformInput_setTapCallbackBase(gatedTap);
         printf("[MENUTOUCH] GATE READY initialSelected=0 dashboard=2x2 firstTap=bright-arm secondReleasedSameTap=confirm startAction=enabled loadAction=enabled optionsAction=enabled helpAction=enabled\n");
+        (void)EspUacMenuPreview_activate(); /* native-240 default or fail-closed classic */
     }
     else {
         EspUacMenuPreview_reset();

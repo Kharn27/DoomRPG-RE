@@ -35,7 +35,7 @@ def restore_pre_uac_p1_menu_touch(source: str) -> str:
         '    EspUacMenuPreview_reset();\n\n',
         ''
     )
-    start = '    /* The original logo was a no-op tap area.'
+    start = '    /* Native 240 button hitboxes when available;'
     stop = '\n    if (hit != gateSelectedItem) {'
     assert source.count(start) == 1 and source.count(stop) == 1
     a = source.index(start)
@@ -58,6 +58,10 @@ def restore_pre_uac_p1_menu_touch(source: str) -> str:
         '        else\n'
         '            downstreamTapCallback(screenX, screenY, pressure, rawX, rawY);\n',
         '        downstreamTapCallback(screenX, screenY, pressure, rawX, rawY);\n'
+    )
+    undo(
+        '        (void)EspUacMenuPreview_activate(); /* native-240 default or fail-closed classic */\n',
+        ''
     )
     undo(
         '    else {\n'

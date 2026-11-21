@@ -4,10 +4,11 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-/* MENU_MAIN only: classic=0, 120 exact nearest x2=1, physical 240 native=2.
- * Removable SD assets are OPTIONAL: missing or malformed -> classic. */
+/* MENU_MAIN: direct 240 BGRA32 UAC default; procedural menu is fallback.
+ * Activate once when MENU_MAIN owns touch; no logo cycling or 120 mode.
+ * SD assets remain optional: invalid/missing files leave classic active. */
 int EspUacMenuPreview_mode(void);
-int EspUacMenuPreview_cycle(void);
+int EspUacMenuPreview_activate(void);
 void EspUacMenuPreview_reset(void);
 int EspUacMenuPreview_selectedIndex(void);
 #ifdef __cplusplus

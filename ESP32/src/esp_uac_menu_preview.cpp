@@ -3,6 +3,8 @@
 #include <SD.h>
 #include <TFT_eSPI.h>
 #include <stdio.h>
+#include <string.h>
+#include <esp_heap_caps.h>
 #include <mbedtls/sha256.h>
 #include "esp_uac_bmp32.h"
 #include "esp_audio_entrance_music.h"
@@ -44,12 +46,12 @@ const char* const kSha256[2][9] = {
     "63054b67f2c7c6024e4e1392dd34cb165e074eef6f810b518fca0804ad9ecb55"
   }
 };
-/* Reversible comparison: 0 CLASSIC, 1 native-120, 2 sampled 240->120,
- * 3 direct-240. P1 accepts artist-updated SD BMP with strict V4 geometry. */
-enum { kClassic=0,kNative120=1,k240As120=2,kDirect240=3 };
+/* Normal menu: native 240 assets; only the procedural original is fallback.
+ * No logo switch or experimental 120 modes. Keep exact V4 BGRA32 preflight. */
+enum { kClassic=0,kUac240=3 };
 constexpr bool kStrictSha256=false;
-static int assetTier(int m){return m==kNative120?120:240;}
 int mode=kClassic;
+bool activationPending=false; /* no heap/SD work inside MENU_MAIN owner's check */
 int paintedMode=0,paintedSelection=-1;
 /* Four physical rows per TFT write: 6680B BSS, no frame allocation.
  * Only frame plus current button can have live BMP handles. */
@@ -58,8 +60,104 @@ static uint16_t outRows[kRows*kWidth];
 static uint8_t frameRows[kRows*118*4];
 static uint8_t buttonRows[kRows*110*4];
 static uint8_t pixels[118*4];
-struct DrawStats {uint32_t sdUs,lcdUs;unsigned batches,buttonOpens,rowsSent,audioPumps,audioBlocks;};
+struct DrawStats {
+    uint32_t sdUs,lcdUs;
+    unsigned batches,buttonOpens,rowsSent,audioPumps,audioBlocks,cacheHits;
+};
 struct OpenImage { File file; EspUacBmp32 bmp; };
+
+/* One BRIGHT RGB565 110x40 patch per labelled button. Inactive patches
+ * are derived by RGB565 dimming; no extra SD reads or second-state cache.
+ * 4x8800=35200B vs 70400B, still with a 20KB heap8 guard. */
+constexpr uint32_t kCacheSlotBytes=(uint32_t)ESP_UAC_BUTTON_WIDTH*40U*2U;
+constexpr uint32_t kCacheReserve8=20U*1024U;
+static uint16_t* cachePixels[4]={};
+static uint8_t cacheReady[4]={};
+static unsigned cacheSlots=0,cacheBytes=0;
+static int cacheMode=0;
+
+static void freeCache(const char* reason) {
+    const unsigned bytes=cacheBytes,slots=cacheSlots;
+    const int previous=cacheMode;
+    const uint32_t before=heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    for(int i=0;i<4;++i){
+        if(cachePixels[i])heap_caps_free(cachePixels[i]);
+        cachePixels[i]=nullptr;
+        cacheReady[i]=0;
+    }
+    cacheMode=0;cacheSlots=0;cacheBytes=0;
+    if(slots)Serial.printf(
+        "[UAC] CACHE FREE reason=%s mode=%d slots=%u bytes=%u heap8=%lu->%lu largest8=%lu\n",
+        reason,previous,slots,bytes,
+        (unsigned long)before,
+        (unsigned long)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+        (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+}
+
+static void allocateCache(int m){
+    cacheMode=m;
+    const uint32_t before=heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    for(int i=0;i<4;++i){
+        const uint32_t free8=heap_caps_get_free_size(MALLOC_CAP_8BIT);
+        const uint32_t largest8=heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+        if(free8<kCacheSlotBytes+kCacheReserve8||largest8<kCacheSlotBytes)
+            continue;
+        uint16_t* ptr=(uint16_t*)heap_caps_malloc(kCacheSlotBytes,MALLOC_CAP_8BIT);
+        if(!ptr)continue;
+        cachePixels[i]=ptr;
+        ++cacheSlots;
+        cacheBytes+=(unsigned)kCacheSlotBytes;
+    }
+    Serial.printf(
+        "[UAC] CACHE ALLOC mode=%d slots=%u/4 bytes=%u reserve8=%lu heap8=%lu->%lu largest8=%lu fallback=SD\n",
+        m,cacheSlots,cacheBytes,(unsigned long)kCacheReserve8,
+        (unsigned long)before,
+        (unsigned long)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+        (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+}
+
+/* Dim after preserving the bright composite. Integer RGB565 channel math
+ * produces exactly the same result for cold and cached presentation. */
+static uint16_t dimRgb565(uint16_t pixel){
+    const uint16_t r=(uint16_t)((((pixel>>11)&31U)*5U)>>3);
+    const uint16_t g=(uint16_t)((((pixel>>5)&63U)*5U)>>3);
+    const uint16_t b=(uint16_t)(((pixel&31U)*5U)>>3);
+    return (uint16_t)((r<<11)|(g<<5)|b);
+}
+static bool renderCachedSelection(TFT_eSPI* lcd,int m,int selected,int previous,
+                                  DrawStats* stats){
+    if(!lcd||!stats||m!=cacheMode||selected<0||selected>=4||
+       previous<0||previous>=4||previous==selected||
+       !cacheReady[previous]||!cacheReady[selected]||
+       !cachePixels[previous]||!cachePixels[selected])return false;
+    uint16_t inactiveRow[ESP_UAC_BUTTON_WIDTH]; /* 220B bounded stack */
+    const uint32_t t=micros();
+    lcd->startWrite();
+    const int targets[2]={previous,selected};
+    for(int k=0;k<2;++k){
+        const int item=targets[k];
+        const uint16_t* pixels=cachePixels[item];
+        lcd->setAddrWindow(kPanelX+ESP_UAC_BUTTON_INSET,kTop[item],
+                           ESP_UAC_BUTTON_WIDTH,40);
+        for(int row=0;row<40;++row){
+            const uint16_t* bright=pixels+row*ESP_UAC_BUTTON_WIDTH;
+            if(k==0){
+                for(int x=0;x<ESP_UAC_BUTTON_WIDTH;++x)
+                    inactiveRow[x]=dimRgb565(bright[x]);
+                lcd->pushPixels(inactiveRow,ESP_UAC_BUTTON_WIDTH);
+            }else{
+                lcd->pushPixels(const_cast<uint16_t*>(bright),
+                                ESP_UAC_BUTTON_WIDTH);
+            }
+        }
+    }
+    lcd->endWrite();
+    stats->lcdUs+=(uint32_t)(micros()-t);
+    stats->rowsSent+=80;stats->batches+=2;stats->cacheHits+=2;
+    ++stats->audioPumps;
+    stats->audioBlocks+=(unsigned)EspEntranceMusic_pumpMenuPreview();
+    return true;
+}
 
 static int readAt(void* ctx,uint32_t offset,void* dst,size_t n){
     File* f=static_cast<File*>(ctx);
@@ -109,34 +207,33 @@ static bool verifySha256(File& file,const char* expected){
     }
     return true;
 }
-static void framePath(char* p,size_t n,int m){
-    snprintf(p,n,"/doomrpg/img/menu_frame_%d.bmp",assetTier(m));
+static void framePath(char* p,size_t n){
+    snprintf(p,n,"/doomrpg/img/menu_frame_240.bmp");
 }
-static void buttonPath(char* p,size_t n,int m,int index,bool active){
-    snprintf(p,n,"/doomrpg/img/menu_%s_%s_%d.bmp",kButtons[index],
-             active?"active":"inactive",assetTier(m));
+static void buttonPath(char* p,size_t n,int index,bool active){
+    snprintf(p,n,"/doomrpg/img/menu_%s_%s_240.bmp",kButtons[index],
+             active?"active":"inactive");
 }
-static bool preflight(int m){
+static bool preflight(void){
     OpenImage img{};
     char p[72];
-    const uint16_t fw=m==1?59U:118U,fh=m==1?120U:240U;
-    const uint16_t bw=m==1?55U:110U,bh=m==1?20U:40U;
-    framePath(p,sizeof(p),m);
+    const uint16_t fw=118U,fh=240U,bw=110U,bh=40U;
+    framePath(p,sizeof(p));
     bool valid=openBmp(img,p,fw,fh);
-    if(valid&&kStrictSha256)valid=verifySha256(img.file,kSha256[assetTier(m)==120?0:1][0]);
+    if(valid&&kStrictSha256)valid=verifySha256(img.file,kSha256[1][0]);
     if(img.file)img.file.close();
     (void)EspEntranceMusic_pumpMenuPreview();
     if(!valid){Serial.printf("[UAC] PREFLIGHT FAIL %s\n",p);return false;}
-    for(int i=0;i<4;++i)for(int s=0;s<2;++s){
-        buttonPath(p,sizeof(p),m,i,s==1);
+    for(int i=0;i<4;++i){
+        buttonPath(p,sizeof(p),i,true);
         valid=openBmp(img,p,bw,bh);
-        if(valid&&kStrictSha256)valid=verifySha256(img.file,kSha256[assetTier(m)==120?0:1][1+i*2+s]);
+        if(valid&&kStrictSha256)valid=verifySha256(img.file,kSha256[1][2+i*2]);
         if(img.file)img.file.close();
         (void)EspEntranceMusic_pumpMenuPreview();
         if(!valid){Serial.printf("[UAC] PREFLIGHT FAIL %s\n",p);return false;}
     }
-    Serial.printf("[UAC] PREFLIGHT OK mode=%d tier=%d integrity=%s bmpV4=valid\n",
-                  m,assetTier(m),kStrictSha256?"strict-sha256":"structure+dimensions");
+    Serial.printf("[UAC] PREFLIGHT OK mode=3 tier=240 integrity=%s bmpV4=valid\n",
+                  kStrictSha256?"strict-sha256":"structure+dimensions");
     return true;
 }
 /* Full paint only on mode entry. On selection changes the physical
@@ -144,28 +241,40 @@ static bool preflight(int m){
  * button BMP and fixed frame overlay are reproduced pixel-for-pixel there.
  * Preserve the original 160x120 framebuffer and all native input owners. */
 static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
-                 int m,int selected,int previous,DrawStats* stats){
+                 int m,int selected,int previous,DrawStats* stats,
+                 int warmTarget=-1){
     OpenImage frame{},button{};
     char path[72];
-    const int scale=m==kDirect240?1:2;
-    const int sourceStep=m==k240As120?2:1;
-    const auto blendRow=m==k240As120?
-        EspUacBmp32_blendRow240As120:EspUacBmp32_blendRow;
-    const uint16_t fw=m==1?59U:118U,fh=m==1?120U:240U;
-    const uint16_t bw=m==1?55U:110U,bh=m==1?20U:40U;
-    const bool patch=previous>=0&&previous<4&&previous!=selected;
-    const int regions=patch?2:1;
+    const int scale=1; /* Only direct physical pixels survive this milestone. */
+    const int sourceStep=1;
+    const auto blendRow=EspUacBmp32_blendRow;
+    const uint16_t fw=118U,fh=240U,bw=110U,bh=40U;
+    const bool warming=warmTarget>=0&&warmTarget<4;
+    const bool patch=warming||(previous>=0&&previous<4&&previous!=selected);
+    const int regions=warming?1:(patch?2:1);
     int openedButton=-1;
     auto finish=[&](bool ok,const char* stage)->bool{
         if(!ok)Serial.printf("[UAC] DRAW FAIL mode=%d stage=%s path=%s\n",m,stage,path);
         if(button.file)button.file.close();
         if(frame.file)frame.file.close();
+        if(ok&&cacheMode==m){
+            if(warming){
+                if(cachePixels[warmTarget])cacheReady[warmTarget]=1;
+            }else if(patch){
+                if(cachePixels[previous])cacheReady[previous]=1;
+                if(cachePixels[selected])cacheReady[selected]=1;
+            }else{
+                for(int i=0;i<4;++i)
+                    if(cachePixels[i])cacheReady[i]=1;
+            }
+        }
         return ok;
     };
-    framePath(path,sizeof(path),m);
+    framePath(path,sizeof(path));
     if(!openBmp(frame,path,fw,fh))return finish(false,"frame-open");
     for(int region=0;region<regions;++region){
-        const int target=patch?(region==0?previous:selected):-1;
+        const int target=warming?warmTarget:
+                         patch?(region==0?previous:selected):-1;
         const int firstY=target>=0?kTop[target]:0;
         const int finalY=target>=0?kTop[target]+40:kHeight;
         const int outputX=target>=0?kPanelX+ESP_UAC_BUTTON_INSET:0;
@@ -188,7 +297,7 @@ static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
                 if(button.file)button.file.close();
                 openedButton=active;
                 if(active>=0){
-                    buttonPath(path,sizeof(path),m,active,selected==active);
+                    buttonPath(path,sizeof(path),active,true);
                     if(!openBmp(button,path,bw,bh))return finish(false,"button-open");
                     ++stats->buttonOpens;
                 }
@@ -229,17 +338,33 @@ static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
                         patch?-ESP_UAC_BUTTON_INSET:kPanelX,(uint8_t)scale,
                         out,(uint16_t)outputW,pixels,
                         sizeof(pixels)))return finish(false,"frame-blend");
+                if(active>=0){
+                    uint16_t* bright=out+(patch?0:kPanelX+ESP_UAC_BUTTON_INSET);
+                    /* The bezel is already composited. Save the BRIGHT
+                     * surface before applying the software inactive tint. */
+                    if(cacheMode==m&&cachePixels[active]){
+                        uint16_t* dst=cachePixels[active];
+                        memcpy(dst+(py-kTop[active])*ESP_UAC_BUTTON_WIDTH,
+                               bright,ESP_UAC_BUTTON_WIDTH*sizeof(uint16_t));
+                    }
+                    if(selected!=active){
+                        for(int x=0;x<ESP_UAC_BUTTON_WIDTH;++x)
+                            bright[x]=dimRgb565(bright[x]);
+                    }
+                }
             }
-            /* The audio pump may read SD, so invoke it ONLY AFTER TFT
-             * endWrite and after this strip's BMP reads have completed. */
-            const uint32_t lcdStart=micros();
-            lcd->startWrite();
-            lcd->setAddrWindow(outputX,y,outputW,count);
-            for(int row=0;row<count;++row)
-                lcd->pushPixels(outRows+row*kWidth,outputW);
-            lcd->endWrite();
-            stats->lcdUs+=(uint32_t)(micros()-lcdStart);
-            stats->rowsSent+=(unsigned)count;
+            /* Finish SD work before any TFT transaction or audio pump. In
+             * warm-only mode the LCD keeps its current image untouched. */
+            if(!warming){
+                const uint32_t lcdStart=micros();
+                lcd->startWrite();
+                lcd->setAddrWindow(outputX,y,outputW,count);
+                for(int row=0;row<count;++row)
+                    lcd->pushPixels(outRows+row*kWidth,outputW);
+                lcd->endWrite();
+                stats->lcdUs+=(uint32_t)(micros()-lcdStart);
+                stats->rowsSent+=(unsigned)count;
+            }
             ++stats->batches;
             ++stats->audioPumps;
             stats->audioBlocks+=(unsigned)EspEntranceMusic_pumpMenuPreview();
@@ -249,49 +374,99 @@ static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
     }
     return finish(true,"OK");
 }
+
+/* FULL already captures all four BRIGHT states. Only a missing slot may
+ * need an auxiliary decode; no alternate/INACTIVE warmup remains. */
+static bool warmCache(const uint16_t* fb,uint16_t stride,int m){
+    if(cacheMode!=m||cacheSlots==0)return true;
+    const uint32_t begin=millis();
+    unsigned filled=0,reads=0;
+    for(int item=0;item<4;++item){
+        if(!cachePixels[item]||cacheReady[item])continue;
+        DrawStats stats{};
+        if(!draw(fb,stride,nullptr,m,item,-1,&stats,item))
+            return false;  /* SD failure is still fail-closed */
+        ++filled;
+        reads+=stats.batches;
+    }
+    unsigned ready=0;
+    for(int i=0;i<4;++i)ready+=cacheReady[i]?1U:0U;
+    Serial.printf(
+        "[UAC] CACHE WARM mode=%d filled=%u ready=%u/%u batches=%u ms=%lu heap8=%lu largest8=%lu\n",
+        m,filled,ready,cacheSlots,reads,(unsigned long)(millis()-begin),
+        (unsigned long)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+        (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    return true;
+}
 } // namespace
 
-extern "C" int EspUacMenuPreview_mode(void){return mode;}
-extern "C" void EspUacMenuPreview_reset(void){
-    if(mode)Serial.printf("[UAC] RESET mode=%d fallback=classic\n",mode);
-    mode=0;paintedMode=0;paintedSelection=-1;
+/* Registration into MENU_MAIN MUST be allocation-/SD-free. The software
+ * compositor verifies its framebuffer hashes AND identical heap8 before it
+ * makes the first physical present(). Defer every UAC SD check/allocation
+ * to that present() or Options->Back will fail even with valid bitmaps. */
+extern "C" int EspUacMenuPreview_mode(void){
+    return mode==kUac240||activationPending?kUac240:kClassic;
 }
-extern "C" int EspUacMenuPreview_cycle(void){
-    const int next=(mode+1)%4;
-    if(next!=0&&!preflight(next)){
-        mode=0;
+extern "C" void EspUacMenuPreview_reset(void){
+    if(mode||activationPending)
+        Serial.printf("[UAC] RESET mode=%d pending=%u fallback=classic\n",
+                      mode,activationPending?1U:0U);
+    activationPending=false;
+    freeCache("menu-exit");
+    mode=kClassic;paintedMode=kClassic;paintedSelection=-1;
+}
+extern "C" int EspUacMenuPreview_activate(void){
+    if(mode==kUac240)return 1;
+    activationPending=true; /* never preflight or malloc here */
+    return 1;
+}
+static bool activateOnFirstPresent(void){
+    if(!activationPending)return mode==kUac240;
+    activationPending=false;
+    freeCache("menu-activate");
+    if(!preflight()){
+        mode=kClassic;paintedMode=kClassic;paintedSelection=-1;
         Serial.println("[UAC] FALLBACK SD missing/invalid -> original MENU_MAIN");
-        return 0;
+        return false;
     }
-    mode=next;
-    paintedMode=0;paintedSelection=-1;
-    Serial.printf("[UAC] MODE %s source=%s physical=320x240 buttons=110x40 RAM=6680B-BSS\n",
-                  mode==kClassic?"CLASSIC":mode==kNative120?"120":
-                    mode==k240As120?"240->120":"240",
-                  mode==kClassic?"original":mode==kNative120?
-                    "59x120 nearest-x2":mode==k240As120?
-                    "118x240 decimate2x+nearest-x2":"118x240 DIRECT");
-    return mode;
+    mode=kUac240;
+    paintedMode=kClassic;paintedSelection=-1;
+    allocateCache(mode);
+    Serial.printf("[UAC] MODE 240 source=118x240 DIRECT physical=320x240 buttons=110x40 RAM=6680B-BSS default=yes\n");
+    return true;
 }
 bool EspUacMenuPreview_draw(TFT_eSPI* lcd,const uint16_t* fb,uint16_t stride){
+    if(!lcd||!fb||stride<160U)return false;
+    if(activationPending&&!activateOnFirstPresent())return false;
     const int current=mode;
     if(!current)return true;
-    if(!lcd||!fb||stride<160U)return false;
     const int sel=EspUacMenuPreview_selectedIndex();
     if(sel<0||sel>3)return false;
     if(current==paintedMode && sel==paintedSelection)return true;
     const int previous=current==paintedMode?paintedSelection:-1;
     const uint32_t start=millis();
     DrawStats stats{};
-    const bool ok=draw(fb,stride,lcd,current,sel,previous,&stats);
+    bool fromCache=false;
+    if(previous>=0)
+        fromCache=renderCachedSelection(lcd,current,sel,previous,&stats);
+    const bool painted=fromCache||
+                     draw(fb,stride,lcd,current,sel,previous,&stats);
+    const uint32_t paintMs=millis()-start;
+    bool warmed=true;
+    if(painted&&previous<0)warmed=warmCache(fb,stride,current);
+    const bool ok=painted&&warmed;
     if(ok){paintedMode=current;paintedSelection=sel;}
-    Serial.printf("[UAC] PRESENT mode=%d selected=%d prior=%d paint=%s result=%s ms=%lu sdMs=%lu lcdMs=%lu batches=%u rows=%u buttonOpens=%u audioPumps=%u audioBlocks=%u heap=%u framebuffer=unchanged\n",
+    Serial.printf("[UAC] PRESENT mode=%d selected=%d prior=%d paint=%s result=%s ms=%lu sdMs=%lu lcdMs=%lu batches=%u rows=%u buttonOpens=%u audioPumps=%u audioBlocks=%u cache=%s cacheSlots=%u cacheBytes=%u warmMs=%lu heap=%u heap8=%lu framebuffer=unchanged\n",
                   current,sel,previous,previous>=0?"BUTTONS":"FULL",
-                  ok?"OK":"FAIL",static_cast<unsigned long>(millis()-start),
+                  ok?"OK":"FAIL",static_cast<unsigned long>(paintMs),
                   static_cast<unsigned long>(stats.sdUs/1000U),
                   static_cast<unsigned long>(stats.lcdUs/1000U),
                   stats.batches,stats.rowsSent,stats.buttonOpens,
                   stats.audioPumps,stats.audioBlocks,
-                  static_cast<unsigned>(ESP.getFreeHeap()));
+                  fromCache?"HIT":previous>=0?"MISS-SD":"INITIAL",
+                  cacheSlots,cacheBytes,
+                  static_cast<unsigned long>((millis()-start)-paintMs),
+                  static_cast<unsigned>(ESP.getFreeHeap()),
+                  (unsigned long)heap_caps_get_free_size(MALLOC_CAP_8BIT));
     return ok;
 }
