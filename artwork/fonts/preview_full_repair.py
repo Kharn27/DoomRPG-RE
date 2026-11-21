@@ -13,7 +13,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 ROOT=Path(__file__).resolve().parents[2]
 SMALL=ROOT/"sdroot/doomrpg/img/a.bmp"
-LARGE=ROOT/"sdroot/doomrpg/img/larger_font.bmp"
+LARGE=ROOT/"artwork/fonts/sources/larger_font_pre_full_repair.bmp"
+FINAL=ROOT/"sdroot/doomrpg/img/larger_font.bmp"
 WORK=ROOT/"artwork/fonts/previews"
 SMALL_TO_BIG={0:2,1:1,2:0,3:12,4:10,5:8,6:7,7:5,8:14,9:13,10:9,11:6,12:4,13:3,14:15,15:11}
 assert len(SMALL_TO_BIG)==16 and len(set(SMALL_TO_BIG.values()))==16
@@ -104,12 +105,73 @@ def render_report()->bytes:
     sheet.save(buf,"PNG",optimize=True)
     return buf.getvalue()
 
+def build_refined_data()->bytes:
+    """Generate a native indexed BMP, changing ONLY 4-bit pixels of 94 cells.
+
+    Start with the exact canonical-a palette and approved a/o source atlas.
+    Silhouettes of every remaining character are transposed from a.bmp;
+    original large-font metallic pixels are retained where they remain inside
+    each cleaned silhouette. Palette, header and magenta index stay byte exact.
+    """
+    base=LARGE.read_bytes()
+    assert len(base)==10726 and base[:2]==b"BM"
+    assert struct.unpack_from("<I",base,10)[0]==118
+    assert struct.unpack_from("<ii",base,18)==(WIDTH,HEIGHT)
+    assert struct.unpack_from("<H",base,28)[0]==4
+    small=Image.open(SMALL)
+    big=Image.open(LARGE)
+    result=make_option("mask",small,big)
+    output=bytearray(base)
+    pitch=((WIDTH*4+31)//32)*4
+    changed=0
+    changed_cells=0
+    for ci in range(96):
+        changed_this=0
+        for cy in range(PH):
+            y=(ci//16)*PH+cy
+            for cx in range(PW):
+                x=(ci%16)*PW+cx
+                old=big.getpixel((x,y))
+                value=result.getpixel((x,y))
+                if value==old:continue
+                assert ci not in KEEP,"approved a/o changed"
+                changed+=1
+                changed_this+=1
+                loc=118+(HEIGHT-1-y)*pitch+x//2
+                if x&1:output[loc]=(output[loc]&240)|value
+                else:output[loc]=(output[loc]&15)|(value<<4)
+        if changed_this:changed_cells+=1
+    assert output[:118]==base[:118]
+    assert changed>2000 and changed_cells>70,(changed,changed_cells)
+    assert bytes(output)!=base
+    img=Image.open(io.BytesIO(output))
+    assert img.mode=="P" and img.size==(WIDTH,HEIGHT)
+    assert img.tobytes()==result.tobytes()
+    other=bytearray()
+    for ci in range(96):
+        if ci in KEEP:continue
+        x=(ci%16)*PW;y=(ci//16)*PH
+        for row in range(PH):
+            for col in range(PW):other.append(img.getpixel((x+col,y+row)))
+    print(f"[FONT-REBUILD] changedPixels={changed} changedGlyphCells={changed_cells}/94 "
+          f"other94SHA256={hashlib.sha256(other).hexdigest()} indexed=4 palette=a.bmp")
+    return bytes(output)
+
 def main():
     pa=argparse.ArgumentParser()
     pa.add_argument("--report",action="store_true")
+    pa.add_argument("--build",action="store_true")
+    pa.add_argument("--check",action="store_true")
     pa.add_argument("--emit-base64",action="store_true")
     opt=pa.parse_args()
-    assert opt.report
+    assert opt.report or opt.build or opt.check
+    if opt.build or opt.check:
+        font=build_refined_data()
+        if opt.build:FINAL.write_bytes(font)
+        if opt.check:assert FINAL.read_bytes()==font,"SD large font is stale"
+        print(f"[FONT-REBUILD] {'WRITE' if opt.build else 'CHECK'} PASS size={len(font)} sha256={hashlib.sha256(font).hexdigest()}")
+        if opt.emit_base64:print(f"[FONT-FINAL-BLOB] sdroot/doomrpg/img/larger_font.bmp {base64.b64encode(font).decode('ascii')}")
+    if not opt.report:return
     small=Image.open(SMALL)
     big=Image.open(LARGE)
     assert (small.mode,big.mode)==("P","P")
