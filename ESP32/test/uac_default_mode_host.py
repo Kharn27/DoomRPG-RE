@@ -62,7 +62,7 @@ assert compose.index('heapAfter != heapBefore') < compose.index('(void)Esp32Plat
 def git_blob(data:str)->str:
     import hashlib
     raw=data.encode()
-    return hashlib.sha1(b"blob "+str(len(raw)).encode()+b"\\0"+raw).hexdigest()
+    return hashlib.sha1(b"blob "+str(len(raw)).encode()+b"\0"+raw).hexdigest()
 assert git_blob(layout)=="8bc87944b6a193b087975c5465d6a6616d37b895"
 activate=section(touch,'int DoomRPG_esp32MainMenuTouchActivate(',
                  'int DoomRPG_esp32MainMenuTouchIsActive(')
