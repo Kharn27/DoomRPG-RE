@@ -14,9 +14,9 @@ en fallback si le BMP SD est absent ou incompatible.
 **doublon binaire exact** et a été retiré du dossier de déploiement.
 `larger_font.bmp` est désormais le seul grand atlas runtime ; sa palette
 16 couleurs reprend **exactement les 16 entrées de `a.bmp`**. Depuis
-le correctif intégral, **94 des 96 glyphes sont reconstruits depuis les
-formes ET les couleurs de `a.bmp`**, avec relief argent/cuivre. Les deux
-minuscules `a` et `o` réparées précédemment restent **pixel-identiques**.
+le correctif intégral, **les 96 glyphes sont reconstruits depuis les formes ET les couleurs
+de `a.bmp` avec exactement le même traitement**, y compris les deux
+minuscules `a` et `o`. Plus d'exception stylistique ni de palette différente.
 Le magenta transparent, les 96 cellules, l'en-tête, la palette et le BMP
 4-bpp 208×102 restent strictement identiques au format antérieur.
 
@@ -37,26 +37,27 @@ ont été reconstruits depuis les originaux métalliques, projetés sur les
 de l'avancement et de la découpe des cellules ; le dégradé argent/cuivre
 reste conservé.
 
-**PR #413 — deuxième correction après constat visuel :** les 94 autres
-glyphes de **`a.bmp` petit sont inchangés**. En revanche, les **94 autres
-glyphes de `larger_font.bmp` sont désormais tous corrigés** : 10 653 pixels
-indexés retouchés sur 94 cellules / 94, pour éliminer les anciens contours
-sales et les pixels gris/blancs parasites. Chaque glyphe utilise sa silhouette
-9×12 de `a.bmp` reprojetée dans la cellule 13×17, avec interpolation
-bicubique et quantification **exacte dans la palette Doom 16 couleurs** ;
-aucune palette libre supplémentaire, aucun fond opaque, aucun changement
-des deux minuscules `a` et `o` de la grande police.
+**PR #413 — correction complète après deux retours visuels :** les glyphes
+du petit **`a.bmp` demeurent inchangés**. Les 96 glyphes de
+`larger_font.bmp` utilisent désormais **tous la même transformation** :
+silhouette 9×12 issue de `a.bmp`, reprojetée dans une cellule 13×17 avec
+interpolation bicubique, quantifiée dans **sa palette Doom 16 couleurs**,
+et magenta transparent. Le premier lot de 94 caractères était jugé bon
+sur le CYD, mais les anciens `a`/`o` conservés faisaient tache.
+Le dernier correctif ne modifie donc **que ces deux caractères**
+(90 pixels pour `a`, 71 pour `o`) et préserve, pixel pour pixel,
+les 94 caractères que tu as validés.
 
 **Reconstruction reproductible :** source historique verrouillée
 `artwork/fonts/sources/larger_font_pre_full_repair.bmp`,
 `artwork/fonts/preview_full_repair.py --check`, et
 `artwork/menu-uac/generic/tools/repair_assets.py --check`.
 Le SHA256 du BMP SD final est
-`1fb05564fd1041c94dd3b10970c826300155f2a9221aa7fac07ea0bb9c85bdcf`,
+`9e16011cc6a6755bad5226143c342ec7339e47088f0c0dbdf3340518858f5350`,
 l'oracle des 94 cellules `b4a46914a75ce8daee36f290c80f66fa5766e1a6887e87a47856d338b56b2bed`.
-Le test `ESP32/test/font_sd_assets_host.py` vérifie aussi les deux
-minuscules byte-exactes, l'en-tête, le magenta, les 16 couleurs et la
-déduplication des noms SD.
+Le test `ESP32/test/font_sd_assets_host.py` vérifie la nouvelle forme
+de `a` et `o`, la non-régression stricte des 94 autres caractères,
+l'en-tête, le magenta, les 16 couleurs et la déduplication des noms SD.
 
 ## Couleurs à la volée
 
