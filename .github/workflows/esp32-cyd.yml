@@ -826,7 +826,7 @@ jobs:
             ESP32/src/esp_native_gameplay_player_pain_visual.c \
             ESP32/src/esp_native_gameplay_gib_sheet.c \
             ESP32/src/esp_native_dynamic_line_render.c ESP32/src/esp_native_gameplay_present_gate.c \
-            -Wl,--gc-sections -o /tmp/doomrpg-paid-interaction-test
+            -Wl,--gc-sections -Wl,--wrap=EspNativeGameplayActionEngine_present -o /tmp/doomrpg-paid-interaction-test
           /tmp/doomrpg-paid-interaction-test
 
       - name: Test native dialog BACK touch and cancel semantics (host C)
