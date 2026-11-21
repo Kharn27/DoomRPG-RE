@@ -11,7 +11,7 @@ import argparse, base64, io, hashlib, struct
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
-ROOT=Path(__file__).resolve().parents[4]
+ROOT=Path(__file__).resolve().parents[2]
 SMALL=ROOT/"sdroot/doomrpg/img/a.bmp"
 LARGE=ROOT/"sdroot/doomrpg/img/larger_font.bmp"
 WORK=ROOT/"artwork/fonts/previews"
