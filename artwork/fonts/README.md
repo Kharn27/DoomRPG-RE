@@ -13,9 +13,12 @@ en fallback si le BMP SD est absent ou incompatible.
 `a.bmp` est **le seul fichier petite police** : `a_doom.bmp` était son
 **doublon binaire exact** et a été retiré du dossier de déploiement.
 `larger_font.bmp` est désormais le seul grand atlas runtime ; sa palette
-16 couleurs reprend **exactement les 16 entrées de `a.bmp`**, en conservant
-le tracé de chaque glyphe, ses indices 4-bpp, le magenta transparent, les
-96 cellules et le format BMP original à l'octet près hors palette.
+16 couleurs reprend **exactement les 16 entrées de `a.bmp`**. Depuis
+le correctif intégral, **94 des 96 glyphes sont reconstruits depuis les
+formes ET les couleurs de `a.bmp`**, avec relief argent/cuivre. Les deux
+minuscules `a` et `o` réparées précédemment restent **pixel-identiques**.
+Le magenta transparent, les 96 cellules, l'en-tête, la palette et le BMP
+4-bpp 208×102 restent strictement identiques au format antérieur.
 
 La grande police historique non recolorée et la variante distincte
 `larger_font_doom_compat3.bmp` (3 couleurs) sont conservées uniquement dans
@@ -24,7 +27,7 @@ La grande police historique non recolorée et la variante distincte
 dans l'historique Git de la PR #407. Aucun alias `_doom` n'est consommé
 par le runtime ni requis sur la carte SD.
 
-## Correction ciblée de `a` et `o` minuscules
+## Glyphes `a` et `o` puis reprise de toute la grande police
 
 Le placement original avait produit un `o` minuscule coupé sur la petite
 planche et des `a`/`o` déformés à différentes tailles. Les quatre glyphes
@@ -34,15 +37,26 @@ ont été reconstruits depuis les originaux métalliques, projetés sur les
 de l'avancement et de la découpe des cellules ; le dégradé argent/cuivre
 reste conservé.
 
-**Contrat d'absence de régression sur les formes** : les **94 autres
-caractères de chaque BMP sont strictement identiques pixel par pixel**.
-Entêtes, ordre, clé magenta, tailles, stride et encodage restent identiques.
-Seule **la palette de `larger_font.bmp`** change dans la PR #413, sans
-aucune modification des octets de glyphes. Le test
-`ESP32/test/font_sd_assets_host.py` contrôle la palette canonique,
-les empreintes des 94 glyphes, les deux petits caractères corrigés,
-l'absence des variantes redondantes en SD et la conservation de la
-version originale dans `artwork/fonts/sources/`.
+**PR #413 — deuxième correction après constat visuel :** les 94 autres
+glyphes de **`a.bmp` petit sont inchangés**. En revanche, les **94 autres
+glyphes de `larger_font.bmp` sont désormais tous corrigés** : 10 653 pixels
+indexés retouchés sur 94 cellules / 94, pour éliminer les anciens contours
+sales et les pixels gris/blancs parasites. Chaque glyphe utilise sa silhouette
+9×12 de `a.bmp` reprojetée dans la cellule 13×17, avec interpolation
+bicubique et quantification **exacte dans la palette Doom 16 couleurs** ;
+aucune palette libre supplémentaire, aucun fond opaque, aucun changement
+des deux minuscules `a` et `o` de la grande police.
+
+**Reconstruction reproductible :** source historique verrouillée
+`artwork/fonts/sources/larger_font_pre_full_repair.bmp`,
+`artwork/fonts/preview_full_repair.py --check`, et
+`artwork/menu-uac/generic/tools/repair_assets.py --check`.
+Le SHA256 du BMP SD final est
+`1fb05564fd1041c94dd3b10970c826300155f2a9221aa7fac07ea0bb9c85bdcf`,
+l'oracle des 94 cellules `b4a46914a75ce8daee36f290c80f66fa5766e1a6887e87a47856d338b56b2bed`.
+Le test `ESP32/test/font_sd_assets_host.py` vérifie aussi les deux
+minuscules byte-exactes, l'en-tête, le magenta, les 16 couleurs et la
+déduplication des noms SD.
 
 ## Couleurs à la volée
 
@@ -81,8 +95,8 @@ Fichier absent/invalide : fallback sur `/DoomRPG-ESP32.pak` natif,
 non compressés 1, 4 ou 8 bits ; la palette magenta est la clé transparente.
 
 Le runtime garde un framebuffer logique 160 × 120 et des lecteurs bornés,
-sans chargement d'un BMP24 de 63 Ko en RAM. Les thèmes, le code du moteur,
-les autres glyphes et le gameplay ne sont pas modifiés par cette retouche.
+sans chargement d'un BMP24 de 63 Ko en RAM. Les thèmes, le code du moteur et le gameplay ne sont pas modifiés
+par la reconstruction **des glyphes de grande police**.
 
 ## Gain de lisibilité de la teinte sur les glyphes SD (moteur)
 
@@ -110,3 +124,12 @@ palette de la grande police. La police PAK n'est pas modifiée ; le
 rendu spécifique du mode UAC 120 applique la palette canonique même
 lorsque le chargement se replie sur le PAK. La coloration générale du
 Canvas reste dans son chemin de modulation existant.
+
+## Aperçu des 96 cellules corrigées
+
+![Grand atlas Doom : couleurs exactes de a.bmp, 94 glyphes repris et a/o conservés](previews/larger_font_clean_zoom.png)
+
+Le zoom est nearest-neighbor ×4 depuis **le BMP SD final**, sans
+filtre d'embellissement. Il permet de vérifier les 96 emplacements et
+la transparence magenta indépendamment du firmware. Le test physique
+de la lisibilité sur CYD reste **PENDING**.
