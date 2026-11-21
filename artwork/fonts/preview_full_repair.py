@@ -108,10 +108,11 @@ def render_report()->bytes:
 def build_refined_data()->bytes:
     """Generate a native indexed BMP, changing ONLY 4-bit pixels of 94 cells.
 
-    Start with the exact canonical-a palette and approved a/o source atlas.
-    Silhouettes of every remaining character are transposed from a.bmp;
-    original large-font metallic pixels are retained where they remain inside
-    each cleaned silhouette. Palette, header and magenta index stay byte exact.
+    Start from the canonical a.bmp palette and the approved a/o source atlas.
+    Every other glyph is rebuilt COMPLETELY from the known clean 9x12 source:
+    bicubic RGBA shape sampling, transparent threshold, closest of 15 opaque
+    canonical palette colors. No polluted gray/white ink from the legacy
+    large atlas can leak into the rebuilt glyph. 4bpp layout and key stay.
     """
     base=LARGE.read_bytes()
     assert len(base)==10726 and base[:2]==b"BM"
@@ -120,7 +121,7 @@ def build_refined_data()->bytes:
     assert struct.unpack_from("<H",base,28)[0]==4
     small=Image.open(SMALL)
     big=Image.open(LARGE)
-    result=make_option("mask",small,big)
+    result=make_option("smooth",small,big)
     output=bytearray(base)
     pitch=((WIDTH*4+31)//32)*4
     changed=0
@@ -142,7 +143,7 @@ def build_refined_data()->bytes:
                 else:output[loc]=(output[loc]&15)|(value<<4)
         if changed_this:changed_cells+=1
     assert output[:118]==base[:118]
-    assert changed>2000 and changed_cells>70,(changed,changed_cells)
+    assert changed>7000 and changed_cells>70,(changed,changed_cells)
     assert bytes(output)!=base
     img=Image.open(io.BytesIO(output))
     assert img.mode=="P" and img.size==(WIDTH,HEIGHT)
