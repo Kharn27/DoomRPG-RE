@@ -61,7 +61,7 @@ def main() -> None:
         elif not target.exists() or target.read_bytes() != data:
             raise AssertionError(f"{target}: BMP differs from Adobe RGBA master")
         entries += [(sha256(source.read_bytes()), f"sources/menu_generic_{tier}.png"),
-                    (sha256(data), f"../../sdroot/doomrpg/img/menu_generic_{tier}.bmp")]
+                    (sha256(data), f"../../../sdroot/doomrpg/img/menu_generic_{tier}.bmp")]
         print(f"[UAC-GENERIC] {tier} {width}x{height} V4 BGRA32 {len(data)} bytes sha256={sha256(data)}")
     manifest = "".join(f"{hash_}  {name}\n" for hash_, name in entries).encode()
     manifest_file = ART / "SHA256SUMS.txt"
