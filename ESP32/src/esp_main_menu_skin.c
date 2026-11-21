@@ -17,8 +17,8 @@ typedef struct {
 /* Compact original Doom-like pixel-metal lettering. The reference is
  * ONE BIG WORD per control (not two tiny lines). The 5x9 masks use 108 bytes
  * of flash, no font atlas, texture, cache, mutable state or heap. */
-/* CLASSIC text ramp: lighter straw, more golden bronze, livelier red copper.
- * One set of ROM constants feeds MENU_MAIN, modals and the loading bar. */
+/* CLASSIC ROM tones are shared by MENU_MAIN, modals and LOADING.
+ * Only their vertical order is reversed: dark copper at the top. */
 #define CLASSIC_PALE_YELLOW 0xff34U
 #define CLASSIC_GOLD_BRONZE 0xf5aaU
 #define CLASSIC_RED_COPPER  0xd225U
@@ -30,13 +30,13 @@ static const SkinPalette palettes[3] = {
     {0x0800U,0x4248U,0x83ceU,0x0800U,0x2903U,0xdba5U,0x2800U,0xffffU}
 };
 
-/* INFERNO text-only gradient: pale red -> medium red -> dark Doom red.
- * The bottom glyph tone and all six red loading-track rows remain unchanged. */
+/* INFERNO glyph tones (RGB565 unchanged): dark Doom red at the top,
+ * medium red in the center, pale red at the bottom. */
 #define INFERNO_PALE_ROSE 0xfe78U
 #define INFERNO_MID_RED 0xe30cU
 
-/* PHOSPHORE glyph and loading ink: pale green -> electric green -> turquoise.
- * Electric midpoint stays byte-exact; no changes to metallic accent seams. */
+/* PHOSPHORE RGB565 tones stay byte-exact: turquoise -> electric -> pale.
+ * The metallic accent seams and ungraded modal ink stay unchanged. */
 #define PHOSPHORE_PALE_GREEN     0xc7b8U
 #define PHOSPHORE_ELECTRIC_GREEN 0x87e0U
 #define PHOSPHORE_TURQUOISE      0x2638U
@@ -56,21 +56,23 @@ int EspMainMenuSkin_setTheme(uint8_t theme) {
 uint16_t EspMainMenuSkin_letterTone(int row, int rows) {
     if (rows != 5 && rows != 7 && rows != 9) return 0U;
     if (row < 0 || row >= rows) return 0U;
+    /* Mirror all three bands, preserving rounding for 5/7/9-row glyphs. */
+    row = rows - 1 - row;
     if (selectedLetterTheme == ESP_MAIN_MENU_THEME_INFERNO) {
-        /* Pale warm red -> saturated medium red -> unchanged deep Doom red.
-         * Only glyph faces vary; masks, shadows and geometry are preserved. */
+        /* Original pale-to-dark lookup, now read bottom-to-top.
+         * Masks, shadows and geometry are preserved. */
         if (row < (rows + 2) / 3) return INFERNO_PALE_ROSE;
         if (row < (2 * rows + 2) / 3) return INFERNO_MID_RED;
         return 0xc002U;
     }
     if (selectedLetterTheme == ESP_MAIN_MENU_THEME_PHOSPHORE) {
-        /* Pale green -> untouched electric green -> vivid turquoise.
-         * Only ink pixels change; no halo, allocations or new assets. */
+        /* Original pale -> electric -> turquoise lookup, now mirrored.
+         * No halo, allocations or new assets. */
         if (row < (rows + 2) / 3) return PHOSPHORE_PALE_GREEN;
         if (row < (2 * rows + 2) / 3) return PHOSPHORE_ELECTRIC_GREEN;
         return PHOSPHORE_TURQUOISE;
     }
-    /* CLASSIC: pale yellow -> golden bronze -> vivid red copper. */
+    /* CLASSIC original pale yellow -> bronze -> copper, read bottom-to-top. */
     if (row < (rows + 2) / 3) return CLASSIC_PALE_YELLOW;
     if (row < (2 * rows + 2) / 3)
         return palettes[ESP_MAIN_MENU_SKIN_IDLE].typeFace;
@@ -92,16 +94,16 @@ uint16_t EspMainMenuSkin_accentTone(EspMainMenuSkinState state) {
 }
 
 uint16_t EspMainMenuSkin_progressTone(int row, int rows) {
-    /* The LOADING fill is exactly six logical rows. Theme colors apply
-     * only to filled pixels; no track geometry or ownership changes. */
+    /* LOADING uses the same six RGB565 tones, reversed dark-to-light.
+     * Only filled pixels change; geometry/ownership stay unchanged. */
     static const uint16_t gradients[3][6] = {
-        {CLASSIC_PALE_YELLOW, CLASSIC_GOLD_BRONZE, CLASSIC_GOLD_BRONZE,
-         CLASSIC_RED_COPPER, CLASSIC_RED_COPPER, 0xb225U},
+        {0xb225U, CLASSIC_RED_COPPER, CLASSIC_RED_COPPER,
+         CLASSIC_GOLD_BRONZE, CLASSIC_GOLD_BRONZE, CLASSIC_PALE_YELLOW},
         /* INFERNO: six genuinely red rows, not an amber face with a red seam. */
-        {0xf946U, 0xf905U, 0xf804U, 0xd004U, 0xb003U, 0x9002U},
-        /* PHOSPHORE: pale green into electric lime, then teal/turquoise. */
-        {PHOSPHORE_PALE_GREEN, 0xbff3U, 0xa7f1U,
-         PHOSPHORE_ELECTRIC_GREEN, 0x4f12U, PHOSPHORE_TURQUOISE}
+        {0x9002U, 0xb003U, 0xd004U, 0xf804U, 0xf905U, 0xf946U},
+        /* PHOSPHORE: turquoise through electric lime to pale green. */
+        {PHOSPHORE_TURQUOISE, 0x4f12U, PHOSPHORE_ELECTRIC_GREEN,
+         0xa7f1U, 0xbff3U, PHOSPHORE_PALE_GREEN}
     };
     if (rows != 6 || row < 0 || row >= rows ||
         selectedLetterTheme > ESP_MAIN_MENU_THEME_PHOSPHORE) return 0U;
