@@ -1,4 +1,4 @@
-# UAC-120-GENERIC-LARGER — bouton unique + police Doom, correctif palette/détourage (PENDING re-test CYD)
+# UAC-120-GENERIC-LARGER — bouton unique + police Doom, maintenant par défaut (PENDING re-test CYD)
 
 Base initiale après PR #411 fusionnée (assets seuls) : **main `b15efb4d9e04cccaac62f1432a613550533e92a3`**. Branche ensuite **réancrée sur main `4ece448f523d32db6ddcf85d1ca4492513339dbb`** (ARCH-RC23, historique CI conservé), sans chevauchement des fichiers fonctionnels UAC.
 
@@ -160,3 +160,106 @@ utilisateur sur les 94 caractères est pris en compte ; aucun nouveau
 PASS visuel n'est revendiqué pour les deux minuscules. Remplacer seulement
 `/doomrpg/img/larger_font.bmp` sur SD suffit si les boutons génériques
 corrigés sont déjà installés. Aucun merge sans validation utilisateur.
+
+## UAC-120-DEFAULT + TYPO-GROW — nouveau comportement par défaut (21 novembre 2026)
+
+**Décision utilisateur :** le menu 120 à **un seul bouton générique** doit
+devenir l'accueil normal ; le menu procedural `CLASSIC` ne doit
+réapparaître **qu'en fallback**, jamais comme une variante à sélectionner
+volontairement. Après accord visuel sur la police homogène 96/96, agrandir
+les lettres de START/LOAD/OPTIONS/HELP pour remplir la hauteur du bouton,
+puis examiner la faisabilité RAM d'une police Doom plus nette dans tout le jeu.
+
+### Ownership / transitions sans régression
+
+- `DoomRPG_esp32RepaintOpaqueMainMenu` reste le propriétaire du modèle,
+  de l'activation tactile et de la framebuffer 160×120 originale. Ses
+  vérifications `FNV`, `heap8` et `largest8` se déroulent **AVANT**
+  `EspUacMenuPreview_enterDefault()`, appelé juste avant le premier
+  `PlatformVideo_present()` : aucune allocation de glyphes ne fausse la
+  condition existante de **zéro allocation** dans la composition.
+- Le nouveau préflight vérifie le châssis 59×120, le seul bouton 55×20 et
+  les 12 glyphes requis de `larger_font.bmp` via SD puis PAK si besoin.
+  Succès : `mode=1` par défaut, première présentation FULL. Échec : cache
+  libéré, `mode=0`, rendu CLASSIC déjà prêt dans la framebuffer.
+  Si un fichier disparaît après preflight, l'échec de dessin bascule aussi
+  vers CLASSIC via `PlatformVideo_present()`.
+- À chaque **Back** vers MENU_MAIN, la même fonction de présentation
+  réinitialise la vue et réessaie le défaut 120. Lors des sorties vers
+  HELP/OPTIONS/LOAD/START, `EspUacMenuPreview_reset()` libère
+  le cache et écarte tout overlay pendant l'affichage du nouvel écran.
+- Le logo garde les modes de comparaison facultatifs
+  **120 → 240→120 → 240 direct → 120**, jamais CLASSIC normalement.
+  Depuis un échec CLASSIC, le logo autorise une nouvelle tentative 120.
+  Les hitboxes, double tap, modèle de menu et retours restent propriétaires
+  du chemin existant.
+- Les 12 glyphes 13×17 **en cache indexé** sont projetés par nearest
+  sur **14×27 pixels physiques**, sans deuxième atlas ni allongement du
+  cache. `OPTIONS`=7×14=98px, marge 6px de chaque côté du métal
+  110px ; hauteur 27px et marge 6/7px dans les 40px du bouton.
+  Palette argent/cuivre et assombrissement des éléments non sélectionnés
+  inchangés. Le BMP `larger_font.bmp` SD n'est pas modifié.
+- La simulation des quatre sélections est regenerée depuis les assets
+  réels et vérifiée par `render_corrected_120.py --check`.
+  `ESP32/test/uac_default_mode_host.py` surveille le placement de
+  l'appel après la frontière mémoire, le fail-closed, le cycle sans
+  CLASSIC, les dimensions et la borne du cache.
+
+### Analyse RAM statique, pas de gain matériel inventé
+
+| Élément | Octets | Durée et risque |
+|---|---:|---|
+| Framebuffer logique RGB565 160×120 | **38 400** | Propriétaire unique existant, non touché |
+| Scratch de présentation UAC | **6 680 BSS** | Déjà présent avant cette correction, pas augmenté |
+| Cache UAC des 12 majuscules, 4bpp (12×17×7) | **1 428 heap** | UNIQUEMENT durant MENU_MAIN, libéré au reset |
+| Scratch de décodage des glyphes RGB565 (13×17×2) | **442 stack** | Temporaire dans `prepareLargerFont`, non retenu |
+| Polices résidentes 4bpp petit `a.bmp` | **5 184 pixels + 64 palette** | Si décodée et conservée en texture |
+| Polices résidentes 4bpp grand `larger_font.bmp` | **10 608 pixels + 64 palette** | Si décodée et conservée en texture |
+
+L'extension physique **13×17 → 14×27** dans le rendu menu ajoute
+**zéro octet** de cache, framebuffer ou BSS. L'enregistrement Serial
+`[UAC] DEFAULT READY mode=120 ... heap8=AVANT->APRÈS largest8=AVANT->APRÈS`
+fournit les vraies mesures au moment du préflight. Il faut encore
+obtenir le log du vrai `esp32-cyd`, notamment `HEAP8` avant et après
+retour gameplay, car les `File` SD peuvent entraîner des réservations
+temporaires dépendantes du matériel.
+
+**Pourquoi ne pas basculer toute la police du gameplay maintenant ?**
+Le Canvas utilise actuellement une **texture indexée résidente** et
+un avancement de texte de 7px (voir `esp_native_canvas_text.c`).
+Remplacer la texture 144×72 par celle 208×102 représenterait **au moins
+5 424 octets supplémentaires de pixels** si elles sont exclusives ;
+les garder toutes deux représenterait **au moins 10 608 octets
+supplémentaires** pour les pixels du grand atlas, en plus de palette,
+objet texture et overhead des allocateurs. Et le moteur devrait
+adapter largeur/espacement/collision des textes dans une logique 160×120.
+Mettre les **96 glyphes** dans le petit cache UI serait **11 424 B** :
+interdit comme migration paresseuse sur ce classic CYD sans PSRAM.
+Un prochain milestone distinct peut tester une API native commune
+de rendu indexé à la demande, **sans tableau 96 glyphes permanent**,
+avec mesure du heap8 min et du plus gros bloc, retours au jeu, HUD,
+dialogues et toutes les polices de thème. **Aucune migration globale
+n'est incluse dans cette PR.**
+
+### Protocole hardware esp32-cyd
+
+1. SD : `/doomrpg/img/menu_frame_120.bmp`,
+   `/doomrpg/img/menu_generic_120.bmp`,
+   `/doomrpg/img/larger_font.bmp` ; garder `/DoomRPG-ESP32.pak`
+   et le petit `a.bmp`. Firmware `esp32-cyd`, pas bringup.
+2. Au boot, **ne pas toucher au logo** : exiger `[UAC] DEFAULT READY
+   mode=120`, puis `[UAC] PRESENT mode=1 ... paint=FULL result=OK`.
+   Constater 4 mots **plus grands et centrés**, OPTIONS sans toucher
+   au biseau. Tap une fois pour sélectionner, une deuxième fois pour
+   confirmer ; LOAD sans sauvegarde, OPTIONS/HELP et Back.
+3. Tap logo : comparaison 240→120, 240 direct, puis **120** sans passage
+   volontaire par CLASSIC. Sur retour menu (Back), **120 redevient le
+   défaut**, même après comparaison en 240.
+4. Supprimer/renommer temporairement `menu_generic_120.bmp` : au
+   redémarrage exiger `[UAC] DEFAULT FALLBACK mode=CLASSIC` et un
+   menu utilisable. Restaurer le fichier : défaut 120 rétabli.
+   Supprimer seulement `larger_font.bmp` pour tester le fallback PAK
+   (qui n'utilise pas la nouvelle forme SD des 96 glyphes).
+5. Serial : comparer `heap8` et `largest8` au préflight, au retour
+   menu et en gameplay ; `shapeData/mediaTexels=NULL`, aucun
+   panic/WDT/audio underrun. Fournir photos et log. **PENDING CYD**.
