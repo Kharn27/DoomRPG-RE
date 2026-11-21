@@ -181,6 +181,9 @@ static int paintIndustrialDialog(uint16_t* framebuffer) {
  * shade/black outlines; the real indexed BMP blitter keeps exactly one PAK
  * range read per glyph as before. No font pixels or other owners are changed. */
 static void tintDialogFontInk(void) {
+    /* An artist-supplied SD atlas owns its exact palette. Preserve Doom's
+     * chrome/orange instead of applying the PAK-specific monochrome UI tint. */
+    if (dialog.font.sdFontSource != 0U) return;
     const uint16_t ink = EspMainMenuSkin_uiInk();
     uint16_t i;
     for (i = 0U; i < dialog.font.paletteCount; ++i) {

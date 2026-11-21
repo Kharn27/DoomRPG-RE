@@ -27,6 +27,8 @@ typedef struct EspNativeTexture_s {
     uint8_t indexed;
     uint8_t red, green, blue;
     uint8_t hasColorKey;
+    /* Set only for an actual SD font texture, never inferred from geometry. */
+    uint8_t sdFont;
     uint16_t colorKey;
 } EspNativeTexture;
 
