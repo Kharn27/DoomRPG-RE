@@ -63,3 +63,8 @@ respectant le scale x2 des boutons et l'écriture 1:1 des glyphes 13×17.
 Ils servent de revue graphique reproductible, **pas de PASS sur matériel**.
 
     python artwork/menu-uac/generic/tools/render_corrected_120.py --check
+
+La nouvelle police de la PR #413 possède **94 glyphes reconstruits**
+depuis `a.bmp` et deux glyphes `a`/`o` conservés. Le rendu ci-dessus
+est recalculé à partir du BMP indexé final, non de la version provisoire.
+[Voir le zoom de l'atlas complet](../../fonts/previews/larger_font_clean_zoom.png).
