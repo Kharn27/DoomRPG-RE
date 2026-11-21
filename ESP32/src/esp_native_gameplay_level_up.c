@@ -30,7 +30,7 @@ static EspNativeGameplayLevelUpView levelUp;
 
 /* Full-frame presentation owner: do not let gameplay feedback compositing
  * repaint over this modal. */
-int __real_Esp32PlatformVideo_present(void);
+int Esp32PlatformVideo_presentBase(void);
 
 static int framebufferReady(void) {
     return Esp32PlatformVideo_framebuffer() != NULL &&
@@ -161,7 +161,7 @@ static int paint(void) {
     EspNativeGameplayHubTouchUi_drawCrispText(
         framebuffer(), "TAP TO CONTINUE", 80, 108, COLOR_IVORY);
 
-    return __real_Esp32PlatformVideo_present();
+    return Esp32PlatformVideo_presentBase();
 }
 
 void EspNativeGameplayLevelUp_reset(void) {
