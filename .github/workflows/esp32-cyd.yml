@@ -132,6 +132,9 @@ jobs:
       - name: ARCH-RC21 packed sprite, projected sprite, BSP admission and activation (6 real C, 14 mutants)
         run: python ESP32/test/native_sprite_visibility_reads_boundary_host.py
 
+      - name: ARCH-RC22 actual PlayerView MOVE CAS and resource HUD composition (12 C bodies, 15 mutants)
+        run: python ESP32/test/native_player_resource_move_hud_boundary_host.py
+
       - name: Inventory native process RNG root owners and replay guards
         run: python ESP32/test/native_root_rng_ownership_inventory.py
 
