@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check SD-ready Doom glyph sheets and isolate the lowercase a/o repairs."""
+"""Check SD-ready Doom glyph sheets and deterministic large-font 94-glyph cleanup."""
 from pathlib import Path
 import hashlib
 import struct
@@ -20,8 +20,8 @@ EXPECTED = {
         "size": (208, 102),
         "cell": (13, 17),
         "magenta": 2,
-        "sha256": "61f35f7d590dfb632692104cab679f79fab39c2d5c4bf0b8227fc47ad6d20fc6",
-        "other_94": "ed651f3eb94098ee5f604de3841f8536365252b135aefbfc8564365d6b93d819",
+        "sha256": "925240fb829adac6d4ffce420894bbe4848edfd21ce080508d7e3b30b324a63f",
+        "other_94": "f57ac5e7f275b7bddc0efaef7defa37af3e61498e1eeb506a02e172500042083",
         "ink": 96,
     },
 }
@@ -52,10 +52,31 @@ def inspect(name, spec):
             small[54 + 4 * i:58 + 4 * i] for i in expected_indices
         ]
         assert palette == expected_colors, "large-font must use exact a.bmp palette"
-        original = (root / "artwork/fonts/sources/larger_font_original.bmp").read_bytes()
-        assert data[:54] == original[:54] and data[118:] == original[118:], (
-            "atlas geometry/index data must remain unchanged, palette only"
+        reference_large = (
+            root / "artwork/fonts/sources/larger_font_pre_full_repair.bmp"
+        ).read_bytes()
+        assert data[:118] == reference_large[:118], (
+            "4bpp header and 16-color palette must remain exactly unchanged"
         )
+        assert data[118:] != reference_large[118:], (
+            "the other 94 glyphs must be visually repaired"
+        )
+        def glyph_bytes(raw, code):
+            out = bytearray()
+            for row in range(17):
+                y = (code // 16) * 17 + row
+                for col in range(13):
+                    x = (code % 16) * 13 + col
+                    stride = ((208 * 4 + 31) // 32) * 4
+                    index = 118 + (101-y) * stride + (x >> 1)
+                    value = raw[index]
+                    out.append((value >> 4) if not (x & 1) else (value & 15))
+            return bytes(out)
+        for char in "ao":
+            slot = ord(char) - 33
+            assert glyph_bytes(data, slot) == glyph_bytes(reference_large, slot), (
+                "approved lowercase glyph changed", char
+            )
 
     def pixel(x, y):
         p = data[pixel_offset + (h - 1 - y) * pitch + (x >> 1)]
@@ -81,7 +102,7 @@ def inspect(name, spec):
         assert sum(y >= ch // 2 for _, y in ink) > 20, (name, letter)
         assert min(y for _, y in ink) >= 2 and max(y for _, y in ink) < ch - 2
     print(f"FONT-SD ASSET PASS {name}: {w}x{h} 4-bpp, "
-          f"{len(data)} B, 94 other glyphs unchanged, a/o complete")
+          f"{len(data)} B, other94 glyph oracle exact, a/o complete")
 
 
 for file_name, settings in EXPECTED.items():
