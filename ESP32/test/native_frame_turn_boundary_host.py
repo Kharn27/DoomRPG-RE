@@ -358,9 +358,9 @@ MUTANTS = [
      "dynamicFrameActive = 0U;", "dynamicFrameActive = 1U;"),
     ("ignore dynamic geometry fault", "scope",
      "if (dynamicAnimationFault != 0U) ok = 0;", "if (0) ok = 0;"),
-    ("bypass raw base", "scope",
+    ("wrong angle into raw base", "scope",
      "EspNativeGameplayFrame_renderTurnBase(render, angle, outStats);",
-     "renderComposed(render, EspPlayerView_view(), angle, 0, 1, outStats);"),
+     "EspNativeGameplayFrame_renderTurnBase(render, (uint8_t)(angle + 1U), outStats);"),
     ("raw leaf becomes preview", "base",
      "angle, 0, 1, outStats);", "angle, 1, 1, outStats);"),
     ("raw leaf becomes no-present", "base",
@@ -376,8 +376,12 @@ def compile_run(bodies, verbose=False):
         code, exe = p / "test.c", p / "test"
         code.write_text(source)
         built = subprocess.run(
+            # A mutation may deliberately remove the ONLY use of a fixture
+            # mock. This is not a production C failure; all other warnings
+            # remain errors, and every mutant must still compile and execute.
             ["cc", "-std=c11", "-O0", "-Wall", "-Wextra", "-Werror",
-             "-DARDUINO", "-DDOOMRPG_ESP32", str(code), "-o", str(exe)],
+             "-Wno-unused-function", "-DARDUINO", "-DDOOMRPG_ESP32",
+             str(code), "-o", str(exe)],
             text=True, capture_output=True)
         require(built.returncode == 0,
                 "actual C bodies fail compile: " + built.stderr[:5000])
