@@ -6,7 +6,7 @@
 
 - `a.bmp` : `/doomrpg/img/a.bmp`, **144×72**, glyphes 9×12, 16 colonnes × 6 lignes.
 - `larger_font.bmp` : `/doomrpg/img/larger_font.bmp`, **208×102**, glyphes 13×17.
-- Le nom du BMP doit être exactement celui attendu. `a_doom.bmp` et `larger_font_doom.bmp` sont des variantes de livraison ; sur la **SD** on en copie une version renommée. Aucun alias runtime implicite.
+- Le répertoire **`sdroot/doomrpg/img/` contient désormais les deux fichiers directement prêts à copier** : `a.bmp` (copie exacte de `a_doom.bmp`, 4 bits) et `larger_font.bmp` (copie exacte de `larger_font_doom.bmp`, 4 bits). `main` contenait auparavant sous ce second nom le BMP **24 bits incompatible** ; la branche le remplace par l'atlas indexé. Les variantes `_doom` et `_24bit` restent disponibles en références. Aucun alias runtime implicite.
 - Un BMP SD présent et compatible (BMP indexé non compressé 1/4/8-bpp, palette et bornes valides, géométrie exacte) prime. En absence de SD, erreur d'ouverture, mauvaise géométrie, format 24-bpp non supporté ou mauvais contenu initial, le PAK natif `/DoomRPG-ESP32.pak` reste la source. Pas de ZIP runtime.
 - Pas d'auto hot-reload : mise à jour par **redémarrage**.
 - Les erreurs physiques ultérieures pendant un blit provoquent l'échec borné de cette peinture ; l'ouverture suivante utilise le PAK. Il n'y a pas de substitution en cours de demi-frame.
@@ -27,6 +27,7 @@ Le test `ESP32/test/font_sd_override_host.c`, qui compile les **deux vrais déco
 - manque de surcharges -> lectures PAK et même géométrie ;
 - 4-bpp 16 couleurs SD -> blit 9×12 et transparence magenta 0xf81f ;
 - `larger_font` 208×102 SD ;
+- le test Python d'assets vérifie les **fichiers livrés sous les noms runtime**, leurs palettes et leur stricte identité binaire avec les variantes Doom ;
 - dimension incorrecte -> repli PAK sans métadonnées ambiguës ;
 - RGB24 -> rejet et PAK, sans allocation/chargement 24-bpp ;
 - importer `EspNativeIndexedImage` depuis SD, puis rejet et repli PAK, fermeture logique de PAK.
@@ -37,7 +38,7 @@ Le test `ESP32/test/font_sd_override_host.c`, qui compile les **deux vrais déco
 
 1. Compiler/flasher la branche `agent/font-sd-overrides-pak-fallback` avec `esp32-cyd` ; conserver les Serial depuis reset et les captures des menus/texte.
 2. SD **sans** `doomrpg/img/a.bmp` ni `doomrpg/img/larger_font.bmp` : le jeu doit fonctionner à l'identique avec fallback. Inspecter `[FONTSD] FALLBACK` et absence de nouveau panic/WDT.
-3. SD avec les **copies renommées** des deux variantes Doom 4-bpp : inspecter `[FONTSD] ACTIVE` et les zones de jeu suivantes : HUD, dialogue (incluant teintes), HUB inventaire et notes, démarrage/menu, texte Canvas.
+3. SD avec les deux BMP 4-bpp **directement copiés depuis `sdroot/doomrpg/img`** : inspecter `[FONTSD] ACTIVE` et les zones de jeu suivantes : HUD, dialogue (incluant teintes), HUB inventaire et notes, démarrage/menu, texte Canvas.
 4. Retirer un seul des deux BMP et recommencer : source mixte et repli individuel.
 5. À la transition MENU/NEW GAME/MAPLOAD, tester le fallback lors d'un PAK physiquement SD ; vérifier absence d'accès SD concurrent non sécurisé, musique/SFX normaux, 0 underrun/recovery, HEADROOM_OK et `shapeData/mediaTexels=NULL`.
 6. Si le rendu paraît tronqué ou colorisé par erreur, joindre le log exact et une photo. Pas de fusion avant test sur vrai CYD et revue des logs.

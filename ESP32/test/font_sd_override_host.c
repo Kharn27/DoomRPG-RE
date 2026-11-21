@@ -129,7 +129,13 @@ int main(void) {
                                    0, 0, 9, 12, 0, 0, 1, &stats) ==
            ESP_NATIVE_INDEXED_BMP_OK);
     assert(pakReads == prior && sdReads >= 3U);
-    assert(framebuffer[0] == 0U && framebuffer[1] == 0xffffU);
+    /* Fixture BMP is bottom-up: the deliberately transparent half-pixel
+     * lives on source row 71, not the top rendered row. */
+    assert(framebuffer[0] == 0xffffU && framebuffer[1] == 0xffffU);
+    assert(EspNativeIndexedBmp_blit(&bmp, framebuffer, 160, 120,
+                                   0, 71, 9, 1, 0, 1, 1, &stats) ==
+           ESP_NATIVE_INDEXED_BMP_OK);
+    assert(framebuffer[160] == 0U && framebuffer[161] == 0xffffU);
     sdEnabled[1] = 1U;
     assert(EspNativeIndexedBmp_open("larger_font.bmp", &bmp, &stats) ==
            ESP_NATIVE_INDEXED_BMP_OK && bmp.sdFontSource == 2U);

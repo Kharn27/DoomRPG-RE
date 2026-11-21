@@ -389,6 +389,7 @@ jobs:
             ESP32/test/font_sd_override_host.c \
             -o /tmp/doomrpg-font-sd-override
           /tmp/doomrpg-font-sd-override
+          python ESP32/test/font_sd_assets_host.py
 
       - name: SDL-C1 native indexed image decoder, PAK lease and failure rollback
         run: |

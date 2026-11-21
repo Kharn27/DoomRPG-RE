@@ -16,27 +16,20 @@ Les 96 glyphes ont été repositionnés par rapport à `larger_font.bmp` (208 ×
 
 ## Surcharge native sur SD (branche `agent/font-sd-overrides-pak-fallback`)
 
-Le firmware recherche uniquement les noms **exacts** ci-dessous, sur la carte SD montée :
+La livraison contient maintenant **directement** les deux fichiers sous les noms exacts attendus par le runtime :
 
-| Planche du moteur | Fichier SD optionnel |
-| --- | --- |
-| `a.bmp` (144 × 72) | `/doomrpg/img/a.bmp` |
-| `larger_font.bmp` (208 × 102) | `/doomrpg/img/larger_font.bmp` |
+| Planche demandée | Fichier prêt à copier sur la SD | Format |
+| --- | --- | --- |
+| `a.bmp` | `sdroot/doomrpg/img/a.bmp` → `/doomrpg/img/a.bmp` | 144 × 72, 4 bits |
+| `larger_font.bmp` | `sdroot/doomrpg/img/larger_font.bmp` → `/doomrpg/img/larger_font.bmp` | 208 × 102, 4 bits |
 
-Pour essayer **les graphismes Doom présents dans ce dépôt**, copier et **renommer** :
+Il suffit de **synchroniser le dossier `sdroot/doomrpg/img` vers la carte SD**. Les fichiers `a_doom.bmp`, `larger_font_doom.bmp` et les autres variantes sont gardés comme copies de référence. Le fichier `larger_font_doom_24bit.bmp` demeure une référence visuelle, **pas** un fichier runtime.
 
-```text
-sdroot/doomrpg/img/a_doom.bmp              -> <carte SD>/doomrpg/img/a.bmp
-sdroot/doomrpg/img/larger_font_doom.bmp    -> <carte SD>/doomrpg/img/larger_font.bmp
-```
+Le lecteur natif accepte les BMP indexés non compressés **1, 4 ou 8 bits**. Un fichier absent, incompatible, aux mauvaises dimensions ou corrompu lors du premier décodage entraîne un fallback sur les polices d'origine de `/DoomRPG-ESP32.pak`. **Aucune lecture ZIP runtime.**
 
-Les variantes sources ne sont pas renommées dans Git : seules les **copies SD** utilisent les noms attendus. Les assets existants du PAK sont inchangés.
+Le Canvas décode une texture indexée compacte une seule fois ; HUD/dialogues/HUB lisent les plages glyphes à la demande. Les handles sont suspendus avant toute ouverture physique SD du PAK ; lorsqu'un PAK est physiquement ouvert sur SD, les glyphes sont lus depuis le PAK pour éviter une concurrence sur le lecteur. En mode PAK flash-backed, la surcharge SD est disponible. Les fichiers changés pendant une session ne sont pas rechargés à chaud : **redémarrer** après copie.
 
-Le lecteur natif accepte seulement les BMP indexés non compressés **1, 4 ou 8 bits**. `larger_font_doom_24bit.bmp` (24 bits) est une référence visuelle : **ne pas le renommer pour le runtime**, il entraînerait un repli sur le PAK. Les dimensions incorrectes, les fichiers absents/incompatibles et les erreurs de décodage initial entraînent aussi le fallback. Une panne SD pendant un blit échoue de manière bornée et l'ouverture suivante utilise le PAK ; pas de buffer de pixels map-wide.
-
-Le Canvas charge la texture indexée compacte une seule fois ; les HUD/dialogues/HUB lisent les plages glyphes à la demande sans image complète. Les fichiers SD sont des **surcharges optionnelles**, le PAK natif `/DoomRPG-ESP32.pak` demeure la référence, **aucun ZIP runtime**. Les handles de polices sont suspendus avant les accès PAK physiques ; si un PAK est déjà physiquement ouvert sur SD, le rendu courant se replie sur le PAK pour éviter un conflit de lecteur. En mode PAK flash-backed, la surcharge SD est autorisée. Les décisions sont conservées pendant la session (redémarrer pour changer de fichiers).
-
-Logs attendus (validation uniquement par le vrai classic CYD) :
+Logs attendus (à confirmer sur vrai CYD) :
 
 ```text
 [FONTSD] ACTIVE name=a.bmp source=SD ...
@@ -45,7 +38,7 @@ Logs attendus (validation uniquement par le vrai classic CYD) :
 [FONTSD] FALLBACK name=... reason=invalid-or-io backing=PAK
 ```
 
-**PENDING CYD** : confirmer au moins un redémarrage sans surcharges, un avec les deux polices, un avec une police manquante, la RAM libre, la stabilité sonore, le rendu des dialogues/du HUD/du HUB et le retour menu.
+**PENDING CYD** : tester absence des deux fichiers, présence des deux, un seul manquant, RAM et audio lors des dialogues/HUD/HUB.
 
 ## Essai matériel
 
