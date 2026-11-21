@@ -73,13 +73,15 @@ def scan():
             "public/direct physical APIs must remain exported")
     sources = [p for p in SRC.iterdir() if p.suffix in (".c", ".cpp")]
     require(len(sources) >= 178, "incomplete production source inventory")
+    offenders = []
     for p in sources:
         value = p.read_text()
         stripped = re.sub(r"/\*[\s\S]*?\*/|//[^\n]*", "", value)
-        require(not re.search(r"\b__(?:wrap|real)_Esp32PlatformVideo_present\b",
-                              stripped), "dead physical GNU alias in " + p.name)
+        if re.search(r"\b__(?:wrap|real)_Esp32PlatformVideo_present\b", stripped):
+            offenders.append(p.name)
         require(not re.search(r"\b-Wl,--wrap=Esp32PlatformVideo_present\b", stripped),
                 "retired physical GNU flag in " + p.name)
+    require(not offenders, "dead physical GNU aliases: " + repr(sorted(offenders)))
     require("Esp32PlatformVideo_presentBase()" in
             (SRC / "esp_native_transition_presentation.c").read_text(),
             "loading/stats must call physical Base")
