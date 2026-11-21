@@ -8,8 +8,8 @@ Le cycle de comparaison de MENU_MAIN reste **CLASSIC → 120 ×2 → 240→120 �
 
 - Châssis `menu_frame_120.bmp` **59×120**, identique.
 - Un unique fond métallique vierge `/doomrpg/img/menu_generic_120.bmp` **55×20 BGRA V4**, partagé pour START/LOAD/OPTIONS/HELP et leurs deux états, agrandi en nearest-neighbor ×2. Le bouton est ouvert **une seule fois** pendant le FULL et réutilisé pour les quatre labels ; sur sélection, les deux rectangles 110×40 sont seuls rafraîchis.
-- Les vrais dessins de glyphes de **`larger_font.bmp`** (208×102, 13×17, source grille ASCII `c-33`, 16 colonnes) sont centrés et projetés physiquement à 1:1 sur les boutons. L'encre sélectionnée est chaude/claire, l'autre est atténuée. Les glyphes viennent du BMP, pas d'une police système ou des anciens boutons texte.
-- Seules les 12 majuscules utiles sont mises en cache, **12×17×7 = 1428 octets de heap TEMPORAIRE uniquement en mode 120**, en luminance indexée 4 bits (0 transparent, 1..15 intensité). L'allocation est bornée et peut échouer proprement vers CLASSIC. **Libération explicite** quand on quitte le mode 120, lors d'un reset/retour gameplay et en cas d'échec de préparation : **aucune charge permanente de 1428 B sur la marge heap8 gameplay**. Pas d'atlas complet en RAM, pas de copie du BMP 55×20 persistante. Scratch glyph RGB565 **442 octets stack** pendant la préparation ; scanout BSS historique inchangé **6680 octets**.
+- Les vrais dessins de glyphes de **`larger_font.bmp`** (208×102, 13×17, source grille ASCII `c-33`, 16 colonnes) sont centrés et projetés physiquement à 1:1 sur les boutons. Les couleurs sélectionnées suivent la vraie palette `a.bmp` argent/cuivre, les non sélectionnées sont atténuées. Les glyphes viennent du BMP, pas d'une police système ou des anciens boutons texte.
+- Seules les 12 majuscules utiles sont mises en cache, **12×17×7 = 1428 octets de heap TEMPORAIRE uniquement en mode 120**, en indices palette Doom 4 bits (0 transparent, 1..15 couleurs canoniques). L'allocation est bornée et peut échouer proprement vers CLASSIC. **Libération explicite** quand on quitte le mode 120, lors d'un reset/retour gameplay et en cas d'échec de préparation : **aucune charge permanente de 1428 B sur la marge heap8 gameplay**. Pas d'atlas complet en RAM, pas de copie du BMP 55×20 persistante. Scratch glyph RGB565 **442 octets stack** pendant la préparation ; scanout BSS historique inchangé **6680 octets**.
 - La source préférée est `/doomrpg/img/larger_font.bmp` sur SD si atlas indexé compatible ; si absent, mauvais format, géométrie ou erreur de lecture de glyphe, **repli vers le `larger_font.bmp` natif du `/DoomRPG-ESP32.pak`**, via la même API `EspNativeIndexedBmp` (sans ZIP). Les lectures sont terminées avant la peinture et la musique n'ouvre pas de second producteur.
 - Si le bouton générique, le cadre ou les deux polices sont indisponibles, retour fail-closed au menu CLASSIC comme précédemment. Les 16 boutons historiques, les trois autres modes et la logique tactile restent inchangés.
 
@@ -52,9 +52,10 @@ Corrections sur la même branche :
 - **120 et 240 génériques** : alpha de START original et biseau
   périphérique copiés exactement ; centre générique conservé. BMP SD +
   PNG sources + manifest régénérés, pixels vérifiés par script déterministe.
-- **Grande police SD** : permutation des 16 couleurs depuis `a.bmp` ;
-  35 octets de palette effectivement modifiés, **toutes les données index
-  glyphes et le BMP header inchangés**. Même rendu couleur en mode 120
+- **Première étape de grande police SD (désormais remplacée)** :
+  permutation des 16 couleurs depuis `a.bmp` ; 35 octets de palette modifiés
+  sans modifier les glyphes. **Ce n'était pas suffisant visuellement** :
+  voir la reprise complète des 94 glyphes ci-dessous. Même rendu couleur en mode 120
   avec fallback PAK grâce à une palette canonique en ROM.
 - **Rendu UAC 120** : abandon de la conversion couleurs→luminance→blanc
   unicolore ; conservation des indices réels de glyphes Doom, transparent
@@ -65,7 +66,7 @@ Corrections sur la même branche :
   et `larger_font_doom_compat3.bmp` du répertoire SD ; ces deux dernières
   sont déplacées, par identité de blob, dans `artwork/fonts/sources/`.
   Tests host font mis à jour pour contrôler couleurs, géométrie et
-  empreintes des 94 glyphes non modifiés.
+  empreintes exactes des glyphes après correction.
 
 **Nouveau test CYD demandé :** sur la microSD, remplacer
 `/doomrpg/img/menu_generic_120.bmp`,
@@ -77,3 +78,47 @@ les contrastes de caractères multicolores et l'absence de traits au bord.
 Puis retirer seulement `larger_font.bmp` pour vérifier le même rendu
 palette Doom via PAK. Serial demandé pour confirmer `[UAC] FONT120`,
 `PREFLIGHT`, `PRESENT` et RAM/audio. **Aucun PASS CYD revendiqué.**
+
+## Refonte des 94 autres glyphes (retour utilisateur supplémentaire, 21 novembre 2026) — PENDING CYD
+
+L'utilisateur constate que **seuls les `a` et `o` minuscules** du grand atlas
+sont satisfaisants ; la correction de palette seule n'a pas réparé le tracé
+des 94 autres caractères. Une première variante de détourage qui conservait
+le métal pollué de l'ancien grand atlas a été **rejetée après revue des
+preuves PNG**, malgré 3215 pixels et 94 cellules modifiés : des parasites
+gris/blancs restaient visibles.
+
+**Implémentation retenue :** reconstruction **totale** de chacune des
+94 cellules depuis le dessin de `a.bmp` petite police (9×12 → 13×17),
+interpolation bicubique puis quantification dans **les 16 couleurs exactes**
+de `a.bmp`, transparence magenta conservée. La source 13×17 d'origine
+à palette harmonisée est archivée dans
+`artwork/fonts/sources/larger_font_pre_full_repair.bmp`, et seules les
+deux minuscules `a`/`o` préalablement validées sont recopiées à
+l'identique depuis ce master. **10 653 pixels / 94 cellules exactement
+changés**, zéro changement d'en-tête/palette/stride/dimensions 208×102,
+16×6 ASCII `c-33`, format 4bpp BMP 10 726 o.
+
+**Oracles :** `artwork/fonts/preview_full_repair.py --check`,
+`artwork/menu-uac/generic/tools/repair_assets.py --check`,
+`artwork/menu-uac/generic/tools/render_corrected_120.py --check`,
+`ESP32/test/font_sd_assets_host.py` (empreinte totale
+`1fb05564fd1041c94dd3b10970c826300155f2a9221aa7fac07ea0bb9c85bdcf`,
+94 cellules `b4a46914a75ce8daee36f290c80f66fa5766e1a6887e87a47856d338b56b2bed`,
+a/o strictement identiques à la source, palette exacte et structure BMP).
+Les nouveaux PNG depuis le BMP final sont
+`artwork/fonts/previews/larger_font_clean_zoom.png` et
+`artwork/menu-uac/generic/previews/proof_120_four_selections.png` ;
+**ils ne constituent pas un test LCD réel**.
+
+**Retest :** mettre à jour **`/doomrpg/img/larger_font.bmp`** sur SD
+(depuis la présente branche) et conserver le nouveau
+`menu_generic_120.bmp` pour tester le menu 120. Vérifier toutes les
+lettres de START/LOAD/OPTIONS/HELP, les minuscules et ponctuations
+dans les écrans qui font appel à la grande police, la couleur gris/cuivre
+et les bords des boutons. Un fallback PAK affiche le **font original du
+PAK**, dont les silhouettes restent d'origine : la couleur canonique
+est appliquée en menu 120, mais **ce fallback ne possède pas la nouvelle
+reconstruction des 94 glyphes** ; ne pas annoncer une équivalence
+pixel parfaite avec l'atlas SD. Logs Serial + photos requis ; aucun
+PASS CYD revendiqué à ce stade.
