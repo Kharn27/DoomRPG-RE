@@ -73,6 +73,12 @@ def original_body_parity() -> None:
     marker = GUARD.encode("ascii")
     for filename, blob in BEFORE.items():
         current = (SOURCES / filename).read_bytes()
+        # ARCH-RC24 has no GNU runtime alias; undo only public/physical
+        # present spellings for the immutable pre-SDL-F27 source witnesses.
+        if filename in ("esp_native_gameplay_action_engine.c",
+                        "esp_native_gameplay_gib_fx.c"):
+            from arch_rc24_history import restore_pre_rc24
+            current = restore_pre_rc24(filename, current)
         # Undo RC23 and RC22 native owner renames before frozen Git parity;
         # keep the pre-F27 immutable blob SHAs STRICT and unchanged.
         from arch_rc23_history import restore_pre_rc23
