@@ -218,7 +218,7 @@ size_t Esp32PlatformVideo_framebufferSizeBytes(void) { return 160U * 120U * 2U; 
 int Esp32PlatformVideo_presentBase(void) {
     ++presents; return presentOk;
 }
-int EspNativeGameplayActionEngine_present(void) {
+int __wrap_EspNativeGameplayActionEngine_present(void) {
     ++decoratedPresents;
     return Esp32PlatformVideo_presentBase();
 }
