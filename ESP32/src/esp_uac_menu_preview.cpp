@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <mbedtls/sha256.h>
+#include <esp_heap_caps.h>
 #include "esp_uac_bmp32.h"
 #include "esp_audio_entrance_music.h"
 #include "esp_asset_pack.h"
@@ -25,7 +26,15 @@ const char* const kButtons[4]={"start","load","options","help"};
  * a.bmp color index (0 transparent); 12 glyphs use one bounded 1428B
  * temporary UI cache, released on mode exit/reset, no gameplay BSS. */
 constexpr char kFontAlphabet[]="ADEHILNOPRST";
-constexpr int kGlyphW=13,kGlyphH=17,kFontAdvance=13;
+constexpr int kGlyphW=13,kGlyphH=17;
+/* Physical-only nearest upsampling: widen slightly and grow text vertically
+ * for optical centering. OPTIONS (7*14=98px) leaves 6px on either side
+ * of the 110px button; 27px high leaves 6/7px for its metal bevel. */
+constexpr int kPaintGlyphW=14,kPaintGlyphH=27,kPaintAdvance=14;
+static_assert(7*kPaintAdvance<=ESP_UAC_BUTTON_WIDTH-12,
+              "OPTIONS must remain inside the generic button bezel");
+static_assert(kPaintGlyphH<=40-12,
+              "enlarged font must not overpaint the upper/lower bezel");
 /* Canonical a.bmp RGB565 palette, permuted into larger_font index order.
  * Slot 0 is transparent, slots 1,2 are source indices 0,1; slots 3..15
  * equal the corresponding larger_font indices (source index 2 is magenta).
@@ -76,8 +85,9 @@ const char* const kSha256[2][9] = {
     "63054b67f2c7c6024e4e1392dd34cb165e074eef6f810b518fca0804ad9ecb55"
   }
 };
-/* Reversible comparison: 0 CLASSIC, 1 native-120, 2 sampled 240->120,
- * 3 direct-240. P1 accepts artist-updated SD BMP with strict V4 geometry. */
+/* 0 CLASSIC is now strictly a fail-closed fallback. Normal MENU_MAIN opens
+ * native-120 first; optional logo comparisons cycle 120 -> 240->120 ->
+ * direct-240 -> 120, NEVER into CLASSIC without an asset/paint failure. */
 enum { kClassic=0,kNative120=1,k240As120=2,kDirect240=3 };
 constexpr bool kStrictSha256=false;
 static int assetTier(int m){return m==kNative120?120:240;}
@@ -237,30 +247,31 @@ static bool prepareLargerFont(){
     return ok;
 }
 
-/* Physical 1:1 larger_font (13x17), optically centered on a 110x40 plate.
- * Render each true Doom palette index with the same 16 a.bmp colors.
- * Inactive labels use the same palette gently dimmed; never paint
- * background/magenta or overwrite the top/bottom metal bezel. */
+/* Scale cached 13x17 indexed glyphs to physical 14x27 by bounded nearest
+ * lookup, without allocating a second atlas. Optical ink now fills the
+ * 110x40 plate more evenly; selected/nonselected share palette semantics. */
 static void paintLargerTextRow(uint16_t* dst,int py,int index,int selected,
                               bool patch){
     if(!fontReady||index<0||index>=4)return;
-    const int gy=py-kTop[index]-(40-kGlyphH)/2;
-    if(gy<0||gy>=kGlyphH)return;
+    const int paintY=py-kTop[index]-(40-kPaintGlyphH)/2;
+    if(paintY<0||paintY>=kPaintGlyphH)return;
+    const int sourceY=paintY*kGlyphH/kPaintGlyphH;
     const char* label=kButtons[index];
     const int len=(int)strlen(label);
     const int xStart=(ESP_UAC_BUTTON_WIDTH-
-                      ((len-1)*kFontAdvance+kGlyphW))/2;
+                      ((len-1)*kPaintAdvance+kPaintGlyphW))/2;
     const int destOrigin=patch?0:kPanelX+ESP_UAC_BUTTON_INSET;
     for(int i=0;i<len;++i){
         const char ch=(char)(label[i]-'a'+'A');
         const char* found=strchr(kFontAlphabet,ch);
         if(!found)continue; /* No unsupported glyph can index outside cache. */
         const unsigned gi=(unsigned)(found-kFontAlphabet);
-        for(int x=0;x<kGlyphW;++x){
-            const uint8_t pair=fontInk->glyph[gi][gy][x/2];
-            const unsigned ink=(x&1)?(pair&15U):(pair>>4U);
+        for(int x=0;x<kPaintGlyphW;++x){
+            const int sourceX=x*kGlyphW/kPaintGlyphW;
+            const uint8_t pair=fontInk->glyph[gi][sourceY][sourceX/2];
+            const unsigned ink=(sourceX&1)?(pair&15U):(pair>>4U);
             if(ink==0U)continue; /* atlas transparent magenta */
-            const int dx=destOrigin+xStart+i*kFontAdvance+x;
+            const int dx=destOrigin+xStart+i*kPaintAdvance+x;
             if(dx<0||dx>=(patch?ESP_UAC_BUTTON_WIDTH:kWidth))continue;
             uint16_t color=kDoomFontInk[ink];
             if(index!=selected){
@@ -432,24 +443,54 @@ static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
 
 extern "C" int EspUacMenuPreview_mode(void){return mode;}
 extern "C" void EspUacMenuPreview_reset(void){
-    if(mode)Serial.printf("[UAC] RESET mode=%d fallback=classic\n",mode);
-    mode=0;paintedMode=0;paintedSelection=-1; releaseLargerFont();
+    if(mode)Serial.printf("[UAC] RESET mode=%d heap8=%u largest8=%u\n",
+                          mode,
+                          (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+                          (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    mode=kClassic;paintedMode=0;paintedSelection=-1;
+    releaseLargerFont();
+}
+/* Called ONLY after MENU_MAIN's strict heap-equality and framebuffer FNV
+ * oracles and touch activation have passed. The 1428B ink cache therefore
+ * cannot invalidate those pre-existing memory checks. All SD/PAK failures
+ * leave the already-constructed native CLASSIC framebuffer as fallback. */
+extern "C" int EspUacMenuPreview_enterDefault(void){
+    const unsigned heapBefore=(unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    const unsigned largestBefore=(unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    mode=kClassic;paintedMode=0;paintedSelection=-1;
+    releaseLargerFont();
+    if(!preflight(kNative120)){
+        releaseLargerFont();
+        Serial.printf("[UAC] DEFAULT FALLBACK mode=CLASSIC reason=assets-or-font heap8=%u largest8=%u\n",
+                      (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+                      (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        return kClassic;
+    }
+    mode=kNative120;
+    Serial.printf("[UAC] DEFAULT READY mode=120 generic=1 font=larger inkBytes=%u glyphPaint=%dx%d heap8=%u->%u largest8=%u->%u\n",
+                  (unsigned)sizeof(FontInkCache),kPaintGlyphW,kPaintGlyphH,
+                  heapBefore,(unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+                  largestBefore,(unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    return mode;
 }
 extern "C" int EspUacMenuPreview_cycle(void){
-    const int next=(mode+1)%4;
+    /* Classic is never offered as a normal mode; in fallback tap the logo
+     * to reattempt 120 after repairing/remounting SD. */
+    const int next=mode==kNative120?k240As120:
+                   mode==k240As120?kDirect240:kNative120;
     if(mode==kNative120 && next!=kNative120)releaseLargerFont();
-    if(next!=0&&!preflight(next)){
+    if(!preflight(next)){
         releaseLargerFont();
-        mode=0;
+        mode=kClassic;paintedMode=0;paintedSelection=-1;
         Serial.println("[UAC] FALLBACK SD missing/invalid -> original MENU_MAIN");
-        return 0;
+        return kClassic;
     }
     mode=next;
     paintedMode=0;paintedSelection=-1;
     Serial.printf("[UAC] MODE %s source=%s physical=320x240 buttons=110x40 RAM=6680B-BSS+1428B-menu-only\n",
                   mode==kClassic?"CLASSIC":mode==kNative120?"120":
                     mode==k240As120?"240->120":"240",
-                  mode==kClassic?"original":mode==kNative120?
+                  mode==kClassic?"fallback":mode==kNative120?
                     "59x120 nearest-x2":mode==k240As120?
                     "118x240 decimate2x+nearest-x2":"118x240 DIRECT");
     return mode;
