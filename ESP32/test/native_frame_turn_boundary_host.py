@@ -302,7 +302,10 @@ int main(void) {
     pending = 3;
     validateOk = 0;
     assert(EspNativeGameplayFrame_renderTurn(&liveRender, 64, &stats) == 1);
-    assert(pending == 0 && rawCalls == 1 && prepareCalls == 0);
+    /* The historical invalid-lease path cancels all pending animations and
+     * publishes the result without an extra physical frame. This RC23
+     * extraction must not silently invent an additional LCD present. */
+    assert(pending == 0 && rawCalls == 0 && prepareCalls == 0);
     assert(eventCalls == 1 && lastEvent == 1 && openSfxCalls == 0);
 
     puts("PASS RC23 real C: Base->scoped frame->public facade; "
