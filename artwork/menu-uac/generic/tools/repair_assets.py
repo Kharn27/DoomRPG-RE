@@ -2,10 +2,10 @@
 """Rebuild pixel-exact UAC generic edges and full clean Doom larger_font from a.bmp.
 
 The START V4 alpha/metal rim is the geometry oracle. Only its perimeter
-is borrowed; the original generic metal center stays blank. 94 large-font
-glyphs are rebuilt from the small Doom atlas with its own canonical
-silver/copper gradient, while preserving two approved a/o glyphs. No font header or palette bytes
-are modified, and only 4bpp pixel indexes of the 94 cells change.
+is borrowed; the original generic metal center stays blank. All 96 large-font
+glyphs, including lowercase a/o, are rebuilt identically from the small
+Doom atlas and its canonical silver/copper gradient. No font header or palette bytes
+are modified, and only the 4bpp pixel indexes of the 96 cells change.
 
 --write rewrites sources, final SD BMPs and the generic manifest;
 --check is deterministic and does not write;
@@ -120,7 +120,7 @@ def all_outputs()->dict[str,bytes]:
     ).encode("utf-8")
     font,diff=repair_large_font()
     outputs["sdroot/doomrpg/img/larger_font.bmp"]=font
-    print(f"[UAC-REPAIR] larger_font palette=canonical-a.bmp 16/16 glyphs=96 rebuilt=94 bytesChanged={diff} sha256={sha(font)}")
+    print(f"[UAC-REPAIR] larger_font palette=canonical-a.bmp 16/16 glyphs=96 rebuilt=96 bytesChanged={diff} sha256={sha(font)}")
     return outputs
 
 def main()->None:
