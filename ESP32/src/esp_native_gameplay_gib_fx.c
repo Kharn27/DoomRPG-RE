@@ -1189,13 +1189,13 @@ static void decoratePlayerImpact(void) {
  * active impact lease paints onto the freshly drawn grid *during* present.
  * Keep all visual leases untouched; the world presenter resumes at HUB close.
  * This uses the existing physical present, no additional pixels or heap. */
-extern int __real_Esp32PlatformVideo_present(void);
+extern int Esp32PlatformVideo_presentBase(void);
 
 int EspNativeGameplayActionEngine_present(void) {
     uint32_t seed = 0U;
     uint32_t age = 0U;
     if (EspNativeGameplayHub_isActive()) {
-        return __real_Esp32PlatformVideo_present();
+        return Esp32PlatformVideo_presentBase();
     }
     decorateActiveHit();
     decorateActiveGib();
