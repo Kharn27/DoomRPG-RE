@@ -365,7 +365,7 @@ MUTANTS = [
 ]
 
 
-def compile_run(bodies):
+def compile_run(bodies, verbose=False):
     source = (PREFIX + "\n" + bodies["base"] + "\n" + bodies["scope"]
               + "\n" + bodies["public"] + "\n" + SUFFIX)
     with tempfile.TemporaryDirectory(prefix="rc23-real-c-") as directory:
@@ -380,12 +380,15 @@ def compile_run(bodies):
                 "actual C bodies fail compile: " + built.stderr[:5000])
         run = subprocess.run([str(exe)], capture_output=True, text=True,
                              timeout=15)
+        if verbose and (run.returncode != 0 or "PASS RC23 real C:" not in run.stdout):
+            print("REAL C harness stdout:", run.stdout)
+            print("REAL C harness stderr:", run.stderr)
         return run.returncode == 0 and "PASS RC23 real C:" in run.stdout
 
 
 def main():
     scan()
-    require(compile_run(BODIES), "unmodified REAL C contract failed")
+    require(compile_run(BODIES, verbose=True), "unmodified REAL C contract failed")
     for description, owner, before, after in MUTANTS:
         require(BODIES[owner].count(before) == 1,
                 "non-unique mutation anchor " + description)
