@@ -19,13 +19,13 @@ resident = (ROOT / "ESP32/src/esp_native_resident_gameplay.c").read_text()
 flow = (ROOT / "ESP32/src/esp_native_gameplay_session.c").read_text()
 main = (ROOT / "ESP32/src/native_main_menu_actions.c").read_text()
 
-start = source.index("int __wrap_Esp32PlatformVideo_present(void) {")
+start = source.index("int EspNativeGameplayActionEngine_presentBase(void) {")
 body = source[start:]
 guard = re.search(
     r"if \(!EspNativeResidentGameplay_ownsWorldPresent\(\)\) \{\s*"
     r"(?:/\*.*?\*/\s*)?"
     r"EspPickupMini_markFreshFrame\(\);\s*"
-    r"return __real_Esp32PlatformVideo_present\(\);\s*\}",
+    r"return Esp32PlatformVideo_presentBase\(\);\s*\}",
     body, re.S)
 assert guard, "missing non-world bypass of the gameplay compositor"
 assert guard.start() < body.index("EspNativeGameplayControls_isActive()")
@@ -62,7 +62,7 @@ static int worldActive, firstWorldLease, dirty, presentOk, presentCalls, hudPain
 static int EspNativeResidentGameplay_ownsWorldPresent(void) {
     return worldActive || firstWorldLease;
 }
-static int __real_Esp32PlatformVideo_present(void) {
+static int Esp32PlatformVideo_presentBase(void) {
     ++presentCalls;
     return presentOk;
 }
@@ -75,7 +75,7 @@ static int nativePresent(void) {
         ++hudPaints;
         dirty = 0;
     }
-    return __real_Esp32PlatformVideo_present();
+    return Esp32PlatformVideo_presentBase();
 }
 int main(void) {
     for(int i=0;i<4096;i++) {
