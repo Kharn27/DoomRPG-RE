@@ -58,8 +58,8 @@ def scan():
     require(len(source_files) >= 178, "incomplete production source inventory")
     normal = CONFIG.split("[env:esp32-cyd]", 1)[1].split(
         "[env:esp-cyd-inverted]", 1)[0]
-    require(len(re.findall(r"^\s+-Wl,--wrap=", normal, re.M)) == 4,
-            "expected exactly four remaining production GNU wrappers")
+    require(len(re.findall(r"^\s+-Wl,--wrap=", normal, re.M)) == 2,
+            "expected exactly two remaining production GNU wrappers")
     for name in RETIRED:
         require("-Wl,--wrap=" + name not in CONFIG, "retired flag " + name)
         for path, source in source_files.items():

@@ -55,10 +55,6 @@ static EspNativeGameplayHudState hudOverlay;
 
 int EspMapRuntime_getMapSpriteBase(uint32_t index,
                                       EspMapSprite* outSprite);
-const EspNativeGameplayHudState* __real_EspNativeGameplayHud_view(void);
-EspPlayerViewMoveStatus __real_EspPlayerView_commitPreparedMove(
-    const EspPlayerViewState* expectedBefore,
-    const EspPlayerViewState* preparedAfter);
 static uint16_t tileForView(const EspPlayerViewState* view) {
     uint32_t x;
     uint32_t y;
@@ -94,7 +90,7 @@ static void clearPendingMove(void) {
 
 static int ensureOwner(uint8_t targetMapId) {
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
-    const EspNativeGameplayHudState* hud = __real_EspNativeGameplayHud_view();
+    const EspNativeGameplayHudState* hud = EspNativeGameplayHud_viewBase();
     uint32_t bytes;
     uint8_t* next;
 
@@ -156,8 +152,8 @@ int EspNativeGameplayPickup_getMapSprite(uint32_t index,
     return 1;
 }
 
-const EspNativeGameplayHudState* __wrap_EspNativeGameplayHud_view(void) {
-    const EspNativeGameplayHudState* base = __real_EspNativeGameplayHud_view();
+const EspNativeGameplayHudState* EspNativeGameplayPickup_hudView(void) {
+    const EspNativeGameplayHudState* base = EspNativeGameplayHud_viewBase();
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
     if (base == NULL || runtime == NULL || pickup.ready != 1U ||
         pickup.arenaFNV != runtime->arenaFNV1a ||
@@ -304,11 +300,11 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
     return 1;
 }
 
-EspPlayerViewMoveStatus __wrap_EspPlayerView_commitPreparedMove(
+EspPlayerViewMoveStatus EspNativeGameplayPickup_commitPreparedMove(
     const EspPlayerViewState* expectedBefore,
     const EspPlayerViewState* preparedAfter) {
     EspPlayerViewMoveStatus status =
-        __real_EspPlayerView_commitPreparedMove(expectedBefore, preparedAfter);
+        EspPlayerView_commitPreparedMoveBase(expectedBefore, preparedAfter);
 
     if (status != ESP_PLAYER_VIEW_MOVE_OK || expectedBefore == NULL ||
         preparedAfter == NULL) {
