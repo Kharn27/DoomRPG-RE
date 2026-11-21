@@ -1,12 +1,12 @@
 # FONT-SD-P1 — surcharge optionnelle des deux planches de police, PAK natif en fallback — PENDING CYD
 
-**Base exacte** : `main=0ecf61366140f9ef3c279e33111055ea0f6dd8c8` après fusion de la PR #407. **Branche** : `agent/font-sd-overrides-pak-fallback`. **Statut : code proposé ; aucune preuve matérielle CYD à ce jour**.
+**Base exacte** : `main=0ecf61366140f9ef3c279e33111055ea0f6dd8c8` après fusion de la PR #407. **Branche** : `agent/font-sd-overrides-pak-fallback`. **Statut : loader SD observé sur vrai CYD pour `a.bmp` AVANT retouche ; aspect des 4 glyphes corrigés et `larger_font.bmp` encore PENDING CYD.**
 
 ## Contrat fonctionnel
 
 - `a.bmp` : `/doomrpg/img/a.bmp`, **144×72**, glyphes 9×12, 16 colonnes × 6 lignes.
 - `larger_font.bmp` : `/doomrpg/img/larger_font.bmp`, **208×102**, glyphes 13×17.
-- Le répertoire **`sdroot/doomrpg/img/` contient désormais les deux fichiers directement prêts à copier** : `a.bmp` (copie exacte de `a_doom.bmp`, 4 bits) et `larger_font.bmp` (copie exacte de `larger_font_doom.bmp`, 4 bits). `main` contenait auparavant sous ce second nom le BMP **24 bits incompatible** ; la branche le remplace par l'atlas indexé. Les variantes `_doom` et `_24bit` restent disponibles en références. Aucun alias runtime implicite.
+- Le répertoire **`sdroot/doomrpg/img/` contient désormais les deux fichiers directement prêts à copier** : `a.bmp` (copie exacte de `a_doom.bmp`, 4 bits) et `larger_font.bmp` (copie exacte de `larger_font_doom.bmp`, 4 bits). `main` contenait auparavant sous ce second nom le BMP **24 bits incompatible** ; la branche le remplace par l'atlas indexé. Les variantes `_doom` restent disponibles en références, mais le BMP RGB24 `larger_font_doom_24bit.bmp` (63 702 o) est désormais **supprimé du répertoire SD** : il n'est pas pris en charge, et reste récupérable dans l'historique Git #407. Aucun alias runtime implicite.
 - Un BMP SD présent et compatible (BMP indexé non compressé 1/4/8-bpp, palette et bornes valides, géométrie exacte) prime. En absence de SD, erreur d'ouverture, mauvaise géométrie, format 24-bpp non supporté ou mauvais contenu initial, le PAK natif `/DoomRPG-ESP32.pak` reste la source. Pas de ZIP runtime.
 - Pas d'auto hot-reload : mise à jour par **redémarrage**.
 - Les erreurs physiques ultérieures pendant un blit provoquent l'échec borné de cette peinture ; l'ouverture suivante utilise le PAK. Il n'y a pas de substitution en cours de demi-frame.
@@ -27,7 +27,7 @@ Le test `ESP32/test/font_sd_override_host.c`, qui compile les **deux vrais déco
 - manque de surcharges -> lectures PAK et même géométrie ;
 - 4-bpp 16 couleurs SD -> blit 9×12 et transparence magenta 0xf81f ;
 - `larger_font` 208×102 SD ;
-- le test Python d'assets vérifie les **fichiers livrés sous les noms runtime**, leurs palettes et leur stricte identité binaire avec les variantes Doom ;
+- le test Python d'assets vérifie les **fichiers livrés sous les noms runtime**, leurs palettes et leur stricte identité binaire avec les variantes Doom ; il verrouille également les **94 autres glyphes intacts de chaque planche**, les nouveaux `a/o`, leurs dimensions et la suppression du RGB24 ;
 - dimension incorrecte -> repli PAK sans métadonnées ambiguës ;
 - RGB24 -> rejet et PAK, sans allocation/chargement 24-bpp ;
 - importer `EspNativeIndexedImage` depuis SD, puis rejet et repli PAK, fermeture logique de PAK.
@@ -45,4 +45,13 @@ Le test `ESP32/test/font_sd_override_host.c`, qui compile les **deux vrais déco
 
 ## Limites
 
-La source PAK indexée est conservée et la surcharge n'est pas une dépendance du runtime. Les polices SD sont sensibles à l'encodage BMP et à la palette magenta. Le BMP 24-bpp de la PR #407 reste une référence d'art non pris en charge par cette frontière.
+La source PAK indexée est conservée et la surcharge n'est pas une dépendance du runtime. Les polices SD sont sensibles à l'encodage BMP et à la palette magenta. L'ancien BMP 24-bpp de la PR #407 n'est plus présent dans la livraison SD ; il reste récupérable dans l'historique Git (jamais décodeur runtime).
+
+## Retour CYD réel du 21 novembre 2026 — preuve bornée
+
+Log utilisateur `platformio-device-monitor-261121-110206.log` :
+328 lignes, 29 837 octets, SHA-256
+`950da58b2f5b04bbb7901e13375e8995a9be23858d9a3b56f5ebbf8625eb095d`.
+La session a montré la vraie source SD `[FONTSD] ACTIVE name=a.bmp source=SD indexed=4 palette=16 bytes=5302`, puis l'affichage Help/About (`[MAINMODEL] HELP-NATIVE lines=112`), la pagination et le retour au menu. Aucun panic/WDT n'est visible dans cet extrait ; `larger_font.bmp` n'y est **pas** attestée chargée. L'utilisateur confirme l'attrait des effets de coloration, mais signale des `a`/`o` malformés.
+
+**Suite ciblée, PENDING vrai CYD :** seuls les quatre glyphes `a/o` des deux BMP sont remplacés (fond/placement et 94 autres glyphes inchangés), ainsi que les variantes `_doom` strictement identiques ; RGB24 de 63 702 o retiré ; aucune retouche au code du moteur ni aux thèmes. Contrôle hôte attendu : 94 empreintes de glyphes inchangées par planche, deux nouveaux glyphes complets et BMP indexés valides. **Le log ci-dessus ne valide pas les nouveaux pixels ; un nouveau test visuel hardware est nécessaire** (Help, HUD, dialogues, et un trajet faisant réellement charger `larger_font.bmp`).
