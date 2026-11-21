@@ -45,10 +45,10 @@ FontSlot* slotFor(uint8_t source) {
  * Keep the reusable read-only font handles exclusive to safe SD windows. */
 extern "C" void EspNativeFontSd_suspend(void) {
     for (FontSlot& slot : fonts) {
-        if (slot->state == 1U) {
-            if (slot->file) slot->file.close();
-            slot->size = 0U;
-            slot->state = 0U; /* Reprobe when the next flash-backed window opens. */
+        if (slot.state == 1U) {
+            if (slot.file) slot.file.close();
+            slot.size = 0U;
+            slot.state = 0U; /* Reprobe when the next flash-backed window opens. */
         }
     }
 }
