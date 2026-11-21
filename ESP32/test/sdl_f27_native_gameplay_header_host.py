@@ -73,6 +73,8 @@ def original_body_parity() -> None:
     marker = GUARD.encode("ascii")
     for filename, blob in BEFORE.items():
         current = (SOURCES / filename).read_bytes()
+        from arch_rc21_history import restore_pre_rc21
+        current = restore_pre_rc21(filename, current)
         from arch_rc20_history import restore_pre_rc20
         current = restore_pre_rc20(filename, current)
         from arch_rc14_history import restore_pre_rc14

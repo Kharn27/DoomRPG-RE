@@ -58,6 +58,9 @@ def source_gate() -> None:
         assert current.count(b"#include <SDL.h>") == 1, name
         old = b"#include <SDL.h>\n" + current[len(prefix):]
         if name == "esp_native_bsp_visibility.c":
+            from arch_rc21_history import restore_pre_rc21
+            old = restore_pre_rc21(name, old)
+        if name == "esp_native_bsp_visibility.c":
             old = restore_pre_moving_monster_bsp_leaf(old)
         if name == "esp_native_gameplay_event_chain.c":
             from arch_rc11_history import restore_pre_rc11_event_chain

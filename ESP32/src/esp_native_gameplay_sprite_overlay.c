@@ -18,10 +18,7 @@
 #define SPRITE_COMBAT_ATTACK_ALTERNATE_VISUAL 5U
 #define SPRITE_COMBAT_PAIN_VISUAL 6U
 
-int __real_EspMapRuntime_getMapSprite(uint32_t index,
-                                      EspMapSprite* outSprite);
-
-int __wrap_EspMapRuntime_getMapSprite(uint32_t index,
+int EspMapRuntime_getMapSprite(uint32_t index,
                                       EspMapSprite* outSprite) {
     const EspNativeGameplayMonsterPositionRecord* monsterPosition;
     uint8_t visual;
@@ -31,7 +28,7 @@ int __wrap_EspMapRuntime_getMapSprite(uint32_t index,
     uint16_t linkOrder;
     uint8_t animation;
 
-    if (!__real_EspMapRuntime_getMapSprite(index, outSprite)) return 0;
+    if (!EspMapRuntime_getMapSpriteBase(index, outSprite)) return 0;
     if (outSprite == NULL) return 1;
 
     /* A transformed crate remains the same immutable BSP sprite spatially, but

@@ -124,6 +124,9 @@ int EspMapRuntime_getNode(uint32_t index, EspMapNode* outNode);
 int EspMapRuntime_getLine(uint32_t index, EspMapLine* outLine);
 /* Raw immutable arena decoding; explicit bypass for the rendering facade. */
 int EspMapRuntime_getLineBase(uint32_t index, EspMapLine* outLine);
+/* Canonical packed BSP sprite decoder. Never calls a mutable projection. */
+int EspMapRuntime_getMapSpriteBase(uint32_t index, EspMapSprite* outSprite);
+/* Public adapter: crate, pickup, movement, attack/pain/death presentation. */
 int EspMapRuntime_getMapSprite(uint32_t index, EspMapSprite* outSprite);
 int EspMapRuntime_getEvent(uint32_t index, uint32_t* outEvent);
 int EspMapRuntime_getByteCode(uint32_t index, EspMapByteCode* outByteCode);

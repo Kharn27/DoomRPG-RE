@@ -528,7 +528,7 @@ int EspNativeBspVisibility_mapSpriteVisibleReadOnly(
     return (state->visibleLeaves[leaf >> 5] & (1U << (leaf & 31U))) != 0U;
 }
 
-int EspNativeBspVisibility_mapSpriteVisible(
+int EspNativeBspVisibility_mapSpriteVisibleBase(
     const EspNativeBspVisibilityState* state,
     uint32_t mapSpriteIndex,
     uint32_t* outLeafIndex) {

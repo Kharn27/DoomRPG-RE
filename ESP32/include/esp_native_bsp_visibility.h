@@ -63,6 +63,14 @@ int EspNativeBspVisibility_mapSpriteVisibleReadOnly(
  * traversal is cached per source arena in a bounded 2KB native sidecar
  * (maps with >1024 sprites use checked uncached traversal); mutable visibility,
  * overlay state and gameplay activation remain outside this pure query. */
+/* Raw admission remains pure: no gameplay activation, for the native
+ * composition layer only. Preview uses ReadOnly directly. */
+int EspNativeBspVisibility_mapSpriteVisibleBase(
+    const EspNativeBspVisibilityState* state,
+    uint32_t mapSpriteIndex,
+    uint32_t* outLeafIndex);
+/* Public visible-leaf admission owns the activation side effect only after
+ * the raw BSP-visible test has passed and canonical entity checks succeed. */
 int EspNativeBspVisibility_mapSpriteVisible(
     const EspNativeBspVisibilityState* state,
     uint32_t mapSpriteIndex,

@@ -65,8 +65,8 @@ def source_scan():
     require(len(all_src) >= 178, "unexpectedly small production corpus")
     config = (ROOT / "platformio.ini").read_text()
     normal = config.split("[env:esp32-cyd]", 1)[1].split("[env:esp-cyd-inverted]", 1)[0]
-    require(len(re.findall(r"^\s+-Wl,--wrap=", normal, re.M)) == 6,
-            "expected 6 production wrappers after RC20")
+    require(len(re.findall(r"^\s+-Wl,--wrap=", normal, re.M)) == 4,
+            "expected 4 production wrappers after RC21")
     for symbol in RETIRED:
         require("-Wl,--wrap=" + symbol not in config, "retired flag " + symbol)
         for name, text in all_src.items():

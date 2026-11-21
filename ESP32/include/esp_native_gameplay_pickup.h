@@ -31,7 +31,6 @@ EspPlayerViewMoveStatus EspNativeGameplayPickup_commitPreparedMove(
     const EspPlayerViewState* expectedBefore,
     const EspPlayerViewState* preparedAfter);
 
-#define __wrap_EspMapRuntime_getMapSprite EspNativeGameplayPickup_getMapSprite
 #define __wrap_EspNativeGameplayHud_view EspNativeGameplayPickup_hudView
 #define __wrap_EspPlayerView_commitPreparedMove \
     EspNativeGameplayPickup_commitPreparedMove
