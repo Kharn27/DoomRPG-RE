@@ -46,8 +46,8 @@ config = INI.read_text()
 normal = config.split("[env:esp32-cyd]", 1)[1].split(
     "[env:esp-cyd-inverted]", 1)[0]
 
-require(len(re.findall(r"^\s+-Wl,--wrap=", normal, re.M)) == 2,
-        "ARCH-RC22 expects two genuine release GNU wrappers")
+require(len(re.findall(r"^\s+-Wl,--wrap=", normal, re.M)) == 1,
+        "ARCH-RC23 expects one genuine release GNU wrapper")
 for name in ("EspAssetPack_residentBegin", "PlatformInput_setTapCallback"):
     require("-Wl,--wrap=" + name not in config,
             "old linker interposition resurrected: " + name)

@@ -29,8 +29,7 @@ FUNCTION = re.compile(r"^\s*[0-9a-fA-F]+ <([^>]+)>:$")
 CALL = re.compile(
     r"\b(?:call0|call4|call8|call12|j)\s+[0-9a-fA-F]+\s+"
     r"<(__wrap_[A-Za-z_][A-Za-z0-9_]*)(?:\+[^>]*)?>")
-REQUIRED = {"EspNativeGameplayFrame_renderTurn",
-            "Esp32PlatformVideo_present"}
+REQUIRED = {"Esp32PlatformVideo_present"}
 # Arduino/ESP-IDF log adapters are provided by the toolchain, not the
 # DoomRPG platformio.ini composition. Their exact linked symbols were
 # confirmed in all four real Xtensa ELF artifacts on ARCH-RC0.
@@ -82,7 +81,8 @@ RETIRED_NORMAL_WRAPS = frozenset((
     "EspMapSpriteTopology_getVisualState",
     "EspMapRuntime_getMapSprite",
     "EspNativeBspVisibility_mapSpriteVisible",
-    "EspNativeGameplayHud_view", "EspPlayerView_commitPreparedMove"))
+    "EspNativeGameplayHud_view", "EspPlayerView_commitPreparedMove",
+    "EspNativeGameplayFrame_renderTurn"))
 RETIRED_ALL_WRAPS = RETIRED_BRINGUP_WRAPS | RETIRED_NORMAL_WRAPS
 RETAINED_BRINGUP_WRAPS = frozenset((
     "EspNativeFirstFrame_route",
@@ -118,7 +118,7 @@ def declarations(config: str) -> dict[str, list[str]]:
                     f"duplicate ld --wrap in {section}: {symbol}")
             sections[section].append(symbol)
     base = sections.get("env:esp32-cyd")
-    require(base is not None and len(base) >= 2,
+    require(base is not None and len(base) >= 1,
             "missing canonical normal build or unexpectedly small --wrap inventory")
     require(REQUIRED.issubset(base), "missing required native boundary")
     require(len(sections.get("env:esp32-cyd-bringup", [])) >= 3,
@@ -262,7 +262,7 @@ def compare_release(normal: dict, inverted: dict) -> None:
 
 def self_test() -> None:
     real = declarations((PROJECT / "platformio.ini").read_text())
-    require(len(real["env:esp32-cyd"]) == 2, "expected ARCH-RC22 2 normal wraps")
+    require(len(real["env:esp32-cyd"]) == 1, "expected ARCH-RC23 1 normal wrap")
     require(len(real["env:esp32-cyd-bringup"]) == 3,
             "expected 3 surviving diagnostic extras after ARCH-RC1")
     require(set(real["env:esp32-cyd-bringup"]) == RETAINED_BRINGUP_WRAPS,
@@ -334,7 +334,7 @@ def self_test() -> None:
         pass
     else:
         raise AssertionError("release wrapper divergence accepted")
-    print(f"PASS ARCH-RC22 host self-test: {len(real['env:esp32-cyd'])}+"
+    print(f"PASS ARCH-RC23 host self-test: {len(real['env:esp32-cyd'])}+"
           f"{len(real['env:esp32-cyd-bringup'])} native GNU wraps; "
           f"{len(RETIRED_ALL_WRAPS)} retired boundaries blocked, "
           "malformed/duplicate rejected, nm syntax, direct-call attribution, "

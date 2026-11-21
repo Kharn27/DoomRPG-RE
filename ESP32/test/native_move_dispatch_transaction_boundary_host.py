@@ -53,17 +53,18 @@ def source_scan():
     require(len(all_src) >= 178, "production corpus unexpectedly small")
     ini = (ROOT / "platformio.ini").read_text()
     normal = ini.split("[env:esp32-cyd]", 1)[1].split("[env:esp-cyd-inverted]", 1)[0]
-    require(len(re.findall(r"^\s+-Wl,--wrap=", normal, re.M)) == 2,
-            "RC22 expects exactly 2 normal GNU wraps")
+    require(len(re.findall(r"^\s+-Wl,--wrap=", normal, re.M)) == 1,
+            "RC23 expects exactly 1 normal GNU wrap")
     for name in RETIRED:
         require("-Wl,--wrap=" + name not in ini, "retired flag: " + name)
         for filename, source in all_src.items():
             require(not re.search(r"\b__(?:wrap|real)_" + name + r"\b", source),
                     "retired GNU alias in " + filename)
         require("EspNativeGameplayDispatch_" in name, "dispatch scope drift")
-    for name in ("EspNativeGameplayFrame_renderTurn",
-                 "Esp32PlatformVideo_present"):
-        require("-Wl,--wrap=" + name in ini, "protected wrapper retired: " + name)
+    require("-Wl,--wrap=EspNativeGameplayFrame_renderTurn" not in ini,
+            "cardinal frame GNU interposition resurrected")
+    require("-Wl,--wrap=Esp32PlatformVideo_present" in ini,
+            "protected physical-present wrapper retired")
     require("EspNativeGameplayDispatch_commitMove(" not in SOURCES["dispatch"],
             "raw dispatcher must not bypass public MOVE owner")
     require("EspNativeGameplayDispatch_rollbackMove(" not in SOURCES["dispatch"],

@@ -58,15 +58,15 @@ def scan():
     require(len(source_files) >= 178, "incomplete production source inventory")
     normal = CONFIG.split("[env:esp32-cyd]", 1)[1].split(
         "[env:esp-cyd-inverted]", 1)[0]
-    require(len(re.findall(r"^\s+-Wl,--wrap=", normal, re.M)) == 2,
-            "expected exactly two remaining production GNU wrappers")
+    require(len(re.findall(r"^\s+-Wl,--wrap=", normal, re.M)) == 1,
+            "expected exactly one production GNU wrapper after RC23")
     for name in RETIRED:
         require("-Wl,--wrap=" + name not in CONFIG, "retired flag " + name)
         for path, source in source_files.items():
             require(not re.search(r"\b__(?:wrap|real)_" + name + r"\b", source),
                     "obsolete linker alias in " + path)
-    require("-Wl,--wrap=EspNativeGameplayFrame_renderTurn" in CONFIG,
-            "RC19 must retain cardinal/door transaction wrapper")
+    require("-Wl,--wrap=EspNativeGameplayFrame_renderTurn" not in CONFIG,
+            "RC23 cardinal transaction facade must be explicit")
     for name, owner in (("EspMapRuntime_getLine", "esp_native_dynamic_line_render.c"),
                         ("EspMapRuntime_getLineBase", "esp_map_access.c"),
                         ("EspMapLineState_view", "esp_native_dynamic_line_render.c"),
