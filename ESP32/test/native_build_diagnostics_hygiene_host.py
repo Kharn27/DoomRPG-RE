@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OPTIONS = (ROOT / "src/native_main_menu_options_back.c").read_text()
 BRIDGE = (ROOT / "include/platform_video_c_bridge.h").read_text()
 BRIDGE_CPP = (ROOT / "src/platform_video_c_bridge.cpp").read_text()
+GATE = (ROOT / "src/esp_native_gameplay_present_gate.c").read_text()
 MAIN = (ROOT / "src/main.cpp").read_text()
 VIDEO = (ROOT / "src/platform_video.cpp").read_text()
 TOUCH = (ROOT / "src/soft_xpt2046.cpp").read_text()
@@ -44,8 +45,10 @@ def compile_probe(header: str) -> subprocess.CompletedProcess:
 
 require(BRIDGE.count("int Esp32PlatformVideo_present(void);") == 1,
         "native C bridge public declaration drift")
-require('extern "C" int Esp32PlatformVideo_present(void)' in BRIDGE_CPP,
-        "actual C-linkage bridge implementation missing")
+require('extern "C" int Esp32PlatformVideo_presentBase(void)' in BRIDGE_CPP,
+        "raw C-linkage physical present bridge missing")
+require("int Esp32PlatformVideo_present(void)" in GATE,
+        "native public present implementation missing")
 require(OPTIONS.count('#include "platform_video_c_bridge.h"') == 1,
         "options owner must include the C bridge exactly once")
 require(OPTIONS.index('#include "platform_video_c_bridge.h"')
