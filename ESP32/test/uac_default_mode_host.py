@@ -20,6 +20,7 @@ def section(code:str,start:str,end:str)->str:
     assert start in code and end in code,(start,end)
     return code.split(start,1)[1].split(end,1)[0]
 
+assert 'void EspUacMenuPreview_armDefault(void);' in header
 assert 'int EspUacMenuPreview_enterDefault(void);' in header
 assert 'constexpr int kPaintGlyphW=14,kPaintGlyphH=27,kPaintAdvance=14;' in preview
 assert 'const int sourceY=paintY*kGlyphH/kPaintGlyphH;' in preview
@@ -31,6 +32,8 @@ assert 'source_x=cx*13//PAINT_W' in proof
 
 enter=section(preview,'extern "C" int EspUacMenuPreview_enterDefault(void){',
               'extern "C" int EspUacMenuPreview_cycle(void){')
+assert 'if(!defaultPending)return mode;' in enter
+assert 'defaultPending=false;' in enter
 assert 'mode=kClassic;paintedMode=0;paintedSelection=-1;' in enter
 assert 'releaseLargerFont();' in enter
 assert 'if(!preflight(kNative120)){' in enter
@@ -53,11 +56,25 @@ compose=section(layout,'int DoomRPG_esp32RepaintOpaqueMainMenu(',
                 'int __wrap_DoomRPG_probeNativeMainMenuOverlay(')
 assert 'heapAfter != heapBefore || largestAfter != largestBefore' in compose
 assert 'DoomRPG_esp32MainMenuTouchActivate(doomRpg, finalHash)' in compose
-assert '(void)EspUacMenuPreview_enterDefault();' in compose
-assert compose.index('heapAfter != heapBefore') < compose.index('EspUacMenuPreview_enterDefault()')
-assert compose.index('EspUacMenuPreview_enterDefault()') < compose.index('(void)Esp32PlatformVideo_present()')
-assert '#if defined(DOOMRPG_ESP32) && DOOMRPG_ESP32' in compose
+assert '(void)EspUacMenuPreview_enterDefault();' not in compose
+assert compose.index('heapAfter != heapBefore') < compose.index('(void)Esp32PlatformVideo_present()')
+# The source-locked SDL-F17 whole-file oracle owns this original layout.
+def git_blob(data:str)->str:
+    import hashlib
+    raw=data.encode()
+    return hashlib.sha1(b"blob "+str(len(raw)).encode()+b"\\0"+raw).hexdigest()
+assert git_blob(layout)=="8bc87944b6a193b087975c5465d6a6616d37b895"
+activate=section(touch,'int DoomRPG_esp32MainMenuTouchActivate(',
+                 'int DoomRPG_esp32MainMenuTouchIsActive(')
+assert 'EspUacMenuPreview_armDefault();' in activate
+assert activate.index('DoomRPG_esp32MainMenuFramebufferHash(') < activate.index('EspUacMenuPreview_armDefault()')
+assert activate.index('PlatformInput_setTapCallback(DoomRPG_esp32MainMenuTouchOnTap)') < activate.index('EspUacMenuPreview_armDefault()')
 assert 'EspUacMenuPreview_reset();' in touch
+present=section(video,'bool PlatformVideo_present() {',
+               '#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY')
+assert '(void)EspUacMenuPreview_enterDefault();' in present
+assert present.index('EspUacMenuPreview_enterDefault()') < present.index('EspUacMenuPreview_mode()')
+assert 'EspUacMenuPreview_reset();' in present
 
 for label in ("START","LOAD","OPTIONS","HELP"):
     x=(110-len(label)*14)//2
@@ -71,6 +88,6 @@ for x in range(14):
 for y in range(27):
     sy=y*17//27
     assert 0<=sy<17
-print("UAC-DEFAULT HOST PASS: root entry after strict heap/FNV/touch checks, 120 default, classic fail-closed,")
+print("UAC-DEFAULT HOST PASS: deferred touch-arm/first-present after strict root heap/FNV checks, 120 default, classic fail-closed,")
 print("                     logo 120->240sampled->240direct->120, 14x27 text within bezel,")
 print("                     1428B temporary font cache, no added atlas or gameplay allocations")
