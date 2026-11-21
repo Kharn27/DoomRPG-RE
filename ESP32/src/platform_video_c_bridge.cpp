@@ -9,7 +9,7 @@ extern "C" size_t Esp32PlatformVideo_framebufferSizeBytes(void) {
     return PlatformVideo_framebufferSizeBytes();
 }
 
-extern "C" int Esp32PlatformVideo_present(void) {
+extern "C" int Esp32PlatformVideo_presentBase(void) {
     return PlatformVideo_present() ? 1 : 0;
 }
 
