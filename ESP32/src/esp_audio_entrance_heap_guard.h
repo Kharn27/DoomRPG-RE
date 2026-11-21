@@ -5,10 +5,12 @@
 
 /* One shared 16 KiB INTERNAL|8BIT SD/ADPCM/DAC ring. No second allocation.
  *
- * AUDIO-LOAD V11 CYD witness: NEW GAME has 49388 free bytes after the ring;
- * restored LOAD has 48568. The former 49152-byte post-ring floor rejected
- * valid LOAD by just 584 bytes despite both pre-ring totals and contiguous
- * blocks satisfying the existing preflight and the gameplay RAM budget.
+ * AUDIO-LOAD V11 CYD witness: NEW GAME has 49388 free bytes AFTER ring;
+ * restored LOAD has 69344 BEFORE SD-open/ring and reports FAIL-HEAP.
+ * If LOAD consumes the same 20776-byte startup delta as NEW GAME, it
+ * would retain 48568: 584 bytes below the old 49152-byte floor. This
+ * post-ring LOAD value is a projection, NOT a direct hardware measure.
+ * The code below logs actual allocation/heap/contiguity on any rejection.
  *
  * Retain the original 60 KiB preflight and 16 KiB largest-block guards.
  * A bounded 46 KiB post-ring free floor still leaves >=32 KiB general
