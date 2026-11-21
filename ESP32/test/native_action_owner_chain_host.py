@@ -43,8 +43,10 @@ def census():
         need(not any(re.search(r"\b__(?:real|wrap)_" + symbol + r"\s*\(", s)
                      for s in files.values()),
              "legacy GNU alias/bypass still compiled: " + symbol)
-    for symbol in ("EspNativeGameplayFrame_renderTurn",):
-        need("-Wl,--wrap=" + symbol in ini, "door/render boundary lost: " + symbol)
+    need("-Wl,--wrap=EspNativeGameplayFrame_renderTurn" not in ini,
+         "RC23 retired door/render GNU interposition resurrected")
+    need("-Wl,--wrap=Esp32PlatformVideo_present" in ini,
+         "physical-present GNU boundary unexpectedly retired")
     expected = {
         ("esp_native_resident_gameplay.c",
          "EspNativeGameplayTransition_executeSelect(intent, &result)"): 1,
