@@ -172,12 +172,16 @@ puis examiner la faisabilité RAM d'une police Doom plus nette dans tout le jeu.
 
 ### Ownership / transitions sans régression
 
-- `DoomRPG_esp32RepaintOpaqueMainMenu` reste le propriétaire du modèle,
-  de l'activation tactile et de la framebuffer 160×120 originale. Ses
-  vérifications `FNV`, `heap8` et `largest8` se déroulent **AVANT**
-  `EspUacMenuPreview_enterDefault()`, appelé juste avant le premier
-  `PlatformVideo_present()` : aucune allocation de glyphes ne fausse la
-  condition existante de **zéro allocation** dans la composition.
+- `DoomRPG_esp32RepaintOpaqueMainMenu` reste **strictement inchangé**
+  (oracle historique SDL-F17, SHA Git du main conservé). Son activation
+  tactile arme un simple drapeau `EspUacMenuPreview_armDefault()`,
+  **sans allocation** ; le premier `PlatformVideo_present()` consomme
+  ce drapeau via `EspUacMenuPreview_enterDefault()` **APRÈS** que le
+  layout a passé ses vérifications `FNV`, `heap8` et `largest8`.
+  Aucun décodage de police ne fausse la condition de zéro allocation
+  lors de la composition. La source historique tactile reste soumise
+  à l'inverse strict `arch_rc18_history.py` : seules les nouvelles
+  lignes du marqueur sont retirées avant comparaison au SHA original.
 - Le nouveau préflight vérifie le châssis 59×120, le seul bouton 55×20 et
   les 12 glyphes requis de `larger_font.bmp` via SD puis PAK si besoin.
   Succès : `mode=1` par défaut, première présentation FULL. Échec : cache
@@ -217,7 +221,7 @@ puis examiner la faisabilité RAM d'une police Doom plus nette dans tout le jeu.
 | Polices résidentes 4bpp grand `larger_font.bmp` | **10 608 pixels + 64 palette** | Si décodée et conservée en texture |
 
 L'extension physique **13×17 → 14×27** dans le rendu menu ajoute
-**zéro octet** de cache, framebuffer ou BSS. L'enregistrement Serial
+**zéro octet** de cache de glyphes ou framebuffer et **un drapeau d'activation** booléen dans l'état plateforme (environ 1 octet BSS). L'enregistrement Serial
 `[UAC] DEFAULT READY mode=120 ... heap8=AVANT->APRÈS largest8=AVANT->APRÈS`
 fournit les vraies mesures au moment du préflight. Il faut encore
 obtenir le log du vrai `esp32-cyd`, notamment `HEAP8` avant et après
