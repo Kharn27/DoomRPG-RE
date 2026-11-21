@@ -41,9 +41,10 @@ def scan():
         for filename, source in sources.items():
             require(not re.search(r"\b__(?:wrap|real)_" + name + r"\b", source),
                     "retired linker alias still compiled in " + filename)
-    for name in ("EspNativeGameplayFrame_renderTurn",):
-        require("-Wl,--wrap=" + name in flags,
-                "protected rendering/door wrapper inadvertently removed")
+    require("-Wl,--wrap=EspNativeGameplayFrame_renderTurn" not in flags,
+            "retired RC23 renderTurn GNU wrapper resurrected")
+    require("-Wl,--wrap=Esp32PlatformVideo_present" in flags,
+            "remaining physical-present wrapper inadvertently removed")
 
     exact = {
         ("esp_native_gameplay_hub.c", "EspNativeGameplayHub_handleActionBase("): 4,
