@@ -1,0 +1,20 @@
+name: UAC native 120 enlarged proof temporary
+on:
+  push:
+    branches: [agent/uac-120-generic-larger-font]
+    paths:
+      - artwork/menu-uac/generic/tools/render_corrected_120.py
+      - .github/workflows/uac-default-proof.yml
+  workflow_dispatch:
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install Pillow==11.3.0
+      - run: python artwork/menu-uac/generic/tools/render_corrected_120.py --write --emit-base64
+      - run: python artwork/menu-uac/generic/tools/render_corrected_120.py --check
+      - run: python ESP32/test/uac_default_mode_host.py
