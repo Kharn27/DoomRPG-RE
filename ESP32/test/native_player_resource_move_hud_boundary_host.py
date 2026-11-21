@@ -315,6 +315,7 @@ def compile_run(bodies):
         unit.write_text(actual, encoding="utf-8")
         build = subprocess.run(
             ["cc", "-std=c11", "-O0", "-Wall", "-Wextra", "-Werror",
+             "-Wno-unused-function",  # mutant removing last raw helper call
              "-I" + str(ROOT / "include"), str(unit), "-o", str(binary)],
             capture_output=True, text=True, timeout=30)
         require(build.returncode == 0,
