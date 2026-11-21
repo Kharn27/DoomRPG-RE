@@ -42,6 +42,7 @@ support = r'''
 #include <stdio.h>
 #include <string.h>
 #include <limits.h>
+#include "esp_native_fire_visual.h"
 
 #define MAP_SPRITES 344U
 #define MAX_VISIBLE_SPRITES 64U

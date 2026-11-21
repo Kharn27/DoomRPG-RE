@@ -138,6 +138,9 @@ jobs:
       - name: ARCH-RC23 cardinal renderer native Base/facade, door transactions (3 C bodies, 20 mutants)
         run: python ESP32/test/native_frame_turn_boundary_host.py
 
+      - name: FIRE-VIS-P1 real C fire routing, bitshape reader and masked saturated spans
+        run: python ESP32/test/native_fire_visual_host.py
+
       - name: Inventory native process RNG root owners and replay guards
         run: python ESP32/test/native_root_rng_ownership_inventory.py
 

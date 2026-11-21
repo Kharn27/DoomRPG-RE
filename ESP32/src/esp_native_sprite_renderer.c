@@ -25,6 +25,7 @@
 #include "esp_native_gameplay_monster_combat.h"
 #include "esp_native_gameplay_player_pain_visual.h"
 #include "esp_native_sprite_renderer.h"
+#include "esp_native_fire_visual.h"
 #include "esp_native_ambient_sprite.h"
 #include "esp_native_first_frame.h"
 #include "esp_player_view_state.h"
@@ -871,7 +872,9 @@ static int buildOrder(Render_t* render,
         }
 
         /* Raster witnesses are recorded by drawAt(), never BSP admission. */
-        if (spriteRenderMode(resourceLogical) == RENDER_MODE_ADD) {
+        if (EspNativeFireVisual_mapMode(
+                spriteRenderMode(resourceLogical), type, info) ==
+            RENDER_MODE_ADD) {
             ++stats->mode7Objects;
         }
         else {
@@ -1409,6 +1412,13 @@ static int drawAt(Render_t* render,
     if (!EspMapSpriteTopology_getEntity(parent->index,&entityType,
                                         &entitySubtype,&entityLink,
                                         &entityOrdinal)) return 0;
+    /* Legacy Entity_initspawn: only actual non-CROSS fire map entities
+     * use additive mode 7. Preserve independent glow/CROSS/transient modes,
+     * resource lookup, depth, masking and draw order unchanged. */
+    if (!glow) {
+        renderMode = EspNativeFireVisual_mapMode(
+            renderMode, entityType, parent->info);
+    }
     /* Base and glow have distinct pixel counters: a cull or wall mask
      * must not claim a visible animation (including legacy CROSS copies). */
     rasterPixelsBefore = glow ? stats->glowPixels : stats->pixelsDrawn;
