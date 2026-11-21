@@ -257,8 +257,8 @@ def source_scan():
     ini = INI.read_text()
     base = ini.split("[env:esp32-cyd]", 1)[1].split(
         "[env:esp-cyd-inverted]", 1)[0]
-    require(len(re.findall(r"^\s+-Wl,--wrap=", base, re.M)) == 4,
-            "RC21 must retain exactly four production wrappers")
+    require(len(re.findall(r"^\s+-Wl,--wrap=", base, re.M)) == 2,
+            "RC22 must retain exactly two production wrappers")
     require("-Wl,--wrap=EspNativeGameplayFrame_renderTurn" in base,
             "RC20 must keep the door transaction wrapper")
     for name in ("EspMapSpriteTopology_getEntity",

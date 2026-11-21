@@ -132,6 +132,11 @@ EspPlayerViewMoveStatus EspPlayerView_prepareCardinalMove(
     EspPlayerViewState* outBefore,
     EspPlayerViewState* outAfter);
 
+/* Raw CAS leaf: no resource side effects. Ordinary callers use public facade
+ * which arms/cancels the pending pickup lease after a successful commit. */
+EspPlayerViewMoveStatus EspPlayerView_commitPreparedMoveBase(
+    const EspPlayerViewState* expectedBefore,
+    const EspPlayerViewState* preparedAfter);
 EspPlayerViewMoveStatus EspPlayerView_commitPreparedMove(
     const EspPlayerViewState* expectedBefore,
     const EspPlayerViewState* preparedAfter);

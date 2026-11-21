@@ -31,9 +31,8 @@ EspPlayerViewMoveStatus EspNativeGameplayPickup_commitPreparedMove(
     const EspPlayerViewState* expectedBefore,
     const EspPlayerViewState* preparedAfter);
 
-#define __wrap_EspNativeGameplayHud_view EspNativeGameplayPickup_hudView
-#define __wrap_EspPlayerView_commitPreparedMove \
-    EspNativeGameplayPickup_commitPreparedMove
+/* Historical named APIs remain for legacy pickup probes only; no GNU
+ * interposition or preprocessor alias redirects the permanent owners. */
 
 #ifdef __cplusplus
 }
