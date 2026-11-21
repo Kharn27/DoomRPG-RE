@@ -102,7 +102,7 @@ const EspNativeGameplayPlayerState* EspNativeGameplayPlayerState_view(void) {
     return viewAllowed ? &player : NULL;
 }
 const EspNativeGameplayWeaponSpec* EspNativeGameplayCombatMath_weapon(uint8_t id) {
-    return id == player.weapon ? &weapon : NULL;
+    return id == 3U && id == player.weapon ? &weapon : NULL;
 }
 
 static void resetAll(void) {
