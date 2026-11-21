@@ -7,7 +7,83 @@ main.cpp changes; it does NOT remove native gameplay or any other features.
 from native_boot_legals_history import restore_pre_boot_legals
 
 
+def restore_pre_res60_p1(main: str) -> str:
+    """Remove only P1's isolated video-only boot seam for historical blob parity."""
+    p6_include = ('#if DOOMRPG_RES60_P6_MENU\n'
+                  '#include "esp_res60_menu.h"\n'
+                  '#include "platform_touch_events.h"\n'
+                  '#endif\n')
+    assert main.count(p6_include) == 1, "P6 include scope changed"
+    main = main.replace(p6_include, "", 1)
+    p7_include = ('#if DOOMRPG_RES60_P7_NAV\n'
+                  '#include "esp_res60_nav.h"\n'
+                  '#endif\n')
+    assert main.count(p7_include) == 1, "P7 include scope changed"
+    main = main.replace(p7_include, "", 1)
+    p8_include = ('#if DOOMRPG_RES60_P8_TEXEL\n'
+                  '#include "esp_res60_texture_probe.h"\n'
+                  '#endif\n')
+    assert main.count(p8_include) == 1, "P8 cache include scope changed"
+    main = main.replace(p8_include, "", 1)
+    for added in ("#include <esp_heap_caps.h>\n",
+                  '#include "platform_video_config.h"\n'):
+        # Use exactly one removal; do not alter any historical main line.
+        assert main.count(added) == 1, added
+        main = main.replace(added, "", 1)
+    begin = "    initializePlatformVideo();\n#if DOOMRPG_RES60_P1_DIAGNOSTIC\n"
+    end = "#endif\n    initializeSdCard();"
+    assert main.count(begin) == 1 and main.count(end) == 1
+    left = main.index(begin) + len("    initializePlatformVideo();\n")
+    right = main.index(end, left) + len("#endif\n")
+    removed = main[left:right]
+    assert 'PlatformVideo_showTestPattern();' in removed
+    assert 'return;' in removed and '55296U' in removed
+    main = main[:left] + main[right:]
+    # P5 introduces two gated scalar input/title states. Reverse them
+    # precisely before checking the frozen historical pre-RES60 blob.
+    p5_state = ("#if DOOMRPG_RES60_P5_TITLE\n"
+                "    bool res60TitleVisible = false;\n"
+                "    bool res60TouchWasDown = false;\n"
+                "#endif\n")
+    assert main.count(p5_state) == 1, "P5 global input/title owner drift"
+    main = main.replace(p5_state, "", 1)
+    p7_state = ("#if DOOMRPG_RES60_P7_NAV\n"
+                "    uint8_t res60QuarterTurns = 0U;\n"
+                "#endif\n")
+    assert main.count(p7_state) == 1, "P7 rotation owner drift"
+    main = main.replace(p7_state, "", 1)
+    p6_start = "#if DOOMRPG_RES60_P6_MENU\n    bool res60MenuVisible = false;\n"
+    p6_end = "\n#endif\n"
+    assert main.count(p6_start) == 1, "P6 input owner drift"
+    p6_at = main.index(p6_start)
+    p6_end_at = main.index(p6_end, p6_at) + len(p6_end)
+    p6_state = main[p6_at:p6_end_at]
+    assert "res60TapPending" in p6_state and "res60MenuTapCallback" in p6_state
+    main = main[:p6_at] + main[p6_end_at:]
+    loop_start = "void loop()\n{\n#if DOOMRPG_RES60_P1_DIAGNOSTIC\n"
+    loop_end = "    delay(250);\n#endif\n    return;\n#else\n"
+    assert main.count(loop_start) == 1 and main.count(loop_end) == 1
+    start = main.index(loop_start)
+    end = main.index(loop_end, start) + len(loop_end)
+    p5_loop = main[start:end]
+    # Strict evidence that ONLY the P5 pilot toggle is removed: never strip
+    # a gameplay service or mutable world operation from a future version.
+    assert p5_loop.count("#if DOOMRPG_RES60_P5_TITLE") == 1
+    assert p5_loop.count("#if DOOMRPG_RES60_P6_MENU") == 1
+    assert "EspRes60Menu_onTap" in p5_loop
+    assert p5_loop.count("res60TouchWasDown = down;") == 1
+    assert p5_loop.count("PlatformVideo_showRes60WorldPreview();") == 2
+    assert p5_loop.count("PlatformVideo_showRes60TitlePreview();") == 1
+    assert "EspNativeGameplaySessionCoordinator_service" not in p5_loop
+    main = main[:start] + "void loop()\n{\n" + main[end:]
+    assert main.endswith("    delay(5);\n#endif\n}\n")
+    main = main[:-len("    delay(5);\n#endif\n}\n")] + "    delay(5);\n}\n"
+    return main
+
+
 def restore_pre_audio_r1(text: str) -> str:
+    if "#if DOOMRPG_RES60_P1_DIAGNOSTIC" in text:
+        text = restore_pre_res60_p1(text)
     # ARCH-RC9: main loop uses the explicit session coordinator. The
     # historical Root-J2 SHA still describes the original raw public call.
     live = "EspNativeGameplaySessionCoordinator_service(doomRpg);"

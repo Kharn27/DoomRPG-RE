@@ -43,6 +43,42 @@ jobs:
           python -m pip install --quiet Pillow==11.3.0
           python artwork/menu-uac/tools/render_previews.py --check
 
+      - name: RES60-P1 test 50% isolation and true 192x144 fractional geometry (host C11)
+        run: python ESP32/test/res60_p1_geometry_host.py
+
+      - name: RES60-P2 exact 24/96/24 region ownership, C11 FNV and fail-closed profile
+        run: python ESP32/test/res60_p2_layout_host.py
+
+      - name: RES60-P3 real MAP_INTRO BSP line projection, native 192x96 and no fake upscale (C11)
+        run: python ESP32/test/res60_p3_world_host.py
+
+      - name: RES60-P4 alternate ILI9341 panel-only admission and native 192x96 parity (C11)
+        run: python ESP32/test/res60_p4_panel_profiles_host.py
+
+      - name: RES60-P5 original PAK title and touch-to-BSP preview (host C11)
+        run: python ESP32/test/res60_p5_title_host.py
+
+      - name: RES60-P6 original PAK menu, 160x120 skin view, and calibrated two-tap fail-closed router (host C11)
+        run: python ESP32/test/res60_p6_menu_host.py
+
+      - name: RES60-P7 cardinal BSP rotation, native original-skin navigation and P3 FNV preservation (host C11)
+        run: python ESP32/test/res60_p7_navigation_host.py
+
+      - name: RES60-P8 original 4bpp wall texels, BGR565 palette and bounded native PAK inset (host C11)
+        run: python ESP32/test/res60_p8_texel_host.py
+
+      - name: RES60-P9 bounded cardinal view wedge, exact legacy 192x96 framebuffer parity (host C11)
+        run: python ESP32/test/res60_p9_wedge_host.py
+
+      - name: RES60-P10 one original 4bpp material on native projected walls (host C11)
+        run: python ESP32/test/res60_p10_material_host.py
+
+      - name: RES60-P10 visible P3 ray material selection through real P8 PAK/catalog owner (host C11)
+        run: python ESP32/test/res60_p10_visible_source_host.py
+
+      - name: RES60-P11 owner phase profiling, P10 exact raster parity, 32-bit microsecond wrap (host C11)
+        run: python ESP32/test/res60_p11_profile_host.py
+
       - name: Test AUDIO-R1 bounded PCM, DAC GPIO26 and game handoff (host C)
         run: python ESP32/test/audio_r1_analog_pcm_host.py
 
