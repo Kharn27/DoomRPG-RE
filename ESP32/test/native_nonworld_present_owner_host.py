@@ -48,7 +48,7 @@ assert "EspNativeResidentGameplay_reset();" in flow
 assert "fillRect(fb, 0, 0, 159, 119, ESP_HUB_COLOR_BG);" in saves
 assert "paintMainSlots();" in saves
 assert "EspNativeGameplaySave_mainSelectorBegin();" in main
-assert "__wrap_Esp32PlatformVideo_present(void)" in source
+assert "int EspNativeGameplayActionEngine_presentBase(void)" in source
 
 # Extract the exact guard *including its call* as the first block. Stub only
 # the downstream renderer and a one-bit facing fallback. Prove that the gate
