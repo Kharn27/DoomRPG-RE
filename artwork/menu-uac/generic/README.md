@@ -1,6 +1,6 @@
 # Bouton UAC générique — 120 / 240
 
-Le bouton est extrait du START UAC existant et nettoyé avec Adobe : plus de lettres, pentagramme, icône ou logement circulaire, seulement le métal et ses bordures. La police Doom RPG sera dessinée **séparément** par le jeu dans un milestone ultérieur.
+Le bouton a été nettoyé depuis START puis **recadré pixel par pixel sur le contour alpha et les bordures métalliques exactes du bouton START** : pas de bande rectangulaire opaque sur la première et dernière ligne. Le centre conserve le métal vierge, sans lettres ni icône. Le texte est dessiné par le jeu uniquement en mode UAC 120, à partir de la grande police Doom 4 bits et de sa palette canonique.
 
 | Version | Dimensions natives | PNG source | BMP SD |
 |---|---|---|---|
@@ -30,4 +30,36 @@ L'option --write reconstruit les BMP et le manifeste SHA256SUMS.txt. Sources, RE
 
 Une seule image générique retenue coûterait **8 800 octets** en RGB565 pour l'écran 240 ou **2 200 octets** pour l'écran 120, indépendamment de START / LOAD / OPTIONS / HELP. Les états inactifs seraient dérivés par assombrissement logiciel, et la police serait dessinée à la volée.
 
-**Ce PR est graphique uniquement.** Il ne remplace aucun des 16 BMP historiques et ne modifie ni le rendu, ni la RAM du firmware. La PR #406 actuelle utilise encore 4 patches actifs × 8 800 = 35 200 octets : l'économie future reste à développer puis mesurer sur le vrai CYD. Les nouveaux BMP sont facultatifs jusqu'à l'intégration.
+**Depuis la PR #413**, le menu UAC 120 utilise effectivement ce bouton unique et le cache de glyphes temporaire. Le 240→120 et le 240 direct continuent volontairement d'utiliser les BMP historiques pour comparer. Les gains RAM exacts et le verdict esthétique restent à confirmer par le firmware normal et le vrai CYD. Les nouveaux BMP sont facultatifs jusqu'à l'intégration.
+
+## Rectification de la silhouette après retour CYD (PR #413)
+
+L'audit initial a montré un défaut objectif : en 120, la première ligne
+du générique avait **54 pixels opaques** contre **20** sur START original ;
+en 240, **109 contre 36**. Le script
+`tools/repair_assets.py --write` recopie **l'alpha exact de START**
+et le liseré/biseau d'origine sur les bandes périphériques, sans reprendre
+le texte. Les PNG maîtres 55×20 et 110×40, les BMP V4 SD et le
+`SHA256SUMS.txt` sont reconstruits de façon reproductible.
+
+Pour vérifier sans écriture :
+
+    python artwork/menu-uac/generic/tools/repair_assets.py --check
+    python artwork/menu-uac/generic/tools/export_generic.py --check
+
+Les anciens BMP spécifiques restent intacts pour les deux modes 240 de
+comparaison. Après le correctif, il faut **recopier les nouveaux BMP génériques
+et `larger_font.bmp` sur la carte SD** et redémarrer le CYD.
+
+## Preuves de rendu corrigé (PR #413)
+
+![Simulation du mode 120 pour les quatre choix START LOAD OPTIONS HELP](previews/proof_120_four_selections.png)
+
+![Simulation du menu 120 avec START sélectionné](previews/preview_120_start.png)
+
+Ces PNG sont reconstruits depuis les **BMP SD finaux**, le châssis
+`menu_frame_120.bmp` et les pixels indexés de `larger_font.bmp`, en
+respectant le scale x2 des boutons et l'écriture 1:1 des glyphes 13×17.
+Ils servent de revue graphique reproductible, **pas de PASS sur matériel**.
+
+    python artwork/menu-uac/generic/tools/render_corrected_120.py --check

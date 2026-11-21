@@ -9,7 +9,6 @@ assets = root / "sdroot" / "doomrpg" / "img"
 
 EXPECTED = {
     "a.bmp": {
-        "alias": "a_doom.bmp",
         "size": (144, 72),
         "cell": (9, 12),
         "magenta": 0,
@@ -18,11 +17,10 @@ EXPECTED = {
         "ink": 52,
     },
     "larger_font.bmp": {
-        "alias": "larger_font_doom.bmp",
         "size": (208, 102),
         "cell": (13, 17),
         "magenta": 2,
-        "sha256": "faa893a06e63a9ca0e223cf2bcc5216950db600a437b01ab68a156eb1b8a4908",
+        "sha256": "61f35f7d590dfb632692104cab679f79fab39c2d5c4bf0b8227fc47ad6d20fc6",
         "other_94": "ed651f3eb94098ee5f604de3841f8536365252b135aefbfc8564365d6b93d819",
         "ink": 96,
     },
@@ -31,7 +29,6 @@ EXPECTED = {
 
 def inspect(name, spec):
     data = (assets / name).read_bytes()
-    assert data == (assets / spec["alias"]).read_bytes(), name
     assert data[:2] == b"BM", name
     file_size, pixel_offset, dib_size = (
         struct.unpack_from("<I", data, pos)[0] for pos in (2, 10, 14)
@@ -47,6 +44,18 @@ def inspect(name, spec):
     palette = [data[54 + 4*i:58 + 4*i] for i in range(16)]
     assert palette[spec["magenta"]] == bytes((255, 0, 255, 0)), name
     assert hashlib.sha256(data).hexdigest() == spec["sha256"], name
+    if name == "larger_font.bmp":
+        small = (assets / "a.bmp").read_bytes()
+        expected_indices = (2, 1, 0, 13, 12, 7, 11, 6,
+                            5, 10, 4, 15, 3, 9, 8, 14)
+        expected_colors = [
+            small[54 + 4 * i:58 + 4 * i] for i in expected_indices
+        ]
+        assert palette == expected_colors, "large-font must use exact a.bmp palette"
+        original = (root / "artwork/fonts/sources/larger_font_original.bmp").read_bytes()
+        assert data[:54] == original[:54] and data[118:] == original[118:], (
+            "atlas geometry/index data must remain unchanged, palette only"
+        )
 
     def pixel(x, y):
         p = data[pixel_offset + (h - 1 - y) * pitch + (x >> 1)]
@@ -78,6 +87,8 @@ def inspect(name, spec):
 for file_name, settings in EXPECTED.items():
     inspect(file_name, settings)
 
-# RGB24 was a reference image, never runtime-capable, now removed from SD distribution.
-assert not (assets / "larger_font_doom_24bit.bmp").exists()
-print("FONT-SD ASSET PASS: only indexed fonts distributed; BMP24 removed")
+# The SD folder is deployment-only: no unconsumed _doom clones/references.
+for unused in ("a_doom.bmp", "larger_font_doom.bmp",
+               "larger_font_doom_compat3.bmp", "larger_font_doom_24bit.bmp"):
+    assert not (assets / unused).exists(), unused
+print("FONT-SD ASSET PASS: canonical palette and unique runtime font filenames; originals archived in artwork/fonts/sources")

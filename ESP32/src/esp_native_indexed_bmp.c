@@ -258,6 +258,43 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_open(
     return openFromSource(name, outBmp, stats, 0U, 0U);
 }
 
+/* UI-only standalone SD font selection, needed while MENU_MAIN keeps the
+ * native PAK closed to allow SD music to play. This never opens the PAK.
+ * The ordinary EspNativeIndexedBmp_open() is still the PAK fallback path. */
+EspNativeIndexedBmpStatus EspNativeIndexedBmp_openSdFontStandalone(
+    const char* name,
+    EspNativeIndexedBmp* outBmp,
+    EspNativeIndexedBmpStats* stats) {
+#if defined(DOOMRPG_ESP32) && DOOMRPG_ESP32
+    uint32_t sdSize = 0U;
+    uint8_t source;
+    EspNativeIndexedBmpStatus result;
+    if (outBmp != NULL) memset(outBmp, 0, sizeof(*outBmp));
+    if (name == NULL || outBmp == NULL ||
+        strcmp(name, "larger_font.bmp") != 0 ||
+        EspAssetPack_isOpen()) return ESP_NATIVE_INDEXED_BMP_INVALID;
+    source = EspNativeFontSd_probe(name, &sdSize);
+    if (source != ESP_NATIVE_FONT_SD_LARGER)
+        return ESP_NATIVE_INDEXED_BMP_NOT_FOUND;
+    result = openFromSource(name, outBmp, stats, source, sdSize);
+    if (result == ESP_NATIVE_INDEXED_BMP_OK &&
+        outBmp->width == 208U && outBmp->height == 102U) {
+        printf("[FONTSD] ACTIVE name=%s source=SD indexed=%u palette=%u bytes=%lu\n",
+               name, (unsigned)outBmp->bitsPerPixel,
+               (unsigned)outBmp->paletteCount, (unsigned long)sdSize);
+        return result;
+    }
+    EspNativeFontSd_reject(source);
+    memset(outBmp, 0, sizeof(*outBmp));
+    return ESP_NATIVE_INDEXED_BMP_UNSUPPORTED;
+#else
+    (void)name;
+    (void)outBmp;
+    (void)stats;
+    return ESP_NATIVE_INDEXED_BMP_NOT_FOUND;
+#endif
+}
+
 EspNativeIndexedBmpStatus EspNativeIndexedBmp_blit(
     const EspNativeIndexedBmp* bmp,
     uint16_t* framebuffer,

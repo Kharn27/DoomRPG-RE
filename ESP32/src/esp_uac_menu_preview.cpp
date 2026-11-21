@@ -3,9 +3,14 @@
 #include <SD.h>
 #include <TFT_eSPI.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <mbedtls/sha256.h>
 #include "esp_uac_bmp32.h"
 #include "esp_audio_entrance_music.h"
+#include "esp_asset_pack.h"
+#include "esp_native_font_sd.h"
+#include "esp_native_indexed_bmp.h"
 
 namespace {
 constexpr int kPanelX=ESP_UAC_PANEL_LEFT,kWidth=320,kHeight=240;
@@ -15,6 +20,33 @@ static_assert(ESP_UAC_PANEL_WIDTH==ESP_UAC_BUTTON_WIDTH+2*ESP_UAC_BUTTON_INSET,
               "button bezel must be symmetric");
 constexpr uint16_t kMatte=0x1925U;
 const char* const kButtons[4]={"start","load","options","help"};
+/* The 120-only experiment draws actual Doom indexed palette glyphs, never
+ * a fake solid-white alpha/luminance font. Each nibble is a canonical
+ * a.bmp color index (0 transparent); 12 glyphs use one bounded 1428B
+ * temporary UI cache, released on mode exit/reset, no gameplay BSS. */
+constexpr char kFontAlphabet[]="ADEHILNOPRST";
+constexpr int kGlyphW=13,kGlyphH=17,kFontAdvance=13;
+/* Canonical a.bmp RGB565 palette, permuted into larger_font index order.
+ * Slot 0 is transparent, slots 1,2 are source indices 0,1; slots 3..15
+ * equal the corresponding larger_font indices (source index 2 is magenta).
+ * Keep in sync with artwork/menu-uac/generic/tools/repair_assets.py. */
+constexpr uint16_t kDoomFontInk[16]={
+    0x0000U,0x0000U,0xffffU,0x0862U,
+    0x5902U,0x31a8U,0xa9a1U,0x5b4fU,
+    0x8cd5U,0xf322U,0xb63aU,0xc554U,
+    0xdf3dU,0xfd44U,0xff51U,0xf7beU
+};
+struct FontInkCache {
+    uint8_t glyph[sizeof(kFontAlphabet)-1][kGlyphH][(kGlyphW+1)/2];
+};
+static FontInkCache* fontInk=nullptr;
+static bool fontReady=false;
+static void releaseLargerFont(){
+    free(fontInk);
+    fontInk=nullptr;
+    fontReady=false;
+}
+static const char* const kGeneric120="/doomrpg/img/menu_generic_120.bmp";
 const int kTop[4]={20,74,128,182};
 /* Manifest from artwork/menu-uac/SHA256SUMS.txt (PR #399). Mode and
  * ordering: FRAME, START inactive/active, LOAD inactive/active,
@@ -51,7 +83,7 @@ constexpr bool kStrictSha256=false;
 static int assetTier(int m){return m==kNative120?120:240;}
 int mode=kClassic;
 int paintedMode=0,paintedSelection=-1;
-/* Four physical rows per TFT write: 6680B BSS, no frame allocation.
+/* Four physical rows per TFT write: 6680B static scanout; font ink is temporary heap. 
  * Only frame plus current button can have live BMP handles. */
 constexpr int kRows=4;
 static uint16_t outRows[kRows*kWidth];
@@ -113,8 +145,134 @@ static void framePath(char* p,size_t n,int m){
     snprintf(p,n,"/doomrpg/img/menu_frame_%d.bmp",assetTier(m));
 }
 static void buttonPath(char* p,size_t n,int m,int index,bool active){
+    if(m==kNative120){
+        snprintf(p,n,"%s",kGeneric120);
+        return;
+    }
     snprintf(p,n,"/doomrpg/img/menu_%s_%s_%d.bmp",kButtons[index],
              active?"active":"inactive",assetTier(m));
+}
+
+/* Select the existing SD-indexed font owner WITHOUT opening the PAK first:
+ * a physical SD PAK lease would prohibit the preferred SD font source.
+ * If absent/malformed, open a transient native PAK lease, decode the same
+ * original 208x102 indexed atlas, then close it before any BMP/TFT paint.
+ * No ZIP, font-sized retained buffer, or PAK lease held during music.
+ * The resulting compact ink cache is the ONLY retained font state here. */
+static bool prepareLargerFont(){
+    releaseLargerFont();
+    fontInk=static_cast<FontInkCache*>(calloc(1U,sizeof(FontInkCache)));
+    if(!fontInk){
+        Serial.println("[UAC] FONT120 FAIL reason=bounded-cache-alloc");
+        return false;
+    }
+    EspNativeIndexedBmp bmp{};
+    EspNativeIndexedBmpStats stats{};
+    bool temporaryPak=false;
+    EspNativeIndexedBmpStatus st=EspNativeIndexedBmp_openSdFontStandalone(
+        "larger_font.bmp",&bmp,&stats);
+
+    /* Blit actual indexed glyph pixels via the existing bounded decoder;
+     * retain the palette INDEX, not RGB luminance, so colors and black
+     * outlines match a.bmp. The same mapping works with the old PAK atlas
+     * and the new recolored SD atlas (the indices have not changed). */
+    auto decode=[&]()->bool {
+        if(st!=ESP_NATIVE_INDEXED_BMP_OK ||
+           bmp.width!=208U || bmp.height!=102U)return false;
+        for(size_t i=0;i<sizeof(kFontAlphabet)-1;++i){
+            const unsigned ch=(unsigned)kFontAlphabet[i]-33U;
+            uint16_t pixels[kGlyphW*kGlyphH];
+            for(auto& pixel:pixels)pixel=0xf81fU;
+            if(EspNativeIndexedBmp_blit(&bmp,pixels,kGlyphW,kGlyphH,
+                   (uint16_t)((ch&15U)*kGlyphW),
+                   (uint16_t)((ch>>4U)*kGlyphH),
+                   kGlyphW,kGlyphH,0,0,1,&stats)!=ESP_NATIVE_INDEXED_BMP_OK)
+                return false;
+            for(int y=0;y<kGlyphH;++y){
+                for(int x=0;x<kGlyphW;++x){
+                    uint8_t ink=0;
+                    const uint16_t p=pixels[y*kGlyphW+x];
+                    if(p!=0xf81fU){
+                        uint16_t sourceIndex=16U;
+                        for(uint16_t j=0U;j<bmp.paletteCount&&j<16U;++j){
+                            if(p==bmp.paletteRgb565[j]){sourceIndex=j;break;}
+                        }
+                        if(sourceIndex>=16U || sourceIndex==2U)
+                            return false; /* unexpected/ambiguous palette */
+                        ink=(uint8_t)(sourceIndex<2U?sourceIndex+1U:sourceIndex);
+                    }
+                    uint8_t& pair=fontInk->glyph[i][y][x/2];
+                    if((x&1)==0)pair=(uint8_t)((pair&0x0fU)|(ink<<4));
+                    else pair=(uint8_t)((pair&0xf0U)|ink);
+                }
+            }
+        }
+        return true;
+    };
+    bool ok=decode();
+    if(!ok){
+        /* SD may pass its header/palette preflight then fail mid-glyph.
+         * Reject THAT source and retry the entire ink cache from PAK. */
+        if(bmp.sdFontSource!=0U)EspNativeFontSd_reject(bmp.sdFontSource);
+        if(!EspAssetPack_isOpen()){
+            if(EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH))
+                temporaryPak=true;
+            else
+                Serial.println("[UAC] FONT PAK fallback unavailable");
+        }
+        if(EspAssetPack_isOpen()){
+            st=EspNativeIndexedBmp_open("larger_font.bmp",&bmp,&stats);
+            ok=decode();
+        }
+    }
+    const bool fromSD=ok && bmp.sdFontSource!=0U;
+    if(temporaryPak)EspAssetPack_close();
+    EspNativeFontSd_suspend();
+    if(!ok)releaseLargerFont();
+    else fontReady=true;
+    Serial.printf("[UAC] FONT120 %s name=larger_font.bmp backing=%s palette=a.bmp-indexed glyphs=%u inkBytes=%u reads=%lu bytes=%lu\n",
+                  ok?"READY":"FAIL",fromSD?"SD":"PAK",
+                  (unsigned)(sizeof(kFontAlphabet)-1),(unsigned)sizeof(FontInkCache),
+                  (unsigned long)stats.packReads,(unsigned long)stats.bytesRead);
+    return ok;
+}
+
+/* Physical 1:1 larger_font (13x17), optically centered on a 110x40 plate.
+ * Render each true Doom palette index with the same 16 a.bmp colors.
+ * Inactive labels use the same palette gently dimmed; never paint
+ * background/magenta or overwrite the top/bottom metal bezel. */
+static void paintLargerTextRow(uint16_t* dst,int py,int index,int selected,
+                              bool patch){
+    if(!fontReady||index<0||index>=4)return;
+    const int gy=py-kTop[index]-(40-kGlyphH)/2;
+    if(gy<0||gy>=kGlyphH)return;
+    const char* label=kButtons[index];
+    const int len=(int)strlen(label);
+    const int xStart=(ESP_UAC_BUTTON_WIDTH-
+                      ((len-1)*kFontAdvance+kGlyphW))/2;
+    const int destOrigin=patch?0:kPanelX+ESP_UAC_BUTTON_INSET;
+    for(int i=0;i<len;++i){
+        const char ch=(char)(label[i]-'a'+'A');
+        const char* found=strchr(kFontAlphabet,ch);
+        if(!found)continue; /* No unsupported glyph can index outside cache. */
+        const unsigned gi=(unsigned)(found-kFontAlphabet);
+        for(int x=0;x<kGlyphW;++x){
+            const uint8_t pair=fontInk->glyph[gi][gy][x/2];
+            const unsigned ink=(x&1)?(pair&15U):(pair>>4U);
+            if(ink==0U)continue; /* atlas transparent magenta */
+            const int dx=destOrigin+xStart+i*kFontAdvance+x;
+            if(dx<0||dx>=(patch?ESP_UAC_BUTTON_WIDTH:kWidth))continue;
+            uint16_t color=kDoomFontInk[ink];
+            if(index!=selected){
+                /* 75% channel intensity, preserving hue and Doom outlines. */
+                const unsigned r=((color>>11U)&31U)*3U/4U;
+                const unsigned g=((color>>5U)&63U)*3U/4U;
+                const unsigned b=(color&31U)*3U/4U;
+                color=(uint16_t)((r<<11U)|(g<<5U)|b);
+            }
+            dst[dx]=color;
+        }
+    }
 }
 static bool preflight(int m){
     OpenImage img{};
@@ -127,6 +285,17 @@ static bool preflight(int m){
     if(img.file)img.file.close();
     (void)EspEntranceMusic_pumpMenuPreview();
     if(!valid){Serial.printf("[UAC] PREFLIGHT FAIL %s\n",p);return false;}
+    if(m==kNative120){
+        if(!openBmp(img,kGeneric120,55U,20U)){
+            Serial.printf("[UAC] PREFLIGHT FAIL %s\n",kGeneric120);
+            if(img.file)img.file.close();
+            return false;
+        }
+        if(img.file)img.file.close();
+        if(!prepareLargerFont())return false;
+        Serial.println("[UAC] PREFLIGHT OK mode=1 tier=120 generic=1 font=larger SD-or-PAK bmpV4=valid");
+        return true;
+    }
     for(int i=0;i<4;++i)for(int s=0;s<2;++s){
         buttonPath(p,sizeof(p),m,i,s==1);
         valid=openBmp(img,p,bw,bh);
@@ -184,7 +353,15 @@ static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
             if(count>finalY-y)count=finalY-y;
             if(count<=0)return finish(false,"row-boundary");
             const uint32_t sdStart=micros();
-            if(active!=openedButton){
+            if(m==kNative120){
+                /* One generic SD handle for ALL four labels and both states. */
+                if(active>=0&&!button.file){
+                    buttonPath(path,sizeof(path),m,active,selected==active);
+                    if(!openBmp(button,path,bw,bh))return finish(false,"button-open");
+                    ++stats->buttonOpens;
+                }
+                openedButton=active;
+            } else if(active!=openedButton){
                 if(button.file)button.file.close();
                 openedButton=active;
                 if(active>=0){
@@ -229,6 +406,8 @@ static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
                         patch?-ESP_UAC_BUTTON_INSET:kPanelX,(uint8_t)scale,
                         out,(uint16_t)outputW,pixels,
                         sizeof(pixels)))return finish(false,"frame-blend");
+                if(m==kNative120&&active>=0)
+                    paintLargerTextRow(out,py,active,selected,patch);
             }
             /* The audio pump may read SD, so invoke it ONLY AFTER TFT
              * endWrite and after this strip's BMP reads have completed. */
@@ -254,18 +433,20 @@ static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
 extern "C" int EspUacMenuPreview_mode(void){return mode;}
 extern "C" void EspUacMenuPreview_reset(void){
     if(mode)Serial.printf("[UAC] RESET mode=%d fallback=classic\n",mode);
-    mode=0;paintedMode=0;paintedSelection=-1;
+    mode=0;paintedMode=0;paintedSelection=-1; releaseLargerFont();
 }
 extern "C" int EspUacMenuPreview_cycle(void){
     const int next=(mode+1)%4;
+    if(mode==kNative120 && next!=kNative120)releaseLargerFont();
     if(next!=0&&!preflight(next)){
+        releaseLargerFont();
         mode=0;
         Serial.println("[UAC] FALLBACK SD missing/invalid -> original MENU_MAIN");
         return 0;
     }
     mode=next;
     paintedMode=0;paintedSelection=-1;
-    Serial.printf("[UAC] MODE %s source=%s physical=320x240 buttons=110x40 RAM=6680B-BSS\n",
+    Serial.printf("[UAC] MODE %s source=%s physical=320x240 buttons=110x40 RAM=6680B-BSS+1428B-menu-only\n",
                   mode==kClassic?"CLASSIC":mode==kNative120?"120":
                     mode==k240As120?"240->120":"240",
                   mode==kClassic?"original":mode==kNative120?

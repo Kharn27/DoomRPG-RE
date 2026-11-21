@@ -9,12 +9,20 @@ en fallback si le BMP SD est absent ou incompatible.
 | `a.bmp` | 144 × 72 | 9 × 12, 16 × 6 glyphes | **5 302 o**, BMP 4 bits, palette 16 couleurs |
 | `larger_font.bmp` | 208 × 102 | 13 × 17, 16 × 6 glyphes | **10 726 o**, BMP 4 bits, palette 16 couleurs |
 
-Les doublons `a_doom.bmp` et `larger_font_doom.bmp` possèdent
-exactement les **mêmes octets** que leurs noms runtime respectifs. La variante
-`larger_font_doom_compat3.bmp` (3 couleurs, 10 676 o) reste disponible en
-référence. **`larger_font_doom_24bit.bmp` (63 702 o) a été retirée du
-répertoire SD** : le chargeur natif n'accepte pas les BMP RGB24. Son ancienne
-version reste accessible dans l'historique Git de la PR #407.
+### Livraison SD dédupliquée et palette harmonisée (PR #413)
+`a.bmp` est **le seul fichier petite police** : `a_doom.bmp` était son
+**doublon binaire exact** et a été retiré du dossier de déploiement.
+`larger_font.bmp` est désormais le seul grand atlas runtime ; sa palette
+16 couleurs reprend **exactement les 16 entrées de `a.bmp`**, en conservant
+le tracé de chaque glyphe, ses indices 4-bpp, le magenta transparent, les
+96 cellules et le format BMP original à l'octet près hors palette.
+
+La grande police historique non recolorée et la variante distincte
+`larger_font_doom_compat3.bmp` (3 couleurs) sont conservées uniquement dans
+`artwork/fonts/sources/` pour référence et comparaison, **pas** dans
+`sdroot/`. L'ancienne variante BMP RGB24 non prise en charge reste accessible
+dans l'historique Git de la PR #407. Aucun alias `_doom` n'est consommé
+par le runtime ni requis sur la carte SD.
 
 ## Correction ciblée de `a` et `o` minuscules
 
@@ -26,12 +34,15 @@ ont été reconstruits depuis les originaux métalliques, projetés sur les
 de l'avancement et de la découpe des cellules ; le dégradé argent/cuivre
 reste conservé.
 
-**Contrat d'absence de régression sur les assets** : les **94 autres
+**Contrat d'absence de régression sur les formes** : les **94 autres
 caractères de chaque BMP sont strictement identiques pixel par pixel**.
-Entêtes, ordre des caractères, palette, transparence magenta, tailles,
-stride et encodage ne changent pas. Le test
-`ESP32/test/font_sd_assets_host.py` vérifie ces empreintes, les glyphes
-réparés, les doublons et l'absence du BMP RGB24.
+Entêtes, ordre, clé magenta, tailles, stride et encodage restent identiques.
+Seule **la palette de `larger_font.bmp`** change dans la PR #413, sans
+aucune modification des octets de glyphes. Le test
+`ESP32/test/font_sd_assets_host.py` contrôle la palette canonique,
+les empreintes des 94 glyphes, les deux petits caractères corrigés,
+l'absence des variantes redondantes en SD et la conservation de la
+version originale dans `artwork/fonts/sources/`.
 
 ## Couleurs à la volée
 
@@ -41,7 +52,7 @@ Le Canvas natif `EspNativeCanvas_drawText` appelle
 de la palette BMP par la composante demandée (0–255 / 255) :
 le résultat conserve les nuances locales argent/cuivre mais n'est **pas**
 une simple couleur uniforme appliquée à une police blanche. Le BMP SD
-demeure inchangé. Cette modulation est propre aux chemins de rendu qui
+reste source de couleur et n'est jamais réécrit par le rendu à la volée. Cette modulation est propre aux chemins de rendu qui
 appliquent `setColorMod`, pas à tous les blits natifs indistinctement.
 
 ## Source des fichiers et preuve matérielle
@@ -90,3 +101,12 @@ passent pas par `EspNativeTexture_setColorMod`. Les chemins de recoloration
 sont volontairement conservés distincts. Effet précis à vérifier sur CYD
 avec les différentes couleurs de thème ; pas de validation matérielle
 du gain de luminosité encore revendiquée.
+
+### Vérification des nouveaux assets (PR #413)
+
+`python artwork/menu-uac/generic/tools/repair_assets.py --check` refait
+l'audit exact de la silhouette des deux boutons génériques et de la
+palette de la grande police. La police PAK n'est pas modifiée ; le
+rendu spécifique du mode UAC 120 applique la palette canonique même
+lorsque le chargement se replie sur le PAK. La coloration générale du
+Canvas reste dans son chemin de modulation existant.

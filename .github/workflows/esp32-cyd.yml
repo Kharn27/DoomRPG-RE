@@ -42,6 +42,9 @@ jobs:
         run: |
           python -m pip install --quiet Pillow==11.3.0
           python artwork/menu-uac/tools/render_previews.py --check
+          python artwork/menu-uac/generic/tools/export_generic.py --check
+          python artwork/menu-uac/generic/tools/repair_assets.py --check
+          python artwork/menu-uac/generic/tools/render_corrected_120.py --check
 
       - name: Test AUDIO-R1 bounded PCM, DAC GPIO26 and game handoff (host C)
         run: python ESP32/test/audio_r1_analog_pcm_host.py
