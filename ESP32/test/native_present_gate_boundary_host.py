@@ -190,7 +190,7 @@ MUTANTS = (
     ("lie about armed status", "EspNativeGameplayPresentGate_isArmed",
      "return gateArmed != 0U;", "return gateArmed == 0U;"),
     ("lie about suppressed count", "EspNativeGameplayPresentGate_suppressedCount",
-     "return suppressedCount;", "return suppressedCount + 1U;"),
+     "return suppressedCount;", "return 0U;"),
     ("disable one-shot gate", PUBLIC,
      "if (gateArmed != 0U) {", "if (0) {"),
     ("consume without clearing", PUBLIC,
