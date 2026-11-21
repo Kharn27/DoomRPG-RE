@@ -137,6 +137,11 @@ int main(void) {
         assert(EspNativeGameplayPresentGate_suppressedCount() == count + 1);
         assert(EspNativeGameplayPresentGate_isArmed() == 0);
         assert(actionCalls == 2 && levelCalls == 0);
+        /* Isolate LOADING: otherwise WAIT_STATS masks an inverted LOADING guard. */
+        stats = level = 0;
+        assert(Esp32PlatformVideo_present() == 1);
+        assert(actionCalls == 2 && levelCalls == 0);
+        stats = level = 1;
         assert(Esp32PlatformVideo_present() == 1);
         assert(actionCalls == 2 && levelCalls == 0);
         loading = 0;
