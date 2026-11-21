@@ -281,9 +281,8 @@ def scan():
     normal = ini.split("[env:esp32-cyd]", 1)[1].split("[env:esp-cyd-inverted]", 1)[0]
     bringup = ini.split("[env:esp32-cyd-bringup]", 1)[1].split("[env:esp32-cyd-trace]", 1)[0]
     active = lambda txt: re.findall(r"^\s+-Wl,--wrap=([A-Za-z_0-9]+)", txt, re.M)
-    require(set(active(normal)) == {
-        "EspNativeGameplayFrame_renderTurn", "Esp32PlatformVideo_present"},
-        "remaining production interpositions must be exactly render+present")
+    require(set(active(normal)) == {"Esp32PlatformVideo_present"},
+        "RC23 must leave present as sole production interposition")
     require(set(active(bringup)) == {
         "EspNativeFirstFrame_route", "EspNativeGameplayInteractionInventory_log",
         "EspNativeResidentGameplay_service"}, "bringup diagnostics drifted")
