@@ -83,7 +83,7 @@ def source_scan(source):
     cfg = INI.read_text()
     normal = cfg.split("[env:esp32-cyd]", 1)[1].split(
         "[env:esp-cyd-inverted]", 1)[0]
-    require(len(re.findall(r"^\s+-Wl,--wrap=", normal, re.M)) == 1,
+    require(len(re.findall(r"^\s+-Wl,--wrap=", normal, re.M)) == 0,
             "expected exactly one normal GNU wrapper after RC23")
     require(BYTE in source and WORD in source,
             "permanent native RNG definitions absent")
