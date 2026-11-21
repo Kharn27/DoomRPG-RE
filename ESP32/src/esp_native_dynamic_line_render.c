@@ -81,10 +81,6 @@ void EspNativeDynamicLineRender_resumeFromAutomap(int wasScoped) {
     if (wasScoped) dynamicFrameActive = 1U;
 }
 
-int __real_EspNativeGameplayFrame_renderTurn(
-    struct Render_s* render,
-    uint8_t angle,
-    EspNativeGameplayFrameStats* outStats);
 int EspMapRuntime_getLineBase(uint32_t index, EspMapLine* outLine);
 const EspMapLineStateView* EspMapLineState_viewBase(void);
 
@@ -290,7 +286,7 @@ static int renderDynamicFrame(struct Render_s* render,
     dynamicAnimationFault = 0U;
     memset(&animatedClip, 0, sizeof(animatedClip));
     dynamicFrameActive = 1U;
-    ok = __real_EspNativeGameplayFrame_renderTurn(render, angle, outStats);
+    ok = EspNativeGameplayFrame_renderTurnBase(render, angle, outStats);
     dynamicFrameActive = 0U;
     animatedClip.valid = 0U;
 
@@ -409,7 +405,7 @@ int EspNativeDynamicLineRender_renderVisualMove(
     return endDynamicPreview(ok, "move");
 }
 
-int __wrap_EspNativeGameplayFrame_renderTurn(
+int EspNativeGameplayFrame_renderTurn(
     struct Render_s* render,
     uint8_t angle,
     EspNativeGameplayFrameStats* outStats) {
