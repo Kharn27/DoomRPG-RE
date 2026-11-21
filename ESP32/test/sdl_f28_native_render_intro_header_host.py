@@ -98,20 +98,20 @@ def restore_pre_fire_vis_sprite(value: bytes) -> bytes:
     the native additive fire routing and its new include as normal.
     """
     inverse = (
-        (b'#include "esp_native_sprite_renderer.h"\\n'
-         b'#include "esp_native_fire_visual.h"\\n',
-         b'#include "esp_native_sprite_renderer.h"\\n'),
-        (b'if (EspNativeFireVisual_mapMode(\\n'
-         b'                spriteRenderMode(resourceLogical), type, info) ==\\n'
+        (b'#include "esp_native_sprite_renderer.h"\n'
+         b'#include "esp_native_fire_visual.h"\n',
+         b'#include "esp_native_sprite_renderer.h"\n'),
+        (b'if (EspNativeFireVisual_mapMode(\n'
+         b'                spriteRenderMode(resourceLogical), type, info) ==\n'
          b'            RENDER_MODE_ADD) {',
          b'if (spriteRenderMode(resourceLogical) == RENDER_MODE_ADD) {'),
-        (b'    /* Legacy Entity_initspawn: only actual non-CROSS fire map entities\\n'
-         b'     * use additive mode 7. Preserve independent glow/CROSS/transient modes,\\n'
-         b'     * resource lookup, depth, masking and draw order unchanged. */\\n'
-         b'    if (!glow) {\\n'
-         b'        renderMode = EspNativeFireVisual_mapMode(\\n'
-         b'            renderMode, entityType, parent->info);\\n'
-         b'    }\\n',
+        (b'    /* Legacy Entity_initspawn: only actual non-CROSS fire map entities\n'
+         b'     * use additive mode 7. Preserve independent glow/CROSS/transient modes,\n'
+         b'     * resource lookup, depth, masking and draw order unchanged. */\n'
+         b'    if (!glow) {\n'
+         b'        renderMode = EspNativeFireVisual_mapMode(\n'
+         b'            renderMode, entityType, parent->info);\n'
+         b'    }\n',
          b''),
     )
     for added, previous in inverse:
