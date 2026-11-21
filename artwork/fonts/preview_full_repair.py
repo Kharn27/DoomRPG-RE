@@ -160,17 +160,30 @@ def build_refined_data()->bytes:
 def main():
     pa=argparse.ArgumentParser()
     pa.add_argument("--report",action="store_true")
+    pa.add_argument("--proof",action="store_true")
     pa.add_argument("--build",action="store_true")
     pa.add_argument("--check",action="store_true")
     pa.add_argument("--emit-base64",action="store_true")
     opt=pa.parse_args()
-    assert opt.report or opt.build or opt.check
+    assert opt.report or opt.build or opt.check or opt.proof
     if opt.build or opt.check:
         font=build_refined_data()
         if opt.build:FINAL.write_bytes(font)
         if opt.check:assert FINAL.read_bytes()==font,"SD large font is stale"
         print(f"[FONT-REBUILD] {'WRITE' if opt.build else 'CHECK'} PASS size={len(font)} sha256={hashlib.sha256(font).hexdigest()}")
         if opt.emit_base64:print(f"[FONT-FINAL-BLOB] sdroot/doomrpg/img/larger_font.bmp {base64.b64encode(font).decode('ascii')}")
+    if opt.proof:
+        final=Image.open(FINAL)
+        data=colored(final,4)
+        output=WORK/"larger_font_clean_zoom.png"
+        WORK.mkdir(parents=True,exist_ok=True)
+        buf=io.BytesIO()
+        data.save(buf,"PNG",optimize=True)
+        content=buf.getvalue()
+        output.write_bytes(content)
+        print(f"[FONT-PROOF] {output.relative_to(ROOT)} {data.size} {len(content)} bytes")
+        if opt.emit_base64:
+            print(f"[FONT-ZOOM-BLOB] {output.relative_to(ROOT)} {base64.b64encode(content).decode()}")
     if not opt.report:return
     small=Image.open(SMALL)
     big=Image.open(LARGE)
