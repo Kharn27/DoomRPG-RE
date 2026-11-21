@@ -40,7 +40,7 @@ def scan():
                         for f in files.values()), "GNU alias retained: " + name)
     require("-Wl,--wrap=EspNativeGameplayFrame_renderTurn" not in flags,
             "RC23 retired cardinal render interposition resurrected")
-    require("-Wl,--wrap=Esp32PlatformVideo_present" in flags,
+    require("-Wl,--wrap=Esp32PlatformVideo_present" not in flags,
             "remaining physical present interposition missing")
     expected = {
         "EspNativeGameplayDialog_begin":

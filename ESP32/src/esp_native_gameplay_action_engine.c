@@ -274,7 +274,6 @@ int EspMapSpriteTopology_getEntityBase(uint32_t spriteIndex,
                                           uint8_t* outSubType,
                                           uint16_t* outLinkState,
                                           uint16_t* outLinkOrder);
-int __real_Esp32PlatformVideo_present(void);
 
 static uint32_t actionNowMs(void) {
     /* Keep legacy/ESP32 header boundaries clean: this recovered runtime clock
@@ -1581,7 +1580,7 @@ void EspNativeGameplayActionEngine_endMonsterVisualWork(void) {
          * Paint onto the existing fresh framebuffer, then let the proven
          * flash compositor paint text/2px red/direction and publish once. */
         if (impactPainter != NULL) impactPainter();
-        (void)__wrap_Esp32PlatformVideo_present();
+        (void)EspNativeGameplayActionEngine_presentBase();
     }
 }
 
@@ -1900,7 +1899,7 @@ static void muteAutomapVisuals(void) {
     printf("[AUTOMAPFX] SUPPRESS owner=automap feedback=hidden border=hidden cue=discarded gameplay=unchanged framebufferMutation=no\n");
 }
 
-int __wrap_Esp32PlatformVideo_present(void) {
+int EspNativeGameplayActionEngine_presentBase(void) {
     uint8_t feedback = ACTION_FEEDBACK_NONE;
     int hadFeedback = 0;
     int flashPainted = 0;
@@ -1922,7 +1921,7 @@ int __wrap_Esp32PlatformVideo_present(void) {
          * immediately after pickup COMMIT. Preserve the visual intent and
          * its FIFO for when WORLD resumes, but invalidate screen pixels. */
         EspPickupMini_markFreshFrame();
-        return __real_Esp32PlatformVideo_present();
+        return Esp32PlatformVideo_presentBase();
     }
 
     /*
@@ -1943,10 +1942,10 @@ int __wrap_Esp32PlatformVideo_present(void) {
     if (EspNativeResidentGameplay_isAutomapActive()) {
         EspPickupMini_markFreshFrame();
         muteAutomapVisuals();
-        return __real_Esp32PlatformVideo_present();
+        return Esp32PlatformVideo_presentBase();
     }
     if (EspNativeGameplayControls_isActive()) {
-        return __real_Esp32PlatformVideo_present();
+        return Esp32PlatformVideo_presentBase();
     }
 
     if (actionState.feedbackPending != 0U) {
@@ -2031,7 +2030,7 @@ int __wrap_Esp32PlatformVideo_present(void) {
     /* Icon is painted after the 2px damage border and BEFORE physical
      * present. Only presentation owns its reversible 20x20 underlay. */
     EspPickupMini_beforePresent(actionNowMs());
-    ok = __real_Esp32PlatformVideo_present();
+    ok = Esp32PlatformVideo_presentBase();
     if (!ok) return 0;
     /* One immutable timestamp for the single successful LCD present:
      * border + direction + face + source impact all share this anchor. */
@@ -2123,7 +2122,7 @@ static int serviceViewportFlashExpiry(void) {
                 printf("[VIEWFLASH] FAILED phase=expiry-restore\n");
                 return 0;
             }
-            if (!__real_Esp32PlatformVideo_present()) {
+            if (!Esp32PlatformVideo_presentBase()) {
                 /* Physical screen still shows ON: restore the framebuffer
                  * to that same state before retrying the expiry. */
                 if (!paintViewportFlash()) return 0;
@@ -2157,7 +2156,7 @@ static int serviceViewportFlashExpiry(void) {
             printf("[VIEWFLASH] FAILED phase=blink-paint\n");
             return 0;
         }
-        if (!__real_Esp32PlatformVideo_present()) {
+        if (!Esp32PlatformVideo_presentBase()) {
             /* Screen was OFF, keep it OFF when present fails. */
             if (!restoreViewportFlash(0)) return 0;
             return 0;
@@ -2169,7 +2168,7 @@ static int serviceViewportFlashExpiry(void) {
             printf("[VIEWFLASH] FAILED phase=blink-restore\n");
             return 0;
         }
-        if (!__real_Esp32PlatformVideo_present()) {
+        if (!Esp32PlatformVideo_presentBase()) {
             if (!paintViewportFlash()) return 0;
             return 0;
         }
@@ -2220,7 +2219,7 @@ static int serviceFeedbackExpiry(void) {
         --actionState.feedbackFollowupCount;
         actionState.feedbackPending = 1U;
         actionState.feedbackKind = kind;
-        if (!__wrap_Esp32PlatformVideo_present()) return 0;
+        if (!EspNativeGameplayActionEngine_presentBase()) return 0;
         printf("[ACTIONFEEDBACK] ADVANCE kind=%u text=\"%s\" remaining=%u elapsedMs=%u targetMs=%u source=legacy-pickup-fifo\n",
                (unsigned int)kind,
                actionState.feedbackText,
@@ -2237,7 +2236,7 @@ static int serviceFeedbackExpiry(void) {
     clearFeedbackFollowups();
     actionState.feedbackPending = 1U;
     actionState.feedbackKind = ACTION_FEEDBACK_NONE;
-    if (!__wrap_Esp32PlatformVideo_present()) return 0;
+    if (!EspNativeGameplayActionEngine_presentBase()) return 0;
     printf("[ACTIONFEEDBACK] EXPIRE kind=%u elapsedMs=%u targetMs=%u restored=topbar-only\n",
            (unsigned int)kind,
            (unsigned int)elapsed,
@@ -2724,7 +2723,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
         !EspNativeResidentGameplay_isAutomapActive() &&
         !EspAssetPack_isOpen() &&
         EspNativeResidentGameplay_ownsWorldPresent()) {
-        if (!__wrap_Esp32PlatformVideo_present()) return 0;
+        if (!EspNativeGameplayActionEngine_presentBase()) return 0;
     }
     /* PASS TURN and future non-SELECT actions may queue transient feedback
      * without owning an ActionPending transaction. If no gameplay redraw has
@@ -2738,7 +2737,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
           actionState.viewportFlashLit != 0U &&
           directionCue.workActive == 0U))) {
         if (EspAssetPack_isOpen()) return 1;
-        if (!__wrap_Esp32PlatformVideo_present()) return 0;
+        if (!EspNativeGameplayActionEngine_presentBase()) return 0;
     }
     if (actionState.pending.active == 0U) return 1;
     if (doomRpg == NULL || EspNativeRootOwners_live()->render == NULL || view == NULL ||
@@ -2750,7 +2749,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
     if (pending.worldChanged == 0U) {
         actionState.feedbackPending = 1U;
         actionState.feedbackKind = pending.feedback;
-        if (!__wrap_Esp32PlatformVideo_present()) return 0;
+        if (!EspNativeGameplayActionEngine_presentBase()) return 0;
         printf("[ACTIONENGINE] PRESENT seq=%u route=%s worldMutation=no fullRedraw=no feedback=yes\n",
                (unsigned int)pending.sequence,
                routeName((ActionRoute)pending.route));

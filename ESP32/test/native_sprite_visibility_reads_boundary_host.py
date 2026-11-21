@@ -293,8 +293,8 @@ def scan():
     config=(ROOT/"platformio.ini").read_text()
     base=config.split("[env:esp32-cyd]",1)[1].split(
         "[env:esp-cyd-inverted]",1)[0]
-    require(len(re.findall(r"^\s+-Wl,--wrap=",base,re.M))==1,
-            "RC23 requires exactly 1 production GNU wrapper")
+    require(len(re.findall(r"^\s+-Wl,--wrap=",base,re.M))==0,
+            "RC24 requires zero production GNU wrappers")
     old_aliases = []
     for symbol in ("EspMapRuntime_getMapSprite",
                    "EspNativeBspVisibility_mapSpriteVisible"):

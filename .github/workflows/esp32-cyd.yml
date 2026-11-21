@@ -138,6 +138,9 @@ jobs:
       - name: ARCH-RC23 cardinal renderer native Base/facade, door transactions (3 C bodies, 20 mutants)
         run: python ESP32/test/native_frame_turn_boundary_host.py
 
+      - name: ARCH-RC24 zero-production-GNU present facade, owner gates and mutants
+        run: python ESP32/test/native_present_gate_boundary_host.py
+
       - name: Inventory native process RNG root owners and replay guards
         run: python ESP32/test/native_root_rng_ownership_inventory.py
 
@@ -823,9 +826,7 @@ jobs:
             ESP32/src/esp_native_gameplay_player_pain_visual.c \
             ESP32/src/esp_native_gameplay_gib_sheet.c \
             ESP32/src/esp_native_dynamic_line_render.c ESP32/src/esp_native_gameplay_present_gate.c \
-            -Wl,--gc-sections \
-            -Wl,--wrap=Esp32PlatformVideo_present \
-            -Wl,--wrap=EspNativeGameplayActionEngine_present -o /tmp/doomrpg-paid-interaction-test
+            -Wl,--gc-sections -Wl,--wrap=EspNativeGameplayActionEngine_present -o /tmp/doomrpg-paid-interaction-test
           /tmp/doomrpg-paid-interaction-test
 
       - name: Test native dialog BACK touch and cancel semantics (host C)

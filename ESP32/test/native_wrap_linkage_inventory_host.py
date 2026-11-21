@@ -29,7 +29,7 @@ FUNCTION = re.compile(r"^\s*[0-9a-fA-F]+ <([^>]+)>:$")
 CALL = re.compile(
     r"\b(?:call0|call4|call8|call12|j)\s+[0-9a-fA-F]+\s+"
     r"<(__wrap_[A-Za-z_][A-Za-z0-9_]*)(?:\+[^>]*)?>")
-REQUIRED = {"Esp32PlatformVideo_present"}
+REQUIRED = set()
 # Arduino/ESP-IDF log adapters are provided by the toolchain, not the
 # DoomRPG platformio.ini composition. Their exact linked symbols were
 # confirmed in all four real Xtensa ELF artifacts on ARCH-RC0.
@@ -82,7 +82,8 @@ RETIRED_NORMAL_WRAPS = frozenset((
     "EspMapRuntime_getMapSprite",
     "EspNativeBspVisibility_mapSpriteVisible",
     "EspNativeGameplayHud_view", "EspPlayerView_commitPreparedMove",
-    "EspNativeGameplayFrame_renderTurn"))
+    "EspNativeGameplayFrame_renderTurn",
+    "Esp32PlatformVideo_present"))
 RETIRED_ALL_WRAPS = RETIRED_BRINGUP_WRAPS | RETIRED_NORMAL_WRAPS
 RETAINED_BRINGUP_WRAPS = frozenset((
     "EspNativeFirstFrame_route",
@@ -118,8 +119,8 @@ def declarations(config: str) -> dict[str, list[str]]:
                     f"duplicate ld --wrap in {section}: {symbol}")
             sections[section].append(symbol)
     base = sections.get("env:esp32-cyd")
-    require(base is not None and len(base) >= 1,
-            "missing canonical normal build or unexpectedly small --wrap inventory")
+    require(base is not None and not base,
+            "ARCH-RC24 requires zero DoomRPG GNU --wrap flags in production")
     require(REQUIRED.issubset(base), "missing required native boundary")
     require(len(sections.get("env:esp32-cyd-bringup", [])) >= 3,
             "bringup-only diagnostic boundary inventory unexpectedly small")
@@ -262,7 +263,7 @@ def compare_release(normal: dict, inverted: dict) -> None:
 
 def self_test() -> None:
     real = declarations((PROJECT / "platformio.ini").read_text())
-    require(len(real["env:esp32-cyd"]) == 1, "expected ARCH-RC23 1 normal wrap")
+    require(len(real["env:esp32-cyd"]) == 0, "expected ARCH-RC24 zero normal GNU wraps")
     require(len(real["env:esp32-cyd-bringup"]) == 3,
             "expected 3 surviving diagnostic extras after ARCH-RC1")
     require(set(real["env:esp32-cyd-bringup"]) == RETAINED_BRINGUP_WRAPS,
@@ -298,7 +299,7 @@ def self_test() -> None:
             raise AssertionError("invalid duplicate/malformed wrap accepted")
     fixture = (
         "40000000 00000030 T __wrap_EspAssetPack_residentBegin\n"
-        "40000100 00000010 T __wrap_Esp32PlatformVideo_present\n")
+        "40000100 00000010 T __wrap_EspNativeFirstFrame_route\n")
     parsed = parse_nm(fixture)
     require(len(TOOLCHAIN_LOG_WRAPPERS) == 3 and
             "__wrap_esp_log_write" in TOOLCHAIN_LOG_WRAPPERS and
