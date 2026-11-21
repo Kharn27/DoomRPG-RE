@@ -59,12 +59,37 @@ et `larger_font.bmp` sur la carte SD** et redémarrer le CYD.
 
 Ces PNG sont reconstruits depuis les **BMP SD finaux**, le châssis
 `menu_frame_120.bmp` et les pixels indexés de `larger_font.bmp`, en
-respectant le scale x2 des boutons et l'écriture 1:1 des glyphes 13×17.
+respectant le scale x2 des boutons et le **nearest-neighbor 13×17 → 14×27
+physique** des glyphes, centrés dans les boutons 110×40 (OPTIONS 98px,
+marges latérales de 6px). Aucun nouveau bitmap ni cache de glyphes agrandi.
 Ils servent de revue graphique reproductible, **pas de PASS sur matériel**.
 
     python artwork/menu-uac/generic/tools/render_corrected_120.py --check
 
-La nouvelle police de la PR #413 possède **94 glyphes reconstruits**
-depuis `a.bmp` et deux glyphes `a`/`o` conservés. Le rendu ci-dessus
+La grande police SD possède désormais **96 glyphes homogènes**,
+tous reconstruits selon le même algorithme depuis `a.bmp` (y compris
+les minuscules `a` et `o`). Le rendu ci-dessus
 est recalculé à partir du BMP indexé final, non de la version provisoire.
 [Voir le zoom de l'atlas complet](../../fonts/previews/larger_font_clean_zoom.png).
+
+## UAC natif 120 comme menu d'accueil par défaut (PR #413, PENDING CYD)
+
+À l'issue de `DoomRPG_esp32RepaintOpaqueMainMenu`, **après** les
+contrôles invariants du modèle, FNV framebuffer, activation tactile,
+`heap8` et `largest8`, `EspUacMenuPreview_enterDefault()` vérifie
+`menu_frame_120.bmp`, `menu_generic_120.bmp` et la grande police
+indexée (SD d'abord, PAK natif en repli). Il peint le menu 120 au
+premier `PlatformVideo_present()` et à chaque retour au menu principal
+depuis Options/Help ou la reprise. En cas d'erreur de lecture ou de
+rendu, **le menu CLASSIC d'origine reste le fallback**.
+
+Le clic sur le logo permet encore de comparer **120 → 240→120 → 240
+direct → 120**, sans sélectionner CLASSIC par simple navigation.
+La police est rendue **14×27** au lieu de 13×17 pixels physiques ;
+elle reste issue du même cache 4bpp de 12 glyphes, alloué uniquement en
+MENU_MAIN et libéré au reset, sans augmenter la RAM.
+
+Pour vérifier : `python ESP32/test/uac_default_mode_host.py`,
+`python artwork/menu-uac/generic/tools/render_corrected_120.py --check`.
+Le firmware normal est `esp32-cyd`; **aucun nouveau test CYD
+ou gain de RAM mesuré sur matériel n'est revendiqué ici**.
