@@ -42,9 +42,10 @@ PROGRAM = r"""
 #include "esp_audio_entrance_heap_guard.h"
 
 int main(void) {
-    /* Real CYD Serial samples: same track M_STALKS, same one 16KiB ring.
-       NEW GAME passes old 48KiB threshold by 236B; restored V11 LOAD
-       fails old threshold by 584B. Both must now be admitted. */
+    /* Real CYD: NEW GAME after ring=49388; LOAD before=69344 and FAIL-HEAP.
+       Projected LOAD after ring=69344-(70164-49388)=48568; that post
+       value was NOT serialized in the original failing firmware.
+       Both the measured NEW case and modeled V11 case must be admitted. */
     assert(EspAudioMusic_heapBeforeRingOk(70164U, 47092U));
     assert(EspAudioMusic_heapAfterRingOk(1, 49388U, 31732U));
     assert(EspAudioMusic_heapBeforeRingOk(69344U, 47092U));
