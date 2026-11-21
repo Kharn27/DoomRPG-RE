@@ -14,6 +14,127 @@
 #define DOOMRPG_PHYSICAL_HEIGHT 240
 #define DOOMRPG_INTEGER_SCALE 2
 
+/* RES60-P1 runs ONLY the video hardware probe: 160x120 gameplay layout,
+ * 160x80 renderers, HUD and their strict guards are intentionally retained.
+ * The 192x144 framebuffer is never passed to the 160x120 render engine. */
+#ifndef DOOMRPG_RES60_P1_DIAGNOSTIC
+#define DOOMRPG_RES60_P1_DIAGNOSTIC 0
+#endif
+#if DOOMRPG_RES60_P1_DIAGNOSTIC != 0 && DOOMRPG_RES60_P1_DIAGNOSTIC != 1
+#error "RES60-P1 diagnostic flag must be 0 or 1"
+#endif
+/* RES60-P2 experiments with 24/96/24 ownership of the same 192x144
+ * allocation. Never admit this flag into production 160x120 gameplay. */
+#ifndef DOOMRPG_RES60_P2_LAYOUT
+#define DOOMRPG_RES60_P2_LAYOUT 0
+#endif
+#if DOOMRPG_RES60_P2_LAYOUT != 0 && DOOMRPG_RES60_P2_LAYOUT != 1
+#error "RES60-P2 layout flag must be 0 or 1"
+#endif
+#if DOOMRPG_RES60_P2_LAYOUT && !DOOMRPG_RES60_P1_DIAGNOSTIC
+#error "RES60-P2 layout requires isolated RES60 video-only admission"
+#endif
+/* P3 reads original immutable MAP_INTRO geometry from native PAK for a
+ * one-shot flat-shaded 192x96 perspective preview. It MUST NOT start the
+ * legacy 160x80 engine or compile into the normal/inverted firmware. */
+#ifndef DOOMRPG_RES60_P3_WORLD
+#define DOOMRPG_RES60_P3_WORLD 0
+#endif
+#if DOOMRPG_RES60_P3_WORLD != 0 && DOOMRPG_RES60_P3_WORLD != 1
+#error "RES60-P3 world flag must be 0 or 1"
+#endif
+#if DOOMRPG_RES60_P3_WORLD && (!DOOMRPG_RES60_P2_LAYOUT || !DOOMRPG_RES60_P1_DIAGNOSTIC)
+#error "RES60-P3 requires isolated P1/P2 video-only framebuffer and layout"
+#endif
+/* RES60-P5: original assets into 192x144; 160x120 gameplay is still gated. */
+#ifndef DOOMRPG_RES60_P5_TITLE
+#define DOOMRPG_RES60_P5_TITLE 0
+#endif
+#if DOOMRPG_RES60_P5_TITLE != 0 && DOOMRPG_RES60_P5_TITLE != 1
+#error "RES60-P5 must be 0 or 1"
+#endif
+#if DOOMRPG_RES60_P5_TITLE && (!DOOMRPG_RES60_P1_DIAGNOSTIC || !DOOMRPG_RES60_P2_LAYOUT || !DOOMRPG_RES60_P3_WORLD)
+#error "RES60-P5 requires isolated P1/P2/P3"
+#endif
+/* P6: actual native MENU_MAIN graphics + calibrated two-tap zones in 192x144.
+ * Starting the 160x120 game remains forbidden; START routes only to P3. */
+#ifndef DOOMRPG_RES60_P6_MENU
+#define DOOMRPG_RES60_P6_MENU 0
+#endif
+#if DOOMRPG_RES60_P6_MENU != 0 && DOOMRPG_RES60_P6_MENU != 1
+#error "RES60-P6 must be 0 or 1"
+#endif
+#if DOOMRPG_RES60_P6_MENU && !DOOMRPG_RES60_P5_TITLE
+#error "RES60-P6 requires original title P5 in isolated P1/P2/P3 profile"
+#endif
+/* P7: one read-only native 192x96 camera, four cardinal views, and
+ * original skin turn/menu buttons. Strictly gated from 160x120 gameplay. */
+#ifndef DOOMRPG_RES60_P7_NAV
+#define DOOMRPG_RES60_P7_NAV 0
+#endif
+#if DOOMRPG_RES60_P7_NAV != 0 && DOOMRPG_RES60_P7_NAV != 1
+#error "RES60-P7 must be 0 or 1"
+#endif
+#if DOOMRPG_RES60_P7_NAV && (!DOOMRPG_RES60_P6_MENU || !DOOMRPG_RES60_P3_WORLD)
+#error "RES60-P7 requires P6 and isolated P3 world renderer"
+#endif
+/* P8: original PAK texture sampler in one 48x48 diagnostic inset.
+ * Never claim the 192x96 walls are textured yet; P3 raw FNV preserved. */
+#ifndef DOOMRPG_RES60_P8_TEXEL
+#define DOOMRPG_RES60_P8_TEXEL 0
+#endif
+#if DOOMRPG_RES60_P8_TEXEL != 0 && DOOMRPG_RES60_P8_TEXEL != 1
+#error "RES60-P8 must be 0 or 1"
+#endif
+#if DOOMRPG_RES60_P8_TEXEL && (!DOOMRPG_RES60_P7_NAV || !DOOMRPG_RES60_P3_WORLD)
+#error "RES60-P8 requires P7 and original P3 world owner"
+#endif
+/* P9: 1KiB bounded directional broad-phase indices for original flat BSP.
+ * Conservative half-plane rejection must not change any original P3 pixel. */
+#ifndef DOOMRPG_RES60_P9_WEDGE
+#define DOOMRPG_RES60_P9_WEDGE 0
+#endif
+#if DOOMRPG_RES60_P9_WEDGE != 0 && DOOMRPG_RES60_P9_WEDGE != 1
+#error "RES60-P9 flag must be 0 or 1"
+#endif
+#if DOOMRPG_RES60_P9_WEDGE && (!DOOMRPG_RES60_P7_NAV || !DOOMRPG_RES60_P3_WORLD || !DOOMRPG_RES60_P8_TEXEL)
+#error "RES60-P9 requires isolated P7/P8 cardinal BSP probe"
+#endif
+/* P10: single cached P8 wall material is mapped onto its actual P3/P9
+ * projected wall columns; no second full frame or additional PAK reads. */
+#ifndef DOOMRPG_RES60_P10_WALL_MATERIAL
+#define DOOMRPG_RES60_P10_WALL_MATERIAL 0
+#endif
+#if DOOMRPG_RES60_P10_WALL_MATERIAL != 0 && DOOMRPG_RES60_P10_WALL_MATERIAL != 1
+#error "RES60-P10 flag must be 0 or 1"
+#endif
+#if DOOMRPG_RES60_P10_WALL_MATERIAL && (!DOOMRPG_RES60_P9_WEDGE || !DOOMRPG_RES60_P8_TEXEL || !DOOMRPG_RES60_P3_WORLD)
+#error "RES60-P10 requires isolated P8/P9 material and P3 world owner"
+#endif
+/* P11 is timing-only, not an optimization. Exactly the P10 RES60 profile
+ * may opt in. No profile symbols or timers enter production 160x120. */
+#ifndef DOOMRPG_RES60_P11_PROFILE
+#define DOOMRPG_RES60_P11_PROFILE 0
+#endif
+#if DOOMRPG_RES60_P11_PROFILE != 0 && DOOMRPG_RES60_P11_PROFILE != 1
+#error "RES60-P11 profile flag must be 0 or 1"
+#endif
+#if DOOMRPG_RES60_P11_PROFILE && (!DOOMRPG_RES60_P10_WALL_MATERIAL || !DOOMRPG_RES60_P9_WEDGE || !DOOMRPG_RES60_P1_DIAGNOSTIC)
+#error "RES60-P11 requires isolated P10/P9 192x144 diagnostic profile"
+#endif
+#if DOOMRPG_RES60_P1_DIAGNOSTIC
+#define DOOMRPG_VIDEO_BUFFER_WIDTH 192
+#define DOOMRPG_VIDEO_BUFFER_HEIGHT 144
+#else
+#define DOOMRPG_VIDEO_BUFFER_WIDTH DOOMRPG_LOGICAL_WIDTH
+#define DOOMRPG_VIDEO_BUFFER_HEIGHT DOOMRPG_LOGICAL_HEIGHT
+#endif
+#if DOOMRPG_RES60_P1_DIAGNOSTIC && \
+    (DOOMRPG_VIDEO_BUFFER_WIDTH * 5 != DOOMRPG_PHYSICAL_WIDTH * 3 || \
+     DOOMRPG_VIDEO_BUFFER_HEIGHT * 5 != DOOMRPG_PHYSICAL_HEIGHT * 3)
+#error "RES60-P1 buffer must be exactly 192x144 on a 320x240 CYD"
+#endif
+
 /* Permanent classic-CYD logical layout. DoomCanvas does not own mutable
  * geometry on ESP32; the hardware target is fixed at 160x120 logical. */
 #define DOOMRPG_CANVAS_X 0

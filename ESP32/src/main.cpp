@@ -2,6 +2,7 @@
 #include <SD.h>
 #include <SPI.h>
 #include <TFT_eSPI.h>
+#include <esp_heap_caps.h>
 
 #include "board_config.h"
 #include "esp_asset_pack.h"
@@ -22,6 +23,17 @@
 #include "native_main_menu_touch_layout.h"
 #include "platform_input.h"
 #include "platform_video.h"
+#include "platform_video_config.h"
+#if DOOMRPG_RES60_P6_MENU
+#include "esp_res60_menu.h"
+#include "platform_touch_events.h"
+#endif
+#if DOOMRPG_RES60_P7_NAV
+#include "esp_res60_nav.h"
+#endif
+#if DOOMRPG_RES60_P8_TEXEL
+#include "esp_res60_texture_probe.h"
+#endif
 #include "esp_legacy_prerender_startup.h"
 #include "esp_render_startup_bridge.h"
 #include "soft_xpt2046.h"
@@ -60,6 +72,26 @@ namespace
     DoomRpgLayoutReport layoutReport{};
     uint32_t lastTouchUpdate = 0;
     uint32_t lastHeartbeat = 0;
+#if DOOMRPG_RES60_P5_TITLE
+    bool res60TitleVisible = false;
+    bool res60TouchWasDown = false;
+#endif
+#if DOOMRPG_RES60_P7_NAV
+    uint8_t res60QuarterTurns = 0U;
+#endif
+#if DOOMRPG_RES60_P6_MENU
+    bool res60MenuVisible = false;
+    int8_t res60MenuArmed = -1;
+    bool res60TapPending = false;
+    int16_t res60TapX = 0, res60TapY = 0;
+    /* Called by the regular calibrated PlatformInput owner in loop context.
+     * Merely capture an edge; never touch PAK, framebuffer or TFT here. */
+    void res60MenuTapCallback(int16_t x, int16_t y,
+                              uint16_t pressure, uint16_t rawX, uint16_t rawY) {
+        (void)pressure; (void)rawX; (void)rawY;
+        res60TapX = x; res60TapY = y; res60TapPending = true;
+    }
+#endif
 
     void drawLabel(int16_t y, const char *label, const char *value,
                    uint16_t color)
@@ -539,6 +571,75 @@ void setup()
                   DOOMRPG_ESP32_SCREEN_DIAGNOSTICS ? "enabled" : "disabled");
 
     initializePlatformVideo();
+#if DOOMRPG_RES60_P1_DIAGNOSTIC
+    /* Fail closed before SD, PAK, audio or any 160x120 engine owner starts.
+     * No world or HUD frame is ever written with an incompatible pitch. */
+    if (!videoReady || PlatformVideo_framebuffer() == nullptr ||
+        PlatformVideo_framebufferSizeBytes() != 55296U) {
+        Serial.printf("[RES60P1] FAIL CLOSED ready=%u bytes=%u heap8=%u largest8=%u\n",
+                      videoReady ? 1U : 0U,
+                      (unsigned int)PlatformVideo_framebufferSizeBytes(),
+                      (unsigned int)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+                      (unsigned int)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        return;
+    }
+    Serial.printf("[RES60P1] BOOT mode=VIDEO_ONLY logical=192x144 rgb565=55296 viewport3d=NOT_STARTED HUD=NOT_STARTED MENU=NOT_STARTED AUDIO=NOT_STARTED heap8=%u largest8=%u minHeap8=%u\n",
+                  (unsigned int)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+                  (unsigned int)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+                  (unsigned int)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT));
+#if DOOMRPG_RES60_P3_WORLD
+    initializeSdCard();
+    if (!sdReady) {
+        Serial.println("[RES60P3] FAIL CLOSED stage=SD_UNAVAILABLE no ZIP fallback");
+        return;
+    }
+#if DOOMRPG_RES60_P5_TITLE
+#if DOOMRPG_RES60_P6_MENU
+    Serial.println("[RES60P6] BOOT mode=MAIN_MENU touch=TWO_TAP source=ORIGINAL_PAK start=BSP_PREVIEW_ONLY gameplay=NOT_STARTED audio=NOT_STARTED");
+    PlatformInput_setTapCallback(res60MenuTapCallback);
+    res60MenuArmed = -1;
+    res60MenuVisible = PlatformVideo_showRes60MainMenu(res60MenuArmed);
+    if (!res60MenuVisible) {
+        Serial.println("[RES60P6] MENU-UNAVAILABLE fallback=MAP_INTRO-geometry");
+        PlatformVideo_showRes60WorldPreview();
+    }
+#else
+    Serial.println("[RES60P5] BOOT mode=ORIGINAL_TITLE touch=TOGGLE_BSP_PREVIEW gameplay=NOT_STARTED audio=NOT_STARTED");
+    res60TitleVisible = PlatformVideo_showRes60TitlePreview();
+    if (!res60TitleVisible) {
+        Serial.println("[RES60P5] TITLE-UNAVAILABLE fallback=MAP_INTRO-geometry");
+        PlatformVideo_showRes60WorldPreview();
+    }
+    res60TouchWasDown = input.touched();
+#endif
+#else
+    Serial.println("[RES60P3] BOOT mode=INTRO_GEOMETRY_ONLY target=192x96@y24 source=/intro.bsp backing=PAK textures=NOT_STARTED gameplay=NOT_STARTED audio=NOT_STARTED touch=NOT_STARTED");
+    PlatformVideo_showRes60WorldPreview();
+#endif
+#elif DOOMRPG_RES60_P2_LAYOUT
+    Serial.println("[RES60P2] BOOT mode=LAYOUT_ONLY logical=192x144 hudTop=24 viewport=192x96@y24 hudBottom=24 engine=NOT_STARTED touch=NOT_STARTED audio=NOT_STARTED");
+    PlatformVideo_showRes60LayoutPattern();
+#else
+    PlatformVideo_showTestPattern();
+#endif
+#if DOOMRPG_RES60_P6_MENU
+    Serial.printf("[RES60P6] IDLE mode=MENU_OR_GEOMETRY heap8=%u largest8=%u minHeap8=%u gameplay=NOT_STARTED\n",
+        (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT));
+#elif DOOMRPG_RES60_P5_TITLE
+    Serial.printf("[RES60P5] IDLE mode=TITLE_OR_GEOMETRY heap8=%u largest8=%u minHeap8=%u gameplay=NOT_STARTED\n",
+        (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT));
+#else
+    Serial.printf("[RES60P1] IDLE mode=VIDEO_ONLY heap8=%u largest8=%u minHeap8=%u audio=NOT_STARTED map=NOT_LOADED\n",
+                  (unsigned int)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+                  (unsigned int)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+                  (unsigned int)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT));
+#endif
+    return;
+#endif
     initializeSdCard();
     EspNativeConfig_loadAtBoot(sdReady ? 1 : 0);
     /* SOUND=ON by default: drive DAC2 at digital silence before menus/intro.
@@ -556,6 +657,107 @@ void setup()
 
 void loop()
 {
+#if DOOMRPG_RES60_P1_DIAGNOSTIC
+#if DOOMRPG_RES60_P5_TITLE
+#if DOOMRPG_RES60_P6_MENU
+    /* Input's existing 50ms released-edge debounce supplies one event per
+     * tap, already calibrated to physical 320x240. No polling redraw. */
+    (void)input.touched();
+    if (res60TapPending) {
+        const int16_t x = res60TapX, y = res60TapY;
+        res60TapPending = false;
+        if (res60MenuVisible) {
+            const int8_t previous = res60MenuArmed;
+            const EspRes60MenuTap action =
+                EspRes60Menu_onTap(x, y, &res60MenuArmed);
+            if (action == ESP_RES60_MENU_TAP_SELECTION) {
+                if (!PlatformVideo_updateRes60MenuArmed(previous, res60MenuArmed)) {
+                    res60MenuArmed = previous;
+                    Serial.println("[RES60P6] FAIL CLOSED stage=selection-present");
+                }
+            } else if (action == ESP_RES60_MENU_TAP_START_PREVIEW) {
+                Serial.println("[RES60P6] ACTION START target=MAP_INTRO_BSP_PREVIEW gameplay=NOT_STARTED");
+#if DOOMRPG_RES60_P7_NAV
+#if DOOMRPG_RES60_P8_TEXEL
+                /* New preview session: forbid stale swatch across MENU/START. */
+                EspRes60TextureProbe_reset();
+#endif
+                if (PlatformVideo_showRes60WorldPreviewQuarterTurns(0U)) {
+                    res60QuarterTurns = 0U;
+                    res60MenuVisible = false;
+                } else {
+                    Serial.println("[RES60P7] FAIL CLOSED stage=initial-world-view");
+                }
+#else
+                PlatformVideo_showRes60WorldPreview();
+                res60MenuVisible = false;
+#endif
+            } else if (action == ESP_RES60_MENU_TAP_UNSUPPORTED) {
+                Serial.printf("[RES60P6] ACTION BLOCKED item=%d reason=60pct-gameplay-route-not-ported\n",
+                              (int)res60MenuArmed);
+            } else if (action == ESP_RES60_MENU_TAP_INVALID) {
+                Serial.printf("[RES60P6] TOUCH INVALID physical=%d,%d\n",
+                              (int)x, (int)y);
+            }
+        } else {
+#if DOOMRPG_RES60_P7_NAV
+            const EspRes60NavTap tap = EspRes60Nav_hitPhysical(x,y);
+            if (tap == ESP_RES60_NAV_LEFT || tap == ESP_RES60_NAV_RIGHT) {
+                uint8_t next = res60QuarterTurns;
+                if (!EspRes60Nav_applyTurn(res60QuarterTurns,tap,&next) ||
+                    !PlatformVideo_showRes60WorldPreviewQuarterTurns(next)) {
+                    Serial.printf("[RES60P7] TURN-REJECT direction=%s from=%u\n",
+                         tap == ESP_RES60_NAV_LEFT ? "LEFT" : "RIGHT",
+                         (unsigned)res60QuarterTurns);
+                } else {
+                    Serial.printf("[RES60P7] TURN direction=%s from=%u to=%u committed=yes\n",
+                         tap == ESP_RES60_NAV_LEFT ? "LEFT" : "RIGHT",
+                         (unsigned)res60QuarterTurns,(unsigned)next);
+                    res60QuarterTurns = next;
+                }
+            } else if (tap == ESP_RES60_NAV_MENU) {
+                res60MenuArmed = -1;
+                Serial.println("[RES60P7] ACTION MENU from=BSP-preview");
+                res60MenuVisible = PlatformVideo_showRes60MainMenu(-1);
+                if (res60MenuVisible) {
+                    res60QuarterTurns = 0U;
+#if DOOMRPG_RES60_P8_TEXEL
+                    EspRes60TextureProbe_reset();
+#endif
+                }
+            } else {
+                Serial.printf("[RES60P7] TOUCH IGNORED physical=%d,%d zone=world-or-border\n",
+                              (int)x,(int)y);
+            }
+#else
+            res60MenuArmed = -1;
+            Serial.println("[RES60P6] TOUCH BSP-preview->MAIN_MENU");
+            res60MenuVisible = PlatformVideo_showRes60MainMenu(-1);
+#endif
+        }
+    }
+    delay(20);
+#else
+    /* Edge-triggered toggle: not MENU_MAIN, not native gameplay. */
+    const bool down = input.touched();
+    if (down && !res60TouchWasDown) {
+        if (res60TitleVisible) {
+            Serial.println("[RES60P5] TOUCH title->BSP-preview (NOT gameplay)");
+            PlatformVideo_showRes60WorldPreview();
+            res60TitleVisible = false;
+        } else {
+            Serial.println("[RES60P5] TOUCH BSP-preview->original-title");
+            res60TitleVisible = PlatformVideo_showRes60TitlePreview();
+        }
+    }
+    res60TouchWasDown = down;
+    delay(20);
+#endif
+#else
+    delay(250);
+#endif
+    return;
+#else
     if (bootLegalsPending)
     {
         serviceBootLegals();
@@ -585,4 +787,5 @@ void loop()
     updateTouchDiagnostic();
     printHeartbeat();
     delay(5);
+#endif
 }

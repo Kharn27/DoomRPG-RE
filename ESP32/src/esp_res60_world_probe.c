@@ -1,0 +1,236 @@
+#include "platform_video_config.h"
+#if DOOMRPG_RES60_P3_WORLD
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "esp_asset_pack.h"
+#include "esp_bsp_reader.h"
+#include "esp_map_catalog.h"
+#include "esp_map_runtime.h"
+#include "esp_res60_world_probe.h"
+#if DOOMRPG_RES60_P11_PROFILE
+#include "esp_res60_profile.h"
+#endif
+#if DOOMRPG_RES60_P7_NAV
+#include "esp_res60_nav.h"
+#endif
+#if DOOMRPG_RES60_P8_TEXEL
+#include "esp_res60_texture_probe.h"
+#endif
+
+/* Native compact immutable world records, read-only. The only per-line
+ * transient is a 16-byte scalar; no pointer-heavy desktop shapes are built. */
+static int readCompactLine(uint32_t index, EspRes60PreviewLine* out,
+                           void* context) {
+    EspMapLine source;
+    const EspMapRuntimeView* runtime = (const EspMapRuntimeView*)context;
+    if (runtime == NULL || out == NULL ||
+        index >= runtime->lineCount ||
+        !EspMapRuntime_getLine(index, &source)) return 0;
+    out->x1 = source.x1;
+    out->y1 = source.y1;
+    out->x2 = source.x2;
+    out->y2 = source.y2;
+    out->texture = source.texture;
+    out->flags = source.flags;
+    return 1;
+}
+
+static uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b) {
+    return (uint16_t)((((uint16_t)(r >> 3U)) << 11U) |
+                      (((uint16_t)(g >> 2U)) << 5U) |
+                      (uint16_t)(b >> 3U));
+}
+
+static int renderIntroCore(uint16_t* framebuffer,
+                           size_t framebufferBytes, uint8_t quarterTurns,
+                           EspRes60WorldProbeReport* outReport) {
+    const char* const mapName = EspMapCatalog_nameForId(ESP_MAP_ID_INTRO);
+    EspBspInventory inv;
+    const EspMapRuntimeView* runtime = NULL;
+    EspRes60WorldProbeReport report;
+    EspRes60PreviewCamera camera;
+    uint32_t spawnX, spawnY;
+    int32_t viewX, viewY;
+    uint8_t cameraAngle;
+    int loaded = 0;
+    int success = 0;
+
+    memset(&inv, 0, sizeof(inv));
+    memset(&report, 0, sizeof(report));
+    memset(&camera, 0, sizeof(camera));
+    if (outReport != NULL) memset(outReport, 0, sizeof(*outReport));
+    if (framebuffer == NULL || outReport == NULL || mapName == NULL ||
+        framebufferBytes != ESP_RES60_FRAMEBUFFER_BYTES ||
+        quarterTurns > 3U || EspAssetPack_isOpen() || EspMapRuntime_isLoaded()) {
+        printf("[RES60P3] FAIL CLOSED stage=admission alreadyActive=%u pakBusy=%u\n",
+               (unsigned int)EspMapRuntime_isLoaded(),
+               (unsigned int)EspAssetPack_isOpen());
+        return 0;
+    }
+
+#if DOOMRPG_RES60_P11_PROFILE
+    uint32_t phaseAt=EspRes60Profile_nowUs();
+#endif
+    /* Original compressed/packed source is never extracted map-wide. The
+     * normal BSP reader inventories the real PAK through bounded windows,
+     * then native EspMapRuntime builds one compact immutable arena. */
+    if (!EspBspReader_inventoryPackEntry(mapName, &inv)) {
+        printf("[RES60P3] FAIL CLOSED stage=inventory map=%s\n", mapName);
+        return 0;
+    }
+#if DOOMRPG_RES60_P11_PROFILE
+    report.inventoryUs=EspRes60Profile_nowUs()-phaseAt;
+#endif
+    if (inv.sourceBytes == 0U || inv.crc32 == 0U ||
+        inv.expectedCrc32 != inv.crc32 ||
+        inv.spawnIndex >= 1024U ||
+        (inv.spawnDirection & 63U) != 0U ||
+        inv.lines == 0U || inv.lines > ESP_RES60_PREVIEW_MAX_LINES) {
+        printf("[RES60P3] FAIL CLOSED stage=inventory-geometry lines=%lu spawn=%u angle=%u crc=%08lx\n",
+               (unsigned long)inv.lines, (unsigned int)inv.spawnIndex,
+               (unsigned int)inv.spawnDirection, (unsigned long)inv.crc32);
+        return 0;
+    }
+    cameraAngle=(uint8_t)(inv.spawnDirection + quarterTurns*64U);
+#if DOOMRPG_RES60_P7_NAV
+    if (!EspRes60Nav_resolveAngle(inv.spawnDirection, quarterTurns,
+                                 &cameraAngle)) return 0;
+#else
+    if (quarterTurns != 0U) return 0;
+#endif
+    spawnX = ((uint32_t)inv.spawnIndex & 31U) * 64U + 32U;
+    spawnY = ((uint32_t)inv.spawnIndex >> 5U) * 64U + 32U;
+    /* Match EspNativeFirstFrame.renderFrame() exactly for cardinal
+     * angles: vx = spawnX - (16*cos)>>16,
+     * vy = spawnY + (16*sin)>>16. No trig table or approximations. */
+    viewX = (int32_t)spawnX;
+    viewY = (int32_t)spawnY;
+    switch (cameraAngle) {
+        case 0U: viewX -= 16; break;
+        case 64U: viewY += 16; break;
+        case 128U: viewX += 16; break;
+        case 192U: viewY -= 16; break;
+        default: return 0;
+    }
+    if (viewX < 0 || viewX >= 2048 || viewY < 0 || viewY >= 2048) {
+        printf("[RES60P3] FAIL CLOSED stage=legacy-camera-bounds\n");
+        return 0;
+    }
+
+#if DOOMRPG_RES60_P11_PROFILE
+    phaseAt=EspRes60Profile_nowUs();
+#endif
+    if (!EspMapRuntime_loadPackEntry(mapName, &inv)) {
+        printf("[RES60P3] FAIL CLOSED stage=compact-runtime map=%s\n", mapName);
+        return 0;
+    }
+    loaded = 1;
+#if DOOMRPG_RES60_P11_PROFILE
+    report.loadUs=EspRes60Profile_nowUs()-phaseAt;
+#endif
+    runtime = EspMapRuntime_view();
+    if (runtime == NULL || runtime->lineCount != inv.lines ||
+        runtime->nodeCount != inv.nodes ||
+        runtime->sourceCrc32 != inv.crc32 ||
+        runtime->arenaBytes != inv.plan.persistentBytes ||
+        runtime->arenaFNV1a == 0U) {
+        printf("[RES60P3] FAIL CLOSED stage=runtime-parity\n");
+        goto done;
+    }
+
+    camera.worldX = (uint16_t)viewX;
+    camera.worldY = (uint16_t)viewY;
+    camera.angle = cameraAngle;
+    camera.viewZ = 36U;
+    camera.floorRgb565 = rgb565(inv.floorRgb[0], inv.floorRgb[1], inv.floorRgb[2]);
+    camera.ceilingRgb565 = rgb565(inv.ceilingRgb[0], inv.ceilingRgb[1], inv.ceilingRgb[2]);
+
+    report.mapBytes = inv.sourceBytes;
+    report.mapCrc32 = inv.crc32;
+    report.arenaBytes = runtime->arenaBytes;
+    report.arenaFNV = runtime->arenaFNV1a;
+    report.nodeCount = runtime->nodeCount;
+    report.lineCount = runtime->lineCount;
+    report.spawnIndex = inv.spawnIndex;
+    report.spawnX = spawnX;
+    report.spawnY = spawnY;
+    report.spawnAngle = cameraAngle;
+    report.cameraX = (uint32_t)viewX;
+    report.cameraY = (uint32_t)viewY;
+    printf("[RES60P3] MAP source=PAK map=%s bytes=%lu crc=%08lx arena=%lu arenaFNV=%08lx nodes=%lu lines=%lu spawn=%lu,%lu angle=%lu camera=%lu,%lu heapOwner=compact-only\n",
+           mapName, (unsigned long)report.mapBytes,
+           (unsigned long)report.mapCrc32, (unsigned long)report.arenaBytes,
+           (unsigned long)report.arenaFNV, (unsigned long)report.nodeCount,
+           (unsigned long)report.lineCount,
+           (unsigned long)report.spawnX, (unsigned long)report.spawnY,
+           (unsigned long)report.spawnAngle,
+           (unsigned long)report.cameraX, (unsigned long)report.cameraY);
+
+#if DOOMRPG_RES60_P11_PROFILE
+    phaseAt=EspRes60Profile_nowUs();
+#endif
+    success = EspRes60Preview_render(framebuffer, framebufferBytes, &camera,
+                                     runtime->lineCount, readCompactLine,
+                                     (void*)runtime, &report.raster);
+#if DOOMRPG_RES60_P11_PROFILE
+    report.p3Us=EspRes60Profile_nowUs()-phaseAt;
+#endif
+    if (!success) {
+        printf("[RES60P3] FAIL CLOSED stage=raycast geometry lines=%lu hitColumns=%lu reads=%lu\n",
+               (unsigned long)report.lineCount,
+               (unsigned long)report.raster.visibleColumns,
+               (unsigned long)report.raster.readerCalls);
+        goto done;
+    }
+#if DOOMRPG_RES60_P8_TEXEL
+    /* P3 raw raster fingerprint was committed BEFORE the P8 inset.
+     * Catalog + PAK owners are transient, released before map + LCD present. */
+#if DOOMRPG_RES60_P11_PROFILE
+    phaseAt=EspRes60Profile_nowUs();
+#endif
+    success=EspRes60TextureProbe_render(framebuffer,framebufferBytes,
+                                        &report.texture);
+#if DOOMRPG_RES60_P11_PROFILE
+    report.textureUs=EspRes60Profile_nowUs()-phaseAt;
+#endif
+    if(!success){
+        printf("[RES60P8] FAIL CLOSED stage=map-wall-texel-admission\n");
+        goto done;
+    }
+#endif
+
+done:
+#if DOOMRPG_RES60_P11_PROFILE
+    phaseAt=EspRes60Profile_nowUs();
+#endif
+    if (loaded) {
+        EspMapRuntime_reset();
+    }
+#if DOOMRPG_RES60_P11_PROFILE
+    report.releaseUs=EspRes60Profile_nowUs()-phaseAt;
+#endif
+    if (EspMapRuntime_isLoaded() || EspAssetPack_isOpen()) {
+        printf("[RES60P3] FAIL CLOSED stage=cleanup compactOrPakStillActive\n");
+        return 0;
+    }
+    if (success) *outReport = report;
+    return success;
+}
+
+int EspRes60WorldProbe_renderIntro(uint16_t* framebuffer,
+                                   size_t framebufferBytes,
+                                   EspRes60WorldProbeReport* outReport) {
+    return renderIntroCore(framebuffer, framebufferBytes, 0U, outReport);
+}
+#if DOOMRPG_RES60_P7_NAV
+int EspRes60WorldProbe_renderIntroQuarterTurns(
+    uint16_t* framebuffer, size_t framebufferBytes, uint8_t quarterTurns,
+    EspRes60WorldProbeReport* outReport) {
+    return renderIntroCore(framebuffer, framebufferBytes,
+                           quarterTurns, outReport);
+}
+#endif
+
+#endif /* DOOMRPG_RES60_P3_WORLD: production 50% keeps no new world code */
