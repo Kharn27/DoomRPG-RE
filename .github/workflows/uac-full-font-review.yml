@@ -15,6 +15,7 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install Pillow==11.3.0
-      - run: python artwork/fonts/preview_full_repair.py --check --proof --emit-base64
+      - run: python artwork/fonts/preview_full_repair.py --build --proof --emit-base64
+      - run: python artwork/fonts/preview_full_repair.py --check
       - run: python artwork/menu-uac/generic/tools/render_corrected_120.py --write --emit-base64
       - run: python artwork/menu-uac/generic/tools/render_corrected_120.py --check
