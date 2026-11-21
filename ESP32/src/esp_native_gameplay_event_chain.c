@@ -125,7 +125,7 @@ static EspNativeGameplayDialogResumeStatus resumeInteraction(uint16_t eventIndex
     uint8_t offset, uint32_t runFlags, EspNativeGameplayDialogResumeResult* result);
 int EspNativeGameplayEventChain_rollbackDialogResume(
     const EspNativeGameplayDialogResumeResult* result);
-extern int __real_Esp32PlatformVideo_present(void);
+extern int Esp32PlatformVideo_presentBase(void);
 
 #if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_DEBUG
 static uint8_t corpusLogged;
@@ -1149,7 +1149,7 @@ int EspNativeGameplayEventChain_serviceWait(struct Render_s* render) {
         }
         if (!EspNativeGameplayGibFx_paintCapture(transaction.continuation.particles,
                 age, transaction.continuation.durationMs, transaction.continuation.eventIndex) ||
-            !__real_Esp32PlatformVideo_present()) return 1;
+            !Esp32PlatformVideo_presentBase()) return 1;
         /* Capture owns this physical publish, like other native modals. Do not
          * let old hit/gib/action decorators overwrite its composed pixels. */
         if (!transaction.continuation.waitPresented) {
