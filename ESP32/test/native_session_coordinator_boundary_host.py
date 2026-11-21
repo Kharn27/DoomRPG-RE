@@ -48,8 +48,8 @@ def scan(files: dict[str, str], ini: str, header: str) -> None:
     require(ini.count("-Wl,--wrap=EspNativeGameplaySession_reset") == 0,
             "outer reset linker interposition returned")
     release_flags = re.findall(r"^\s+-Wl,--wrap=([^\n\r\s]+)", ini, re.M)
-    require(len(release_flags) == 5,
-            "expected RC22 2 production plus 3 bringup linker flags")
+    require(len(release_flags) == 4,
+            "expected RC23 1 production plus 3 bringup linker flags")
     for name in ("service", "reset"):
         declaration = f"void EspNativeGameplaySessionCoordinator_{name}("
         require(header.count(declaration) == 1,
