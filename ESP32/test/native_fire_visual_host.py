@@ -217,9 +217,9 @@ static void testModesAndRaster(void) {
  framebuffer[42U*160U]=framebuffer[43U*160U]=0x001fU;
  mode=EspNativeFireVisual_mapMode(0U,10U,91U);
  assert(spans(&r,&line,&f,mode,0,&stats));
- assert(framebuffer[40U*160U]==0xf81fU);
+ assert(framebuffer[40U*160U]==0xf01eU);
  assert(framebuffer[41U*160U]==0x001fU);
- assert(framebuffer[42U*160U]==0x07ffU);
+ assert(framebuffer[42U*160U]==0x07deU);
  assert(framebuffer[43U*160U]==0x001fU);
  assert(stats.pixelsDrawn==2U && stats.mode7Pixels==2U);
  /* A non-fire reuses the old opaque mode: masked pixels still untouched. */
@@ -234,14 +234,16 @@ static void testModesAndRaster(void) {
  memset(&stats,0,sizeof stats);
  assert(spans(&r,&line,&f,7U,1,&stats));
  assert(stats.glowPixels==2U && stats.mode7Pixels==0U);
- assert(framebuffer[40U*160U]==0xf800U);
- /* Saturation: white + white remains white, never wraps RGB565. */
+ assert(framebuffer[40U*160U]==0xe000U);
+ /* The historical RGB565 carry approximation is NOT ideal clamp-to-white.
+  * Check exact native bytes, including its overflow behavior. This P1 does
+  * not alter the existing glow or other additive blend formula. */
  f.palette[1]=f.palette[2]=0xffffU;
  framebuffer[40U*160U]=framebuffer[42U*160U]=0xffffU;
  memset(&stats,0,sizeof stats);
  assert(spans(&r,&line,&f,7U,0,&stats));
- assert(framebuffer[40U*160U]==0xffffU &&
-        framebuffer[42U*160U]==0xffffU);
+ assert(framebuffer[40U*160U]==0xe79cU &&
+        framebuffer[42U*160U]==0xe79cU);
  /* Wall depth rejects the entire column without changing any framebuffer. */
  r.columnScale[0]=0;
  memset(&stats,0,sizeof stats);
@@ -254,7 +256,7 @@ static void testModesAndRaster(void) {
  memset(&stats,0,sizeof stats);
  assert(!spans(&r,&line,&f,7U,0,&stats));
  assert(!spans(&r,&line,&f,9U,0,&stats));
- puts("FIRE-VIS RGB565 real spans: fire/opaque/glow/mask/depth/saturation PASS");
+ puts("FIRE-VIS RGB565 real spans: fire/opaque/glow/mask/depth/legacy-carry PASS");
 }
 int main(void) {
  testAssetReader();
