@@ -21,7 +21,6 @@
 #include "native_main_menu_touch.h"
 #include "native_main_menu_present.h"
 #include "native_main_menu_touch_layout.h"
-#include "esp_uac_menu_preview.h"
 #include "native_sprite_lru_cache.h"
 #include "native_wall_lru_cache.h"
 #include "platform_video_config.h"
@@ -744,12 +743,6 @@ int DoomRPG_esp32RepaintOpaqueMainMenu(struct DoomRPG_s* doomRpgBase,
 
     printf("[MENUSKIN] COMPOSE us=%u state=IDLE wholeMenu=yes framebuffer=single\n",
            (unsigned int)composeUs);
-#if defined(DOOMRPG_ESP32) && DOOMRPG_ESP32
-    /* Default physical UAC is prepared only AFTER zero-allocation root
-     * composition, FNV, touch activation and strict heap8/largest invariants.
-     * A failing SD/font preflight leaves the intact CLASSIC framebuffer. */
-    (void)EspUacMenuPreview_enterDefault();
-#endif
     (void)Esp32PlatformVideo_present();
 
     if (finalFramebufferFNV != NULL) *finalFramebufferFNV = finalHash;
