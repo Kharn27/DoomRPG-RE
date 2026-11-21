@@ -1,5 +1,8 @@
 #include "esp_native_indexed_image.h"
 #include "esp_asset_pack.h"
+#if defined(DOOMRPG_ESP32) && DOOMRPG_ESP32
+#include "esp_native_font_sd.h"
+#endif
 
 #include <limits.h>
 #include <stdio.h>
@@ -140,6 +143,14 @@ fail:
     return status;
 }
 
+#if defined(DOOMRPG_ESP32) && DOOMRPG_ESP32
+static int fontSdRange(void* context, uint32_t offset,
+                       void* dest, uint32_t bytes) {
+    const uint8_t source = *(const uint8_t*)context;
+    return EspNativeFontSd_read(source, offset, dest, bytes);
+}
+#endif
+
 static int packRange(void* context, uint32_t offset, void* dest, uint32_t bytes) {
     return EspAssetPack_readRange((const EspAssetPackEntry*)context,
                                   offset, dest, (size_t)bytes);
@@ -154,6 +165,33 @@ EspNativeImageStatus EspNativeImage_loadPack(const char* name,
     if (output != NULL) memset(output, 0, sizeof(*output));
     if (output == NULL || name == NULL || name[0] == '\0')
         return ESP_NATIVE_IMAGE_INVALID;
+
+#if defined(DOOMRPG_ESP32) && DOOMRPG_ESP32
+    {
+        uint32_t sdSize = 0U;
+        uint8_t source = EspNativeFontSd_probe(name, &sdSize);
+        if (source != 0U) {
+            int geometryMatches;
+            memset(&input, 0, sizeof(input));
+            input.context = &source;
+            input.size = sdSize;
+            input.readRange = fontSdRange;
+            result = EspNativeImage_decode(&input, transparentMask, output);
+            geometryMatches = source == ESP_NATIVE_FONT_SD_STANDARD
+                    ? output->width == 144 && output->height == 72
+                    : output->width == 208 && output->height == 102;
+            if (result == ESP_NATIVE_IMAGE_OK && geometryMatches) {
+                printf("[FONTSD] ACTIVE name=%s source=SD indexed=%u palette=%u bytes=%lu\n",
+                       name, (unsigned)output->bitsPerPixel,
+                       (unsigned)output->paletteSize, (unsigned long)sdSize);
+                return ESP_NATIVE_IMAGE_OK;
+            }
+            if (result == ESP_NATIVE_IMAGE_OK) EspNativeImage_dispose(output);
+            EspNativeFontSd_reject(source);
+            if (result == ESP_NATIVE_IMAGE_OOM) return result;
+        }
+    }
+#endif
 
     /* Match EspLegacyAssetSource's exclusive lease semantics. */
     if (EspAssetPack_isOpen() ||

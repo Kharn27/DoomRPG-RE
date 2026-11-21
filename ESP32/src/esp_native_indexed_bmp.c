@@ -1,7 +1,12 @@
 #include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
+
+#if defined(DOOMRPG_ESP32) && DOOMRPG_ESP32
+#include "esp_native_font_sd.h"
+#endif
 
 #include "esp_native_indexed_bmp.h"
 
@@ -52,11 +57,23 @@ static void addRead(EspNativeIndexedBmpStats* stats, uint32_t bytes) {
 }
 
 static int readRange(const EspAssetPackEntry* entry,
+                     uint8_t sdFontSource,
                      uint32_t offset,
                      void* destination,
                      uint32_t bytes,
                      EspNativeIndexedBmpStats* stats) {
-    if (!EspAssetPack_readRange(entry, offset, destination, bytes)) return 0;
+#if defined(DOOMRPG_ESP32) && DOOMRPG_ESP32
+    if (sdFontSource != 0U) {
+        if (!EspNativeFontSd_read(sdFontSource, offset, destination, bytes)) {
+            return 0;
+        }
+    } else
+#else
+    (void)sdFontSource;
+#endif
+    if (!EspAssetPack_readRange(entry, offset, destination, bytes)) {
+        return 0;
+    }
     addRead(stats, bytes);
     return 1;
 }
@@ -90,15 +107,18 @@ static int readSourceRow(const EspNativeIndexedBmp* bmp,
 
     fileY = bmp->topDown ? sourceY : ((uint32_t)bmp->height - 1U - sourceY);
     offset = bmp->pixelOffset + fileY * (uint32_t)bmp->filePitch;
-    if (!readRange(&bmp->entry, offset, row, bmp->filePitch, stats)) return 0;
+    if (!readRange(&bmp->entry, bmp->sdFontSource,
+                   offset, row, bmp->filePitch, stats)) return 0;
     if (stats != NULL) ++stats->rowsRead;
     return 1;
 }
 
-EspNativeIndexedBmpStatus EspNativeIndexedBmp_open(
+static EspNativeIndexedBmpStatus openFromSource(
     const char* name,
     EspNativeIndexedBmp* outBmp,
-    EspNativeIndexedBmpStats* stats) {
+    EspNativeIndexedBmpStats* stats,
+    uint8_t sdFontSource,
+    uint32_t sdSourceSize) {
     uint8_t header[BMP_HEADER_BYTES];
     EspAssetPackEntry entry;
     uint32_t dibSize;
@@ -119,10 +139,14 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_open(
 
     if (outBmp != NULL) memset(outBmp, 0, sizeof(*outBmp));
     if (name == NULL || outBmp == NULL) return ESP_NATIVE_INDEXED_BMP_INVALID;
-    if (!EspAssetPack_isOpen()) return ESP_NATIVE_INDEXED_BMP_PACK_NOT_OPEN;
-    if (!EspAssetPack_findEntry(name, &entry)) return ESP_NATIVE_INDEXED_BMP_NOT_FOUND;
+    if (sdFontSource != 0U) {
+        memset(&entry, 0, sizeof(entry));
+        entry.size = sdSourceSize;
+    } else if (!EspAssetPack_findEntry(name, &entry)) {
+        return ESP_NATIVE_INDEXED_BMP_NOT_FOUND;
+    }
     if (entry.size < BMP_HEADER_BYTES ||
-        !readRange(&entry, 0U, header, sizeof(header), stats)) {
+        !readRange(&entry, sdFontSource, 0U, header, sizeof(header), stats)) {
         return ESP_NATIVE_INDEXED_BMP_READ_FAILED;
     }
     if (header[0] != 'B' || header[1] != 'M') {
@@ -172,7 +196,8 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_open(
         return ESP_NATIVE_INDEXED_BMP_UNSUPPORTED;
     }
 
-    if (!readRange(&entry, paletteOffset, indexedBmpScratch, paletteBytes, stats)) {
+    if (!readRange(&entry, sdFontSource, paletteOffset,
+                    indexedBmpScratch, paletteBytes, stats)) {
         return ESP_NATIVE_INDEXED_BMP_READ_FAILED;
     }
 
@@ -186,12 +211,51 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_open(
     outBmp->paletteCount = (uint16_t)paletteCount;
     outBmp->bitsPerPixel = (uint8_t)bitsPerPixel;
     outBmp->topDown = signedHeight < 0 ? 1U : 0U;
+    outBmp->sdFontSource = sdFontSource;
 
     for (i = 0U; i < paletteCount; ++i) {
         const uint8_t* bgra = &indexedBmpScratch[i * BMP_PALETTE_ENTRY_BYTES];
         outBmp->paletteRgb565[i] = rgb565(bgra[2], bgra[1], bgra[0]);
     }
     return ESP_NATIVE_INDEXED_BMP_OK;
+}
+
+/* Keep the existing PAK lease and bounded blit buffers. Only exact font names
+ * can be redirected; malformed or wrong-sized SD atlases are rejected before
+ * the owner receives metadata, and the unchanged PAK resource is tried. */
+EspNativeIndexedBmpStatus EspNativeIndexedBmp_open(
+    const char* name,
+    EspNativeIndexedBmp* outBmp,
+    EspNativeIndexedBmpStats* stats) {
+    if (outBmp != NULL) memset(outBmp, 0, sizeof(*outBmp));
+    if (name == NULL || outBmp == NULL) return ESP_NATIVE_INDEXED_BMP_INVALID;
+    if (!EspAssetPack_isOpen()) return ESP_NATIVE_INDEXED_BMP_PACK_NOT_OPEN;
+#if defined(DOOMRPG_ESP32) && DOOMRPG_ESP32
+    {
+        uint32_t sdSize = 0U;
+        uint8_t source = EspNativeFontSd_probe(name, &sdSize);
+        if (source != 0U) {
+            EspNativeIndexedBmpStats saved = {0};
+            EspNativeIndexedBmpStatus status;
+            int correctGeometry;
+            if (stats != NULL) saved = *stats;
+            status = openFromSource(name, outBmp, stats, source, sdSize);
+            correctGeometry = source == ESP_NATIVE_FONT_SD_STANDARD
+                    ? outBmp->width == 144U && outBmp->height == 72U
+                    : outBmp->width == 208U && outBmp->height == 102U;
+            if (status == ESP_NATIVE_INDEXED_BMP_OK && correctGeometry) {
+                printf("[FONTSD] ACTIVE name=%s source=SD indexed=%u palette=%u bytes=%lu\n",
+                       name, (unsigned)outBmp->bitsPerPixel,
+                       (unsigned)outBmp->paletteCount,
+                       (unsigned long)sdSize);
+                return status;
+            }
+            EspNativeFontSd_reject(source);
+            if (stats != NULL) *stats = saved;
+        }
+    }
+#endif
+    return openFromSource(name, outBmp, stats, 0U, 0U);
 }
 
 EspNativeIndexedBmpStatus EspNativeIndexedBmp_blit(
@@ -246,7 +310,7 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_blit(
         chunkBytes = (uint32_t)chunkRows * (uint32_t)bmp->filePitch;
 
         if (chunkBytes > BMP_BLIT_RANGE_BYTES ||
-            !readRange(&bmp->entry, fileOffset,
+            !readRange(&bmp->entry, bmp->sdFontSource, fileOffset,
                        indexedBmpScratch, chunkBytes, stats)) {
             return ESP_NATIVE_INDEXED_BMP_READ_FAILED;
         }
