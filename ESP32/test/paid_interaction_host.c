@@ -24,6 +24,7 @@
 #include "esp_native_gameplay_hud_direction.h"
 #include "esp_native_gameplay_weapon.h"
 #include "esp_native_gameplay_present_gate.h"
+#include "platform_video_c_bridge.h"
 #include "esp_native_door_animator.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_player_view_state.h"
