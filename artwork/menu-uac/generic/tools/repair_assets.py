@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Rebuild pixel-exact UAC generic edges + recolor Doom larger_font via a.bmp.
+"""Rebuild pixel-exact UAC generic edges and full clean Doom larger_font from a.bmp.
 
-The source START V4 alpha/metal rim is the geometry oracle. Only its perimeter
-is borrowed; the original generic metal center stays blank. Larger glyph pixel
-indices, dimensions, transparency and 4bpp BMP file structure stay byte-exact;
-only its 16*4-byte palette is permuted to the canonical a.bmp colors.
+The START V4 alpha/metal rim is the geometry oracle. Only its perimeter
+is borrowed; the original generic metal center stays blank. 94 large-font
+silhouettes are rebuilt from the small Doom atlas while preserving native
+metallic shades and two approved a/o glyphs. No font header or palette bytes
+are modified, and only 4bpp pixel indexes of the 94 cells change.
 
 --write rewrites sources, final SD BMPs and the generic manifest;
 --check is deterministic and does not write;
@@ -81,29 +82,24 @@ def repair_generic(tier:int,width:int,height:int)->tuple[bytes,bytes,int]:
     return src,bytes(bmp),changed
 
 def repair_large_font()->tuple[bytes,int]:
-    main=bytearray((SD/"larger_font.bmp").read_bytes())
+    # Permanent source is artwork/fonts/sources/larger_font_pre_full_repair.bmp,
+    # not the already-shipped output, so --write and --check are idempotent.
+    import sys
+    sys.path.insert(0,str(ROOT/"artwork/fonts"))
+    from preview_full_repair import build_refined_data
+    font=build_refined_data()
     reference=(SD/"a.bmp").read_bytes()
-    for data,size in ((main,(208,102)),(reference,(144,72))):
-        assert data[:2]==b"BM"
-        assert struct.unpack_from("<I",data,10)[0]==118
-        assert struct.unpack_from("<ii",data,18)==size
-        assert struct.unpack_from("<H",data,28)[0]==4
-        assert struct.unpack_from("<I",data,30)[0]==0
-    orig=bytes(main)
-    # Transparent: source palette[2] -> standard palette[0] (ff00ff).
-    assert main[54+2*4:54+2*4+3]==bytes((255,0,255))
-    assert reference[54:57]==bytes((255,0,255))
+    assert font[:2]==b"BM" and reference[:2]==b"BM"
+    assert struct.unpack_from("<I",font,10)[0]==118
+    assert struct.unpack_from("<ii",font,18)==(208,102)
+    assert struct.unpack_from("<H",font,28)[0]==4
+    assert struct.unpack_from("<ii",reference,18)==(144,72)
+    # Big atlas source-index -> canonical small-atlas palette index.
     for src_idx,ref_idx in enumerate(PALETTE_MAP):
-        pos=54+src_idx*4
-        src=54+ref_idx*4
-        main[pos:pos+4]=reference[src:src+4]
-    # Indexed glyph drawing and magenta transparent bitmap untouched.
-    assert main[118:]==orig[118:]
-    assert main[:54]==orig[:54]
-    for idx in range(16):
-        p=54+idx*4
-        assert main[p:p+4]==reference[54+PALETTE_MAP[idx]*4:58+PALETTE_MAP[idx]*4]
-    return bytes(main),sum(x!=y for x,y in zip(orig,main))
+        assert font[54+src_idx*4:58+src_idx*4]==reference[54+ref_idx*4:58+ref_idx*4]
+    old=(SD/"larger_font.bmp").read_bytes()
+    return font,sum(x!=y for x,y in zip(old,font))
+
 
 def sha(x:bytes)->str:
     return hashlib.sha256(x).hexdigest()
@@ -124,7 +120,7 @@ def all_outputs()->dict[str,bytes]:
     ).encode("utf-8")
     font,diff=repair_large_font()
     outputs["sdroot/doomrpg/img/larger_font.bmp"]=font
-    print(f"[UAC-REPAIR] larger_font palette=canonical-a.bmp 16/16 indexes bytesChanged={diff} pixelBytes=unchanged sha256={sha(font)}")
+    print(f"[UAC-REPAIR] larger_font palette=canonical-a.bmp 16/16 glyphs=96 rebuilt=94 bytesChanged={diff} sha256={sha(font)}")
     return outputs
 
 def main()->None:
