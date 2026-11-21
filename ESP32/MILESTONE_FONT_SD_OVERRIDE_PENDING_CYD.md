@@ -1,3 +1,5 @@
+> **Note postérieure — PR #413 :** la livraison SD a été dédupliquée (plus de `a_doom.bmp` ni de variantes `larger_font_doom*` dans `sdroot`) et la palette de `larger_font.bmp` harmonisée avec `a.bmp`, sans changement des pixels-index de glyphes. Les assertions historiques d'identité binaire ci-dessous décrivent uniquement l'état de ce milestone d'origine. Voir `artwork/fonts/README.md` et `MILESTONE_UAC_120_GENERIC_FONT_PENDING_CYD.md`.
+
 # FONT-SD-P1 — surcharge optionnelle des deux planches de police, PAK natif en fallback — PENDING CYD
 
 **Base exacte** : `main=0ecf61366140f9ef3c279e33111055ea0f6dd8c8` après fusion de la PR #407. **Branche** : `agent/font-sd-overrides-pak-fallback`. **Statut : loader SD observé sur vrai CYD pour `a.bmp` AVANT retouche ; aspect des 4 glyphes corrigés et `larger_font.bmp` encore PENDING CYD.**

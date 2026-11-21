@@ -349,6 +349,11 @@ bool PlatformVideo_present() {
         return false;
     }
 
+    /* Activated by the native MENU_MAIN touch owner without allocation.
+     * The first present after root composition/heap/FNV validation consumes
+     * this marker and chooses UAC-120 or the fail-closed classic fallback. */
+    (void)EspUacMenuPreview_enterDefault();
+
     /* Experimental UAC owns the *physical* scanout only while MENU_MAIN is
      * active. Do not briefly display the old dashboard before every UAC
      * selection (flicker/two SPI frame writes). The proven normal presenter

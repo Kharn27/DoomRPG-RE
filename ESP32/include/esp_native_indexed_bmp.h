@@ -54,6 +54,15 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_open(
     EspNativeIndexedBmp* outBmp,
     EspNativeIndexedBmpStats* stats);
 
+/* MENU_MAIN SD font probe when the PAK lease is deliberately closed.
+ * Attempts ONLY the optional, already-supported SD override. The caller
+ * may separately open a bounded PAK lease on failure for normal fallback.
+ * Does not open, close or mutate the PAK lease. */
+EspNativeIndexedBmpStatus EspNativeIndexedBmp_openSdFontStandalone(
+    const char* name,
+    EspNativeIndexedBmp* outBmp,
+    EspNativeIndexedBmpStats* stats);
+
 /* Draw one source rectangle. Coordinates are clipped only at the framebuffer. */
 EspNativeIndexedBmpStatus EspNativeIndexedBmp_blit(
     const EspNativeIndexedBmp* bmp,

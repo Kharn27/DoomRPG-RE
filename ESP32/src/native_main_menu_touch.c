@@ -153,6 +153,9 @@ int DoomRPG_esp32MainMenuTouchActivate(struct DoomRPG_s* doomRpgBase,
     selectionHashes[0] = currentHash;
     touchActive = 1;
     PlatformInput_setTapCallback(DoomRPG_esp32MainMenuTouchOnTap);
+    /* No allocation here: the first physical MENU_MAIN present follows
+     * the strict root heap/FNV checks and prepares UAC-120 at that point. */
+    EspUacMenuPreview_armDefault();
 
     printf("[MENUTOUCH] READY physical=%dx%d logical=%dx%d scale=%d selected=0 initialFNV=%08x cursorPatchBytes=0 releaseDebounce=50ms\n",
            DOOMRPG_PHYSICAL_WIDTH,
@@ -511,7 +514,7 @@ static void gatedTap(int16_t screenX,
         return;
     }
     /* The original logo was a no-op tap area. Here it is the reversible
-     * preview switch: classic -> 120 -> 240 decimated -> 240 direct -> classic.
+     * comparison switch: 120 -> 240 decimated -> 240 direct -> 120.
      * Disabled when LOAD's slot selector is open (handled above). */
     if (screenX >= 0 && screenX < ESP_UAC_PANEL_LEFT && screenY >= 0 && screenY < 240) {
         lastTappedItem = -1;
