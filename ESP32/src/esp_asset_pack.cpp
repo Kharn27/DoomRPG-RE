@@ -10,8 +10,21 @@
 #include "esp_asset_pack_io_probe.h"
 #include "doomrpg_log.h"
 #include "esp_map_catalog.h"
+#if defined(DOOMRPG_ESP32) && DOOMRPG_ESP32
+#include "esp_native_font_sd.h"
+#endif
 
 namespace {
+
+/* No SD font File may overlap a physical SD PAK/probe open. Flash-backed
+ * logical PAK sessions do not call this and can read SD font ranges safely. */
+static void suspendFontSdBeforePackOpen()
+{
+#if defined(DOOMRPG_ESP32) && DOOMRPG_ESP32
+    EspNativeFontSd_suspend();
+#endif
+}
+
 
 constexpr uint8_t kMagic[8] = {'D', 'R', 'P', 'G', 'E', 'S', 'P', '2'};
 constexpr uint32_t kVersion = ESP_ASSET_PACK_FORMAT_VERSION;
@@ -370,6 +383,7 @@ bool mapFlashBuildSourcePlan(uint8_t targetMapId,
         }
     }
 
+    suspendFontSdBeforePackOpen();
     sourceFile = SD.open(ESP_ASSET_PACK_DEFAULT_PATH, FILE_READ);
     if (!sourceFile) {
         if (outReason != nullptr) *outReason = "source-pack-open";
@@ -1037,6 +1051,7 @@ int EspAssetPack_open(const char* path)
         return 1;
     }
 
+    suspendFontSdBeforePackOpen();
     packFile = SD.open(path, FILE_READ);
     if (!packFile) {
         return 0;
@@ -1163,6 +1178,7 @@ int EspAssetPack_sourceProbeBegin(const char* resourceName)
     }
 
     clearSourceProbe();
+    suspendFontSdBeforePackOpen();
     sourceProbeFile = SD.open(ESP_ASSET_PACK_DEFAULT_PATH, FILE_READ);
     if (!sourceProbeFile) {
         return 0;

@@ -1,4 +1,5 @@
 #include "esp_native_texture.h"
+#include "esp_native_font_tint.h"
 
 #include <Arduino.h>
 #include <algorithm>
@@ -21,10 +22,8 @@ uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b) {
 }
 
 uint16_t modulate565(uint16_t color, const EspNativeTexture* texture) {
-    const int red = ((color >> 11) & 0x1f) * texture->red / 255;
-    const int green = ((color >> 5) & 0x3f) * texture->green / 255;
-    const int blue = (color & 0x1f) * texture->blue / 255;
-    return static_cast<uint16_t>((red << 11) | (green << 5) | blue);
+    return EspNativeFontTint_apply(color, texture->red, texture->green,
+                                   texture->blue, texture->sdFont);
 }
 
 bool inClip(int x, int y) {
@@ -62,6 +61,7 @@ extern "C" EspNativeTexture* EspNativeTexture_adoptIndexed(
     texture->indexed = true;
     texture->red = texture->green = texture->blue = 255;
     texture->hasColorKey = image->hasColorKey != 0;
+    texture->sdFont = image->sdFont;
     texture->colorKey = 0xf81fU;
     image->pixels = nullptr;
     image->palette = nullptr;

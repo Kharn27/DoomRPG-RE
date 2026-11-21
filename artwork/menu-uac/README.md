@@ -126,3 +126,8 @@ La version 240 reste physiquement native, le 120 reste nearest-neighbor ×2.
 Ces images sont des preuves logicielles, pas un PASS matériel. Le firmware
 expérimental PR #400 avec la correction P2 (PR #402) est à retester sur le
 vrai classic CYD. Les anciennes notes de la PR #399 sont conservées.
+
+
+## Prototype graphique indépendant : bouton UAC générique
+
+[Voir les deux versions vierges 120 / 240, le packaging BMP V4 et les limites du cache futur](generic/README.md). Aucun changement du pilote UAC de la PR #406.
