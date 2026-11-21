@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Pixel-art proof of the actual UAC native-120 font composition (host only).
 
-No procedural font, no rescaling of larger glyphs. The 120 BMPs are
-nearest-scaled x2; only 13x17 Doom glyph pixels are painted 1:1 and
-with the indexed palette corresponding to the real firmware.
+No procedural font. The 120 BMPs are nearest-scaled x2; cached Doom 13x17
+indexed glyphs are sampled nearest to physical 14x27 on a 110x40 button,
+matching esp_uac_menu_preview.cpp exactly, with its original palette.
 """
 from __future__ import annotations
 from pathlib import Path
@@ -17,6 +17,8 @@ ART=ROOT/"artwork/menu-uac/generic"
 OUT=ART/"previews"
 LABELS=("START","LOAD","OPTIONS","HELP")
 TOPS=(20,74,128,182)
+PAINT_W,PAINT_H,ADVANCE=14,27,14
+assert len("OPTIONS")*ADVANCE==98 and PAINT_H<=28
 DARK=(16,21,29,255)
 
 def blend_on(dest:Image.Image, src:Image.Image, pos:tuple[int,int])->None:
@@ -53,19 +55,23 @@ def compose(index:int)->Image.Image:
     atlas=Image.open(SD/"larger_font.bmp")
     assert atlas.mode=="P" and atlas.size==(208,102)
     for i,label in enumerate(LABELS):
-        x0=4+(110-len(label)*13)//2
-        y0=TOPS[i]+(40-17)//2
+        x0=4+(110-len(label)*ADVANCE)//2
+        y0=TOPS[i]+(40-PAINT_H)//2
+        assert x0>=4+6 and x0+len(label)*ADVANCE<=4+110-6
+        assert y0>=TOPS[i]+6 and y0+PAINT_H<=TOPS[i]+40-6
         for j,char in enumerate(label):
             tile=ord(char)-33
             sx0=(tile%16)*13
             sy0=(tile//16)*17
-            for cy in range(17):
-                for cx in range(13):
-                    palette_index=atlas.getpixel((sx0+cx,sy0+cy))
+            for cy in range(PAINT_H):
+                for cx in range(PAINT_W):
+                    source_y=cy*17//PAINT_H
+                    source_x=cx*13//PAINT_W
+                    palette_index=atlas.getpixel((sx0+source_x,sy0+source_y))
                     if palette_index==2:continue
                     palette=atlas.getpalette()
                     rgb=tuple(palette[palette_index*3:palette_index*3+3])
-                    bg.putpixel((x0+j*13+cx,y0+cy),
+                    bg.putpixel((x0+j*ADVANCE+cx,y0+cy),
                                 glyph_color(rgb,i==index))
     return bg.convert("RGB")
 
