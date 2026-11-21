@@ -45,6 +45,7 @@ with tempfile.TemporaryDirectory(prefix="stats-present-owner-") as d:
     (tmp / "esp_native_gameplay_present_gate.c").write_text(gate)
     prototypes = {
         "esp_native_gameplay_present_gate.h": "",
+        "platform_video_c_bridge.h": "int Esp32PlatformVideo_presentBase(void);\n",
         "esp_native_gameplay_level_up.h": (
             "int EspNativeGameplayLevelUp_filterGameplayPresent(void);\n"
             "int EspNativeGameplayLevelUp_repaintOwned(void);\n"
