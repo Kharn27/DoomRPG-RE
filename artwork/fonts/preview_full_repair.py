@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Inspect deterministic 4bpp replacement candidates for all 94 large Doom glyphs.
+"""Rebuild all 96 Doom large-font glyphs from the same canonical small atlas.
 
-Source is the verified user-approved 9x12 a.bmp sheet; preserve the two
-individually restored 13x17 lowercase a/o exactly. All options retain the
-existing 208x102 grid/ASCII c-33 index, BMP palette and magenta key.
-An engineering preview is emitted without modifying the deployable BMP.
+No exception for lowercase a/o: previous special-casing made two characters
+look visibly different from the other 94. Retain the exact 208x102 layout,
+96 13x17 cells, ASCII c-33, a.bmp color palette and magenta transparency.
 """
 from __future__ import annotations
 import argparse, base64, io, hashlib, struct
@@ -18,7 +17,7 @@ FINAL=ROOT/"sdroot/doomrpg/img/larger_font.bmp"
 WORK=ROOT/"artwork/fonts/previews"
 SMALL_TO_BIG={0:2,1:1,2:0,3:12,4:10,5:8,6:7,7:5,8:14,9:13,10:9,11:6,12:4,13:3,14:15,15:11}
 assert len(SMALL_TO_BIG)==16 and len(set(SMALL_TO_BIG.values()))==16
-KEEP={ord("a")-33,ord("o")-33}
+AO_SLOTS={ord("a")-33,ord("o")-33}  # regression oracle only; never skipped
 WIDTH,HEIGHT=208,102
 PW,PH=13,17
 
@@ -43,7 +42,6 @@ def make_option(mode:str,small:Image.Image,big:Image.Image)->Image.Image:
     result=big.copy()
     smallp=small.getpalette()
     for ci in range(96):
-        if ci in KEEP: continue
         sx=(ci%16)*9; sy=(ci//16)*12
         dx=(ci%16)*PW; dy=(ci//16)*PH
         if mode=="nearest":
@@ -106,13 +104,13 @@ def render_report()->bytes:
     return buf.getvalue()
 
 def build_refined_data()->bytes:
-    """Generate a native indexed BMP, changing ONLY 4-bit pixels of 94 cells.
+    """Generate a 4bpp indexed BMP for ALL 96 glyphs with one identical method.
 
-    Start from the canonical a.bmp palette and the approved a/o source atlas.
-    Every other glyph is rebuilt COMPLETELY from the known clean 9x12 source:
-    bicubic RGBA shape sampling, transparent threshold, closest of 15 opaque
-    canonical palette colors. No polluted gray/white ink from the legacy
-    large atlas can leak into the rebuilt glyph. 4bpp layout and key stay.
+    Start from the canonical a.bmp palette and the archived large-font header.
+    Every glyph, including lowercase a/o, is rebuilt from the clean 9x12
+    source using bicubic RGBA sampling, an identical transparency threshold
+    and nearest of the 15 opaque canonical palette colors. The previous
+    exception for lowercase a/o is deliberately removed.
     """
     base=LARGE.read_bytes()
     assert len(base)==10726 and base[:2]==b"BM"
@@ -126,6 +124,7 @@ def build_refined_data()->bytes:
     pitch=((WIDTH*4+31)//32)*4
     changed=0
     changed_cells=0
+    ao_changed={}
     for ci in range(96):
         changed_this=0
         for cy in range(PH):
@@ -135,27 +134,30 @@ def build_refined_data()->bytes:
                 old=big.getpixel((x,y))
                 value=result.getpixel((x,y))
                 if value==old:continue
-                assert ci not in KEEP,"approved a/o changed"
                 changed+=1
                 changed_this+=1
                 loc=118+(HEIGHT-1-y)*pitch+x//2
                 if x&1:output[loc]=(output[loc]&240)|value
                 else:output[loc]=(output[loc]&15)|(value<<4)
         if changed_this:changed_cells+=1
+        if ci in AO_SLOTS:
+            assert changed_this>0,("special-case glyph was not unified",chr(ci+33))
+            ao_changed[chr(ci+33)]=changed_this
     assert output[:118]==base[:118]
-    assert changed>7000 and changed_cells>70,(changed,changed_cells)
+    assert changed>10000 and changed_cells==96,(changed,changed_cells)
     assert bytes(output)!=base
     img=Image.open(io.BytesIO(output))
     assert img.mode=="P" and img.size==(WIDTH,HEIGHT)
     assert img.tobytes()==result.tobytes()
     other=bytearray()
     for ci in range(96):
-        if ci in KEEP:continue
+        if ci in AO_SLOTS:continue
         x=(ci%16)*PW;y=(ci//16)*PH
         for row in range(PH):
             for col in range(PW):other.append(img.getpixel((x+col,y+row)))
-    print(f"[FONT-REBUILD] changedPixels={changed} changedGlyphCells={changed_cells}/94 "
-          f"other94SHA256={hashlib.sha256(other).hexdigest()} indexed=4 palette=a.bmp")
+    print(f"[FONT-REBUILD] changedPixels={changed} changedGlyphCells={changed_cells}/96 "
+          f"lowercaseChanged={ao_changed} other94SHA256={hashlib.sha256(other).hexdigest()} "
+          f"indexed=4 palette=a.bmp")
     return bytes(output)
 
 def main():
@@ -197,12 +199,10 @@ def main():
         o=make_option(mode,small,big)
         nonzero=0
         for i in range(96):
-            if i in KEEP:
+            if i in AO_SLOTS:
                 a=big.crop(((i%16)*PW,(i//16)*PH,(i%16+1)*PW,(i//16+1)*PH))
                 b=o.crop(((i%16)*PW,(i//16)*PH,(i%16+1)*PW,(i//16+1)*PH))
-                assert a.tobytes()==b.tobytes(),("preserved a/o",mode)
-            else:
-                pass
+                assert a.tobytes()!=b.tobytes(),("a/o must use the SAME reconstruction as all others",mode)
         nonzero=sum(a!=b for a,b in zip(big.tobytes(),o.tobytes()))
         print(f"[FONT-CANDIDATE] {mode} changedPixels={nonzero} indexed=4 palette=canonical")
     b=render_report()
