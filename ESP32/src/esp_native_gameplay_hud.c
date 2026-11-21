@@ -474,7 +474,7 @@ int EspNativeGameplayHud_isReady(void) {
     return hudState.active == 1U && hudState.painted == 1U;
 }
 
-const EspNativeGameplayHudState* EspNativeGameplayHud_view(void) {
+const EspNativeGameplayHudState* EspNativeGameplayHud_viewBase(void) {
     return EspNativeGameplayHud_isReady() ? &hudState : NULL;
 }
 

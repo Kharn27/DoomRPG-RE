@@ -385,7 +385,7 @@ EspPlayerViewMoveStatus EspPlayerView_prepareCardinalMove(
     return ESP_PLAYER_VIEW_MOVE_OK;
 }
 
-EspPlayerViewMoveStatus EspPlayerView_commitPreparedMove(
+EspPlayerViewMoveStatus EspPlayerView_commitPreparedMoveBase(
     const EspPlayerViewState* expectedBefore,
     const EspPlayerViewState* preparedAfter) {
     int32_t deltaX;

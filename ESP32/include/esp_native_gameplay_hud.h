@@ -78,6 +78,9 @@ int EspNativeGameplayHud_paintHelpBottomBand(uint16_t* framebuffer);
 
 void EspNativeGameplayHud_reset(void);
 int EspNativeGameplayHud_isReady(void);
+/* Base exposes retained HUD; public facade projects the live PlayerState.
+ * The returned public overlay is owner-owned scratch, not a durable pointer. */
+const EspNativeGameplayHudState* EspNativeGameplayHud_viewBase(void);
 const EspNativeGameplayHudState* EspNativeGameplayHud_view(void);
 
 /* Reapply only the permanent corner-notch chrome for the three top touch

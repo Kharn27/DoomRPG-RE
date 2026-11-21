@@ -105,10 +105,7 @@ static EspNativeGameplayHudState hudOverlay;
 
 int EspMapRuntime_getMapSpriteBase(uint32_t index,
                                       EspMapSprite* outSprite);
-const EspNativeGameplayHudState* __real_EspNativeGameplayHud_view(void);
-EspPlayerViewMoveStatus __real_EspPlayerView_commitPreparedMove(
-    const EspPlayerViewState* expectedBefore,
-    const EspPlayerViewState* preparedAfter);
+/* Public resource facades use raw Base declarations from owner headers. */
 
 /* Historical bring-up owner is now dormant, but reset it defensively so a
  * branch/session transition can never retain stale compatibility state. */
@@ -1170,11 +1167,11 @@ static void servicePendingMove(struct DoomRPG_s* doomRpg) {
     (void)processCommittedMove(doomRpg, &before, &after);
 }
 
-EspPlayerViewMoveStatus __wrap_EspPlayerView_commitPreparedMove(
+EspPlayerViewMoveStatus EspPlayerView_commitPreparedMove(
     const EspPlayerViewState* expectedBefore,
     const EspPlayerViewState* preparedAfter) {
     EspPlayerViewMoveStatus status =
-        __real_EspPlayerView_commitPreparedMove(expectedBefore, preparedAfter);
+        EspPlayerView_commitPreparedMoveBase(expectedBefore, preparedAfter);
 
     if (status != ESP_PLAYER_VIEW_MOVE_OK || expectedBefore == NULL ||
         preparedAfter == NULL) return status;
@@ -1194,8 +1191,8 @@ EspPlayerViewMoveStatus __wrap_EspPlayerView_commitPreparedMove(
     return status;
 }
 
-const EspNativeGameplayHudState* __wrap_EspNativeGameplayHud_view(void) {
-    const EspNativeGameplayHudState* base = __real_EspNativeGameplayHud_view();
+const EspNativeGameplayHudState* EspNativeGameplayHud_view(void) {
+    const EspNativeGameplayHudState* base = EspNativeGameplayHud_viewBase();
     const EspNativeGameplayPlayerState* player;
     const EspNativeGameplayWeaponSpec* weapon;
 
