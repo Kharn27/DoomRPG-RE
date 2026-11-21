@@ -1,0 +1,135 @@
+ets Jul 29 2019 12:21:46
+
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:2
+load:0x3fff0030,len:1184
+load:0x40078000,len:13232
+load:0x40080400,len:3028
+entry 0x400805e4
+
+=== Doom RPG CYD hardware bring-up ===
+Chip: ESP32-D0WD-V3, revision 3, cores 2
+CPU: 240 MHz
+Flash: 4194304 bytes
+Heap: 283252 free / 309888 total
+Heap8: 218008 free, largest block 110580
+PSRAM: 0 bytes
+[LEGACYINIT] STAGED runtime=ESP32-core/layout/startup legacy-DoomRPG_Init-anchor=retired
+Engine structs: Render=108 Game=0 Canvas=36 Total=641 bytes
+Upload target locked to /dev/ttyUSB0
+[TFT] Screen diagnostics=disabled; game framebuffer owns visible output
+[TFT] Ready, physical size=320x240 diagnostics=disabled
+[BACKLIGHT] READY pin=21 active=HIGH pwm=5000Hz/8bit channel=7 percent=100 persistence=native-sd-config
+[VIDEO] Logical framebuffer 160x120 RGB565, 38400 bytes
+[VIDEO] Physical output 320x240, integer scale 2x
+[VIDEO] CYD display profile raw RGB565 + hardware inverted-gamma resampling=nearest framebuffer=untouched
+[SD] Mounted, size=240 MiB
+[ORIENTATION] SET NORMAL->INVERSE rotation=3 physical=320x240 framebuffer=untouched gamma=preserved
+[BACKLIGHT] SET percent=100 duty=255/255 gpio=21 frame=untouched gameplayRng=untouched
+[NATIVECONFIG] LOAD source=primary result=valid version=3 bytes=12 brightness=100 orientation=INVERSE theme=0 primary=valid write=no
+[DATA] Native PAK indexed, entries=241
+[DATA] HUD resource preflight OK
+
+=== Doom RPG core object graph probe ===
+[CORE] Begin real Doom RPG object graph: heap=151624 largest=86004
+[CORE] DoomRPG        used=0 heap=151524 largest=86004
+[CORERNG] SEEDED next=0 bytes=128 nonZero=127 tableFNV=233a609e source=legacy-DoomRPG_setRand cadence=unchanged
+DoomCanvas_init
+[DOOMCANVASBRIDGE] INIT exports=0 nativeText=1 desktopTU=no bytes=36 retiredDialogStores=2560 retiredZeroRefLayout=240 retiredDormantText=428, retiredStateLayout=116 retiredGraphMirrors=28 retiredIntroState=96 retiredDeadShell=56 retiredInertControl=72 retiredLargeFont=16 retiredFixedGeometry=56 retiredViewShakeAlias=28 clip=160x120
+[CORE] DoomCanvas     used=52 heap=151472 largest=86004
+Render_init
+[RENDERCORE] INIT owner=esp-native-bridge bytes=108
+[CORE] Render         used=124 heap=151348 largest=86004
+[MENUSTORAGE] INIT bytes=496 items=8 owner=esp-native compatibilityLayout=EspNativeMenuState_t desktopTU=no
+[CORE] MenuSystem     used=512 heap=150836 largest=86004
+[CORE] Game           used=0 heap=150836 largest=86004
+[CORE] Game object retired gameBytes=0 desktopBytes=36468 totalReclaimed=36468 field=NULL worldOwner=native
+[CORE] Desktop Game.c retired bridge=absent exports=0 nativeGameOwner=yes
+[CORE] Player retired object=NULL owner=native-gameplay-player-state bytes=52
+[CORE] Sound retired object=NULL owner=native-audio-intent playback=deferred
+[CORE] Hud retired object=NULL owner=native-gameplay-hud+status-feedback
+[CORE] EntityDef retired object=NULL owner=native-entitydef-catalog
+[CORE] Combat retired object=NULL owners=native-combat+weapon+monster-turn
+[CORE] ParticleSystem retired object=NULL owner=native-gibfx
+[CORE] Menu root retired object=NULL owner=native-menu-models
+[CORE] READY stages=5 allocatedObjects=3 heap used=788 remaining=150836 largest=86004 clip=160x120
+[CORE] Resource startup intentionally NOT executed
+[CORE] Summary ready=yes used=788 heap8=150836 largest8=86004 clip=160x120
+
+=== Doom RPG 160x120 layout + HUD startup probe ===
+[LAYOUT] Begin DoomCanvas_startup: heap8=150836 largest8=86004
+[LAYOUT] This stage configures fixed native HUD geometry; legacy Hud_t is retired
+[RENDERCORE] SETUP owner=esp-native-bridge view=160x80@0,20 arrays=640B
+[NATIVEIMAGE] DECODE 144x72 4-bpp packed colors=3 bytes=5184 key=1
+[NATIVEIMAGE] ADOPT 144x72 bpp=4 bytes=5184 palette=3
+[DOOMCANVASBRIDGE] STARTUP desktopTU=no display=160x120 screen=160x80@0,20 startupMap=1 hud=native geometry=fixed-cyd
+[LAYOUT] HUD owner=native-gameplay-hud legacyObject=0x0 top=20 bottom=20
+[LAYOUT] clip    x=0 y=0 w=160 h=120
+[LAYOUT] display x=0 y=0 w=160 h=120
+[LAYOUT] screen  x=0 y=20 w=160 h=80
+[LAYOUT] HUD top=20 bottom=20 Render=160x80 arrays=640B
+[LAYOUT] heap8 used=5948 remaining=144888 largest=86004
+[LAYOUT] READY real engine layout fits inside 160x120
+[LAYOUT] Hud_t retired; native HUD reads bounded PAK assets on demand
+[LAYOUT] Native EntityDef catalog deferred to resident-map load; Render_startup still NOT executed
+[LAYOUT] Summary ready=yes used=5948 heap8=144888 largest8=86004 display=160x120 render=160x80
+
+=== Doom RPG pre-render startup probe ===
+[PRERENDER] Resource preflight (2 files)
+[PRERENDER] j.bmp          bytes=4264 backing=pak
+[PRERENDER] p.bmp          bytes=156 backing=pak
+[PRERENDER] Resource preflight OK
+[PRERENDER] Begin: heap8=144888 largest8=86004
+[PRERENDER] -> EspNativeMenuStorage_startup()
+[NATIVEIMAGE] DECODE 108x74 4-bpp packed colors=16 bytes=3996 key=1
+[NATIVEIMAGE] ADOPT 108x74 bpp=4 bytes=3996 palette=16
+[MENUSTORAGE] STARTUP READY assets=j owner=esp-native legacyAccessoryAssets=p/q-retired desktopMenuSystemStartup=no
+[PRERENDER] EspNativeMenuStorage_startup used=4156 heap8=140732 largest8=86004
+[PRERENDER] EntityDef desktop startup retired; native catalog builds from PAK at resident-map load
+[PRERENDER] READY total used=4156 heap8=140732 largest8=86004
+[PRERENDER] ParticleSystem/EntityDef desktop startup retired; Render_startup / Game_loadConfig still NOT executed
+
+=== Doom RPG shared Render_startup probe ===
+[RENDERSTART] Resource preflight (2 files)
+[RENDERSTART] sintable.bin   bytes=1024 backing=pak
+[RENDERSTART] palettes.bin   bytes=6564 backing=pak
+[RENDERSTART] Resource preflight OK
+[RENDERSTART] Begin: heap8=140732 largest8=86004 platformFB=0x3ffd19f0 bytes=38400
+[RENDERSTART] OWNER api=Render_startup source=esp-native-render-startup direct=yes wrap=no
+[RENDER] sintable loaded: 1024 bytes
+[RENDER] Shared framebuffer 160x120 pitch=320 bytes=38400 ptr=0x3ffd19f0
+[RENDER] palettes loaded: entries=3280 bytes=6560
+[RENDERSTART] Render_startup result=1 used=6576 heap8=134156 largest8=86004
+[RENDERSTART] READY shared framebuffer, sintable and palettes initialized
+[RENDERSTART] fb=0x3ffd19f0 pitch=320 paletteEntries=3280 paletteBytes=6560
+[RENDERSTART] Game_loadConfig / mappings / BSP still NOT executed
+
+=== Doom RPG native config handoff + mappings startup ===
+[MAPPINGS] mappings.bin bytes=8392 backing=pak
+[CONFIGMAP] Native CYD config restored earlier; legacy Config v23 skipped
+[MAPPINGS] -> EspLegacyMappings_load() heap8=134156 largest8=86004
+[MAPPINGS] Header texelOffsets=592 bitShapeOffsets=1300 textures=152 sprites=252
+[MAPPINGS] Plan payload=8376B largestAlloc=5200B whileData heap8=134156 largest8=86004
+[MAPPINGS] INSTALLED payload=8376 heap8=125716 largest8=86004 scratch=framebuffer noInflatedHeap=yes
+[MAPPINGS] EspLegacyMappings_load result=1 used=8440 heap8=125716 largest8=86004
+[CONFIGMAP] READY native config handoff and mappings resident
+[CONFIGMAP] mappingPayload=8376 heap8=125716 largest8=86004
+[CONFIGMAP] Render_beginLoadMap / BSP still NOT executed
+[MENUTOUCH] ZONE item=0 logical=x104..157 y8..31 physical=x208..315 y16..63 text="Start Game"
+[MENUTOUCH] ZONE item=1 logical=x104..157 y35..58 physical=x208..315 y70..117 text="Load Game "
+[MENUTOUCH] ZONE item=2 logical=x104..157 y62..85 physical=x208..315 y124..171 text="Options   "
+[MENUTOUCH] ZONE item=3 logical=x104..157 y89..112 physical=x208..315 y178..225 text="Help/About"
+[MENUTOUCH] PREPARED dashboard=split-logo-left+rail-right cursorPatchBytes=0 targetLogical=54x24 targetPhysical=108x48
+[MENUSKIN] REPAINT selected=0 state=IDLE us=6361 heap8=125716 largest8=86004 allocations=persistent-0
+[MENUTOUCH] STATE SYNC canvas=0->2 source=native-MENU_MAIN activation
+[MENUTOUCH] GATE READY initialSelected=0 dashboard=2x2 firstTap=bright-arm secondReleasedSameTap=confirm startAction=enabled loadAction=enabled optionsAction=enabled helpAction=enabled
+[MENUTOUCH] READY physical=320x240 logical=160x120 scale=2 selected=0 initialFNV=1945fafa cursorPatchBytes=0 releaseDebounce=50ms
+[MENUTOUCH] READY idle cards neutral; first tap arms red card; second released tap on same card confirms
+[MAINOPAQUE] DASHBOARD modelFNV=292c7f95 layoutFNV=c99501ec logoFNV=05aa37e1 finalFNV=1945fafa composeMs=59 heap8=125716 largest8=86004
+[MAINOPAQUE] TARGET layout=split logo=102x120@0,0 stretched=yes unframed=yes rail=x102..159 cards=54x24 logical=108x48 physical verticalMargins=4,4 gap=3 palette=industrial-procedural idle=one-word-amber-gunmetal focus=white cursorPatchBytes=0
+[MENUSKIN] COMPOSE us=58572 state=IDLE wholeMenu=yes framebuffer=single
+[MAINOPAQUE] READY finger-first MENU_MAIN painted without BSP/wall/sprite replay
+[MAINBOOT] READY owner=native-opaque menuBspRuntime=skipped legacyMapStructures=not-created frame=1945fafa
+[READY] Bring-up alive; touch diagnostics are serial-only and TFT is reserved for the game framebuffer.
