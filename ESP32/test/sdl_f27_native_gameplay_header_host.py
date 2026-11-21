@@ -73,6 +73,10 @@ def original_body_parity() -> None:
     marker = GUARD.encode("ascii")
     for filename, blob in BEFORE.items():
         current = (SOURCES / filename).read_bytes()
+        # Undo only RC22 owner/facade symbol changes before older exact
+        # source-history inverses. Immutable pre-F27 blob SHAs remain STRICT.
+        from arch_rc22_history import restore_pre_rc22
+        current = restore_pre_rc22(filename, current)
         from arch_rc21_history import restore_pre_rc21
         current = restore_pre_rc21(filename, current)
         from arch_rc20_history import restore_pre_rc20
