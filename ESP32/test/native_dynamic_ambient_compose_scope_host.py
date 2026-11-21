@@ -3,7 +3,7 @@
 
 Scan all real ESP32 C/C++ TUs. Compile and execute extracted *real* C
 begin/end/ambient/compose bodies with fail-closed fault and nested probes.
-Do not stub out or change actual wrappers for renderTurn/getLine/view.
+Cardinal frames now compose through the explicit RC23 facade.
 """
 from pathlib import Path
 import re
@@ -43,9 +43,8 @@ def scan() -> None:
         require(not any(f"__real_{name}(" in src or f"__wrap_{name}(" in src
                         for src in files.values()),
                 "obsolete GNU alias body/prototype present " + name)
-    for left in ("EspNativeGameplayFrame_renderTurn",):
-        require(f"-Wl,--wrap={left}" in flags,
-                "RC19 must not retire the cardinal door transaction " + left)
+    require("-Wl,--wrap=EspNativeGameplayFrame_renderTurn" not in flags,
+            "RC23 cardinal door facade must not use GNU wrapper")
 
     expected = {
         RAW_AMBIENT: {"esp_native_dynamic_line_render.c": 1,
@@ -81,7 +80,7 @@ def scan() -> None:
     require(dynamic.count('return endDynamicPreview(ok, "compose");') == 1,
             "unpublished script composition dynamic-line scope not closed")
     print(f"PASS ARCH-RC11 source scan: {len(files)} actual C/C++ units, "
-          "two retired wraps, exactly two owner callsites, renderTurn retained")
+          "two retired wraps, exactly two owner callsites, renderTurn facade retained")
 
 
 def extract(source: str, name: str) -> str:
