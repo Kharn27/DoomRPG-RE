@@ -47,7 +47,7 @@ def make_option(mode:str,small:Image.Image,big:Image.Image)->Image.Image:
         dx=(ci%16)*PW; dy=(ci//16)*PH
         if mode=="nearest":
             cell=small.crop((sx,sy,sx+9,sy+12)).resize((PW,PH),Image.Resampling.NEAREST)
-            result.paste(cell.point(lambda k:SMALL_TO_BIG[k]),(dx,dy))
+            result.paste(cell.point(lambda k:SMALL_TO_BIG.get(k,2)),(dx,dy))
             continue
         tile=rgba_tile(small,sx,sy,9,12,smallp,0)
         scaled=tile.resize((PW,PH),Image.Resampling.BICUBIC if mode=="smooth" else Image.Resampling.BILINEAR)
