@@ -109,7 +109,7 @@ MUTANTS = [
      "ESP_AUDIO_MUSIC_PRE_MIN_LARGEST8 = 24576U",
      "ESP_AUDIO_MUSIC_PRE_MIN_LARGEST8 = 32768U"),
     ("accept NULL ring", "return ringAllocated &&",
-     "return 1 &&"),
+     "return (ringAllocated | 1) &&"),
     ("reverse post free capacity",
      "free8 >= ESP_AUDIO_MUSIC_POST_MIN_HEAP8 &&",
      "free8 <= ESP_AUDIO_MUSIC_POST_MIN_HEAP8 &&"),
