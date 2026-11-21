@@ -43,7 +43,7 @@ def scan():
                     "retired linker alias still compiled in " + filename)
     require("-Wl,--wrap=EspNativeGameplayFrame_renderTurn" not in flags,
             "retired RC23 renderTurn GNU wrapper resurrected")
-    require("-Wl,--wrap=Esp32PlatformVideo_present" in flags,
+    require("-Wl,--wrap=Esp32PlatformVideo_present" not in flags,
             "remaining physical-present wrapper inadvertently removed")
 
     exact = {
