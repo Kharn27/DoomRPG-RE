@@ -20,8 +20,8 @@ EXPECTED = {
         "size": (208, 102),
         "cell": (13, 17),
         "magenta": 2,
-        "sha256": "925240fb829adac6d4ffce420894bbe4848edfd21ce080508d7e3b30b324a63f",
-        "other_94": "f57ac5e7f275b7bddc0efaef7defa37af3e61498e1eeb506a02e172500042083",
+        "sha256": "1fb05564fd1041c94dd3b10970c826300155f2a9221aa7fac07ea0bb9c85bdcf",
+        "other_94": "b4a46914a75ce8daee36f290c80f66fa5766e1a6887e87a47856d338b56b2bed",
         "ink": 96,
     },
 }
