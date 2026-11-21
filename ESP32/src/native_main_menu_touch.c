@@ -511,7 +511,7 @@ static void gatedTap(int16_t screenX,
         return;
     }
     /* The original logo was a no-op tap area. Here it is the reversible
-     * preview switch: classic -> 120 -> 240 decimated -> 240 direct -> classic.
+     * comparison switch: 120 -> 240 decimated -> 240 direct -> 120.
      * Disabled when LOAD's slot selector is open (handled above). */
     if (screenX >= 0 && screenX < ESP_UAC_PANEL_LEFT && screenY >= 0 && screenY < 240) {
         lastTappedItem = -1;
