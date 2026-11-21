@@ -53,7 +53,7 @@ typedef struct EspNativeGameplayPickupState_s {
 static EspNativeGameplayPickupState pickup;
 static EspNativeGameplayHudState hudOverlay;
 
-int __real_EspMapRuntime_getMapSprite(uint32_t index,
+int EspMapRuntime_getMapSpriteBase(uint32_t index,
                                       EspMapSprite* outSprite);
 const EspNativeGameplayHudState* __real_EspNativeGameplayHud_view(void);
 EspPlayerViewMoveStatus __real_EspPlayerView_commitPreparedMove(
@@ -147,9 +147,9 @@ void EspNativeGameplayPickup_reset(void) {
     memset(&hudOverlay, 0, sizeof(hudOverlay));
 }
 
-int __wrap_EspMapRuntime_getMapSprite(uint32_t index,
+int EspNativeGameplayPickup_getMapSprite(uint32_t index,
                                      EspMapSprite* outSprite) {
-    if (!__real_EspMapRuntime_getMapSprite(index, outSprite)) return 0;
+    if (!EspMapRuntime_getMapSpriteBase(index, outSprite)) return 0;
     if (outSprite != NULL && consumed(index)) {
         outSprite->info |= PICKUP_HIDDEN_FLAG;
     }

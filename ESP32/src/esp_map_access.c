@@ -68,7 +68,7 @@ int EspMapRuntime_getLineBase(uint32_t index, EspMapLine* outLine) {
     return 1;
 }
 
-int EspMapRuntime_getMapSprite(uint32_t index, EspMapSprite* outSprite) {
+int EspMapRuntime_getMapSpriteBase(uint32_t index, EspMapSprite* outSprite) {
     const EspMapRuntimeView* view = EspMapRuntime_view();
     const uint8_t* raw;
 
