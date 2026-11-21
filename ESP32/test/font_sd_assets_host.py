@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check SD-ready Doom glyph sheets and deterministic large-font 94-glyph cleanup."""
+"""Assert one canonical reconstruction for all 96 large glyphs, and no 94-glyph regression."""
 from pathlib import Path
 import hashlib
 import struct
@@ -20,9 +20,9 @@ EXPECTED = {
         "size": (208, 102),
         "cell": (13, 17),
         "magenta": 2,
-        "sha256": "1fb05564fd1041c94dd3b10970c826300155f2a9221aa7fac07ea0bb9c85bdcf",
+        "sha256": "9e16011cc6a6755bad5226143c342ec7339e47088f0c0dbdf3340518858f5350",
         "other_94": "b4a46914a75ce8daee36f290c80f66fa5766e1a6887e87a47856d338b56b2bed",
-        "ink": 96,
+        "ink": {"a": 109, "o": 108},
     },
 }
 
@@ -74,8 +74,8 @@ def inspect(name, spec):
             return bytes(out)
         for char in "ao":
             slot = ord(char) - 33
-            assert glyph_bytes(data, slot) == glyph_bytes(reference_large, slot), (
-                "approved lowercase glyph changed", char
+            assert glyph_bytes(data, slot) != glyph_bytes(reference_large, slot), (
+                "a/o must use the same projection as the other 94 glyphs", char
             )
 
     def pixel(x, y):
@@ -98,11 +98,12 @@ def inspect(name, spec):
         x0, y0 = code % 16 * cw, code // 16 * ch
         ink = [(x, y) for y in range(ch) for x in range(cw)
                if pixel(x0 + x, y0 + y) != spec["magenta"]]
-        assert len(ink) == spec["ink"], (name, letter, len(ink))
+        expected_ink = spec["ink"][letter] if isinstance(spec["ink"], dict) else spec["ink"]
+        assert len(ink) == expected_ink, (name, letter, len(ink), expected_ink)
         assert sum(y >= ch // 2 for _, y in ink) > 20, (name, letter)
         assert min(y for _, y in ink) >= 2 and max(y for _, y in ink) < ch - 2
     print(f"FONT-SD ASSET PASS {name}: {w}x{h} 4-bpp, "
-          f"{len(data)} B, other94 glyph oracle exact, a/o complete")
+          f"{len(data)} B, other94 glyph oracle exact, a/o unified")
 
 
 for file_name, settings in EXPECTED.items():
