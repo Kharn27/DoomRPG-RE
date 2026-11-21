@@ -109,6 +109,13 @@ for filename, (sha, aliases) in REFERENCES.items():
         restored = current.replace("#include <SDL.h>\n#include <stdlib.h>\n",
                                    "#include <SDL.h>\n", 1)
     if filename == "esp_native_gameplay_event_chain.c":
+        # ARCH-RC24: reverse only the two later direct physical-present
+        # symbol spellings before comparing the immutable pre-SDL-F18 blob.
+        # The historical Git hash must NEVER be rewritten to match new code.
+        assert restored.count("Esp32PlatformVideo_presentBase") == 2, (
+            "RC24 historical physical-present entry drift")
+        restored = restored.replace("Esp32PlatformVideo_presentBase",
+                                    "__real_Esp32PlatformVideo_present")
         from arch_rc11_history import restore_pre_rc11_event_chain
         restored = restore_pre_rc11_event_chain(restored)
     if filename == "esp_native_resident_gameplay.c":
