@@ -92,6 +92,7 @@ enum { kClassic=0,kNative120=1,k240As120=2,kDirect240=3 };
 constexpr bool kStrictSha256=false;
 static int assetTier(int m){return m==kNative120?120:240;}
 int mode=kClassic;
+bool defaultPending=false; /* zero-allocation flag; preflight at next root present */
 int paintedMode=0,paintedSelection=-1;
 /* Four physical rows per TFT write: 6680B static scanout; font ink is temporary heap. 
  * Only frame plus current button can have live BMP handles. */
@@ -442,12 +443,15 @@ static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
 } // namespace
 
 extern "C" int EspUacMenuPreview_mode(void){return mode;}
+extern "C" void EspUacMenuPreview_armDefault(void){
+    defaultPending=true; /* no heap or SD reads before root invariant checks */
+}
 extern "C" void EspUacMenuPreview_reset(void){
     if(mode)Serial.printf("[UAC] RESET mode=%d heap8=%u largest8=%u\n",
                           mode,
                           (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
                           (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
-    mode=kClassic;paintedMode=0;paintedSelection=-1;
+    mode=kClassic;paintedMode=0;paintedSelection=-1;defaultPending=false;
     releaseLargerFont();
 }
 /* Called ONLY after MENU_MAIN's strict heap-equality and framebuffer FNV
@@ -455,6 +459,8 @@ extern "C" void EspUacMenuPreview_reset(void){
  * cannot invalidate those pre-existing memory checks. All SD/PAK failures
  * leave the already-constructed native CLASSIC framebuffer as fallback. */
 extern "C" int EspUacMenuPreview_enterDefault(void){
+    if(!defaultPending)return mode; /* all other present calls are side-effect free */
+    defaultPending=false;
     const unsigned heapBefore=(unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT);
     const unsigned largestBefore=(unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
     mode=kClassic;paintedMode=0;paintedSelection=-1;
@@ -474,6 +480,7 @@ extern "C" int EspUacMenuPreview_enterDefault(void){
     return mode;
 }
 extern "C" int EspUacMenuPreview_cycle(void){
+    defaultPending=false;
     /* Classic is never offered as a normal mode; in fallback tap the logo
      * to reattempt 120 after repairing/remounting SD. */
     const int next=mode==kNative120?k240As120:
