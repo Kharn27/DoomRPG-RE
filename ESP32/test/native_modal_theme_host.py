@@ -35,7 +35,7 @@ assert "EspMainMenuSkin_progressTone(row, trackHeight)" in loading
 assert "const int trackWidth = TRANSITION_PROGRESS_WIDTH - 8;" in loading
 assert "fillWidth = (trackWidth * (int)percent) / 100" in loading
 assert "if (!EspMainMenuSkin_paintPlate(" in loading
-assert "int __real_Esp32PlatformVideo_present(void);" in loading
+assert "int Esp32PlatformVideo_presentBase(void);" in loading
 
 stats = loading.split("int EspNativeTransitionPresentation_showStats(", 1)[1].split(
     "int EspNativeTransitionPresentation_beginLoading(", 1)[0]
@@ -45,7 +45,7 @@ assert "MISSION COMPLETE" in stats
 assert stats.count("EspMainMenuSkin_uiAccent()") >= 3
 assert "EspMainMenuSkin_getTheme()" in stats
 assert "COLOR_GREEN : EspMainMenuSkin_uiAccent()" in stats
-assert "__real_Esp32PlatformVideo_present()" in stats
+assert "Esp32PlatformVideo_presentBase()" in stats
 assert "markCompleted(" not in stats
 assert "LEVELSTATS] PRESENT" in stats
 
@@ -60,7 +60,7 @@ assert '"LEVEL UP", 80, 11' in level
 assert '"MISSION COMPLETE",\n        80, 11' in stats
 assert "COLOR_GREEN" in level
 assert "TAP TO CONTINUE" in level
-assert "__real_Esp32PlatformVideo_present()" in level
+assert "Esp32PlatformVideo_presentBase()" in level
 
 system = load("ESP32/src/esp_native_gameplay_save.cpp")
 
