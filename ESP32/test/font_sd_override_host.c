@@ -132,6 +132,8 @@ int main(void) {
     /* Fixture BMP is bottom-up: the deliberately transparent half-pixel
      * lives on source row 71, not the top rendered row. */
     assert(framebuffer[0] == 0xffffU && framebuffer[1] == 0xffffU);
+    /* Erase the destination first: colorkey leaves existing pixels untouched. */
+    memset(framebuffer + 160, 0, 9U * sizeof(framebuffer[0]));
     assert(EspNativeIndexedBmp_blit(&bmp, framebuffer, 160, 120,
                                    0, 71, 9, 1, 0, 1, 1, &stats) ==
            ESP_NATIVE_INDEXED_BMP_OK);
