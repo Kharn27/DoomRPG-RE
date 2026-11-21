@@ -3,8 +3,8 @@
 
 The START V4 alpha/metal rim is the geometry oracle. Only its perimeter
 is borrowed; the original generic metal center stays blank. 94 large-font
-silhouettes are rebuilt from the small Doom atlas while preserving native
-metallic shades and two approved a/o glyphs. No font header or palette bytes
+glyphs are rebuilt from the small Doom atlas with its own canonical
+silver/copper gradient, while preserving two approved a/o glyphs. No font header or palette bytes
 are modified, and only 4bpp pixel indexes of the 94 cells change.
 
 --write rewrites sources, final SD BMPs and the generic manifest;
