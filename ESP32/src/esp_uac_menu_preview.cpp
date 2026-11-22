@@ -3,9 +3,17 @@
 #include <SD.h>
 #include <TFT_eSPI.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <mbedtls/sha256.h>
+#include <esp_heap_caps.h>
 #include "esp_uac_bmp32.h"
 #include "esp_audio_entrance_music.h"
+#include "esp_asset_pack.h"
+#include "esp_native_font_sd.h"
+#include "esp_native_indexed_bmp.h"
+#include "esp_main_menu_skin.h"
+#include "esp_uac_font_theme.h"
 
 namespace {
 constexpr int kPanelX=ESP_UAC_PANEL_LEFT,kWidth=320,kHeight=240;
@@ -15,7 +23,97 @@ static_assert(ESP_UAC_PANEL_WIDTH==ESP_UAC_BUTTON_WIDTH+2*ESP_UAC_BUTTON_INSET,
               "button bezel must be symmetric");
 constexpr uint16_t kMatte=0x1925U;
 const char* const kButtons[4]={"start","load","options","help"};
+/* The 120-only renderer uses genuine indexed Doom glyphs, not luminance.
+ * One bounded 25-glyph x 17-row x 7-byte cache (2975 B) serves MAIN and
+ * OPTIONS/VIDEO/SOUND/presets, released on menu exit; no gameplay BSS. */
+constexpr char kFontAlphabet[]="%01257ABCDEFHIKLMNOPRSTUV";
+constexpr int kGlyphW=13,kGlyphH=17;
+/* Pixel-perfect 13x17 Doom atlas: modest 14x23 physical scale with
+ * a lower optical baseline. The old 14x27 climbed into the top bevel;
+ * 14x23 at y+10 keeps a visible 10px upper / 7px lower corridor.
+ * Long submenu labels shrink just enough to fit the 110px plate. */
+constexpr int kPaintGlyphW=15,kPaintGlyphH=25,kPaintAdvance=13;
+constexpr int kLabelYOffset=1; /* 8px top / 7px bottom for 25px labels */
+static_assert(7*kPaintAdvance<=ESP_UAC_BUTTON_WIDTH-12,
+              "OPTIONS must remain inside the generic button bezel");
+static_assert(kPaintGlyphH<=40-12,
+              "enlarged font must not overpaint the upper/lower bezel");
+/* Every indexed nontransparent source shade is tinted at presentation. */
+struct FontInkCache {
+    uint8_t glyph[sizeof(kFontAlphabet)-1][kGlyphH][(kGlyphW+1)/2];
+};
+static FontInkCache* fontInk=nullptr;
+static bool fontReady=false;
+/* 16 RGB565 source shades (32 B) for the active SD atlas, never a second font. */
+static uint16_t fontSourcePalette[16]={};
+static bool fontIsNeutral=false;
+static void releaseLargerFont(){
+    free(fontInk);
+    fontInk=nullptr;
+    fontReady=false;
+    fontIsNeutral=false;
+}
+/* Menu-only bounded BMP caches: original bottom-up V4 pixels, not a
+ * framebuffer or desktop texture. 59x120x4 + 55x20x4 = 32720 heap bytes.
+ * SD handles close before drawing; caches release before gameplay. */
+struct BufferedBmp { EspUacBmp32 bmp; uint8_t* pixels; };
+static BufferedBmp frameCache{},genericCache{};
+static void releaseBufferedBmps(){
+    free(frameCache.pixels);free(genericCache.pixels);
+    frameCache=BufferedBmp{};genericCache=BufferedBmp{};
+}
+static void releaseMenuAssets(){releaseLargerFont();releaseBufferedBmps();}
+static const char* const kGeneric120="/doomrpg/img/menu_generic_120.bmp";
 const int kTop[4]={20,74,128,182};
+/* Options subpages own presentation labels only: original UI model,
+ * framebuffer hash oracles, actions and two-tap contracts remain untouched. */
+static const char* const kOptionsRoot[]={"BACK","VIDEO","SOUND"};
+static const char* const kOptionsVideo[]={"BACK","LUMINOSITE","ORIENTATION","THEME"};
+static const char* const kOptionsBrightness[]={"BACK","25%","50%","75%","100%"};
+static const char* const kOptionsVolume[]={"25%","50%","75%","100%"};
+static const char* const kOptionsOrientation[]={"BACK","NORMAL","INVERSE"};
+static const char* const kOptionsTheme[]={"BACK","CLASSIC","INFERNO","PHOSPHORE"};
+static const char* const kOptionsSoundOn[]={"BACK","ON","VOLUME"};
+static const char* const kOptionsSoundOff[]={"BACK","OFF","VOLUME"};
+constexpr int kFiveButtonHeight=32;
+static int optionsPage=ESP_UAC_OPTIONS_NONE;
+static int optionsSelection=0,optionsArmed=0;
+static uint8_t optionsEnabledMask=0x1fU;
+static bool optionsPending=false;
+static int paintedPage=ESP_UAC_OPTIONS_NONE,paintedArmed=0;
+static uint8_t paintedEnabledMask=0U;
+static uint8_t paintedTheme=0xffU;
+constexpr uint32_t kBlinkHalfPeriodMs=450U;
+static uint32_t blinkEpochMs=0U;
+static bool paintedDark=false;
+static const char* labelAt(int page,int index){
+    switch(page){
+        case ESP_UAC_OPTIONS_ROOT: return index<3?kOptionsRoot[index]:nullptr;
+        case ESP_UAC_OPTIONS_VIDEO: return index<4?kOptionsVideo[index]:nullptr;
+        case ESP_UAC_OPTIONS_BRIGHTNESS: return index<5?kOptionsBrightness[index]:nullptr;
+        case ESP_UAC_OPTIONS_VOLUME: return index<4?kOptionsVolume[index]:nullptr;
+        case ESP_UAC_OPTIONS_ORIENTATION: return index<3?kOptionsOrientation[index]:nullptr;
+        case ESP_UAC_OPTIONS_THEME: return index<4?kOptionsTheme[index]:nullptr;
+        case ESP_UAC_OPTIONS_SOUND_ON: return index<3?kOptionsSoundOn[index]:nullptr;
+        case ESP_UAC_OPTIONS_SOUND_OFF: return index<3?kOptionsSoundOff[index]:nullptr;
+        default: return index<4?kButtons[index]:nullptr;
+    }
+}
+static int pageCount(int page){
+    if(page==ESP_UAC_OPTIONS_VIDEO || page==ESP_UAC_OPTIONS_THEME ||
+       page==ESP_UAC_OPTIONS_VOLUME)return 4;
+    if(page==ESP_UAC_OPTIONS_BRIGHTNESS)return 5;
+    return page==ESP_UAC_OPTIONS_NONE?4:3;
+}
+/* The frame contains FOUR fixed metal rails. Three-option pages must draw
+ * the fourth generic button UNLABELLED, never stretch three over the frame.
+ * The semantic count remains three: no selection or touch on slot #4. */
+static int pageSlotCount(int page){return pageCount(page)==5?5:4;}
+static int buttonHeight(int page){return pageCount(page)==5?kFiveButtonHeight:40;}
+static int buttonTop(int page,int index){
+    return pageCount(page)==5?12+46*index:kTop[index];
+}
+static_assert(12+46*4+kFiveButtonHeight<=240-10,"5-button rail must fit");
 /* Manifest from artwork/menu-uac/SHA256SUMS.txt (PR #399). Mode and
  * ordering: FRAME, START inactive/active, LOAD inactive/active,
  * OPTIONS inactive/active, HELP inactive/active. No SD-side manifest
@@ -44,14 +142,16 @@ const char* const kSha256[2][9] = {
     "63054b67f2c7c6024e4e1392dd34cb165e074eef6f810b518fca0804ad9ecb55"
   }
 };
-/* Reversible comparison: 0 CLASSIC, 1 native-120, 2 sampled 240->120,
- * 3 direct-240. P1 accepts artist-updated SD BMP with strict V4 geometry. */
+/* 0 CLASSIC is now strictly a fail-closed fallback. Normal MENU_MAIN opens
+ * native-120 first; optional logo comparisons cycle 120 -> 240->120 ->
+ * direct-240 -> 120, NEVER into CLASSIC without an asset/paint failure. */
 enum { kClassic=0,kNative120=1,k240As120=2,kDirect240=3 };
 constexpr bool kStrictSha256=false;
 static int assetTier(int m){return m==kNative120?120:240;}
 int mode=kClassic;
+bool defaultPending=false; /* zero-allocation flag; preflight at next root present */
 int paintedMode=0,paintedSelection=-1;
-/* Four physical rows per TFT write: 6680B BSS, no frame allocation.
+/* Four physical rows per TFT write: 6680B static scanout; font ink is temporary heap. 
  * Only frame plus current button can have live BMP handles. */
 constexpr int kRows=4;
 static uint16_t outRows[kRows*kWidth];
@@ -113,10 +213,201 @@ static void framePath(char* p,size_t n,int m){
     snprintf(p,n,"/doomrpg/img/menu_frame_%d.bmp",assetTier(m));
 }
 static void buttonPath(char* p,size_t n,int m,int index,bool active){
+    if(m==kNative120){
+        snprintf(p,n,"%s",kGeneric120);
+        return;
+    }
     snprintf(p,n,"/doomrpg/img/menu_%s_%s_%d.bmp",kButtons[index],
              active?"active":"inactive",assetTier(m));
 }
+
+/* Select the existing SD-indexed font owner WITHOUT opening the PAK first:
+ * a physical SD PAK lease would prohibit the preferred SD font source.
+ * If absent/malformed, open a transient native PAK lease, decode the same
+ * original 208x102 indexed atlas, then close it before any BMP/TFT paint.
+ * No ZIP, font-sized retained buffer, or PAK lease held during music.
+ * The resulting compact ink cache is the ONLY retained font state here. */
+static bool prepareLargerFont(){
+    releaseLargerFont();
+    fontInk=static_cast<FontInkCache*>(calloc(1U,sizeof(FontInkCache)));
+    if(!fontInk){
+        Serial.println("[UAC] FONT120 FAIL reason=bounded-cache-alloc");
+        return false;
+    }
+    EspNativeIndexedBmp bmp{};
+    EspNativeIndexedBmpStats stats{};
+    bool temporaryPak=false;
+    EspNativeIndexedBmpStatus st=EspNativeIndexedBmp_openSdFontStandalone(
+        "larger_font.bmp",&bmp,&stats);
+
+    /* Blit actual indexed glyph pixels via the existing bounded decoder;
+     * retain the palette INDEX, not RGB luminance, so colors and black
+     * outlines match a.bmp. The same mapping works with the old PAK atlas
+     * and the new recolored SD atlas (the indices have not changed). */
+    auto decode=[&]()->bool {
+        if(st!=ESP_NATIVE_INDEXED_BMP_OK ||
+           bmp.width!=208U || bmp.height!=102U)return false;
+        for(size_t i=0;i<sizeof(kFontAlphabet)-1;++i){
+            const unsigned ch=(unsigned)kFontAlphabet[i]-33U;
+            uint16_t pixels[kGlyphW*kGlyphH];
+            for(auto& pixel:pixels)pixel=0xf81fU;
+            if(EspNativeIndexedBmp_blit(&bmp,pixels,kGlyphW,kGlyphH,
+                   (uint16_t)((ch&15U)*kGlyphW),
+                   (uint16_t)((ch>>4U)*kGlyphH),
+                   kGlyphW,kGlyphH,0,0,1,&stats)!=ESP_NATIVE_INDEXED_BMP_OK)
+                return false;
+            for(int y=0;y<kGlyphH;++y){
+                for(int x=0;x<kGlyphW;++x){
+                    uint8_t ink=0;
+                    const uint16_t p=pixels[y*kGlyphW+x];
+                    if(p!=0xf81fU){
+                        uint16_t sourceIndex=16U;
+                        for(uint16_t j=0U;j<bmp.paletteCount&&j<16U;++j){
+                            if(p==bmp.paletteRgb565[j]){sourceIndex=j;break;}
+                        }
+                        if(sourceIndex>=16U || sourceIndex==2U)
+                            return false; /* unexpected/ambiguous palette */
+                        ink=(uint8_t)(sourceIndex<2U?sourceIndex+1U:sourceIndex);
+                    }
+                    uint8_t& pair=fontInk->glyph[i][y][x/2];
+                    if((x&1)==0)pair=(uint8_t)((pair&0x0fU)|(ink<<4));
+                    else pair=(uint8_t)((pair&0xf0U)|ink);
+                }
+            }
+        }
+        return true;
+    };
+    bool ok=decode();
+    if(!ok){
+        /* SD may pass its header/palette preflight then fail mid-glyph.
+         * Reject THAT source and retry the entire ink cache from PAK. */
+        if(bmp.sdFontSource!=0U)EspNativeFontSd_reject(bmp.sdFontSource);
+        if(!EspAssetPack_isOpen()){
+            if(EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH))
+                temporaryPak=true;
+            else
+                Serial.println("[UAC] FONT PAK fallback unavailable");
+        }
+        if(EspAssetPack_isOpen()){
+            st=EspNativeIndexedBmp_open("larger_font.bmp",&bmp,&stats);
+            ok=decode();
+        }
+    }
+    const bool fromSD=ok && bmp.sdFontSource!=0U;
+    if(ok){
+        /* The neutral SD atlas uses grayscale palette entries, but the PAK
+         * and historical color BMP retain the original metal-style colors.
+         * No source BMP or global gameplay tint contract is modified. */
+        fontIsNeutral=fromSD && bmp.paletteCount==16U;
+        fontSourcePalette[0]=0U; /* ink 0 is always transparent */
+        for(unsigned ink=1U;ink<16U;++ink){
+            const unsigned sourceIndex=ink<=2U?ink-1U:ink;
+            const uint16_t c=bmp.paletteRgb565[sourceIndex];
+            fontSourcePalette[ink]=c;
+            if(!EspUacFontTheme_isGrayRgb565(c))fontIsNeutral=false;
+        }
+    }
+    if(temporaryPak)EspAssetPack_close();
+    EspNativeFontSd_suspend();
+    if(!ok)releaseLargerFont();
+    else fontReady=true;
+    Serial.printf("[UAC] FONT120 %s name=larger_font.bmp backing=%s palette=%s ramp=vertical-3stops glyphs=%u inkBytes=%u reads=%lu bytes=%lu\n",
+                  ok?"READY":"FAIL",fromSD?"SD":"PAK",
+                  fontIsNeutral?"neutral-theme":"classic-metal",
+                  (unsigned)(sizeof(kFontAlphabet)-1),(unsigned)sizeof(FontInkCache),
+                  (unsigned long)stats.packReads,(unsigned long)stats.bytesRead);
+    return ok;
+}
+
+/* Scale cached 13x17 indexed glyphs to physical 14x23 by bounded nearest
+ * lookup, without allocating a second atlas. Optical ink now fills the
+ * 110x40 plate more evenly; selected/nonselected share palette semantics. */
+static void paintLargerTextRow(uint16_t* dst,int py,int index,int selected,
+                               bool darkPhase,bool patch,int page){
+    if(!fontReady||index<0||index>=pageCount(page))return;
+    const char* label=labelAt(page,index);
+    if(!label)return;
+    const int len=(int)strlen(label);
+    /* Never overwrite the 6px bevel at either side; long labels (up to
+     * ORIENTATION, 11 chars) fit without truncation or extra font buffers. */
+    const int advance=len*kPaintAdvance<=98?kPaintAdvance:98/len;
+    const int textW=advance==kPaintAdvance?kPaintGlyphW:advance;
+    const int textH=pageCount(page)==5?19:(advance<kPaintAdvance?21:kPaintGlyphH);
+    const int inset=(buttonHeight(page)-textH)/2+
+                    (pageCount(page)==5?0:kLabelYOffset);
+    const int paintY=py-buttonTop(page,index)-inset;
+    if(paintY<0||paintY>=textH)return;
+    const int sourceY=paintY*kGlyphH/textH;
+    const int xStart=(ESP_UAC_BUTTON_WIDTH-(len*advance+textW-advance))/2;
+    const int destOrigin=patch?0:kPanelX+ESP_UAC_BUTTON_INSET;
+    /* Smooth 19/21/23-row vertical tone, dark-to-light as the real native
+     * menu theme. Cache only 16 row shades on stack; source glyph bitmap
+     * indices, black outlines and magenta transparency stay unchanged. */
+    uint16_t rowInk[16];
+    const uint16_t tone=EspUacFontTheme_verticalTone(
+        EspMainMenuSkin_letterTone(0,9),
+        EspMainMenuSkin_letterTone(4,9),
+        EspMainMenuSkin_letterTone(8,9),paintY,textH);
+    for(unsigned k=0;k<16U;++k)
+        rowInk[k]=fontIsNeutral?
+            EspUacFontTheme_tintGray(fontSourcePalette[k],tone):
+            EspUacFontTheme_tintColor(fontSourcePalette[k],tone);
+    for(int i=0;i<len;++i){
+        /* Main-menu labels are lowercase, OPTIONS labels already uppercase.
+         * An unconditional ASCII transform turns 'U' into '5'. */
+        const char raw=label[i];
+        const char ch=(raw>='a'&&raw<='z')?(char)(raw-'a'+'A'):raw;
+        const char* found=strchr(kFontAlphabet,ch);
+        if(!found)continue; /* No unsupported glyph can index outside cache. */
+        const unsigned gi=(unsigned)(found-kFontAlphabet);
+        for(int x=0;x<textW;++x){
+            const int sourceX=x*kGlyphW/textW;
+            const uint8_t pair=fontInk->glyph[gi][sourceY][sourceX/2];
+            const unsigned ink=(sourceX&1)?(pair&15U):(pair>>4U);
+            if(ink==0U)continue; /* atlas transparent magenta */
+            const int dx=destOrigin+xStart+i*advance+x;
+            if(dx<0||dx>=(patch?ESP_UAC_BUTTON_WIDTH:kWidth))continue;
+            uint16_t color=rowInk[ink];
+            /* Unselected = full, legible three-stop gradient. Only the
+             * selected label pulses light/dark, retaining a static button
+             * chassis and always keeping disabled options visibly dim. */
+            const bool disabled=page!=ESP_UAC_OPTIONS_NONE &&
+                               !(optionsEnabledMask&(1U<<index));
+            if(disabled)color=EspUacFontTheme_scale565(color,1U,2U);
+            else if(index==selected && darkPhase)
+                color=EspUacFontTheme_scale565(color,2U,5U);
+            dst[dx]=color;
+        }
+    }
+}
+/* Fail closed on malformed BMP or allocation/short-read failure.
+ * Content is accessed only after validation and copying from SD. */
+static bool cacheNativeBmp(BufferedBmp& target,const char* path,
+                           uint16_t w,uint16_t h,const char* sha){
+    OpenImage source{};
+    bool ok=openBmp(source,path,w,h);
+    if(ok&&sha&&kStrictSha256)ok=verifySha256(source.file,sha);
+    const uint32_t n=(uint32_t)w*h*4U;
+    uint8_t* data=ok?static_cast<uint8_t*>(malloc(n)):nullptr;
+    ok=ok&&data&&readAt(&source.file,source.bmp.pixelOffset,data,n);
+    if(source.file)source.file.close();
+    if(!ok){free(data);return false;}
+    target.bmp=source.bmp;target.pixels=data;return true;
+}
 static bool preflight(int m){
+    if(m==kNative120){
+        releaseBufferedBmps();
+        char frameName[72];
+        framePath(frameName,sizeof(frameName),m);
+        if(!cacheNativeBmp(frameCache,frameName,59U,120U,kSha256[0][0]) ||
+           !cacheNativeBmp(genericCache,kGeneric120,55U,20U,nullptr)){
+            Serial.println("[UAC] PREFLIGHT FAIL reason=bounded-bmp-cache");
+            releaseBufferedBmps();return false;
+        }
+        if(!prepareLargerFont()){releaseBufferedBmps();return false;}
+        Serial.println("[UAC] PREFLIGHT OK mode=1 tier=120 cachedBMP=32720 menu-only font=larger SD-or-PAK");
+        return true;
+    }
     OpenImage img{};
     char p[72];
     const uint16_t fw=m==1?59U:118U,fh=m==1?120U:240U;
@@ -144,7 +435,7 @@ static bool preflight(int m){
  * button BMP and fixed frame overlay are reproduced pixel-for-pixel there.
  * Preserve the original 160x120 framebuffer and all native input owners. */
 static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
-                 int m,int selected,int previous,DrawStats* stats){
+                 int m,int selected,int previous,bool darkPhase,DrawStats* stats){
     OpenImage frame{},button{};
     char path[72];
     const int scale=m==kDirect240?1:2;
@@ -153,8 +444,10 @@ static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
         EspUacBmp32_blendRow240As120:EspUacBmp32_blendRow;
     const uint16_t fw=m==1?59U:118U,fh=m==1?120U:240U;
     const uint16_t bw=m==1?55U:110U,bh=m==1?20U:40U;
-    const bool patch=previous>=0&&previous<4&&previous!=selected;
-    const int regions=patch?2:1;
+    const int countButtons=pageSlotCount(optionsPage);
+    /* Same-page selection/arm: repaint only one or two metal plates. */
+    const bool patch=previous>=0&&previous<pageCount(optionsPage);
+    const int regions=patch?(previous==selected?1:2):1;
     int openedButton=-1;
     auto finish=[&](bool ok,const char* stage)->bool{
         if(!ok)Serial.printf("[UAC] DRAW FAIL mode=%d stage=%s path=%s\n",m,stage,path);
@@ -162,21 +455,30 @@ static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
         if(frame.file)frame.file.close();
         return ok;
     };
-    framePath(path,sizeof(path),m);
-    if(!openBmp(frame,path,fw,fh))return finish(false,"frame-open");
+    if(m==kNative120){
+        if(!frameCache.pixels||!genericCache.pixels||!fontReady)
+            return finish(false,"cache-missing");
+        frame.bmp=frameCache.bmp;button.bmp=genericCache.bmp;
+    }else{
+        framePath(path,sizeof(path),m);
+        if(!openBmp(frame,path,fw,fh))return finish(false,"frame-open");
+    }
     for(int region=0;region<regions;++region){
         const int target=patch?(region==0?previous:selected):-1;
-        const int firstY=target>=0?kTop[target]:0;
-        const int finalY=target>=0?kTop[target]+40:kHeight;
+        const int firstY=target>=0?buttonTop(optionsPage,target):0;
+        const int finalY=target>=0?buttonTop(optionsPage,target)+buttonHeight(optionsPage):kHeight;
         const int outputX=target>=0?kPanelX+ESP_UAC_BUTTON_INSET:0;
         const int outputW=target>=0?ESP_UAC_BUTTON_WIDTH:kWidth;
         for(int y=firstY;y<finalY;){
             int active=target,until=finalY;
             if(!patch){
                 active=-1;
-                for(int i=0;i<4;++i){
-                    if(y<kTop[i]){until=kTop[i];break;}
-                    if(y<kTop[i]+40){active=i;until=kTop[i]+40;break;}
+                for(int i=0;i<countButtons;++i){
+                    const int top=buttonTop(optionsPage,i);
+                    if(y<top){until=top;break;}
+                    if(y<top+buttonHeight(optionsPage)){
+                        active=i;until=top+buttonHeight(optionsPage);break;
+                    }
                 }
             }
             int count=kRows;
@@ -184,7 +486,10 @@ static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
             if(count>finalY-y)count=finalY-y;
             if(count<=0)return finish(false,"row-boundary");
             const uint32_t sdStart=micros();
-            if(active!=openedButton){
+            if(m==kNative120){
+                /* One cached generic source for all labels/states; no SD I/O. */
+                openedButton=active;
+            } else if(active!=openedButton){
                 if(button.file)button.file.close();
                 openedButton=active;
                 if(active>=0){
@@ -196,13 +501,27 @@ static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
             const uint16_t first=(uint16_t)((y/scale)*sourceStep);
             const uint16_t last=(uint16_t)(((y+count-1)/scale)*sourceStep);
             EspUacBmpRowBatch frameBatch{},buttonBatch{};
-            if(!EspUacBmp32_loadBatch(&frame.bmp,readAt,&frame.file,first,
+            if(m==kNative120){
+                frameBatch.bytes=frameCache.pixels;
+                frameBatch.fileOffset=frame.bmp.pixelOffset;
+                frameBatch.size=(uint32_t)fw*fh*4U;
+            }else if(!EspUacBmp32_loadBatch(&frame.bmp,readAt,&frame.file,first,
                     (uint16_t)(last-first+1U),frameRows,sizeof(frameRows),
                     &frameBatch))return finish(false,"frame-batch");
             if(active>=0){
-                const uint16_t bFirst=(uint16_t)(((y-kTop[active])/scale)*sourceStep);
-                const uint16_t bLast=(uint16_t)(((y+count-1-kTop[active])/scale)*sourceStep);
-                if(!EspUacBmp32_loadBatch(&button.bmp,readAt,&button.file,
+                const uint16_t bFirst=(uint16_t)((optionsPage!=ESP_UAC_OPTIONS_NONE &&
+                    countButtons==5)?
+                    ((y-buttonTop(optionsPage,active))*20/buttonHeight(optionsPage)):
+                    ((y-buttonTop(optionsPage,active))/scale)*sourceStep);
+                const uint16_t bLast=(uint16_t)((optionsPage!=ESP_UAC_OPTIONS_NONE &&
+                    countButtons==5)?
+                    ((y+count-1-buttonTop(optionsPage,active))*20/buttonHeight(optionsPage)):
+                    ((y+count-1-buttonTop(optionsPage,active))/scale)*sourceStep);
+                if(m==kNative120){
+                    buttonBatch.bytes=genericCache.pixels;
+                    buttonBatch.fileOffset=button.bmp.pixelOffset;
+                    buttonBatch.size=(uint32_t)bw*bh*4U;
+                }else if(!EspUacBmp32_loadBatch(&button.bmp,readAt,&button.file,
                         bFirst,(uint16_t)(bLast-bFirst+1U),buttonRows,
                         sizeof(buttonRows),&buttonBatch))
                     return finish(false,"button-batch");
@@ -220,7 +539,9 @@ static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
                 }
                 if(active>=0&&!blendRow(&button.bmp,
                         EspUacBmp32_readBatch,&buttonBatch,
-                        (uint16_t)((py-kTop[active])/scale),
+                        (uint16_t)((optionsPage!=ESP_UAC_OPTIONS_NONE && countButtons==5)?
+                            ((py-buttonTop(optionsPage,active))*20/buttonHeight(optionsPage)):
+                            ((py-buttonTop(optionsPage,active))/scale)),
                         patch?0:kPanelX+ESP_UAC_BUTTON_INSET,(uint8_t)scale,
                         out,(uint16_t)outputW,pixels,sizeof(pixels)))
                     return finish(false,"button-blend");
@@ -229,6 +550,8 @@ static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
                         patch?-ESP_UAC_BUTTON_INSET:kPanelX,(uint8_t)scale,
                         out,(uint16_t)outputW,pixels,
                         sizeof(pixels)))return finish(false,"frame-blend");
+                if(m==kNative120&&active>=0)
+                    paintLargerTextRow(out,py,active,selected,darkPhase,patch,optionsPage);
             }
             /* The audio pump may read SD, so invoke it ONLY AFTER TFT
              * endWrite and after this strip's BMP reads have completed. */
@@ -252,23 +575,114 @@ static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
 } // namespace
 
 extern "C" int EspUacMenuPreview_mode(void){return mode;}
+extern "C" int EspUacMenuPreview_needsBlink(uint32_t nowMs){
+    return mode==kNative120 && paintedMode==kNative120 && fontReady &&
+           (((nowMs-blinkEpochMs)/kBlinkHalfPeriodMs)&1U)!=(unsigned)paintedDark;
+}
+extern "C" void EspUacMenuPreview_armOptions(void){
+    optionsPending=true; /* preflight deferred until after root FNV/heap oracles */
+}
+extern "C" int EspUacMenuPreview_optionsActive(void){
+    return mode==kNative120 && optionsPage!=ESP_UAC_OPTIONS_NONE;
+}
+extern "C" int EspUacMenuPreview_optionsHit(int16_t x,int16_t y){
+    if(!EspUacMenuPreview_optionsActive() ||
+       x<kPanelX+ESP_UAC_BUTTON_INSET ||
+       x>=kPanelX+ESP_UAC_BUTTON_INSET+ESP_UAC_BUTTON_WIDTH)return -1;
+    for(int i=0;i<pageCount(optionsPage);++i){
+        const int top=buttonTop(optionsPage,i);
+        if(y>=top && y<top+buttonHeight(optionsPage))return i;
+    }
+    return -1;
+}
+extern "C" void EspUacMenuPreview_optionsPage(int page,int selected,int armed,
+                                               uint8_t mask){
+    if(!EspUacMenuPreview_optionsActive() ||
+       page<ESP_UAC_OPTIONS_ROOT || page>ESP_UAC_OPTIONS_VOLUME)return;
+    /* Only the physical volume page is four 40px buttons with no BACK.
+     * Preserve the canonical 5-card SOUND model and choice numbers 1..4. */
+    if(page==ESP_UAC_OPTIONS_VOLUME){
+        if(selected<1||selected>4)return;
+        selected-=1;mask=0x0fU;
+    }
+    if(selected<0||selected>=pageCount(page))return;
+    optionsPage=page;optionsSelection=selected;
+    optionsArmed=armed?1:0;optionsEnabledMask=mask;
+}
+extern "C" int EspUacMenuPreview_enterOptions(void){
+    if(!optionsPending)return EspUacMenuPreview_optionsActive();
+    optionsPending=false;
+    optionsPage=ESP_UAC_OPTIONS_NONE;
+    if(mode!=kClassic)EspUacMenuPreview_reset();
+    if(!preflight(kNative120)){
+        Serial.println("[UAC] OPTIONS fallback=procedural reason=sd-or-font");
+        return 0;
+    }
+    mode=kNative120;optionsPage=ESP_UAC_OPTIONS_ROOT;
+    optionsSelection=0;optionsArmed=0;optionsEnabledMask=0x07U;
+    paintedMode=0;paintedSelection=-1;paintedPage=ESP_UAC_OPTIONS_NONE;
+    Serial.printf("[UAC] OPTIONS ready=1 generic=menu_generic_120 buttons=1 fontBytes=%u\n",
+                  (unsigned)sizeof(FontInkCache));
+    return 1;
+}
+extern "C" void EspUacMenuPreview_armDefault(void){
+    defaultPending=true; /* no heap or SD reads before root invariant checks */
+}
 extern "C" void EspUacMenuPreview_reset(void){
-    if(mode)Serial.printf("[UAC] RESET mode=%d fallback=classic\n",mode);
-    mode=0;paintedMode=0;paintedSelection=-1;
+    if(mode)Serial.printf("[UAC] RESET mode=%d heap8=%u largest8=%u\n",
+                          mode,
+                          (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+                          (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    mode=kClassic;paintedMode=0;paintedSelection=-1;defaultPending=false;
+    optionsPending=false;optionsPage=ESP_UAC_OPTIONS_NONE;
+    paintedPage=ESP_UAC_OPTIONS_NONE;paintedEnabledMask=0U;paintedArmed=0;
+    paintedTheme=0xffU;paintedDark=false;blinkEpochMs=0U;
+    releaseMenuAssets();
+}
+/* Called ONLY after MENU_MAIN's strict heap-equality and framebuffer FNV
+ * oracles and touch activation have passed. The 1428B ink cache therefore
+ * cannot invalidate those pre-existing memory checks. All SD/PAK failures
+ * leave the already-constructed native CLASSIC framebuffer as fallback. */
+extern "C" int EspUacMenuPreview_enterDefault(void){
+    if(!defaultPending)return mode; /* all other present calls are side-effect free */
+    defaultPending=false;
+    const unsigned heapBefore=(unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    const unsigned largestBefore=(unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    mode=kClassic;paintedMode=0;paintedSelection=-1;
+    releaseLargerFont();
+    if(!preflight(kNative120)){
+        releaseLargerFont();
+        Serial.printf("[UAC] DEFAULT FALLBACK mode=CLASSIC reason=assets-or-font heap8=%u largest8=%u\n",
+                      (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+                      (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        return kClassic;
+    }
+    mode=kNative120;
+    Serial.printf("[UAC] DEFAULT READY mode=120 generic=1 font=larger inkBytes=%u glyphPaint=%dx%d heap8=%u->%u largest8=%u->%u\n",
+                  (unsigned)sizeof(FontInkCache),kPaintGlyphW,kPaintGlyphH,
+                  heapBefore,(unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+                  largestBefore,(unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    return mode;
 }
 extern "C" int EspUacMenuPreview_cycle(void){
-    const int next=(mode+1)%4;
-    if(next!=0&&!preflight(next)){
-        mode=0;
+    defaultPending=false;
+    /* Classic is never offered as a normal mode; in fallback tap the logo
+     * to reattempt 120 after repairing/remounting SD. */
+    const int next=mode==kNative120?k240As120:
+                   mode==k240As120?kDirect240:kNative120;
+    if(mode==kNative120 && next!=kNative120)releaseMenuAssets();
+    if(!preflight(next)){
+        releaseMenuAssets();
+        mode=kClassic;paintedMode=0;paintedSelection=-1;
         Serial.println("[UAC] FALLBACK SD missing/invalid -> original MENU_MAIN");
-        return 0;
+        return kClassic;
     }
     mode=next;
     paintedMode=0;paintedSelection=-1;
-    Serial.printf("[UAC] MODE %s source=%s physical=320x240 buttons=110x40 RAM=6680B-BSS\n",
+    Serial.printf("[UAC] MODE %s source=%s physical=320x240 buttons=110x40 RAM=6680B-BSS+1428B-menu-only\n",
                   mode==kClassic?"CLASSIC":mode==kNative120?"120":
                     mode==k240As120?"240->120":"240",
-                  mode==kClassic?"original":mode==kNative120?
+                  mode==kClassic?"fallback":mode==kNative120?
                     "59x120 nearest-x2":mode==k240As120?
                     "118x240 decimate2x+nearest-x2":"118x240 DIRECT");
     return mode;
@@ -277,16 +691,36 @@ bool EspUacMenuPreview_draw(TFT_eSPI* lcd,const uint16_t* fb,uint16_t stride){
     const int current=mode;
     if(!current)return true;
     if(!lcd||!fb||stride<160U)return false;
-    const int sel=EspUacMenuPreview_selectedIndex();
-    if(sel<0||sel>3)return false;
-    if(current==paintedMode && sel==paintedSelection)return true;
-    const int previous=current==paintedMode?paintedSelection:-1;
+    const int page=optionsPage;
+    const int sel=page==ESP_UAC_OPTIONS_NONE?
+                  EspUacMenuPreview_selectedIndex():optionsSelection;
+    if(sel<0||sel>=pageCount(page))return false;
+    const uint8_t theme=EspMainMenuSkin_getTheme();
+    const uint32_t now=millis();
+    const bool changedSelection=current!=paintedMode ||
+                               sel!=paintedSelection || paintedPage!=page;
+    if(changedSelection)blinkEpochMs=now;
+    const bool darkWanted=current==kNative120 &&
+                (((now-blinkEpochMs)/kBlinkHalfPeriodMs)&1U)!=0U;
+    if(current==paintedMode && sel==paintedSelection &&
+       paintedPage==page && paintedArmed==optionsArmed &&
+       paintedEnabledMask==optionsEnabledMask &&
+       paintedTheme==theme && paintedDark==darkWanted)return true;
+    const bool blinkOnly=!changedSelection && current==paintedMode &&
+        paintedArmed==optionsArmed && paintedEnabledMask==optionsEnabledMask &&
+        paintedTheme==theme && paintedDark!=darkWanted;
+    /* Repaint all labels when the palette changes, not only the armed button. */
+    const int previous=(current==paintedMode && paintedPage==page &&
+                        paintedTheme==theme)?
+                       paintedSelection:-1;
     const uint32_t start=millis();
     DrawStats stats{};
-    const bool ok=draw(fb,stride,lcd,current,sel,previous,&stats);
-    if(ok){paintedMode=current;paintedSelection=sel;}
-    Serial.printf("[UAC] PRESENT mode=%d selected=%d prior=%d paint=%s result=%s ms=%lu sdMs=%lu lcdMs=%lu batches=%u rows=%u buttonOpens=%u audioPumps=%u audioBlocks=%u heap=%u framebuffer=unchanged\n",
-                  current,sel,previous,previous>=0?"BUTTONS":"FULL",
+    const bool ok=draw(fb,stride,lcd,current,sel,previous,darkWanted,&stats);
+    if(ok){paintedMode=current;paintedSelection=sel;paintedPage=page;
+           paintedArmed=optionsArmed;paintedEnabledMask=optionsEnabledMask;
+           paintedTheme=theme;paintedDark=darkWanted;}
+    if(!blinkOnly)Serial.printf("[UAC] PRESENT mode=%d page=%d selected=%d prior=%d paint=%s result=%s ms=%lu sdMs=%lu lcdMs=%lu batches=%u rows=%u buttonOpens=%u audioPumps=%u audioBlocks=%u heap=%u framebuffer=unchanged\n",
+                  current,page,sel,previous,previous>=0?"BUTTONS":"FULL",
                   ok?"OK":"FAIL",static_cast<unsigned long>(millis()-start),
                   static_cast<unsigned long>(stats.sdUs/1000U),
                   static_cast<unsigned long>(stats.lcdUs/1000U),

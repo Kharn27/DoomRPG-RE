@@ -51,7 +51,9 @@ assert route.index("if (themeOpen) {") < route.index("if (videoOpen) {")
 assert '(luminositeOpen || soundOpen) ? luminositeItemAt' in route
 assert '(videoOpen ? videoItemAt(screenX, screenY)' in route
 assert route.count("if (!paintVideoState(VIDEO_BACK_ITEM, 0))") >= 4
-assert 'if (armedItem != item)' in route
+assert route.count('if (armedItem != item && !uacInstant)')==2
+assert route.count('if (armedItem != item)')==4
+assert 'const int uacInstant=EspUacMenuPreview_optionsActive();' in route
 assert 'videoOpen = 1U;' in route
 assert 'videoOpen = 0U;' in route
 assert 'item != OPTIONS_SOUND_ITEM' in route

@@ -28,6 +28,7 @@
 #include "native_wall_lru_cache.h"
 #include "platform_video_config.h"
 #include "platform_video_c_bridge.h"
+#include "esp_uac_menu_preview.h"
 
 /* Keep ESP-IDF's stdbool macros after DoomRPG's legacy boolean enum. */
 #include <esp_heap_caps.h>
@@ -372,6 +373,9 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase,
         return 0;
     }
 
+    /* Prepare the *physical* UAC submenus only after every canonical
+     * model/FNV/heap invariant has passed; old framebuffer stays intact. */
+    EspUacMenuPreview_armOptions();
     (void)Esp32PlatformVideo_present();
     if (finalFramebufferFNV != NULL) *finalFramebufferFNV = finalHash;
     printf("[MAINOPTIONS] Presented MENU_MAIN_OPTIONS root=BACK/VIDEO/SOUND videoChild=BRIGHTNESS/ORIENTATION/THEME soundChild=VOLUME-SESSION brightness=%u ready=%d orientationReady=%d theme=%u\n",

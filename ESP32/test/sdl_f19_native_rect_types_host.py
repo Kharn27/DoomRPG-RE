@@ -57,6 +57,19 @@ for name, (sha, count) in BASELINE.items():
         text = restore_pre_menu_audio_actions(text)
         text = restore_pre_help_bottom_blue(text)
     if name == "native_main_menu_options_action.c":
+        # UAC OPTIONS display-only physical overlay was added after F19;
+        # strip ONLY these exact new lines before the frozen Git blob proof.
+        # Keep the original F19 SHA and renderer source checks unchanged.
+        uac_import = '#include "esp_uac_menu_preview.h"\n'
+        uac_arm = (
+            '    /* Prepare the *physical* UAC submenus only after every canonical\n'
+            '     * model/FNV/heap invariant has passed; old framebuffer stays intact. */\n'
+            '    EspUacMenuPreview_armOptions();\n'
+        )
+        assert text.count(uac_import) == 1
+        assert text.count(uac_arm) == 1
+        text = text.replace(uac_import, '', 1).replace(uac_arm, '', 1)
+    if name == "native_main_menu_options_action.c":
         # SOUND became functional after F19. Reconstruct the exact historic
         # pre-audio menu byte stream; do NOT update the frozen F19 Git hash.
         old_pairs = (
