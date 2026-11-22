@@ -32,7 +32,9 @@ uint8_t sourceForName(const char* name) {
     if (strcmp(name, "a.bmp") == 0) return ESP_NATIVE_FONT_SD_STANDARD;
     if (strcmp(name, "larger_font.bmp") == 0) return ESP_NATIVE_FONT_SD_LARGER;
     if (strcmp(name, "c.bmp") == 0) return ESP_NATIVE_WALLPAPER_SD_STARS;
-    if (strcmp(name, "e.bmp") == 0) return ESP_NATIVE_WALLPAPER_SD_MARS;
+    /* WALL-SD A/B: e.bmp is deliberately PAK-only even when a corrected
+     * SD e.bmp exists. Leave the file untouched for a later opt-in test. */
+    if (strcmp(name, "e.bmp") == 0) return 0U;
     return 0U;
 }
 

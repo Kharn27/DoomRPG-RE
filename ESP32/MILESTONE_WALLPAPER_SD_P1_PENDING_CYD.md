@@ -100,3 +100,26 @@ Fusion logique sur `main=c1a8c2820e5f7a75d8097e873905ec8e11fb53f7`
 préservant le LOADING a.bmp thématisé de #433 et son cache 420 B.
 Pas d'allocation de nouveau framebuffer ni modification audio.
 **Retest nécessaire du nouvel écran et des animations, PR reste DRAFT.**
+
+## Rectification de la demande : e.bmp du PAK, fichier SD corrigé intact
+
+La restauration du `e.bmp` SD d'origine dans le candidat intermédiaire
+`06237aa79c826c30a17bce12c82a1839e99b122a` était une **erreur
+d'interprétation**, corrigée **avant tout test physique de ce candidat**.
+
+- L'asset `sdroot/doomrpg/img/e.bmp` reprend exactement le BMP8 corrigé
+  (`0768ffd1d1bb45a3206c347c8022f36689591f3c`, 17 462 B,
+  12 022 pixels clé), sans perte de la correction des nuances roses.
+- Pour le comparatif visuel demandé, le runtime désactive expressément
+  **l'override e.bmp SD**, qui charge donc le BMP4 du **PAK natif**.
+  Aucune opération sur la microSD nécessaire pour e.bmp.
+- Le ciel `c.bmp` reste SD/BMP4 actif, et le premier cadre de LOADING
+  ainsi que son parcours restent sur la même source. Le titre LOADING
+  `a.bmp` thématisé fusionné de `main` est préservé.
+- Le test host garantit simultanément `c.bmp` SD,
+  `e.bmp` PAK malgré la présence du `e.bmp` SD, et le fichier E8
+  corrigé exact conservé dans le dépôt. Aucun seuil audio modifié.
+
+**Ce candidat corrigé reste PENDING TEST CYD.** Les résultats audio PASS
+du deuxième test concernent la version précédente `e1007bd...`, pas
+ce mélange C4 SD / E4 PAK. Aucun merge automatique.

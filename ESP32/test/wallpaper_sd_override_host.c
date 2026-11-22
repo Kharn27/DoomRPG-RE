@@ -63,7 +63,8 @@ int EspAssetPack_readRange(const EspAssetPackEntry* ent, uint32_t off,
 }
 uint8_t EspNativeFontSd_probe(const char* name, uint32_t* size) {
     int i=indexOf(name);++probes;*size=0;
-    if(i<0||!available[i])return 0;
+    /* Mirror production: e.bmp always comes from the original PAK. */
+    if(i<0||i==1||!available[i])return 0;
     *size=i==0?sizeof(sdC):sizeof(sdE);
     return (uint8_t)(3+i);
 }
@@ -103,28 +104,20 @@ int main(void) {
     assert(EspNativeIndexedBmp_blit(&row,framebuffer,32,32,
                                    0,0,32,32,0,0,0U,&stats)==ESP_NATIVE_INDEXED_BMP_OK);
 
-    /* The SD asset is read BEFORE the PAK lease is opened, then adopted
-     * without setting SD-font tint metadata. */
+    /* C is SD first; E stays PAK even if its corrected SD file exists. */
     assert(EspNativeImage_loadPack("c.bmp",0,&img)==ESP_NATIVE_IMAGE_OK);
     assert(img.width==192&&img.height==128&&img.bitsPerPixel==4U&&
            img.paletteSize==16U&&!img.sdFont&&!img.hasColorKey&&
            !packOpen&&pakReads==0U);
     EspNativeImage_dispose(&img);
+    old=pakReads;
     assert(EspNativeImage_loadPack("e.bmp",1,&img)==ESP_NATIVE_IMAGE_OK);
-    assert(img.width==128&&img.height==128&&img.bitsPerPixel==8U&&
-           img.paletteSize==256U&&!img.sdFont&&img.hasColorKey&&
-           img.palette[0].r==255U&&img.palette[0].g==0U&&
-           img.palette[0].b==255U&&!packOpen&&pakReads==0U);
-    /* Original SD E8 intentionally restored: no fringe filtering for A/B. */
-    {
-        unsigned key=0U;
-        for (unsigned y=0; y<128U; ++y) for (unsigned x=0; x<128U; ++x)
-            if (img.pixels[y*(unsigned)img.pitch+x]==0U) ++key;
-        assert(key==7527U);
-    }
+    assert(img.width==128&&img.height==128&&img.bitsPerPixel==4U&&
+           img.paletteSize==16U&&!img.sdFont&&img.hasColorKey&&
+           !packOpen&&pakReads>old);
     EspNativeImage_dispose(&img);
-    assert(sdReads>=4U);
-
+    assert(sdReads>0U);
+    /* Exact SD artwork remains present and untouched but never probed. */
     /* Existing streaming reader also supports both names where the
      * PAK lease is already physically safe for SD I/O. */
     packOpen=1;
@@ -136,8 +129,8 @@ int main(void) {
            row.bitsPerPixel==4U&&row.width==192U);
     assert(EspNativeIndexedBmp_open("e.bmp",&row,&stats)
            ==ESP_NATIVE_INDEXED_BMP_OK);
-    assert(row.sdFontSource==ESP_NATIVE_WALLPAPER_SD_MARS&&
-           row.bitsPerPixel==8U&&row.height==128U);
+    assert(row.sdFontSource==0U&&row.bitsPerPixel==4U&&
+           row.height==128U);
     assert(EspNativeIndexedBmp_blit(&row,framebuffer,32,32,
                                    0,0,32,32,0,0,1,&stats)
            ==ESP_NATIVE_INDEXED_BMP_OK);
@@ -151,14 +144,14 @@ int main(void) {
     EspNativeImage_dispose(&img);
     old=pakReads;
     assert(EspNativeImage_loadPack("e.bmp",1,&img)==ESP_NATIVE_IMAGE_OK);
-    assert(img.bitsPerPixel==8U&&pakReads==old&&rejects==1U);
+    assert(img.bitsPerPixel==4U&&pakReads>old&&rejects==1U);
     EspNativeImage_dispose(&img);
 
-    /* Unsupported RGB24 similarly falls back, without changing the PAK. */
+    /* Even a malformed SD e.bmp cannot influence mandatory PAK routing. */
     wr16(sdE+28,24U);old=pakReads;
     assert(EspNativeImage_loadPack("e.bmp",1,&img)==ESP_NATIVE_IMAGE_OK);
     assert(img.bitsPerPixel==4U&&img.height==128&&
-           pakReads>old&&rejects==2U&&!packOpen);
+           pakReads>old&&rejects==1U&&!packOpen);
     EspNativeImage_dispose(&img);
 
     /* Missing (or now rejected) overrides are independently PAK-only. */
@@ -170,7 +163,7 @@ int main(void) {
     assert(img.bitsPerPixel==4U&&!img.sdFont&&!packOpen);
     EspNativeImage_dispose(&img);
     assert(sdReads==old&&pakReads>0U&&opens>0U&&probes>0U);
-    puts("WALL-SD HOST PASS: real indexed decoders, SD C4/E8, "
-         "colorkey, independent malformed/missing PAK fallback");
+    puts("WALL-SD HOST PASS: streaming SD C4, mandatory PAK E4, "
+         "untouched SD E8, independent invalid/missing C fallback");
     return 0;
 }

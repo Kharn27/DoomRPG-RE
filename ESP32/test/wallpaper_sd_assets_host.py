@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""WALL-SD-P1: audit exact C4 and restored original E8 SD artwork.
+"""WALL-SD-P1: audit C4 wallpaper and untouched fixed E8 SD artwork.
 
 The CYD hardware log 261122-175956 had HEAP-POST-REJECT and visibly
 nontransparent (255,4,255) pixels. This host oracle guards both regressions.
@@ -15,7 +15,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[2]
 ITEMS = (
     ("c", (192, 128), 12406, "b9da41fa33449c8ffeebec5ce0662325c754d280", 4, 16, 118, 12288, 350.0),
-    ("e", (128, 128), 17462, "16fe8cd8ddff2b18e040d69134bfb355fe2bb32b", 8, 256, 1078, 16384, 300.0),
+    ("e", (128, 128), 17462, "0768ffd1d1bb45a3206c347c8022f36689591f3c", 8, 256, 1078, 16384, 300.0),
 )
 
 
@@ -70,16 +70,13 @@ def verify(name: str, size: tuple[int, int], byte_count: int,
                 key_count += 1
                 assert rgb565(dst) == (255, 0, 255), ("invalid transparent palette")
                 continue
-            if is_pink_fringe(rgb565(dst)):
-                fringe_count += 1  # original near-magenta preserved for A/B
+            assert not is_pink_fringe(rgb565(dst)), ("corrected SD pink fringe", dst)
         else:
             assert index < 16
         a = rgb565(src)
         b = rgb565(dst)
         error += 3 * (a[0] - b[0]) ** 2 + 6 * (a[1] - b[1]) ** 2 + 2 * (a[2] - b[2]) ** 2
-    assert key_count == (7527 if name == "e" else 0), (name, key_count)
-    if name == "e":
-        assert fringe_count >= 1000, fringe_count
+    assert key_count == (12022 if name == "e" else 0), (name, key_count)
     used = len(set(indices))
     assert used >= (14 if name == "c" else 140), (name, used)
     weighted_error = error / (size[0] * size[1])
@@ -100,6 +97,8 @@ def verify_audio_memory_recovery() -> None:
     assert 45764 + (24576 + 1024 - 12288 - 64) > 47104
     # Reducing cache capacity/metadata saves 4096 + 32*12 in its owner.
     assert 44820 + (19 - 15) * 1024 + (288 - 256) * 12 > 47104
+    source = (ROOT / "ESP32/src/esp_native_font_sd.cpp").read_text()
+    assert 'if (strcmp(name, "e.bmp") == 0) return 0U;' in source
     print("WALL-SD MEMORY PLAN PASS: audio floors unchanged; "
           "intro C4 and gameplay smaller L1 projected above post-ring floor")
 
