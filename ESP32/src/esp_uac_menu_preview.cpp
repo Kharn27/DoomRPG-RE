@@ -11,6 +11,7 @@
 #include "esp_audio_entrance_music.h"
 #include "esp_asset_pack.h"
 #include "esp_native_font_sd.h"
+#include "esp_native_font_tint.h"
 #include "esp_native_indexed_bmp.h"
 #include "esp_main_menu_skin.h"
 #include "esp_uac_font_theme.h"
@@ -46,11 +47,13 @@ static bool fontReady=false;
 /* 16 RGB565 source shades (32 B) for the active SD atlas, never a second font. */
 static uint16_t fontSourcePalette[16]={};
 static bool fontIsNeutral=false;
+static bool fontSourceIsSD=false;
 static void releaseMenuFont(){
     free(fontInk);
     fontInk=nullptr;
     fontReady=false;
     fontIsNeutral=false;
+    fontSourceIsSD=false;
 }
 /* Menu-only bounded BMP caches: original bottom-up V4 pixels, not a
  * framebuffer or desktop texture. 59x120x4 + 55x20x4 = 32720 heap bytes.
@@ -292,7 +295,8 @@ static bool prepareMenuFont(){
     if(ok){
         /* Both SD and PAK a.bmp are accepted. Grayscale uses the exact
          * HELP tint path; colored legacy PAK is safely hue-tinted. */
-        fontIsNeutral=fromSD && bmp.paletteCount==16U;
+        fontSourceIsSD=fromSD;
+        fontIsNeutral=bmp.paletteCount==16U;
         fontSourcePalette[0]=0U; /* ink 0 is always transparent */
         for(unsigned ink=1U;ink<16U;++ink){
             const unsigned sourceIndex=ink<=2U?ink-1U:ink;
@@ -340,9 +344,13 @@ static void paintLargerTextRow(uint16_t* dst,int py,int index,int selected,
         EspMainMenuSkin_letterTone(0,9),
         EspMainMenuSkin_letterTone(4,9),
         EspMainMenuSkin_letterTone(8,9),paintY,textH);
+    const uint8_t modR=(uint8_t)(((tone>>11U)&31U)*255U/31U);
+    const uint8_t modG=(uint8_t)(((tone>>5U)&63U)*255U/63U);
+    const uint8_t modB=(uint8_t)((tone&31U)*255U/31U);
     for(unsigned k=0;k<16U;++k)
         rowInk[k]=fontIsNeutral?
-            EspUacFontTheme_tintGray(fontSourcePalette[k],tone):
+            EspNativeFontTint_apply(fontSourcePalette[k],modR,modG,modB,
+                                    fontSourceIsSD?1U:0U):
             EspUacFontTheme_tintColor(fontSourcePalette[k],tone);
     for(int i=0;i<len;++i){
         /* Main-menu labels are lowercase, OPTIONS labels already uppercase.
