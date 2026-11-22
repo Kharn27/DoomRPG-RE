@@ -52,6 +52,9 @@ jobs:
       - name: Test AUDIO-SFX-P1 short PCM16 native PAK overlay and real action intents (host C)
         run: python ESP32/test/audio_sfx_p1_pcm_overlay_host.py
 
+      - name: AUDIO-PICKUP #419 real pre-modal audio owner, FIFO and fail-closed gate (host C/C++)
+        run: python ESP32/test/audio_pickup_modal_handoff_host.py
+
       - name: Test SFX-P2 full extinguisher stream, committed cue and DAC gain (host C)
         run: python ESP32/test/audio_sfx_p2_fire_gain_host.py
 

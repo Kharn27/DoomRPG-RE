@@ -1,3 +1,32 @@
+> **AUDIO-PICKUP #419 — fidélité du Shotgun restaurée, PASS CYD borné (22 novembre 2026).**
+> [PR #422](https://github.com/Kharn27/DoomRPG-RE/pull/422),
+> [issue #419](https://github.com/Kharn27/DoomRPG-RE/issues/419),
+> [rapport exact](MILESTONE_AUDIO_PICKUP_419_PENDING_CYD.md).
+> Le code original `src/Entity.c::Entity_touched` utilise **5057.wav**
+> pour Shotgun/armes à feu, **5060.wav** pour Axe/Fire Ext et objets.
+> Le natif a retrouvé ce choix et publie le SFX **après commit de pickup
+> et avant `EspNativeGameplayDialog_beginStandalone`**, dans l'unique
+> ring/FIFO et propriétaire PAK déjà présents. Le test matériel
+> `platformio-device-monitor-261122-084424.log`
+> (SHA256 `bf62f2f473b360416ad74d720f40a6a5049689f5e07ffd31f12c7e84de14ec27`)
+> atteste `[AUDIOINTENT] resource=5057` →
+> `[SFXP1] MIX id=5057 mixed=11907/11907` →
+> `[AUDIOPICKUP] HANDOFF id=5057 status=MIXED ack=1` →
+> `[DIALOG] OPEN-STANDALONE` pour le Shotgun tile659.
+> Hache tile655 → 5060/9702, deux pickups ammo → 5060,
+> `HEADROOM_OK`, `shapeData/mediaTexels=NULL`, musique
+> `STREAM underflows=0 recoveries=0` sur 31 s.
+> Double CI code SUCCESS [push](https://github.com/Kharn27/DoomRPG-RE/actions/runs/44998917701) /
+> [PR](https://github.com/Kharn27/DoomRPG-RE/actions/runs/44998922207) sur
+> `c73081f391aea2c7392ba76db7491187b5dde9f2`. Aucun nouveau
+> PCM buffer, thread, lecteur PAK/SD, ZIP runtime ni accès audio ISR.
+> **Limites** : log terminé avant EXIT et sans FINAL/AUDIT audio post-LOAD ;
+> Fire Ext, doublon firearm, contention et fail-closed non testés
+> physiquement ici (testés côté hôte pour les gardes). L'ancien
+> constat #419 de retard/5060 Shotgun demeure historique.
+
+---
+
 > **FIRE-VIS-P2 / priorité gameplay — 22 novembre 2026.** [PR #421](https://github.com/Kharn27/DoomRPG-RE/pull/421), [issue #416](https://github.com/Kharn27/DoomRPG-RE/issues/416), [rapport CYD](MILESTONE_FIRE_VIS_P2_CYD_PASS.md). Les feux réels `eType=10` utilisent le rendu **mode 7 additif** natif de P1 ; les quatre formes du PAK `logical=129` / `actual=382,383,384,385` sont distinctes et affichées par le renderer. Les phases de ressource continuent d'être choisies toutes les **250 ms** (plus décalage par index), mais l'**ordonnanceur idle**, limité aux sprites réellement rasterisés, reste à **375 ms** : des phases sont volontairement sautées pour préserver les entrées et le caractère *turn-based*. Retrait de l'horloge FIRE-only 250 ms après régression tactile observée. Preuve CYD normale `platformio-device-monitor-261122-072543.log` (SHA256 `b0f5c3cdd961a815ff49586f8cb6655b5778154d185f532e638fd8cbdbf46488`) : 48 témoins feu LCD, 12 MOVE, 4 TURN, 5 FIRE-COMMIT, EXIT propre, LOAD V11 et musique 0 underrun, `HEADROOM_OK`, `shapeData/mediaTexels=NULL`. Accord visuel et ressenti utilisateur (« Ça m'a l'air ok »). Tests C/CI double SUCCESS sur le candidat `018acd... `. Un merge technique avec ARCH-RC24 sur branche suit le test physique ; **pas de preuve de flash CYD du HEAD combiné**, sa CI finale est une étape distincte. Pas d'alpha 50 % obligatoire, de framebuffer supplémentaire, de ZIP runtime ni de garantie d'afficher chaque phase. Détails et limites dans le rapport.
 
 ---
