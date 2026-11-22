@@ -53,16 +53,14 @@ struct FontInkCache {
 };
 static FontInkCache* fontInk=nullptr;
 static bool fontReady=false;
-/* 32B source palette and 32B theme palette. No atlas or RGB framebuffer. */
-static uint16_t fontSourcePalette[16]={},fontActivePalette[16]={};
+/* One 32B RGB565 palette: original neutral shades retained by index. */
+static uint16_t fontSourcePalette[16]={};
 static bool fontIsNeutral=false;
-static uint8_t fontPaletteTheme=0xffU;
 static void releaseLargerFont(){
     free(fontInk);
     fontInk=nullptr;
     fontReady=false;
     fontIsNeutral=false;
-    fontPaletteTheme=0xffU;
 }
 /* Menu-only bounded BMP caches: original bottom-up V4 pixels, not a
  * framebuffer or desktop texture. 59x120x4 + 55x20x4 = 32720 heap bytes.
@@ -314,13 +312,12 @@ static bool prepareLargerFont(){
             fontSourcePalette[ink]=c;
             if(!EspUacFontTheme_isGrayRgb565(c))fontIsNeutral=false;
         }
-        fontPaletteTheme=0xffU; /* refresh only on first paint/theme change */
     }
     if(temporaryPak)EspAssetPack_close();
     EspNativeFontSd_suspend();
     if(!ok)releaseLargerFont();
     else fontReady=true;
-    Serial.printf("[UAC] FONT120 %s name=larger_font.bmp backing=%s palette=%s glyphs=%u inkBytes=%u reads=%lu bytes=%lu\n",
+    Serial.printf("[UAC] FONT120 %s name=larger_font.bmp backing=%s palette=%s ramp=vertical-3stops glyphs=%u inkBytes=%u reads=%lu bytes=%lu\n",
                   ok?"READY":"FAIL",fromSD?"SD":"PAK",
                   fontIsNeutral?"neutral-theme":"classic-metal",
                   (unsigned)(sizeof(kFontAlphabet)-1),(unsigned)sizeof(FontInkCache),
@@ -328,27 +325,12 @@ static bool prepareLargerFont(){
     return ok;
 }
 
-/* Recompute 16 RGB565 ink entries only when the native theme changes.
- * Neutral SD font: shades become CLASSIC/INFERNO/PHOSPHORE ink tones.
- * Historical color font / PAK: preserve original metal palette unchanged. */
-static void refreshLargerPalette(){
-    const uint8_t theme=EspMainMenuSkin_getTheme();
-    if(fontPaletteTheme==theme)return;
-    const uint16_t inkTone=EspMainMenuSkin_uiInk();
-    for(unsigned i=0U;i<16U;++i){
-        fontActivePalette[i]=fontIsNeutral?
-            EspUacFontTheme_tintGray(fontSourcePalette[i],inkTone):
-            kDoomFontInk[i];
-    }
-    fontPaletteTheme=theme;
-}
 /* Scale cached 13x17 indexed glyphs to physical 14x23 by bounded nearest
  * lookup, without allocating a second atlas. Optical ink now fills the
  * 110x40 plate more evenly; selected/nonselected share palette semantics. */
 static void paintLargerTextRow(uint16_t* dst,int py,int index,int selected,
                               bool patch,int page){
     if(!fontReady||index<0||index>=pageCount(page))return;
-    refreshLargerPalette();
     const char* label=labelAt(page,index);
     if(!label)return;
     const int len=(int)strlen(label);
@@ -364,6 +346,18 @@ static void paintLargerTextRow(uint16_t* dst,int py,int index,int selected,
     const int sourceY=paintY*kGlyphH/textH;
     const int xStart=(ESP_UAC_BUTTON_WIDTH-len*advance)/2;
     const int destOrigin=patch?0:kPanelX+ESP_UAC_BUTTON_INSET;
+    /* Smooth 19/21/23-row vertical tone, dark-to-light as the real native
+     * menu theme. Cache only 16 row shades on stack; source glyph bitmap
+     * indices, black outlines and magenta transparency stay unchanged. */
+    uint16_t rowInk[16];
+    if(fontIsNeutral){
+        const uint16_t tone=EspUacFontTheme_verticalTone(
+            EspMainMenuSkin_letterTone(0,9),
+            EspMainMenuSkin_letterTone(4,9),
+            EspMainMenuSkin_letterTone(8,9),paintY,textH);
+        for(unsigned k=0;k<16U;++k)
+            rowInk[k]=EspUacFontTheme_tintGray(fontSourcePalette[k],tone);
+    }
     for(int i=0;i<len;++i){
         /* Main-menu labels are lowercase, OPTIONS labels already uppercase.
          * An unconditional ASCII transform turns 'U' into '5'. */
@@ -379,7 +373,7 @@ static void paintLargerTextRow(uint16_t* dst,int py,int index,int selected,
             if(ink==0U)continue; /* atlas transparent magenta */
             const int dx=destOrigin+xStart+i*advance+x;
             if(dx<0||dx>=(patch?ESP_UAC_BUTTON_WIDTH:kWidth))continue;
-            uint16_t color=fontActivePalette[ink];
+            uint16_t color=fontIsNeutral?rowInk[ink]:kDoomFontInk[ink];
             if(page==ESP_UAC_OPTIONS_NONE?index!=selected:
            (index!=selected || !optionsArmed || !(optionsEnabledMask&(1U<<index)))){
                 /* Selected remains full palette; other buttons dim without
@@ -398,14 +392,46 @@ static void paintLargerTextRow(uint16_t* dst,int py,int index,int selected,
 }
 /* Fail closed on malformed BMP or allocation/short-read failure.
  * Content is accessed only after validation and copying from SD. */
+/* SHA256 of the exact cached file without scanning the SD payload twice:
+ * 122B V4 header from SD and already-buffered BGRA rows, no new heap.
+ * Unlike the old geometry-only check this rejects an outdated opaque
+ * rectangular button that created white corner/edge artifacts. */
+static bool verifyCachedBmpSha(OpenImage& source,const uint8_t* payload,
+                              uint32_t n,const char* expected){
+    uint8_t header[122],digest[32];
+    if(!source.file||!payload||!expected||
+       source.bmp.pixelOffset!=sizeof(header)||
+       !readAt(&source.file,0U,header,sizeof(header)))return false;
+    mbedtls_sha256_context state;
+    mbedtls_sha256_init(&state);
+    int rc=mbedtls_sha256_starts_ret(&state,0);
+    if(rc==0)rc=mbedtls_sha256_update_ret(&state,header,sizeof(header));
+    if(rc==0)rc=mbedtls_sha256_update_ret(&state,payload,n);
+    if(rc==0)rc=mbedtls_sha256_finish_ret(&state,digest);
+    mbedtls_sha256_free(&state);
+    if(rc!=0)return false;
+    for(unsigned i=0;i<32U;++i){
+        const int hi=hexDigit(expected[i*2U]);
+        const int lo=hexDigit(expected[i*2U+1U]);
+        if(hi<0||lo<0||digest[i]!=(uint8_t)((hi<<4)|lo))
+            return false;
+    }
+    return true;
+}
 static bool cacheNativeBmp(BufferedBmp& target,const char* path,
-                           uint16_t w,uint16_t h,const char* sha){
+                           uint16_t w,uint16_t h,const char* sha,
+                           bool requireSha=false){
     OpenImage source{};
     bool ok=openBmp(source,path,w,h);
     if(ok&&sha&&kStrictSha256)ok=verifySha256(source.file,sha);
     const uint32_t n=(uint32_t)w*h*4U;
     uint8_t* data=ok?static_cast<uint8_t*>(malloc(n)):nullptr;
     ok=ok&&data&&readAt(&source.file,source.bmp.pixelOffset,data,n);
+    if(ok&&sha&&(requireSha||kStrictSha256))
+        ok=verifyCachedBmpSha(source,data,n,sha);
+    if(requireSha)
+        Serial.printf("[UAC] GENERIC120 integrity=%s expectedSHA256=%.16s\n",
+                      ok?"MATCH":"REJECT",sha?sha:"none");
     if(source.file)source.file.close();
     if(!ok){free(data);return false;}
     target.bmp=source.bmp;target.pixels=data;return true;
@@ -416,7 +442,8 @@ static bool preflight(int m){
         char frameName[72];
         framePath(frameName,sizeof(frameName),m);
         if(!cacheNativeBmp(frameCache,frameName,59U,120U,kSha256[0][0]) ||
-           !cacheNativeBmp(genericCache,kGeneric120,55U,20U,nullptr)){
+           !cacheNativeBmp(genericCache,kGeneric120,55U,20U,
+                "1aa91c6aa6a1ac515be55c9552ee84f22bea550a1c6e0951b3eef23a525b2274",true)){
             Serial.println("[UAC] PREFLIGHT FAIL reason=bounded-bmp-cache");
             releaseBufferedBmps();return false;
         }

@@ -28,5 +28,32 @@ int main(){
     assert(EspUacFontTheme_tintGray(0xffffU,phosphore)==phosphore);
     assert(EspUacFontTheme_tintGray(0x8410U,inferno)!=
            EspUacFontTheme_tintGray(0x8410U,phosphore));
-    puts("UAC neutral palette host PASS: 256 levels, three themes, dark outlines, bounded RGB565");
+    /* Native letterTone(0/4/8,9) uses dark-to-light order. */
+    const uint16_t stops[3][3]={
+        {0xd225U,0xf5aaU,0xff34U}, /* CLASSIC: copper -> bronze -> yellow */
+        {0xc002U,0xe30cU,0xfe78U}, /* INFERNO: dark red -> ember -> rose */
+        {0x2638U,0x87e0U,0xc7b8U}, /* PHOSPHORE: turquoise -> green -> mint */
+    };
+    for(const auto& ramp:stops){
+        for(int h:{19,21,23}){
+            assert(EspUacFontTheme_verticalTone(ramp[0],ramp[1],ramp[2],0,h)==ramp[0]);
+            assert(EspUacFontTheme_verticalTone(ramp[0],ramp[1],ramp[2],(h-1)/2,h)==ramp[1]);
+            assert(EspUacFontTheme_verticalTone(ramp[0],ramp[1],ramp[2],h-1,h)==ramp[2]);
+            int changes=0;
+            uint16_t before=ramp[0];
+            for(int row=0;row<h;++row){
+                const uint16_t c=EspUacFontTheme_verticalTone(ramp[0],ramp[1],ramp[2],row,h);
+                assert(EspUacFontTheme_tintGray(0U,c)==0U);
+                assert(EspUacFontTheme_tintGray(0xffffU,c)==c);
+                if(c!=before)++changes;
+                before=c;
+            }
+            assert(changes>=h-5); /* genuinely graded, not three flat bands */
+            assert(EspUacFontTheme_verticalTone(ramp[0],ramp[1],ramp[2],-1,h)==0U);
+            assert(EspUacFontTheme_verticalTone(ramp[0],ramp[1],ramp[2],h,h)==0U);
+        }
+    }
+    assert(EspUacFontTheme_verticalTone(0xd225U,0xf5aaU,0xff34U,0,23) !=
+           EspUacFontTheme_verticalTone(0x2638U,0x87e0U,0xc7b8U,0,23));
+    puts("UAC neutral palette host PASS: 256 grayscale shades, 3 themes, 19/21/23 graded rows, black outlines");
 }

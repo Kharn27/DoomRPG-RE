@@ -47,6 +47,7 @@ jobs:
         run: |
           python ESP32/test/uac_default_mode_host.py
           python ESP32/test/uac_neutral_theme_host.py
+          python ESP32/test/uac_generic_integrity_host.py
           c++ -std=c++17 -O2 -Wall -Wextra -Werror -IESP32/include ESP32/test/uac_neutral_palette_host.cpp -o /tmp/doomrpg-uac-neutral
           /tmp/doomrpg-uac-neutral
 
