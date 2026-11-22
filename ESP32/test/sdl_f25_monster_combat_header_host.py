@@ -39,6 +39,11 @@ def git_blob(data: bytes) -> str:
 def source_gate() -> None:
     for name, sha in BEFORE.items():
         data = (SRC / name).read_bytes()
+        # GAME-S1 P1 modifies the same production TU deliberately. Require
+        # its exact reviewed blob, then reconstruct the original source for
+        # this frozen SDL-F25 identity check (no relaxed historical hash).
+        from game_s1_subtype10_history import restore_pre_s1_subtype10
+        data = restore_pre_s1_subtype10(name, data)
         prefix = HOST_GUARD.encode("ascii")
         assert data.startswith(prefix), f"{name}: lost host/geometry include"
         assert data.count(b"#include <SDL.h>") == 1, name

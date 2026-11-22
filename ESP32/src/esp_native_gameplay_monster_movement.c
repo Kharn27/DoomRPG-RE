@@ -30,7 +30,6 @@
 #define MOVE_TILE_CENTER 32
 #define MOVE_TRACE_ATTACK_MASK 0x5687U
 #define MOVE_TRACE_LEGACY_MASK 0xff87U
-#define MOVE_SUBTYPE_SPECIAL_AI 10U
 #define MOVE_TYPE_ENEMY 1U
 #define MOVE_TYPE_SPECIAL_TRACE 14U
 #define MOVE_TYPE_SPECIAL_TRACE_2 15U
@@ -748,7 +747,6 @@ static int findCandidate(const EspPlayerViewState* playerView,
         int64_t dy;
 
         if (monster->alive == 0U || monster->subtype >= 14U ||
-            monster->subtype == MOVE_SUBTYPE_SPECIAL_AI ||
             !EspNativeGameplayMonsterActivation_isActive(monster->spriteIndex)) {
             continue;
         }

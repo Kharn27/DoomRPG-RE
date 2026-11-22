@@ -39,17 +39,21 @@ def source_gate() -> None:
     guard = HOST_GUARD.encode("ascii")
     for name, sha in BEFORE.items():
         current = (SRC / name).read_bytes()
+        # Historical source hash uses a strict inverse of reviewed GAME-S1
+        # edits; SDL header boundary analysis still checks the live source.
+        from game_s1_subtype10_history import restore_pre_s1_subtype10
+        pre_s1 = restore_pre_s1_subtype10(name, current)
         if name == "esp_native_gameplay_monster_state.c":
             # The original include follows four libc headers and one blank.
             anchor = b"\n#include <SDL.h>\n#include \"DoomRPG.h\""
             replacement = b"\n" + guard + b"#include \"DoomRPG.h\""
-            assert current.count(replacement) == 1, name
-            before = current.replace(replacement, anchor, 1)
+            assert pre_s1.count(replacement) == 1, name
+            before = pre_s1.replace(replacement, anchor, 1)
             from arch_rc13_history import restore_pre_rc13
             before = restore_pre_rc13(name, before)
         else:
-            assert current.startswith(guard), name
-            before = b"#include <SDL.h>\n" + current[len(guard):]
+            assert pre_s1.startswith(guard), name
+            before = b"#include <SDL.h>\n" + pre_s1[len(guard):]
         if name == "esp_native_gameplay_monster_turn.c":
             # RC8: exactly reverse only the two removed linker wrappers.
             new_hook = "/* RC8: explicit post-resource leaf, even on resource/action fatal return.\n * Match the former wrapper's observation and fail-closed activation order. */\nvoid EspNativeGameplayMonsterTurn_afterPlayerResourcesService(struct DoomRPG_s* doomRpg) {\n    observeAndProbe((DoomRPG_t*)doomRpg);\n    (void)EspNativeGameplayMonsterActivation_serviceTurn();\n}\n".encode("utf-8")

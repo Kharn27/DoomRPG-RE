@@ -59,6 +59,12 @@ EspNativeGameplayMonsterRecord* EspNativeGameplayMonsterState_findMutable(
 const EspNativeGameplayMonsterRecord* EspNativeGameplayMonsterState_find(
     uint16_t spriteIndex);
 
+/* Toggle the legacy 0x800000 alternate-attack flag under the permanent
+ * 16-byte MonsterState record owner. Requires the expected prior value and
+ * updates the saved-state fingerprint; calling twice restores exactly. */
+int EspNativeGameplayMonsterState_toggleAlternateAttack(
+    uint16_t spriteIndex, uint8_t expectedBefore);
+
 int EspNativeGameplayMonsterState_snapshot(
     EspNativeGameplayMonsterStateSnapshot* outSnapshot);
 int EspNativeGameplayMonsterState_snapshotShapeValid(

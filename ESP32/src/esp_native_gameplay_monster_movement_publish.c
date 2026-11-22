@@ -21,7 +21,6 @@
 
 #define PUBLISH_MOVE_TILE_SIZE 64
 #define PUBLISH_MOVE_WEAPON_COUNT 19U
-#define PUBLISH_MOVE_SPECIAL_AI 10U
 #define PUBLISH_PROJECT_WORDS \
     ((ESP_NATIVE_GAMEPLAY_MONSTER_MAX_COUNT + 31U) / 32U)
 
@@ -198,8 +197,7 @@ static int movementRngCalls(const char* trigger,
 
     if (outCalls != NULL) *outCalls = 0U;
     if (trigger == NULL || monster == NULL || player == NULL || before == NULL ||
-        outCalls == NULL || monster->subtype >= 14U ||
-        monster->subtype == PUBLISH_MOVE_SPECIAL_AI) {
+        outCalls == NULL || monster->subtype >= 14U) {
         return 0;
     }
 

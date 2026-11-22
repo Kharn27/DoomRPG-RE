@@ -575,7 +575,7 @@ static int syncOwner(void) {
         turnOwner.view.lastAttackerSpriteIndex = TURN_NO_SPRITE;
         turnOwner.view.lastMovementSpriteIndex = TURN_NO_SPRITE;
         turnOwner.view.active = 1U;
-        printf("[MONSTERTURN] READY arena=%08x ownerBytes=%u enemies=%u mode=probe+rollback schedule=MOVE+PLAYER_ATTACK+PASS_TURN rotation=legacy-no-turn attackFamily=stationary-cardinal-generic traceMask=%04x playerDamage=prospective movementPositions=deferred activationOrder=fail-closed subtype10AI=deferred mutation=no\n",
+        printf("[MONSTERTURN] READY arena=%08x ownerBytes=%u enemies=%u mode=probe+rollback schedule=MOVE+PLAYER_ATTACK+PASS_TURN rotation=legacy-no-turn attackFamily=stationary-cardinal-generic traceMask=%04x playerDamage=prospective movementPositions=deferred activationOrder=fail-closed subtype10AI=admission-guarded-fallback/raise-deferred mutation=no\n",
                (unsigned int)arena,
                (unsigned int)sizeof(turnOwner),
                (unsigned int)topology->enemyCount,
@@ -618,9 +618,6 @@ static int findCandidateForSprite(
     monster = EspNativeGameplayMonsterState_find(spriteIndex);
     if (monster == NULL || monster->alive == 0U || monster->subtype >= 14U) {
         return 0;
-    }
-    if (monster->subtype == TURN_SUBTYPE_SPECIAL_AI) {
-        return 1;
     }
     if (!EspMapSpriteTopology_getEntity(monster->spriteIndex,
                                         &type, &subtype,
