@@ -21,6 +21,18 @@ Si aucun candidat n'est trouvé : un seul tirage réel (<84 ou >=84), alternance
 
 La recherche P1 de cadavres est conservatrice : les cadavres reconstruits depuis SAVE et les états death4 peuvent être classés comme candidats potentiels et *déférés* plutôt que considérés sûrement non réanimables. Le modèle de liste inactive n'est pas simulé en triant les sprites. Pas de ZIP runtime, heap map-wide, réintroduction du desktop ou modification de `shapeData`/`mediaTexels`.
 
+### P1 correction : chaines d'attaque ET de déplacement
+
+L'audit croisé a détecté que l'implémentation initiale de P1 conservait deux
+exclusions `subtype10` silencieuses dans `MonsterMovement` et
+`MonsterMovementPublish`, malgré le retour dans le séquenceur. **Ne jamais
+assimiler un build vert à une IA rétablie.** Les deux exclusions sont désormais
+retirées pour les tours préalablement admis sans réanimation ; les masques
+originaux `subtype=10` restent appliqués. L'oracle hôte interdit le retour
+de ces deux gardes et les tests SDL-F26 continuent à restaurer les blobs
+historiques stricts par delta réversible. La validation réelle de la
+transaction par le CYD reste nécessaire.
+
 ## Validation
 
 `python3 ESP32/test/monster_subtype10_admission_host.py` : oracles C purs + audit du véritable code de raccordement. CI et build `esp32-cyd` à vérifier avant test matériel. **Aucun PASS CYD n'est revendiqué ; P1 n'achève PAS l'issue #438.**

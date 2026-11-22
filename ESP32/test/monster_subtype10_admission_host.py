@@ -10,6 +10,8 @@ legacy = (repo / "src/Entity.c").read_text()
 sequence = (esp / "src/esp_native_gameplay_monster_active_sequence.c").read_text()
 turn = (esp / "src/esp_native_gameplay_monster_turn.c").read_text()
 state = (esp / "src/esp_native_gameplay_monster_state.c").read_text()
+movement = (esp / "src/esp_native_gameplay_monster_movement.c").read_text()
+publisher = (esp / "src/esp_native_gameplay_monster_movement_publish.c").read_text()
 
 assert "DoomRPG_randNextByte(&entity->doomRpg->random) < 84" in legacy
 assert "i4 == 0 || i4 > 0x4000" in legacy
@@ -22,6 +24,10 @@ assert "EspNativeRngReplayGuard_beginProbeBoundary" in sequence
 assert "cause=special-ai-unowned" not in sequence
 assert "if (monster->subtype == TURN_SUBTYPE_SPECIAL_AI) {\n        return 1;" not in turn
 assert "int EspNativeGameplayMonsterState_toggleAlternateAttack(" in state
+assert "monster->subtype == MOVE_SUBTYPE_SPECIAL_AI" not in movement
+assert "monster->subtype == PUBLISH_MOVE_SPECIAL_AI" not in publisher
+assert "else if (subtype == 10U) mask &= (uint16_t)~0x0400U;" in movement
+assert "EspNativeGameplayMonsterMovementPublish_afterProbe(" in (esp / "src/esp_native_gameplay_monster_movement_probe.c").read_text()
 
 with tempfile.TemporaryDirectory(prefix="subtype10_") as d:
     exe = Path(d) / "policy"

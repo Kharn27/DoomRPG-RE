@@ -7,11 +7,24 @@ The helper is a host-only test utility, never compiled into the firmware.
 import hashlib
 
 EXPECTED = {
+    "esp_native_gameplay_monster_movement.c": ("72d2ab7ad7b48a50d761adbeaa2d6f24946d12e6", "71adcad9b2e0d48638436755ff02938105bc080c"),
+    "esp_native_gameplay_monster_movement_publish.c": ("979cef07b7133f61abd3470fb1248bd0a22c44a0", "0585882c8254a38812adeb7204f5f8d13b9d7d78"),
     "esp_native_gameplay_monster_active_sequence.c": ("2637539668f8a46c37e157772cd73a33101c4b0e", "369339178076eac89e8cc0f7b47d0fb5540619d9"),
     "esp_native_gameplay_monster_turn.c": ("3992a1783f7b5955781b9738a5945b67410eadd8", "3eddfdda0ae1a2ae18d4502bbd8ce65d6d88f978"),
     "esp_native_gameplay_monster_state.c": ("fb4972dd84bd3ab5a934ac1e3381fdff826cbca0", "b8189e585db3658375ca00ecdecbc68e94a0d586"),
 }
 REVERSE_EDITS = {
+    "esp_native_gameplay_monster_movement.c": (
+        ("#define MOVE_TYPE_SPECIAL_TRACE 14U\n",
+         "#define MOVE_SUBTYPE_SPECIAL_AI 10U\n#define MOVE_TYPE_SPECIAL_TRACE 14U\n"),
+        ("        if (monster->alive == 0U || monster->subtype >= 14U ||\n            !EspNativeGameplayMonsterActivation_isActive",
+         "        if (monster->alive == 0U || monster->subtype >= 14U ||\n            monster->subtype == MOVE_SUBTYPE_SPECIAL_AI ||\n            !EspNativeGameplayMonsterActivation_isActive"),
+    ),
+    "esp_native_gameplay_monster_movement_publish.c": (
+        ("#define PUBLISH_MOVE_TILE_SIZE", "#define PUBLISH_MOVE_SPECIAL_AI 10U\n#define PUBLISH_MOVE_TILE_SIZE"),
+        ("        outCalls == NULL || monster->subtype >= 14U) {",
+         "        outCalls == NULL || monster->subtype >= 14U ||\n        monster->subtype == PUBLISH_MOVE_SPECIAL_AI) {"),
+    ),
     "esp_native_gameplay_monster_active_sequence.c": (
         ("#include \"esp_native_gameplay_monster_position.h\"\n#include \"esp_native_gameplay_monster_subtype10_policy.h\"\n#include \"esp_native_process_rng_owner.h\"\n#include \"esp_native_rng_replay_guard.h\"\n",
          ""),
