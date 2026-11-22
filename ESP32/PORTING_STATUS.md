@@ -1,3 +1,39 @@
+## AUDIO-PICKUP #419 — Shotgun 5057 original, pré-modale : **PASS CYD borné** (22 novembre 2026)
+
+[PR #422](https://github.com/Kharn27/DoomRPG-RE/pull/422),
+[issue #419](https://github.com/Kharn27/DoomRPG-RE/issues/419),
+[preuve et limites](MILESTONE_AUDIO_PICKUP_419_PENDING_CYD.md).
+Le moteur natif publie désormais après commit **5060** pour objets,
+munitions, Axe et Fire Ext, **5057** pour les armes à feu (Shotgun,
+Chaingun, Super Shotgun, Plasma, Rocket, BFG, doublons), conformément
+à `src/Entity.c::Entity_touched`. Le même propriétaire audio PCM/FIFO
+garantit le handoff avant bail PAK du dialogue standalone, sans
+nouveau thread, buffer ou lecteur SD. Oracle C/C++ réel et tests
+historiques préservés ; **double CI code SUCCESS** sur
+`c73081f391aea2c7392ba76db7491187b5dde9f2`,
+[push #44998917701](https://github.com/Kharn27/DoomRPG-RE/actions/runs/44998917701),
+[PR #44998922207](https://github.com/Kharn27/DoomRPG-RE/actions/runs/44998922207).
+
+**Log matériel** `platformio-device-monitor-261122-084424.log`,
+**1 209 lignes / 149 083 B**, SHA256
+`bf62f2f473b360416ad74d720f40a6a5049689f5e07ffd31f12c7e84de14ec27` :
+LOAD V11 slot09 Entrance, Axe tile655 `5060` 9 702/9 702
+frames, `HANDOFF id=5060 MIXED ack=1` avant dialogue ;
+**Shotgun tile659 `5057` 11 907/11 907 frames,
+`HANDOFF id=5057 MIXED ack=1` avant dialogue** ;
+munitions toujours `5060`. 18 MOVE, 2 TURN, 4 portes finies,
+2 combats et 4 pickups, pas de crash/WDT, `HEADROOM_OK
+margin8=11976`, `shapeData/mediaTexels=NULL`, 3 STREAM musicaux
+avec `underflows=0 recoveries=0`, `heapAlloc=0` SFX.
+Retour utilisateur « impeccable » et autorisation de merge.
+**Limite :** capture s'arrêtant en gameplay : aucun FINAL/AUDIT
+audio post-LOAD ni EXIT/reset, Fire Ext et doublons non couverts
+physiquement ; ne pas inventer ces validations. Code gelé post-CYD :
+**docs-only** avant merge. Le bilan ancien #419 dans RC24 reste une
+observation historique, pas l'état actuel.
+
+---
+
 ## FIRE-VIS-P2 — feux 4 phases, présentation 375 ms : **PASS CYD borné** (22 novembre 2026)
 
 [PR #421](https://github.com/Kharn27/DoomRPG-RE/pull/421), [issue campagne #416](https://github.com/Kharn27/DoomRPG-RE/issues/416), [rapport matériel complet](MILESTONE_FIRE_VIS_P2_CYD_PASS.md). Après un essai 250 ms affichant bien les quatre phases `logical=129 / actual=382..385` mais pénalisant le toucher, cadence ambiante **375 ms** rétablie pour les feux visibles, quatre phases d'assets restant calculées à 250 ms et **autorisées à sauter à l'écran**. Mode **7 additif** de P1 inchangé, aucun second framebuffer, heap map-wide ni ZIP runtime. Log du vrai CYD `platformio-device-monitor-261122-072543.log`, **1 013 lignes / 129 183 octets**, SHA256 `b0f5c3cdd961a815ff49586f8cb6655b5778154d185f532e638fd8cbdbf46488` : 48 témoins LCD feu (phases 0–3, bitshapes 382–385), 12 MOVE, 4 TURN, **5 FIRE-COMMIT**, 2 portes achevées, LOAD V11 slot09→Entrance→HUB EXIT, **HEADROOM_OK margin8 11 976 B**, `shapeData=mediaTexels=NULL`, 0 underrun/récupération musique, 0 WDT/panic, reset `empty=1`. Retour utilisateur positif sur le compromis. Code testé par contexte `018acd153495386cf5e18814b10dda5ad6c7293f` (pas de SHA binaire dans Serial), double CI du code [push SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/44989761964) / [PR SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/44989767313). **Main RC24 `2758ea343720bdec81efa2d7a0638c26cf0e7755` a été synchronisé ensuite** ; combinaison testée par CI seulement, pas physiquement reflashée. Les lacunes de couverture et preuves PAK sont détaillées dans le rapport ; aucune prétention à la parité exhaustive des cartes.
