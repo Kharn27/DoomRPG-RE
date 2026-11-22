@@ -16,6 +16,9 @@
 #include "esp_player_fresh_map_state.h"
 #include "esp_native_gameplay_transition.h"
 #include "esp_native_indexed_bmp.h"
+#include "esp_native_font_sd.h"
+#include "esp_native_font_tint.h"
+#include "esp_uac_font_theme.h"
 #include "esp_native_loading_progress_scale.h"
 #include "esp_native_transition_presentation.h"
 #include "platform_video_c_bridge.h"
@@ -37,6 +40,20 @@
 #define TRANSITION_PROGRESS_HEIGHT 18
 #define TRANSITION_PROGRESS_STEP 5U
 
+/* a.bmp: 144x72, 16 ASCII columns of 9x12 pixels. Retain ONLY the
+ * seven LOADING glyphs in 4-bpp form for the duration of the loader.
+ * Progress callbacks may run while physical SD is occupied by the PAK. */
+#define LOADING_TITLE_TEXT "LOADING"
+#define LOADING_TITLE_GLYPHS 7U
+#define LOADING_TITLE_SOURCE_W 9U
+#define LOADING_TITLE_SOURCE_H 12U
+#define LOADING_TITLE_ROW_BYTES 5U
+#define LOADING_TITLE_PAINT_W 12
+#define LOADING_TITLE_PAINT_H 14
+#define LOADING_TITLE_ADVANCE 12
+#define LOADING_TITLE_TOP 32
+#define LOADING_TITLE_INK_BYTES (LOADING_TITLE_GLYPHS * LOADING_TITLE_SOURCE_H * LOADING_TITLE_ROW_BYTES)
+
 #define COLOR_BLACK      ESP_HUB_COLOR_BLACK
 #define COLOR_BG         ESP_HUB_COLOR_BG
 #define COLOR_PANEL      ESP_HUB_COLOR_PANEL
@@ -48,6 +65,14 @@
 #define COLOR_AMBER      ESP_HUB_COLOR_AMBER
 #define COLOR_GREEN      ESP_HUB_COLOR_GREEN
 
+typedef struct EspNativeLoadingTitleFont_s {
+    uint8_t ink[LOADING_TITLE_INK_BYTES]; /* 420 B, two palette indices/byte */
+    uint16_t palette[16];                 /* 32 B, not a decoded atlas */
+    uint8_t ready;
+    uint8_t neutral;
+    uint8_t fromSd;
+} EspNativeLoadingTitleFont;
+
 typedef struct EspNativeTransitionPresentationState_s {
     uint32_t loadingStartMs;
     uint32_t frames;
@@ -56,6 +81,7 @@ typedef struct EspNativeTransitionPresentationState_s {
     uint8_t lastPhase;
     uint8_t loadingActive;
     uint8_t flashDeferred;
+    EspNativeLoadingTitleFont titleFont;
     /* LOAD-L0: static timing witnesses only, no playback or ring ownership. */
     uint8_t audioRoute;
     uint32_t audioLastPresentMs;
@@ -297,11 +323,170 @@ static void drawMiniTextCentered(const char* text,
                    top, scale, color, 0);
 }
 
-/* Same LOADING glyphs, horizontal center=80, top=34 and scale=2. */
+/* No PAK/SD reads while painting progress: seven original 9x12 glyphs,
+ * cached as palette indices (420 B) once, tinted from the CURRENT theme on
+ * every repaint. Uses the exact UAC neutral/colored-atlas tint policy. */
 static void drawLoadingTitle(void) {
-    const char* title = "LOADING";
-    drawMiniTextAt(title, 80 - miniTextWidth(title, 2) / 2,
-                   34, 2, 0U, 1);
+    const EspNativeLoadingTitleFont* font = &presentation.titleFont;
+    const char* title = LOADING_TITLE_TEXT;
+    const int left = (DOOMRPG_LOGICAL_WIDTH -
+                      (int)(LOADING_TITLE_GLYPHS * LOADING_TITLE_ADVANCE)) / 2;
+    int y;
+    if (!font->ready) {
+        /* A malformed/missing font cannot prevent the map from loading. */
+        drawMiniTextAt(title, 80 - miniTextWidth(title, 2) / 2,
+                       34, 2, 0U, 1);
+        return;
+    }
+    for (y = 0; y < LOADING_TITLE_PAINT_H; ++y) {
+        const int sourceY = y * (int)LOADING_TITLE_SOURCE_H /
+                            LOADING_TITLE_PAINT_H;
+        const uint16_t tone = EspUacFontTheme_verticalTone(
+            EspMainMenuSkin_letterTone(0, 9),
+            EspMainMenuSkin_letterTone(4, 9),
+            EspMainMenuSkin_letterTone(8, 9),
+            y, LOADING_TITLE_PAINT_H);
+        const uint8_t red = (uint8_t)(((tone >> 11U) & 31U) * 255U / 31U);
+        const uint8_t green = (uint8_t)(((tone >> 5U) & 63U) * 255U / 63U);
+        const uint8_t blue = (uint8_t)((tone & 31U) * 255U / 31U);
+        uint16_t tinted[16];
+        unsigned g;
+        for (g = 0U; g < 16U; ++g) {
+            tinted[g] = font->neutral ?
+                EspNativeFontTint_apply(font->palette[g], red, green, blue,
+                                        font->fromSd) :
+                EspUacFontTheme_tintColor(font->palette[g], tone);
+        }
+        for (g = 0U; g < LOADING_TITLE_GLYPHS; ++g) {
+            int x;
+            const uint8_t* ink =
+                &font->ink[(g * LOADING_TITLE_SOURCE_H +
+                            (unsigned)sourceY) * LOADING_TITLE_ROW_BYTES];
+            for (x = 0; x < LOADING_TITLE_PAINT_W; ++x) {
+                const unsigned sampleX =
+                    (unsigned)(x * (int)LOADING_TITLE_SOURCE_W /
+                               LOADING_TITLE_PAINT_W);
+                const uint8_t packed = ink[sampleX / 2U];
+                const unsigned index = (sampleX & 1U) ?
+                                       (packed & 15U) : (packed >> 4U);
+                if (index != 0U)
+                    pixel(left + (int)g * LOADING_TITLE_ADVANCE + x,
+                          LOADING_TITLE_TOP + y, tinted[index]);
+            }
+        }
+    }
+}
+
+/* Prepare from a validated indexed font while a compatible PAK or SD lease
+ * exists. Never retain BMP metadata, File handles, full decoded images or
+ * allocated scratch; on any error leave the original mini-title fallback. */
+static int cacheLoadingFont(EspNativeIndexedBmp* bmp,
+                            EspNativeIndexedBmpStats* stats) {
+    EspNativeLoadingTitleFont* cache = &presentation.titleFont;
+    const char* title = LOADING_TITLE_TEXT;
+    unsigned g;
+    if (bmp == NULL || bmp->width != 144U || bmp->height != 72U ||
+        bmp->bitsPerPixel != 4U || bmp->paletteCount < 2U ||
+        bmp->paletteCount > 16U || bmp->paletteRgb565[0] != 0xf81fU)
+        return 0;
+    memset(cache, 0, sizeof(*cache));
+    for (g = 0U; g < LOADING_TITLE_GLYPHS; ++g) {
+        const unsigned ascii = (unsigned)(uint8_t)title[g];
+        const unsigned cell = ascii - 33U;
+        uint16_t glyph[LOADING_TITLE_SOURCE_W * LOADING_TITLE_SOURCE_H];
+        unsigned y;
+        if (ascii < 33U || ascii > 126U) return 0;
+        for (y = 0U; y < LOADING_TITLE_SOURCE_W * LOADING_TITLE_SOURCE_H; ++y)
+            glyph[y] = 0xf81fU;
+        if (EspNativeIndexedBmp_blit(
+                bmp, glyph, LOADING_TITLE_SOURCE_W,
+                LOADING_TITLE_SOURCE_H,
+                (uint16_t)((cell & 15U) * LOADING_TITLE_SOURCE_W),
+                (uint16_t)((cell >> 4U) * LOADING_TITLE_SOURCE_H),
+                LOADING_TITLE_SOURCE_W, LOADING_TITLE_SOURCE_H,
+                0, 0, 1U, stats) != ESP_NATIVE_INDEXED_BMP_OK)
+            return 0;
+        for (y = 0U; y < LOADING_TITLE_SOURCE_H; ++y) {
+            unsigned x;
+            for (x = 0U; x < LOADING_TITLE_SOURCE_W; ++x) {
+                const uint16_t color = glyph[y * LOADING_TITLE_SOURCE_W + x];
+                uint8_t index = 0U;
+                if (color != 0xf81fU) {
+                    unsigned p;
+                    for (p = 1U; p < bmp->paletteCount; ++p) {
+                        if (bmp->paletteRgb565[p] == color) {
+                            index = (uint8_t)p;
+                            break;
+                        }
+                    }
+                    if (index == 0U) return 0;
+                }
+                {
+                    uint8_t* packed = &cache->ink[
+                        (g * LOADING_TITLE_SOURCE_H + y) *
+                        LOADING_TITLE_ROW_BYTES + x / 2U];
+                    if ((x & 1U) == 0U)
+                        *packed = (uint8_t)((*packed & 0x0fU) | (index << 4U));
+                    else
+                        *packed = (uint8_t)((*packed & 0xf0U) | index);
+                }
+            }
+        }
+    }
+    cache->neutral = bmp->paletteCount == 16U ? 1U : 0U;
+    cache->fromSd = bmp->sdFontSource != 0U ? 1U : 0U;
+    for (g = 1U; g < 16U; ++g) {
+        const uint16_t color = g < bmp->paletteCount ?
+                               bmp->paletteRgb565[g] : 0U;
+        cache->palette[g] = color;
+        if (!EspUacFontTheme_isGrayRgb565(color)) cache->neutral = 0U;
+    }
+    cache->ready = 1U;
+    return 1;
+}
+
+/* Optional SD override FIRST, before opening the physical PAK. This permits
+ * the user's neutral a.bmp on the SD to drive the first loading frame too.
+ * All seven glyphs are captured and the SD handle is closed before PAK use. */
+static void prepareLoadingFontSd(void) {
+    EspNativeIndexedBmp bmp;
+    EspNativeIndexedBmpStats stats;
+    memset(&bmp, 0, sizeof(bmp));
+    memset(&stats, 0, sizeof(stats));
+    if (!EspAssetPack_isOpen() &&
+        EspNativeIndexedBmp_openSdFontStandalone(
+            "a.bmp", &bmp, &stats) == ESP_NATIVE_INDEXED_BMP_OK) {
+        if (!cacheLoadingFont(&bmp, &stats) && bmp.sdFontSource != 0U)
+            EspNativeFontSd_reject(bmp.sdFontSource);
+    }
+    EspNativeFontSd_suspend();
+    if (presentation.titleFont.ready) {
+        printf("[LOADFONT] READY name=a.bmp backing=SD glyphs=7 inkBytes=%u reads=%u bytes=%u theme=%u\n",
+               (unsigned)sizeof(presentation.titleFont.ink),
+               (unsigned)stats.packReads, (unsigned)stats.bytesRead,
+               (unsigned)EspMainMenuSkin_getTheme());
+    }
+}
+
+static void prepareLoadingFontPak(void) {
+    EspNativeIndexedBmp bmp;
+    EspNativeIndexedBmpStats stats;
+    memset(&bmp, 0, sizeof(bmp));
+    memset(&stats, 0, sizeof(stats));
+    if (presentation.titleFont.ready || !EspAssetPack_isOpen()) return;
+    if (EspNativeIndexedBmp_open("a.bmp", &bmp, &stats) ==
+        ESP_NATIVE_INDEXED_BMP_OK) {
+        if (!cacheLoadingFont(&bmp, &stats) && bmp.sdFontSource != 0U)
+            EspNativeFontSd_reject(bmp.sdFontSource);
+    }
+    EspNativeFontSd_suspend();
+    printf("[LOADFONT] %s name=a.bmp backing=%s glyphs=7 inkBytes=%u reads=%u bytes=%u theme=%u\n",
+           presentation.titleFont.ready ? "READY" : "FALLBACK",
+           presentation.titleFont.ready && presentation.titleFont.fromSd ?
+               "SD" : "PAK",
+           (unsigned)sizeof(presentation.titleFont.ink),
+           (unsigned)stats.packReads, (unsigned)stats.bytesRead,
+           (unsigned)EspMainMenuSkin_getTheme());
 }
 
 static void drawMetricCard(int left,
@@ -383,7 +568,7 @@ static const char* phaseName(uint8_t phase) {
 }
 
 /* MENU_MAIN's exact procedural industrial chassis, enlarged to 128x44.
- * The compact loading text stays centered and needs no font asset.
+ * The centered title uses the 7 cached a.bmp glyphs, with a mini fallback.
  * Redrawing the whole plate prevents stale gameplay pixels during progress. */
 static int paintLoadingCard(const char* target) {
     if (target == NULL ||
@@ -663,12 +848,15 @@ int EspNativeTransitionPresentation_beginLoading(uint8_t targetMapId) {
     memset(&presentation, 0, sizeof(presentation));
     memset(&scratch, 0, sizeof(scratch));
 
+    /* SD-only overrides are readable before the physical PAK opens. */
+    if (!EspAssetPack_isOpen()) prepareLoadingFontSd();
     if (!EspAssetPack_isOpen()) {
         if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) return 0;
         openedHere = 1;
     }
 
     if (!drawFixedStarfield(&scratch.star, &scratch.stats)) goto done;
+    prepareLoadingFontPak();
 
     formatMapLabel(targetMapId, target, sizeof(target));
 
@@ -688,9 +876,11 @@ int EspNativeTransitionPresentation_beginLoading(uint8_t targetMapId) {
 
     if (!Esp32PlatformVideo_presentBase()) goto done;
 
-    printf("[TRANSITIONLOAD] BEGIN targetMap=%u background=%s mode=fixed font=mini-hub entering=\"ENTERING %s\" progress=0%% reads=%u bytes=%u frame=%08x\n",
+    printf("[TRANSITIONLOAD] BEGIN targetMap=%u background=%s mode=fixed font=%s theme=%u entering=\"ENTERING %s\" progress=0%% reads=%u bytes=%u frame=%08x\n",
            (unsigned int)targetMapId,
            TRANSITION_STAR_NAME,
+           presentation.titleFont.ready ? "a.bmp-themed" : "mini-hub-fallback",
+           (unsigned int)EspMainMenuSkin_getTheme(),
            target,
            (unsigned int)scratch.stats.packReads,
            (unsigned int)scratch.stats.bytesRead,
