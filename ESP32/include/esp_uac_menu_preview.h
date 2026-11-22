@@ -10,7 +10,7 @@ extern "C" {
 int EspUacMenuPreview_mode(void);
 /* Allocation-free menu-only clock guard; asks loop to present one selected
  * 110x40 patch at the next dark/light phase, never during gameplay. */
-int EspUacMenuPreview_needsBlink(uint32_t nowMs);
+int EspUacMenuPreview_needsBlink(void);
 /* No-allocation marker set during MENU_MAIN touch activation.
  * The first subsequent video present (after root heap/FNV checks) consumes it. */
 void EspUacMenuPreview_armDefault(void);
