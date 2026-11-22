@@ -358,8 +358,8 @@ static void paintLargerTextRow(uint16_t* dst,int py,int index,int selected,
     const int sourceY=paintY*kGlyphH/textH;
     const int xStart=(ESP_UAC_BUTTON_WIDTH-(len*advance+textW-advance))/2;
     const int destOrigin=patch?0:kPanelX+ESP_UAC_BUTTON_INSET;
-    /* Smooth row-wise theme tone: up to 27px only in MENU_MAIN. */
-     * 16 shades on stack; transparency and outlines unchanged. */
+    /* Smooth row-wise theme tone: up to 27px only in MENU_MAIN.
+     * Sixteen shades on stack; transparency and black outlines stay intact. */
     uint16_t rowInk[16];
     const uint16_t tone=EspUacFontTheme_verticalTone(
         EspMainMenuSkin_letterTone(0,9),
