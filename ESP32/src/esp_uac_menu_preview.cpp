@@ -71,7 +71,8 @@ const int kTop[4]={20,74,128,182};
  * framebuffer hash oracles, actions and two-tap contracts remain untouched. */
 static const char* const kOptionsRoot[]={"BACK","VIDEO","SOUND"};
 static const char* const kOptionsVideo[]={"BACK","LUMINOSITE","ORIENTATION","THEME"};
-static const char* const kOptionsBrightness[]={"BACK","25%","50%","75%","100%"};
+/* Match VOLUME: four full-height preset buttons, no physical BACK. */
+static const char* const kOptionsBrightness[]={"25%","50%","75%","100%"};
 static const char* const kOptionsVolume[]={"25%","50%","75%","100%"};
 static const char* const kOptionsOrientation[]={"BACK","NORMAL","INVERSE"};
 static const char* const kOptionsTheme[]={"BACK","CLASSIC","INFERNO","PHOSPHORE"};
@@ -103,8 +104,7 @@ static const char* labelAt(int page,int index){
 }
 static int pageCount(int page){
     if(page==ESP_UAC_OPTIONS_VIDEO || page==ESP_UAC_OPTIONS_THEME ||
-       page==ESP_UAC_OPTIONS_VOLUME)return 4;
-    if(page==ESP_UAC_OPTIONS_BRIGHTNESS)return 5;
+       page==ESP_UAC_OPTIONS_VOLUME || page==ESP_UAC_OPTIONS_BRIGHTNESS)return 4;
     return page==ESP_UAC_OPTIONS_NONE?4:3;
 }
 /* The frame contains FOUR fixed metal rails. Three-option pages must draw
@@ -605,9 +605,11 @@ extern "C" void EspUacMenuPreview_optionsPage(int page,int selected,int armed,
                                                uint8_t mask){
     if(!EspUacMenuPreview_optionsActive() ||
        page<ESP_UAC_OPTIONS_ROOT || page>ESP_UAC_OPTIONS_VOLUME)return;
-    /* Only the physical volume page is four 40px buttons with no BACK.
-     * Preserve the canonical 5-card SOUND model and choice numbers 1..4. */
-    if(page==ESP_UAC_OPTIONS_VOLUME){
+    /* Physical brightness and volume both use four 40px buttons, no BACK.
+     * Preserve the canonical 5-card framebuffer and choice numbers 1..4. */
+    if(page==ESP_UAC_OPTIONS_VOLUME || page==ESP_UAC_OPTIONS_BRIGHTNESS){
+        /* Both physical four-card preset pages map 0..3 to semantic 1..4.
+         * The canonical 5-card framebuffer and SD/volume actions stay fixed. */
         if(selected<1||selected>4)return;
         selected-=1;mask=0x0fU;
     }
