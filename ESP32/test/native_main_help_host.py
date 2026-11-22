@@ -43,6 +43,11 @@ assert lines[7:14] == [
     "As a lone marine,", "explore dark halls,", "fight turn by turn,",
     "Find keys, secrets."]
 assert lines[6] == ""  # no unwanted DOWN: controls callout
+# Page 4/16: third and fourth text rows are swapped. The empty row after
+# the section heading is deliberately ignored when numbering body lines.
+assert lines[3 * 7 : 4 * 7] == [
+    "TURN-BASED GAME", "", "Moves take a turn.", "Enemies take turns.",
+    "Actions use turns.", "Plan each attack.", "Think before moving."]
 # The fifth page (before CYD TOUCH) illustrates the real 160x20
 # upper HUD in miniature; preserve weapon guidance on the next relevant page.
 hud_page = lines[4 * 7 : 5 * 7]
@@ -175,8 +180,9 @@ assert "static uint16_t helpThirdTone(void)" in actions
 assert "EspMainMenuSkin_uiInk()" not in actions
 assert 'helpPaintCopyrightMark(framebuffer, y, tone);' in actions
 assert '"Kharn27"' in model
-# HELP pages 2-4 and 12-16 take the first/light tone for body copy.
-# The gradient headings, page-1 white tribute, and pages 5-11 stay intact.
+# HELP pages 2-4 and 12-16 select the first/light theme tone for body
+# copy, but page 4 explicitly overrides its *body only* to unthemed white.
+# Gradient page headings, header, page-1 white tribute and pages 5-11 stay.
 light_pages = (2, 3, 4, 12, 13, 14, 15, 16)
 assert [lines[(page - 1) * 7] for page in light_pages] == [
     "DOOM RPG: THE GAME", "MENU CONTROLS", "TURN-BASED GAME",
@@ -197,6 +203,9 @@ assert "scroll <= 15 * MAIN_HELP_VISIBLE_LINES" in body_branch
 assert "? helpTitleTopTone() : helpBodyMiddleTone();" in body_branch
 assert "helpColor888(bodyTone)" in body_branch
 assert "(menuSystem->scrollIndex == 0 && i == 5)" in body_branch
+assert "scroll == 3 * MAIN_HELP_VISIBLE_LINES" in body_branch
+assert "((menuSystem->scrollIndex == 0 && i == 5) ||\n                 scroll == 3 * MAIN_HELP_VISIBLE_LINES)" in body_branch
+assert "? 0xffffffffU : helpColor888(bodyTone)" in body_branch
 assert "helpDrawThemedPageTitle(doomRpg, canvas, line, 12, y);" in actions
 assert "EspMainMenuSkin_letterTone(band * 3 + 1, 9)" in actions
 assert "DoomRPG_setClipTrue(doomRpg, x, y + band * 4," in actions
