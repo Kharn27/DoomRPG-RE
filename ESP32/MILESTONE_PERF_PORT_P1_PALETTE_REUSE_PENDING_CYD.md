@@ -69,6 +69,75 @@ avant comparaison ON/OFF. Ne pas merger cette PR draft.
 
 ---
 
+## Comparaison Sector 1 PERF ON/OFF — 22 novembre 2026 : pas de gain total démontré
+
+Deux captures **inverted au sens de PlatformIO** (côté LCD, le profil
+`esp-cyd-inverted` applique délibérément `INV OFF`, voir
+`platform_video.cpp` : la ligne `alternate-panel inversion=off` est donc
+**attendue**, pas une erreur). Même SD/PAK et save V11
+`/DoomRPG-ESP32-slot02.sav`, même carte **Sector 1 / level01.bsp**,
+catalogue `textures=31 sprites=49 storage=3200 fnv=8027fecf`,
+même `arenaFNV=82d2ee25`, mais trajets et animations non identiques.
+
+| Capture réelle | PERFORMANCES témoin OFF | Optimisation ON |
+|---|---:|---:|
+| Log | `platformio-device-monitor-261122-103555.log` | `platformio-device-monitor-261122-104145.log` |
+| Octets / lignes | 161 209 / 1 360 | 156 484 / 1 312 |
+| Nombre de sondes `[PERFPORT]` | 156 | 143 |
+| Par rendu | `resolved=31 catalogHits=0 pakReads=31` | `resolved=31 catalogHits=3 pakReads=28` |
+| `resolveUs` **chaud** (moins de 4 ms, médiane) | 1 007 µs (n=145) | 966 µs (n=135) |
+| `resolveUs` tous échantillons (médiane) | 1 012 µs | 1 002 µs |
+| `worldUs` RA2B (médiane, n=48) | 24 969,5 µs | 24 924,5 µs |
+| `spriteUs` RA2B (médiane, n=48) | 12 859,5 µs | 16 141 µs |
+| `totalUs` RA2B (médiane, n=48) | 89 176 µs | 91 108 µs |
+| `RAMBUDGET` | `HEADROOM_OK margin8=13548` | `HEADROOM_OK margin8=13548` |
+
+**Mesure CPU :** réemploi effectif de 3/31 palettes, soit 9,68 %
+des appels logiques ciblés ; seulement **41 µs** de différence
+entre médianes *chaudes* en faveur de ON, sans répétabilité statistique
+ni amélioration de `worldUs`/latence globale établie. Le `spriteUs`
+ON semble plus lent de l'ordre de 3–4 ms sur ces captures ;
+un appariement approximatif de 33 images par (map,pose, nombre de
+murs, pixel mur, compte de sprites) donne une médiane
+`totalUs(ON)-totalUs(OFF)=+4,136 ms` et
+`spriteUs(ON)-spriteUs(OFF)=+3,965 ms`. **Ce n'est pas une preuve
+causale** : les phases d'animation/températures du cache et certaines
+actions diffèrent. Ces chiffres suffisent toutefois à dire
+**aucun gain total démontré**, ne pas merger.
+
+**Effet Serial :** `[PERFPORT]` occupe 13 975 octets/156 lignes en OFF
+et 12 801 octets/143 lignes en ON : à **115 200 bauds 8N1**,
+respectivement 1,21 et 1,11 secondes de transmission UART
+**cumulées**, sans prétendre que tout ce temps bloque le CPU.
+Les traces indépendantes `[FONTSD]` ajoutent ~16 422 / 15 456 octets,
+`[RA2B]` ~15 800 / 15 783 octets, soit près de **4 s cumulées
+de bande passante UART** pour ces trois tags dans chaque capture.
+`[PERFPORT]` s'imprime **à chaque frame** après fermeture PAK et
+après la fenêtre mesurée `resolveUs` ; le `printf` affecte encore
+le temps global `worldUs`. **Les deux variantes sont instrumentées
+au même niveau** : les logs peuvent nuire à leur réactivité absolue
+mais n'expliquent pas spécifiquement une dégradation ON.
+Recommandation : ne pas embarquer ces probes bavards dans le
+firmware définitif ; privilégier au besoin une instrumentation
+bornée agrégée hors fenêtre critique.
+
+**Sécurité bornée :** zéro WDT/panic/backtrace, contrôle
+`shapeData/mediaTexels=NULL` présent, deux sorties
+`[SYSEXIT] MENU-READY frame=7a70d304`, 0 underrun dans la musique
+du menu au moment de la transition et budgets RAM identiques.
+Attention : dans Sector 1, `LOADAUDIO-L1 route=deferred`, donc ne
+pas annoncer d'absence d'underrun *musical durant gameplay*.
+Les scripts/actions de partie n'étaient pas identiques ;
+la parité FNV inter-build complète n'est pas prouvée.
+
+**Verdict PERF-PORT-P1 :** **réemploi confirmé / bénéfice CPU
+anecdotique / bénéfice global non démontré / PR draft non merge-ready.**
+Conserver l'optimisation uniquement si une future étude plus
+silencieuse et contrôlée démontre un avantage réel sans coût mémoire,
+audio ou tactile ; sinon revenir à la version main.
+
+---
+
 ## Audit comparatif réel
 
 | RES60 | Production 160×120 actuelle | Gain plausible | Coût RAM P1 | Risque / décision |
