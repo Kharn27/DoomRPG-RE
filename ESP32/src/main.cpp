@@ -22,7 +22,6 @@
 #include "native_main_menu_touch_layout.h"
 #include "platform_input.h"
 #include "platform_video.h"
-#include "esp_uac_menu_preview.h"
 #include "esp_legacy_prerender_startup.h"
 #include "esp_render_startup_bridge.h"
 #include "soft_xpt2046.h"
@@ -583,10 +582,6 @@ void loop()
      * Game-loop producer owns all SD reads/decoding; DAC timer ISR DRAM-only.
      * Automatically stop and close on session or map exit, fail closed. */
     EspEntranceMusic_service(EspNativeGameplaySession_isActive(), sdReady);
-    /* Menu-only 450ms phase: repaint just the selected physical button.
-     * A normal gameplay frame is never scheduled for the UAC pulse. */
-    if (EspUacMenuPreview_needsBlink(millis()))
-        (void)PlatformVideo_present();
     updateTouchDiagnostic();
     printHeartbeat();
     delay(5);
