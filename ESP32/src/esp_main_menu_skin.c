@@ -17,11 +17,12 @@ typedef struct {
 /* Compact original Doom-like pixel-metal lettering. The reference is
  * ONE BIG WORD per control (not two tiny lines). The 5x9 masks use 108 bytes
  * of flash, no font atlas, texture, cache, mutable state or heap. */
-/* CLASSIC ROM tones are shared by MENU_MAIN, modals and LOADING.
- * Only their vertical order is reversed: dark copper at the top. */
-#define CLASSIC_PALE_YELLOW 0xff34U
-#define CLASSIC_GOLD_BRONZE 0xf5aaU
-#define CLASSIC_RED_COPPER  0xd225U
+/* CLASSIC photographic copper/brass trial: dark patina -> aged bronze ->
+ * warm pale gold. Source a.bmp grayscale remains unmodified. INFERNO and
+ * PHOSPHORE are byte-exact. Values are RGB565, no new state or heap. */
+#define CLASSIC_PALE_YELLOW 0xfef4U /* approx. #F9DCA3 */
+#define CLASSIC_GOLD_BRONZE 0xd4aaU /* approx. #D29753 */
+#define CLASSIC_RED_COPPER  0x9285U /* approx. #93502E */
 
 static const SkinPalette palettes[3] = {
     /*      base    steel   top     dark    groove  copper  ink     face  */
@@ -97,7 +98,7 @@ uint16_t EspMainMenuSkin_progressTone(int row, int rows) {
     /* LOADING uses the same six RGB565 tones, reversed dark-to-light.
      * Only filled pixels change; geometry/ownership stay unchanged. */
     static const uint16_t gradients[3][6] = {
-        {0xb225U, CLASSIC_RED_COPPER, CLASSIC_RED_COPPER,
+        {0x61c3U, CLASSIC_RED_COPPER, CLASSIC_RED_COPPER,
          CLASSIC_GOLD_BRONZE, CLASSIC_GOLD_BRONZE, CLASSIC_PALE_YELLOW},
         /* INFERNO: six genuinely red rows, not an amber face with a red seam. */
         {0x9002U, 0xb003U, 0xd004U, 0xf804U, 0xf905U, 0xf946U},
