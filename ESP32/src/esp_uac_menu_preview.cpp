@@ -23,15 +23,14 @@ static_assert(ESP_UAC_PANEL_WIDTH==ESP_UAC_BUTTON_WIDTH+2*ESP_UAC_BUTTON_INSET,
               "button bezel must be symmetric");
 constexpr uint16_t kMatte=0x1925U;
 const char* const kButtons[4]={"start","load","options","help"};
-/* The 120-only renderer uses genuine indexed Doom glyphs, not luminance.
- * One bounded 25-glyph x 17-row x 7-byte cache (2975 B) serves MAIN and
- * OPTIONS/VIDEO/SOUND/presets, released on menu exit; no gameplay BSS. */
+/* The 120-only renderer now reads the SAME 9x12 a.bmp indexed font
+ * as HELP: one 25-glyph x 12-row x 5-byte cache (1500 B) serves MAIN and
+ * OPTIONS/VIDEO/SOUND/presets, released on exit; no gameplay BSS. */
 constexpr char kFontAlphabet[]="%01257ABCDEFHIKLMNOPRSTUV";
-constexpr int kGlyphW=13,kGlyphH=17;
-/* Pixel-perfect 13x17 Doom atlas: modest 14x23 physical scale with
- * a lower optical baseline. The old 14x27 climbed into the top bevel;
- * 14x23 at y+10 keeps a visible 10px upper / 7px lower corridor.
- * Long submenu labels shrink just enough to fit the 110px plate. */
+constexpr int kGlyphW=9,kGlyphH=12;
+/* Pixel-faithful a.bmp (9x12 ASCII cells), sampled nearest into the
+ * bounded 15x25 physical ink box. Existing centered text corridors remain
+ * unchanged. Never load larger_font.bmp merely to paint menu buttons. */
 constexpr int kPaintGlyphW=15,kPaintGlyphH=25,kPaintAdvance=13;
 constexpr int kLabelYOffset=1; /* 8px top / 7px bottom for 25px labels */
 static_assert(7*kPaintAdvance<=ESP_UAC_BUTTON_WIDTH-12,
@@ -47,7 +46,7 @@ static bool fontReady=false;
 /* 16 RGB565 source shades (32 B) for the active SD atlas, never a second font. */
 static uint16_t fontSourcePalette[16]={};
 static bool fontIsNeutral=false;
-static void releaseLargerFont(){
+static void releaseMenuFont(){
     free(fontInk);
     fontInk=nullptr;
     fontReady=false;
@@ -62,7 +61,7 @@ static void releaseBufferedBmps(){
     free(frameCache.pixels);free(genericCache.pixels);
     frameCache=BufferedBmp{};genericCache=BufferedBmp{};
 }
-static void releaseMenuAssets(){releaseLargerFont();releaseBufferedBmps();}
+static void releaseMenuAssets(){releaseMenuFont();releaseBufferedBmps();}
 static const char* const kGeneric120="/doomrpg/img/menu_generic_120.bmp";
 const int kTop[4]={20,74,128,182};
 /* Options subpages own presentation labels only: original UI model,
@@ -221,14 +220,12 @@ static void buttonPath(char* p,size_t n,int m,int index,bool active){
              active?"active":"inactive",assetTier(m));
 }
 
-/* Select the existing SD-indexed font owner WITHOUT opening the PAK first:
- * a physical SD PAK lease would prohibit the preferred SD font source.
- * If absent/malformed, open a transient native PAK lease, decode the same
- * original 208x102 indexed atlas, then close it before any BMP/TFT paint.
- * No ZIP, font-sized retained buffer, or PAK lease held during music.
- * The resulting compact ink cache is the ONLY retained font state here. */
-static bool prepareLargerFont(){
-    releaseLargerFont();
+/* Prefer the same a.bmp SD source as HELP, WITHOUT a simultaneous
+ * PAK lease. On malformed or missing SD atlas, decode the native a.bmp
+ * from one temporary PAK lease and close it before SD button/audio use.
+ * No ZIP and no retained full atlas or second frame buffer. */
+static bool prepareMenuFont(){
+    releaseMenuFont();
     fontInk=static_cast<FontInkCache*>(calloc(1U,sizeof(FontInkCache)));
     if(!fontInk){
         Serial.println("[UAC] FONT120 FAIL reason=bounded-cache-alloc");
@@ -238,15 +235,13 @@ static bool prepareLargerFont(){
     EspNativeIndexedBmpStats stats{};
     bool temporaryPak=false;
     EspNativeIndexedBmpStatus st=EspNativeIndexedBmp_openSdFontStandalone(
-        "larger_font.bmp",&bmp,&stats);
+        "a.bmp",&bmp,&stats);
 
-    /* Blit actual indexed glyph pixels via the existing bounded decoder;
-     * retain the palette INDEX, not RGB luminance, so colors and black
-     * outlines match a.bmp. The same mapping works with the old PAK atlas
-     * and the new recolored SD atlas (the indices have not changed). */
+    /* Cache a.bmp indexed glyphs (not RGB texels). Preserve magenta
+     * transparency, black outlines and source grayscale shades. */
     auto decode=[&]()->bool {
         if(st!=ESP_NATIVE_INDEXED_BMP_OK ||
-           bmp.width!=208U || bmp.height!=102U)return false;
+           bmp.width!=144U || bmp.height!=72U)return false;
         for(size_t i=0;i<sizeof(kFontAlphabet)-1;++i){
             const unsigned ch=(unsigned)kFontAlphabet[i]-33U;
             uint16_t pixels[kGlyphW*kGlyphH];
@@ -289,15 +284,14 @@ static bool prepareLargerFont(){
                 Serial.println("[UAC] FONT PAK fallback unavailable");
         }
         if(EspAssetPack_isOpen()){
-            st=EspNativeIndexedBmp_open("larger_font.bmp",&bmp,&stats);
+            st=EspNativeIndexedBmp_open("a.bmp",&bmp,&stats);
             ok=decode();
         }
     }
     const bool fromSD=ok && bmp.sdFontSource!=0U;
     if(ok){
-        /* The neutral SD atlas uses grayscale palette entries, but the PAK
-         * and historical color BMP retain the original metal-style colors.
-         * No source BMP or global gameplay tint contract is modified. */
+        /* Both SD and PAK a.bmp are accepted. Grayscale uses the exact
+         * HELP tint path; colored legacy PAK is safely hue-tinted. */
         fontIsNeutral=fromSD && bmp.paletteCount==16U;
         fontSourcePalette[0]=0U; /* ink 0 is always transparent */
         for(unsigned ink=1U;ink<16U;++ink){
@@ -309,9 +303,9 @@ static bool prepareLargerFont(){
     }
     if(temporaryPak)EspAssetPack_close();
     EspNativeFontSd_suspend();
-    if(!ok)releaseLargerFont();
+    if(!ok)releaseMenuFont();
     else fontReady=true;
-    Serial.printf("[UAC] FONT120 %s name=larger_font.bmp backing=%s palette=%s ramp=vertical-3stops glyphs=%u inkBytes=%u reads=%lu bytes=%lu\n",
+    Serial.printf("[UAC] FONT120 %s name=a.bmp backing=%s palette=%s ramp=vertical-3stops glyphs=%u inkBytes=%u reads=%lu bytes=%lu\n",
                   ok?"READY":"FAIL",fromSD?"SD":"PAK",
                   fontIsNeutral?"neutral-theme":"classic-metal",
                   (unsigned)(sizeof(kFontAlphabet)-1),(unsigned)sizeof(FontInkCache),
@@ -319,9 +313,8 @@ static bool prepareLargerFont(){
     return ok;
 }
 
-/* Scale cached 13x17 indexed glyphs to physical 14x23 by bounded nearest
- * lookup, without allocating a second atlas. Optical ink now fills the
- * 110x40 plate more evenly; selected/nonselected share palette semantics. */
+/* Sample the identical 9x12 HELP glyph bitmaps into the existing 15x25
+ * physical ink boxes, without another atlas or touching game presentation. */
 static void paintLargerTextRow(uint16_t* dst,int py,int index,int selected,
                                bool darkPhase,bool patch,int page){
     if(!fontReady||index<0||index>=pageCount(page))return;
@@ -340,9 +333,8 @@ static void paintLargerTextRow(uint16_t* dst,int py,int index,int selected,
     const int sourceY=paintY*kGlyphH/textH;
     const int xStart=(ESP_UAC_BUTTON_WIDTH-(len*advance+textW-advance))/2;
     const int destOrigin=patch?0:kPanelX+ESP_UAC_BUTTON_INSET;
-    /* Smooth 19/21/23-row vertical tone, dark-to-light as the real native
-     * menu theme. Cache only 16 row shades on stack; source glyph bitmap
-     * indices, black outlines and magenta transparency stay unchanged. */
+    /* Smooth 19/21/25-row vertical tone, dark-to-light.
+     * 16 shades on stack; transparency and outlines unchanged. */
     uint16_t rowInk[16];
     const uint16_t tone=EspUacFontTheme_verticalTone(
         EspMainMenuSkin_letterTone(0,9),
@@ -404,7 +396,7 @@ static bool preflight(int m){
             Serial.println("[UAC] PREFLIGHT FAIL reason=bounded-bmp-cache");
             releaseBufferedBmps();return false;
         }
-        if(!prepareLargerFont()){releaseBufferedBmps();return false;}
+        if(!prepareMenuFont()){releaseBufferedBmps();return false;}
         Serial.println("[UAC] PREFLIGHT OK mode=1 tier=120 cachedBMP=32720 menu-only font=larger SD-or-PAK");
         return true;
     }
@@ -650,16 +642,16 @@ extern "C" int EspUacMenuPreview_enterDefault(void){
     const unsigned heapBefore=(unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT);
     const unsigned largestBefore=(unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
     mode=kClassic;paintedMode=0;paintedSelection=-1;
-    releaseLargerFont();
+    releaseMenuFont();
     if(!preflight(kNative120)){
-        releaseLargerFont();
+        releaseMenuFont();
         Serial.printf("[UAC] DEFAULT FALLBACK mode=CLASSIC reason=assets-or-font heap8=%u largest8=%u\n",
                       (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
                       (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
         return kClassic;
     }
     mode=kNative120;
-    Serial.printf("[UAC] DEFAULT READY mode=120 generic=1 font=larger inkBytes=%u glyphPaint=%dx%d heap8=%u->%u largest8=%u->%u\n",
+    Serial.printf("[UAC] DEFAULT READY mode=120 generic=1 font=a.bmp inkBytes=%u glyphPaint=%dx%d heap8=%u->%u largest8=%u->%u\n",
                   (unsigned)sizeof(FontInkCache),kPaintGlyphW,kPaintGlyphH,
                   heapBefore,(unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
                   largestBefore,(unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
