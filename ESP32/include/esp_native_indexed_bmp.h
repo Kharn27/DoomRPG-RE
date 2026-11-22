@@ -78,6 +78,26 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_blit(
     uint8_t transparentMagenta,
     EspNativeIndexedBmpStats* stats);
 
+/* Nearest-neighbor fit of a single indexed source rectangle; currently bounded to
+ * 32x32 destination pixels, e.g. a HUD face. Uses the existing 1 KiB indexed
+ * reader scratch, no full-image decode or additional persistent allocation.
+ * The source rectangle must be at most 256x256 pixels. */
+EspNativeIndexedBmpStatus EspNativeIndexedBmp_blitScaledNearest(
+    const EspNativeIndexedBmp* bmp,
+    uint16_t* framebuffer,
+    uint16_t framebufferWidth,
+    uint16_t framebufferHeight,
+    uint16_t sourceX,
+    uint16_t sourceY,
+    uint16_t sourceWidth,
+    uint16_t sourceHeight,
+    int16_t destinationX,
+    int16_t destinationY,
+    uint16_t destinationWidth,
+    uint16_t destinationHeight,
+    uint8_t transparentMagenta,
+    EspNativeIndexedBmpStats* stats);
+
 /* Repeat the complete source image across one destination rectangle. */
 EspNativeIndexedBmpStatus EspNativeIndexedBmp_tile(
     const EspNativeIndexedBmp* bmp,
