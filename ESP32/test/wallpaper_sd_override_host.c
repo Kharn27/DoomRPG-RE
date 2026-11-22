@@ -94,6 +94,14 @@ int main(void) {
            == ESP_NATIVE_INDEXED_BMP_INVALID);
     assert(EspNativeIndexedBmp_openSdFontStandalone("e.bmp",&row,&stats)
            == ESP_NATIVE_INDEXED_BMP_INVALID);
+    assert(EspNativeIndexedBmp_openSdWallpaperStandalone("e.bmp",&row,&stats)
+           == ESP_NATIVE_INDEXED_BMP_INVALID);
+    assert(EspNativeIndexedBmp_openSdWallpaperStandalone("c.bmp",&row,&stats)
+           == ESP_NATIVE_INDEXED_BMP_OK);
+    assert(row.sdFontSource==ESP_NATIVE_WALLPAPER_SD_STARS &&
+           row.bitsPerPixel==4U && !packOpen);
+    assert(EspNativeIndexedBmp_blit(&row,framebuffer,32,32,
+                                   0,0,32,32,0,0,0U,&stats)==ESP_NATIVE_INDEXED_BMP_OK);
 
     /* The SD asset is read BEFORE the PAK lease is opened, then adopted
      * without setting SD-font tint metadata. */
@@ -107,19 +115,12 @@ int main(void) {
            img.paletteSize==256U&&!img.sdFont&&img.hasColorKey&&
            img.palette[0].r==255U&&img.palette[0].g==0U&&
            img.palette[0].b==255U&&!packOpen&&pakReads==0U);
-    /* Pink speckle regression: every near-magenta pixel must be key 0. */
+    /* Original SD E8 intentionally restored: no fringe filtering for A/B. */
     {
         unsigned key=0U;
-        for (unsigned y=0; y<128U; ++y) for (unsigned x=0; x<128U; ++x) {
-            uint8_t id=img.pixels[y*(unsigned)img.pitch+x];
-            const EspNativeImageColor* color=&img.palette[id];
-            if (id==0U) { ++key; continue; }
-            assert(!(color->r>=156U && color->b>=140U &&
-                     color->g<=170U && abs((int)color->r-(int)color->b)<90 &&
-                     (int)color->r-(int)color->g>=40 &&
-                     (int)color->b-(int)color->g>=40));
-        }
-        assert(key==12022U);
+        for (unsigned y=0; y<128U; ++y) for (unsigned x=0; x<128U; ++x)
+            if (img.pixels[y*(unsigned)img.pitch+x]==0U) ++key;
+        assert(key==7527U);
     }
     EspNativeImage_dispose(&img);
     assert(sdReads>=4U);
@@ -127,6 +128,8 @@ int main(void) {
     /* Existing streaming reader also supports both names where the
      * PAK lease is already physically safe for SD I/O. */
     packOpen=1;
+    assert(EspNativeIndexedBmp_openSdWallpaperStandalone("c.bmp",&row,&stats)
+           == ESP_NATIVE_INDEXED_BMP_INVALID);
     assert(EspNativeIndexedBmp_open("c.bmp",&row,&stats)
            ==ESP_NATIVE_INDEXED_BMP_OK);
     assert(row.sdFontSource==ESP_NATIVE_WALLPAPER_SD_STARS&&

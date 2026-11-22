@@ -63,6 +63,12 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_openSdFontStandalone(
     EspNativeIndexedBmp* outBmp,
     EspNativeIndexedBmpStats* stats);
 
+/* Loading SD-first C wallpaper: caller has no open PAK lease.
+ * The SD handle is suspended after the row blit, before PAK use. */
+EspNativeIndexedBmpStatus EspNativeIndexedBmp_openSdWallpaperStandalone(
+    const char* name, EspNativeIndexedBmp* outBmp,
+    EspNativeIndexedBmpStats* stats);
+
 /* Draw one source rectangle. Coordinates are clipped only at the framebuffer. */
 EspNativeIndexedBmpStatus EspNativeIndexedBmp_blit(
     const EspNativeIndexedBmp* bmp,

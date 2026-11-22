@@ -29,6 +29,30 @@
  */
 static uint8_t indexedBmpScratch[BMP_BLIT_RANGE_BYTES];
 
+/* Font overrides may be reopened for every HUD/dialog glyph paint. Log only
+ * the first successful activation of each named SD font per boot; a repeated
+ * open must not flood Serial or disturb gameplay timing. Missing/invalid
+ * override diagnostics remain unchanged in EspNativeFontSd_probe/reject. */
+#if defined(DOOMRPG_ESP32) && DOOMRPG_ESP32
+static uint8_t fontSdActiveLoggedMask;
+
+static void logFontSdActiveOnce(const char* name,
+                                const EspNativeIndexedBmp* bmp,
+                                uint32_t size,
+                                uint8_t source) {
+    uint8_t bit;
+    if (name == NULL || bmp == NULL ||
+        source < ESP_NATIVE_FONT_SD_STANDARD ||
+        source > ESP_NATIVE_FONT_SD_LARGER) return;
+    bit = (uint8_t)(1U << (source - ESP_NATIVE_FONT_SD_STANDARD));
+    if ((fontSdActiveLoggedMask & bit) != 0U) return;
+    fontSdActiveLoggedMask = (uint8_t)(fontSdActiveLoggedMask | bit);
+    printf("[FONTSD] ACTIVE name=%s source=SD indexed=%u palette=%u bytes=%lu\n",
+           name, (unsigned)bmp->bitsPerPixel,
+           (unsigned)bmp->paletteCount, (unsigned long)size);
+}
+#endif
+
 static uint16_t readLe16(const uint8_t* p) {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
 }
@@ -243,11 +267,14 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_open(
                     EspNativeBmpSd_correctGeometry(source, outBmp->width,
                                                    outBmp->height);
             if (status == ESP_NATIVE_INDEXED_BMP_OK && correctGeometry) {
-                printf("[%s] ACTIVE name=%s source=SD indexed=%u palette=%u bytes=%lu\n",
-                       EspNativeBmpSd_isFont(source) ? "FONTSD" : "WALLSD",
-                       name, (unsigned)outBmp->bitsPerPixel,
-                       (unsigned)outBmp->paletteCount,
-                       (unsigned long)sdSize);
+                if (EspNativeBmpSd_isFont(source)) {
+                    logFontSdActiveOnce(name, outBmp, sdSize, source);
+                } else {
+                    printf("[WALLSD] ACTIVE name=%s source=SD indexed=%u palette=%u bytes=%lu\n",
+                           name, (unsigned)outBmp->bitsPerPixel,
+                           (unsigned)outBmp->paletteCount,
+                           (unsigned long)sdSize);
+                }
                 return status;
             }
             EspNativeFontSd_reject(source);
@@ -294,9 +321,7 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_openSdFontStandalone(
     result = openFromSource(name, outBmp, stats, source, sdSize);
     if (result == ESP_NATIVE_INDEXED_BMP_OK &&
         outBmp->width == expectedWidth && outBmp->height == expectedHeight) {
-        printf("[FONTSD] ACTIVE name=%s source=SD indexed=%u palette=%u bytes=%lu\n",
-               name, (unsigned)outBmp->bitsPerPixel,
-               (unsigned)outBmp->paletteCount, (unsigned long)sdSize);
+        logFontSdActiveOnce(name, outBmp, sdSize, source);
         return result;
     }
     EspNativeFontSd_reject(source);
@@ -306,6 +331,40 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_openSdFontStandalone(
     (void)name;
     (void)outBmp;
     (void)stats;
+    return ESP_NATIVE_INDEXED_BMP_NOT_FOUND;
+#endif
+}
+
+
+/* No PAK lease: first LOADING frame may read C from the user's SD
+ * using the same indexed 1KiB scratch. Only this exact wallpaper is allowed. */
+EspNativeIndexedBmpStatus EspNativeIndexedBmp_openSdWallpaperStandalone(
+    const char* name, EspNativeIndexedBmp* outBmp,
+    EspNativeIndexedBmpStats* stats) {
+#if defined(DOOMRPG_ESP32) && DOOMRPG_ESP32
+    uint32_t sdSize = 0U;
+    uint8_t source;
+    EspNativeIndexedBmpStatus status;
+    if (outBmp != NULL) memset(outBmp, 0, sizeof(*outBmp));
+    if (name == NULL || outBmp == NULL || EspAssetPack_isOpen() ||
+        strcmp(name, "c.bmp") != 0)
+        return ESP_NATIVE_INDEXED_BMP_INVALID;
+    source = EspNativeFontSd_probe(name, &sdSize);
+    if (source != ESP_NATIVE_WALLPAPER_SD_STARS)
+        return ESP_NATIVE_INDEXED_BMP_NOT_FOUND;
+    status = openFromSource(name, outBmp, stats, source, sdSize);
+    if (status == ESP_NATIVE_INDEXED_BMP_OK &&
+        EspNativeBmpSd_correctGeometry(source, outBmp->width, outBmp->height)) {
+        printf("[WALLSD] ACTIVE name=%s source=SD indexed=%u palette=%u bytes=%lu\n",
+               name, (unsigned)outBmp->bitsPerPixel,
+               (unsigned)outBmp->paletteCount, (unsigned long)sdSize);
+        return status;
+    }
+    EspNativeFontSd_reject(source);
+    memset(outBmp, 0, sizeof(*outBmp));
+    return ESP_NATIVE_INDEXED_BMP_UNSUPPORTED;
+#else
+    (void)name; (void)outBmp; (void)stats;
     return ESP_NATIVE_INDEXED_BMP_NOT_FOUND;
 #endif
 }

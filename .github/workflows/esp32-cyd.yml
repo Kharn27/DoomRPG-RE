@@ -833,6 +833,12 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include ESP32/test/test_sys_touch.c ESP32/src/esp_native_gameplay_save_touch.c -o /tmp/doomrpg-sys-touch-test
           /tmp/doomrpg-sys-touch-test
 
+      - name: Verify FONTSD ACTIVE de-duplicated on repeated indexed-BMP opens (host C11)
+        run: python ESP32/test/font_sd_active_log_host.py
+
+      - name: Test themed Doom a.bmp LOADING title and fallback (real C11 painter)
+        run: python ESP32/test/loading_doom_title_host.py
+
       - name: Test loading bar flash scales and cache boundary (host C11)
         run: |
           cc -std=c11 -Wall -Wextra -Werror -IESP32/include \

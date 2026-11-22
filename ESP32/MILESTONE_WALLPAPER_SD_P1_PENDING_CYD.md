@@ -1,4 +1,4 @@
-# WALL-SD-P1 — correction après premier test CYD : PENDING RETEST
+# WALL-SD-P1 — audio validé au deuxième test, correction visuelle PENDING CYD
 
 **Branche :** `agent/esp32-wallpaper-sd-overrides`, [PR #434](https://github.com/Kharn27/DoomRPG-RE/pull/434) (DRAFT).
 **Base main vérifiée :** `a40d96eceb94844551a3a3fcd8036d0497d79d93`.
@@ -67,3 +67,36 @@ runtime, buffer image pleine taille ou second reader.
    un CI vert ne vaut pas un PASS CYD.
 
 **Statut : première version FAIL matériel ; correctif à retester.**
+
+## Deuxième vrai test — AUDIO PASS, fond loading MIXTE
+
+`platformio-device-monitor-261122-182021.log`, 537 lignes,
+SHA256 `080dbe1e2765bd43a93bda64b19bc6f3f35e5ad7c3168cc635e690fb33c4ad9a`.
+Le firmware est identifié par le contexte du test, sans SHA série :
+- menu M_DM2TTL.wav PLAY / FINAL underruns=0 recoveries=0 ;
+- intro M_IN_CIT.wav PRIMING heap8=59032 largest8=27636 /
+  PLAY / PRESTART ready=1 / FINAL underruns=0 ;
+- Entrance M_STALKS.wav PRIMING heap8=49300 largest8=34804 /
+  PLAY / PRESTART ready=1 failClosed=0 ;
+- RAMBUDGET HEADROOM_OK margin8=12732B, cache 15360B / 256 entrées,
+  shapeData=mediaTexels=NULL, aucun panic observé sur la capture.
+- MAIN UAC deux mises à jour de sélection 17 et 18 ms,
+  sdMs=0, sans underrun : manque de réactivité ressenti mais non
+  expliqué par ces deux temps de dessin. Contrat de double-tap inchangé.
+- Le chargeur affichait les étoiles PAK dans BEGIN/BSP/RUNTIME/RESTORE,
+  puis étoiles SD dès FLASH-READY : bascule visible signalée par le testeur.
+
+## Nouveau candidat visuel (non reflashé)
+
+La version initiale `e.bmp` SD est rétablie bit-à-bit (blob Git
+`16fe8cd8ddff2b18e040d69134bfb355fe2bb32b`) pour comparaison
+visuelle. Les nuances rose proche-magenta pourront réapparaître.
+Une entrée C-only SD standalone permet au premier écran de loading de
+lire la source microSD **avant** l'ouverture du PAK ; libération du
+handle après blit ligne par ligne, puis éventuel repli PAK. Source du
+premier écran verrouillée aux checkpoints ; callback PAK incompatible
+reporté plutôt que d'afficher un autre ciel.
+Fusion logique sur `main=c1a8c2820e5f7a75d8097e873905ec8e11fb53f7`
+préservant le LOADING a.bmp thématisé de #433 et son cache 420 B.
+Pas d'allocation de nouveau framebuffer ni modification audio.
+**Retest nécessaire du nouvel écran et des animations, PR reste DRAFT.**

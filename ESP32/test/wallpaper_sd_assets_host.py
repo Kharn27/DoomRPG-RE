@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""WALL-SD-P1 recovery: audit exact C4/E8 assets and pink-key fidelity.
+"""WALL-SD-P1: audit exact C4 and restored original E8 SD artwork.
 
 The CYD hardware log 261122-175956 had HEAP-POST-REJECT and visibly
 nontransparent (255,4,255) pixels. This host oracle guards both regressions.
@@ -15,7 +15,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[2]
 ITEMS = (
     ("c", (192, 128), 12406, "b9da41fa33449c8ffeebec5ce0662325c754d280", 4, 16, 118, 12288, 350.0),
-    ("e", (128, 128), 17462, "0768ffd1d1bb45a3206c347c8022f36689591f3c", 8, 256, 1078, 16384, 300.0),
+    ("e", (128, 128), 17462, "16fe8cd8ddff2b18e040d69134bfb355fe2bb32b", 8, 256, 1078, 16384, 300.0),
 )
 
 
@@ -61,7 +61,7 @@ def verify(name: str, size: tuple[int, int], byte_count: int,
     original = list(png.convert("RGB").getdata())
     quantized = list(bmp.convert("RGB").getdata())
     indices = list(bmp.getdata())
-    key_count, error = 0, 0
+    key_count, fringe_count, error = 0, 0, 0
     for src, dst, index in zip(original, quantized, indices):
         if name == "e":
             if rgb565(src) == (255, 0, 255):
@@ -70,20 +70,23 @@ def verify(name: str, size: tuple[int, int], byte_count: int,
                 key_count += 1
                 assert rgb565(dst) == (255, 0, 255), ("invalid transparent palette")
                 continue
-            assert not is_pink_fringe(rgb565(dst)), ("visible pink dot", dst)
+            if is_pink_fringe(rgb565(dst)):
+                fringe_count += 1  # original near-magenta preserved for A/B
         else:
             assert index < 16
         a = rgb565(src)
         b = rgb565(dst)
         error += 3 * (a[0] - b[0]) ** 2 + 6 * (a[1] - b[1]) ** 2 + 2 * (a[2] - b[2]) ** 2
-    assert key_count == (12022 if name == "e" else 0), (name, key_count)
+    assert key_count == (7527 if name == "e" else 0), (name, key_count)
+    if name == "e":
+        assert fringe_count >= 1000, fringe_count
     used = len(set(indices))
     assert used >= (14 if name == "c" else 140), (name, used)
     weighted_error = error / (size[0] * size[1])
     assert weighted_error < error_limit, (name, weighted_error, error_limit)
     print(f"WALL-SD ASSET PASS: {name}.bmp {size[0]}x{size[1]} "
           f"indexed={bpp} colors={used} bytes={len(data)} "
-          f"transparent={key_count} rgb565_weighted_error={weighted_error:.2f}")
+          f"transparent={key_count} fringe_preserved={fringe_count} rgb565_weighted_error={weighted_error:.2f}")
 
 
 def verify_audio_memory_recovery() -> None:
