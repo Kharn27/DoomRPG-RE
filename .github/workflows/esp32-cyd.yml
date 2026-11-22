@@ -427,6 +427,16 @@ jobs:
             ESP32/test/font_sd_tint_host.c -o /tmp/doomrpg-font-sd-tint
           /tmp/doomrpg-font-sd-tint
 
+      - name: WALL-SD-P1 indexed wallpapers, transparency, bounded SD and PAK fallback
+        run: |
+          python ESP32/test/wallpaper_sd_assets_host.py
+          cc -O2 -std=c11 -Wall -Wextra -Werror -DDOOMRPG_ESP32=1 -IESP32/include \
+            ESP32/src/esp_native_indexed_bmp.c \
+            ESP32/src/esp_native_indexed_image.c \
+            ESP32/test/wallpaper_sd_override_host.c \
+            -o /tmp/doomrpg-wallpaper-sd
+          /tmp/doomrpg-wallpaper-sd
+
       - name: SDL-C1 native indexed image decoder, PAK lease and failure rollback
         run: |
           cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include \
