@@ -1,10 +1,11 @@
-# AUDIO-PICKUP #419 — handoff du 5060 avant dialogue standalone (PENDING CYD)
+# AUDIO-PICKUP #419 — handoff et SFX d'arme original 5057 avant dialogue (PENDING CYD)
 
 **Issue :** [#419](https://github.com/Kharn27/DoomRPG-RE/issues/419).
 **PR :** [#422](https://github.com/Kharn27/DoomRPG-RE/pull/422).
 **Branche :** `agent/audio-pickup-419-modal-handoff`.
 **Base exacte de main :** `d6c47f5a2906355b82329ecd21dff5ff44d09abc` (ARCH-RC24 et FIRE-VIS-P2 inclus).
-**Statut : CI et test physique à confirmer. Aucun PASS acoustique / Serial de ce correctif à ce stade.**
+**Statut : correction de fidélité 5057 à tester sur vrai CYD ; pas encore de PASS de cette version.**
+Le premier candidat 5060 (SHA `733d2c17fb4304fd9bc97c635b6ab97a35005861`) a passé la double CI et une lecture de log CYD, mais est **fonctionnellement incorrect** pour les armes à feu.
 
 ## Cause réelle documentée (CYD avant #419)
 
@@ -15,22 +16,51 @@ faisait `[SFXP2] DEFER ... pack-lease-open` jusqu'à `[DIALOG] CLOSE`.
 La FIFO fonctionnait : aucun SFX perdu comptablement, mais un décalage audible
 du moment du pickup.
 
+### Validation matérielle intermédiaire et découverte (22 novembre 2026)
+
+Log exact `platformio-device-monitor-261122-082805.log` fourni par
+l'utilisateur sur la PR #422 : LOAD V11 Entrance, première Axe **tile 655**,
+premier Shotgun **tile 659**. Les deux sont `[AUDIOPICKUP] HANDOFF
+status=MIXED mixedBeforeModal=1 ack=1` avant `[DIALOG] OPEN-STANDALONE` ;
+`SFXP1 MIX id=5060 outputFrames=9702 mixed=9702` dans les deux cas,
+`underruns=0`, `AUDIOINTENT AUDIT queueOverflow=0
+consumerCursorGap=0 audibleSfxDropped=0`. La latence est donc corrigée
+dans ce parcours, et le joueur confirme l'entendre avant le dialogue.
+
+**Mais la fidélité de l'identité sonore est incorrecte.** La fonction
+historique `src/Entity.c::Entity_touched` (`eType=5`) fixe `sound=5060`
+uniquement pour Axe (subtype 0) et Fire Extinguisher (1) ; pour les armes
+à feu Shotgun (3), Chaingun (4), Super Shotgun (5), Plasma (6),
+Rocket Launcher (7), BFG (8), elle fixe **`sound=5057`**, y compris
+les prises de doublon. Le premier candidat #422 avait publié 5060 pour
+toutes les ressources ; les 5060 du Shotgun sont une **preuve de régression
+de fidélité** malgré le PASS technique de handoff.
+
+Le correctif suivant ajoute le choix original `EspAudioPickupCue_weapon`
+et ouvre le chemin PCM borné 5057 **avant** la modale, sans revenir
+au SFX générique ou à la lecture PAK pendant le bail. Une nouvelle
+validation complète CI + CYD est impérative.
+
 ## Changement borné
 
 1. La transaction de pickup et son rendu de confirmation réussissent **avant**
    toute publication audio de ce nouvel embranchement. Le rollback reste
    strictement silencieux.
-2. Le pickup publie une **seule intention 5060**, puis, seulement si le
-   dialogue de **première arme** doit s'ouvrir, propose au propriétaire audio
-   `EspEntranceMusic_handoffPickupBeforeModal(sequence)`.
-3. Le propriétaire audio unique valide la **prochaine** intention FIFO exacte
-   (pas de saut ni de réordonnancement), la disponibilité du PAK/flash et de la
-   piste, la forme réelle de `5060.wav` (PCM16 mono 8 kHz) et les voix
-   disponibles. Les 3 520 frames source du PAK original représentent **9 702**
-   frames à 22 050 Hz ; avec les **1 024** frames de garde, le ring de
-   **16 384 octets** doit contenir **10 726** frames futures disponibles.
-   Cette limite est **recalculée depuis l'en-tête PAK** et non aveuglément
-   codée sur la durée historique.
+2. Le pickup publie **une seule intention**, choisie par le type d'objet et
+   le sous-type d'arme, après succès de la transaction. `5060` reste
+   le cue des objets ordinaires, munitions, Axe et Fire Ext ; `5057` est
+   la sonorité originale des armes à feu, **même en doublon**. Uniquement
+   si un dialogue de **première acquisition** doit s'ouvrir, le propriétaire
+   reçoit `EspEntranceMusic_handoffPickupBeforeModal(sequence)`.
+3. Le propriétaire audio valide la **prochaine** intention FIFO exacte
+   (pas de saut ni de réordonnancement), la disponibilité PAK/flash et de la
+   piste, puis l'en-tête `5057.wav` **ou** `5060.wav` (PCM16 mono 8 kHz).
+   La ressource originale 5060 contient 3 520 frames source, soit **9 702**
+   frames DAC à 22 050 Hz, **10 726** avec garde. La ressource originale
+   5057 contient 4 320 frames source, soit **11 907** frames DAC,
+   **12 931** avec garde 1 024. Les deux tiennent dans le ring
+   **16 384 octets**. Les seuils réels sont **recalculés depuis le PAK**
+   et non figés dans la logique.
 4. Si nécessaire, au maximum **quatre** blocs de musique ADPCM sont publiés
    via le lecteur SD et ring **existants**, dans la même tâche Arduino. Puis
    `mixPendingSfxOne` mélange une seule intention, l'ACKant par son propriétaire
@@ -54,9 +84,11 @@ véritable corps C++** du handoff, plus le propriétaire FIFO
 `ESP32/src/esp_native_audio_intent.c`, les vrais parsers WAV/PCM et la garde
 native. Les périphériques PAK/SD/ring et le corps du mixeur préexistant sont
 remplacés par de petits témoins déterministes (le mixeur normal reste couvert
-par ses tests historiques). Tests incluant 5060 avant modal, FIFO ancienne,
+par ses tests historiques). Le test vérifie la distinction exacte du
+`src/Entity.c` original, la fonction C pure `EspAudioPickupCue_weapon`
+(0/1 → 5060, 2..11 → 5057), les deux WAV avant modale, FIFO ancienne,
 bail occupé, sons désactivés, musique absente, voix occupées, WAV corrompu,
-refills bornés, exact budget 10726, ACK unique et non-rejeu.
+refills bornés, les budgets **10726 / 12931**, ACK unique et non-rejeu.
 La restauration inverse stricte des changements #419 est appliquée **uniquement
 pour l'oracle Git historique SDL-F27**, sans réécrire ses hashes d'origine.
 
@@ -65,16 +97,21 @@ pour l'oracle Git historique SDL-F27**, sans réécrire ses hashes d'origine.
 Après **double CI SUCCESS** sur le HEAD de la PR, flasher ce HEAD normal
 sur le CYD 4 MiB sans PSRAM, même microSD et PAK que les essais précédents.
 
-- START → NEW GAME → Entrance ; ramasser **Shotgun première fois** (tile
-  observée 659). À l'oreille : cue de pickup au toucher, avant fermeture du
-  dialogue. Chercher `[AUDIOINTENT] PUBLISH ...resource=5060`,
-  `[SFXP1] MIX ...id=5060`,
-  `[AUDIOPICKUP] HANDOFF ...status=MIXED mixedBeforeModal=1 ack=1`,
-  **puis** `[DIALOG] OPEN-STANDALONE`. Les messages de journalisation
-  `PLAYERRES COMMIT` doivent précéder le handoff.
-- Tester une **première Fire Ext** (tile 643 si parcours identique), puis
-  toute autre première arme proposée et une reprise d'arme déjà possédée.
-  Vérifier aucun SFX en double, dialogue lisible, pickup unique.
+- START → NEW GAME **ou** LOAD V11 Entrance avec arme encore à prendre ;
+  ramasser le **Shotgun première fois** (tile observée **659**).
+  À l'oreille : le cue mécanique d'arme original, immédiatement et
+  **avant la fermeture du dialogue**. Logs attendus :
+  `[PLAYERRES] COMMIT ...action=weapon` →
+  `[AUDIOINTENT] PUBLISH ...resource=5057` →
+  `[SFXP1] MIX id=5057 ...sampleFrames=4320 outputFrames=11907 mixed=11907` →
+  `[AUDIOPICKUP] HANDOFF ...id=5057 status=MIXED mixedBeforeModal=1 ack=1` →
+  `[DIALOG] OPEN-STANDALONE`. **Aucun 5060** pour ce pickup Shotgun.
+- Vérifier le premier ramassage de la **Hache** (observée tile **655**)
+  et du **Fire Ext** (tile **643** si parcours identique) : cue **5060**
+  toujours pré-modal. Tester un pickup de munitions : cue **5060**.
+  Si possible essayer une acquisition d'arme à feu déjà possédée :
+  **5057** sans nouveau dialogue. Vérifier zéro doublon sonore,
+  dialogues lisibles, mutation de pickup unique.
 - Tester l'absence/le refus d'un WAV ou de musique en regardant le statut
   `DEFER` ; aucune lecture PAK concurrente ni crash. Une cible volontairement
   indisponible est hors du PASS acoustique principal.
