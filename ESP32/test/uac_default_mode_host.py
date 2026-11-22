@@ -26,6 +26,14 @@ assert 'int EspUacMenuPreview_enterDefault(void);' in header
 assert 'constexpr int kPaintGlyphW=15,kPaintGlyphH=25,kPaintAdvance=13;' in preview
 assert 'constexpr int kLabelYOffset=1;' in preview
 assert 'const int sourceY=paintY*kGlyphH/textH;' in preview
+assert 'constexpr int kGlyphW=9,kGlyphH=12;' in preview
+assert 'bmp.width!=144U || bmp.height!=72U' in preview
+assert 'EspNativeIndexedBmp_openSdFontStandalone(' in preview
+assert '"a.bmp",&bmp,&stats);' in preview
+assert 'EspNativeIndexedBmp_open("a.bmp",&bmp,&stats);' in preview
+assert 'name=a.bmp backing=%s' in preview
+assert 'name=larger_font.bmp backing=%s' not in preview
+assert 'sizeof(FontInkCache)' in preview
 assert 'const int sourceX=x*kGlyphW/textW;' in preview
 assert 'for(int x=0;x<textW;++x)' in preview
 # Historical accepted 14x23 bitmap proofs remain immutable until CYD visual PASS.
@@ -144,13 +152,13 @@ for label in ("START","LOAD","OPTIONS","HELP"):
     assert x>=6 and x+width<=104,(label,x)
 y=(40-25)//2+1
 assert y==8 and y+25==33  # 8px upper / 7px lower clearance
-assert 25*17*7==2975
+assert 25*12*5==1500
 for x in range(15):
-    sx=x*13//15
-    assert 0<=sx<13
+    sx=x*9//15
+    assert 0<=sx<9
 for y in range(25):
-    sy=y*17//25
-    assert 0<=sy<17
+    sy=y*12//25
+    assert 0<=sy<12
 
 activate_options=(root/"ESP32/src/native_main_menu_options_action.c").read_text()
 assert 'EspUacMenuPreview_armOptions();' in activate_options
@@ -180,5 +188,5 @@ for y in range(32):
     assert (y*40//32)//2==sy
     assert 0<=sy<20
 assert 'esp_uac_menu_preview.h' in options and 'EspUacMenuPreview_optionsPage(' in options
-print("UAC-DEFAULT+OPTIONS HOST PASS: deferred integrity checks, 14x23 lower optical baseline, 2975B bounded font cache,")
+print("UAC-DEFAULT+OPTIONS HOST PASS: same a.bmp as HELP, 15x25 glyphs, 1500B bounded font cache,")
 print("                              cached SD BMP, two-tap navigation, one-tap percentages only, bounded rows")
