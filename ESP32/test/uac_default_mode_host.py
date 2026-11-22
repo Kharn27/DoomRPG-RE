@@ -105,7 +105,7 @@ enter=section(preview,'extern "C" int EspUacMenuPreview_enterDefault(void){',
 assert 'if(!defaultPending)return mode;' in enter
 assert 'defaultPending=false;' in enter
 assert 'mode=kClassic;paintedMode=0;paintedSelection=-1;' in enter
-assert 'releaseLargerFont();' in enter
+assert 'releaseMenuFont();' in enter
 assert 'if(!preflight(kNative120)){' in enter
 assert 'mode=kNative120;' in enter
 assert enter.index('if(!preflight(kNative120)){') < enter.index('mode=kNative120;')
