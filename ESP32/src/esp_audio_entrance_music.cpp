@@ -735,7 +735,7 @@ static void mixPendingSfxOne() {
             genericSfx[i].active=false;
         return;
     }
-    if (id!=5045U && id!=5046U && id!=5060U) {
+    if (id!=5045U && id!=5046U && id!=5060U && id!=5057U) {
         if (EspAssetPack_isOpen()) return;
         EspNativeAudioIntent_noteConsumerGap(sfxSeenSequence,intent->sequence);
         sfxSeenSequence=intent->sequence;
@@ -1588,7 +1588,8 @@ int EspEntranceMusic_handoffPickupBeforeModal(uint32_t pickupSequence) {
         return 0;
     }
     if (!EspNativeAudioIntent_nextAfter(sfxSeenSequence,&next) ||
-        next.sequence!=pickupSequence || next.resourceId!=5060U ||
+        next.sequence!=pickupSequence ||
+        (next.resourceId!=5060U && next.resourceId!=5057U) ||
         next.flags!=0U || sfxSeenSequence==UINT32_MAX ||
         next.sequence!=sfxSeenSequence+1U) {
         printf("[AUDIOPICKUP] HANDOFF seq=%u status=DEFER reason=fifo-order fifo=retained\\n",
@@ -1596,17 +1597,22 @@ int EspEntranceMusic_handoffPickupBeforeModal(uint32_t pickupSequence) {
         return 0;
     }
 
-    /* The original 5060 is 3520 frames at 8kHz = 9702 at 22.05kHz.
-     * Validate the CURRENT PAK metadata, never assume that fixed length. */
+    /* Original 5060 pickup: 3520 frames -> 9702 DAC frames.
+     * Original 5057 weapon-ready: 4320 frames -> 11907 DAC frames.
+     * Both fit within this same 16KiB ring + 1024-frame guard. Validate
+     * the ACTUAL PAK header/length for either cue; no fixed WAV buffer. */
     if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
         printf("[AUDIOPICKUP] HANDOFF seq=%u status=DEFER reason=pak-open fifo=retained\\n",
                (unsigned)pickupSequence);
         return 0;
     }
+    char filename[16];
+    (void)snprintf(filename,sizeof(filename),"%04u.wav",
+                   (unsigned)next.resourceId);
     EspAssetPackEntry entry={};
     EspNativeSfxWavInfo meta={};
     uint8_t header[512];
-    bool valid=EspAssetPack_findEntry("5060.wav",&entry)!=0 &&
+    bool valid=EspAssetPack_findEntry(filename,&entry)!=0 &&
                (entry.flags&ESP_ASSET_PACK_FLAG_DIRECTORY)==0U &&
                entry.size>=44U;
     if (valid) {
@@ -1672,16 +1678,18 @@ int EspEntranceMusic_handoffPickupBeforeModal(uint32_t pickupSequence) {
 
     const uint32_t playedBefore=sfxPlayedCount;
     const uint32_t rejectedBefore=sfxRejectedCount;
-    /* Existing owner validates and mixes 5060 in place, ACKing once only.
+    /* Existing owner validates and mixes 5060 or 5057 in place,
+     * ACKing once only.
      * This call cannot fall back to a streaming voice: the complete PCM
      * and collision guard have already passed the real ring preflight. */
     mixPendingSfxOne();
     const int mixed=sfxSeenSequence==pickupSequence &&
                     sfxPlayedCount==playedBefore+1U &&
                     sfxRejectedCount==rejectedBefore;
-    printf("[AUDIOPICKUP] HANDOFF seq=%u status=%s mixedBeforeModal=%u "
+    printf("[AUDIOPICKUP] HANDOFF seq=%u id=%u status=%s mixedBeforeModal=%u "
            "ack=%u frames=%u refills=%u packClosed=%u\\n",
-           (unsigned)pickupSequence,mixed?"MIXED":"PARTIAL",
+           (unsigned)pickupSequence,(unsigned)next.resourceId,
+           mixed?"MIXED":"PARTIAL",
            (unsigned)mixed,(unsigned)(sfxSeenSequence==pickupSequence),
            (unsigned)output,(unsigned)refills,
            (unsigned)!EspAssetPack_isOpen());
