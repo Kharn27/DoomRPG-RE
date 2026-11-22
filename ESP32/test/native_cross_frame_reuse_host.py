@@ -82,6 +82,17 @@ shim = r'''
 #include <string.h>
 #include "esp_native_sprite_visual_legacy.h"
 #include "esp_native_fire_visual.h"
+/* Reuse the production FIRE-VIS-P2 eligibility policy. Keep only this
+ * CROSS-specific fixture's deterministic animationDrift clock override. */
+#define EspNativeAmbientSprite_frame EspNativeAmbientSprite_realClockFrame
+#define EspNativeAmbientSprite_rasterCandidate EspNativeAmbientSprite_realCandidate
+#define EspNativeAmbientSprite_fast EspNativeAmbientSprite_realFast
+#define EspNativeAmbientSprite_rapid EspNativeAmbientSprite_realRapid
+#include "esp_native_ambient_sprite.h"
+#undef EspNativeAmbientSprite_rapid
+#undef EspNativeAmbientSprite_fast
+#undef EspNativeAmbientSprite_rasterCandidate
+#undef EspNativeAmbientSprite_frame
 
 #define CROSS 0x04000000UL
 #define ORIENT_MASK 0x00780000UL
@@ -116,6 +127,11 @@ typedef struct {
     uint32_t nearCulled,clipCulled,glowNearCulled,glowClipCulled;
     uint32_t ambientCandidates,ambientFastCandidates,ambientRapidCandidates;
     uint32_t unsupported,frameLoads,frameBytes,packReads;
+    /* Deliberate host mirror of the new bounded production fire witnesses.
+     * The CROSS-only test keeps fireRasterCount zero throughout. */
+    uint32_t fireRasterCount,fireSampleMs;
+    uint16_t fireSampleIndex,fireSampleLogical,fireSampleActual;
+    uint8_t fireSamplePhase;
 } EspNativeSpriteStats;
 static unsigned reads, rasters, entities, mapReads, failRead, corruptFrame, animationDrift;
 static uint32_t clockFrame, lastOffsets[16];

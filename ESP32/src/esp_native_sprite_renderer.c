@@ -1583,6 +1583,20 @@ static int drawAt(Render_t* render,
             parent->info, entityType, rasterPixelsBefore,
             glow ? stats->glowPixels : stats->pixelsDrawn)) {
         ++stats->ambientCandidates;
+        if (!glow && EspNativeAmbientSprite_fireEligible(
+                         parent->info, entityType)) {
+            /* Only completed masked pixels, never admission/near-cull,
+             * count as real fire: record the first LCD witness. The native
+             * 375ms ambient clock now owns ALL fast sprites including fire. */
+            if (stats->fireRasterCount == 0U) {
+                stats->fireSampleIndex = parent->index;
+                stats->fireSampleLogical = logical;
+                stats->fireSampleActual = frame->actual;
+                stats->fireSamplePhase = (uint8_t)animation;
+                stats->fireSampleMs = ambientSampleMs;
+            }
+            ++stats->fireRasterCount;
+        }
         if (EspNativeAmbientSprite_fast(entityType))
             ++stats->ambientFastCandidates;
         if (EspNativeAmbientSprite_rapid(entityType,entitySubtype))

@@ -22,6 +22,23 @@ static inline int EspNativeAmbientSprite_rapid(uint8_t type,uint8_t subtype) {
 static inline int EspNativeAmbientSprite_fast(uint8_t type) {
     return type != 1U && type != 2U;
 }
+/* FIRE-VIS-P2: only a real, non-CROSS, non-FIXED fire BSP sprite can
+ * request phase-accurate idle repaints. Other families retain their clocks.
+ * A rendered-but-occluded fire must NOT arm the scheduler. */
+static inline int EspNativeAmbientSprite_fireEligible(uint32_t info,
+                                                       uint8_t type) {
+    return type == 10U && (info & 0x04000000UL) == 0U &&
+           EspNativeAmbientSprite_eligible(info,type);
+}
+/* The next visible phase boundary is based on the ORIGINAL wall clock,
+ * including the legacy 8ms-per-BSP-index stagger, not on elapsed time
+ * since a previous redraw. This avoids cumulative 250ms timer drift. */
+static inline int EspNativeAmbientSprite_fireChanged(uint16_t index,
+                                                      uint8_t sampledPhase,
+                                                      uint32_t nowMs) {
+    uint32_t stagger = (uint32_t)(index & 255U) * 8U;
+    return (uint8_t)(((nowMs + stagger) / 250U) & 3U) != sampledPhase;
+}
 /* Admission into a BSP leaf or successful projection does not imply a pixel.
  * Wall occlusion, backface and viewport clipping must not arm idle redraw. */
 static inline int EspNativeAmbientSprite_rasterCandidate(uint32_t info,

@@ -53,6 +53,14 @@ typedef struct EspNativeSpriteStats_s {
     uint32_t ambientCandidates;
     uint32_t ambientFastCandidates;
     uint32_t ambientRapidCandidates;
+    /* FIRE-VIS-P2: first pixel-visible BSP fire in this composed frame.
+     * Reporting only; no PAK buffer or decoded texture survives a render. */
+    uint32_t fireRasterCount;
+    uint32_t fireSampleMs;
+    uint16_t fireSampleIndex;
+    uint16_t fireSampleLogical;
+    uint16_t fireSampleActual;
+    uint8_t fireSamplePhase;
 } EspNativeSpriteStats;
 
 /*

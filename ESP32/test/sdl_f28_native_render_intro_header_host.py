@@ -91,6 +91,31 @@ def restore_rc10_dynamic(value: bytes) -> bytes:
 
 
 
+def restore_pre_fire_vis_p2_sprite(value: bytes) -> bytes:
+    """Reverse ONLY the FIRE-VIS-P2 LCD witness insertion; 375ms policy
+    deliberately restores the pre-P2 scheduler exactly. Keep the frozen
+    pre-SDL-F28 SHA immutable and assert this full insertion once.
+    """
+    inserted = (
+        b'        if (!glow && EspNativeAmbientSprite_fireEligible(\n'
+        b'                         parent->info, entityType)) {\n'
+        b'            /* Only completed masked pixels, never admission/near-cull,\n'
+        b'             * count as real fire: record the first LCD witness. The native\n'
+        b'             * 375ms ambient clock now owns ALL fast sprites including fire. */\n'
+        b'            if (stats->fireRasterCount == 0U) {\n'
+        b'                stats->fireSampleIndex = parent->index;\n'
+        b'                stats->fireSampleLogical = logical;\n'
+        b'                stats->fireSampleActual = frame->actual;\n'
+        b'                stats->fireSamplePhase = (uint8_t)animation;\n'
+        b'                stats->fireSampleMs = ambientSampleMs;\n'
+        b'            }\n'
+        b'            ++stats->fireRasterCount;\n'
+        b'        }\n'
+    )
+    assert value.count(inserted) == 1, "FIRE-VIS-P2 historical inverse anchor drift"
+    return value.replace(inserted, b'', 1)
+
+
 def restore_pre_fire_vis_sprite(value: bytes) -> bytes:
     """Invert only FIRE-VIS-P1 renderer bytes before the frozen SDL-F28 blob.
 
@@ -135,7 +160,7 @@ def original_body_parity() -> None:
             historical = restore_rc10_dynamic(restore_rc11_dynamic(
                 restore_pre_audio_door_dynamic(restore_pre_rc19_dynamic(current))))
         elif filename == "esp_native_sprite_renderer.c":
-            historical = restore_pre_fire_vis_sprite(current)
+            historical = restore_pre_fire_vis_sprite(restore_pre_fire_vis_p2_sprite(current))
         else:
             historical = current
         if filename == "esp_render_geometry_primitives.c":
