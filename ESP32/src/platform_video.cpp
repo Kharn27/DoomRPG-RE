@@ -742,7 +742,16 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
         (unsigned long)report.texture.pixels,
         wallTextureSamples);
 #endif
-#if DOOMRPG_RES60_P14_LINE_SNAPSHOT
+#if DOOMRPG_RES60_P15_COMPACT_SNAPSHOT
+    Serial.printf("[RES60P15] COMPACT lines=%lu candidates=%lu snapshotBss=6144 indexBss=0 P14CombinedBss=9216 savedBss=3072 readerCalls=%lu raysUs=%lu heap8=%u largest8=%u minHeap8=%u owner=P13-immutable\n",
+        (unsigned long)report.lineCount,
+        (unsigned long)report.raster.wedgeCandidates,
+        (unsigned long)report.raster.readerCalls,
+        (unsigned long)report.raster.raysUs,
+        (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT));
+#elif DOOMRPG_RES60_P14_LINE_SNAPSHOT
     Serial.printf("[RES60P14] SNAPSHOT lines=%lu candidates=%lu bytesBss=%lu readerCalls=%lu avoidedDecodes=%lu raysUs=%lu owner=P13-immutable\n",
         (unsigned long)report.lineCount,
         (unsigned long)report.raster.wedgeCandidates,
