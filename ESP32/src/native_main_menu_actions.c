@@ -187,8 +187,6 @@ static int helpDrawStarfield(DoomRPG_t* doomRpg) {
                         DOOMRPG_LOGICAL_HEIGHT};
     EspNativeRect wrap = {DOOMRPG_LOGICAL_WIDTH - shift, 0,
                      DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT};
-    int x, y;
-
     if (!helpSpaceActive || helpSpaceOwner != doomRpg ||
         helpSpaceBG.imgBitmap == NULL || framebuffer == NULL ||
         bytes != (size_t)DOOMRPG_LOGICAL_WIDTH *
@@ -200,14 +198,8 @@ static int helpDrawStarfield(DoomRPG_t* doomRpg) {
         (shift > 0 && EspNativeTexture_blit(helpSpaceBG.imgBitmap, NULL, &wrap) != 0))
         return 0;
 
-    /* Keep the translucent dark reading window, without the redundant
-     * colored rectangular frame. Original c.bmp stars remain visible. */
-    for (y = 13; y <= 116; ++y) {
-        for (x = 5; x <= 154; ++x) {
-            uint16_t* pixel = &framebuffer[y * DOOMRPG_LOGICAL_WIDTH + x];
-            *pixel = (uint16_t)((*pixel >> 1) & 0x7befU);
-        }
-    }
+    /* HELP keeps every pixel of the native scrolling c.bmp background:
+     * no dimming, overlay, second framebuffer or extra SD/PAK read. */
     helpSpaceShift = shift;
     return 1;
 }
@@ -232,20 +224,8 @@ static uint16_t helpThirdTone(void) {
     return EspMainMenuSkin_letterTone(7, 9);
 }
 
-/* Framed bright-red a.bmp X lives at x4/y1. The border's hitbox has
- * priority over the left half-screen page gesture. */
-static void helpPaintExitFrame(uint16_t* fb) {
-    int x, y;
-    if (fb == NULL) return;
-    for (x = 1; x <= 16; ++x) {
-        fb[x] = 0xf800U;
-        fb[13 * DOOMRPG_LOGICAL_WIDTH + x] = 0xf800U;
-    }
-    for (y = 1; y < 13; ++y) {
-        fb[y * DOOMRPG_LOGICAL_WIDTH + 1] = 0xf800U;
-        fb[y * DOOMRPG_LOGICAL_WIDTH + 16] = 0xf800U;
-    }
-}
+/* Red a.bmp X at x4/y1: no visible border or backing plate.
+ * Its comfortable invisible touch target still wins over left pagination. */
 
 /* Side rails x2..7/x152..157 sit OUTSIDE 144px teaching illustrations.
  * On pages 1 and 16, the unavailable direction becomes a dim hint. */
@@ -816,10 +796,9 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
             (void)helpBuildWeaponGridMini(framebuffer);
     }
     if (!helpDrawStarfield(doomRpg)) return 0;
-    /* One small framed X, same native a.bmp face as HELP / CYD. */
+    /* Bright red native a.bmp X without a frame or dark backing. */
     DoomRPG_setFontColor(doomRpg, 0xffff2424U);
     EspNativeCanvas_drawText(canvas, "X", 4, 1, 0);
-    helpPaintExitFrame(framebuffer);
     /* Header and page counter retain their established middle theme tone. */
     DoomRPG_setFontColor(doomRpg, helpColor888(helpBodyMiddleTone()));
     EspNativeCanvas_drawText(canvas, "HELP / CYD", 22, 0, 0);
