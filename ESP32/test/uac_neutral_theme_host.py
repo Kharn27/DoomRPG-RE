@@ -7,7 +7,7 @@ for marker in (
     'fontIsNeutral=fromSD && bmp.paletteCount==16U;',
     'EspUacFontTheme_tintColor(fontSourcePalette[k],tone);',
     'EspUacFontTheme_scale565(color,2U,5U)',
-    'EspUacMenuPreview_needsBlink(uint32_t nowMs)',
+    'EspUacMenuPreview_needsBlink(void)',
     'kBlinkHalfPeriodMs=450U',
     'EspUacFontTheme_isGrayRgb565(c)',
     'EspUacFontTheme_verticalTone(',
