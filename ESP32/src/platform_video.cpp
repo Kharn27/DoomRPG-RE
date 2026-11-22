@@ -739,6 +739,13 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
         (unsigned long)report.texture.wallFNV,
         (unsigned long)report.raster.frameFNV);
 #endif
+#if DOOMRPG_RES60_P12_INVENTORY_CACHE
+    Serial.printf("[RES60P12] INVENTORY cache=%s crc=%08lx arenaFNV=%08lx invUs=%lu validated=pak-entry+arena\n",
+        report.inventoryCacheHit ? "HIT" : "MISS",
+        (unsigned long)report.mapCrc32,
+        (unsigned long)report.arenaFNV,
+        (unsigned long)report.inventoryUs);
+#endif
 #if DOOMRPG_RES60_P11_PROFILE
     Serial.printf("[RES60P11] PROFILE angle=%u cache=%s invUs=%lu loadUs=%lu preflightUs=%lu bandUs=%lu raysUs=%lu geometryUs=%lu fillUs=%lu hashUs=%lu p3Us=%lu catalogUs=%lu texPakUs=%lu swatchUs=%lu overlayUs=%lu texUs=%lu releaseUs=%lu preparedUs=%lu rayTests=%lu overlayPixels=%lu heap8=%u instrumentation=ON\n",
         (unsigned)report.spawnAngle,
