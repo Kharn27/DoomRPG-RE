@@ -601,7 +601,7 @@ void setup()
     }
 #if DOOMRPG_RES60_P5_TITLE
 #if DOOMRPG_RES60_P6_MENU
-    Serial.println("[RES60P6] BOOT mode=MAIN_MENU touch=TWO_TAP source=ORIGINAL_PAK start=BSP_PREVIEW_ONLY gameplay=NOT_STARTED audio=NOT_STARTED");
+    Serial.println("[RES60P6] BOOT mode=MAIN_MENU touch=START_ONE_TAP/OTHER_TWO_TAP source=ORIGINAL_PAK start=BSP_PREVIEW_ONLY gameplay=NOT_STARTED audio=NOT_STARTED");
     PlatformInput_setTapCallback(res60MenuTapCallback);
     res60MenuArmed = -1;
     res60MenuVisible = PlatformVideo_showRes60MainMenu(res60MenuArmed);
@@ -741,9 +741,6 @@ void loop()
 #endif
 #if DOOMRPG_RES60_P13_MAP_LEASE
                     EspRes60MapLease_reset();
-#endif
-#if DOOMRPG_RES60_P13_MAP_LEASE
-                EspRes60MapLease_reset();
 #endif
                 }
             } else {

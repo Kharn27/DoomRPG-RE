@@ -21,3 +21,7 @@ Aucune modification du nombre de lignes, de l'ordre des candidats, des ray tests
 Test matériel normal de la branche `pio run -e esp32-cyd-res60-inverted -t upload -t monitor` depuis `ESP32` ; tourner N/E/S/W et refaire START/MENU. Comparer `raysUs`, `preparedUs`, `heap8`, `minHeap8`, `largest8`, mêmes FNV. **Cible exploratoire** : retrouver ~60ms raycast nord sans perdre le bloc ~86K ni baisser sensiblement `minHeap8`. Le nouveau main UAC peut influencer les régions heap ; ne jamais inventer leur stabilité. Si non concluant, rollback P18 tout en conservant P17.
 
 **Statut : CI/CYD PENDING, PR DRAFT. Non jouable en 192×144 ; preview MAP_INTRO seulement.**
+
+## P18 : résultat CYD du 22 novembre 2026
+
+Firmware par contexte sur `be7449d43c1e1526054e12b240a9529ebaf0fd75` (aucun SHA binaire imprimé). Log `platformio-device-monitor-261122-191955.log`, 449 lignes, 60389 octets, SHA256 `90ce11ef8ea56ea49276c970457eb7e407b60c658cd4cfe80cb6dae2dd6d2d5e` : **27 frames / 26 rotations / 1 START / 1 MENU**, même FNV de chaque vue, pas de crash ni WDT, PAK fermé. Raycast HIT moyen N64 **59.970ms** (7), E0 **20.891ms** (6), S192 **1.675ms** (6), W128 **7.416ms** (7). P17 N≈64.026ms, donc gain P18≈6.3% sans perte du bloc contigu `largest8=86004`; `heap8=114452`, `minHeap8=101520` stables. **P18 PASS CPU/RAM/FNV borné**, mais UX à corriger : menu raster ≈1.197s, second START absent après MENU (`SELECT -1→0→-1→1→-1`). Aucun test de deuxième START prouvé. P19 est un candidat distinct, non testé CYD.

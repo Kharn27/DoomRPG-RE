@@ -36,7 +36,7 @@ int EspRes60Menu_repaintSelection(uint16_t* fb, size_t bytes,
                                  int8_t previous, int8_t next);
 /* Physical 320x240 calibrated touch -> 192x144 floor inverse -> skin slots. */
 int EspRes60Menu_hitPhysical(int16_t physicalX, int16_t physicalY);
-/* Two-tap navigation; START opens P3 geometry only, NOT gameplay. */
+/* START one-tap, others two-tap; opens P3 geometry, NOT gameplay. */
 EspRes60MenuTap EspRes60Menu_onTap(int16_t x, int16_t y, int8_t* selected);
 #ifdef __cplusplus
 }

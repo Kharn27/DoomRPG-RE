@@ -1,0 +1,7 @@
+# RES60-P19 — START de nouveau relançable / menu PAK optimisé (CYD PENDING)
+
+[PR #364](https://github.com/Kharn27/DoomRPG-RE/pull/364), branche `agent/esp32-res60-p1` DRAFT. Diagnostic sur `platformio-device-monitor-261122-191955.log` (SHA256 `90ce11ef8ea56ea49276c970457eb7e407b60c658cd4cfe80cb6dae2dd6d2d5e`) : raster menu 1.197s / frame entière 1.245s, second START non exécuté après MENU; N64 P18 raycast 59.970ms, heap8=114452, largest8=86004.
+
+P19 remplace uniquement pour le `c.bmp` PAK original 192x128 les 144 lectures ligne par ligne par deux appels au lecteur BMP batché natif (`blit` sur 128 lignes, puis les 16 premières répétées). Scratch 1KiB partagé, aucune nouvelle allocation, cache ou image retenue, même framebuffer 192x144. Dimensions différentes gardent `tile`. Logo PAK `j.bmp` inchangé. START devient une action au **premier tap dans sa hitbox**, y compris au retour de MENU; les autres cartes restent à deux taps et bloquées. Un reset de lease carte dupliqué est supprimé.
+
+Tests hôte P5 (fallback), P6 (2 blits fond + logo, rendu RGB565/FNV et canaries), P7, P18 raycast/UV, double CI; production 160x120 inchangée. Refaire sur CYD `esp32-cyd-res60-inverted`: premier START, N/E/S/W, MENU, **nouveau START**, répétition, même empreintes; comparer `[RES60P6] MENU rasterUs` au 1.197s de P18 et vérifier heap8/largest8/PAK. **Aucun PASS ni gain P19 revendiqué sans Serial réel.**

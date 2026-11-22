@@ -70,11 +70,13 @@ EspRes60MenuTap EspRes60Menu_onTap(int16_t x, int16_t y,
         *selected = -1;
         return ESP_RES60_MENU_TAP_SELECTION;
     }
+    /* START launches on its first valid press, even after returning from
+     * preview. Do not mutate the painted selection if rendering fails. */
+    if (hit == 0) return ESP_RES60_MENU_TAP_START_PREVIEW;
     if (*selected != hit) {
         *selected = (int8_t)hit;
         return ESP_RES60_MENU_TAP_SELECTION;
     }
-    return hit == 0 ? ESP_RES60_MENU_TAP_START_PREVIEW :
-                      ESP_RES60_MENU_TAP_UNSUPPORTED;
+    return ESP_RES60_MENU_TAP_UNSUPPORTED;
 }
 #endif

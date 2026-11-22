@@ -29,14 +29,25 @@ int EspRes60TitlePreview_renderAt(uint16_t* fb, size_t bytes,
     if (logoX < 0 || logoY < 0 ||
         (uint32_t)logoX + logo.width > ESP_RES60_WIDTH ||
         (uint32_t)logoY + logo.height > ESP_RES60_HEIGHT) goto done;
-    /* Native PAK row streaming, bounded 1 KiB shared scratch, no second FB. */
-    if (EspNativeIndexedBmp_tile(&bg, fb, ESP_RES60_WIDTH, ESP_RES60_HEIGHT,
-                                 0, 0, ESP_RES60_WIDTH, ESP_RES60_HEIGHT,
-                                 0U, &io) != ESP_NATIVE_INDEXED_BMP_OK ||
-        EspNativeIndexedBmp_blit(&logo, fb, ESP_RES60_WIDTH, ESP_RES60_HEIGHT,
-                                 0, 0, logo.width, logo.height,
-                                 logoX, logoY,
-                                 1U, &io) != ESP_NATIVE_INDEXED_BMP_OK)
+    /* P19: original c.bmp 192x128: two batched blits reuse the 1KiB
+     * scratch instead of 144 separate SD row reads. The first 16 source
+     * rows repeat at the bottom; fallback keeps generic tiling. */
+    if (bg.width == ESP_RES60_WIDTH && bg.height == 128U) {
+        if (EspNativeIndexedBmp_blit(&bg, fb, ESP_RES60_WIDTH,
+                ESP_RES60_HEIGHT, 0, 0, ESP_RES60_WIDTH, 128U,
+                0, 0, 0U, &io) != ESP_NATIVE_INDEXED_BMP_OK ||
+            EspNativeIndexedBmp_blit(&bg, fb, ESP_RES60_WIDTH,
+                ESP_RES60_HEIGHT, 0, 0, ESP_RES60_WIDTH, 16U,
+                0, 128, 0U, &io) != ESP_NATIVE_INDEXED_BMP_OK)
+            goto done;
+    } else if (EspNativeIndexedBmp_tile(&bg, fb,
+                   ESP_RES60_WIDTH, ESP_RES60_HEIGHT, 0, 0,
+                   ESP_RES60_WIDTH, ESP_RES60_HEIGHT, 0U, &io)
+                   != ESP_NATIVE_INDEXED_BMP_OK)
+        goto done;
+    if (EspNativeIndexedBmp_blit(&logo, fb, ESP_RES60_WIDTH,
+            ESP_RES60_HEIGHT, 0, 0, logo.width, logo.height,
+            logoX, logoY, 1U, &io) != ESP_NATIVE_INDEXED_BMP_OK)
         goto done;
     report->backgroundWidth = bg.width;
     report->backgroundHeight = bg.height;

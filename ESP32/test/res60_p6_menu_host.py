@@ -32,7 +32,7 @@ src = r"""
 #include "esp_res60_layout.h"
 #include "esp_res60_title_preview.h"
 #include "esp_res60_menu.h"
-static int active, opens, closes, failLogo, tileCount, blitCount;
+static int active, opens, closes, failLogo, tileCount, blitCount, bgBatchCount;
 static uint16_t f1[192U*144U+2U], f2[192U*144U+2U];
 int EspAssetPack_isOpen(void){return active;}
 int EspAssetPack_open(const char* p){
@@ -64,8 +64,18 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_blit(
  const EspNativeIndexedBmp* b,uint16_t* fb,uint16_t w,uint16_t h,
  uint16_t sx,uint16_t sy,uint16_t rw,uint16_t rh,
  int16_t x,int16_t y,uint8_t tr,EspNativeIndexedBmpStats* stats){
- assert(active && b->width==108 && w==192 && h==144);
- assert(sx==0 && sy==0 && rw==108 && rh==74 && tr==1);
+ assert(active && w==192 && h==144);
+ if(b->width==192) {
+   assert(b->height==128 && sx==0 && sy==0 && rw==192 && x==0 && tr==0);
+   assert((bgBatchCount==0 && rh==128 && y==0) ||
+          (bgBatchCount==1 && rh==16 && y==128));
+   for(uint16_t yy=0;yy<rh;++yy)
+     for(uint16_t xx=0;xx<rw;++xx)
+       fb[((size_t)y+yy)*w+xx]=0x1234U;
+   bgBatchCount++;blitCount++;stats->pixelsWritten+=rw*rh;
+   return ESP_NATIVE_INDEXED_BMP_OK;
+ }
+ assert(b->width==108 && sx==0 && sy==0 && rw==108 && rh==74 && tr==1);
  assert(x==12 && y==35);
  fb[(size_t)y*w+x]=0x5678U;
  blitCount++;stats->pixelsWritten+=rw*rh;
@@ -85,7 +95,7 @@ int main(void){
  assert(opens==1 && closes==1 && f[0]==0x4321);
  failLogo=0;
  assert(EspRes60Menu_render(f,ESP_RES60_FRAMEBUFFER_BYTES,-1,&a));
- assert(opens==2 && closes==2 && !active && tileCount==1 && blitCount==1);
+ assert(opens==2 && closes==2 && !active && tileCount==0 && blitCount==3 && bgBatchCount==2);
  assert(a.title.logoWidth==108 && a.title.logoHeight==74);
  assert(a.finalFNV==EspRes60Layout_fnv(f,ESP_RES60_FRAMEBUFFER_BYTES));
  assert(f[35U*192U+12U]==0x5678 && f[0]==0x1234);
@@ -105,16 +115,21 @@ int main(void){
  assert(EspRes60Menu_hitPhysical(319,239)==-1);
  assert(EspRes60Menu_hitPhysical(320,100)==-1);
  assert(EspRes60Menu_hitPhysical(0,0)==-1);
- /* Exact floor inverse of 320x240 nearest scaling, 4 real card centres. */
- for(int i=0;i<4;i++){
+ /* One-tap START at boot and after returning from MENU; others two taps. */
+ assert(EspRes60Menu_hitPhysical(270,53)==0);
+ assert(EspRes60Menu_onTap(270,53,&selected)==ESP_RES60_MENU_TAP_START_PREVIEW);
+ assert(selected==-1);
+ for(int i=1;i<4;i++){
    int px=270, py=((12+8+12+27*i)*5)/3;
    assert(EspRes60Menu_hitPhysical(px,py)==i);
    assert(EspRes60Menu_onTap(px,py,&selected)==ESP_RES60_MENU_TAP_SELECTION);
    assert(selected==i);
-   assert(EspRes60Menu_onTap(px,py,&selected)==
-      (i==0?ESP_RES60_MENU_TAP_START_PREVIEW:ESP_RES60_MENU_TAP_UNSUPPORTED));
+   assert(EspRes60Menu_onTap(px,py,&selected)==ESP_RES60_MENU_TAP_UNSUPPORTED);
  }
  assert(selected==3);
+ selected=-1;
+ assert(EspRes60Menu_onTap(270,53,&selected)==ESP_RES60_MENU_TAP_START_PREVIEW);
+ assert(selected==-1);
  assert(EspRes60Menu_onTap(0,0,&selected)==ESP_RES60_MENU_TAP_SELECTION);
  assert(selected==-1);
  assert(EspRes60Menu_onTap(0,0,&selected)==ESP_RES60_MENU_TAP_NO_CHANGE);
