@@ -1,4 +1,35 @@
-# RES60-P17 — A/B statique contre heap 6144B, CI / CYD PENDING (22 novembre 2026)
+# RES60-P17 — PASS CYD mémoire et rendu, CPU raycast à optimiser (22 novembre 2026)
+
+**Branche :** `agent/esp32-res60-p1`; [PR #364 DRAFT](https://github.com/Kharn27/DoomRPG-RE/pull/364). **Code effectivement testé :** `4b7718054ace14f78b34def20ff7e21c5d57be15`; double CI SUCCESS [push #45033645348](https://github.com/Kharn27/DoomRPG-RE/actions/runs/45033645348) / [PR #45033649494](https://github.com/Kharn27/DoomRPG-RE/actions/runs/45033649494). **Preuve matérielle :** vrai CYD ESP32-D0WD-V3 240 MHz / flash 4MB / **0 PSRAM**, Serial `platformio-device-monitor-261122-161354.log`, **576 lignes, 81222 octets, SHA256 `fe19307c4d92f86bb630969ef299a9a6cd574f133cb0db9250763c04233d2fde`**. Le log ne contient pas de SHA firmware inscrit : attribution au code candidat via contexte de flash.
+
+## Verdict matériel borné
+
+- **37 frames BSP / 34 rotations engagées**, 3 START et 3 retours MENU ; 3 MISS cold MAPRT/PAK puis 34 HIT, invariants de cache inchangés. Aucun `FAIL`, `panic`, `Guru Meditation` ou `WDT`. Pas de gameplay/audio/sprites/HUD final 192×144 (toujours `NOT_STARTED`).
+- Toutes les empreintes P3 brutes **N/E/S/W** = `ed9b68c4`, `48ae8442`, `2697640d`, `f43a2791` ; P7 final = `3d6bbdf0`, `075642f1`, `55d83b1d`, `2cf4b66c`, exactes P15/P16 dans toutes les vues. P8 `sampleFNV=e627fa0d`, P10 nord 26 colonnes/650 pixels `sampleFNV=e1f75a15`. PAK `closed` après rendu.
+- **Mémoire stable** `heap8=114564` (P16 114580, **-16B**), `minHeap8=101632` (P16 101648, **-16B**), **`largest8=86004` (P16 57332, +28672B, **+50,0%**) sur la session**. La mémoire totale non allouée est quasi identique ; le bénéfice est une réserve contiguë retrouvée, PAS 28K de heap libre supplémentaire.
+- **Déplacement d'allocation confirmé :** framebuffer 55296B à **`0x3ffd1ad0`**, dans la région `0x3ffd17a0`, maintenant taille **59488B** (P16 53344B). Avant et après ce `calloc`, plus grand bloc **110580B** inchangé. L'allocation séparée du snapshot 6144B réussit à **`0x3ffb2730`**, `heap8 162548→156388` (**−6160B overhead inclus**) et `largest8` reste **110580B**. Après MAPRT, la région `0x3ffe4350` héberge 26928B alloués, garde **86004B contigus**. **L'hypothèse placement linker/BSS est confirmée pour ce build** : sortir 6144B de BSS a élargi la région adjacente à 59488B, permettant d'y placer le framebuffer et de préserver l'autre gros bloc. Les adresses sont des résultats hardware de ce firmware, pas des garanties absolues sur des builds futurs.
+- Observateurs : au boot P16 `freeDelta=-100 largestDelta=0 neutral=0` (effet d'amorçage Serial non neutre), au premier cache HIT `freeDelta=0 largestDelta=0 neutral=1`.
+
+## Perf P16→P17 : comparaison rigoureuse du même protocole
+
+Moyennes `RES60P11 cache=HIT` sur les logs réels P16 (`platformio-device-monitor-261122-152531.log`, 10/11/10/10 vues N/E/S/W) et P17 (8/9/8/9 vues) :
+
+| Angle | P16 raysUs (ms) | P17 raysUs (ms) | delta | P16 preparedUs (ms) | P17 preparedUs (ms) |
+|---|---:|---:|---:|---:|---:|
+| 64 (N) | 59.963 | 64.026 | **+6.78%** | 100.487 | 101.621 |
+| 0 (E) | 20.865 | 22.284 | **+6.80%** | 60.872 | 59.263 |
+| 192 (S) | 1.655 | 1.745 | **+5.45%** | 41.873 | 39.000 |
+| 128 (W) | 7.375 | 7.869 | **+6.69%** | 47.561 | 45.081 |
+
+`loadUs` warm **baisse d'environ 3ms** (P16 ~22.5ms → P17 ~19.5ms), masquant une partie du surcoût raycast dans `preparedUs`. P17 **n'est pas un PASS de non-régression CPU stricte** : les tests mémoire/rendu PASS, mais les **rayons sont ~6–7% plus lents**. Le gain mémoire est utile, mais doit être consolidé via un P18 dédié, sans revenir à 6144B BSS ni sacrifier `largest8`. Ne pas conclure que P17 est définitivement optimal sur CPU.
+
+## Suite
+
+**P17 PASS CYD sur allocation, mémoire, FNV, stabilité et ownership.** Amélioration `largest8` +28672B confirmée, CPU raycast à revoir en P18. Préserver l'oracle P17/les mesures P16, refuser tout changement silencieux de géométrie ou de format, et continuer sur **la branche parallèle**, PR #364 DRAFT. Aucun merge en production `main`.
+
+---
+
+# RES60-P17 — protocole initial A/B statique contre heap 6144B, CI / CYD PENDING (22 novembre 2026)
 
 **Branche :** `agent/esp32-res60-p1`, [PR #364 DRAFT](https://github.com/Kharn27/DoomRPG-RE/pull/364). Dernier code matériel P16 `1d46b98600056807ca482f2d0573bb3720b2f3c9`, [rapport CYD P16](MILESTONE_RES60_P16_HEAP_TOPOLOGY_PENDING_CYD.md), Serial `platformio-device-monitor-261122-152531.log` SHA256 `b036c1538289d515c9d9ea1f1f95f15938f727e9fdbe537283043cc1c4e33470`. Le vrai CYD a montré 43 vues, 41 rotations, 2 START/MENU, toutes FNV exactes et `largest8=57332` constant après le framebuffer.
 
