@@ -1583,7 +1583,7 @@ int EspEntranceMusic_handoffPickupBeforeModal(uint32_t pickupSequence) {
         !EspNativeAudioIntent_isSoundEnabled() ||
         EspAssetPack_isOpen() || !EspAssetPack_musicSdSafe() ||
         !EspAssetPack_isMapFlashActive() || !EspAssetPack_isResident()) {
-        printf("[AUDIOPICKUP] HANDOFF seq=%u status=DEFER reason=owner-not-ready fifo=retained\\n",
+        printf("[AUDIOPICKUP] HANDOFF seq=%u status=DEFER reason=owner-not-ready fifo=retained\n",
                (unsigned)pickupSequence);
         return 0;
     }
@@ -1592,7 +1592,7 @@ int EspEntranceMusic_handoffPickupBeforeModal(uint32_t pickupSequence) {
         (next.resourceId!=5060U && next.resourceId!=5057U) ||
         next.flags!=0U || sfxSeenSequence==UINT32_MAX ||
         next.sequence!=sfxSeenSequence+1U) {
-        printf("[AUDIOPICKUP] HANDOFF seq=%u status=DEFER reason=fifo-order fifo=retained\\n",
+        printf("[AUDIOPICKUP] HANDOFF seq=%u status=DEFER reason=fifo-order fifo=retained\n",
                (unsigned)pickupSequence);
         return 0;
     }
@@ -1602,7 +1602,7 @@ int EspEntranceMusic_handoffPickupBeforeModal(uint32_t pickupSequence) {
      * Both fit within this same 16KiB ring + 1024-frame guard. Validate
      * the ACTUAL PAK header/length for either cue; no fixed WAV buffer. */
     if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
-        printf("[AUDIOPICKUP] HANDOFF seq=%u status=DEFER reason=pak-open fifo=retained\\n",
+        printf("[AUDIOPICKUP] HANDOFF seq=%u status=DEFER reason=pak-open fifo=retained\n",
                (unsigned)pickupSequence);
         return 0;
     }
@@ -1631,7 +1631,7 @@ int EspEntranceMusic_handoffPickupBeforeModal(uint32_t pickupSequence) {
         EspNativeSfxPcm_outputFrames(meta.sampleFrames,kRate):0U;
     if (!valid || output==0U ||
         output>kRingCapacity-kSfxLeadFrames) {
-        printf("[AUDIOPICKUP] HANDOFF seq=%u status=DEFER reason=pcm-contract fifo=retained\\n",
+        printf("[AUDIOPICKUP] HANDOFF seq=%u status=DEFER reason=pcm-contract fifo=retained\n",
                (unsigned)pickupSequence);
         return 0;
     }
@@ -1647,7 +1647,7 @@ int EspEntranceMusic_handoffPickupBeforeModal(uint32_t pickupSequence) {
         const uint32_t before=queued();
         if (!refill()) {
             closeMusic(failure);
-            printf("[AUDIOPICKUP] HANDOFF seq=%u status=DEFER reason=music-refill fifo=session-owned\\n",
+            printf("[AUDIOPICKUP] HANDOFF seq=%u status=DEFER reason=music-refill fifo=session-owned\n",
                    (unsigned)pickupSequence);
             return 0;
         }
@@ -1670,7 +1670,7 @@ int EspEntranceMusic_handoffPickupBeforeModal(uint32_t pickupSequence) {
     };
     if (!EspAudioPickupModal_canMix(&gate)) {
         printf("[AUDIOPICKUP] HANDOFF seq=%u status=DEFER reason=ring-or-voice "
-               "queued=%u required=%u voiceIdle=%u refills=%u fifo=retained\\n",
+               "queued=%u required=%u voiceIdle=%u refills=%u fifo=retained\n",
                (unsigned)pickupSequence,(unsigned)(writer-reader),
                (unsigned)required,(unsigned)voicesIdle,(unsigned)refills);
         return 0;
@@ -1687,7 +1687,7 @@ int EspEntranceMusic_handoffPickupBeforeModal(uint32_t pickupSequence) {
                     sfxPlayedCount==playedBefore+1U &&
                     sfxRejectedCount==rejectedBefore;
     printf("[AUDIOPICKUP] HANDOFF seq=%u id=%u status=%s mixedBeforeModal=%u "
-           "ack=%u frames=%u refills=%u packClosed=%u\\n",
+           "ack=%u frames=%u refills=%u packClosed=%u\n",
            (unsigned)pickupSequence,(unsigned)next.resourceId,
            mixed?"MIXED":"PARTIAL",
            (unsigned)mixed,(unsigned)(sfxSeenSequence==pickupSequence),
