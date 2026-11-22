@@ -5,7 +5,7 @@
 #include <stdio.h>
 int main(void) {
     const uint16_t themes[][3] = {
-        {0x6c35U, 0xc638U, 0xedceU},
+        {0x6c35U, 0xc638U, 0xf4caU},
         {0xc002U, 0xe30cU, 0xfe78U},
         {0x2638U, 0x87e0U, 0xc7b8U}
     };
@@ -27,7 +27,7 @@ int main(void) {
     assert(EspUacFontTheme_verticalTone(themes[0][0],themes[0][1],
                                         themes[0][2],12,25)==0xc638U);
     assert(EspUacFontTheme_verticalTone(themes[0][0],themes[0][1],
-                                        themes[0][2],24,25)==0xedceU);
+                                        themes[0][2],24,25)==0xf4caU);
     for (int row=0;row<23;++row) {
         uint16_t a=EspUacFontTheme_verticalTone(themes[0][0],themes[0][1],themes[0][2],row,23);
         uint16_t b=EspUacFontTheme_verticalTone(themes[1][0],themes[1][1],themes[1][2],row,23);
