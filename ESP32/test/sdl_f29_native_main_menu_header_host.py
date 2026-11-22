@@ -107,7 +107,9 @@ def original_body_parity() -> None:
         # Sound activation is the only later intentional menu behavior delta.
         # Reverse it exactly without changing the historical frozen blobs.
         if filename == "native_main_menu_actions.c":
+            from native_help_fullscreen_history import restore_pre_help_fullscreen_nav
             restored = restore_pre_help_weapon_sweep_actions(restored)
+            restored = restore_pre_help_fullscreen_nav(restored)
             restored = restore_pre_help_frame_polish(restored)
             from uac_blink_history import restore_pre_uac_blink_actions
             restored = restore_pre_uac_blink_actions(restored)

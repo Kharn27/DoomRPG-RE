@@ -55,6 +55,7 @@ preamble = r"""
 #define DOOMRPG_LOGICAL_HEIGHT 120
 #define MAIN_HELP_WEAPON_MINI_W 144
 #define MAIN_HELP_WEAPON_MINI_H 60
+#define MAIN_HELP_WEAPON_DRAW_H 76
 #define MAIN_HELP_WEAPON_MINI_X 8
 #define MAIN_HELP_WEAPON_MINI_Y 39
 #define MAIN_HELP_WEAPON_SWEEP_MS 320U
@@ -150,16 +151,21 @@ static void sweepTest(void) {
         for (y = 0; y < 120; ++y) {
             for (x = 0; x < 160; ++x) {
                 uint16_t expected = sky;
-                if (x >= 8 && x <= 151 && y >= 39 && y <= 98) {
+                if (x >= 8 && x <= 151 && y >= 39 && y <= 114) {
                     const int dx = x - 8;
                     const int dy = y - 39;
-                    const int cx = dx % 36, cy = dy % 20;
-                    const int cell = dy / 20 * 4 + dx / 36;
-                    const int frameEdge = (cx <= 1 || cx >= 34 ||
-                                           cy <= 1 || cy >= 18);
+                    const int sourceY = dy * 60 / MAIN_HELP_WEAPON_DRAW_H;
+                    const int row = sourceY / 20, column = dx / 36;
+                    const int top = (row * MAIN_HELP_WEAPON_DRAW_H + 2) / 3;
+                    const int bottom =
+                        ((row + 1) * MAIN_HELP_WEAPON_DRAW_H + 2) / 3 - 1;
+                    const int cx = dx % 36;
+                    const int frameEdge = cx <= 1 || cx >= 34 ||
+                        dy - top <= 1 || bottom - dy <= 1;
+                    const int cell = row * 4 + column;
                     expected = frameEdge
                         ? (uint16_t)(cell == slot ? 0x07e0U : 0x4208U)
-                        : immutable[dy * 144 + dx];
+                        : immutable[sourceY * 144 + dx];
                 }
                 assert(frame[y * 160 + x] == expected);
             }
@@ -230,7 +236,7 @@ int main(void) {
     previewGridTest();
     sweepTest();
     cueTest();
-    puts("PASS HELP 12/12 PAK weapon grid, 320ms wrap sweep, full green borders, 46x15 HUD cue, no overdraw/cache mutation");
+    puts("PASS HELP 12/12 PAK weapon grid, 320ms wrap sweep, 144x76 complete green borders, no overdraw/cache mutation");
     return 0;
 }
 """
