@@ -117,6 +117,9 @@ jobs:
       - name: Test Junction M_DEAD SD track route and fail-closed prestart lifecycle
         run: python ESP32/test/audio_junction_m_dead_host.py
 
+      - name: Test AUDIO-S1-P1 Sector 1 native track, exact BSP pair and ADPCM fail-closed (host C)
+        run: python ESP32/test/audio_s1_sector1_music_host.py
+
       - name: Test AUDIO-MENU-M0 title music route and one-reader handoff
         run: python ESP32/test/audio_menu_m0_title_music_host.py
 

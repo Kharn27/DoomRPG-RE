@@ -47,12 +47,16 @@ int main(void) {
     assert(EspAudioLoadingRoute_forMap(1U)==ESP_AUDIO_LOADING_TRACK_M_STALKS);
     assert(strcmp(EspAudioLoadingRoute_trackName(
         EspAudioLoadingRoute_forMap(1U)),"M_STALKS.wav")==0);
+    assert(ESP_MAP_ID_SECTOR_1==2U);
+    assert(EspAudioLoadingRoute_forMap(2U)==ESP_AUDIO_LOADING_TRACK_M_E1M3);
+    assert(strcmp(EspAudioLoadingRoute_trackName(
+        EspAudioLoadingRoute_forMap(2U)),"M_E1M3.wav")==0);
     assert(ESP_MAP_ID_JUNCTION==9U);
     assert(EspAudioLoadingRoute_forMap(9U)==ESP_AUDIO_LOADING_TRACK_M_DEAD);
     assert(strcmp(EspAudioLoadingRoute_trackName(
         EspAudioLoadingRoute_forMap(9U)),"M_DEAD.wav")==0);
     for (unsigned i=0;i<256;i++) {
-        if (i==1 || i==9) continue;
+        if (i==1 || i==2 || i==9) continue;
         assert(EspAudioLoadingRoute_forMap((uint8_t)i)==
                ESP_AUDIO_LOADING_TRACK_DEFERRED);
         assert(strcmp(EspAudioLoadingRoute_trackName(
@@ -70,4 +74,4 @@ with tempfile.TemporaryDirectory(prefix="doom-audio-loading-l0-") as d:
                     "-pedantic","-I",str(inc),str(f),"-o",str(e)],
                    cwd=root,check=True)
     subprocess.run([str(e)],cwd=root,check=True)
-print("PASS LOAD-AUDIO-L0: Entrance M_STALKS + Junction M_DEAD, 254 other IDs deferred, loader remains silent")
+print("PASS LOAD-AUDIO-L0: Entrance M_STALKS + Junction M_DEAD, 253 other IDs deferred, loader remains silent")

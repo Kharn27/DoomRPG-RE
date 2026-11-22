@@ -23,6 +23,7 @@ code=r"""
 #include "esp_audio_track_volume.h"
 int main(void) {
     assert(ESP_MAP_ID_INTRO==1U && ESP_MAP_ID_JUNCTION==9U);
+    assert(ESP_MAP_ID_SECTOR_1==2U);
     assert(strcmp(EspMapCatalog_nameForId(9U),"/junction.bsp")==0);
     assert(strcmp(EspMapCatalog_nameForId(10U),"/junction_destroyed.bsp")==0);
     assert(EspAudioLoadingRoute_forMap(1U)==ESP_AUDIO_LOADING_TRACK_M_STALKS);
@@ -38,7 +39,7 @@ int main(void) {
     assert(strcmp(EspAudioLoadingRoute_trackName(
         ESP_AUDIO_LOADING_TRACK_M_DEAD),"M_DEAD.wav")==0);
     for (unsigned i=0U;i<256U;i++) {
-        if (i!=1U && i!=9U) {
+        if (i!=1U && i!=2U && i!=9U) {
             assert(EspAudioLoadingRoute_forMap((uint8_t)i)==
                    ESP_AUDIO_LOADING_TRACK_DEFERRED);
         }
@@ -48,6 +49,7 @@ int main(void) {
             const EspAudioLoadingTrack expected=
                 i==1U && bsp==1U ? ESP_AUDIO_LOADING_TRACK_M_STALKS :
                 i==9U && bsp==2U ? ESP_AUDIO_LOADING_TRACK_M_DEAD :
+                i==2U && bsp==3U ? ESP_AUDIO_LOADING_TRACK_M_E1M3 :
                 ESP_AUDIO_LOADING_TRACK_DEFERRED;
             assert(EspAudioLoadingRoute_forView(
                 (uint8_t)i,(uint8_t)bsp)==expected);
@@ -66,6 +68,8 @@ int main(void) {
             ESP_AUDIO_LOADING_TRACK_DEFERRED,(uint8_t)master)==master);
         assert(EspAudioTrackVolume_effectivePercent(
             ESP_AUDIO_LOADING_TRACK_M_STALKS,(uint8_t)master)==master);
+        assert(EspAudioTrackVolume_effectivePercent(
+            ESP_AUDIO_LOADING_TRACK_M_E1M3,(uint8_t)master)==master);
         assert(EspAudioTrackVolume_effectivePercent(
             ESP_AUDIO_LOADING_TRACK_M_DEAD,(uint8_t)master)
             ==(master*75U)/100U);
