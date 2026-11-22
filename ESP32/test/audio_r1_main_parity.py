@@ -9,6 +9,15 @@ from native_boot_legals_history import restore_pre_boot_legals
 
 def restore_pre_res60_p1(main: str) -> str:
     """Remove only P1's isolated video-only boot seam for historical blob parity."""
+    # P12's RES60-only snapshot API is an additional isolated header.
+    # Strip the exact gate before restoring the historical Root-J2 Git blob;
+    # do not change or regenerate its golden SHA.
+    p12_include = ('#if DOOMRPG_RES60_P12_INVENTORY_CACHE\\n'
+                   '#include "esp_res60_inventory_cache.h"\\n'
+                   '#endif\\n')
+    if p12_include in main:
+        assert main.count(p12_include) == 1, "P12 include scope changed"
+        main = main.replace(p12_include, "", 1)
     p6_include = ('#if DOOMRPG_RES60_P6_MENU\n'
                   '#include "esp_res60_menu.h"\n'
                   '#include "platform_touch_events.h"\n'
