@@ -116,7 +116,12 @@ static int renderIntroCore(uint16_t* framebuffer,
     cameraAngle=(uint8_t)(inv.spawnDirection + quarterTurns*64U);
 #if DOOMRPG_RES60_P7_NAV
     if (!EspRes60Nav_resolveAngle(inv.spawnDirection, quarterTurns,
-                                 &cameraAngle)) return 0;
+                                 &cameraAngle)) {
+#if DOOMRPG_RES60_P12_INVENTORY_CACHE
+        EspRes60InventoryCache_reset();
+#endif
+        return 0;
+    }
 #else
     if (quarterTurns != 0U) return 0;
 #endif
@@ -135,6 +140,9 @@ static int renderIntroCore(uint16_t* framebuffer,
         default: return 0;
     }
     if (viewX < 0 || viewX >= 2048 || viewY < 0 || viewY >= 2048) {
+#if DOOMRPG_RES60_P12_INVENTORY_CACHE
+        EspRes60InventoryCache_reset();
+#endif
         printf("[RES60P3] FAIL CLOSED stage=legacy-camera-bounds\n");
         return 0;
     }
