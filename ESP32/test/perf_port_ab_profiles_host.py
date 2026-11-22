@@ -23,26 +23,31 @@ def assert_profiles() -> None:
         raise AssertionError(f"missing {INI}")
 
     normal = parser["env:esp32-cyd"]
-    off = parser["env:esp32-cyd-perf-off"]
+    inverted_on = parser["env:esp-cyd-inverted"]
+    inverted_off = parser["env:esp32-cyd-perf-off"]
 
     assert parser["platformio"]["default_envs"].strip() == "esp32-cyd"
-    assert off["extends"].strip() == "env:esp32-cyd"
-    assert "${env:esp32-cyd.build_flags}" in off["build_flags"]
-    assert off["build_flags"].count("-D DOOMRPG_PERF_PORT_PALETTE_REUSE=0") == 1
-    assert "-I.pio/libdeps/esp32-cyd-perf-off/TFT_eSPI" in off["build_flags"]
+    assert inverted_on["extends"].strip() == "env:esp32-cyd"
+    assert "${env:esp32-cyd.build_flags}" in inverted_on["build_flags"]
+    assert "-D DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION=1" in inverted_on["build_flags"]
+    assert inverted_off["extends"].strip() == "env:esp-cyd-inverted"
+    assert "${env:esp-cyd-inverted.build_flags}" in inverted_off["build_flags"]
+    assert inverted_off["build_flags"].count("-D DOOMRPG_PERF_PORT_PALETTE_REUSE=0") == 1
+    assert "-I.pio/libdeps/esp32-cyd-perf-off/TFT_eSPI" in inverted_off["build_flags"]
     assert "DOOMRPG_PERF_PORT_PROFILE=1" in normal["build_flags"]
     assert "DOOMRPG_PERF_PORT_PALETTE_REUSE=" not in normal["build_flags"]
+    assert "DOOMRPG_PERF_PORT_PALETTE_REUSE=" not in inverted_on["build_flags"]
     assert "DOOMRPG_RA2B_CAPTURE=1" in normal["build_flags"]
-    assert "DOOMRPG_ESP32_BRINGUP_PROBES" not in off["build_flags"]
-    assert "DOOMRPG_LOG_LEVEL=4" not in off["build_flags"]
+    assert "DOOMRPG_ESP32_BRINGUP_PROBES" not in inverted_off["build_flags"]
+    assert "DOOMRPG_LOG_LEVEL=4" not in inverted_off["build_flags"]
 
     renderer = RENDERER.read_text(encoding="utf-8")
     assert "#ifndef DOOMRPG_PERF_PORT_PALETTE_REUSE\n#define DOOMRPG_PERF_PORT_PALETTE_REUSE 1\n#endif" in renderer
     assert "#if DOOMRPG_PERF_PORT_PROFILE" in renderer
-    print("PERF-PORT-P1 A/B config PASS: normal ON, perf-off OFF, same INFO/probe/base")
+    print("PERF-PORT-P1 A/B config PASS: inverted ON, inverted perf-off OFF, same INFO/probe/base")
 
 
-def assert_compiled_reference(path: Path) -> None:
+def extract_compiled_defines(path: Path) -> list[str]:
     db = json.loads(path.read_text(encoding="utf-8"))
     matched = [row for row in db if Path(row["file"]).name == "esp_native_first_frame.c"]
     assert len(matched) == 1, f"expected one real production renderer compile: {len(matched)}"
@@ -59,18 +64,34 @@ def assert_compiled_reference(path: Path) -> None:
         elif arg.startswith("-D"):
             definitions.append(arg[2:])
 
-    assert "DOOMRPG_PERF_PORT_PROFILE=1" in definitions, "OFF witness must remain instrumented"
-    assert "DOOMRPG_PERF_PORT_PALETTE_REUSE=0" in definitions, "OFF witness compiled with reuse ON"
-    assert "DOOMRPG_ESP32=1" in definitions, "not the normal native CYD engine"
-    assert "DOOMRPG_RA2B_CAPTURE=1" in definitions, "baseline capture not preserved"
-    assert "DOOMRPG_ESP32_BRINGUP_PROBES=1" not in definitions, "diagnostic build invalidates A/B"
-    print("PERF-PORT-P1 A/B compiledb PASS: genuine renderer C built OFF with profile=1")
+    return definitions
+
+
+def assert_compiled_reference(off_db: Path, on_db: Path | None) -> None:
+    off = extract_compiled_defines(off_db)
+    assert "DOOMRPG_PERF_PORT_PROFILE=1" in off, "OFF witness must remain instrumented"
+    assert "DOOMRPG_PERF_PORT_PALETTE_REUSE=0" in off, "OFF witness compiled with reuse ON"
+    assert "DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION=1" in off, "OFF LCD is not inverted"
+    assert "DOOMRPG_ESP32=1" in off, "not the native CYD engine"
+    assert "DOOMRPG_RA2B_CAPTURE=1" in off, "capture not preserved"
+    assert "DOOMRPG_ESP32_BRINGUP_PROBES=1" not in off, "diagnostic A/B is invalid"
+    if on_db is not None:
+        on = extract_compiled_defines(on_db)
+        assert "DOOMRPG_PERF_PORT_PROFILE=1" in on, "ON witness not instrumented"
+        assert "DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION=1" in on, "ON LCD is not inverted"
+        assert "DOOMRPG_PERF_PORT_PALETTE_REUSE=0" not in on, "ON unexpectedly disabled"
+        assert sorted(set(off) - {"DOOMRPG_PERF_PORT_PALETTE_REUSE=0"}) == sorted(set(on)), (
+            "A/B compiler defines differ outside the palette reuse switch",
+            set(off) ^ set(on),
+        )
+    print("PERF-PORT-P1 A/B compiledb PASS: inverted renderer ON/OFF, same compiler defines except REUSE=0")
 
 
 if __name__ == "__main__":
     cli = argparse.ArgumentParser(description=__doc__)
-    cli.add_argument("--compiledb", type=Path, help="PlatformIO OFF compile_commands.json")
+    cli.add_argument("--compiledb", type=Path, help="PlatformIO inverted OFF compile_commands.json")
+    cli.add_argument("--compiledb-on", type=Path, help="PlatformIO inverted ON compile_commands.json")
     args = cli.parse_args()
     assert_profiles()
     if args.compiledb:
-        assert_compiled_reference(args.compiledb)
+        assert_compiled_reference(args.compiledb, args.compiledb_on)
