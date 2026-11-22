@@ -415,6 +415,11 @@ jobs:
             ESP32/test/font_sd_tint_host.c -o /tmp/doomrpg-font-sd-tint
           /tmp/doomrpg-font-sd-tint
 
+      - name: FONT-NEUTRAL-P1 deterministic BMP palettes and host geometry integrity
+        run: |
+          python artwork/fonts/neutral/generate.py --check
+          python ESP32/test/font_neutral_assets_host.py
+
       - name: SDL-C1 native indexed image decoder, PAK lease and failure rollback
         run: |
           cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include \
