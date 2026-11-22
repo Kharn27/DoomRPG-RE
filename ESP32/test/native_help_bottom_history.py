@@ -142,6 +142,7 @@ def restore_pre_help_frame_polish(source: str) -> str:
     marker = "    int x, y;\n"
     anchor = "static int helpDrawStarfield(DoomRPG_t* doomRpg) {"
     start = source.index(anchor)
-    x_pos = source.index(marker, start) + len(marker)
+    # Pre-polish declarations were BEFORE `int x, y`, not after it.
+    x_pos = source.index(marker, start)
     assert source[x_pos:x_pos+len(_PRE_FRAME_DECL)] != _PRE_FRAME_DECL
     return source[:x_pos] + _PRE_FRAME_DECL + source[x_pos:]
