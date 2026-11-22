@@ -893,12 +893,16 @@ jobs:
         working-directory: ESP32
         run: pio run -e esp32-cyd
 
-      - name: PERF-PORT-P1 build independent OFF reference and verify compiled C defines
+      - name: PERF-PORT-P1 build inverted OFF reference and verify matched LCD/renderer defines
         working-directory: ESP32
         run: |
           pio run -e esp32-cyd-perf-off
+          pio run -e esp-cyd-inverted -t compiledb
+          cp compile_commands.json "$RUNNER_TEMP/perf-port-inverted-on-compile-commands.json"
           pio run -e esp32-cyd-perf-off -t compiledb
-          python test/perf_port_ab_profiles_host.py --compiledb compile_commands.json
+          python test/perf_port_ab_profiles_host.py \
+            --compiledb compile_commands.json \
+            --compiledb-on "$RUNNER_TEMP/perf-port-inverted-on-compile-commands.json"
 
       - name: Assert the two release builds compile the SAME engine units and defines
         working-directory: ESP32
