@@ -30,8 +30,10 @@ constexpr uint8_t kMagic[8] = {'D', 'R', 'P', 'G', 'E', 'S', 'P', '2'};
 constexpr uint32_t kVersion = ESP_ASSET_PACK_FORMAT_VERSION;
 constexpr size_t kHeaderBytes = 24;
 constexpr size_t kEntryBytes = 20;
-constexpr uint32_t kResidentRangeCapacityBytes = 19U * 1024U;
-constexpr uint32_t kResidentRangeEntryCapacity = 288U;
+/* WALL-SD recovery: keep the 46 KiB post-ring audio reserve on the
+ * no-PSRAM CYD. Slightly smaller L1 cache; flash-backed misses stay safe. */
+constexpr uint32_t kResidentRangeCapacityBytes = 15U * 1024U;
+constexpr uint32_t kResidentRangeEntryCapacity = 256U;
 constexpr uint32_t kResidentEntryCacheSlots = 24U;
 constexpr uint32_t kResidentMaxCachedRangeBytes = 1024U;
 constexpr uint32_t kResidentLargeRangeBytes = 2048U;
@@ -1563,7 +1565,7 @@ int EspAssetPack_mapFlashStage(uint8_t currentMapId)
            (unsigned int)stagedBytes,
            (unsigned int)partition->size,
            (unsigned int)(partition->size - payloadFlashOffset - stagedBytes));
-    printf("[MAPFLASH] CONTRACT raw-partition single-slot; copy complete current-map gameplay working set before resident gameplay; original index+offset semantics retained; 19KiB RAM cache stays L1; header committed last after flash readback; excluded BSP access fails closed; SD fallback during active gameplay=no\n");
+    printf("[MAPFLASH] CONTRACT raw-partition single-slot; copy complete current-map gameplay working set before resident gameplay; original index+offset semantics retained; 15KiB RAM cache stays L1; header committed last after flash readback; excluded BSP access fails closed; SD fallback during active gameplay=no\n");
 
     buffer = (uint8_t*)malloc(kMapFlashCopyBufferBytes);
     if (buffer == nullptr) {

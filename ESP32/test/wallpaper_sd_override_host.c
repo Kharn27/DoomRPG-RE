@@ -11,7 +11,7 @@
 #include "esp_native_indexed_image.h"
 
 static uint8_t pakC[12408], pakE[8312];
-static uint8_t sdC[25654], sdE[17462];
+static uint8_t sdC[12406], sdE[17462];
 static int available[2] = {1, 1}, packOpen;
 static unsigned pakReads, sdReads, rejects, opens, probes;
 static void wr16(uint8_t* p, uint16_t v) { p[0]=(uint8_t)v; p[1]=(uint8_t)(v>>8); }
@@ -98,8 +98,8 @@ int main(void) {
     /* The SD asset is read BEFORE the PAK lease is opened, then adopted
      * without setting SD-font tint metadata. */
     assert(EspNativeImage_loadPack("c.bmp",0,&img)==ESP_NATIVE_IMAGE_OK);
-    assert(img.width==192&&img.height==128&&img.bitsPerPixel==8U&&
-           img.paletteSize==256U&&!img.sdFont&&!img.hasColorKey&&
+    assert(img.width==192&&img.height==128&&img.bitsPerPixel==4U&&
+           img.paletteSize==16U&&!img.sdFont&&!img.hasColorKey&&
            !packOpen&&pakReads==0U);
     EspNativeImage_dispose(&img);
     assert(EspNativeImage_loadPack("e.bmp",1,&img)==ESP_NATIVE_IMAGE_OK);
@@ -107,6 +107,20 @@ int main(void) {
            img.paletteSize==256U&&!img.sdFont&&img.hasColorKey&&
            img.palette[0].r==255U&&img.palette[0].g==0U&&
            img.palette[0].b==255U&&!packOpen&&pakReads==0U);
+    /* Pink speckle regression: every near-magenta pixel must be key 0. */
+    {
+        unsigned key=0U;
+        for (unsigned y=0; y<128U; ++y) for (unsigned x=0; x<128U; ++x) {
+            uint8_t id=img.pixels[y*(unsigned)img.pitch+x];
+            const EspNativeImageColor* color=&img.palette[id];
+            if (id==0U) { ++key; continue; }
+            assert(!(color->r>=156U && color->b>=140U &&
+                     color->g<=170U && abs((int)color->r-(int)color->b)<90 &&
+                     (int)color->r-(int)color->g>=40 &&
+                     (int)color->b-(int)color->g>=40));
+        }
+        assert(key==12022U);
+    }
     EspNativeImage_dispose(&img);
     assert(sdReads>=4U);
 
@@ -116,7 +130,7 @@ int main(void) {
     assert(EspNativeIndexedBmp_open("c.bmp",&row,&stats)
            ==ESP_NATIVE_INDEXED_BMP_OK);
     assert(row.sdFontSource==ESP_NATIVE_WALLPAPER_SD_STARS&&
-           row.bitsPerPixel==8U&&row.width==192U);
+           row.bitsPerPixel==4U&&row.width==192U);
     assert(EspNativeIndexedBmp_open("e.bmp",&row,&stats)
            ==ESP_NATIVE_INDEXED_BMP_OK);
     assert(row.sdFontSource==ESP_NATIVE_WALLPAPER_SD_MARS&&
@@ -153,7 +167,7 @@ int main(void) {
     assert(img.bitsPerPixel==4U&&!img.sdFont&&!packOpen);
     EspNativeImage_dispose(&img);
     assert(sdReads==old&&pakReads>0U&&opens>0U&&probes>0U);
-    puts("WALL-SD HOST PASS: real indexed decoders, 8bpp SD C/E, "
+    puts("WALL-SD HOST PASS: real indexed decoders, SD C4/E8, "
          "colorkey, independent malformed/missing PAK fallback");
     return 0;
 }

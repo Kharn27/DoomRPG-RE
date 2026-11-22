@@ -1,38 +1,39 @@
-# Wallpapers de l'introduction — sources PNG et BMP CYD
+# Wallpapers de l'introduction — source PNG, BMP CYD à mémoire bornée
 
-Sources humaines : `c.png` (192×128, décor étoilé), `e.png` (128×128, Mars).
-Les fichiers compatibles avec l'importeur natif sont :
+Les PNG de référence restent `artwork/wallpaper/c.png` (ciel étoilé
+192×128) et `e.png` (illustrations 128×128). Les deux surcharges sont
+à copier **ensemble** sur la microSD, dans `/doomrpg/img/` :
 
-- `sdroot/doomrpg/img/c.bmp` → copier sur la SD sous `/doomrpg/img/c.bmp`
-- `sdroot/doomrpg/img/e.bmp` → copier sur la SD sous `/doomrpg/img/e.bmp`
+- `sdroot/doomrpg/img/c.bmp` — BMP4 indexé (16 couleurs, 12 406 octets)
+- `sdroot/doomrpg/img/e.bmp` — BMP8 indexé (256 entrées, 17 462 octets)
 
-Le BMP exporté est **Windows BMP indexé 8 bpp, BI_RGB (non compressé)**,
-palette BGRA 256 entrées, orientation bas-vers-haut, ligne alignée sur 4 octets.
-Il conserve les dimensions originales et une palette adaptative RGB565;
-le nom `e.bmp` réserve l'index 0 au magenta `#FF00FF` (clé transparente).
-`c.bmp` est entièrement opaque.
+Après le premier essai CYD, `c.bmp` a été quantifié à 15 tons utiles
++ 1 réserve afin de conserver le dessin du ciel dans **12 288 octets
+de pixels** au lieu de 24 576. `e.bmp` garde ses détails en 8 bits.
+Les pixels roses du fond, qui comprenaient **7 527 pixels magenta
+exacts mais aussi 4 495 pixels magenta apparentés**, sont maintenant
+remplacés par un *unique* index 0 `#FF00FF` dans l'asset.
+La couleur n'est plus visible sous forme de petites taches roses quand
+le masque de transparence est appliqué.
 
-Taille des fichiers : 25 654 et 17 462 octets, respectivement.
-La CI vérifie les blobs Git exacts, le format, les pixels-clés et l'écart
-colorimétrique après quantification RGB565. Les PNG restent les masters.
+Windows BMP BI_RGB non compressé, palette BGR0, lignes bas-vers-haut.
+Ne pas exporter en RGB24/RGBA32, changer les dimensions ou les noms :
+les chargeurs natifs de la CYD imposent ces contrats.
+Le PAK original n'est pas modifié et reste le fallback indépendant.
 
-**Source de repli** : les `c.bmp` et `e.bmp` 4 bpp immuables du
-`/DoomRPG-ESP32.pak`. Aucun nouveau ZIP ni repack du PAK au runtime.
-Si la SD manque, si un fichier est invalide, si sa géométrie diffère
-ou si un autre accès exclusif SD détient le lecteur, le PAK demeure prioritaire
-en sécurité. Ne pas renommer les fichiers, changer leurs dimensions ou
-exporter en BMP 24/32 bpp : le décodeur natif les refuserait.
+**Pourquoi ce compromis :** le premier test réel
+`platformio-device-monitor-261122-175956.log` trouvait bien les
+musiques mais refusait leur démarrage (`HEAP-POST-REJECT`).
+La nouvelle représentation `c4/e8` reprend 13 248 octets résidents
+dans le prologue par rapport à `c8/e8` ; la surcharge simultanée
+ne représente plus que **9 152 octets théoriques** par rapport à
+`c4/e4` du PAK. Le cache range gameplay L1 est resserré (19→15 KiB,
+288→256 entrées) pour retrouver une marge audio sans abaisser le
+garde 46 KiB post-ring. Ce sont des **projections à vérifier sur la
+carte**, pas un second PASS matériel.
 
-**Mémoire** : passage PAK 4 bpp → SD 8 bpp : +12 288 octets de pixels
-pour `c.bmp` et +8 192 pour `e.bmp`, plus 960 octets de palette par
-image. Si les deux textures sont présentes ensemble, delta théorique des
-pixels/palettes **+22 400 octets** (non mesuré sur CYD). Pas de double
-framebuffer ni de copie BMP complète, et libération habituelle des textures
-à la fin des séquences.
-
-**Test matériel requis avant fusion** : firmware normal `esp32-cyd`,
-copier les deux BMP sur microSD, lancer l'introduction, vérifier le défilement
-de `c.bmp`, la planète `e.bmp`, sa transparence, la fluidité, le son, les
-logs `[WALLSD] ACTIVE`, la marge heap8 et le retour gameplay. Retirer ensuite
-un BMP pour confirmer le fallback PAK individuel. Pas de PASS matériel
-revendiqué ici.
+La CI vérifie les blobs précis, le format BMP, la nouvelle clé rose et
+les tests hôtes des vrais décodeurs. Le firmware normal `esp32-cyd`
+devra être reflashé et les deux BMP SD recopiés ; vérifier son, image,
+mémoire et gameplay. Aucun ZIP runtime, framebuffer supplémentaire ou
+média texel map-wide.
