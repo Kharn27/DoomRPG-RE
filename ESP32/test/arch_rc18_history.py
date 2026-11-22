@@ -61,7 +61,10 @@ def restore_pre_uac_p1_menu_touch(source: str) -> str:
     )
     undo(
         '    else {\n'
-        '        EspUacMenuPreview_reset();\n'
+        '        /* The original Options/Video/Sound native callback stays active;\n'
+        '         * only the physical UAC overlay is retained for those subpages. */\n'
+        '        if(callback==NULL || !EspUacMenuPreview_optionsActive())\n'
+        '            EspUacMenuPreview_reset();\n'
         '        downstreamTapCallback = callback;\n'
         '        PlatformInput_setTapCallbackBase(callback);\n'
         '    }\n}',
@@ -69,6 +72,15 @@ def restore_pre_uac_p1_menu_touch(source: str) -> str:
         '        downstreamTapCallback = callback;\n'
         '        PlatformInput_setTapCallbackBase(callback);\n'
         '    }\n}'
+    )
+    # UAC-120-DEFAULT arms the physical UI without allocating during
+    # the legacy main-menu touch-activation/hash oracle. Strictly strip ONLY
+    # this explicit new callback intent before checking immutable old SHAs.
+    undo(
+        '    /* No allocation here: the first physical MENU_MAIN present follows\n'
+        '     * the strict root heap/FNV checks and prepares UAC-120 at that point. */\n'
+        '    EspUacMenuPreview_armDefault();\n',
+        ''
     )
     assert 'EspUacMenuPreview' not in source and 'EspUacMenu_hitPhysical' not in source
     return source

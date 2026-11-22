@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "ESP32/src"
 EXPECTED = {
     "esp_doomrpg_presentation.c": 1,
-    "native_main_menu_actions.c": 2,
+    "native_main_menu_actions.c": 3,
     "native_main_menu_options_action.c": 1,
     "native_main_menu_options_back.c": 7,
     "native_main_menu_touch.c": 3,
@@ -48,6 +48,7 @@ assert "bool PlatformVideo_present()" in display
 assert "uint16_t outputRow[DOOMRPG_PHYSICAL_WIDTH];" in display
 assert "DOOMRPG_INTEGER_SCALE" in display
 assert "platformDisplay->pushPixels(outputRow, DOOMRPG_PHYSICAL_WIDTH);" in display
-assert len(EXPECTED) == 6 and sum(EXPECTED.values()) == 15
-print("SDL-F2 PASS 15 production present sites -> existing native C video bridge;"
+assert len(EXPECTED) == 6 and sum(EXPECTED.values()) == 16
+assert "if (EspUacMenuPreview_needsBlink())" in (SRC / "native_main_menu_actions.c").read_text()
+print("SDL-F2 PASS 16 production present sites -> existing native C video bridge;"
       " historical SDL oracle retained, real TFT presenter untouched")

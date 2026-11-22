@@ -162,7 +162,10 @@ assert "DoomRPG_esp32BrightnessCardRect(item, &left, &top, &right, &bottom)" in 
 assert "DoomRPG_esp32VideoCardRect(item, &left, &top, &right, &bottom)" in options
 assert "(luminositeOpen || soundOpen) ? luminositeItemAt" in options
 assert "if (luminositeOpen)" in options
-assert "if (armedItem != item)" in options
+assert "if (armedItem != item && !uacInstant)" in options
+assert "const int uacInstant=EspUacMenuPreview_optionsActive();" in options
+assert options.count("if (armedItem != item && !uacInstant)") == 2
+assert options.count("if (armedItem != item)") == 4
 assert "if (item == OPTIONS_VIDEO_ITEM)" in options
 assert "luminositeOpen = 1U;" in options
 assert "if (item == 0)" in options
