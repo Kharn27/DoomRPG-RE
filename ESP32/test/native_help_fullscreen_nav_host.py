@@ -57,6 +57,7 @@ harness = r"""
 #define MAIN_HELP_WEAPON_MINI_W 144
 #define MAIN_HELP_WEAPON_MINI_H 60
 #define MAIN_HELP_WEAPON_DRAW_H 76
+#define ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_SLOT_COUNT 12U
 static uint16_t helpWeaponMini[144*60];
 static uint8_t helpWeaponMiniReady = 1U;
 static uint16_t frame[160*120];
@@ -202,17 +203,24 @@ static void gridContract(void) {
             helpWeaponMini[y*144+x]=(uint16_t)((y+1)*11+x);
     memcpy(copy,helpWeaponMini,sizeof(copy));
     for(unsigned i=0;i<160U*120U;++i)frame[i]=0x2a45U;
-    helpDrawWeaponGridMini(frame);
+    helpDrawWeaponGridMini(frame,0U);
     assert(memcmp(copy,helpWeaponMini,sizeof(copy))==0);
     for(int y=0;y<120;++y)for(int x=0;x<160;++x) {
         if(x>=8&&x<152&&y>=39&&y<115) {
             const int srcY=(y-39)*60/76;
-            assert(frame[y*160+x]==copy[srcY*144+x-8]);
+            const int row=srcY/20, col=(x-8)/36;
+            const int top=(row*76+2)/3, bottom=((row+1)*76+2)/3-1;
+            const int cx=(x-8)%36, dy=y-39;
+            const int edge=cx<=1||cx>=34||dy-top<=1||bottom-dy<=1;
+            const uint16_t expected=edge
+                ? (uint16_t)(row==0&&col==0?0x07e0U:0x4208U)
+                : copy[srcY*144+x-8];
+            assert(frame[y*160+x]==expected);
         } else assert(frame[y*160+x]==0x2a45U);
     }
     helpWeaponMiniReady=0U;
     for(unsigned i=0;i<160U*120U;++i)frame[i]=0x2a45U;
-    helpDrawWeaponGridMini(frame);
+    helpDrawWeaponGridMini(frame,0U);
     for(unsigned i=0;i<160U*120U;++i)assert(frame[i]==0x2a45U);
 }
 int main(void) {

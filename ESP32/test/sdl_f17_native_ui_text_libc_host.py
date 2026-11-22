@@ -13,6 +13,7 @@ from native_help_bottom_history import (restore_pre_help_bottom_blue,
                                         restore_pre_help_bottom_model,
                                         restore_pre_help_light_body_pages,
                                         restore_pre_help_frame_polish,
+                                        restore_pre_help_weapon_sweep_actions,
                                         restore_pre_help_page4_model,
                                         restore_pre_help_page4_actions)
 
@@ -80,6 +81,7 @@ def restore(filename: str, current: str) -> str:
     if filename == "native_main_menu_actions.c":
         original = restore_pre_help_page4_actions(original)
         from native_help_fullscreen_history import restore_pre_help_fullscreen_nav
+        original = restore_pre_help_weapon_sweep_actions(original)
         original = restore_pre_help_fullscreen_nav(original)
         original = restore_pre_help_frame_polish(original)
         from uac_blink_history import restore_pre_uac_blink_actions

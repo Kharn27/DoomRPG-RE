@@ -14,8 +14,10 @@ from audio_r2c_restore_menu_oracle import (restore_sound_options_action,
                                            restore_sound_options_back)
 from native_help_bottom_history import (restore_pre_help_light_body_pages,
                                         restore_pre_help_frame_polish,
-                                         restore_pre_help_page4_model,
-                                         restore_pre_help_page4_actions)
+                                        restore_pre_help_weapon_sweep_actions,
+                                        restore_pre_help_weapon_sweep_model,
+                                        restore_pre_help_page4_model,
+                                        restore_pre_help_page4_actions)
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCES = ROOT / "ESP32/src"
@@ -98,13 +100,13 @@ def original_body_parity() -> None:
         # former .c modules, each with its own original SDL.h include.
         # Restore every one of those original imports before whole-blob SHA.
         restored = current.replace(marker, old_import).decode("utf-8")
+        # ARCH-RC18 changed only the public menu callback handoff names.
+        # Restore those exact pre-RC18 aliases before the frozen F29 Git SHA,
+        # without updating, weakening, or replacing any historical SHA.
         if filename == "native_main_menu_model.c":
             restored = restore_pre_help_page4_model(restored)
         elif filename == "native_main_menu_actions.c":
             restored = restore_pre_help_page4_actions(restored)
-        # ARCH-RC18 changed only the public menu callback handoff names.
-        # Restore those exact pre-RC18 aliases before the frozen F29 Git SHA,
-        # without updating, weakening, or replacing any historical SHA.
         if filename == "native_main_menu_touch.c":
             from arch_rc18_history import restore_pre_rc18_menu_touch
             restored = restore_pre_rc18_menu_touch(restored)
@@ -112,6 +114,7 @@ def original_body_parity() -> None:
         # Reverse it exactly without changing the historical frozen blobs.
         if filename == "native_main_menu_actions.c":
             from native_help_fullscreen_history import restore_pre_help_fullscreen_nav
+            restored = restore_pre_help_weapon_sweep_actions(restored)
             restored = restore_pre_help_fullscreen_nav(restored)
             restored = restore_pre_help_frame_polish(restored)
             from uac_blink_history import restore_pre_uac_blink_actions
@@ -132,6 +135,8 @@ def original_body_parity() -> None:
         elif filename == "native_main_menu_actions.c":
             # Undo only the later HELP page-2 ink before the frozen F29 blob.
             restored = restore_pre_help_light_body_pages(restored)
+        elif filename == "native_main_menu_model.c":
+            restored = restore_pre_help_weapon_sweep_model(restored)
         assert git_blob(restored.encode("utf-8")) == blob, (
             f"{filename}: original pre-F29 Git blob not preserved exactly")
         assert current.count(old_import) == expected, filename
