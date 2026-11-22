@@ -177,12 +177,14 @@ EspNativeImageStatus EspNativeImage_loadPack(const char* name,
             input.size = sdSize;
             input.readRange = fontSdRange;
             result = EspNativeImage_decode(&input, transparentMask, output);
-            geometryMatches = source == ESP_NATIVE_FONT_SD_STANDARD
-                    ? output->width == 144 && output->height == 72
-                    : output->width == 208 && output->height == 102;
+            geometryMatches = result == ESP_NATIVE_IMAGE_OK &&
+                    EspNativeBmpSd_correctGeometry(source, output->width,
+                                                   output->height);
             if (result == ESP_NATIVE_IMAGE_OK && geometryMatches) {
-                output->sdFont = source; /* Persist source for font-only tint. */
-                printf("[FONTSD] ACTIVE name=%s source=SD indexed=%u palette=%u bytes=%lu\n",
+                /* Wallpaper palettes are immutable and must never be font-tinted. */
+                if (EspNativeBmpSd_isFont(source)) output->sdFont = source;
+                printf("[%s] ACTIVE name=%s source=SD indexed=%u palette=%u bytes=%lu\n",
+                       EspNativeBmpSd_isFont(source) ? "FONTSD" : "WALLSD",
                        name, (unsigned)output->bitsPerPixel,
                        (unsigned)output->paletteSize, (unsigned long)sdSize);
                 return ESP_NATIVE_IMAGE_OK;

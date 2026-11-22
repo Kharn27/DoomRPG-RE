@@ -81,6 +81,7 @@ typedef struct EspNativeTransitionPresentationState_s {
     uint8_t lastPhase;
     uint8_t loadingActive;
     uint8_t flashDeferred;
+    uint8_t backgroundSd; /* pin the first-frame wallpaper source */
     EspNativeLoadingTitleFont titleFont;
     /* LOAD-L0: static timing witnesses only, no playback or ring ownership. */
     uint8_t audioRoute;
@@ -540,22 +541,49 @@ static void drawReportValue(int left, const char* label, const char* value,
 }
 
 static int drawFixedStarfield(EspNativeIndexedBmp* star,
-                              EspNativeIndexedBmpStats* stats) {
-    if (star == NULL || stats == NULL ||
-        EspNativeIndexedBmp_open(TRANSITION_STAR_NAME, star, stats) !=
-            ESP_NATIVE_INDEXED_BMP_OK ||
-        star->width < DOOMRPG_LOGICAL_WIDTH ||
-        star->height < DOOMRPG_LOGICAL_HEIGHT) {
+                              EspNativeIndexedBmpStats* stats,
+                              int* openedPackHere) {
+    int sdStandalone = 0;
+    EspNativeIndexedBmpStatus status;
+    if (star == NULL || stats == NULL || openedPackHere == NULL) return 0;
+    /* No PAK open yet: select SD C first, using the existing 1KiB scratch.
+     * Missing/invalid override falls back to the untouched original PAK. */
+    if (!EspAssetPack_isOpen()) {
+        status = EspNativeIndexedBmp_openSdWallpaperStandalone(
+            TRANSITION_STAR_NAME, star, stats);
+        if (status == ESP_NATIVE_INDEXED_BMP_OK) {
+            sdStandalone = 1;
+        } else {
+            if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) return 0;
+            *openedPackHere = 1;
+        }
+    }
+    /* If the first frame used SD, never repaint with different PAK stars
+     * in a callback that currently owns physical SD PAK access. */
+    if (!sdStandalone) {
+        if (presentation.loadingActive && presentation.backgroundSd &&
+            !EspAssetPack_musicSdSafe()) return 0;
+        if (EspNativeIndexedBmp_open(TRANSITION_STAR_NAME, star, stats) !=
+            ESP_NATIVE_INDEXED_BMP_OK) return 0;
+    }
+    if (presentation.loadingActive &&
+        (uint8_t)(star->sdFontSource != 0U) != presentation.backgroundSd) {
+        if (sdStandalone) EspNativeFontSd_suspend();
         return 0;
     }
-
-    return EspNativeIndexedBmp_blit(
-               star, framebuffer(),
-               DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
-               (uint16_t)((star->width - DOOMRPG_LOGICAL_WIDTH) / 2U),
-               (uint16_t)((star->height - DOOMRPG_LOGICAL_HEIGHT) / 2U),
-               DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
-               0, 0, 0U, stats) == ESP_NATIVE_INDEXED_BMP_OK;
+    if (star->width < DOOMRPG_LOGICAL_WIDTH ||
+        star->height < DOOMRPG_LOGICAL_HEIGHT) {
+        if (sdStandalone) EspNativeFontSd_suspend();
+        return 0;
+    }
+    status = EspNativeIndexedBmp_blit(
+        star, framebuffer(), DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
+        (uint16_t)((star->width - DOOMRPG_LOGICAL_WIDTH) / 2U),
+        (uint16_t)((star->height - DOOMRPG_LOGICAL_HEIGHT) / 2U),
+        DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
+        0, 0, 0U, stats);
+    if (sdStandalone) EspNativeFontSd_suspend();
+    return status == ESP_NATIVE_INDEXED_BMP_OK;
 }
 
 static const char* phaseName(uint8_t phase) {
@@ -657,17 +685,7 @@ static void presentOverall(uint8_t percent,
         int openedHere = 0;
 
         memset(&scratch, 0, sizeof(scratch));
-        if (!EspAssetPack_isOpen()) {
-            if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
-                printf("[TRANSITIONLOAD] FRAME-DEFER stage=%s overall=%u reason=pack-open\n",
-                       stage != NULL ? stage : "LOAD",
-                       (unsigned int)percent);
-                return;
-            }
-            openedHere = 1;
-        }
-
-        if (!drawFixedStarfield(&scratch.star, &scratch.stats)) {
+        if (!drawFixedStarfield(&scratch.star, &scratch.stats, &openedHere)) {
             if (openedHere && EspAssetPack_isOpen()) EspAssetPack_close();
             printf("[TRANSITIONLOAD] FRAME-DEFER stage=%s overall=%u reason=background-redraw\n",
                    stage != NULL ? stage : "LOAD",
@@ -706,10 +724,11 @@ static void presentOverall(uint8_t percent,
         ++presentation.frames;
         fnv = frameFNV();
 
-        printf("[TRANSITIONLOAD] FRAME n=%u stage=%s overall=%u background=repainted assetReads=%u source=%s frame=%08x\n",
+        printf("[TRANSITIONLOAD] FRAME n=%u stage=%s overall=%u background=repainted backgroundSource=%s assetReads=%u source=%s frame=%08x\n",
                (unsigned int)presentation.frames,
                stage != NULL ? stage : "LOAD",
                (unsigned int)percent,
+               presentation.backgroundSd ? "SD" : "PAK",
                (unsigned int)scratch.stats.packReads,
                source != NULL ? source : "generic",
                (unsigned int)fnv);
@@ -850,13 +869,15 @@ int EspNativeTransitionPresentation_beginLoading(uint8_t targetMapId) {
 
     /* SD-only overrides are readable before the physical PAK opens. */
     if (!EspAssetPack_isOpen()) prepareLoadingFontSd();
-    if (!EspAssetPack_isOpen()) {
-        if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) return 0;
-        openedHere = 1;
+    if (!drawFixedStarfield(&scratch.star, &scratch.stats, &openedHere))
+        goto done;
+    if (!presentation.titleFont.ready) {
+        if (!EspAssetPack_isOpen()) {
+            if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) goto done;
+            openedHere = 1;
+        }
+        prepareLoadingFontPak();
     }
-
-    if (!drawFixedStarfield(&scratch.star, &scratch.stats)) goto done;
-    prepareLoadingFontPak();
 
     formatMapLabel(targetMapId, target, sizeof(target));
 
@@ -869,6 +890,7 @@ int EspNativeTransitionPresentation_beginLoading(uint8_t targetMapId) {
     presentation.lastPercent = 0U;
     presentation.lastPhase = 0U;
     presentation.loadingActive = 1U;
+    presentation.backgroundSd = scratch.star.sdFontSource != 0U ? 1U : 0U;
     presentation.loadingStartMs = nowMs();
     presentation.audioLastPresentMs = presentation.loadingStartMs;
     presentation.audioRoute = (uint8_t)EspAudioLoadingRoute_forMap(targetMapId);
@@ -876,9 +898,10 @@ int EspNativeTransitionPresentation_beginLoading(uint8_t targetMapId) {
 
     if (!Esp32PlatformVideo_presentBase()) goto done;
 
-    printf("[TRANSITIONLOAD] BEGIN targetMap=%u background=%s mode=fixed font=%s theme=%u entering=\"ENTERING %s\" progress=0%% reads=%u bytes=%u frame=%08x\n",
+    printf("[TRANSITIONLOAD] BEGIN targetMap=%u background=%s mode=fixed backgroundSource=%s font=%s theme=%u entering=\"ENTERING %s\" progress=0%% reads=%u bytes=%u frame=%08x\n",
            (unsigned int)targetMapId,
            TRANSITION_STAR_NAME,
+           presentation.backgroundSd ? "SD" : "PAK",
            presentation.titleFont.ready ? "a.bmp-themed" : "mini-hub-fallback",
            (unsigned int)EspMainMenuSkin_getTheme(),
            target,

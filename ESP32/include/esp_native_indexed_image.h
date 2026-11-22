@@ -22,7 +22,7 @@ typedef struct EspNativeIndexedImage_s {
     int pitch;
     uint8_t bitsPerPixel;
     uint8_t hasColorKey;
-    /* 0=PAK, 1/2=validated SD font; default zero in generic decoder. */
+    /* 0=PAK or wallpaper, 1/2=validated SD font (tint applies only to fonts). */
     uint8_t sdFont;
     uint16_t paletteSize;
     uint8_t* pixels;
