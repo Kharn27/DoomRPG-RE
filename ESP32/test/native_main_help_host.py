@@ -68,7 +68,7 @@ assert "STATUS AT A GLANCE" not in lines
 assert lines[9 * 7 + 3].startswith("RIGHT: ")
 assert lines[9 * 7 + 4] == "Touch for weapon menu"
 assert lines[10 * 7 : 11 * 7] == [
-    "WEAPON SELECT", "Tap gun icon", "", "", "", "", ""]
+    "WEAPON SELECT", "Tap weapon icon", "", "", "", "", ""]
 
 assert "DOWN: controls" not in lines
 # Two long strings on BOTTOM HUD are explicitly positioned across the 160px
@@ -487,13 +487,31 @@ assert '#define MAIN_HELP_WEAPON_MINI_W 144' in actions
 assert '#define MAIN_HELP_WEAPON_MINI_H 60' in actions
 assert 'static uint16_t helpWeaponMini[MAIN_HELP_WEAPON_MINI_W *' in actions
 assert 'helpBuildWeaponGridMini(framebuffer)' in actions
-assert 'helpDrawWeaponGridMini(framebuffer);' in actions
+assert 'helpDrawWeaponGridMini(framebuffer, helpWeaponSweepSlot(' in actions
 assert 'helpDrawWeaponButtonCue(framebuffer);' in actions
 assert 'helpBottomHudMini[sy * MAIN_HELP_HUD_BAR_WIDTH + sx]' in actions
 assert 'const int dstX = 108, dstY = 12, dstW = 46, dstH = 15;' in actions
 assert 'helpTintBottomHudWeaponBlue(original, power)' in actions
 assert 'helpHudBreathStep = step;' in actions
 assert 'scroll == MAIN_HELP_WEAPON_PAGE_SCROLL;' in actions
+assert '#define MAIN_HELP_WEAPON_SWEEP_MS 320U' in actions
+assert 'static uint32_t helpWeaponSweepEpoch;' in actions
+assert actions.count('helpWeaponSweepEpoch = 0U;') == 2
+assert 'helpLoggedScroll != MAIN_HELP_WEAPON_PAGE_SCROLL' in actions
+assert 'helpWeaponSweepEpoch = DoomRPG_GetUpTimeMS();' in actions
+assert 'DoomRPG_GetUpTimeMS() - helpWeaponSweepEpoch' in actions
+assert 'helpWeaponSweepSlot(uint32_t elapsedMs)' in actions
+assert 'ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_SLOT_COUNT' in actions
+assert 'slot == activeSlot ? 0x07e0U : 0x4208U' in actions
+assert 'for (inset = 0; inset < 2; ++inset)' in actions
+assert 'fb[t * DOOMRPG_LOGICAL_WIDTH + x] = ink;' in actions
+assert 'fb[b * DOOMRPG_LOGICAL_WIDTH + x] = ink;' in actions
+assert 'fb[y * DOOMRPG_LOGICAL_WIDTH + l] = ink;' in actions
+assert 'fb[y * DOOMRPG_LOGICAL_WIDTH + r] = ink;' in actions
+assert len("Tap weapon icon") <= 20
+# Existing starfield/breath service owns all time-driven paints; sweep
+# adds no extra present() or independent frame loop.
+assert 'helpHudBreathStep == helpBreathStepAt(now)' in actions
 assert 'static uint16_t helpWeaponPreviewLitPixel(' in actions
 assert 'static void helpIlluminateWeaponGridMini(void)' in actions
 assert 'helpIlluminateWeaponGridMini();' in actions
