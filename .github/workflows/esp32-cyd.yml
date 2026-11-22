@@ -90,6 +90,9 @@ jobs:
       - name: Test AUDIO-SFX-P1 short PCM16 native PAK overlay and real action intents (host C)
         run: python ESP32/test/audio_sfx_p1_pcm_overlay_host.py
 
+      - name: AUDIO-PICKUP #419 real pre-modal audio owner, FIFO and fail-closed gate (host C/C++)
+        run: python ESP32/test/audio_pickup_modal_handoff_host.py
+
       - name: Test SFX-P2 full extinguisher stream, committed cue and DAC gain (host C)
         run: python ESP32/test/audio_sfx_p2_fire_gain_host.py
 
@@ -146,6 +149,9 @@ jobs:
       - name: Test AUDIO-LOAD-L1 sound before first post-loading gameplay present
         run: python ESP32/test/audio_loading_l1_ready_prestart_host.py
 
+      - name: AUDIO-LOAD-V11 saved-game 46KiB heap reserve (real C, 13 mutants)
+        run: python ESP32/test/audio_load_v11_heap_guard_host.py
+
       - name: Test Junction M_DEAD SD track route and fail-closed prestart lifecycle
         run: python ESP32/test/audio_junction_m_dead_host.py
 
@@ -175,6 +181,15 @@ jobs:
 
       - name: ARCH-RC23 cardinal renderer native Base/facade, door transactions (3 C bodies, 20 mutants)
         run: python ESP32/test/native_frame_turn_boundary_host.py
+
+      - name: ARCH-RC24 zero-production-GNU present facade, owner gates and mutants
+        run: python ESP32/test/native_present_gate_boundary_host.py
+
+      - name: FIRE-VIS-P1 real C fire routing, bitshape reader and masked saturated spans
+        run: python ESP32/test/native_fire_visual_host.py
+
+      - name: FIRE-VIS-P2 real C fire phase scheduler and LCD presentation witness
+        run: python ESP32/test/native_fire_vis_p2_host.py
 
       - name: Inventory native process RNG root owners and replay guards
         run: python ESP32/test/native_root_rng_ownership_inventory.py
@@ -861,9 +876,7 @@ jobs:
             ESP32/src/esp_native_gameplay_player_pain_visual.c \
             ESP32/src/esp_native_gameplay_gib_sheet.c \
             ESP32/src/esp_native_dynamic_line_render.c ESP32/src/esp_native_gameplay_present_gate.c \
-            -Wl,--gc-sections \
-            -Wl,--wrap=Esp32PlatformVideo_present \
-            -Wl,--wrap=EspNativeGameplayActionEngine_present -o /tmp/doomrpg-paid-interaction-test
+            -Wl,--gc-sections -Wl,--wrap=EspNativeGameplayActionEngine_present -o /tmp/doomrpg-paid-interaction-test
           /tmp/doomrpg-paid-interaction-test
 
       - name: Test native dialog BACK touch and cancel semantics (host C)

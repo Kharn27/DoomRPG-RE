@@ -73,6 +73,73 @@ Un **oracle C11 double compilation du vrai projecteur avant/après P9** compare 
 
 ---
 
+> **AUDIO-PICKUP #419 — fidélité du Shotgun restaurée, PASS CYD borné (22 novembre 2026).**
+> [PR #422](https://github.com/Kharn27/DoomRPG-RE/pull/422),
+> [issue #419](https://github.com/Kharn27/DoomRPG-RE/issues/419),
+> [rapport exact](MILESTONE_AUDIO_PICKUP_419_PENDING_CYD.md).
+> Le code original `src/Entity.c::Entity_touched` utilise **5057.wav**
+> pour Shotgun/armes à feu, **5060.wav** pour Axe/Fire Ext et objets.
+> Le natif a retrouvé ce choix et publie le SFX **après commit de pickup
+> et avant `EspNativeGameplayDialog_beginStandalone`**, dans l'unique
+> ring/FIFO et propriétaire PAK déjà présents. Le test matériel
+> `platformio-device-monitor-261122-084424.log`
+> (SHA256 `bf62f2f473b360416ad74d720f40a6a5049689f5e07ffd31f12c7e84de14ec27`)
+> atteste `[AUDIOINTENT] resource=5057` →
+> `[SFXP1] MIX id=5057 mixed=11907/11907` →
+> `[AUDIOPICKUP] HANDOFF id=5057 status=MIXED ack=1` →
+> `[DIALOG] OPEN-STANDALONE` pour le Shotgun tile659.
+> Hache tile655 → 5060/9702, deux pickups ammo → 5060,
+> `HEADROOM_OK`, `shapeData/mediaTexels=NULL`, musique
+> `STREAM underflows=0 recoveries=0` sur 31 s.
+> Double CI code SUCCESS [push](https://github.com/Kharn27/DoomRPG-RE/actions/runs/44998917701) /
+> [PR](https://github.com/Kharn27/DoomRPG-RE/actions/runs/44998922207) sur
+> `c73081f391aea2c7392ba76db7491187b5dde9f2`. Aucun nouveau
+> PCM buffer, thread, lecteur PAK/SD, ZIP runtime ni accès audio ISR.
+> **Limites** : log terminé avant EXIT et sans FINAL/AUDIT audio post-LOAD ;
+> Fire Ext, doublon firearm, contention et fail-closed non testés
+> physiquement ici (testés côté hôte pour les gardes). L'ancien
+> constat #419 de retard/5060 Shotgun demeure historique.
+
+---
+
+> **FIRE-VIS-P2 / priorité gameplay — 22 novembre 2026.** [PR #421](https://github.com/Kharn27/DoomRPG-RE/pull/421), [issue #416](https://github.com/Kharn27/DoomRPG-RE/issues/416), [rapport CYD](MILESTONE_FIRE_VIS_P2_CYD_PASS.md). Les feux réels `eType=10` utilisent le rendu **mode 7 additif** natif de P1 ; les quatre formes du PAK `logical=129` / `actual=382,383,384,385` sont distinctes et affichées par le renderer. Les phases de ressource continuent d'être choisies toutes les **250 ms** (plus décalage par index), mais l'**ordonnanceur idle**, limité aux sprites réellement rasterisés, reste à **375 ms** : des phases sont volontairement sautées pour préserver les entrées et le caractère *turn-based*. Retrait de l'horloge FIRE-only 250 ms après régression tactile observée. Preuve CYD normale `platformio-device-monitor-261122-072543.log` (SHA256 `b0f5c3cdd961a815ff49586f8cb6655b5778154d185f532e638fd8cbdbf46488`) : 48 témoins feu LCD, 12 MOVE, 4 TURN, 5 FIRE-COMMIT, EXIT propre, LOAD V11 et musique 0 underrun, `HEADROOM_OK`, `shapeData/mediaTexels=NULL`. Accord visuel et ressenti utilisateur (« Ça m'a l'air ok »). Tests C/CI double SUCCESS sur le candidat `018acd... `. Un merge technique avec ARCH-RC24 sur branche suit le test physique ; **pas de preuve de flash CYD du HEAD combiné**, sa CI finale est une étape distincte. Pas d'alpha 50 % obligatoire, de framebuffer supplémentaire, de ZIP runtime ni de garantie d'afficher chaque phase. Détails et limites dans le rapport.
+
+---
+
+> **Clôture post-FIRE RC24 : test combiné sur vrai CYD.** **Smoke-test matériel combiné RC24 + FIRE-VIS-P1 #417 + AUDIO-LOAD-V11 #415 — PASS CYD borné (22 novembre 2026).** Nouveau log `platformio-device-monitor-261122-060222.log` : **4 090 lignes / 480 617 octets / SHA256 `00df45bcede2b747c51efee48fe4c12021ec27d95435d147ee20f57f041b728e`**. Test de la branche `agent/esp32-arch-rc24-zero-prod-wrap` après intégration de `main=3956064a3f553a4ef6d34f24830f7bc4247a166a`; aucun SHA firmware n'est imprimé par le Serial, donc attribution par le contexte de test, non preuve binaire indépendante. START/INTRO/Entrance puis **58 MOVE, 22 rotations, 7 DOORANIM COMPLETE (3 HOLD/RELEASE), 16 DIALOG CLOSE, 16 PLAYERRES COMMIT, 6 MONSTERCOMBAT COMMIT, 3 MONSTERRETAL COMMIT, 5 FIRE-COMMIT** ; des frames présentent **glows=922** (preuve d'exercice de la voie glow, sans comparaison pixel-à-pixel). HUB/System EXIT → menu → **LOAD V11 slot04 5604 B, restauration** → gameplay/combat → **mort joueur** et redémarrage d'Entrance → second EXIT/menu. **3 HEADROOM_OK** (margins heap8 13 264 / 12 000 / 12 820 B), **3 RESIDENTRESET empty=1**, **2 SYSEXIT MENU-READY**, `shapeData=0x0 mediaTexels=0x0`. **3 PRESTART M_STALKS.wav ready=1 failClosed=0**, **6 FINAL musique underruns=0 recoveries=0**, **6 AUDIOINTENT AUDIT queueOverflow=0 consumerCursorGap=0 audibleSfxDropped=0 sfxRejectedTrack=0**. Trois FINALS M_STALKS affichent `gapsOver90us=1` chacun, tous `gapsOver500Ms=0`; aucun panic/WDT/FAIL-HEAP. Aucun CHANGEMAP, WAIT_STATS, LEVEL UP ou test multi-cartes attesté. Les sujets #419 (SFX première arme différé) et #420 (latence/police) restent indépendants. **Cela clôt la condition de test physique combiné demandée par la PR #414**, sous réserve de la CI finale du HEAD documentaire et d'une fusion explicite.
+
+---
+
+> **Synchronisation post-test FIRE-VIS-P1 (#417) :** `main=3956064a3f553a4ef6d34f24830f7bc4247a166a` est intégré à la PR #414 au commit `92a513724c7275f074509dc8e2ef5690030b00f3`. Le matériel RC24 du 22/11 validait `9c529dc9...`, **pas** la combinaison FIRE + zéro-wrapper actuelle ; tests physiques combinés et double CI encore nécessaires, sans retoucher la façade native RC24. La PR reste draft, non fusionnée.
+
+## ARCH-RC24 — « FINISH HIM » : 0 wrapper GNU DoomRPG production (22 novembre 2026, PASS CYD borné)
+
+[Rapport hardware / limites / suivi](MILESTONE_ARCH_RC24_ZERO_WRAPPERS_CYD_PASS.md), [PR #414](https://github.com/Kharn27/DoomRPG-RE/pull/414). Depuis main intégrant AUDIO-LOAD-V11 #415 (`826780ff72f43819945d5e1e8028935163a5cc1e`), la dernière API sous GNU `--wrap`, `Esp32PlatformVideo_present`, est **une façade C native permanente** : suppression one-shot puis filtre loading/WAIT_STATS/LEVEL UP puis `EspNativeGameplayActionEngine_present()`; les owners directs emploient `Esp32PlatformVideo_presentBase()` / `EspNativeGameplayActionEngine_presentBase()` sans interposition. **0 GNU wrapper DoomRPG production/trace/inverted, 3 diagnostics bringup**, sans nouvel allocateur, ZIP, map-wide heap, copie du framebuffer ou changement du LCD. Candidate code `9c529dc9bdd95b07b298e7ee13e8ae26812ec9f6`; 14 mutants sur corps C réels et quatre ELF vérifiés ; double CI combinée [push SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/44983817913) / [PR SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/44983821696).
+
+Le vrai classic CYD `esp32-cyd` (capture `platformio-device-monitor-261122-052553.log`, 4150 lignes / 478175 B / SHA256 `71110bfef9c23bf3e5552ee07733028b22ad1237990f383b8288adfade4714bb`) : 99 animations finalisées, 10 portes (dont cinq fermetures différées HOLD/RELEASE), 24 pickups et miniatures, 16 dialogues, 5 combats et 5 ripostes, EXIT→LOAD V11 slot04→EXIT, deux HEADROOM_OK et reset `empty=1`, `shapeData/mediaTexels=NULL`, aucune panne. **Musique LOAD de #415** confirmée `ready=1 failClosed=0`, `M_STALKS.wav heap8=48568 après ring`, 0 underrun/recovery sur 5 terminaisons audio, SFX non perdus. **Limites :** `WAIT_STATS`, `LEVEL UP` et CHANGEMAP non joués ; pas de SHA firmware dans Serial, test matériel borné.
+
+Deux constats d'amélioration indépendants de RC24 : [#419](https://github.com/Kharn27/DoomRPG-RE/issues/419) SFX premier Shotgun retardé après aide (pack lease), [#420](https://github.com/Kharn27/DoomRPG-RE/issues/420) petite latence ressentie et potentiel coût police Doom SD, déjà visible avant RC24 ; comparaison non contrôlée, besoin A/B. **Ne pas modifier RC24 pour ces pistes.** Gel du code après PASS ; clôture docs-only puis double CI finale, PR merge-ready sans merge automatique.
+
+---
+
+## FIRE-VIS-P1 — feux additifs et limites de validation (22 novembre 2026)
+
+Le premier correctif de fidélité visuelle ([PR #417](https://github.com/Kharn27/DoomRPG-RE/pull/417), [issue #416](https://github.com/Kharn27/DoomRPG-RE/issues/416)) conserve les chemins BSP, les masques et la composition native existants : les entités **eType 10 non-CROSS** utilisent le mode **7 additif**, tandis que tous les autres modes restent inchangés. La lumière est un *sprite additif* sur le framebuffer, **pas** un éclairage dynamique des murs. Les lampes legacy 131 → 144 et 135/140 → 136 ont déjà leur compagnon glow natif ; l'ID 137 est intrinsèquement additif. La preuve d'exécution des halos nécessite un parcours où les compteurs `glows` sont non nuls : le test CYD du 22/11/2026 n'en contient aucun. Ne pas conclure à leur absence ni à leur validation.
+
+**Validation CYD bornée :** `platformio-device-monitor-261122-044800.log` (SHA256 `4c877e17827ef928c17abde0ff499fc8b0a53020dbe8a1b27e2594c6695b4709`) + retour visuel utilisateur positif, quatre feux supprimés, deux contacts de danger, un passage de tour dangereux, transitions/porte et EXIT opérationnels, `HEADROOM_OK` et ressources `shapeData/mediaTexels=NULL`. **Audio (historique avant fusion #415) :** cette ancienne session avait LOAD → `M_STALKS.wav` → `FAIL-HEAP`, `PRESTART ready=0`. La PR #415, maintenant fusionnée dans `main`, a corrigé ce garde et validé séparément la musique sur CYD (`PRIMING heap8=48568`, `PLAY`, `PRESTART ready=1`). Le firmware combiné FIRE-VIS-P1 + AUDIO-LOAD-V11 n'a pas été testé sur CYD par ce log. Aucun fingerprint du firmware dans Serial. Le PAK source des phases 0..3 n'a pas été inspecté ; FIRE-VIS-P2 reste dédié à leur distinction et leur présentation, sans changement du rythme dans P1.
+
+Pour tester les plafonniers : identifier dans une map un sprite ID 131, 135, 137 ou 140 visible, obtenir `glowPixels > 0` / `glows > 0` si applicable, confirmer l'occlusion et le masque contre différents fonds et mesurer heap8/largest8 sur `esp32-cyd` normal. Ne pas généraliser un effet lumineux nouveau hors des règles du legacy.
+
+---
+
+## AUDIO-LOAD-V11 — musique native conservée après restauration V11 (21 novembre 2026, CYD PASS borné)
+
+[Rapport matériel complet](MILESTONE_AUDIO_LOAD_V11_HEAP_GUARD_CYD_PASS.md), [PR #415](https://github.com/Kharn27/DoomRPG-RE/pull/415). La régression précédente de `M_STALKS.wav` sur MENU LOAD V11 provenait vraisemblablement du garde **post-ring** : l'ancienne limite de **49 152 B** rejetait un budget de **48 568 B**, désormais **mesuré** en hardware. Le seul seuil abaissé est la réserve libre après ring à **47 104 B (46 KiB)** ; ring audio INTERNAL/8BIT de **16 384 B** constant, seuil de bloc libre contigu de 16 KiB inchangé, préflight original et fail-closed conservés. `esp_audio_entrance_heap_guard.h` contient la politique C pure (pas de nouveau runtime audio ni d'accès ZIP) ; `audio_load_v11_heap_guard_host.py` la compile et teste bornes/aléas/**13 mutants**. Code testé `d8e81d3315f023beccf49dcafbf70dde5857af8f` ; double CI code [push SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/44904289067) / [PR SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/44904292214).
+
+Sur le vrai CYD sans PSRAM, capture `platformio-device-monitor-261121-143238.log` (2565 lignes, 308501 B, SHA256 `2b91d882d0eafb1093d1b5c7c4769ffe6e13dc5b6a624d7fd6ceda1a8eeef309`) : START→Entrance musique OK ; EXIT→MENU LOAD slot04 V11 `restored-exact` ; `WAV_OK → PRIMING heap8=48568 largest8=31732 → PLAY → PRESTART ready=1 failClosed=0`, puis STREAM actif ~44 s avec `underruns=0 recoveries=0`, 34 SFX mixés, deuxième EXIT et menu music OK. 2 resets `empty=1`, `shapeData/mediaTexels=NULL`, pas de panic/WDT/FAIL-HEAP. Deux dépassements `gapsOver90us` et un `maxPublishGapMs=513` sans underrun : surveiller, ne pas assimiler à une coupure. Une seule reprise LOAD attestée par la capture ; ni test de LOAD consécutifs, ni SHA exact du binaire dans Serial. Après PASS, **modifications docs-only**, CI finale du HEAD documentaire à valider. RC24 dewrap #414 reste distinct. Pas de fusion automatique.
+
+---
+
 ## ARCH-RC23 — transaction renderTurn directe, un dernier GNU wrapper (21 novembre 2026)
 
 [Rapport et limites](MILESTONE_ARCH_RC23_RENDER_TURN_FACADE.md), [PR #410](https://github.com/Kharn27/DoomRPG-RE/pull/410). La feuille `EspNativeGameplayFrame_renderTurnBase` rend sans orchestration de portes ; la façade native `EspNativeGameplayFrame_renderTurn` reprend le comportement transactionnel de l'ancien `__wrap_` avec HOLD/RELEASE différé, gestion d'échec/rollback, présentation des frames, publication d'événements et SFX. Aucun alias `__real_` pour cette API, ni modification du présentateur LCD. **1 wrapper production** `Esp32PlatformVideo_present` reste, plus 3 diagnostics bringup. Oracle 20 mutants, audits quatre ELF, double CI SUCCESS sur code [push](https://github.com/Kharn27/DoomRPG-RE/actions/runs/44899400332) / [PR](https://github.com/Kharn27/DoomRPG-RE/actions/runs/44899406314).

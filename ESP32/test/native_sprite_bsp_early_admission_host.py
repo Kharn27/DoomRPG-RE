@@ -42,6 +42,7 @@ support = r'''
 #include <stdio.h>
 #include <string.h>
 #include <limits.h>
+#include "esp_native_fire_visual.h"
 
 #define MAP_SPRITES 344U
 #define MAX_VISIBLE_SPRITES 64U
@@ -195,6 +196,6 @@ with tempfile.TemporaryDirectory(prefix="doomrpg-sprite-order-") as td:
         subprocess.run(["cc","-std=c11","-O2","-Wall","-Wextra",
                         "-Werror","-Wno-unused-parameter","-Wno-unused-function",
                         "-Wno-unused-variable","-Wno-unused-but-set-variable",
-                        *defines,str(source_file),"-o",str(binary)],check=True)
+                        "-IESP32/include",*defines,str(source_file),"-o",str(binary)],check=True)
         subprocess.run([str(binary)],check=True)
 print("PASS normal and trace, BSP admission parity and fail-closed")

@@ -14,6 +14,8 @@
 #include <esp_timer.h>
 
 #include "doomrpg_log.h"
+#include "esp_audio_entrance_music.h"
+#include "esp_audio_pickup_cue.h"
 #include "esp_entity_def_type_catalog.h"
 #include "esp_native_audio_intent.h"
 #include "esp_map_runtime.h"
@@ -777,6 +779,7 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
     uint8_t legacyMessagesShifted = 0U;
     const char* firstWeaponDialog = NULL;
     uint8_t firstWeaponDialogSubtype = 0xffU;
+    uint16_t pickupSoundId = 5060U;
     int feedbackQueued = 0;
     int dialogOpened = 0;
     int syncRedraw = 0;
@@ -869,6 +872,16 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
     }
 
     if (appliedCount == 0U) return 1;
+
+    /* Original Entity_touched(eType=5) plays 5057 for every regular
+     * firearm pickup, including duplicates. Axe and extinguisher use 5060.
+     * Resolve across all committed resources BEFORE the first-help loop
+     * can stop at the first unknown-weapon dialog. */
+    for (i = 0U; i < appliedCount; ++i) {
+        if (applied[i].type == RESOURCE_TYPE_WEAPON &&
+            EspAudioPickupCue_weapon(applied[i].subtype) == 5057U)
+            pickupSoundId = 5057U;
+    }
 
     /* Legacy Entity_touched() opens help only for a weapon that was not
      * already owned or temporarily disabled before touching this tile. */
@@ -1004,27 +1017,6 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
                        (applied[i].dynamicDrop ? "dynamic-drop" : "map-item"));
             EspPickupMini_enqueue(logical);
         }
-        if (firstWeaponDialog != NULL) {
-            EspNativeGameplayDialogBeginStatus dialogStatus =
-                ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_NOT_READY;
-            if (EspNativeResidentGameplay_exitAutomapForModal(
-                    doomRpg != NULL ? EspNativeRootOwners_live()->render : NULL,
-                    "WEAPON-PICKUP-DIALOG")) {
-                dialogStatus =
-                    EspNativeGameplayDialog_beginStandalone(firstWeaponDialog);
-            }
-            if (dialogStatus == ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_OK) {
-                dialogOpened = 1;
-                printf("[PLAYERRES] WEAPON-HELP tile=%u subtype=%u status=OPEN firstAcquire=yes continuation=none turnAdvance=no\n",
-                       (unsigned int)afterTile,
-                       (unsigned int)firstWeaponDialogSubtype);
-            }
-            else {
-                printf("[PLAYERRES] WEAPON-HELP tile=%u status=DEFER begin=%s firstAcquire=yes pickupCommitted=yes\n",
-                       (unsigned int)afterTile,
-                       EspNativeGameplayDialog_beginStatusName(dialogStatus));
-            }
-        }
         DRPG_LOGD("[PLAYERRES] COMMIT tile=%u candidates=%u consumed=%u totalConsumed=%u playerFNV=%08x->%08x hp=%u/%u armor=%u/%u weapon=%u weapons=%04x ammo0=%u ammo1=%u ammo2=%u ammo3=%u ammo4=%u keys=%08x credits=%u sound=deferred message=%s visual=pak-mini-500ms nonblocking=yes gotFace=deferred rollback=closed\n",
                (unsigned int)afterTile,
                (unsigned int)candidateCount,
@@ -1063,7 +1055,38 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
 #endif
         /* SFX-P1: only after irreversible resource/player/world commit.
          * Original desktop generic pickup cue 5060; no PAK access here. */
-        (void)EspNativeAudioIntent_publish(5060U,0U,3U);
+        const int pickupCuePublished=EspNativeAudioIntent_publish(pickupSoundId,0U,3U);
+        /* Resource/world mutation is now irreversible: the synchronous
+         * redraw succeeded, and NO rollback path remains below this point.
+         * Give the audio owner one bounded chance to mix the cue while the
+         * original music ring and PAK source are still free. For normal
+         * pickups the ordinary cooperative audio service is unchanged. */
+        if (firstWeaponDialog != NULL && pickupCuePublished)
+            (void)EspEntranceMusic_handoffPickupBeforeModal(
+                EspNativeAudioIntent_count());
+        /* The standalone UI takes and retains the PAK lease only AFTER
+         * the pickup intent was published and the audio handoff attempted. */
+        if (firstWeaponDialog != NULL) {
+            EspNativeGameplayDialogBeginStatus dialogStatus =
+                ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_NOT_READY;
+            if (EspNativeResidentGameplay_exitAutomapForModal(
+                    doomRpg != NULL ? EspNativeRootOwners_live()->render : NULL,
+                    "WEAPON-PICKUP-DIALOG")) {
+                dialogStatus =
+                    EspNativeGameplayDialog_beginStandalone(firstWeaponDialog);
+            }
+            if (dialogStatus == ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_OK) {
+                dialogOpened = 1;
+                printf("[PLAYERRES] WEAPON-HELP tile=%u subtype=%u status=OPEN firstAcquire=yes continuation=none turnAdvance=no\n",
+                       (unsigned int)afterTile,
+                       (unsigned int)firstWeaponDialogSubtype);
+            }
+            else {
+                printf("[PLAYERRES] WEAPON-HELP tile=%u status=DEFER begin=%s firstAcquire=yes pickupCommitted=yes\n",
+                       (unsigned int)afterTile,
+                       EspNativeGameplayDialog_beginStatusName(dialogStatus));
+            }
+        }
         DRPG_LOGD("[PLAYERRES] FEEDBACK tile=%u message=\"%s\" sourceDefTile=%u flash=none miniature=PAK-24x24/500ms position=13,72 gotFace=deferred weaponHelp=%s messages=%u additionalMessages=%u-queued legacyCap=%u shifted=%u\n",
                (unsigned int)afterTile,
                pickupMessages[0],

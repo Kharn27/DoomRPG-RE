@@ -13,6 +13,8 @@
 #include <stdio.h>
 
 #include "esp_audio_entrance_adpcm.h"
+#include "esp_audio_entrance_heap_guard.h"
+#include "esp_audio_pickup_modal_gate.h"
 #include "esp_audio_clock_guard.h"
 #include "esp_native_sfx_pcm_mix.h"
 #include "esp_native_sfx_wav.h"
@@ -733,7 +735,7 @@ static void mixPendingSfxOne() {
             genericSfx[i].active=false;
         return;
     }
-    if (id!=5045U && id!=5046U && id!=5060U) {
+    if (id!=5045U && id!=5046U && id!=5060U && id!=5057U) {
         if (EspAssetPack_isOpen()) return;
         EspNativeAudioIntent_noteConsumerGap(sfxSeenSequence,intent->sequence);
         sfxSeenSequence=intent->sequence;
@@ -1031,7 +1033,7 @@ static void begin(bool intro,bool menu,EspAudioLoadingTrack gameplayTrack) {
     failure="none";
     heapBefore=heap_caps_get_free_size(MALLOC_CAP_8BIT);
     const uint32_t largest=heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-    if (heapBefore<61440U||largest<24576U) {
+    if (!EspAudioMusic_heapBeforeRingOk(heapBefore,largest)) {
         printf("[ENTRANCEMUSIC] SILENT reason=heap_guard "
                "heap8=%u largest8=%u\n",
                (unsigned)heapBefore,(unsigned)largest);
@@ -1085,9 +1087,22 @@ static void begin(bool intro,bool menu,EspAudioLoadingTrack gameplayTrack) {
 
     ring=(uint8_t*)heap_caps_malloc(
         kRingCapacity,MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
-    if (!ring ||
-        heap_caps_get_free_size(MALLOC_CAP_8BIT)<49152U ||
-        heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)<16384U) {
+    const uint32_t postRingHeap8=heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    const uint32_t postRingLargest8=
+        heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    if (!EspAudioMusic_heapAfterRingOk(ring!=nullptr,postRingHeap8,
+                                      postRingLargest8)) {
+        /* Keep the failure fail-closed, but expose whether the internal ring
+         * allocation or the conservative post-ring reserve was rejected.
+         * A restored V11 LOAD retains more memory than a fresh session. */
+        printf("[ENTRANCEMUSIC] HEAP-POST-REJECT ring=%u "
+               "before=%u after=%u largestBefore=%u largestAfter=%u "
+               "minAfter=%u minLargest=%u\n",
+               (unsigned)(ring!=nullptr),(unsigned)heapBefore,
+               (unsigned)postRingHeap8,(unsigned)largest,
+               (unsigned)postRingLargest8,
+               (unsigned)ESP_AUDIO_MUSIC_POST_MIN_HEAP8,
+               (unsigned)ESP_AUDIO_MUSIC_POST_MIN_LARGEST8);
         closeMusic("FAIL-HEAP");
         return;
     }
@@ -1553,6 +1568,132 @@ void EspEntranceMusic_pumpGameplay(void) {
      * first confirmed door frame, not at the end of the animation. Unlike
      * the prior early return, a full ring must not starve active SFX. */
     if (phase==kPlay) mixPendingSfx();
+}
+
+/* AUDIO-PICKUP #419. The committed first-weapon pickup has published
+ * 5060, but has NOT yet opened its standalone dialog's long-lived PAK lease.
+ * Mix the complete PCM into already published music bytes in this one Arduino
+ * task, or leave the FIFO untouched for the ordinary consumer after close.
+ * No new ring, SD handle, cached waveform, ISR work or dialog ownership. */
+int EspEntranceMusic_handoffPickupBeforeModal(uint32_t pickupSequence) {
+    EspNativeAudioIntent next={};
+    if (pickupSequence==0U || phase!=kPlay || !fileOpen ||
+        ring==nullptr || activeIntroTrack || activeMenuTrack ||
+        activeGameplayTrack==ESP_AUDIO_LOADING_TRACK_DEFERRED ||
+        !EspNativeAudioIntent_isSoundEnabled() ||
+        EspAssetPack_isOpen() || !EspAssetPack_musicSdSafe() ||
+        !EspAssetPack_isMapFlashActive() || !EspAssetPack_isResident()) {
+        printf("[AUDIOPICKUP] HANDOFF seq=%u status=DEFER reason=owner-not-ready fifo=retained\n",
+               (unsigned)pickupSequence);
+        return 0;
+    }
+    if (!EspNativeAudioIntent_nextAfter(sfxSeenSequence,&next) ||
+        next.sequence!=pickupSequence ||
+        (next.resourceId!=5060U && next.resourceId!=5057U) ||
+        next.flags!=0U || sfxSeenSequence==UINT32_MAX ||
+        next.sequence!=sfxSeenSequence+1U) {
+        printf("[AUDIOPICKUP] HANDOFF seq=%u status=DEFER reason=fifo-order fifo=retained\n",
+               (unsigned)pickupSequence);
+        return 0;
+    }
+
+    /* Original 5060 pickup: 3520 frames -> 9702 DAC frames.
+     * Original 5057 weapon-ready: 4320 frames -> 11907 DAC frames.
+     * Both fit within this same 16KiB ring + 1024-frame guard. Validate
+     * the ACTUAL PAK header/length for either cue; no fixed WAV buffer. */
+    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
+        printf("[AUDIOPICKUP] HANDOFF seq=%u status=DEFER reason=pak-open fifo=retained\n",
+               (unsigned)pickupSequence);
+        return 0;
+    }
+    char filename[16];
+    (void)snprintf(filename,sizeof(filename),"%04u.wav",
+                   (unsigned)next.resourceId);
+    EspAssetPackEntry entry={};
+    EspNativeSfxWavInfo meta={};
+    uint8_t header[512];
+    bool valid=EspAssetPack_findEntry(filename,&entry)!=0 &&
+               (entry.flags&ESP_ASSET_PACK_FLAG_DIRECTORY)==0U &&
+               entry.size>=44U;
+    if (valid) {
+        const uint32_t size=entry.size<sizeof(header)?
+                            entry.size:(uint32_t)sizeof(header);
+        valid=EspAssetPack_readRange(&entry,0U,header,size)!=0 &&
+              EspNativeSfxWav_probe(header,size,entry.size,&meta)==
+                  ESP_NATIVE_SFX_WAV_PCM &&
+              meta.formatTag==1U && meta.channels==1U &&
+              meta.sampleRate==8000U && meta.bitsPerSample==16U &&
+              meta.blockAlign==2U && meta.dataOffset==44U &&
+              meta.dataBytes==meta.sampleFrames*2U;
+    }
+    EspAssetPack_close();
+    const uint32_t output=valid?
+        EspNativeSfxPcm_outputFrames(meta.sampleFrames,kRate):0U;
+    if (!valid || output==0U ||
+        output>kRingCapacity-kSfxLeadFrames) {
+        printf("[AUDIOPICKUP] HANDOFF seq=%u status=DEFER reason=pcm-contract fifo=retained\n",
+               (unsigned)pickupSequence);
+        return 0;
+    }
+
+    /* Fill only the one existing music ring, at most four 2041-frame ADPCM
+     * blocks; a failing producer closes its owner and leaves no second path.
+     * Never touch a PAK lease while the SD music file is refilled. */
+    const uint32_t required=output+kSfxLeadFrames;
+    uint32_t refills=0U;
+    while (phase==kPlay && refills<kCatchUpRefillBlocks &&
+           queued()<required &&
+           queued()<=kRingCapacity-kMaxBlockSamples) {
+        const uint32_t before=queued();
+        if (!refill()) {
+            closeMusic(failure);
+            printf("[AUDIOPICKUP] HANDOFF seq=%u status=DEFER reason=music-refill fifo=session-owned\n",
+                   (unsigned)pickupSequence);
+            return 0;
+        }
+        ++refills;
+        if (queued()<=before) break;
+    }
+
+    const uint32_t reader=__atomic_load_n(&rd,__ATOMIC_ACQUIRE);
+    const uint32_t writer=__atomic_load_n(&wr,__ATOMIC_ACQUIRE);
+    bool voicesIdle=!fireSfx.active &&
+                    (int32_t)(sfxBusyUntil-reader)<=0;
+    for (uint8_t i=0U;i<kGenericSfxVoiceCount;++i)
+        if (genericSfx[i].active) voicesIdle=false;
+    const EspAudioPickupModalGate gate={
+        &next,pickupSequence,sfxSeenSequence,reader,writer,
+        kRingCapacity,output,kSfxLeadFrames,
+        (uint8_t)(phase==kPlay && ring!=nullptr && fileOpen),
+        (uint8_t)(!EspAssetPack_isOpen() && EspAssetPack_musicSdSafe()),
+        (uint8_t)voicesIdle
+    };
+    if (!EspAudioPickupModal_canMix(&gate)) {
+        printf("[AUDIOPICKUP] HANDOFF seq=%u status=DEFER reason=ring-or-voice "
+               "queued=%u required=%u voiceIdle=%u refills=%u fifo=retained\n",
+               (unsigned)pickupSequence,(unsigned)(writer-reader),
+               (unsigned)required,(unsigned)voicesIdle,(unsigned)refills);
+        return 0;
+    }
+
+    const uint32_t playedBefore=sfxPlayedCount;
+    const uint32_t rejectedBefore=sfxRejectedCount;
+    /* Existing owner validates and mixes 5060 or 5057 in place,
+     * ACKing once only.
+     * This call cannot fall back to a streaming voice: the complete PCM
+     * and collision guard have already passed the real ring preflight. */
+    mixPendingSfxOne();
+    const int mixed=sfxSeenSequence==pickupSequence &&
+                    sfxPlayedCount==playedBefore+1U &&
+                    sfxRejectedCount==rejectedBefore;
+    printf("[AUDIOPICKUP] HANDOFF seq=%u id=%u status=%s mixedBeforeModal=%u "
+           "ack=%u frames=%u refills=%u packClosed=%u\n",
+           (unsigned)pickupSequence,(unsigned)next.resourceId,
+           mixed?"MIXED":"PARTIAL",
+           (unsigned)mixed,(unsigned)(sfxSeenSequence==pickupSequence),
+           (unsigned)output,(unsigned)refills,
+           (unsigned)!EspAssetPack_isOpen());
+    return mixed;
 }
 
 /* UAC-P1: lengthy optional SD BMP read/render must not starve the 16KiB

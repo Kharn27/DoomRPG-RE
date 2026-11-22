@@ -45,7 +45,7 @@ def census():
              "legacy GNU alias/bypass still compiled: " + symbol)
     need("-Wl,--wrap=EspNativeGameplayFrame_renderTurn" not in ini,
          "RC23 retired door/render GNU interposition resurrected")
-    need("-Wl,--wrap=Esp32PlatformVideo_present" in ini,
+    need("-Wl,--wrap=Esp32PlatformVideo_present" not in ini,
          "physical-present GNU boundary unexpectedly retired")
     expected = {
         ("esp_native_resident_gameplay.c",

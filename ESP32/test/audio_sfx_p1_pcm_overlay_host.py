@@ -44,9 +44,11 @@ assert 'EspNativeAudioIntent_publish(5046U,0U,3U)' in gameplay
 assert gameplay.index('[CRATE] COMMIT') < gameplay.index(
     'EspNativeAudioIntent_publish(5046U,0U,3U)')
 assert 'crateOutcome != ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_INVALID' in gameplay
-assert 'EspNativeAudioIntent_publish(5060U,0U,3U)' in pickup
+assert '#include "esp_audio_pickup_cue.h"' in pickup
+assert 'EspAudioPickupCue_weapon(applied[i].subtype)' in pickup
+assert 'EspNativeAudioIntent_publish(pickupSoundId,0U,3U)' in pickup
 assert pickup.index('[PLAYERRES] COMMIT') < pickup.index(
-    'EspNativeAudioIntent_publish(5060U,0U,3U)')
+    'EspNativeAudioIntent_publish(pickupSoundId,0U,3U)')
 assert 'PCM' in p0 and 'ESP_NATIVE_SFX_WAV_PCM' in music
 assert 'sampleMode=uncapped-interval' in music # R2f stays intact
 code=r"""

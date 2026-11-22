@@ -610,6 +610,56 @@ done:
                (unsigned int)(sdAfter - ra2bSdBefore),
                (unsigned int)(flashAfter - ra2bFlashBefore));
     }
+    /* FIRE-VIS-P2 witness: log only after a physical LCD presentation,
+         * never for an unpublished preview, AUTOMAP substitution or a
+         * culled/fixed fire. Include published MOVE/TURN previews too. 48 samples cap Serial/latency perturbation.
+         * Render sample and post-audio-pump observation differ from physical\n         * present time. Log after the transaction, not inside raster/audio. */
+    if (ok && publish && !EspNativeResidentGameplay_isAutomapActive() &&
+        sprites->fireRasterCount != 0U) {
+            static uint8_t firePresentedLogCount;
+            static uint16_t firePriorIndex = UINT16_MAX;
+            static uint32_t firePriorSampleMs;
+            static uint8_t firePriorPhase;
+            if (firePresentedLogCount < 48U) {
+                uint32_t steps = 0U;
+                const uint32_t sample = sprites->fireSampleMs;
+                const uint32_t stagger =
+                    (uint32_t)(sprites->fireSampleIndex & 255U) * 8U;
+                const uint32_t presentMs =
+                    (uint32_t)(esp_timer_get_time() / 1000LL);
+                if (firePriorIndex == sprites->fireSampleIndex) {
+                    const uint32_t currTick = (sample + stagger) / 250U;
+                    const uint32_t prevTick =
+                        (firePriorSampleMs + stagger) / 250U;
+                    if (sample >= firePriorSampleMs &&
+                        currTick >= prevTick) steps = currTick - prevTick;
+                }
+                printf("[FIREVIS-P2] PRESENT n=%u sprite=%u logical=%u phase=%u actual=%u sampleMs=%u observedMs=%u phaseSteps=%u previousPhase=%u visible=%u preview=%u settled=%u spriteUs=%u presentUs=%u pakReads=%u\n",
+                       (unsigned int)(firePresentedLogCount + 1U),
+                       (unsigned int)sprites->fireSampleIndex,
+                       (unsigned int)sprites->fireSampleLogical,
+                       (unsigned int)sprites->fireSamplePhase,
+                       (unsigned int)sprites->fireSampleActual,
+                       (unsigned int)sample,
+                       (unsigned int)presentMs,
+                       (unsigned int)steps,
+                       (unsigned int)(firePriorIndex ==
+                                      sprites->fireSampleIndex
+                                      ? firePriorPhase : 255U),
+                       (unsigned int)sprites->fireRasterCount,
+                       (unsigned int)preview,
+                       (unsigned int)(view->viewX == view->destX &&
+                                      view->viewY == view->destY &&
+                                      view->viewAngle == view->destAngle),
+                       (unsigned int)stats->spriteMicros,
+                       (unsigned int)stats->presentMicros,
+                       (unsigned int)stats->spritePackReads);
+                firePriorIndex = sprites->fireSampleIndex;
+                firePriorSampleMs = sample;
+                firePriorPhase = sprites->fireSamplePhase;
+                ++firePresentedLogCount;
+            }
+        }
 #endif
     return ok;
 }

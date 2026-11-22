@@ -24,6 +24,7 @@
 #include "esp_native_gameplay_hud_direction.h"
 #include "esp_native_gameplay_weapon.h"
 #include "esp_native_gameplay_present_gate.h"
+#include "platform_video_c_bridge.h"
 #include "esp_native_door_animator.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_player_view_state.h"
@@ -214,13 +215,12 @@ int EspNativeAudioIntent_publish(uint16_t sound, uint8_t flags, uint8_t priority
 int EspNativeGameplayFacingLabel_refresh(const char* reason) { (void)reason; return 1; }
 void* Esp32PlatformVideo_framebuffer(void) { return pixels + 1; }
 size_t Esp32PlatformVideo_framebufferSizeBytes(void) { return 160U * 120U * 2U; }
-int Esp32PlatformVideo_present(void) {
+int Esp32PlatformVideo_presentBase(void) {
     ++presents; return presentOk;
 }
-int __real_Esp32PlatformVideo_present(void);
 int __wrap_EspNativeGameplayActionEngine_present(void) {
     ++decoratedPresents;
-    return __real_Esp32PlatformVideo_present();
+    return Esp32PlatformVideo_presentBase();
 }
 void EspNativeGameplayActionEngine_markFreshFrame(void) { ++freshFrames; }
 int EspNativeTransitionPresentation_isLoadingActive(void) { return 0; }
