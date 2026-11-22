@@ -51,9 +51,12 @@ filters = block.group("body").splitlines()
 assert [s.strip() for s in filters] == [
     "+<*>", "-<esp32_sdl.cpp>", "-<esp32_bmp.cpp>"
 ], filters
-# Production + TRACE/bringup + the display-only alternate CYD release profile.
-# Never permit an unaccounted environment or an SDL source registration.
-assert ini.count("extends = env:esp32-cyd") == 3
+# Production + TRACE/bringup + display-inverted + the explicit native HUD
+# face A/B control profile. Each extra env inherits the same SDL exclusions.
+# Never permit an unaccounted environment or SDL source registration.
+assert ini.count("extends = env:esp32-cyd") == 4
+assert "[env:esp32-cyd-hud-original]" in ini
+assert "-D DOOMRPG_HUD_LARGER_FACE_EXPERIMENT=0" in ini
 assert "[env:esp-cyd-inverted]" in ini
 assert "Esp32Sdl_attachDisplay" not in main
 assert '#include "esp32_sdl_platform.h"' not in main
