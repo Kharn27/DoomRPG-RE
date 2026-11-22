@@ -65,7 +65,8 @@ assert 'paintedTheme=theme;' in preview
 assert 'paintedTheme==theme && paintedDark==darkWanted)return true;' in preview
 assert 'const bool blinkOnly=' in preview
 assert 'if(!blinkOnly)Serial.printf(' in preview
-assert 'EspUacMenuPreview_needsBlink(millis())' in (root/'ESP32/src/main.cpp').read_text()
+assert 'EspUacMenuPreview_needsBlink()' in (root/'ESP32/src/native_main_menu_actions.c').read_text()
+assert 'EspUacMenuPreview_needsBlink' not in (root/'ESP32/src/main.cpp').read_text()
 assert 'kOptionsVolume[]={"25%","50%","75%","100%"}' in preview
 assert 'page==ESP_UAC_OPTIONS_VOLUME)return 4;' in preview
 assert 'selected-=1;mask=0x0fU;' in preview
