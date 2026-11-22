@@ -15,8 +15,8 @@ EXPECTED = {
 }
 REVERSE_EDITS = {
     "esp_native_gameplay_monster_movement.c": (
-        ("#define MOVE_TYPE_SPECIAL_TRACE 14U\n",
-         "#define MOVE_SUBTYPE_SPECIAL_AI 10U\n#define MOVE_TYPE_SPECIAL_TRACE 14U\n"),
+        ("#define MOVE_TYPE_ENEMY 1U\n",
+         "#define MOVE_SUBTYPE_SPECIAL_AI 10U\n#define MOVE_TYPE_ENEMY 1U\n"),
         ("        if (monster->alive == 0U || monster->subtype >= 14U ||\n            !EspNativeGameplayMonsterActivation_isActive",
          "        if (monster->alive == 0U || monster->subtype >= 14U ||\n            monster->subtype == MOVE_SUBTYPE_SPECIAL_AI ||\n            !EspNativeGameplayMonsterActivation_isActive"),
     ),
