@@ -15,6 +15,7 @@
 
 #include "doomrpg_log.h"
 #include "esp_audio_entrance_music.h"
+#include "esp_audio_pickup_cue.h"
 #include "esp_entity_def_type_catalog.h"
 #include "esp_native_audio_intent.h"
 #include "esp_map_runtime.h"
@@ -778,6 +779,7 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
     uint8_t legacyMessagesShifted = 0U;
     const char* firstWeaponDialog = NULL;
     uint8_t firstWeaponDialogSubtype = 0xffU;
+    uint16_t pickupSoundId = 5060U;
     int feedbackQueued = 0;
     int dialogOpened = 0;
     int syncRedraw = 0;
@@ -870,6 +872,16 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
     }
 
     if (appliedCount == 0U) return 1;
+
+    /* Original Entity_touched(eType=5) plays 5057 for every regular
+     * firearm pickup, including duplicates. Axe and extinguisher use 5060.
+     * Resolve across all committed resources BEFORE the first-help loop
+     * can stop at the first unknown-weapon dialog. */
+    for (i = 0U; i < appliedCount; ++i) {
+        if (applied[i].type == RESOURCE_TYPE_WEAPON &&
+            EspAudioPickupCue_weapon(applied[i].subtype) == 5057U)
+            pickupSoundId = 5057U;
+    }
 
     /* Legacy Entity_touched() opens help only for a weapon that was not
      * already owned or temporarily disabled before touching this tile. */
@@ -1043,7 +1055,7 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
 #endif
         /* SFX-P1: only after irreversible resource/player/world commit.
          * Original desktop generic pickup cue 5060; no PAK access here. */
-        const int pickupCuePublished=EspNativeAudioIntent_publish(5060U,0U,3U);
+        const int pickupCuePublished=EspNativeAudioIntent_publish(pickupSoundId,0U,3U);
         /* Resource/world mutation is now irreversible: the synchronous
          * redraw succeeded, and NO rollback path remains below this point.
          * Give the audio owner one bounded chance to mix the cue while the
