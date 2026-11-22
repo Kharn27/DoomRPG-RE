@@ -147,6 +147,9 @@ jobs:
       - name: ARCH-RC24 zero-production-GNU present facade, owner gates and mutants
         run: python ESP32/test/native_present_gate_boundary_host.py
 
+      - name: PERF-PORT-P1 actual C palette resolver ON/OFF and fail-closed parity
+        run: python ESP32/test/perf_port_palette_host.py
+
       - name: FIRE-VIS-P1 real C fire routing, bitshape reader and masked saturated spans
         run: python ESP32/test/native_fire_visual_host.py
 
