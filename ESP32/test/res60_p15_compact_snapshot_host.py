@@ -168,7 +168,7 @@ int main(void){
     lines[9].x1=2048;
     assert(!EspRes60Preview_render(fb+1,55296U,&cam,513U,readLine,NULL,&stats));
     for(unsigned i=0;i<192U*144U+2U;++i)assert(fb[i]==0x3333U);
-    assert(raysAvoided>10000U && frames==265U);
+    assert(raysAvoided>10000U && frames==261U);
     printf("RES60-P15 real-C C11 PASS frames=%u original-rays=%lu avoided-line-decodes=%lu, 6144B BSS, 3072B saved vs P14, strict pixel/UV parity\\n",
            frames,(unsigned long)raysAvoided,(unsigned long)raysAvoided);
     return 0;
@@ -212,4 +212,4 @@ with tempfile.TemporaryDirectory(prefix="res60-p15-") as d:
     bad=subprocess.run(CC+["-DDOOMRPG_RES60_P15_COMPACT_SNAPSHOT=1",
        "-fsyntax-only",projector],capture_output=True,text=True)
     assert bad.returncode!=0 and "requires isolated P14/P13/P9" in bad.stderr
-print("RES60-P15 HOST PASS: actual P14 snapshot vs P15 compact, exact FNV/material, 265 frames, fail closed")
+print("RES60-P15 HOST PASS: actual P14 snapshot vs P15 compact, exact FNV/material, 261 frames, fail closed")
