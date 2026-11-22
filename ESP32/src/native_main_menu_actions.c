@@ -721,7 +721,7 @@ static void helpDrawWeaponGridMini(uint16_t* fb, uint8_t activeSlot) {
 
     /* Every pass starts from the same cached source: no ghost highlights,
      * cumulative tint, extra framebuffer, asset read or gameplay mutation. */
-    for (slot = 0; slot < ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_SLOT_COUNT; ++slot) {
+    for (slot = 0; slot < (int)ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_SLOT_COUNT; ++slot) {
         const int left = MAIN_HELP_WEAPON_MINI_X + (slot % 4) * 36;
         const int top = MAIN_HELP_WEAPON_MINI_Y + (slot / 4) * 20;
         const uint16_t ink = slot == activeSlot ? 0x07e0U : 0x4208U;
