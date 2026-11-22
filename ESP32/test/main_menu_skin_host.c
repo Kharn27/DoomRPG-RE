@@ -360,13 +360,13 @@ int main(void) {
     /* Exact menu and LOADING face bands, no halo or second text pass. */
     {
         static const uint16_t menu[9] = {
-            0xd225U, 0xd225U, 0xd225U,
-            0xf5aaU, 0xf5aaU, 0xf5aaU,
-            0xff34U, 0xff34U, 0xff34U
+            0x9285U, 0x9285U, 0x9285U,
+            0xd4aaU, 0xd4aaU, 0xd4aaU,
+            0xfef4U, 0xfef4U, 0xfef4U
         };
         static const uint16_t loading[5] = {
-            0xd225U, 0xf5aaU, 0xf5aaU,
-            0xff34U, 0xff34U
+            0x9285U, 0xd4aaU, 0xd4aaU,
+            0xfef4U, 0xfef4U
         };
         int row;
         for (row = 0; row < 9; ++row)
@@ -378,12 +378,12 @@ int main(void) {
         assert(EspMainMenuSkin_letterTone(9, 9) == 0U);
         assert(EspMainMenuSkin_letterTone(0, 0) == 0U);
         assert(EspMainMenuSkin_letterTone(0, 6) == 0U);
-        assert(EspMainMenuSkin_letterTone(0, 7) == 0xd225U);
-        assert(EspMainMenuSkin_letterTone(3, 7) == 0xf5aaU);
-        assert(EspMainMenuSkin_letterTone(6, 7) == 0xff34U);
+        assert(EspMainMenuSkin_letterTone(0, 7) == 0x9285U);
+        assert(EspMainMenuSkin_letterTone(3, 7) == 0xd4aaU);
+        assert(EspMainMenuSkin_letterTone(6, 7) == 0xfef4U);
         static const uint16_t classicFill[6] = {
-            0xb225U, 0xd225U, 0xd225U,
-            0xf5aaU, 0xf5aaU, 0xff34U
+            0x61c3U, 0x9285U, 0x9285U,
+            0xd4aaU, 0xd4aaU, 0xfef4U
         };
         for (int y=0;y<6;++y)
             assert(EspMainMenuSkin_progressTone(y,6) == classicFill[y]);
@@ -394,18 +394,25 @@ int main(void) {
     assert(EspMainMenuSkin_getTheme() == ESP_MAIN_MENU_THEME_CLASSIC);
     assert(EspMainMenuSkin_uiAccent() == 0xfd20U);
     assert(EspMainMenuSkin_uiAccentDim() == 0x7a80U);
-    assert(EspMainMenuSkin_uiInk() == 0xff34U);
-    /* Directional RGB565 proof against the former CLASSIC tones:
-     * yellow becomes paler, bronze more golden, airain visibly redder. */
+    assert(EspMainMenuSkin_uiInk() == 0xfef4U);
+    /* Aged-copper -> bronze -> pale-gold: all three distinct, increasing
+     * physical luminance and remaining warm (red >= green >= blue). */
     {
-        const uint16_t yellow = EspMainMenuSkin_letterTone(8, 9);
+        const uint16_t gold = EspMainMenuSkin_letterTone(8, 9);
         const uint16_t bronze = EspMainMenuSkin_letterTone(4, 9);
         const uint16_t copper = EspMainMenuSkin_letterTone(0, 9);
-        assert((yellow & 31U) > (0xf6afU & 31U));
-        assert(((yellow >> 5) & 63U) > ((0xf6afU >> 5) & 63U));
-        assert(((bronze >> 5) & 63U) > ((0xe4e9U >> 5) & 63U));
-        assert(((copper >> 11) & 31U) > ((0xaa85U >> 11) & 31U));
-        assert(((copper >> 5) & 63U) < ((0xaa85U >> 5) & 63U));
+        const uint16_t colors[3] = {copper,bronze,gold};
+        assert(copper==0x9285U && bronze==0xd4aaU && gold==0xfef4U);
+        for(int i=0;i<3;++i){
+            const unsigned r=(colors[i]>>11)&31U;
+            const unsigned g=(colors[i]>>5)&63U;
+            const unsigned b=colors[i]&31U;
+            assert(r*2U>=g && g>=b*2U);
+        }
+        assert((copper>>11&31U) < (bronze>>11&31U));
+        assert((bronze>>11&31U) < (gold>>11&31U));
+        assert(((copper>>5)&63U) < ((bronze>>5)&63U));
+        assert(((bronze>>5)&63U) < ((gold>>5)&63U));
     }
     assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_INFERNO));
     assert(EspMainMenuSkin_uiAccent() == 0xf926U);
@@ -546,7 +553,7 @@ int main(void) {
                 const int textY = t + 8 +
                     (state == ESP_MAIN_MENU_SKIN_CONFIRM ? 1 : 0);
                 const uint16_t topColor =
-                    state == ESP_MAIN_MENU_SKIN_IDLE ? 0xd225U : 0xffffU;
+                    state == ESP_MAIN_MENU_SKIN_IDLE ? 0x9285U : 0xffffU;
                 assert(fb[t * W + l + 10] ==
                        (state == ESP_MAIN_MENU_SKIN_IDLE ? 0x838dU :
                         state == ESP_MAIN_MENU_SKIN_ARMED ? 0xa4d1U : 0x83ceU));
@@ -561,8 +568,8 @@ int main(void) {
                     for (int xx = l + 6; xx <= r - 6; ++xx) {
                         const uint16_t pixel = fb[yy * W + xx];
                         const int isFace = state == ESP_MAIN_MENU_SKIN_IDLE
-                            ? pixel == 0xff34U || pixel == 0xf5aaU ||
-                              pixel == 0xd225U
+                            ? pixel == 0xfef4U || pixel == 0xd4aaU ||
+                              pixel == 0x9285U
                             : pixel == 0xffffU;
                         if (isFace) {
                             ++faces;
