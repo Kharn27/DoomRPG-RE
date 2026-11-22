@@ -15,14 +15,30 @@
 /* Only one render owner, never an allocation or a duplicated map arena.
  * Compiled out of 160x120 production; 512 * 2B = 1024B BSS. */
 #define RES60_P9_MAX_LINES 512U
+#if !DOOMRPG_RES60_P15_COMPACT_SNAPSHOT
 static uint16_t wedgeIndices[RES60_P9_MAX_LINES];
+#endif
 #if DOOMRPG_RES60_P14_LINE_SNAPSHOT
-/* 512 x 16B = 8192B BSS, no heap/stack explosion. Camera-specific lines
- * are validated and decoded once during the existing P9 preflight, then
- * consumed 192 times without re-reading immutable compact BSP records.
- * Only valid for P13's retained immutable map, never mutable world lines. */
+#if DOOMRPG_RES60_P15_COMPACT_SNAPSHOT
+/* P15: original 9-bit source index, both ray-visible special flag bits,
+ * original 16-bit coordinates and texture; no quantization or reordered ties.
+ * This 12-byte snapshot replaces both the 16-byte P14 record and P9 index. */
+enum {
+    RES60_P15_SOURCE_MASK=0x01ffU,
+    RES60_P15_SPRITE_BIT=0x0200U,
+    RES60_P15_OCCLUDER_BIT=0x0400U
+};
+typedef struct EspRes60P15SnapshotLine_s {
+    uint16_t x1,y1,x2,y2,texture;
+    uint16_t sourceAndFlags;
+} EspRes60P15SnapshotLine;
+typedef char EspRes60P15_Line12[(sizeof(EspRes60P15SnapshotLine)==12U)?1:-1];
+static EspRes60P15SnapshotLine candidateLines[RES60_P9_MAX_LINES];
+#else
+/* P14 frozen: 8192B snapshot and 1024B P9 index. */
 typedef char EspRes60P14_Line16[(sizeof(EspRes60PreviewLine)==16U)?1:-1];
 static EspRes60PreviewLine candidateLines[RES60_P9_MAX_LINES];
+#endif
 #endif
 
 /* All 192 cardinal rays lie inside |lateral| <= 191/192 * forward.
@@ -198,9 +214,21 @@ int EspRes60Preview_render(uint16_t* framebuffer, size_t framebufferBytes,
         ++stats.readerCalls;
 #if DOOMRPG_RES60_P9_WEDGE
         if(insideCardinalWedge(camera,&line)) {
+#if DOOMRPG_RES60_P15_COMPACT_SNAPSHOT
+            /* lineCount<=512 was checked before preflight. The original
+             * index fits without truncation; other BSP flags were unused. */
+            const uint16_t sourceAndFlags=(uint16_t)(index |
+                ((line.flags & ESP_RES60_PREVIEW_SPRITE_SPAN) ?
+                    RES60_P15_SPRITE_BIT : 0U) |
+                ((line.flags & ESP_RES60_PREVIEW_OCCLUDER_ONLY) ?
+                    RES60_P15_OCCLUDER_BIT : 0U));
+            candidateLines[candidateCount]=(EspRes60P15SnapshotLine){
+                line.x1,line.y1,line.x2,line.y2,line.texture,sourceAndFlags};
+#else
             wedgeIndices[candidateCount]=(uint16_t)index;
 #if DOOMRPG_RES60_P14_LINE_SNAPSHOT
             candidateLines[candidateCount]=line;
+#endif
 #endif
             ++candidateCount;
         } else {
@@ -242,15 +270,24 @@ int EspRes60Preview_render(uint16_t* framebuffer, size_t framebufferBytes,
         for (index = 0U; index < lineCount; ++index) {
 #endif
             uint32_t lineIndex=index;
-#if DOOMRPG_RES60_P9_WEDGE
+#if DOOMRPG_RES60_P15_COMPACT_SNAPSHOT
+            const EspRes60P15SnapshotLine* entry=&candidateLines[index];
+            lineIndex=(uint32_t)(entry->sourceAndFlags & RES60_P15_SOURCE_MASK);
+            const EspRes60PreviewLine line={
+                entry->x1,entry->y1,entry->x2,entry->y2,entry->texture,
+                ((entry->sourceAndFlags & RES60_P15_SPRITE_BIT) ?
+                    ESP_RES60_PREVIEW_SPRITE_SPAN : 0U) |
+                ((entry->sourceAndFlags & RES60_P15_OCCLUDER_BIT) ?
+                    ESP_RES60_PREVIEW_OCCLUDER_ONLY : 0U)};
+#elif DOOMRPG_RES60_P9_WEDGE
             lineIndex=wedgeIndices[index];
 #endif
-#if DOOMRPG_RES60_P14_LINE_SNAPSHOT
+#if DOOMRPG_RES60_P14_LINE_SNAPSHOT && !DOOMRPG_RES60_P15_COMPACT_SNAPSHOT
             /* P13 guarantees immutable arena validity for the whole frame;
              * preflight already checked every source line. The snapshot is
              * indexed in original P9 order, including ties/special flags. */
             const EspRes60PreviewLine line=candidateLines[index];
-#else
+#elif !DOOMRPG_RES60_P15_COMPACT_SNAPSHOT
             EspRes60PreviewLine line;
 #endif
             int64_t num, den;
