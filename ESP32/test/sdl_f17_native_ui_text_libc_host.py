@@ -12,7 +12,9 @@ import tempfile
 from native_help_bottom_history import (restore_pre_help_bottom_blue,
                                         restore_pre_help_bottom_model,
                                         restore_pre_help_light_body_pages,
-                                        restore_pre_help_frame_polish)
+                                        restore_pre_help_frame_polish,
+                                        restore_pre_help_page4_model,
+                                        restore_pre_help_page4_actions)
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "ESP32/src"
@@ -76,6 +78,9 @@ def restore(filename: str, current: str) -> str:
         assert original.count(GUARD) == COUNTS[filename], filename
         original = original.replace(GUARD, "#include <SDL.h>\n")
     if filename == "native_main_menu_actions.c":
+        original = restore_pre_help_page4_actions(original)
+        from native_help_fullscreen_history import restore_pre_help_fullscreen_nav
+        original = restore_pre_help_fullscreen_nav(original)
         original = restore_pre_help_frame_polish(original)
         from uac_blink_history import restore_pre_uac_blink_actions
         original = restore_pre_uac_blink_actions(original)
@@ -85,6 +90,7 @@ def restore(filename: str, current: str) -> str:
     if filename == "native_main_menu_actions.c":
         original = restore_pre_help_bottom_blue(original)
     if filename == "native_main_menu_model.c":
+        original = restore_pre_help_page4_model(original)
         original = restore_pre_help_bottom_model(original)
     # SDL-F19 only renames local layout typedef uses; reconstruct the exact
     # historical pre-F17 source before the F17 alias reversions.
