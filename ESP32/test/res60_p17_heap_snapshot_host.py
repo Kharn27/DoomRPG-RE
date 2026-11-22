@@ -115,7 +115,7 @@ with tempfile.TemporaryDirectory(prefix="res60-p17-") as tmp:
         nm=subprocess.check_output(["nm","-S",str(obj)],text=True)
         a=[]
         for line in nm.splitlines():
-            m=re.search(r"\\b[0-9a-fA-F]+\\s+([0-9a-fA-F]+)\\s+[bBdD]\\s+"+name+r"$",line)
+            m=re.search(r"\b[0-9a-fA-F]+\s+([0-9a-fA-F]+)\s+[bBdD]\s+"+name+r"$",line)
             if m:a.append(int(m.group(1),16))
         assert len(a)==1,(name,a,nm[-900:])
         return a[0]
