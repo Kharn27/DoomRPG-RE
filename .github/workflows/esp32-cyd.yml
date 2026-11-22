@@ -32,6 +32,11 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: HUD-FACE larger original atlas bounded source-row scaler (host C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/src/esp_native_indexed_bmp.c ESP32/test/hud_face_scaled_bmp_host.c -o /tmp/doomrpg-hud-face-scaled
+          /tmp/doomrpg-hud-face-scaled
+
       - name: UAC-P1 bounded BMP32 alpha decoder, corruption and touch (host C)
         run: |
           cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/src/esp_uac_bmp32.c ESP32/test/uac_bmp32_host.c -o /tmp/doomrpg-uac-bmp32
