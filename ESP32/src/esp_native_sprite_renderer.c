@@ -216,10 +216,15 @@ static uint16_t source565(uint16_t c) {
 /* Renderer-owned presentation clock and visible candidates. No frame loop. */
 static uint32_t ambientSampleMs, ambientPresentedMs;
 static uint8_t ambientCandidates, ambientFastCandidates, ambientRapidCandidates;
+static uint8_t ambientFireVisible, ambientFirePhase;
+static uint16_t ambientFireIndex;
 static uint8_t ambientSuspended;
 int EspNativeSpriteRenderer_ambientDue(uint32_t now) {
     return !ambientSuspended &&
            (EspNativeFirstFrame_indicatorDue(now) ||
+            (ambientFireVisible &&
+             EspNativeAmbientSprite_fireChanged(ambientFireIndex,
+                                                ambientFirePhase, now)) ||
             EspNativeAmbientSprite_due(now, ambientPresentedMs,
                                        ambientFastCandidates,
                                        ambientRapidCandidates,
@@ -228,6 +233,7 @@ int EspNativeSpriteRenderer_ambientDue(uint32_t now) {
 void EspNativeSpriteRenderer_suspendAmbient(void) {
     ambientSuspended=1U;
     ambientCandidates=0U; ambientFastCandidates=0U; ambientRapidCandidates=0U;
+    ambientFireVisible=0U; ambientFireIndex=0U; ambientFirePhase=0U;
 }
 void EspNativeSpriteRenderer_resetAmbient(void) {
     EspNativeSpriteRenderer_suspendAmbient();
@@ -1583,7 +1589,21 @@ static int drawAt(Render_t* render,
             parent->info, entityType, rasterPixelsBefore,
             glow ? stats->glowPixels : stats->pixelsDrawn)) {
         ++stats->ambientCandidates;
-        if (EspNativeAmbientSprite_fast(entityType))
+        if (!glow && EspNativeAmbientSprite_fireEligible(
+                         parent->info, entityType)) {
+            /* Only completed masked pixels, never admission/near-cull,
+             * arm the 4-phase fire clock. A fixed or CROSS sprite stays
+             * excluded. Keep the first witness stable per render order. */
+            if (stats->fireRasterCount == 0U) {
+                stats->fireSampleIndex = parent->index;
+                stats->fireSampleLogical = logical;
+                stats->fireSampleActual = frame->actual;
+                stats->fireSamplePhase = (uint8_t)animation;
+                stats->fireSampleMs = ambientSampleMs;
+            }
+            ++stats->fireRasterCount;
+        }
+        else if (EspNativeAmbientSprite_fast(entityType))
             ++stats->ambientFastCandidates;
         if (EspNativeAmbientSprite_rapid(entityType,entitySubtype))
             ++stats->ambientRapidCandidates;
@@ -1893,6 +1913,9 @@ done:
         ambientCandidates=(uint8_t)(stats.ambientCandidates!=0U);
         ambientFastCandidates=(uint8_t)(stats.ambientFastCandidates!=0U);
         ambientRapidCandidates=(uint8_t)(stats.ambientRapidCandidates!=0U);
+        ambientFireVisible=(uint8_t)(stats.fireRasterCount!=0U);
+        ambientFireIndex=stats.fireSampleIndex;
+        ambientFirePhase=stats.fireSamplePhase;
     } else EspNativeSpriteRenderer_suspendAmbient();
     *outStats = stats;
 #if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
