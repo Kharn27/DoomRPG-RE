@@ -34,6 +34,7 @@ assert pilot_flags == [
     "-D", "DOOMRPG_RES60_P10_WALL_MATERIAL=1",
     "-D", "DOOMRPG_RES60_P11_PROFILE=1",
     "-D", "DOOMRPG_RES60_P12_INVENTORY_CACHE=1",
+    "-D", "DOOMRPG_RES60_P13_MAP_LEASE=1",
     "-I.pio/libdeps/esp32-cyd-res60/TFT_eSPI",
 ]
 assert p4_flags == [

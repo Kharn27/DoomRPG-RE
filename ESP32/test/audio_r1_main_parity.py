@@ -9,6 +9,14 @@ from native_boot_legals_history import restore_pre_boot_legals
 
 def restore_pre_res60_p1(main: str) -> str:
     """Remove only P1's isolated video-only boot seam for historical blob parity."""
+    # P13's retained-map owner is isolated under the same pilot-only seam.
+    # Reverse exactly this added include; historical Root-J2 SHA stays frozen.
+    p13_include = ('#if DOOMRPG_RES60_P13_MAP_LEASE\n'
+                   '#include "esp_res60_map_lease.h"\n'
+                   '#endif\n')
+    if p13_include in main:
+        assert main.count(p13_include) == 1, "P13 include scope changed"
+        main = main.replace(p13_include, "", 1)
     # P12's RES60-only snapshot API is an additional isolated header.
     # Strip the exact gate before restoring the historical Root-J2 Git blob;
     # do not change or regenerate its golden SHA.
