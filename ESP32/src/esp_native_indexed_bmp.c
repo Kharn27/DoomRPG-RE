@@ -29,6 +29,30 @@
  */
 static uint8_t indexedBmpScratch[BMP_BLIT_RANGE_BYTES];
 
+/* Font overrides may be reopened for every HUD/dialog glyph paint. Log only
+ * the first successful activation of each named SD font per boot; a repeated
+ * open must not flood Serial or disturb gameplay timing. Missing/invalid
+ * override diagnostics remain unchanged in EspNativeFontSd_probe/reject. */
+#if defined(DOOMRPG_ESP32) && DOOMRPG_ESP32
+static uint8_t fontSdActiveLoggedMask;
+
+static void logFontSdActiveOnce(const char* name,
+                                const EspNativeIndexedBmp* bmp,
+                                uint32_t size,
+                                uint8_t source) {
+    uint8_t bit;
+    if (name == NULL || bmp == NULL ||
+        source < ESP_NATIVE_FONT_SD_STANDARD ||
+        source > ESP_NATIVE_FONT_SD_LARGER) return;
+    bit = (uint8_t)(1U << (source - ESP_NATIVE_FONT_SD_STANDARD));
+    if ((fontSdActiveLoggedMask & bit) != 0U) return;
+    fontSdActiveLoggedMask = (uint8_t)(fontSdActiveLoggedMask | bit);
+    printf("[FONTSD] ACTIVE name=%s source=SD indexed=%u palette=%u bytes=%lu\n",
+           name, (unsigned)bmp->bitsPerPixel,
+           (unsigned)bmp->paletteCount, (unsigned long)size);
+}
+#endif
+
 static uint16_t readLe16(const uint8_t* p) {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
 }
@@ -244,10 +268,7 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_open(
                     ? outBmp->width == 144U && outBmp->height == 72U
                     : outBmp->width == 208U && outBmp->height == 102U;
             if (status == ESP_NATIVE_INDEXED_BMP_OK && correctGeometry) {
-                printf("[FONTSD] ACTIVE name=%s source=SD indexed=%u palette=%u bytes=%lu\n",
-                       name, (unsigned)outBmp->bitsPerPixel,
-                       (unsigned)outBmp->paletteCount,
-                       (unsigned long)sdSize);
+                logFontSdActiveOnce(name, outBmp, sdSize, source);
                 return status;
             }
             EspNativeFontSd_reject(source);
@@ -294,9 +315,7 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_openSdFontStandalone(
     result = openFromSource(name, outBmp, stats, source, sdSize);
     if (result == ESP_NATIVE_INDEXED_BMP_OK &&
         outBmp->width == expectedWidth && outBmp->height == expectedHeight) {
-        printf("[FONTSD] ACTIVE name=%s source=SD indexed=%u palette=%u bytes=%lu\n",
-               name, (unsigned)outBmp->bitsPerPixel,
-               (unsigned)outBmp->paletteCount, (unsigned long)sdSize);
+        logFontSdActiveOnce(name, outBmp, sdSize, source);
         return result;
     }
     EspNativeFontSd_reject(source);
