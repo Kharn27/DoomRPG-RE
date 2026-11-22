@@ -38,7 +38,8 @@ assert "consumePainSound(" in combat and "consumeDeathSound(" in combat
 assert "constexpr uint8_t kGenericSfxVoiceCount=3U;" in music
 assert "EspNativeAudioIntent_nextAfter(sfxSeenSequence,&next)" in music
 assert "EspNativeSfxPcm_outputFrames(meta.sampleFrames,kRate)" in music
-assert "if (n>8192U) n=8192U;" in music
+assert "EspNativeSfxPcm_publishedSpan(" in music
+assert "if (n>8192U) n=8192U;" not in music
 assert "if (!EspAssetPack_musicSdSafe()) return;" in music
 assert "return !openReady || (physicalUsesMapFlash && !sourceProbeReady);" in pack
 assert "retainIntent();" in intent
