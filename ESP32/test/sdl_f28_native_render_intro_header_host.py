@@ -92,50 +92,28 @@ def restore_rc10_dynamic(value: bytes) -> bytes:
 
 
 def restore_pre_fire_vis_p2_sprite(value: bytes) -> bytes:
-    """Reverse ONLY the bounded FIRE-VIS-P2 additions, then let P1 and the
-    immutable pre-SDL-F28 SHA oracle do their unchanged checks. New code must
-    have every expected anchor exactly once; never bless a changed baseline.
+    """Reverse ONLY the FIRE-VIS-P2 LCD witness insertion; 375ms policy
+    deliberately restores the pre-P2 scheduler exactly. Keep the frozen
+    pre-SDL-F28 SHA immutable and assert this full insertion once.
     """
-    inverse = (
-        (b'    /* Only completed masked pixels, never admission/near-cull,\n'
-         b'             * arm the 4-phase fire clock. A fixed or CROSS sprite stays\n'
-         b'             * excluded. Keep the first witness stable per render order. */\n',
-         b''),
+    inserted = (
+        b'        if (!glow && EspNativeAmbientSprite_fireEligible(\n'
+        b'                         parent->info, entityType)) {\n'
+        b'            /* Only completed masked pixels, never admission/near-cull,\n'
+        b'             * count as real fire: record the first LCD witness. The native\n'
+        b'             * 375ms ambient clock now owns ALL fast sprites including fire. */\n'
+        b'            if (stats->fireRasterCount == 0U) {\n'
+        b'                stats->fireSampleIndex = parent->index;\n'
+        b'                stats->fireSampleLogical = logical;\n'
+        b'                stats->fireSampleActual = frame->actual;\n'
+        b'                stats->fireSamplePhase = (uint8_t)animation;\n'
+        b'                stats->fireSampleMs = ambientSampleMs;\n'
+        b'            }\n'
+        b'            ++stats->fireRasterCount;\n'
+        b'        }\n'
     )
-    # Render-stat witness and independent scheduler have different source
-    # locations. Revert every complete production insertion exactly once.
-    edits = (
-        (b'static uint8_t ambientFireVisible, ambientFirePhase;\n'
-         b'static uint16_t ambientFireIndex;\n', b''),
-        (b'            (ambientFireVisible &&\n'
-         b'             EspNativeAmbientSprite_fireChanged(ambientFireIndex,\n'
-         b'                                                ambientFirePhase, now)) ||\n',
-         b''),
-        (b'    ambientFireVisible=0U; ambientFireIndex=0U; ambientFirePhase=0U;\n', b''),
-        (b'        if (!glow && EspNativeAmbientSprite_fireEligible(\n'
-         b'                         parent->info, entityType)) {\n'
-         b'            /* Only completed masked pixels, never admission/near-cull,\n'
-         b'             * arm the 4-phase fire clock. A fixed or CROSS sprite stays\n'
-         b'             * excluded. Keep the first witness stable per render order. */\n'
-         b'            if (stats->fireRasterCount == 0U) {\n'
-         b'                stats->fireSampleIndex = parent->index;\n'
-         b'                stats->fireSampleLogical = logical;\n'
-         b'                stats->fireSampleActual = frame->actual;\n'
-         b'                stats->fireSamplePhase = (uint8_t)animation;\n'
-         b'                stats->fireSampleMs = ambientSampleMs;\n'
-         b'            }\n'
-         b'            ++stats->fireRasterCount;\n'
-         b'        }\n'
-         b'        else if (EspNativeAmbientSprite_fast(entityType))\n',
-         b'        if (EspNativeAmbientSprite_fast(entityType))\n'),
-        (b'        ambientFireVisible=(uint8_t)(stats.fireRasterCount!=0U);\n'
-         b'        ambientFireIndex=stats.fireSampleIndex;\n'
-         b'        ambientFirePhase=stats.fireSamplePhase;\n', b''),
-    )
-    for added, previous in edits:
-        assert value.count(added) == 1, "FIRE-VIS-P2 historical inverse anchor drift"
-        value = value.replace(added, previous, 1)
-    return value
+    assert value.count(inserted) == 1, "FIRE-VIS-P2 historical inverse anchor drift"
+    return value.replace(inserted, b'', 1)
 
 
 def restore_pre_fire_vis_sprite(value: bytes) -> bytes:
