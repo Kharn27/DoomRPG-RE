@@ -24,11 +24,16 @@ COMPARISON_SCALE = 2
 THEME_SCALE = 2
 GLYPHS = "ADOao08%"
 LABEL_HEIGHT = 24
-# Only the new *large neutral* BMP gets chromed-outline a/o tonal repairs.
-# Old colored sources, magenta index 2, geometry and the other 94 cells stay intact.
-LARGE_AO_REMAP = (0, 1, 2, 0, 15, 12, 4, 8, 7, 4, 7, 11, 1, 0, 12, 15)
+# The new large 4bpp neutral font comes from the smaller a.bmp, NOT from
+# the historically distinct larger_font.bmp. Keep that old asset untouched.
+# Scale 9x12 -> an 11x15 ink grid centred within each required 13x17 cell.
+# This deliberately preserves the delicate small-font strokes and cell spacing.
+LARGE_COLOR_PROOF = ROOT / "artwork" / "fonts" / "neutral" / "larger_font_from_a_color.bmp"
+LARGE_INNER = (11, 15)
+LARGE_MARGIN = (1, 1)
 LABEL_FONT = {
     "A": ("01110", "10001", "10001", "11111", "10001", "10001", "10001"),
+    "D": ("11110", "10001", "10001", "10001", "10001", "10001", "11110"),
     "E": ("11111", "10000", "10000", "11110", "10000", "10000", "11111"),
     "G": ("01111", "10000", "10000", "10111", "10001", "10001", "01110"),
     "H": ("10001", "10001", "10001", "11111", "10001", "10001", "10001"),
@@ -101,27 +106,47 @@ def neutralize(data: bytes, transparent_index: int) -> bytes:
     return bytes(result)
 
 
-def harmonize_large_ao(data: bytes, size: tuple[int, int],
-                        cell: tuple[int, int]) -> bytes:
-    """Re-shade only a/o in new neutral large atlas, preserving their silhouette."""
-    src = inspect_bmp(data, size)
-    out = bytearray(data)
-    cw, ch = cell
-    for glyph in "ao":
-        index = ord(glyph) - 33
-        x0, y0 = index % 16 * cw, index // 16 * ch
-        for y in range(ch):
-            for x in range(cw):
-                xg, yg = x0 + x, y0 + y
-                original = pixel(src, xg, yg)
-                mapped = LARGE_AO_REMAP[original]
-                assert (original == 2) == (mapped == 2)  # unchanged magenta
-                offset = 118 + (size[1] - 1 - yg) * src["pitch"] + xg // 2
-                if xg % 2:
-                    out[offset] = (out[offset] & 0xf0) | mapped
-                else:
-                    out[offset] = (out[offset] & 0x0f) | (mapped << 4)
-    return bytes(out)
+def scale_small_to_large(small_data: bytes) -> bytes:
+    """Rebuild 96 glyphs from actual a.bmp as a thinner 13x17 4-bpp atlas.
+
+    A full-canvas nearest-neighbour 9x12 -> 13x17 would thicken every
+    stroke. Instead resize each 9x12 glyph to 11x15 with 1px margins.
+    Small palette 0 = transparent magenta; big format needs index 2.
+    Swap indices 0/2 and their palette entries; keep all other indices.
+    The historical larger_font.bmp is never read as glyph input.
+    """
+    small = inspect_bmp(small_data, (144, 72))
+    assert small["palette"][0] == (255, 0, 255)
+    width, height, pitch = 208, 102, 104
+    output = bytearray(118 + pitch * height)
+    output[:118] = small_data[:118]
+    struct.pack_into("<I", output, 2, len(output))
+    struct.pack_into("<i", output, 18, width)
+    struct.pack_into("<i", output, 22, height)
+    struct.pack_into("<I", output, 34, pitch * height)
+    output[54:58] = small_data[62:66]  # index 0 <- small black 2
+    output[62:66] = small_data[54:58]  # index 2 <- small magenta 0
+    for y in range(height):
+        glyph_y, local_y = divmod(y, 17)
+        for x in range(width):
+            glyph_x, local_x = divmod(x, 13)
+            value = 2  # magenta: 1-pixel inset, no glyph clipping
+            if (1 <= local_x < 12) and (1 <= local_y < 16):
+                sx = ((2 * (local_x - 1) + 1) * 9) // 22
+                sy = ((2 * (local_y - 1) + 1) * 12) // 30
+                value = pixel(small, glyph_x * 9 + sx, glyph_y * 12 + sy)
+                if value == 0:
+                    value = 2
+                elif value == 2:
+                    value = 0
+            offset = 118 + (height - 1 - y) * pitch + x // 2
+            if x & 1:
+                output[offset] = (output[offset] & 0xf0) | value
+            else:
+                output[offset] = (output[offset] & 0x0f) | (value << 4)
+    result = bytes(output)
+    assert inspect_bmp(result, (width, height))["palette"][2] == (255, 0, 255)
+    return result
 
 
 def canvas(w: int, h: int) -> bytearray:
@@ -167,7 +192,7 @@ def draw_label(dst: bytearray, dw: int, ox: int, oy: int,
                text: str, color: tuple[int, int, int]) -> None:
     """Deterministic five-by-seven caption; no Pillow/system font needed."""
     for i, letter in enumerate(text):
-        for y, pixels in enumerate(LABEL_FONT[letter]):
+        for y, pixels in enumerate(LABEL_FONT.get(letter, ("00000",) * 7)):
             for x, value in enumerate(pixels):
                 if value == "0":
                     continue
@@ -207,13 +232,19 @@ def png(w: int, h: int, pixels: bytearray) -> bytes:
 def render_outputs() -> dict[Path, bytes]:
     outputs = {}
     for original, neutral, size, cell, transparent, expected_hash in SPECS:
-        source_bytes = (ASSETS / original).read_bytes()
-        assert sha256(source_bytes) == expected_hash, original + " changed!"
+        historical_bytes = (ASSETS / original).read_bytes()
+        assert sha256(historical_bytes) == expected_hash, original + " changed!"
+        if original == "a.bmp":
+            source_bytes = historical_bytes
+        else:
+            # Preview's SOURCE is the new generated color sheet from a.bmp.
+            # Historical larger_font.bmp stays untouched and is not portrayed
+            # as the source of this new neutral style.
+            source_bytes = scale_small_to_large((ASSETS / "a.bmp").read_bytes())
+            outputs[LARGE_COLOR_PROOF] = source_bytes
         source = inspect_bmp(source_bytes, size)
         assert source["palette"][transparent] == (255, 0, 255)
         neutral_bytes = neutralize(source_bytes, transparent)
-        if original == "larger_font.bmp":
-            neutral_bytes = harmonize_large_ao(neutral_bytes, size, cell)
         neut = inspect_bmp(neutral_bytes, size)
         assert source_bytes[:54] == neutral_bytes[:54]
         if original == "a.bmp":
@@ -227,8 +258,9 @@ def render_outputs() -> dict[Path, bytes]:
         bh = PADDING * 2 + LABEL_HEIGHT + h * scale
         comparison = canvas(bw, bh)
         panel_x = [PADDING + i * (w * scale + GAP) for i in range(3)]
+        panel_labels = ("ORIGINAL", "NEUTRE", "PHOSPHORE") if original == "a.bmp" else ("A AGRANDI", "NEUTRE", "PHOSPHORE")
         for x, label_text, label_color in zip(
-                panel_x, ("ORIGINAL", "NEUTRE", "PHOSPHORE"),
+                panel_x, panel_labels,
                 ((255, 195, 94), (230, 232, 236), (112, 255, 172))):
             draw_label(comparison, bw, x, PADDING, label_text, label_color)
         top = PADDING + LABEL_HEIGHT
@@ -284,7 +316,7 @@ def main() -> None:
             assert path.read_bytes() == data, "non-reproducible: " + str(path)
         print("FONT-NEUTRAL", "WRITE" if args.write else "PASS",
               path.relative_to(ROOT), len(data), sha256(data))
-    print("FONT-NEUTRAL-P1: deterministic grayscale + large a/o indices, no runtime changes")
+    print("FONT-NEUTRAL-P1: grayscale + thin large font rebuilt from a.bmp; no runtime changes")
 
 
 if __name__ == "__main__":
