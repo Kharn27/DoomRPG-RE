@@ -1,0 +1,19 @@
+name: Temporary AUDIO-S1 WAV quality inspection
+on:
+  push:
+    branches:
+      - 'agent/audio-s1-wav-qc-20261122'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect real SD WAVs with firmware IMA parser and decoded signal metrics
+        run: |
+          command -v ffmpeg
+          command -v cc
+          python3 ESP32/tools/audio_wav_quality_audit.py
