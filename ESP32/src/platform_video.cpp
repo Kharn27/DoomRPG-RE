@@ -12,6 +12,9 @@
 #if DOOMRPG_RES60_P12_INVENTORY_CACHE
 #include "esp_res60_inventory_cache.h"
 #endif
+#if DOOMRPG_RES60_P13_MAP_LEASE
+#include "esp_res60_map_lease.h"
+#endif
 #if DOOMRPG_RES60_P11_PROFILE
 #include "esp_res60_profile.h"
 extern "C" uint32_t EspRes60Profile_nowUs(void) {
@@ -690,6 +693,9 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
 #if DOOMRPG_RES60_P12_INVENTORY_CACHE
         EspRes60InventoryCache_reset();
 #endif
+#if DOOMRPG_RES60_P13_MAP_LEASE
+        EspRes60MapLease_reset();
+#endif
         Serial.println("[RES60P7] FAIL CLOSED stage=compact-map-projection");
         return false;
     }
@@ -698,9 +704,16 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
     if (!EspRes60Nav_paint(framebuffer, kFramebufferBytes,
                            (uint8_t)(report.spawnAngle - turns * 64U),
                            turns) || EspAssetPack_isOpen() ||
+#if DOOMRPG_RES60_P13_MAP_LEASE
+        !EspRes60MapLease_isReady()) {
+#else
         EspMapRuntime_isLoaded()) {
+#endif
 #if DOOMRPG_RES60_P12_INVENTORY_CACHE
         EspRes60InventoryCache_reset();
+#endif
+#if DOOMRPG_RES60_P13_MAP_LEASE
+        EspRes60MapLease_reset();
 #endif
         Serial.println("[RES60P7] FAIL CLOSED stage=navigation-or-leases");
         return false;
@@ -755,6 +768,14 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
         (unsigned long)report.arenaFNV,
         (unsigned long)report.inventoryUs);
 #endif
+#if DOOMRPG_RES60_P13_MAP_LEASE
+    Serial.printf("[RES60P13] MAP lease=%s crc=%08lx arenaFNV=%08lx mapUs=%lu bytesResident=%lu validated=pak-metadata+resident-arena\n",
+        report.mapLeaseHit ? "HIT" : "MISS",
+        (unsigned long)report.mapCrc32,
+        (unsigned long)report.arenaFNV,
+        (unsigned long)report.loadUs,
+        (unsigned long)report.arenaBytes);
+#endif
 #if DOOMRPG_RES60_P11_PROFILE
     Serial.printf("[RES60P11] PROFILE angle=%u cache=%s invUs=%lu loadUs=%lu preflightUs=%lu bandUs=%lu raysUs=%lu geometryUs=%lu fillUs=%lu hashUs=%lu p3Us=%lu catalogUs=%lu texPakUs=%lu swatchUs=%lu overlayUs=%lu texUs=%lu releaseUs=%lu preparedUs=%lu rayTests=%lu overlayPixels=%lu heap8=%u instrumentation=ON\n",
         (unsigned)report.spawnAngle,
@@ -791,10 +812,17 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
 #if DOOMRPG_RES60_P12_INVENTORY_CACHE
         EspRes60InventoryCache_reset();
 #endif
+#if DOOMRPG_RES60_P13_MAP_LEASE
+        EspRes60MapLease_reset();
+#endif
         Serial.println("[RES60P7] FAIL CLOSED stage=LCD_PRESENT");
         return false;
     }
+#if DOOMRPG_RES60_P13_MAP_LEASE
+    Serial.printf("[RES60P7] FRAME totalUs=%lu heap8=%u largest8=%u minHeap8=%u mapRuntime=RETAINED pak=closed audio=NOT_STARTED\n",
+#else
     Serial.printf("[RES60P7] FRAME totalUs=%lu heap8=%u largest8=%u minHeap8=%u mapRuntime=RELEASED pak=closed audio=NOT_STARTED\n",
+#endif
          (unsigned long)(micros()-started),
          (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
          (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),

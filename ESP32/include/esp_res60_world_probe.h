@@ -35,6 +35,9 @@ typedef struct EspRes60WorldProbeReport_s {
 #if DOOMRPG_RES60_P12_INVENTORY_CACHE
     uint8_t inventoryCacheHit;
 #endif
+#if DOOMRPG_RES60_P13_MAP_LEASE
+    uint8_t mapLeaseHit; /* 1: full compact arena retained on this turn */
+#endif
 #if DOOMRPG_RES60_P8_TEXEL
     EspRes60TextureProbeReport texture;
 #endif

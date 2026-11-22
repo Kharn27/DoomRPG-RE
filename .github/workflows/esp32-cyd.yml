@@ -81,6 +81,9 @@ jobs:
       - name: RES60-P12 verified intro inventory cache (C11 + isolation)
         run: python ESP32/test/res60_p12_inventory_cache_host.py
 
+      - name: RES60-P13 retained compact native MAP_INTRO lease and integrity (real C11)
+        run: python ESP32/test/res60_p13_map_lease_host.py
+
       - name: Test AUDIO-R1 bounded PCM, DAC GPIO26 and game handoff (host C)
         run: python ESP32/test/audio_r1_analog_pcm_host.py
 

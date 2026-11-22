@@ -134,6 +134,17 @@
 #if DOOMRPG_RES60_P12_INVENTORY_CACHE && (!DOOMRPG_RES60_P11_PROFILE || !DOOMRPG_RES60_P10_WALL_MATERIAL || !DOOMRPG_RES60_P1_DIAGNOSTIC)
 #error "RES60-P12 requires isolated P11/P10 192x144 preview"
 #endif
+/* P13: optional session-owned compact immutable map, same sole arena,
+ * only on the RES60 preview. The normal game already retains its map. */
+#ifndef DOOMRPG_RES60_P13_MAP_LEASE
+#define DOOMRPG_RES60_P13_MAP_LEASE 0
+#endif
+#if DOOMRPG_RES60_P13_MAP_LEASE != 0 && DOOMRPG_RES60_P13_MAP_LEASE != 1
+#error "RES60-P13 map-lease flag must be 0 or 1"
+#endif
+#if DOOMRPG_RES60_P13_MAP_LEASE && (!DOOMRPG_RES60_P12_INVENTORY_CACHE || !DOOMRPG_RES60_P7_NAV || !DOOMRPG_RES60_P1_DIAGNOSTIC)
+#error "RES60-P13 requires isolated P12/P7 192x144 preview"
+#endif
 #if DOOMRPG_RES60_P1_DIAGNOSTIC
 #define DOOMRPG_VIDEO_BUFFER_WIDTH 192
 #define DOOMRPG_VIDEO_BUFFER_HEIGHT 144

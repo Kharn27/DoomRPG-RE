@@ -12,6 +12,9 @@
 #if DOOMRPG_RES60_P12_INVENTORY_CACHE
 #include "esp_res60_inventory_cache.h"
 #endif
+#if DOOMRPG_RES60_P13_MAP_LEASE
+#include "esp_res60_map_lease.h"
+#endif
 #if DOOMRPG_RES60_P11_PROFILE
 #include "esp_res60_profile.h"
 #endif
@@ -62,6 +65,9 @@ static int renderIntroCore(uint16_t* framebuffer,
 #if DOOMRPG_RES60_P12_INVENTORY_CACHE
     uint8_t inventoryHit = 0U;
 #endif
+#if DOOMRPG_RES60_P13_MAP_LEASE
+    uint8_t mapLeaseHit = 0U;
+#endif
 
     memset(&inv, 0, sizeof(inv));
     memset(&report, 0, sizeof(report));
@@ -69,7 +75,12 @@ static int renderIntroCore(uint16_t* framebuffer,
     if (outReport != NULL) memset(outReport, 0, sizeof(*outReport));
     if (framebuffer == NULL || outReport == NULL || mapName == NULL ||
         framebufferBytes != ESP_RES60_FRAMEBUFFER_BYTES ||
-        quarterTurns > 3U || EspAssetPack_isOpen() || EspMapRuntime_isLoaded()) {
+        quarterTurns > 3U || EspAssetPack_isOpen() ||
+#if DOOMRPG_RES60_P13_MAP_LEASE
+        (EspMapRuntime_isLoaded() && !EspRes60MapLease_isReady())) {
+#else
+        EspMapRuntime_isLoaded()) {
+#endif
         printf("[RES60P3] FAIL CLOSED stage=admission alreadyActive=%u pakBusy=%u\n",
                (unsigned int)EspMapRuntime_isLoaded(),
                (unsigned int)EspAssetPack_isOpen());
@@ -107,6 +118,9 @@ static int renderIntroCore(uint16_t* framebuffer,
         inv.lines == 0U || inv.lines > ESP_RES60_PREVIEW_MAX_LINES) {
 #if DOOMRPG_RES60_P12_INVENTORY_CACHE
         EspRes60InventoryCache_reset();
+#if DOOMRPG_RES60_P13_MAP_LEASE
+        EspRes60MapLease_reset();
+#endif
 #endif
         printf("[RES60P3] FAIL CLOSED stage=inventory-geometry lines=%lu spawn=%u angle=%u crc=%08lx\n",
                (unsigned long)inv.lines, (unsigned int)inv.spawnIndex,
@@ -119,6 +133,9 @@ static int renderIntroCore(uint16_t* framebuffer,
                                  &cameraAngle)) {
 #if DOOMRPG_RES60_P12_INVENTORY_CACHE
         EspRes60InventoryCache_reset();
+#if DOOMRPG_RES60_P13_MAP_LEASE
+        EspRes60MapLease_reset();
+#endif
 #endif
         return 0;
     }
@@ -142,6 +159,9 @@ static int renderIntroCore(uint16_t* framebuffer,
     if (viewX < 0 || viewX >= 2048 || viewY < 0 || viewY >= 2048) {
 #if DOOMRPG_RES60_P12_INVENTORY_CACHE
         EspRes60InventoryCache_reset();
+#if DOOMRPG_RES60_P13_MAP_LEASE
+        EspRes60MapLease_reset();
+#endif
 #endif
         printf("[RES60P3] FAIL CLOSED stage=legacy-camera-bounds\n");
         return 0;
@@ -150,6 +170,19 @@ static int renderIntroCore(uint16_t* framebuffer,
 #if DOOMRPG_RES60_P11_PROFILE
     phaseAt=EspRes60Profile_nowUs();
 #endif
+#if DOOMRPG_RES60_P13_MAP_LEASE
+    /* Keep ONE compact arena across rotations, not a second map copy.
+     * A HIT checks the real PAK entry metadata and hashes all resident
+     * immutable bytes before any pixel is drawn. */
+    if (!EspRes60MapLease_acquire(mapName, &inv, inventoryHit,
+                                  &mapLeaseHit)) {
+        EspRes60InventoryCache_reset();
+        EspRes60MapLease_reset();
+        printf("[RES60P13] FAIL CLOSED stage=map-lease map=%s\n", mapName);
+        return 0;
+    }
+    report.mapLeaseHit = mapLeaseHit;
+#else
     if (!EspMapRuntime_loadPackEntry(mapName, &inv)) {
 #if DOOMRPG_RES60_P12_INVENTORY_CACHE
         EspRes60InventoryCache_reset();
@@ -157,6 +190,7 @@ static int renderIntroCore(uint16_t* framebuffer,
         printf("[RES60P3] FAIL CLOSED stage=compact-runtime map=%s\n", mapName);
         return 0;
     }
+#endif
     loaded = 1;
 #if DOOMRPG_RES60_P11_PROFILE
     report.loadUs=EspRes60Profile_nowUs()-phaseAt;
@@ -247,15 +281,26 @@ done:
 #if DOOMRPG_RES60_P11_PROFILE
     phaseAt=EspRes60Profile_nowUs();
 #endif
-    if (loaded) {
-        EspMapRuntime_reset();
-    }
+#if DOOMRPG_RES60_P13_MAP_LEASE
+    if (loaded && !success) EspRes60MapLease_reset();
+#else
+    if (loaded) EspMapRuntime_reset();
+#endif
 #if DOOMRPG_RES60_P11_PROFILE
     report.releaseUs=EspRes60Profile_nowUs()-phaseAt;
 #endif
+#if DOOMRPG_RES60_P13_MAP_LEASE
+    if (EspAssetPack_isOpen() ||
+        (success && !EspRes60MapLease_isReady()) ||
+        (!success && EspMapRuntime_isLoaded())) {
+#else
     if (EspMapRuntime_isLoaded() || EspAssetPack_isOpen()) {
+#endif
 #if DOOMRPG_RES60_P12_INVENTORY_CACHE
         EspRes60InventoryCache_reset();
+#if DOOMRPG_RES60_P13_MAP_LEASE
+        EspRes60MapLease_reset();
+#endif
 #endif
         printf("[RES60P3] FAIL CLOSED stage=cleanup compactOrPakStillActive\n");
         return 0;
@@ -267,6 +312,9 @@ done:
         success = 0;
     }
     if (!success) EspRes60InventoryCache_reset();
+#endif
+#if DOOMRPG_RES60_P13_MAP_LEASE
+    if (!success) EspRes60MapLease_reset();
 #endif
     if (success) *outReport = report;
     return success;

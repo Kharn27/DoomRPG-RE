@@ -37,6 +37,9 @@
 #if DOOMRPG_RES60_P12_INVENTORY_CACHE
 #include "esp_res60_inventory_cache.h"
 #endif
+#if DOOMRPG_RES60_P13_MAP_LEASE
+#include "esp_res60_map_lease.h"
+#endif
 #include "esp_legacy_prerender_startup.h"
 #include "esp_render_startup_bridge.h"
 #include "soft_xpt2046.h"
@@ -688,6 +691,9 @@ void loop()
 #if DOOMRPG_RES60_P12_INVENTORY_CACHE
                 EspRes60InventoryCache_reset();
 #endif
+#if DOOMRPG_RES60_P13_MAP_LEASE
+                EspRes60MapLease_reset();
+#endif
                 if (PlatformVideo_showRes60WorldPreviewQuarterTurns(0U)) {
                     res60QuarterTurns = 0U;
                     res60MenuVisible = false;
@@ -732,6 +738,12 @@ void loop()
 #endif
 #if DOOMRPG_RES60_P12_INVENTORY_CACHE
                     EspRes60InventoryCache_reset();
+#endif
+#if DOOMRPG_RES60_P13_MAP_LEASE
+                    EspRes60MapLease_reset();
+#endif
+#if DOOMRPG_RES60_P13_MAP_LEASE
+                EspRes60MapLease_reset();
 #endif
                 }
             } else {
