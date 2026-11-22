@@ -1,3 +1,9 @@
+## AUDIO-S1-P1 — Sector 1 natif : PASS matériel CYD borné (22 novembre 2026)
+
+[PR #428](https://github.com/Kharn27/DoomRPG-RE/pull/428) / [issue #427](https://github.com/Kharn27/DoomRPG-RE/issues/427) / [rapport](MILESTONE_AUDIO_S1_P1_SECTOR1_CYD_PASS.md). Le routage **map catalogue 2 / BSP loadMapId 3** lance `M_E1M3.wav` depuis la microSD, via un seul lecteur SD / ring 16 KiB / DAC2 / mixeur FIFO existants. Le log matériel `platformio-device-monitor-261122-111340.log` (SHA256 `8532cc2abc4a2abe0f524bf24ff480b644065e56e98b1ad09d0875b067dcb7ae`) démontre `WAV_OK → PLAY → PRESTART ready=1 beforeWorldPresent=1`, **23 SFX joués**, porte 5063/5064, pickups 5060/5057, `0 underrun/recovery`, zéro overflow/gap/drop FIFO, `HEADROOM_OK`, EXIT propre et retour musique menu ; `shapeData/mediaTexels=NULL`. Code testé par contexte `319b340024e03c1d568350342569205a474174d2` (SHA binaire absent du Serial). Les **15 WAV** restent sur `agent/esp32-audio-s1-wav-assets` (commit `2eac3ad75c4abff91a523762c791ef6b3ba89c81`), **hors PR code-only**, audit format 15/15 SUCCESS. P2 SFX-only sans musique **reporté** ; pas de test artificiel de piste invalide demandé. Après PASS : changements docs-only, CI finale requise.
+
+---
+
 > **AUDIO-PICKUP #419 — fidélité du Shotgun restaurée, PASS CYD borné (22 novembre 2026).**
 > [PR #422](https://github.com/Kharn27/DoomRPG-RE/pull/422),
 > [issue #419](https://github.com/Kharn27/DoomRPG-RE/issues/419),
