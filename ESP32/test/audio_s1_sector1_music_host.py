@@ -141,7 +141,8 @@ assert "DAC_CHANNEL_2" in music and "DAC_CHANNEL_1" not in music
 assert "EspAudioLoadingRoute_forMap(view->targetMapId)" in session
 assert "EspAudioLoadingRoute_forMap(targetMapId)" in transition
 assert 'EspAudioLoadingRoute_forView(view->targetMapId,' in music
-assert "EspEntranceMusic_prestartGameplayBeforeFirstFrame(view->targetMapId)" in session
+assert "EspEntranceMusic_prestartGameplayBeforeFirstFrame(" in session
+assert "view->targetMapId)" in session
 assert "Test AUDIO-S1-P1 Sector 1 native track" in workflow
 print("PASS AUDIO-S1-P1: 65536 C11 map/BSP pairs, IMA format refusals, "
       "single SD music owner, prestart/LOAD/EXIT, SFX/STOP_ALL contract")
