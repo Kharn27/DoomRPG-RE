@@ -80,9 +80,16 @@ def assert_compiled_reference(off_db: Path, on_db: Path | None) -> None:
         assert "DOOMRPG_PERF_PORT_PROFILE=1" in on, "ON witness not instrumented"
         assert "DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION=1" in on, "ON LCD is not inverted"
         assert "DOOMRPG_PERF_PORT_PALETTE_REUSE=0" not in on, "ON unexpectedly disabled"
-        assert sorted(set(off) - {"DOOMRPG_PERF_PORT_PALETTE_REUSE=0"}) == sorted(set(on)), (
-            "A/B compiler defines differ outside the palette reuse switch",
-            set(off) ^ set(on),
+        # PlatformIO injects a per-environment label (PIOENV); it is not
+        # a renderer behavior switch. All other -D flags must match.
+        def semantic_defines(items: list[str]) -> set[str]:
+            return {item for item in items if not item.startswith("PIOENV=")}
+
+        off_compared = semantic_defines(off) - {"DOOMRPG_PERF_PORT_PALETTE_REUSE=0"}
+        on_compared = semantic_defines(on)
+        assert off_compared == on_compared, (
+            "A/B compiler defines differ outside the palette reuse switch / PIOENV",
+            off_compared ^ on_compared,
         )
     print("PERF-PORT-P1 A/B compiledb PASS: inverted renderer ON/OFF, same compiler defines except REUSE=0")
 
