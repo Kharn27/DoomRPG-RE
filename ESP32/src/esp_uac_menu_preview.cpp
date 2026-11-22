@@ -33,11 +33,21 @@ constexpr int kGlyphW=9,kGlyphH=12;
  * bounded 15x25 physical ink box. Existing centered text corridors remain
  * unchanged. Never load larger_font.bmp merely to paint menu buttons. */
 constexpr int kPaintGlyphW=15,kPaintGlyphH=25,kPaintAdvance=13;
-constexpr int kLabelYOffset=1; /* 8px top / 7px bottom for 25px labels */
+constexpr int kLabelYOffset=1; /* submenu glyphs remain byte-for-byte sized */
+/* MENU_MAIN alone: modestly larger a.bmp glyphs and an optically lower
+ * baseline, with 7px left/right clearance even for seven-letter OPTIONS. */
+constexpr int kMainGlyphW=17,kMainGlyphH=27,kMainGlyphAdvance=13;
+constexpr int kMainLabelYOffset=3;
 static_assert(7*kPaintAdvance<=ESP_UAC_BUTTON_WIDTH-12,
               "OPTIONS must remain inside the generic button bezel");
 static_assert(kPaintGlyphH<=40-12,
-              "enlarged font must not overpaint the upper/lower bezel");
+              "submenu font must not overpaint the upper/lower bezel");
+static_assert(7*kMainGlyphAdvance+kMainGlyphW-kMainGlyphAdvance<=
+              ESP_UAC_BUTTON_WIDTH-12,
+              "MAIN OPTIONS text must keep a 6px side corridor");
+static_assert((40-kMainGlyphH)/2+kMainLabelYOffset>=6 &&
+              (40-kMainGlyphH)/2+kMainLabelYOffset+kMainGlyphH<=36,
+              "larger MAIN label must stay inside 40px button bevel");
 /* Every indexed nontransparent source shade is tinted at presentation. */
 struct FontInkCache {
     uint8_t glyph[sizeof(kFontAlphabet)-1][kGlyphH][(kGlyphW+1)/2];
@@ -322,8 +332,9 @@ static bool prepareMenuFont(){
     return ok;
 }
 
-/* Sample the identical 9x12 HELP glyph bitmaps into the existing 15x25
- * physical ink boxes, without another atlas or touching game presentation. */
+/* Sample the identical 9x12 HELP glyph bitmaps: slightly larger and
+ * lower only in MENU_MAIN; submenus retain their proven 15x25 text boxes.
+ * No new atlas, RAM, code path or changes to game presentation. */
 static void paintLargerTextRow(uint16_t* dst,int py,int index,int selected,
                                bool darkPhase,bool patch,int page){
     if(!fontReady||index<0||index>=pageCount(page))return;
@@ -332,17 +343,22 @@ static void paintLargerTextRow(uint16_t* dst,int py,int index,int selected,
     const int len=(int)strlen(label);
     /* Never overwrite the 6px bevel at either side; long labels (up to
      * ORIENTATION, 11 chars) fit without truncation or extra font buffers. */
-    const int advance=len*kPaintAdvance<=98?kPaintAdvance:98/len;
-    const int textW=advance==kPaintAdvance?kPaintGlyphW:advance;
-    const int textH=pageCount(page)==5?19:(advance<kPaintAdvance?21:kPaintGlyphH);
+    const bool mainLabel=page==ESP_UAC_OPTIONS_NONE;
+    const int regularAdvance=mainLabel?kMainGlyphAdvance:kPaintAdvance;
+    const int advance=len*regularAdvance<=98?regularAdvance:98/len;
+    const int textW=advance==regularAdvance?
+        (mainLabel?kMainGlyphW:kPaintGlyphW):advance;
+    const int textH=pageCount(page)==5?19:(advance<regularAdvance?21:
+        (mainLabel?kMainGlyphH:kPaintGlyphH));
     const int inset=(buttonHeight(page)-textH)/2+
-                    (pageCount(page)==5?0:kLabelYOffset);
+                    (mainLabel?kMainLabelYOffset:
+                     (pageCount(page)==5?0:kLabelYOffset));
     const int paintY=py-buttonTop(page,index)-inset;
     if(paintY<0||paintY>=textH)return;
     const int sourceY=paintY*kGlyphH/textH;
     const int xStart=(ESP_UAC_BUTTON_WIDTH-(len*advance+textW-advance))/2;
     const int destOrigin=patch?0:kPanelX+ESP_UAC_BUTTON_INSET;
-    /* Smooth 19/21/25-row vertical tone, dark-to-light.
+    /* Smooth row-wise theme tone: up to 27px only in MENU_MAIN. */
      * 16 shades on stack; transparency and outlines unchanged. */
     uint16_t rowInk[16];
     const uint16_t tone=EspUacFontTheme_verticalTone(
