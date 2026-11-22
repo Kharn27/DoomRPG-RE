@@ -1,6 +1,6 @@
 # LOADING-FONT-P1 — titre « LOADING » en a.bmp + thème natif (candidat CYD)
 
-**Statut : PENDING CYD.** Code préparé sur la branche `agent/esp32-loading-a-bmp-themed-title` depuis le `main` exact `a40d96eceb94844551a3a3fcd8036d0497d79d93` (22 novembre 2026). N'affirmer ni validation physique ni gain de performance avant les logs du classic CYD.
+**Statut : PASS visuel + parcours matériel sur code LOADING, correctif de verbosité post-test non reflashé.** Code préparé sur la branche `agent/esp32-loading-a-bmp-themed-title` depuis le `main` exact `a40d96eceb94844551a3a3fcd8036d0497d79d93` (22 novembre 2026). N'affirmer ni validation physique ni gain de performance avant les logs du classic CYD.
 
 ## Portée
 
@@ -25,3 +25,9 @@ pio device monitor -b 115200
 ```
 
 Exercer **START → intro → Entrance** ainsi que, si possible, un **LOAD de sauvegarde** (et une transition de carte). Vérifier visuellement la silhouette de `LOADING`, le bon thème CLASSIC/INFERNO/PHOSPHORE, et que `ENTERING`, les noms, la jauge et le fond restent alignés. Relever `LOADFONT`, `TRANSITIONLOAD BEGIN/FRAME/RELEASE`, `RAMBUDGET`, `LOADAUDIO-L0`, et les `AUDIO ... PRESTART` / `STREAM underflows` ; comparer fluidité et RAM au firmware normal de `main` uniquement si deux logs équivalents existent. **Le test visuel et les logs réels sont les critères de PASS.** Ne jamais le supposer par la seule CI.
+
+## Validation réelle CYD du 22 novembre 2026 et amélioration de verbosité
+
+L'utilisateur valide explicitement la nouvelle présentation (« niquel »). Capture normale `platformio-device-monitor-261122-180507.log`, **1 194 lignes** : `[LOADFONT] READY name=a.bmp backing=SD glyphs=7 inkBytes=420 reads=9 bytes=6166 theme=0` puis `[TRANSITIONLOAD] BEGIN targetMap=1 ... font=a.bmp-themed theme=0 ...` ; huit frames de progression, `RELEASE ... progress=100` ; `[RAMBUDGET] RESERVE ... margin8=12228 ... HEADROOM_OK`; musique Entrance `M_STALKS.wav` démarrée avant première présentation du monde, cinq `STREAM` sans `underflows` ni `recoveries`, `[RESIDENTRESET] ... empty=1`, `[SYSEXIT] MENU-READY`. Pas de panic/Backtrace. Seul le thème 0 (CLASSIC) est attesté matériellement dans cette capture ; les autres thèmes restent validés par le test hôte.
+
+La capture révèle **188 occurrences** de `[FONTSD] ACTIVE name=a.bmp ...` sur 1 194 lignes (15,7 %), dues au log émis pour chaque ouverture d'atlas par `EspNativeIndexedBmp_open`. Le changement demandé après cet essai introduit un **masque de 1 octet**, afin de n'annoncer `[FONTSD] ACTIVE` qu'une seule fois par police (`a.bmp`, `larger_font.bmp`) et par boot, aussi bien dans `EspNativeIndexedBmp_open` que dans `EspNativeIndexedBmp_openSdFontStandalone`. Les erreurs `[FONTSD] FALLBACK` restent inchangées ; chemin SD/PAK et comportement visuel inchangés. Un nouveau test C11 extrait et exécute le vrai verrou de log avec 350 ouvertures simulées : exactement 2 annonces, sans changer la logique de décodage. **La baisse effective du nombre de messages du firmware modifié n'a pas été mesurée sur un nouveau flash physique**. Fusion sur accord explicite de l'utilisateur, après CI finale de la variante corrigée.
