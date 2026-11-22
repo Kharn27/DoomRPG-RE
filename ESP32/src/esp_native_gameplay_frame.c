@@ -612,12 +612,10 @@ done:
     }
     /* FIRE-VIS-P2 witness: log only after a physical LCD presentation,
          * never for an unpublished preview, AUTOMAP substitution or a
-         * culled/fixed fire. 48 samples cap Serial/latency perturbation.
+         * culled/fixed fire. Include published MOVE/TURN previews too. 48 samples cap Serial/latency perturbation.
          * Render sample and post-audio-pump observation differ from physical\n         * present time. Log after the transaction, not inside raster/audio. */
-    if (ok && publish && preview && !EspNativeResidentGameplay_isAutomapActive() &&
-            sprites->fireRasterCount != 0U &&
-            view->viewX == view->destX && view->viewY == view->destY &&
-            view->viewAngle == view->destAngle) {
+    if (ok && publish && !EspNativeResidentGameplay_isAutomapActive() &&
+        sprites->fireRasterCount != 0U) {
             static uint8_t firePresentedLogCount;
             static uint16_t firePriorIndex = UINT16_MAX;
             static uint32_t firePriorSampleMs;
@@ -636,7 +634,7 @@ done:
                     if (sample >= firePriorSampleMs &&
                         currTick >= prevTick) steps = currTick - prevTick;
                 }
-                printf("[FIREVIS-P2] PRESENT n=%u sprite=%u logical=%u phase=%u actual=%u sampleMs=%u observedMs=%u phaseSteps=%u previousPhase=%u visible=%u spriteUs=%u presentUs=%u pakReads=%u\n",
+                printf("[FIREVIS-P2] PRESENT n=%u sprite=%u logical=%u phase=%u actual=%u sampleMs=%u observedMs=%u phaseSteps=%u previousPhase=%u visible=%u preview=%u settled=%u spriteUs=%u presentUs=%u pakReads=%u\n",
                        (unsigned int)(firePresentedLogCount + 1U),
                        (unsigned int)sprites->fireSampleIndex,
                        (unsigned int)sprites->fireSampleLogical,
@@ -649,6 +647,10 @@ done:
                                       sprites->fireSampleIndex
                                       ? firePriorPhase : 255U),
                        (unsigned int)sprites->fireRasterCount,
+                       (unsigned int)preview,
+                       (unsigned int)(view->viewX == view->destX &&
+                                      view->viewY == view->destY &&
+                                      view->viewAngle == view->destAngle),
                        (unsigned int)stats->spriteMicros,
                        (unsigned int)stats->presentMicros,
                        (unsigned int)stats->spritePackReads);
