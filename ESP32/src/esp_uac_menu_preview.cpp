@@ -93,7 +93,7 @@ static const char* labelAt(int page,int index){
     switch(page){
         case ESP_UAC_OPTIONS_ROOT: return index<3?kOptionsRoot[index]:nullptr;
         case ESP_UAC_OPTIONS_VIDEO: return index<4?kOptionsVideo[index]:nullptr;
-        case ESP_UAC_OPTIONS_BRIGHTNESS: return index<5?kOptionsBrightness[index]:nullptr;
+        case ESP_UAC_OPTIONS_BRIGHTNESS: return index<4?kOptionsBrightness[index]:nullptr;
         case ESP_UAC_OPTIONS_VOLUME: return index<4?kOptionsVolume[index]:nullptr;
         case ESP_UAC_OPTIONS_ORIENTATION: return index<3?kOptionsOrientation[index]:nullptr;
         case ESP_UAC_OPTIONS_THEME: return index<4?kOptionsTheme[index]:nullptr;
