@@ -34,6 +34,9 @@ assert 'EspNativeIndexedBmp_open("a.bmp",&bmp,&stats);' in preview
 assert 'name=a.bmp backing=%s' in preview
 assert 'name=larger_font.bmp backing=%s' not in preview
 assert 'sizeof(FontInkCache)' in preview
+assert 'fontSourceIsSD=fromSD;' in preview
+assert 'EspNativeFontTint_apply(' in preview
+assert 'EspUacFontTheme_verticalTone(' in preview
 assert 'const int sourceX=x*kGlyphW/textW;' in preview
 assert 'for(int x=0;x<textW;++x)' in preview
 # Historical accepted 14x23 bitmap proofs remain immutable until CYD visual PASS.
