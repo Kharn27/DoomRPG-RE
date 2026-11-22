@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include "esp_native_audio_intent.h"
 
-/* AUDIO-PICKUP #419: local, allocation-free policy for a single 5060 cue.
+/* AUDIO-PICKUP #419: local, allocation-free policy for a single original pickup cue (5060/5057).
  * A pickup may only hand off its *own* next FIFO record, with enough already
  * published music samples to mix its entire original PCM before the modal
  * takes the PAK lease. No cursor advance, SD/flash I/O, ring write or new
@@ -32,7 +32,9 @@ static inline int EspAudioPickupModal_canMix(
         gate->consumerSequence == UINT32_MAX ||
         gate->next->sequence != gate->expectedSequence ||
         gate->next->sequence != gate->consumerSequence + 1U ||
-        gate->next->resourceId != 5060U || gate->next->flags != 0U ||
+        (gate->next->resourceId != 5060U &&
+         gate->next->resourceId != 5057U) ||
+        gate->next->flags != 0U ||
         gate->reader > gate->writer ||
         gate->ringCapacity == 0U ||
         gate->writer - gate->reader > gate->ringCapacity ||
