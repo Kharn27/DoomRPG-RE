@@ -25,8 +25,12 @@ def main():
     config.read(ROOT / "ESP32/platformio.ini")
     assert {s for s in config if s.startswith("env:")} == {
         "env:esp32-cyd", "env:esp32-cyd-trace", "env:esp32-cyd-bringup",
-        "env:esp-cyd-inverted"}
+        "env:esp-cyd-inverted", "env:esp32-cyd-hud-original"}
     assert config["platformio"]["default_envs"] == "esp32-cyd"
+    hud_original = config["env:esp32-cyd-hud-original"]
+    assert hud_original["extends"] == "env:esp32-cyd"
+    assert hud_original["build_flags"].split() == [
+        "${env:esp32-cyd.build_flags}", "-D", "DOOMRPG_HUD_LARGER_FACE_EXPERIMENT=0"]
     base = config["env:esp32-cyd"]
     assert base["build_type"] == "release"
     assert base["upload_port"] == base["monitor_port"] == "/dev/ttyUSB0"
