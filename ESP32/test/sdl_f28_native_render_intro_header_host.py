@@ -91,6 +91,53 @@ def restore_rc10_dynamic(value: bytes) -> bytes:
 
 
 
+def restore_pre_fire_vis_p2_sprite(value: bytes) -> bytes:
+    """Reverse ONLY the bounded FIRE-VIS-P2 additions, then let P1 and the
+    immutable pre-SDL-F28 SHA oracle do their unchanged checks. New code must
+    have every expected anchor exactly once; never bless a changed baseline.
+    """
+    inverse = (
+        (b'    /* Only completed masked pixels, never admission/near-cull,\n'
+         b'             * arm the 4-phase fire clock. A fixed or CROSS sprite stays\n'
+         b'             * excluded. Keep the first witness stable per render order. */\n',
+         b''),
+    )
+    # Render-stat witness and independent scheduler have different source
+    # locations. Revert every complete production insertion exactly once.
+    edits = (
+        (b'static uint8_t ambientFireVisible, ambientFirePhase;\n'
+         b'static uint16_t ambientFireIndex;\n', b''),
+        (b'            (ambientFireVisible &&\n'
+         b'             EspNativeAmbientSprite_fireChanged(ambientFireIndex,\n'
+         b'                                                ambientFirePhase, now)) ||\n',
+         b''),
+        (b'    ambientFireVisible=0U; ambientFireIndex=0U; ambientFirePhase=0U;\n', b''),
+        (b'        if (!glow && EspNativeAmbientSprite_fireEligible(\n'
+         b'                         parent->info, entityType)) {\n'
+         b'            /* Only completed masked pixels, never admission/near-cull,\n'
+         b'             * arm the 4-phase fire clock. A fixed or CROSS sprite stays\n'
+         b'             * excluded. Keep the first witness stable per render order. */\n'
+         b'            if (stats->fireRasterCount == 0U) {\n'
+         b'                stats->fireSampleIndex = parent->index;\n'
+         b'                stats->fireSampleLogical = logical;\n'
+         b'                stats->fireSampleActual = frame->actual;\n'
+         b'                stats->fireSamplePhase = (uint8_t)animation;\n'
+         b'                stats->fireSampleMs = ambientSampleMs;\n'
+         b'            }\n'
+         b'            ++stats->fireRasterCount;\n'
+         b'        }\n'
+         b'        else if (EspNativeAmbientSprite_fast(entityType))\n',
+         b'        if (EspNativeAmbientSprite_fast(entityType))\n'),
+        (b'        ambientFireVisible=(uint8_t)(stats.fireRasterCount!=0U);\n'
+         b'        ambientFireIndex=stats.fireSampleIndex;\n'
+         b'        ambientFirePhase=stats.fireSamplePhase;\n', b''),
+    )
+    for added, previous in edits:
+        assert value.count(added) == 1, "FIRE-VIS-P2 historical inverse anchor drift"
+        value = value.replace(added, previous, 1)
+    return value
+
+
 def restore_pre_fire_vis_sprite(value: bytes) -> bytes:
     """Invert only FIRE-VIS-P1 renderer bytes before the frozen SDL-F28 blob.
 
@@ -135,7 +182,7 @@ def original_body_parity() -> None:
             historical = restore_rc10_dynamic(restore_rc11_dynamic(
                 restore_pre_audio_door_dynamic(restore_pre_rc19_dynamic(current))))
         elif filename == "esp_native_sprite_renderer.c":
-            historical = restore_pre_fire_vis_sprite(current)
+            historical = restore_pre_fire_vis_sprite(restore_pre_fire_vis_p2_sprite(current))
         else:
             historical = current
         if filename == "esp_render_geometry_primitives.c":
