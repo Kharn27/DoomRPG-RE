@@ -220,9 +220,8 @@ static EspNativeIndexedBmpStatus openFromSource(
     return ESP_NATIVE_INDEXED_BMP_OK;
 }
 
-/* Keep the existing PAK lease and bounded blit buffers. Only exact font names
- * can be redirected; malformed or wrong-sized SD atlases are rejected before
- * the owner receives metadata, and the unchanged PAK resource is tried. */
+/* Keep the PAK lease and bounded blit buffers. Only the two fonts and
+ * two exact-size story wallpapers may override; else PAK is authoritative. */
 EspNativeIndexedBmpStatus EspNativeIndexedBmp_open(
     const char* name,
     EspNativeIndexedBmp* outBmp,
@@ -240,11 +239,12 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_open(
             int correctGeometry;
             if (stats != NULL) saved = *stats;
             status = openFromSource(name, outBmp, stats, source, sdSize);
-            correctGeometry = source == ESP_NATIVE_FONT_SD_STANDARD
-                    ? outBmp->width == 144U && outBmp->height == 72U
-                    : outBmp->width == 208U && outBmp->height == 102U;
+            correctGeometry = status == ESP_NATIVE_INDEXED_BMP_OK &&
+                    EspNativeBmpSd_correctGeometry(source, outBmp->width,
+                                                   outBmp->height);
             if (status == ESP_NATIVE_INDEXED_BMP_OK && correctGeometry) {
-                printf("[FONTSD] ACTIVE name=%s source=SD indexed=%u palette=%u bytes=%lu\n",
+                printf("[%s] ACTIVE name=%s source=SD indexed=%u palette=%u bytes=%lu\n",
+                       EspNativeBmpSd_isFont(source) ? "FONTSD" : "WALLSD",
                        name, (unsigned)outBmp->bitsPerPixel,
                        (unsigned)outBmp->paletteCount,
                        (unsigned long)sdSize);
