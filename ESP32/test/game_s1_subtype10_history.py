@@ -21,7 +21,8 @@ REVERSE_EDITS = {
          "        if (monster->alive == 0U || monster->subtype >= 14U ||\n            monster->subtype == MOVE_SUBTYPE_SPECIAL_AI ||\n            !EspNativeGameplayMonsterActivation_isActive"),
     ),
     "esp_native_gameplay_monster_movement_publish.c": (
-        ("#define PUBLISH_MOVE_TILE_SIZE", "#define PUBLISH_MOVE_SPECIAL_AI 10U\n#define PUBLISH_MOVE_TILE_SIZE"),
+        ("#define PUBLISH_MOVE_WEAPON_COUNT 19U\n",
+         "#define PUBLISH_MOVE_WEAPON_COUNT 19U\n#define PUBLISH_MOVE_SPECIAL_AI 10U\n"),
         ("        outCalls == NULL || monster->subtype >= 14U) {",
          "        outCalls == NULL || monster->subtype >= 14U ||\n        monster->subtype == PUBLISH_MOVE_SPECIAL_AI) {"),
     ),
