@@ -21,10 +21,10 @@ typedef struct {
  * light yellow-orange. SD a.bmp glyphs remain grayscale and untouched.
  * The selected UAC label darkens the SAME ramp in the existing blink path.
  * Literal RGB565 from requested RGB888 values; no state or heap. */
-#define CLASSIC_STEEL_BLUE 0x7433U /* #74879A */
+#define CLASSIC_STEEL_BLUE 0x6c35U /* #6885AC: stronger blue */
 #define CLASSIC_METAL_GRAY 0xc638U /* #C7C7C2 */
-#define CLASSIC_PALE_AMBER 0xe62fU /* #E6C57A */
-#define CLASSIC_DIM_STEEL  0x532fU /* #526578, LOADING first band */
+#define CLASSIC_PALE_AMBER 0xedceU /* #EFBB70: warmer orange */
+#define CLASSIC_DIM_STEEL  0x42f0U /* #455D84, darker blue LOADING band */
 
 static const SkinPalette palettes[3] = {
     /*      base    steel   top     dark    groove  copper  ink     face  */
