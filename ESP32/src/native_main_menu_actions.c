@@ -24,6 +24,7 @@
 #include "esp_native_gameplay_player_state.h"
 #include "esp_entity_def_type_catalog.h"
 #include "platform_video_c_bridge.h"
+#include "esp_uac_menu_preview.h"
 
 #include "native_main_menu_actions.h"
 #include "native_main_menu_load_action.h"
@@ -998,6 +999,11 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
 void DoomRPG_esp32MainMenuHelpService(void) {
     uint32_t now, finalFNV = 0U;
     int phase, shift;
+    /* Already serviced each game-loop turn, including MENU_MAIN/OPTIONS.
+     * Repaint only the selected native-120 physical label when its phase
+     * changes; do not touch framebuffer, input state or gameplay scenes. */
+    if (EspUacMenuPreview_needsBlink())
+        (void)Esp32PlatformVideo_present();
     if (!helpSpaceActive) return;
     if (helpDoomRpg == NULL || helpDoomRpg != helpSpaceOwner ||
         EspNativeRootOwners_live()->menuSystem == NULL ||
