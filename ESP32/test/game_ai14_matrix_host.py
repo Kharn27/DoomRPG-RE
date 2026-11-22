@@ -21,11 +21,11 @@ def read(path: Path) -> str:
 def array(text: str, name: str, expected: int) -> list[int]:
     # Parse only simple static literal arrays; intentionally fail on an API or
     # representation change until the historical oracle has been re-reviewed.
-    matches = list(re.finditer(r"\\b" + re.escape(name) +
-                               r"\\s*\\[[^\\]]*\\]\\s*=\\s*\\{([^}]*)\\}",
+    matches = list(re.finditer(r"\b" + re.escape(name) +
+                               r"\s*\[[^\]]*\]\s*=\s*\{([^}]*)\}",
                                text, re.S))
     assert len(matches) == 1, f"{name}: missing or ambiguous literal array"
-    values = re.sub(r"/\\*.*?\\*/|//[^\\n]*", "", matches[0].group(1),
+    values = re.sub(r"/\*.*?\*/|//[^\n]*", "", matches[0].group(1),
                     flags=re.S)
     values = [v.strip() for v in values.split(",") if v.strip()]
     assert len(values) == expected, f"{name}: expected {expected}, found {len(values)}"
