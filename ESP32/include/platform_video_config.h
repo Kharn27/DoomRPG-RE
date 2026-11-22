@@ -122,6 +122,18 @@
 #if DOOMRPG_RES60_P11_PROFILE && (!DOOMRPG_RES60_P10_WALL_MATERIAL || !DOOMRPG_RES60_P9_WEDGE || !DOOMRPG_RES60_P1_DIAGNOSTIC)
 #error "RES60-P11 requires isolated P10/P9 192x144 diagnostic profile"
 #endif
+/* P12: keep ONLY a verified compact scalar inventory snapshot between
+ * cardinal preview rotations; original PAK entry CRC and rebuilt arena FNV
+ * must still match on every warm rotation. Opt-in RES60 only. */
+#ifndef DOOMRPG_RES60_P12_INVENTORY_CACHE
+#define DOOMRPG_RES60_P12_INVENTORY_CACHE 0
+#endif
+#if DOOMRPG_RES60_P12_INVENTORY_CACHE != 0 && DOOMRPG_RES60_P12_INVENTORY_CACHE != 1
+#error "RES60-P12 inventory flag must be 0 or 1"
+#endif
+#if DOOMRPG_RES60_P12_INVENTORY_CACHE && (!DOOMRPG_RES60_P11_PROFILE || !DOOMRPG_RES60_P10_WALL_MATERIAL || !DOOMRPG_RES60_P1_DIAGNOSTIC)
+#error "RES60-P12 requires isolated P11/P10 192x144 preview"
+#endif
 #if DOOMRPG_RES60_P1_DIAGNOSTIC
 #define DOOMRPG_VIDEO_BUFFER_WIDTH 192
 #define DOOMRPG_VIDEO_BUFFER_HEIGHT 144
