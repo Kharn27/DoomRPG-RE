@@ -19,7 +19,9 @@ assert "gainDiv,&stats)" in music
 assert "gainDiv=%u track=%s" in music
 assert '(activeMenuTrack ? "MENU" :' in music
 assert 'activeGameplayTrack==ESP_AUDIO_LOADING_TRACK_M_DEAD' in music
-assert '? "JUNCTION" : "ENTRANCE"' in music
+assert '? "JUNCTION" :' in music
+assert 'activeGameplayTrack==ESP_AUDIO_LOADING_TRACK_M_E1M3' in music
+assert '? "SECTOR1" : "ENTRANCE"' in music
 assert 'activeIntroTrack ? "INTRO"' in music
 assert "EspNativeAudioIntent_musicVolumePercent()" in music
 assert "kRingCapacity=16384U" in music
