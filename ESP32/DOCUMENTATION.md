@@ -2,6 +2,12 @@
 
 ---
 
+## AUDIO-S1-P1 — Sector 1 natif : PASS matériel CYD borné (22 novembre 2026)
+
+[PR #428](https://github.com/Kharn27/DoomRPG-RE/pull/428) / [issue #427](https://github.com/Kharn27/DoomRPG-RE/issues/427) / [rapport](MILESTONE_AUDIO_S1_P1_SECTOR1_CYD_PASS.md). Le routage **map catalogue 2 / BSP loadMapId 3** lance `M_E1M3.wav` depuis la microSD, via un seul lecteur SD / ring 16 KiB / DAC2 / mixeur FIFO existants. Le log matériel `platformio-device-monitor-261122-111340.log` (SHA256 `8532cc2abc4a2abe0f524bf24ff480b644065e56e98b1ad09d0875b067dcb7ae`) démontre `WAV_OK → PLAY → PRESTART ready=1 beforeWorldPresent=1`, **23 SFX joués**, porte 5063/5064, pickups 5060/5057, `0 underrun/recovery`, zéro overflow/gap/drop FIFO, `HEADROOM_OK`, EXIT propre et retour musique menu ; `shapeData/mediaTexels=NULL`. Code testé par contexte `319b340024e03c1d568350342569205a474174d2` (SHA binaire absent du Serial). Les **15 WAV** restent sur `agent/esp32-audio-s1-wav-assets` (commit `2eac3ad75c4abff91a523762c791ef6b3ba89c81`), **hors PR code-only**, audit format 15/15 SUCCESS. P2 SFX-only sans musique **reporté** ; pas de test artificiel de piste invalide demandé. Après PASS : changements docs-only, CI finale requise.
+
+---
+
 
 > **RES60-P14 — PASS matériel CYD borné, snapshot lignes 8 KiB (22 novembre 2026).** [PR #364 DRAFT](https://github.com/Kharn27/DoomRPG-RE/pull/364), [rapport](MILESTONE_RES60_P14_LINE_SNAPSHOT_PENDING_CYD.md). Code P14 `547441d5805a7d8a89db0f9fad6bcb64426fa360`, double CI [push SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/45008683469) / [PR SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/45008687278). Serial vrai CYD `platformio-device-monitor-261122-105309.log` (822 lignes / 116796B / SHA256 `8bd07655a730fdcf12546c65635345d13e2bbdaf1686965c475043e6a4383cd0`), 59 rendus, 55 rotations, 4 START / 4 MENU, 4 map MISS / 55 HIT, 59 snapshots 480 lignes/frame, quatre FNV P3 et P7 identiques P13, P8/P10 matériau nord exacts, PAK fermé, aucun WDT/panic. Raycast N64 P13 138,40ms→P14 61,62ms (−55,5%) ; prépa N64 175,85→99,24ms. Coût **8192B BSS**, `heap8=111508` et **`largest8=57332`** (contre P13 86004) stables ; réserve RAM sérieuse pour une future vraie session de jeu. Session MENU avant reset dans Serial, heap post-MENU non mesurée. **P14 limité à MAP_INTRO BSP preview 192×144, pas au gameplay/audio/sprites ni à la production 160×120.** PR encore DRAFT ; envisager P15 réduction contrôlée de l'empreinte P9/P14 et preuve RAM avant extension.
 

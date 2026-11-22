@@ -12,6 +12,7 @@ extern "C" {
 #define ESP_MAP_CATALOG_COUNT 13U
 
 #define ESP_MAP_ID_INTRO 1U
+#define ESP_MAP_ID_SECTOR_1 2U /* /level01.bsp, BSP loadMapId=3 */
 #define ESP_MAP_ID_JUNCTION 9U
 #define ESP_MAP_ID_END_GAME 13U
 
