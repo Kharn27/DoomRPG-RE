@@ -191,6 +191,11 @@ def original_body_parity() -> None:
             assert current.count(p1_hook) == 1, "SFX-P1 crate commit hook drift"
             current = current.replace(p1_import, b"", 1).replace(p1_hook, b"", 1)
         elif filename == "esp_native_gameplay_player_resources.c":
+            # AUDIO-PICKUP #419 is newer than frozen SDL-F27. Reverse its
+            # *exact* moved modal block and added owner import first; then
+            # the historical SFX-P1 inverse and original Git SHA stay strict.
+            from audio_pickup_modal_history import restore_pre_audio_pickup_modal_resources
+            current = restore_pre_audio_pickup_modal_resources(current)
             p1_import = b'#include "esp_native_audio_intent.h"\n'
             p1_hook = (
                 b"        /* SFX-P1: only after irreversible resource/player/world commit.\n"
