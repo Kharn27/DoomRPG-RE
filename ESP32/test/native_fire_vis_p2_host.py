@@ -57,7 +57,7 @@ assert "fireRasterCount" in SH and "fireSampleActual" in SH
 assert "if (!Esp32PlatformVideo_present())" in GAME
 assert GAME.index("if (!Esp32PlatformVideo_present())") < GAME.index(
     'printf("[FIREVIS-P2] PRESENT')
-assert "if (preview && !EspNativeResidentGameplay_isAutomapActive()" in GAME
+assert "if (ok && publish && preview && !EspNativeResidentGameplay_isAutomapActive()" in GAME
 assert "firePresentedLogCount < 48U" in GAME
 assert "stats->finalPresented = 1U;" in GAME
 assert "stats->spritePackReads" in GAME
