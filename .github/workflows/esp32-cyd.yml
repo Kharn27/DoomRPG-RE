@@ -685,6 +685,7 @@ jobs:
       - name: Test native CYD HELP animated starfield, guide and touch parity
         run: |
           python ESP32/test/native_main_help_host.py
+          python ESP32/test/native_help_fullscreen_nav_host.py
           python ESP32/test/native_bottom_help_breath_host.py
           python ESP32/test/native_help_weapon_preview_host.py
 
