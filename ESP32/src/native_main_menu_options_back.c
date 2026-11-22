@@ -404,6 +404,9 @@ static void optionsBackTap(int16_t screenX,
     /* Native UAC volume has four physical preset slots, no BACK.
      * Map only those taps to the preexisting semantic preset IDs 1..4. */
     if(soundOpen && uacInstant && item>=0)++item;
+    /* Brightness uses the same four physical preset slots as VOLUME.
+     * The immutable native brightness model still addresses choices 1..4. */
+    if(luminositeOpen && uacInstant && item>=0)++item;
     printf("[OPTIONBACK] TAP n=%u raw=%u,%u pressure=%u physical=%d,%d logical=%d,%d layer=%s item=%d armedItem=%d\n",
            (unsigned int)optionsTapCount, rawX, rawY, pressure,
            screenX, screenY, screenX / DOOMRPG_INTEGER_SCALE,
