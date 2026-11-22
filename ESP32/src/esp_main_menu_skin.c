@@ -23,7 +23,7 @@ typedef struct {
  * Literal RGB565 from requested RGB888 values; no state or heap. */
 #define CLASSIC_STEEL_BLUE 0x6c35U /* #6885AC: stronger blue */
 #define CLASSIC_METAL_GRAY 0xc638U /* #C7C7C2 */
-#define CLASSIC_PALE_AMBER 0xedceU /* #EFBB70: warmer orange */
+#define CLASSIC_PALE_AMBER 0xf4caU /* #F39A50: clearly warmer orange */
 #define CLASSIC_DIM_STEEL  0x42f0U /* #455D84, darker blue LOADING band */
 
 static const SkinPalette palettes[3] = {
