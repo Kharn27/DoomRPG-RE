@@ -165,7 +165,9 @@ static void DoomRPG_esp32MainMenuTouchOnTap(int16_t,int16_t,uint16_t,uint16_t,ui
 static void gatedTap(int16_t,int16_t,uint16_t,uint16_t,uint16_t) {}
 static void otherTap(int16_t,int16_t,uint16_t,uint16_t,uint16_t) {}
 static int uacResets = 0;
-static void EspUacMenuPreview_reset() { ++uacResets; }
+static bool optionsUacActive = false;
+static int EspUacMenuPreview_optionsActive() { return optionsUacActive ? 1 : 0; }
+static void EspUacMenuPreview_reset() { ++uacResets; optionsUacActive=false; }
 static int EspNativeGameplayTransitionHandoff_tryArmNullCallback() {
     ++armAttempts; return busy ? 1 : 0;
 }
@@ -177,9 +179,13 @@ int main() {
     assert(gTapCallback==gatedTap);
     assert(downstreamTapCallback==DoomRPG_esp32MainMenuTouchOnTap);
     assert(gateSelectedItem==0 && lastTappedItem==-1 && gateTapCount==0);
+    optionsUacActive=true;
+    const int beforeOptions=uacResets;
     PlatformInput_setTapCallback(otherTap);
     assert(gTapCallback==otherTap && downstreamTapCallback==otherTap && syncCalls==1);
+    assert(uacResets==beforeOptions && optionsUacActive);
     busy=true; PlatformInput_setTapCallback(nullptr);
+    assert(uacResets==beforeOptions+1 && !optionsUacActive);
     assert(gTapCallback==otherTap && downstreamTapCallback==nullptr && armAttempts==1);
     busy=false; PlatformInput_setTapCallback(nullptr);
     assert(gTapCallback==nullptr && armAttempts==2);

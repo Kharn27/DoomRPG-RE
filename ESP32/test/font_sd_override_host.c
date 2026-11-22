@@ -110,6 +110,44 @@ int main(void) {
     fixture(pakLarge, sizeof(pakLarge), 208U, 102U, 3U);
     fixture(sdLarge, sizeof(sdLarge), 208U, 102U, 16U);
 
+    /* UAC 120: the MENU_MAIN PAK is closed while SD soundtrack runs.
+     * Standalone loader must select SD larger_font without opening PAK,
+     * reject malformed SD, and never grant standalone access to other names. */
+    assert(!pakOpen);
+    assert(EspNativeIndexedBmp_openSdFontStandalone(
+               "larger_font.bmp", &bmp, &stats) ==
+           ESP_NATIVE_INDEXED_BMP_NOT_FOUND);
+    sdEnabled[1] = 1U;
+    prior = pakReads;
+    assert(EspNativeIndexedBmp_openSdFontStandalone(
+               "larger_font.bmp", &bmp, &stats) ==
+           ESP_NATIVE_INDEXED_BMP_OK &&
+           bmp.sdFontSource == ESP_NATIVE_FONT_SD_LARGER &&
+           bmp.width == 208U && bmp.height == 102U);
+    assert(pakReads == prior && sdReads == 2U);
+    uint16_t glyph[13U * 17U] = {0};
+    assert(EspNativeIndexedBmp_blit(&bmp, glyph, 13U, 17U,
+                                   0U, 34U, 13U, 17U,
+                                   0, 0, 1U, &stats) ==
+           ESP_NATIVE_INDEXED_BMP_OK);
+    assert(glyph[0] == 0xffffU);
+    assert(pakReads == prior);
+    assert(EspNativeIndexedBmp_openSdFontStandalone(
+               "a.bmp", &bmp, &stats) == ESP_NATIVE_INDEXED_BMP_INVALID);
+    pakOpen = 1U;
+    assert(EspNativeIndexedBmp_openSdFontStandalone(
+               "larger_font.bmp", &bmp, &stats) ==
+           ESP_NATIVE_INDEXED_BMP_INVALID);
+    pakOpen = 0U;
+    le32(sdLarge + 18, 207U);
+    assert(EspNativeIndexedBmp_openSdFontStandalone(
+               "larger_font.bmp", &bmp, &stats) ==
+           ESP_NATIVE_INDEXED_BMP_UNSUPPORTED);
+    assert(rejects == 1U && !sdEnabled[1]);
+    fixture(sdLarge, sizeof(sdLarge), 208U, 102U, 16U);
+    rejects = 0U;
+    sdReads = pakReads = 0U;
+
     /* Missing override: exact historical PAK range path, no new SD read. */
     pakOpen = 1U;
     assert(EspNativeIndexedBmp_open("a.bmp", &bmp, &stats) ==
