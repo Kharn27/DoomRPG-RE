@@ -1,8 +1,73 @@
-# PERF-PORT-P1 — réemploi exact des palettes déjà résidentes (CYD PENDING)
+# PERF-PORT-P1 — palettes natives réutilisées (PASS CYD fonctionnel borné ; A/B CPU pending)
 
 **Branche isolée :** `agent/esp32-perf-port-palettes-p1` depuis le vrai GitHub
 `main=1588b6983cc5724f7028ac0d2c18f96688aba990` (22 novembre 2026).
 Ne pas fusionner sans accord utilisateur. La PR RES60 #364 reste intacte.
+
+## Capture matérielle réelle — 22 novembre 2026 : PASS fonctionnel borné, performance NON prouvée
+
+**Source :** `platformio-device-monitor-261122-092240.log`, **3 535 lignes /
+409 445 octets**, SHA-256
+`d72b489f2582b1caacd29406511dfea9a7cb25d5f5a6531311a243f20cc0e77d`.
+Attribution au candidat `01b3eac5d8ad3daf85b98d27547451cbb809c2a0`
+par contexte du flash et tags `[PERFPORT]` ; **SHA firmware non imprimé dans
+le Serial**. ESP32-D0WD-V3 à 240 MHz, 4 Mio flash, PSRAM=0,
+framebuffer **160×120 RGB565, 38 400 B**, profil panneau
+`alternate-panel inversion=off`, environnement normal `esp32-cyd`
+annoncé pour ce test.
+
+**Ce qui est réellement validé :** deux sessions Entrance, la première
+depuis NEW GAME/prologue et la seconde depuis un LOAD save V11 ; 2
+reconstructions du catalogue `textures=33 sprites=45 storage=3120B
+fnv=29ffc14a`, MapRuntime `arenaFNV=c3882516` et source CRC
+`623f34e4`. **363/363** `[PERFPORT] PALETTE ok=1`, sans
+régression observable du résolveur. Chaque frame résout **33 textures**,
+`catalogHits=3 pakReads=30` : **9,09 % des requêtes de palettes**
+sautent le `EspAssetPack_readRange` logique, soit 1 089 appels
+logiques économisés dans cette capture. Ce nombre n'est **pas** un
+compteur d'accès flash physiques économisés, puisque le PAK possède
+déjà son cache résident.
+
+`resolveUs` parmi les 363 rendus : **médiane 1 209 µs**, minimum
+**624 µs**, maximum **815 519 µs** sur le **premier rendu froid**
+(avant cache/flash prêts) ; **67 rendus >=5 ms**, avec pics chauds
+typiques autour de 10–12 ms. La différence cold/warm est importante,
+mais **elle ne démontre absolument pas** un gain de P1 :
+aucun firmware `DOOMRPG_PERF_PORT_PALETTE_REUSE=0` équitablement
+instrumenté n'a encore été testé sur le même CYD/PAK. Le probe Serial
+ajoute également un coût à `worldMicros/totalMicros`.
+
+Exercices réellement couverts : rotations et déplacements interpolés,
+sprites et flammes animées, porte ouverte/fermée en plusieurs frames,
+dialogues avec continuation script, pickups, attaques de caisses,
+SFX et musique, page HUB, EXIT et retour au menu **deux fois**.
+Les 2 `[RESIDENTRESET]` vident intégralement la session
+(`before=1/1/1/1/1/1/1 after=0/0/0/0/0/0/0`).
+Deux `[SYSEXIT] MENU-READY` publient le **même**
+`frame=7a70d304`. Les invariants `shapeData=0x0` et
+`mediaTexels=0x0` restent observés aux jalons session.
+
+**Audio :** les 11 `ENTRANCEMUSIC STREAM` indiquent
+`underflows=0 recoveries=0 slowReadsOver20ms=0`; les six
+`ENTRANCEMUSIC FINAL` ont `underruns=0 recoveries=0`.
+Les six `AUDIOINTENT AUDIT` ne comptent aucun overflow,
+`consumerCursorGap` ni SFX audible perdu. Pas de panic, WDT,
+Guru Meditation ou Backtrace détecté.
+
+**RAM :** `[RAMBUDGET] RESERVE advisory=HEADROOM_OK` sur les
+deux sessions, marges heap8 respectivement **13 240B et 11 976B**,
+`largest8=31 732B` au gameplay musical ; à menu inactif après
+l'arrêt audio `heap8=115 256B largest8=86 004B` en fin de log,
+sans dérive visible. `cacheBytes=0` signifie **pas de cache
+permanent P1** ; la sonde ajoute seulement de petits compteurs
+transitoires dans `FirstFrameWork`.
+
+**Verdict :** **PASS matériel fonctionnel borné**, **gain CPU et parité
+inter-build PENDING**. 3/33 réemplois rendent le gain probable
+modeste ; ne pas qualifier ce jalon de « optimisation prouvée »
+avant comparaison ON/OFF. Ne pas merger cette PR draft.
+
+---
 
 ## Audit comparatif réel
 
@@ -80,4 +145,4 @@ angles/états du monde différents. Si `catalogHits=0` ou si
 annoncé : candidat à abandonner/revert. Aucune confirmation de parité
 visuelle, d'audio et de stabilité RAM n'existe encore pour ce code.
 
-**PENDING CYD.** Pas de merge automatique.
+**PASS fonctionnel CYD documenté ; A/B CPU et parité visuelle ON/OFF toujours PENDING.** Pas de merge automatique.
