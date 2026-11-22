@@ -143,11 +143,11 @@ sans éditer le source ni modifier les flags à la main :
 ```sh
 cd ESP32
 
-# A : optimisé (ON, normal 160x120, déjà validé fonctionnellement)
-pio run -e esp32-cyd -t upload -t monitor
+# A : optimisé (ON), inversion LCD ACTIVÉE (profil classique inverted)
+pio run -e esp-cyd-inverted -t upload -t monitor
 
 # Quitter le moniteur avec Ctrl+C avant le flash suivant.
-# B : témoin (OFF, héritage exact du normal + une seule macro)
+# B : témoin (OFF), MÊME inversion LCD, une seule macro P1 différente
 pio run -e esp32-cyd-perf-off -t upload -t monitor
 ```
 
@@ -157,20 +157,29 @@ et un parcours comparable (rotations dans les deux sens, mouvements,
 porte et combat) sur les deux variantes ; conserver deux logs séparés.
 Conserver strictement la même carte SD et le même PAK.
 
-**A :** `esp32-cyd` hérite du défaut source
-`DOOMRPG_PERF_PORT_PALETTE_REUSE=1` ; en Entrance on a observé
-`catalogHits=3 pakReads=30` pour `resolved=33`.
-**B :** `esp32-cyd-perf-off` hérite de la totalité des flags
-`esp32-cyd` (dont `PERF_PORT_PROFILE=1`, `RA2B_CAPTURE=1`),
-ajoute **uniquement** `-D DOOMRPG_PERF_PORT_PALETTE_REUSE=0`
-et le chemin local de dépendance TFT_eSPI nécessaire à son build
-standalone. Pour Entrance et 33 textures, on **attend**
+**A :** `esp-cyd-inverted` hérite du `esp32-cyd` optimisé
+(`DOOMRPG_PERF_PORT_PALETTE_REUSE=1` par défaut source)
+avec `DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION=1`.
+**B :** `esp32-cyd-perf-off` hérite **directement** de
+`esp-cyd-inverted` : mêmes flags, même inversion de dalle,
+`PERF_PORT_PROFILE=1`, `RA2B_CAPTURE=1` ; **seule la
+réutilisation des palettes change** via
+`-D DOOMRPG_PERF_PORT_PALETTE_REUSE=0`. Un chemin `-I`
+vers la dépendance TFT_eSPI du profil B permet sa compilation
+indépendante. Les deux firmwares doivent déclarer
+`alternate-panel inversion=on` au boot.
+
+**Attention aux preuves historiques :** le log déjà fourni pour P1
+(363/363 résolutions avec `catalogHits=3 pakReads=30` sur Entrance)
+était en **inversion OFF**. Il valide fonctionnellement la voie optimisée,
+mais **n'est pas un des deux nouveaux témoins inverted A/B**.
+Pour Entrance et 33 textures, avec profil B, on **attend**
 `catalogHits=0 pakReads=33` ; ce n'est pas une mesure CYD acquise.
 
 La CI compile les deux firmwares, lit le vrai
-`compile_commands.json` du profil OFF, vérifie que le renderer C
-est bien compilé avec `REUSE=0` et `PROFILE=1`, et publie les deux
-firmwares binaires. **Ne pas confondre cet oracle compile avec un test
+`compile_commands.json` du profil OFF, vérifie que les deux vrais renderers C compilent avec
+`INVERSION=1`, `PROFILE=1`, avec `REUSE=0` uniquement côté OFF,
+et publie les deux firmwares binaires. **Ne pas confondre cet oracle compile avec un test
 matériel.**
 
 Comparer prioritairement les distributions de `resolveUs` à phase
