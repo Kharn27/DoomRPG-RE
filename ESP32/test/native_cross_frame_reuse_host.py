@@ -81,6 +81,7 @@ shim = r'''
 #include <stdio.h>
 #include <string.h>
 #include "esp_native_sprite_visual_legacy.h"
+#include "esp_native_fire_visual.h"
 
 #define CROSS 0x04000000UL
 #define ORIENT_MASK 0x00780000UL
