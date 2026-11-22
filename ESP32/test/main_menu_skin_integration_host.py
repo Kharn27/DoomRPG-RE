@@ -121,9 +121,9 @@ assert "length * 6 - 1" in skin
 assert "row < 9" in skin and "bit < 5" in skin
 # Intentional CLASSIC tint update: preserve the shared nine-row glyph ramp,
 # but assert the current yellow/bronze/airain ROM values rather than old ink.
-assert "#define CLASSIC_PALE_YELLOW 0xff34U" in skin
-assert "#define CLASSIC_GOLD_BRONZE 0xf5aaU" in skin
-assert "#define CLASSIC_RED_COPPER  0xd225U" in skin
+assert "#define CLASSIC_PALE_YELLOW 0xfef4U" in skin
+assert "#define CLASSIC_GOLD_BRONZE 0xd4aaU" in skin
+assert "#define CLASSIC_RED_COPPER  0x9285U" in skin
 assert "return CLASSIC_PALE_YELLOW;" in skin
 assert "return CLASSIC_RED_COPPER;" in skin
 assert "0xffffU" in skin and "p->ink" in skin
