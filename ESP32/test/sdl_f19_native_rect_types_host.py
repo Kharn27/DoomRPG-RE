@@ -52,6 +52,8 @@ for name, (sha, count) in BASELINE.items():
     # reconstruct its exact pre-blue block before verifying the immutable
     # F19 whole-file blob and native rectangle alias equivalence.
     if name == "native_main_menu_actions.c":
+        from uac_blink_history import restore_pre_uac_blink_actions
+        text = restore_pre_uac_blink_actions(text)
         text = restore_pre_help_light_body_pages(text)
         from audio_menu_m1_history import restore_pre_menu_audio_actions
         text = restore_pre_menu_audio_actions(text)
