@@ -55,8 +55,8 @@ def scan():
     section = INI.split("[env:esp32-cyd]", 1)[1].split(
         "[env:esp-cyd-inverted]", 1)[0]
     flags = re.findall(r"^\s+-Wl,--wrap=([A-Za-z_0-9]+)", section, re.M)
-    require(flags == ["Esp32PlatformVideo_present"],
-            "only physical present must remain wrapped in normal firmware")
+    require(flags == [],
+            "no physical GNU wrapper may remain in normal firmware")
     require("-Wl,--wrap=" + PUBLIC not in INI,
             "retired cardinal wrap must never return")
     require("int " + PUBLIC + "(" in (ROOT / "include/esp_native_gameplay_frame.h").read_text(),

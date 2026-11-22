@@ -74,10 +74,10 @@ typedef struct EspNativeTransitionPaintScratch_s {
 
 static EspNativeTransitionPresentationState presentation;
 
-/* This module is itself the full-frame presentation owner. Bypass the global
- * gameplay compositor wrapper so loading/stats frames cannot acquire a stale
+/* This module is itself the full-frame presentation owner. Bypass the native public
+ * gameplay compositor facade so loading/stats frames cannot acquire a stale
  * top-bar feedback or viewport flash while they are on screen. */
-int __real_Esp32PlatformVideo_present(void);
+int Esp32PlatformVideo_presentBase(void);
 
 static uint32_t nowMs(void) {
     return (uint32_t)(esp_timer_get_time() / 1000LL);
@@ -500,7 +500,7 @@ static void presentOverall(uint8_t percent,
             return;
         }
 
-        if (!__real_Esp32PlatformVideo_present()) {
+        if (!Esp32PlatformVideo_presentBase()) {
             if (openedHere && EspAssetPack_isOpen()) EspAssetPack_close();
             printf("[TRANSITIONLOAD] FRAME-DEFER stage=%s overall=%u reason=present-failed\n",
                    stage != NULL ? stage : "LOAD",
@@ -621,7 +621,7 @@ int EspNativeTransitionPresentation_showStats(
     EspNativeGameplayHubTouchUi_drawCrispText(framebuffer(), "TAP TO CONTINUE",
         80, 108, COLOR_IVORY);
 
-    if (!__real_Esp32PlatformVideo_present()) return 0;
+    if (!Esp32PlatformVideo_presentBase()) return 0;
     /* The stats screen is presentation-only. PR #249 commits the SOURCE
      * completion bit exactly once, after the destination spawn/session are
      * configured successfully. Painting this modal before acknowledgement
@@ -686,7 +686,7 @@ int EspNativeTransitionPresentation_beginLoading(uint8_t targetMapId) {
     presentation.audioRoute = (uint8_t)EspAudioLoadingRoute_forMap(targetMapId);
     presentation.frames = 1U;
 
-    if (!__real_Esp32PlatformVideo_present()) goto done;
+    if (!Esp32PlatformVideo_presentBase()) goto done;
 
     printf("[TRANSITIONLOAD] BEGIN targetMap=%u background=%s mode=fixed font=mini-hub entering=\"ENTERING %s\" progress=0%% reads=%u bytes=%u frame=%08x\n",
            (unsigned int)targetMapId,

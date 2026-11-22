@@ -1,6 +1,7 @@
 #include <stdint.h>
 
 #include "esp_native_gameplay_present_gate.h"
+#include "platform_video_c_bridge.h"
 #include "esp_native_gameplay_level_up.h"
 #include "esp_native_gameplay_transition.h"
 #include "esp_native_transition_presentation.h"
@@ -9,7 +10,7 @@ static uint8_t gateArmed;
 static unsigned int suppressedCount;
 
 /* The action layer is a leaf behind this permanent gate.  Keeping the gate as
- * the sole linker wrapper preserves the already-validated one-shot suppression
+ * the native public presentation facade preserves the already-validated one-shot suppression
  * contract while allowing Action feedback to decorate a frame immediately
  * before the physical present. */
 extern int EspNativeGameplayActionEngine_present(void);
@@ -32,7 +33,7 @@ unsigned int EspNativeGameplayPresentGate_suppressedCount(void) {
     return suppressedCount;
 }
 
-int __wrap_Esp32PlatformVideo_present(void) {
+int Esp32PlatformVideo_present(void) {
     if (gateArmed != 0U) {
         gateArmed = 0U;
         ++suppressedCount;
@@ -43,7 +44,7 @@ int __wrap_Esp32PlatformVideo_present(void) {
      * Full-screen transition loading is a stronger presentation owner than
      * every gameplay compositor. Stop here, before Action/GIB/HIT decorators
      * can touch the logical framebuffer and before the physical present.
-     * TransitionPresentation itself uses __real_Esp32PlatformVideo_present()
+     * TransitionPresentation itself uses Esp32PlatformVideo_presentBase()
      * for its own progress frames, so the loading UI remains publishable.
      */
     if (EspNativeTransitionPresentation_isLoadingActive()) {
@@ -52,7 +53,7 @@ int __wrap_Esp32PlatformVideo_present(void) {
 
     /* A completed CHANGEMAP door may install the full-screen stats frame
      * while the source gameplay session is still active. That session may
-     * continue ticking feedback/ambient owners, but NONE of its wrapped
+     * continue ticking feedback/ambient owners, but NONE of its public
      * presents may publish source-world pixels over WAIT_STATS. Stats itself
      * uses the direct physical present; the tap handoff replaces this owner
      * with the existing loading presentation before the target is committed.
