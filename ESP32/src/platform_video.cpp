@@ -44,6 +44,34 @@ namespace {
 
 TFT_eSPI* platformDisplay = nullptr;
 uint16_t* framebuffer = nullptr;
+#if DOOMRPG_RES60_P16_HEAP_TOPOLOGY
+/* One extra byte of BSS (plus compiler alignment), no large arrays or
+ * malloc. The profiler is used only AFTER the P11 time capture. */
+static uint8_t res60P16WarmDumped=0U;
+static void res60P16_printHeapTopology(const char* phase) {
+    multi_heap_info_t before{};
+    heap_caps_get_info(&before,MALLOC_CAP_8BIT);
+    Serial.printf("[RES60P16] REGIONS phase=%s beforeFree=%u beforeLargest=%u beforeMin=%u freeBlocks=%u allocatedBlocks=%u totalBlocks=%u\n",
+                  phase,(unsigned)before.total_free_bytes,
+                  (unsigned)before.largest_free_block,
+                  (unsigned)before.minimum_free_bytes,
+                  (unsigned)before.free_blocks,
+                  (unsigned)before.allocated_blocks,
+                  (unsigned)before.total_blocks);
+    /* Per-capability internal heap-region addresses, NOT a new allocator.
+     * Published once after framebuffer allocation and once after first HIT. */
+    heap_caps_print_heap_info(MALLOC_CAP_8BIT);
+    multi_heap_info_t after{};
+    heap_caps_get_info(&after,MALLOC_CAP_8BIT);
+    Serial.printf("[RES60P16] OBSERVER phase=%s freeAfter=%u largestAfter=%u freeDelta=%ld largestDelta=%ld neutral=%u\n",
+                  phase,(unsigned)after.total_free_bytes,
+                  (unsigned)after.largest_free_block,
+                  (long)after.total_free_bytes-(long)before.total_free_bytes,
+                  (long)after.largest_free_block-(long)before.largest_free_block,
+                  (unsigned)(after.total_free_bytes==before.total_free_bytes &&
+                             after.largest_free_block==before.largest_free_block));
+}
+#endif
 
 /* Dedicated backlight LEDC channel; no RGB565 data or frame presentation is
  * ever modified by this owner. TFT_eSPI initializes active-high GPIO21. */
@@ -257,6 +285,13 @@ bool PlatformVideo_begin(TFT_eSPI* display) {
         return false;
     }
 
+#if DOOMRPG_RES60_P16_HEAP_TOPOLOGY
+    /* Capture BEFORE calloc, do not print here: lazy UART/log initialization
+     * could otherwise alter the very allocation topology under inspection. */
+    multi_heap_info_t p16BeforeFramebuffer{};
+    heap_caps_get_info(&p16BeforeFramebuffer,MALLOC_CAP_8BIT);
+    const bool p16WasAllocated=framebuffer!=nullptr;
+#endif
     if (framebuffer == nullptr) {
         framebuffer = static_cast<uint16_t*>(calloc(kPixelCount, sizeof(uint16_t)));
         if (framebuffer == nullptr) {
@@ -266,6 +301,22 @@ bool PlatformVideo_begin(TFT_eSPI* display) {
         }
     }
 
+#if DOOMRPG_RES60_P16_HEAP_TOPOLOGY
+    multi_heap_info_t p16AfterFramebuffer{};
+    heap_caps_get_info(&p16AfterFramebuffer,MALLOC_CAP_8BIT);
+    Serial.printf("[RES60P16] FRAMEBUFFER wasAllocated=%u bytes=%u addr=%p freeBefore=%u freeAfter=%u largestBefore=%u largestAfter=%u minBefore=%u minAfter=%u freeBlocksBefore=%u freeBlocksAfter=%u\n",
+                  (unsigned)p16WasAllocated,(unsigned)kFramebufferBytes,
+                  static_cast<void*>(framebuffer),
+                  (unsigned)p16BeforeFramebuffer.total_free_bytes,
+                  (unsigned)p16AfterFramebuffer.total_free_bytes,
+                  (unsigned)p16BeforeFramebuffer.largest_free_block,
+                  (unsigned)p16AfterFramebuffer.largest_free_block,
+                  (unsigned)p16BeforeFramebuffer.minimum_free_bytes,
+                  (unsigned)p16AfterFramebuffer.minimum_free_bytes,
+                  (unsigned)p16BeforeFramebuffer.free_blocks,
+                  (unsigned)p16AfterFramebuffer.free_blocks);
+    res60P16_printHeapTopology("framebuffer-ready");
+#endif
     applyCydInvertedGammaProfile();
 
     if (!backlightReady) {
@@ -845,6 +896,14 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
          (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
          (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
          (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT));
+#if DOOMRPG_RES60_P16_HEAP_TOPOLOGY
+    /* Only once, after successful LCD presentation + full profile logging.
+     * Any Serial perturbation cannot contaminate raysUs/preparedUs values. */
+    if (!res60P16WarmDumped && report.mapLeaseHit) {
+        res60P16WarmDumped=1U;
+        res60P16_printHeapTopology("first-map-hit");
+    }
+#endif
     return true;
 }
 #endif

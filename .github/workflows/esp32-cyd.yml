@@ -90,6 +90,9 @@ jobs:
       - name: RES60-P15 compact 12B snapshots real C11 P14 parity and BSS symbol audit
         run: python ESP32/test/res60_p15_compact_snapshot_host.py
 
+      - name: RES60-P16 bounded heap region instrumentation with P15 C binary parity
+        run: python ESP32/test/res60_p16_heap_topology_host.py
+
       - name: Test AUDIO-R1 bounded PCM, DAC GPIO26 and game handoff (host C)
         run: python ESP32/test/audio_r1_analog_pcm_host.py
 
