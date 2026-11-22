@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Compile the actual HELP-only 4x3 sprite illuminator, title-side cue and
-gray-to-blue painter, with deterministic bounded host-owned native PAK pixels.
+"""Compile the real HELP-only 4x3 PAK sprite illumination, sweeping neon
+frame and HUD touch cue into a host frame with strict pixel/clock guards.
 
-The game/HUB sprite painter remains untouched. This verifies that all 12
-weapon preview cells visibly illuminate (not just the 'owned' bits), and the
-larger touch cue breathes across every pixel without modifying its cached
-source, title, caption or surrounding starfield.
+The game/HUB sprite painter stays untouched. All 12 frames must light in
+sequence and close on four sides. The PAK miniature remains immutable, every
+nonfocused slot is dark, and captions/sky/footer are pixel-exact unchanged.
 """
 from pathlib import Path
 import subprocess
@@ -32,6 +31,8 @@ functions = "\n\n".join(extract(s) for s in (
     "static uint16_t helpTintBottomHudWeaponBlue(",
     "static uint16_t helpWeaponPreviewLitPixel(",
     "static void helpIlluminateWeaponGridMini(void) {",
+    "static uint8_t helpWeaponSweepSlot(",
+    "static void helpDrawWeaponGridMini(",
     "static void helpDrawWeaponButtonCue(",
 ))
 assert "demo.weapons = 0x0fffU;" in source
@@ -39,6 +40,10 @@ assert "helpIlluminateWeaponGridMini();" in source
 assert "EspNativeGameplayHubWeaponGrid_paint(framebuffer, &demo, 2U)" in source
 assert "scroll == MAIN_HELP_WEAPON_PAGE_SCROLL;" in source
 assert "helpHudBreathStep = step;" in functions
+assert "helpWeaponSweepEpoch = DoomRPG_GetUpTimeMS();" in source
+assert "helpWeaponSweepSlot(" in source
+assert "static uint16_t helpWeaponMini[" in source
+assert "MAIN_HELP_WEAPON_SWEEP_MS 320U" in source
 assert "const int dstX = 108, dstY = 12, dstW = 46, dstH = 15;" in functions
 
 preamble = r"""
@@ -50,12 +55,17 @@ preamble = r"""
 #define DOOMRPG_LOGICAL_HEIGHT 120
 #define MAIN_HELP_WEAPON_MINI_W 144
 #define MAIN_HELP_WEAPON_MINI_H 60
+#define MAIN_HELP_WEAPON_MINI_X 8
+#define MAIN_HELP_WEAPON_MINI_Y 39
+#define MAIN_HELP_WEAPON_SWEEP_MS 320U
+#define ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_SLOT_COUNT 12U
 #define MAIN_HELP_HUD_BAR_WIDTH 128
 #define MAIN_HELP_HUD_BAR_HEIGHT 16
 #define ESP_NATIVE_HUD_WEAPON_LEFT 100
 #define ESP_NATIVE_HUD_WEAPON_RIGHT 159
 static uint16_t helpWeaponMini[MAIN_HELP_WEAPON_MINI_W *
                                MAIN_HELP_WEAPON_MINI_H];
+static uint8_t helpWeaponMiniReady = 1U;
 static uint16_t helpBottomHudMini[MAIN_HELP_HUD_BAR_WIDTH *
                                   MAIN_HELP_HUD_BAR_HEIGHT];
 static uint8_t helpBottomHudReady = 1U;
@@ -119,6 +129,53 @@ static void previewGridTest(void) {
     assert(count == 12);
 }
 
+
+static void sweepTest(void) {
+    /* Source miniature was already illuminated by previewGridTest(). */
+    static uint16_t immutable[144 * 60];
+    const uint16_t sky = 0x2345U;
+    uint32_t t;
+    int slot, x, y;
+    memcpy(immutable, helpWeaponMini, sizeof(immutable));
+    for (slot = 0; slot < 12; ++slot) {
+        /* 319ms hold, then exactly one next slot; slot 11 wraps to 0. */
+        t = (uint32_t)slot * MAIN_HELP_WEAPON_SWEEP_MS;
+        assert(helpWeaponSweepSlot(t) == (uint8_t)slot);
+        assert(helpWeaponSweepSlot(t + MAIN_HELP_WEAPON_SWEEP_MS - 1U)
+               == (uint8_t)slot);
+        for (y = 0; y < 120; ++y)
+            for (x = 0; x < 160; ++x)
+                frame[y * 160 + x] = sky;
+        helpDrawWeaponGridMini(frame, (uint8_t)slot);
+        for (y = 0; y < 120; ++y) {
+            for (x = 0; x < 160; ++x) {
+                uint16_t expected = sky;
+                if (x >= 8 && x <= 151 && y >= 39 && y <= 98) {
+                    const int dx = x - 8;
+                    const int dy = y - 39;
+                    const int cx = dx % 36, cy = dy % 20;
+                    const int cell = dy / 20 * 4 + dx / 36;
+                    const int frameEdge = (cx <= 1 || cx >= 34 ||
+                                           cy <= 1 || cy >= 18);
+                    expected = frameEdge
+                        ? (uint16_t)(cell == slot ? 0x07e0U : 0x4208U)
+                        : immutable[dy * 144 + dx];
+                }
+                assert(frame[y * 160 + x] == expected);
+            }
+        }
+        assert(memcmp(immutable, helpWeaponMini, sizeof(immutable)) == 0);
+    }
+    assert(helpWeaponSweepSlot(12U * MAIN_HELP_WEAPON_SWEEP_MS) == 0U);
+    assert(helpWeaponSweepSlot(13U * MAIN_HELP_WEAPON_SWEEP_MS) == 1U);
+    /* Invalid slot must not touch a pixel (fail closed). */
+    for (y = 0; y < 120; ++y)
+        for (x = 0; x < 160; ++x) frame[y * 160 + x] = sky;
+    helpDrawWeaponGridMini(frame, 12U);
+    for (y = 0; y < 120; ++y)
+        for (x = 0; x < 160; ++x) assert(frame[y * 160 + x] == sky);
+}
+
 static void cueTest(void) {
     int x, y, phase, changed;
     const uint16_t untouched = 0x39e7U;
@@ -166,8 +223,9 @@ static void cueTest(void) {
 
 int main(void) {
     previewGridTest();
+    sweepTest();
     cueTest();
-    puts("PASS HELP 12/12 bright PAK weapon preview, 46x15 full gray-blue cue, no overdraw/cache mutation");
+    puts("PASS HELP 12/12 PAK weapon grid, 320ms wrap sweep, full green borders, 46x15 HUD cue, no overdraw/cache mutation");
     return 0;
 }
 """
