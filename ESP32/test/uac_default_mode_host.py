@@ -81,6 +81,8 @@ assert 'buttonBatch.bytes=genericCache.pixels;' in preview
 assert 'const bool patch=previous>=0&&previous<pageCount(optionsPage);' in preview
 assert 'const int regions=patch?(previous==selected?1:2):1;' in preview
 assert 'const int previous=(current==paintedMode && paintedPage==page &&' in preview
+assert 'if(selected<1||selected>4)return;' in preview
+assert 'selected-=1;mask=0x0fU;' in preview
 assert 'paintedTheme==theme)?' in preview
 assert 'paintedTheme=theme;' in preview
 assert 'paintedTheme==theme && paintedDark==darkWanted)return true;' in preview
@@ -89,9 +91,12 @@ assert 'if(!blinkOnly)Serial.printf(' in preview
 assert 'EspUacMenuPreview_needsBlink()' in (root/'ESP32/src/native_main_menu_actions.c').read_text()
 assert 'EspUacMenuPreview_needsBlink' not in (root/'ESP32/src/main.cpp').read_text()
 assert 'kOptionsVolume[]={"25%","50%","75%","100%"}' in preview
-assert 'page==ESP_UAC_OPTIONS_VOLUME)return 4;' in preview
+assert 'page==ESP_UAC_OPTIONS_VOLUME || page==ESP_UAC_OPTIONS_BRIGHTNESS)return 4;' in preview
+assert 'if(page==ESP_UAC_OPTIONS_BRIGHTNESS)return 5;' not in preview
 assert 'selected-=1;mask=0x0fU;' in preview
 assert 'if(soundOpen && uacInstant && item>=0)++item;' in options
+assert 'if(luminositeOpen && uacInstant && item>=0)++item;' in options
+assert 'if(page==ESP_UAC_OPTIONS_VOLUME || page==ESP_UAC_OPTIONS_BRIGHTNESS){' in preview
 # Existing MAIN selection/confirmation gate is retained across all UAC modes.
 assert 'if (EspUacMenuPreview_mode() == 1)' not in touch
 assert '[UAC] INSTANT action=' not in touch
@@ -99,6 +104,7 @@ assert 'if (lastTappedItem == hit) {' in touch
 assert 'DoomRPG_esp32MainMenuTouchArmSelected(hit)' in touch
 assert 'executeConfirmedAction(hit);' in touch
 # ONLY brightness/volume percentage buttons have a one-tap UAC shortcut.
+# Both physical pages have four 110x40 cards and map to semantic 1..4.
 assert options.count('if (armedItem != item && !uacInstant) {')==2
 assert options.count('if (armedItem != item) {')==4
 for lower,upper in [
@@ -181,7 +187,8 @@ assert 'EspUacMenuPreview_optionsHit(screenX,screenY)' in options
 assert 'EspUacMenuPreview_enterOptions();' in video
 assert 'paintedPage==page' in preview and 'optionsEnabledMask==paintedEnabledMask' not in preview
 assert 'kOptionsVideo[]={"BACK","LUMINOSITE","ORIENTATION","THEME"}' in preview
-assert 'kOptionsBrightness[]={"BACK","25%","50%","75%","100%"}' in preview
+assert 'kOptionsBrightness[]={"25%","50%","75%","100%"}' in preview
+assert 'kOptionsBrightness[]={"BACK","25%","50%","75%","100%"}' not in preview
 for name in ('ROOT','VIDEO','BRIGHTNESS','ORIENTATION','THEME','SOUND_ON','SOUND_OFF','VOLUME'):
     assert 'ESP_UAC_OPTIONS_'+name in header
 for label in ("LUMINOSITE","ORIENTATION","PHOSPHORE"):
