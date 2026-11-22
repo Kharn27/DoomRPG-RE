@@ -30,6 +30,16 @@ assert 'constexpr int kGlyphW=9,kGlyphH=12;' in preview
 assert 'bmp.width!=144U || bmp.height!=72U' in preview
 assert 'EspNativeIndexedBmp_openSdFontStandalone(' in preview
 assert '"a.bmp",&bmp,&stats);' in preview
+decoder=(root/"ESP32/src/esp_native_indexed_bmp.c").read_text()
+standalone=section(decoder,'EspNativeIndexedBmpStatus EspNativeIndexedBmp_openSdFontStandalone(',
+                   'EspNativeIndexedBmpStatus EspNativeIndexedBmp_blit(')
+assert 'ESP_NATIVE_FONT_SD_STANDARD' in standalone
+assert 'expectedWidth = 144U;' in standalone and 'expectedHeight = 72U;' in standalone
+assert 'ESP_NATIVE_FONT_SD_LARGER' in standalone
+assert 'expectedWidth = 208U;' in standalone and 'expectedHeight = 102U;' in standalone
+assert 'const uint16_t c=ink<bmp.paletteCount?' in preview
+assert 'sourceIndex==0U || sourceIndex>=16U' in preview
+assert 'sourceIndex==2U' not in preview
 assert 'EspNativeIndexedBmp_open("a.bmp",&bmp,&stats);' in preview
 assert 'name=a.bmp backing=%s' in preview
 assert 'name=larger_font.bmp backing=%s' not in preview
