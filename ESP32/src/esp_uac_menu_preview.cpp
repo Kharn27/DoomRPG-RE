@@ -240,11 +240,14 @@ static bool prepareMenuFont(){
     EspNativeIndexedBmpStatus st=EspNativeIndexedBmp_openSdFontStandalone(
         "a.bmp",&bmp,&stats);
 
-    /* Cache a.bmp indexed glyphs (not RGB texels). Preserve magenta
-     * transparency, black outlines and source grayscale shades. */
+    /* Cache a.bmp indexed glyphs (not RGB texels). Reserve ink 0 for
+     * magenta transparency and preserve ALL 15 shades, including black #2. */
     auto decode=[&]()->bool {
         if(st!=ESP_NATIVE_INDEXED_BMP_OK ||
-           bmp.width!=144U || bmp.height!=72U)return false;
+           bmp.width!=144U || bmp.height!=72U ||
+           bmp.bitsPerPixel!=4U || bmp.paletteCount<2U ||
+           bmp.paletteCount>16U || bmp.paletteRgb565[0]!=0xf81fU)
+            return false;
         for(size_t i=0;i<sizeof(kFontAlphabet)-1;++i){
             const unsigned ch=(unsigned)kFontAlphabet[i]-33U;
             uint16_t pixels[kGlyphW*kGlyphH];
@@ -263,9 +266,11 @@ static bool prepareMenuFont(){
                         for(uint16_t j=0U;j<bmp.paletteCount&&j<16U;++j){
                             if(p==bmp.paletteRgb565[j]){sourceIndex=j;break;}
                         }
-                        if(sourceIndex>=16U || sourceIndex==2U)
-                            return false; /* unexpected/ambiguous palette */
-                        ink=(uint8_t)(sourceIndex<2U?sourceIndex+1U:sourceIndex);
+                        /* Palette #0 is the magenta colorkey. Keep 1..15
+                         * unchanged: real a.bmp uses index 2 for BLACK. */
+                        if(sourceIndex==0U || sourceIndex>=16U)
+                            return false;
+                        ink=(uint8_t)sourceIndex;
                     }
                     uint8_t& pair=fontInk->glyph[i][y][x/2];
                     if((x&1)==0)pair=(uint8_t)((pair&0x0fU)|(ink<<4));
@@ -299,8 +304,8 @@ static bool prepareMenuFont(){
         fontIsNeutral=bmp.paletteCount==16U;
         fontSourcePalette[0]=0U; /* ink 0 is always transparent */
         for(unsigned ink=1U;ink<16U;++ink){
-            const unsigned sourceIndex=ink<=2U?ink-1U:ink;
-            const uint16_t c=bmp.paletteRgb565[sourceIndex];
+            const uint16_t c=ink<bmp.paletteCount?
+                bmp.paletteRgb565[ink]:0U;
             fontSourcePalette[ink]=c;
             if(!EspUacFontTheme_isGrayRgb565(c))fontIsNeutral=false;
         }
