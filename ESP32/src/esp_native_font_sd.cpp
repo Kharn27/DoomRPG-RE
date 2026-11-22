@@ -9,13 +9,14 @@
 namespace {
 
 constexpr uint32_t kMinBmpBytes = 54U;
-constexpr uint32_t kMaxFontBytes = 32U * 1024U;
-/* 32 KiB is an input-size ceiling, NOT an allocation. It covers 1/4/8-bpp
- * 144x72 and 208x102 BMPs; 24-bpp art cannot be decoded by our indexed
- * importer and deliberately falls back to the original PAK. */
-constexpr const char* kPaths[2] = {
+constexpr uint32_t kMaxBmpBytes = 32U * 1024U;
+/* File-size ceiling only (not RAM): the original indexed fonts and two
+ * 8-bpp wallpapers all fit. RGB24 and malformed sizes must fall back. */
+constexpr const char* kPaths[4] = {
     "/doomrpg/img/a.bmp",
-    "/doomrpg/img/larger_font.bmp"
+    "/doomrpg/img/larger_font.bmp",
+    "/doomrpg/img/c.bmp",
+    "/doomrpg/img/e.bmp"
 };
 
 struct FontSlot {
@@ -24,18 +25,20 @@ struct FontSlot {
     uint8_t state = 0U; /* 0=unprobed, 1=SD ready, 2=PAK fallback */
 };
 
-FontSlot fonts[2];
+FontSlot fonts[4];
 
 uint8_t sourceForName(const char* name) {
     if (name == nullptr) return 0U;
     if (strcmp(name, "a.bmp") == 0) return ESP_NATIVE_FONT_SD_STANDARD;
     if (strcmp(name, "larger_font.bmp") == 0) return ESP_NATIVE_FONT_SD_LARGER;
+    if (strcmp(name, "c.bmp") == 0) return ESP_NATIVE_WALLPAPER_SD_STARS;
+    if (strcmp(name, "e.bmp") == 0) return ESP_NATIVE_WALLPAPER_SD_MARS;
     return 0U;
 }
 
 FontSlot* slotFor(uint8_t source) {
     if (source < ESP_NATIVE_FONT_SD_STANDARD ||
-        source > ESP_NATIVE_FONT_SD_LARGER) return nullptr;
+        source > ESP_NATIVE_WALLPAPER_SD_MARS) return nullptr;
     return &fonts[source - 1U];
 }
 
@@ -68,15 +71,15 @@ extern "C" uint8_t EspNativeFontSd_probe(const char* name, uint32_t* size) {
         slot->file = SD.open(kPaths[source - 1U], FILE_READ);
         if (slot->file && !slot->file.isDirectory()) {
             const size_t fileSize = slot->file.size();
-            if (fileSize >= kMinBmpBytes && fileSize <= kMaxFontBytes) {
+            if (fileSize >= kMinBmpBytes && fileSize <= kMaxBmpBytes) {
                 slot->size = static_cast<uint32_t>(fileSize);
                 slot->state = 1U;
             }
         }
         if (slot->state != 1U) {
             if (slot->file) slot->file.close();
-            Serial.printf("[FONTSD] FALLBACK name=%s reason=missing-or-size backing=PAK\n",
-                          name);
+            Serial.printf("[%s] FALLBACK name=%s reason=missing-or-size backing=PAK\n",
+                          EspNativeBmpSd_isFont(source) ? "FONTSD" : "WALLSD", name);
         }
     }
     if (slot->state != 1U) return 0U;
@@ -111,6 +114,6 @@ extern "C" void EspNativeFontSd_reject(uint8_t source) {
     if (slot->file) slot->file.close();
     slot->size = 0U;
     slot->state = 2U;
-    Serial.printf("[FONTSD] FALLBACK name=%s reason=invalid-or-io backing=PAK\n",
-                  kPaths[source - 1U]);
+    Serial.printf("[%s] FALLBACK name=%s reason=invalid-or-io backing=PAK\n",
+                  EspNativeBmpSd_isFont(source) ? "FONTSD" : "WALLSD", kPaths[source - 1U]);
 }
