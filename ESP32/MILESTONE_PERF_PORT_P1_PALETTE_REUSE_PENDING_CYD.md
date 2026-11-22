@@ -128,7 +128,7 @@ header invalide. Les lectures attendues passent de 4 à 3/2 uniquement
 lorsque la correspondance est réelle. Aucun résultat host ne prouve
 une amélioration CPU sur le matériel.
 
-## Protocole CYD : strictement en attente
+## Protocole CYD : ON validé fonctionnellement, A/B OFF encore en attente
 
 Firmware normal : `cd ESP32 && pio run -e esp32-cyd -t upload -t monitor`.
 Conserver Serial complet sur ≥10 images, rotations dans les deux sens,
@@ -137,12 +137,50 @@ Observer `[PERFPORT] PALETTE` et `[TURNFRAME]`, les FNV monde/frame à pose
 égale, les compteurs de mur, la RAM libre / largest8 / minHeap8, la
 musique et les audits AudioIntent, et `shapeData/mediaTexels=NULL`.
 
-Pour l'A/B, tester **le même code, même firmware normal et même PAK**
-avec une seconde compilation `DOOMRPG_PERF_PORT_PALETTE_REUSE=0`.
-Ne comparer ni une image à froid et une rotation à chaud, ni des
-angles/états du monde différents. Si `catalogHits=0` ou si
-`resolveUs` ne s'améliore pas de façon répétable, aucun gain ne sera
-annoncé : candidat à abandonner/revert. Aucune confirmation de parité
-visuelle, d'audio et de stabilité RAM n'existe encore pour ce code.
+Pour l'A/B, **deux vrais environnements PlatformIO indépendants**,
+sans éditer le source ni modifier les flags à la main :
+
+```sh
+cd ESP32
+
+# A : optimisé (ON, normal 160x120, déjà validé fonctionnellement)
+pio run -e esp32-cyd -t upload -t monitor
+
+# Quitter le moniteur avec Ctrl+C avant le flash suivant.
+# B : témoin (OFF, héritage exact du normal + une seule macro)
+pio run -e esp32-cyd-perf-off -t upload -t monitor
+```
+
+**Attention :** chaque commande téléverse un nouveau firmware et écrase
+le précédent. Pour un test ciblé Sector 1, utiliser **le même slot V11**
+et un parcours comparable (rotations dans les deux sens, mouvements,
+porte et combat) sur les deux variantes ; conserver deux logs séparés.
+Conserver strictement la même carte SD et le même PAK.
+
+**A :** `esp32-cyd` hérite du défaut source
+`DOOMRPG_PERF_PORT_PALETTE_REUSE=1` ; en Entrance on a observé
+`catalogHits=3 pakReads=30` pour `resolved=33`.
+**B :** `esp32-cyd-perf-off` hérite de la totalité des flags
+`esp32-cyd` (dont `PERF_PORT_PROFILE=1`, `RA2B_CAPTURE=1`),
+ajoute **uniquement** `-D DOOMRPG_PERF_PORT_PALETTE_REUSE=0`
+et le chemin local de dépendance TFT_eSPI nécessaire à son build
+standalone. Pour Entrance et 33 textures, on **attend**
+`catalogHits=0 pakReads=33` ; ce n'est pas une mesure CYD acquise.
+
+La CI compile les deux firmwares, lit le vrai
+`compile_commands.json` du profil OFF, vérifie que le renderer C
+est bien compilé avec `REUSE=0` et `PROFILE=1`, et publie les deux
+firmwares binaires. **Ne pas confondre cet oracle compile avec un test
+matériel.**
+
+Comparer prioritairement les distributions de `resolveUs` à phase
+et carte comparables, en isolant les rendus froids/chauds. Confronter
+`worldUs` avec prudence à cause du Serial. Comparer
+`viewport`/`world` FNV uniquement à mêmes position, angle,
+animation et mutations de la carte (les animations sont temporelles).
+Contrôler `heap8/largest8`, `HEADROOM_OK`, musique et audio.
+Si `resolveUs` ne s'améliore pas de façon répétable, aucun gain
+CPU ne sera annoncé : candidat à abandonner/revert. La parité
+inter-build et la stabilité matérielle du profil OFF restent en attente.
 
 **PASS fonctionnel CYD documenté ; A/B CPU et parité visuelle ON/OFF toujours PENDING.** Pas de merge automatique.
