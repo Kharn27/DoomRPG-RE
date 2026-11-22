@@ -44,7 +44,7 @@ typedef struct EspNativeIndexedBmp_s {
     uint16_t paletteCount;
     uint8_t bitsPerPixel;
     uint8_t topDown;
-    uint8_t sdFontSource; /* 0 = PAK, 1/2 = optional SD font (no retained pixels). */
+    uint8_t sdFontSource; /* 0=PAK, 1/2=font SD, 3/4=wallpaper SD; ranges only. */
     uint8_t reserved;
     uint16_t paletteRgb565[ESP_NATIVE_INDEXED_BMP_MAX_PALETTE];
 } EspNativeIndexedBmp;
@@ -61,6 +61,12 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_open(
 EspNativeIndexedBmpStatus EspNativeIndexedBmp_openSdFontStandalone(
     const char* name,
     EspNativeIndexedBmp* outBmp,
+    EspNativeIndexedBmpStats* stats);
+
+/* Loading SD-first C wallpaper: caller has no open PAK lease.
+ * The SD handle is suspended after the row blit, before PAK use. */
+EspNativeIndexedBmpStatus EspNativeIndexedBmp_openSdWallpaperStandalone(
+    const char* name, EspNativeIndexedBmp* outBmp,
     EspNativeIndexedBmpStats* stats);
 
 /* Draw one source rectangle. Coordinates are clipped only at the framebuffer. */

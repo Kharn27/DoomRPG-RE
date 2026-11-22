@@ -7,14 +7,32 @@
 extern "C" {
 #endif
 
-/* Only these two immutable font identities may override the native PAK.
- * SD paths are /doomrpg/img/a.bmp and /doomrpg/img/larger_font.bmp.
- * A source ID is not an open File pointer: it stays small and safe in C
- * metadata, and the sole C++ SD owner keeps the backing handle. */
+/* Two original fonts and two exact-size story wallpapers can override PAK.
+ * All optional indexed BMPs live under /doomrpg/img/ on SD.
+ * Source IDs remain small, with the sole C++ SD owner of their handles. */
 #define ESP_NATIVE_FONT_SD_STANDARD 1U
 #define ESP_NATIVE_FONT_SD_LARGER 2U
+#define ESP_NATIVE_WALLPAPER_SD_STARS 3U
+#define ESP_NATIVE_WALLPAPER_SD_MARS 4U
 
-/* Return 0 on missing/disabled SD override, or a font source ID. A successful
+/* The geometry is validated before any SD metadata becomes observable. */
+static inline int EspNativeBmpSd_correctGeometry(uint8_t source, int width,
+                                                  int height) {
+    switch (source) {
+    case ESP_NATIVE_FONT_SD_STANDARD: return width == 144 && height == 72;
+    case ESP_NATIVE_FONT_SD_LARGER: return width == 208 && height == 102;
+    case ESP_NATIVE_WALLPAPER_SD_STARS: return width == 192 && height == 128;
+    case ESP_NATIVE_WALLPAPER_SD_MARS: return width == 128 && height == 128;
+    default: return 0;
+    }
+}
+
+static inline int EspNativeBmpSd_isFont(uint8_t source) {
+    return source == ESP_NATIVE_FONT_SD_STANDARD ||
+           source == ESP_NATIVE_FONT_SD_LARGER;
+}
+
+/* Return 0 on missing/disabled SD override, or an indexed BMP source ID. A successful
  * probe owns an open read-only File until rejected or the device restarts.
  * No ZIP, whole-file buffer or map-wide allocation is involved. */
 uint8_t EspNativeFontSd_probe(const char* name, uint32_t* size);
@@ -24,13 +42,12 @@ uint8_t EspNativeFontSd_probe(const char* name, uint32_t* size);
 int EspNativeFontSd_read(uint8_t source, uint32_t offset,
                          void* destination, uint32_t bytes);
 
-/* Called by the indexed BMP decoders when a present file is malformed or
- * its dimensions differ from the original sprite atlas. */
+/* Called by the indexed BMP decoders for malformed files or wrong geometry. */
 void EspNativeFontSd_reject(uint8_t source);
 
-/* Close live font handles before any physical PAK/source-probe SD.open.
- * Missing/invalid decisions remain cached; good fonts can be reprobed after
- * the PAK returns to flash or fully closes. No retained image allocation. */
+/* Close all optional BMP handles before any physical SD PAK/source-probe.
+ * Reprobe good files after reopening; rejected files stay rejected until boot.
+ * No retained full-image allocation is made by this owner. */
 void EspNativeFontSd_suspend(void);
 
 #ifdef __cplusplus
