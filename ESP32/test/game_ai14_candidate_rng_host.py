@@ -62,6 +62,7 @@ prefix = r"""
 #define MOVE_TRACE_LEGACY_MASK 0xff87U
 #define PUBLISH_MOVE_WEAPON_COUNT 19U
 #define PUBLISH_MOVE_TILE_SIZE 64
+#define PUBLISH_MOVE_SPECIAL_AI 10U
 
 typedef struct EspNativeGameplayMonsterRecord_s {
     uint32_t param1, param2;
