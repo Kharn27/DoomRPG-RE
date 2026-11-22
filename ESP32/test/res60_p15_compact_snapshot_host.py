@@ -99,9 +99,13 @@ static void compare(const EspRes60PreviewCamera* cam, uint32_t n,
     assert(ok0==1 && x.readerCalls==(uint32_t)calls && x.rayTests>0U);
     plan(planA,visA);
     memcpy(rawBefore,a,sizeof(a));
+    /* Always sample an actually visible winner, not an arbitrary source
+     * line which might be fully occluded: this tests sourceU/V/clipping. */
+    const uint16_t overlayTexture=visA[96U]?planA[96U]:lines[0].texture;
     EspRes60WallMaterialStats overlayA;
     assert(EspRes60WallMaterial_overlay(a+1,55296U,packed,2048U,
-                                       palette,lines[0].texture,&overlayA));
+                                       palette,overlayTexture,&overlayA));
+    assert(overlayA.pixels>0U);
     calls=0;
     int ok1=EspRes60Preview_render(b+1,55296U,cam,n,readLine,NULL,&y);
     assert(ok1==ok0 && y.readerCalls==(uint32_t)calls);
@@ -109,7 +113,7 @@ static void compare(const EspRes60PreviewCamera* cam, uint32_t n,
     assert(memcmp(rawBefore,b,sizeof(a))==0); /* all raw pixels and canaries */
     EspRes60WallMaterialStats overlayB;
     assert(EspRes60WallMaterial_overlay(b+1,55296U,packed,2048U,
-                                       palette,lines[0].texture,&overlayB));
+                                       palette,overlayTexture,&overlayB));
     assert(memcmp(a,b,sizeof(a))==0); /* includes P10 sourceU, V, clipping */
     assert(memcmp(&overlayA,&overlayB,sizeof(overlayA))==0);
     assert(memcmp(planA,planB,sizeof(planA))==0);
@@ -123,6 +127,10 @@ static void compare(const EspRes60PreviewCamera* cam, uint32_t n,
     assert(x.preflightLines==y.preflightLines);
     assert(x.frameFNV==y.frameFNV);
     assert(x.centerDepth==y.centerDepth && x.centerLineIndex==y.centerLineIndex);
+    if(n==512U) {
+        assert(x.centerLineIndex==0U && y.centerLineIndex==0U);
+        assert(y.wedgeCandidates==512U);
+    }
     assert(x.minDepth==y.minDepth && x.maxDepth==y.maxDepth);
     assert(x.fullHeightColumns==y.fullHeightColumns);
     assert(x.visibleColumns==y.visibleColumns && y.visibleColumns==192U);
