@@ -1,7 +1,8 @@
 """Strict inverse of UAC Options physical-only compositor for frozen SDL oracles.
 
-Exactly eleven intentional deltas to native_main_menu_options_back.c and
-two to options_action.c. Never weaken original historical Git blob SHA.
+The historical changes remain strictly inverted; the additional brightness
+physical-only 4-slot remap is stripped before verifying the original Git SHA.
+Never weaken the historical Git blob SHA.
 """
 
 
@@ -35,6 +36,11 @@ def restore_pre_uac_options_back(source: str) -> str:
     guard='if (armedItem != item && !uacInstant) {'
     assert source.count(guard)==2, 'UAC percentage-only instant guard drift'
     source=source.replace(guard,'if (armedItem != item) {')
+    source = _replace_one(source,
+        '    /* Brightness uses the same four physical preset slots as VOLUME.\n'
+        '     * The immutable native brightness model still addresses choices 1..4. */\n'
+        '    if(luminositeOpen && uacInstant && item>=0)++item;\n',
+        '')
     # Keep the historical test's original logging exact; production
     # distinguishes a native-UAC percentage tap from procedural two taps.
     source = _replace_one(source,
