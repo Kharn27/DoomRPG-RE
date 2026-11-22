@@ -258,27 +258,42 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_open(
     return openFromSource(name, outBmp, stats, 0U, 0U);
 }
 
-/* UI-only standalone SD font selection, needed while MENU_MAIN keeps the
- * native PAK closed to allow SD music to play. This never opens the PAK.
- * The ordinary EspNativeIndexedBmp_open() is still the PAK fallback path. */
+/* UI-only standalone SD font selection for BOTH a.bmp and larger_font.bmp
+ * while MENU_MAIN keeps the native PAK closed for SD music. No PAK open,
+ * retained full atlas or second reader; the ordinary open() is fallback. */
 EspNativeIndexedBmpStatus EspNativeIndexedBmp_openSdFontStandalone(
     const char* name,
     EspNativeIndexedBmp* outBmp,
     EspNativeIndexedBmpStats* stats) {
 #if defined(DOOMRPG_ESP32) && DOOMRPG_ESP32
     uint32_t sdSize = 0U;
+    uint8_t expectedSource;
     uint8_t source;
+    uint16_t expectedWidth;
+    uint16_t expectedHeight;
     EspNativeIndexedBmpStatus result;
     if (outBmp != NULL) memset(outBmp, 0, sizeof(*outBmp));
-    if (name == NULL || outBmp == NULL ||
-        strcmp(name, "larger_font.bmp") != 0 ||
-        EspAssetPack_isOpen()) return ESP_NATIVE_INDEXED_BMP_INVALID;
+    if (name == NULL || outBmp == NULL || EspAssetPack_isOpen())
+        return ESP_NATIVE_INDEXED_BMP_INVALID;
+    /* The menu uses a.bmp while keeping the PAK closed for SD music.
+     * Both exact native font names share this bounded standalone owner. */
+    if (strcmp(name, "a.bmp") == 0) {
+        expectedSource = ESP_NATIVE_FONT_SD_STANDARD;
+        expectedWidth = 144U;
+        expectedHeight = 72U;
+    } else if (strcmp(name, "larger_font.bmp") == 0) {
+        expectedSource = ESP_NATIVE_FONT_SD_LARGER;
+        expectedWidth = 208U;
+        expectedHeight = 102U;
+    } else {
+        return ESP_NATIVE_INDEXED_BMP_INVALID;
+    }
     source = EspNativeFontSd_probe(name, &sdSize);
-    if (source != ESP_NATIVE_FONT_SD_LARGER)
+    if (source != expectedSource)
         return ESP_NATIVE_INDEXED_BMP_NOT_FOUND;
     result = openFromSource(name, outBmp, stats, source, sdSize);
     if (result == ESP_NATIVE_INDEXED_BMP_OK &&
-        outBmp->width == 208U && outBmp->height == 102U) {
+        outBmp->width == expectedWidth && outBmp->height == expectedHeight) {
         printf("[FONTSD] ACTIVE name=%s source=SD indexed=%u palette=%u bytes=%lu\n",
                name, (unsigned)outBmp->bitsPerPixel,
                (unsigned)outBmp->paletteCount, (unsigned long)sdSize);
