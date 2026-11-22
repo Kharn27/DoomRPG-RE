@@ -128,24 +128,31 @@ assert "void DoomRPG_esp32MainMenuHelpService(void);" in header
 assert loop.index("Esp32IntroClock_service();") < loop.index("DoomRPG_esp32MainMenuHelpService();")
 assert "EspNativeIntroState_begin(" not in actions
 
-# Three plates map pixel-for-pixel to their touch rectangles, with
-# two inert spacer columns; no geometry beyond the single 160x120 frame.
+# Fullscreen navigation: no bottom plates, one X in the header and two
+# 80-pixel-wide touch halves. The X wins over previous on its own rectangle.
 assert macro("MAIN_HELP_VISIBLE_LINES") == 7
-assert macro("MAIN_HELP_LINE_HEIGHT") == 12
-assert macro("MAIN_HELP_FOOTER_TOP") == 100
-assert macro("MAIN_HELP_BUTTON_BOTTOM") == 119
-x_spans = [(macro("MAIN_HELP_BACK_LEFT"), macro("MAIN_HELP_BACK_RIGHT")),
-           (macro("MAIN_HELP_UP_LEFT"), macro("MAIN_HELP_UP_RIGHT")),
-           (macro("MAIN_HELP_DOWN_LEFT"), macro("MAIN_HELP_DOWN_RIGHT"))]
-assert x_spans == [(1, 51), (54, 104), (107, 158)]
-for y in range(120):
-    for x in range(160):
-        touches = [idx for idx, (left, right) in enumerate(x_spans)
-                   if left <= x <= right and 100 <= y <= 119]
-        assert len(touches) <= 1
-        if y < 100: assert not touches
-assert actions.count("!EspMainMenuSkin_paintPlate(") == 3
-assert actions.count("!EspMainMenuSkin_paintText(") == 3
+assert macro("MAIN_HELP_LINE_HEIGHT") == 14
+assert "MAIN_HELP_FOOTER_TOP" not in actions
+assert "MAIN_HELP_BACK_LEFT" not in actions
+assert "MAIN_HELP_BUTTON_BOTTOM" not in actions
+assert "EspMainMenuSkin_paintPlate(framebuffer" not in actions
+assert "EspMainMenuSkin_paintText(framebuffer" not in actions
+assert '#include "esp_native_help_nav.h"' in actions
+assert "EspNativeHelpNav_hit(logicalX, logicalY)" in actions
+assert "EspNativeHelpNav_scroll(" in actions
+assert "if (action == ESP_NATIVE_HELP_NAV_CLOSE)" in actions
+assert "DoomRPG_esp32MainMenuReturnToMain(" in actions
+assert "if (menuSystem->scrollIndex == beforeScroll) return;" in actions
+assert 'input=header-x+left-prev+right-next' in actions
+assert 'helpPaintPageChevron(framebuffer, 1, menuSystem->scrollIndex > 0)' in actions
+assert 'helpPaintPageChevron(framebuffer, 0, menuSystem->scrollIndex < maxScroll)' in actions
+assert '"HELP / CYD", 22, 0, 0' in actions
+assert '"X", 4, 1, 0' in actions
+assert 'DoomRPG_setFontColor(doomRpg, 0xffff2424U)' in actions
+assert 'helpPaintExitFrame' not in actions  # red X has no border
+assert 'static void helpPaintPageChevron(' in actions
+assert 'static void helpPaintPageChevron(' in actions
+
 # All HELP copy consumes the live industrial font theme.
 # The HEADER alone uses the exact center (second) stop; page titles and
 # body text keep their existing separate three-stop behavior.
@@ -159,17 +166,17 @@ assert 'helpColor888(helpBodyMiddleTone())' in help_header
 assert help_header.index('helpColor888(helpBodyMiddleTone())') < help_header.index('"HELP / CYD"')
 assert help_header.index('"HELP / CYD"') < help_header.index('EspNativeCanvas_drawText(canvas, page,')
 assert 'snprintf(page, sizeof(page), "%d/%d"' in help_header
-# Border removed but the 150x86 darkened reading field and original
-# starfield still come from the SAME framebuffer on every repaint.
+# No rectangular frame, no dark/translucent overlay. The real PAK
+# c.bmp starfield goes straight to the ONE shared framebuffer on each paint.
 starfield = actions.split('static int helpDrawStarfield(',1)[1].split('static uint32_t helpColor888(',1)[0]
-assert 'for (y = 13; y <= 98; ++y)' in starfield
-assert 'for (x = 5; x <= 154; ++x)' in starfield
-assert '*pixel = (uint16_t)((*pixel >> 1) & 0x7befU);' in starfield
-assert 'framebuffer[12 * DOOMRPG_LOGICAL_WIDTH + x]' not in starfield
-assert 'framebuffer[99 * DOOMRPG_LOGICAL_WIDTH + x]' not in starfield
-assert 'framebuffer[y * DOOMRPG_LOGICAL_WIDTH + 5]' not in starfield
-assert 'framebuffer[y * DOOMRPG_LOGICAL_WIDTH + 154]' not in starfield
+assert 'EspNativeTexture_blit(helpSpaceBG.imgBitmap, NULL, &primary)' in starfield
+assert 'EspNativeTexture_blit(helpSpaceBG.imgBitmap, NULL, &wrap)' in starfield
+assert 'helpSpaceShift = shift;' in starfield
+assert 'for (y = 13;' not in starfield
+assert '*pixel =' not in starfield
+assert 'framebuffer[' not in starfield
 assert 'dimAccent' not in starfield and 'uint16_t accent' not in starfield
+assert '0x7befU' not in starfield
 assert "helpColor888(bodyTone)" in actions
 assert "static uint16_t helpThirdTone(void)" in actions
 assert "EspMainMenuSkin_uiInk()" not in actions
@@ -208,8 +215,8 @@ assert "static const uint16_t rows[12]" in actions
 assert "for (x = 0; x < 12; ++x)" in actions
 assert "fb[(top + y) * DOOMRPG_LOGICAL_WIDTH + 12 + x] = ink;" in actions
 assert 'i % MAIN_HELP_VISIBLE_LINES == 0' in actions
-# The logo and section heading never occupy the footer/button pixels;
-# the original 9x12 explanation glyphs and 12px line height remain unchanged.
+# The 9x12 atlas is unchanged; 14px line pitch reclaims the retired footer.
+# Seven rows begin at y14 and end at y109, within the new y116 dark window.
 assert 26 + 12 - 1 == 37 and 12 + 12 - 1 < 27
 assert "y = 14;" in actions
 assert "y += MAIN_HELP_LINE_HEIGHT;" in actions
@@ -344,14 +351,14 @@ assert 'EspNativeGameplayHud_routeInitial(' not in actions
 assert 'DoomRPG_esp32MainMenuReturnToMain(' in actions
 
 # Real HUD miniature is produced by gameplay's own 5-asset painter.
-# Source bottom y100..119 is only scratch, overwritten by HELP footer plates.
+# The real HUD source y100..119 is a temporary scratch before starfield repaint.
 assert 'static uint16_t helpBottomHudMini[MAIN_HELP_HUD_BAR_WIDTH *' in actions
 assert 'helpBottomHudReady = 0U;' in actions
 assert 'EspNativeGameplayHud_paintHelpBottomBand(fb)' in actions
 assert 'static int helpPaintBottomHudIllustration(' in actions
-assert '#define MAIN_HELP_BOTTOM_HUD_BAR_Y (MAIN_HELP_HUD_BAR_Y - MAIN_HELP_LINE_HEIGHT)' in actions
+assert '#define MAIN_HELP_BOTTOM_HUD_BAR_Y (MAIN_HELP_HUD_BAR_Y - 12)' in actions
 assert macro("MAIN_HELP_HUD_BAR_Y") == 43
-assert macro("MAIN_HELP_LINE_HEIGHT") == 12
+assert macro("MAIN_HELP_LINE_HEIGHT") == 14
 assert 43 - 12 == 31
 bottom_section = actions.split(
     'static int helpPaintBottomHudIllustration(uint16_t* fb) {', 1
@@ -477,14 +484,17 @@ for color in ('NEON_GREEN_CORE  0x07e0U',
     assert color in controls
 
 # Weapon selector: exact existing PAK bitshapes/mappings 4x3 painter,
-# local demonstration player only, increased to the maximum space under
-# the subtitle and above the unchanged menu footer, bounded BSS 144x60.
+# local demonstration player only, same 144x60 BSS stretched to 144x76
+# inside the newly usable footer space.
 grid_c = (SRC / 'esp_native_gameplay_hub_weapon_grid.c').read_text()
 assert '#define MAIN_HELP_WEAPON_PAGE_SCROLL (10 * MAIN_HELP_VISIBLE_LINES)' in actions
 assert '#define MAIN_HELP_WEAPON_MINI_X 8' in actions
 assert '#define MAIN_HELP_WEAPON_MINI_Y 39' in actions
 assert '#define MAIN_HELP_WEAPON_MINI_W 144' in actions
 assert '#define MAIN_HELP_WEAPON_MINI_H 60' in actions
+assert '#define MAIN_HELP_WEAPON_DRAW_H 76' in actions
+assert 'const int sourceY = y * MAIN_HELP_WEAPON_MINI_H /' in actions
+assert 'for (y = 0; y < MAIN_HELP_WEAPON_DRAW_H; ++y)' in actions
 assert 'static uint16_t helpWeaponMini[MAIN_HELP_WEAPON_MINI_W *' in actions
 assert 'helpBuildWeaponGridMini(framebuffer)' in actions
 assert 'helpDrawWeaponGridMini(framebuffer);' in actions
@@ -520,10 +530,10 @@ assert 'const int sx = 2 + x * 155 / (MAIN_HELP_WEAPON_MINI_W - 1);' in actions
 assert 'selectedWeapon >= ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COUNT' in grid_c
 assert 'EspAssetPack_findEntry("stexels.bin", &stexels)' in grid_c
 assert 'GRID_CELL_WIDTH 39' in grid_c and 'GRID_CELL_HEIGHT 28' in grid_c
-# Exact available space: caption at y27..38, grid at y39..98,
-# footer begins y100. Source pixels x2..157/y35..118 are ALL covered.
+# Caption at y27..38, cached mini 144x60, drawn scaled at y39..114.
+# The 17,280-byte source cache and native pixel backing remain unchanged.
 assert 8 + 144 - 1 == 151
-assert 39 + 60 - 1 == 98 < 100
+assert 39 + 76 - 1 == 114 < 117
 assert 27 + 12 - 1 == 38 < 39
 assert 2 + (144 - 1) * 155 // (144 - 1) == 157
 assert 35 + (60 - 1) * 83 // (60 - 1) == 118
@@ -628,9 +638,9 @@ assert 'helpExpectedFrameFNV = finalFNV;' in actions
 
 
 assert "EspMainMenuSkin_uiAccentDim()" not in starfield
-assert "menuSystem->scrollIndex -= MAIN_HELP_VISIBLE_LINES;" in actions
-assert "menuSystem->scrollIndex += MAIN_HELP_VISIBLE_LINES;" in actions
-assert "else return; /* gaps between plates" in actions
+assert "EspNativeHelpNav_scroll(" in actions
+assert 'PAGE-%s scroll=%d->%d half=%s' in actions
+assert 'PAGE-UP scroll' not in actions and 'PAGE-DOWN scroll' not in actions
 assert "helpExpectedFrameFNV = finalFNV;" in actions
 assert "before != helpExpectedFrameFNV" in actions
 assert "helpStop();" in actions
@@ -647,4 +657,4 @@ for scroll in range(len(lines)):
 
 print("PASS HELP: 16 pages; original live-PAK wall/door illustration restored,")
 print("           bottom HUD button scaled to real hitbox, icon inline title,")
-print("           all 12 PAK weapon icons enlarged to 144x60, no footer caption")
+print("           12 PAK weapon icons cached 144x60, drawn 144x76; 2 half-screen touch zones")

@@ -18,6 +18,7 @@
 #include "esp_main_menu_skin.h"
 #include "esp_asset_pack.h"
 #include "esp_native_help_scene.h"
+#include "esp_native_help_nav.h"
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_hud_weapon_button.h"
 #include "esp_native_gameplay_hub_weapon_grid.h"
@@ -40,16 +41,9 @@
 #include "platform_touch_events.h"
 #include "platform_video_config.h"
 
-#define MAIN_HELP_LINE_HEIGHT 12
+#define MAIN_HELP_LINE_HEIGHT 14
 #define MAIN_HELP_VISIBLE_LINES 7
-#define MAIN_HELP_FOOTER_TOP 100
-#define MAIN_HELP_BACK_LEFT 1
-#define MAIN_HELP_BACK_RIGHT 51
-#define MAIN_HELP_UP_LEFT 54
-#define MAIN_HELP_UP_RIGHT 104
-#define MAIN_HELP_DOWN_LEFT 107
-#define MAIN_HELP_DOWN_RIGHT 158
-#define MAIN_HELP_BUTTON_BOTTOM 119
+/* Footer buttons retired: ordinary text reaches y109, dark window y116. */
 /* c.bmp is the original scrolling starfield (192 virtual pixels wide).
  * Draw once per resulting logical pixel of motion, about 5Hz, not 60 FPS. */
 #define MAIN_HELP_STAR_PERIOD_MS 157U
@@ -75,14 +69,15 @@
 #define MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL (9 * MAIN_HELP_VISIBLE_LINES)
 /* BOTTOM HUD has no redundant subtitle: preview and labels move up 12px.
  * The TOP HUD miniature retains its existing y43 position. */
-#define MAIN_HELP_BOTTOM_HUD_BAR_Y (MAIN_HELP_HUD_BAR_Y - MAIN_HELP_LINE_HEIGHT)
+#define MAIN_HELP_BOTTOM_HUD_BAR_Y (MAIN_HELP_HUD_BAR_Y - 12)
 #define MAIN_HELP_WEAPON_PAGE_SCROLL (10 * MAIN_HELP_VISIBLE_LINES)
-/* Full available HELP viewport under the caption (y27..38) and above
- * the navigation footer (y100..119): 144x60, x8..151/y39..98. */
+/* Keep the original 144x60 cached grid, enlarge only its presentation to
+ * 144x76 down to y114 without growing the 17280-byte owner. */
 #define MAIN_HELP_WEAPON_MINI_X 8
 #define MAIN_HELP_WEAPON_MINI_Y 39
 #define MAIN_HELP_WEAPON_MINI_W 144
 #define MAIN_HELP_WEAPON_MINI_H 60
+#define MAIN_HELP_WEAPON_DRAW_H 76
 
 static DoomRPG_t* helpDoomRpg;
 static uint32_t helpExpectedFrameFNV;
@@ -192,8 +187,6 @@ static int helpDrawStarfield(DoomRPG_t* doomRpg) {
                         DOOMRPG_LOGICAL_HEIGHT};
     EspNativeRect wrap = {DOOMRPG_LOGICAL_WIDTH - shift, 0,
                      DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT};
-    int x, y;
-
     if (!helpSpaceActive || helpSpaceOwner != doomRpg ||
         helpSpaceBG.imgBitmap == NULL || framebuffer == NULL ||
         bytes != (size_t)DOOMRPG_LOGICAL_WIDTH *
@@ -205,14 +198,8 @@ static int helpDrawStarfield(DoomRPG_t* doomRpg) {
         (shift > 0 && EspNativeTexture_blit(helpSpaceBG.imgBitmap, NULL, &wrap) != 0))
         return 0;
 
-    /* Keep the translucent dark reading window, without the redundant
-     * colored rectangular frame. Original c.bmp stars remain visible. */
-    for (y = 13; y <= 98; ++y) {
-        for (x = 5; x <= 154; ++x) {
-            uint16_t* pixel = &framebuffer[y * DOOMRPG_LOGICAL_WIDTH + x];
-            *pixel = (uint16_t)((*pixel >> 1) & 0x7befU);
-        }
-    }
+    /* HELP keeps every pixel of the native scrolling c.bmp background:
+     * no dimming, overlay, second framebuffer or extra SD/PAK read. */
     helpSpaceShift = shift;
     return 1;
 }
@@ -235,6 +222,36 @@ static uint16_t helpBodyMiddleTone(void) {
 }
 static uint16_t helpThirdTone(void) {
     return EspMainMenuSkin_letterTone(7, 9);
+}
+
+/* Red a.bmp X at x4/y1: no visible border or backing plate.
+ * Its comfortable invisible touch target still wins over left pagination. */
+
+/* Side rails x2..7/x152..157 sit OUTSIDE 144px teaching illustrations.
+ * On pages 1 and 16, the unavailable direction becomes a dim hint. */
+static void helpPaintPageChevron(uint16_t* fb, int previous, int enabled) {
+    uint16_t tone = EspMainMenuSkin_letterTone(8, 9);
+    const int tip = previous ? 2 : 157;
+    int step;
+    if (fb == NULL) return;
+    if (!enabled) {
+        tone = (uint16_t)(((((tone >> 11U) & 31U) / 4U) << 11U) |
+                          ((((tone >> 5U) & 63U) / 4U) << 5U) |
+                          ((tone & 31U) / 4U));
+    }
+    for (step = 0; step <= 5; ++step) {
+        const int x = previous ? tip + step : tip - step;
+        const int top = 62 - step;
+        const int bottom = 62 + step;
+        fb[top * DOOMRPG_LOGICAL_WIDTH + x] = tone;
+        fb[bottom * DOOMRPG_LOGICAL_WIDTH + x] = tone;
+        /* Two logical pixels of neon, never entering the preview bounds. */
+        if (step < 5) {
+            const int inner = previous ? x + 1 : x - 1;
+            fb[top * DOOMRPG_LOGICAL_WIDTH + inner] = tone;
+            fb[bottom * DOOMRPG_LOGICAL_WIDTH + inner] = tone;
+        }
+    }
 }
 
 /* Nine-row native menu lettering is our theme reference. The existing
@@ -267,7 +284,7 @@ static void helpPaintCopyrightMark(uint16_t* fb, int top, uint16_t ink) {
         0x901U, 0x901U, 0x8f1U, 0x402U, 0x30cU, 0x0f0U
     };
     int y, x;
-    if (fb == NULL || top < 0 || top + 12 > MAIN_HELP_FOOTER_TOP)
+    if (fb == NULL || top < 0 || top + 12 > DOOMRPG_LOGICAL_HEIGHT - 2)
         return;
     for (y = 0; y < 12; ++y)
         for (x = 0; x < 12; ++x)
@@ -696,11 +713,14 @@ done:
 static void helpDrawWeaponGridMini(uint16_t* fb) {
     int x, y;
     if (fb == NULL || !helpWeaponMiniReady) return;
-    for (y = 0; y < MAIN_HELP_WEAPON_MINI_H; ++y)
+    for (y = 0; y < MAIN_HELP_WEAPON_DRAW_H; ++y) {
+        const int sourceY = y * MAIN_HELP_WEAPON_MINI_H /
+                            MAIN_HELP_WEAPON_DRAW_H;
         for (x = 0; x < MAIN_HELP_WEAPON_MINI_W; ++x)
             fb[(MAIN_HELP_WEAPON_MINI_Y + y) * DOOMRPG_LOGICAL_WIDTH +
                MAIN_HELP_WEAPON_MINI_X + x] =
-                helpWeaponMini[y * MAIN_HELP_WEAPON_MINI_W + x];
+                helpWeaponMini[sourceY * MAIN_HELP_WEAPON_MINI_W + x];
+    }
 }
 
 /* WEAPON SELECT: the actual x100..159 ammo touch-zone from the shared
@@ -776,9 +796,12 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
             (void)helpBuildWeaponGridMini(framebuffer);
     }
     if (!helpDrawStarfield(doomRpg)) return 0;
-    /* Page header + x/16 take the SECOND theme tone on every HELP page. */
+    /* Bright red native a.bmp X without a frame or dark backing. */
+    DoomRPG_setFontColor(doomRpg, 0xffff2424U);
+    EspNativeCanvas_drawText(canvas, "X", 4, 1, 0);
+    /* Header and page counter retain their established middle theme tone. */
     DoomRPG_setFontColor(doomRpg, helpColor888(helpBodyMiddleTone()));
-    EspNativeCanvas_drawText(canvas, "HELP / CYD", 12, 0, 0);
+    EspNativeCanvas_drawText(canvas, "HELP / CYD", 22, 0, 0);
     snprintf(page, sizeof(page), "%d/%d",
                  (menuSystem->scrollIndex + MAIN_HELP_VISIBLE_LINES - 1) /
                      MAIN_HELP_VISIBLE_LINES + 1,
@@ -939,40 +962,8 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
         y += MAIN_HELP_LINE_HEIGHT;
     }
     }
-    /* Exactly the finger hitboxes below: each chassis stays 100..119.
-     * Shared painter gives CLASSIC/INFERNO/PHOSPHORE the same industrial
-     * relief and 9-row glyph gradients as LOAD GAME. */
-    if (!EspMainMenuSkin_paintPlate(framebuffer, DOOMRPG_LOGICAL_WIDTH,
-            DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
-            MAIN_HELP_BACK_LEFT, MAIN_HELP_FOOTER_TOP,
-            MAIN_HELP_BACK_RIGHT, MAIN_HELP_BUTTON_BOTTOM,
-            ESP_MAIN_MENU_SKIN_IDLE) ||
-        !EspMainMenuSkin_paintText(framebuffer, DOOMRPG_LOGICAL_WIDTH,
-            DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
-            MAIN_HELP_BACK_LEFT, MAIN_HELP_FOOTER_TOP,
-            MAIN_HELP_BACK_RIGHT, MAIN_HELP_BUTTON_BOTTOM,
-            "BACK", 0, 1) ||
-        !EspMainMenuSkin_paintPlate(framebuffer, DOOMRPG_LOGICAL_WIDTH,
-            DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
-            MAIN_HELP_UP_LEFT, MAIN_HELP_FOOTER_TOP,
-            MAIN_HELP_UP_RIGHT, MAIN_HELP_BUTTON_BOTTOM,
-            ESP_MAIN_MENU_SKIN_IDLE) ||
-        !EspMainMenuSkin_paintText(framebuffer, DOOMRPG_LOGICAL_WIDTH,
-            DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
-            MAIN_HELP_UP_LEFT, MAIN_HELP_FOOTER_TOP,
-            MAIN_HELP_UP_RIGHT, MAIN_HELP_BUTTON_BOTTOM,
-            "UP", 0, menuSystem->scrollIndex > 0) ||
-        !EspMainMenuSkin_paintPlate(framebuffer, DOOMRPG_LOGICAL_WIDTH,
-            DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
-            MAIN_HELP_DOWN_LEFT, MAIN_HELP_FOOTER_TOP,
-            MAIN_HELP_DOWN_RIGHT, MAIN_HELP_BUTTON_BOTTOM,
-            ESP_MAIN_MENU_SKIN_IDLE) ||
-        !EspMainMenuSkin_paintText(framebuffer, DOOMRPG_LOGICAL_WIDTH,
-            DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
-            MAIN_HELP_DOWN_LEFT, MAIN_HELP_FOOTER_TOP,
-            MAIN_HELP_DOWN_RIGHT, MAIN_HELP_BUTTON_BOTTOM,
-            "DOWN", 0, menuSystem->scrollIndex < maxScroll))
-        return 0;
+    helpPaintPageChevron(framebuffer, 1, menuSystem->scrollIndex > 0);
+    helpPaintPageChevron(framebuffer, 0, menuSystem->scrollIndex < maxScroll);
 
     DoomRPG_setFontColor(doomRpg, 0xffffffffU);
     frameFNV = DoomRPG_esp32MainMenuFramebufferHash(EspNativeRootOwners_live()->render);
@@ -980,7 +971,7 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
     (void)Esp32PlatformVideo_present();
     if (outFrameFNV != NULL) *outFrameFNV = frameFNV;
     if (helpLoggedScroll != menuSystem->scrollIndex) {
-        printf("[MAINHELP] PAINT lines=%d visible=%d range=%d..%d maxScroll=%d frame=%08x background=intro-c.bmp shift=%d buttons=industrial\n",
+        printf("[MAINHELP] PAINT lines=%d visible=%d range=%d..%d maxScroll=%d frame=%08x background=intro-c.bmp shift=%d nav=halves+header-x\n",
                menuSystem->numItems, visible, menuSystem->scrollIndex,
                end > menuSystem->scrollIndex ? end - 1 : menuSystem->scrollIndex,
                maxScroll, (unsigned int)frameFNV, helpSpaceShift);
@@ -1046,8 +1037,8 @@ static void helpTap(int16_t screenX,
     EspNativeMenuState_t* menuSystem;
     int logicalX;
     int logicalY;
-    int maxScroll;
     int beforeScroll;
+    EspNativeHelpNavAction action;
     uint32_t before;
     uint32_t finalFNV = 0U;
 
@@ -1085,15 +1076,15 @@ static void helpTap(int16_t screenX,
            menuSystem->scrollIndex,
            (unsigned int)before);
 
-    if (logicalY < MAIN_HELP_FOOTER_TOP ||
-        logicalY > MAIN_HELP_BUTTON_BOTTOM) {
-        printf("[MAINHELP] CONTENT tap=no-action footerTop=%d\n",
-               MAIN_HELP_FOOTER_TOP);
-        return;
-    }
+    /* Reject out-of-display physical taps before integer downscaling. */
+    if (screenX < 0 || screenX >= DOOMRPG_LOGICAL_WIDTH *
+                          DOOMRPG_INTEGER_SCALE ||
+        screenY < 0 || screenY >= DOOMRPG_LOGICAL_HEIGHT *
+                          DOOMRPG_INTEGER_SCALE) return;
+    action = EspNativeHelpNav_hit(logicalX, logicalY);
+    if (action == ESP_NATIVE_HELP_NAV_NONE) return;
 
-    if (logicalX >= MAIN_HELP_BACK_LEFT &&
-        logicalX <= MAIN_HELP_BACK_RIGHT) {
+    if (action == ESP_NATIVE_HELP_NAV_CLOSE) {
         PlatformInput_setTapCallback(NULL);
         helpStop();
 
@@ -1118,31 +1109,13 @@ static void helpTap(int16_t screenX,
     }
 
     beforeScroll = menuSystem->scrollIndex;
-    maxScroll = menuSystem->numItems > MAIN_HELP_VISIBLE_LINES
-                    ? menuSystem->numItems - MAIN_HELP_VISIBLE_LINES
-                    : 0;
-
-    if (logicalX >= MAIN_HELP_UP_LEFT &&
-        logicalX <= MAIN_HELP_UP_RIGHT) {
-        menuSystem->scrollIndex -= MAIN_HELP_VISIBLE_LINES;
-        if (menuSystem->scrollIndex < 0) menuSystem->scrollIndex = 0;
-        printf("[MAINHELP] PAGE-UP scroll=%d->%d\n",
-               beforeScroll,
-               menuSystem->scrollIndex);
-    }
-    else if (logicalX >= MAIN_HELP_DOWN_LEFT &&
-             logicalX <= MAIN_HELP_DOWN_RIGHT) {
-        menuSystem->scrollIndex += MAIN_HELP_VISIBLE_LINES;
-        if (menuSystem->scrollIndex > maxScroll) {
-            menuSystem->scrollIndex = maxScroll;
-        }
-        printf("[MAINHELP] PAGE-DOWN scroll=%d->%d max=%d\n",
-               beforeScroll,
-               menuSystem->scrollIndex,
-               maxScroll);
-    }
-
-    else return; /* gaps between plates are deliberately not clickable */
+    menuSystem->scrollIndex = EspNativeHelpNav_scroll(
+        beforeScroll, menuSystem->numItems, action);
+    printf("[MAINHELP] PAGE-%s scroll=%d->%d half=%s\n",
+           action == ESP_NATIVE_HELP_NAV_PREVIOUS ? "PREV" : "NEXT",
+           beforeScroll, menuSystem->scrollIndex,
+           action == ESP_NATIVE_HELP_NAV_PREVIOUS ? "LEFT" : "RIGHT");
+    if (menuSystem->scrollIndex == beforeScroll) return; /* first/last page */
 
     menuSystem->selectedIndex = menuSystem->scrollIndex;
     if (!paintHelp(doomRpg, &finalFNV)) {
@@ -1157,7 +1130,7 @@ static void helpTap(int16_t screenX,
     }
 
     helpExpectedFrameFNV = finalFNV;
-    printf("[MAINHELP] READY scroll=%d frame=%08x input=footer-back+page-up+page-down\n",
+    printf("[MAINHELP] READY scroll=%d frame=%08x input=header-x+left-prev+right-next\n",
            menuSystem->scrollIndex,
            (unsigned int)finalFNV);
 }
@@ -1202,7 +1175,7 @@ static int activateHelp(DoomRPG_t* doomRpg) {
     helpExpectedFrameFNV = helpFNV;
     PlatformInput_setTapCallback(helpTap);
 
-    printf("[MAINHELP] READY menu=%d type=%d old=%d frame=%08x input=footer-back+page-up+page-down backOwner=native\n",
+    printf("[MAINHELP] READY menu=%d type=%d old=%d frame=%08x input=header-x+left-prev+right-next backOwner=native\n",
            menuSystem->menu,
            menuSystem->type,
            menuSystem->oldMenu,

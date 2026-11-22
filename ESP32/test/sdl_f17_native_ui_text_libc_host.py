@@ -76,6 +76,8 @@ def restore(filename: str, current: str) -> str:
         assert original.count(GUARD) == COUNTS[filename], filename
         original = original.replace(GUARD, "#include <SDL.h>\n")
     if filename == "native_main_menu_actions.c":
+        from native_help_fullscreen_history import restore_pre_help_fullscreen_nav
+        original = restore_pre_help_fullscreen_nav(original)
         original = restore_pre_help_frame_polish(original)
         from uac_blink_history import restore_pre_uac_blink_actions
         original = restore_pre_uac_blink_actions(original)
