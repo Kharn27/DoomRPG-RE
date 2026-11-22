@@ -98,6 +98,11 @@ def original_body_parity() -> None:
         # GAME-PICKUP is a post-F27 presentation optimization. Restore only
         # its exact additive source delta before any older historical inverse.
         if filename == "esp_native_gameplay_player_resources.c":
+            # Undo AUDIO-PICKUP #419 BEFORE the older GAME-PICKUP inverse,
+            # which rewrites DRPG_LOGD into historical printf spellings.
+            # The later inverse must see the exact pre-#419 C bytes.
+            from audio_pickup_modal_history import restore_pre_audio_pickup_modal_resources
+            current = restore_pre_audio_pickup_modal_resources(current)
             from game_pickup_redraw_history import restore_pre_game_pickup_resources
             current = restore_pre_game_pickup_resources(current)
         elif filename == "esp_native_resident_gameplay.c":
@@ -191,11 +196,8 @@ def original_body_parity() -> None:
             assert current.count(p1_hook) == 1, "SFX-P1 crate commit hook drift"
             current = current.replace(p1_import, b"", 1).replace(p1_hook, b"", 1)
         elif filename == "esp_native_gameplay_player_resources.c":
-            # AUDIO-PICKUP #419 is newer than frozen SDL-F27. Reverse its
-            # *exact* moved modal block and added owner import first; then
-            # the historical SFX-P1 inverse and original Git SHA stay strict.
-            from audio_pickup_modal_history import restore_pre_audio_pickup_modal_resources
-            current = restore_pre_audio_pickup_modal_resources(current)
+            # Newer AUDIO-PICKUP and GAME-PICKUP inverse already applied above.
+            # Continue with the original SFX-P1 inverse, no baseline changes.
             p1_import = b'#include "esp_native_audio_intent.h"\n'
             p1_hook = (
                 b"        /* SFX-P1: only after irreversible resource/player/world commit.\n"
