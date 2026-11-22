@@ -146,14 +146,30 @@ for y in range(120):
         if y < 100: assert not touches
 assert actions.count("!EspMainMenuSkin_paintPlate(") == 3
 assert actions.count("!EspMainMenuSkin_paintText(") == 3
-# All HELP copy now consumes the live theme's industrial font palette.
-# For every theme: top=CLASSIC warm ivory / INFERNO pale rose /
-# PHOSPHORE mint, middle=CLASSIC amber / INFERNO bronze / PHOSPHORE green.
+# All HELP copy consumes the live industrial font theme.
+# The HEADER alone uses the exact center (second) stop; page titles and
+# body text keep their existing separate three-stop behavior.
 assert "static uint16_t helpTitleTopTone(void)" in actions
 assert "static uint16_t helpBodyMiddleTone(void)" in actions
 assert "return EspMainMenuSkin_letterTone(1, 9);" in actions
 assert "return EspMainMenuSkin_letterTone(4, 9);" in actions
-assert "helpColor888(helpTitleTopTone())" in actions
+assert "helpColor888(helpTitleTopTone())" not in actions.split('if (!helpDrawStarfield(doomRpg)) return 0;',1)[1].split('if (menuSystem->scrollIndex == MAIN_HELP_HUD_PAGE_SCROLL)',1)[0]
+help_header = actions.split('if (!helpDrawStarfield(doomRpg)) return 0;',1)[1].split('if (menuSystem->scrollIndex == MAIN_HELP_HUD_PAGE_SCROLL)',1)[0]
+assert 'helpColor888(helpBodyMiddleTone())' in help_header
+assert help_header.index('helpColor888(helpBodyMiddleTone())') < help_header.index('"HELP / CYD"')
+assert help_header.index('"HELP / CYD"') < help_header.index('EspNativeCanvas_drawText(canvas, page,')
+assert 'snprintf(page, sizeof(page), "%d/%d"' in help_header
+# Border removed but the 150x86 darkened reading field and original
+# starfield still come from the SAME framebuffer on every repaint.
+starfield = actions.split('static int helpDrawStarfield(',1)[1].split('static uint32_t helpColor888(',1)[0]
+assert 'for (y = 13; y <= 98; ++y)' in starfield
+assert 'for (x = 5; x <= 154; ++x)' in starfield
+assert '*pixel = (uint16_t)((*pixel >> 1) & 0x7befU);' in starfield
+assert 'framebuffer[12 * DOOMRPG_LOGICAL_WIDTH + x]' not in starfield
+assert 'framebuffer[99 * DOOMRPG_LOGICAL_WIDTH + x]' not in starfield
+assert 'framebuffer[y * DOOMRPG_LOGICAL_WIDTH + 5]' not in starfield
+assert 'framebuffer[y * DOOMRPG_LOGICAL_WIDTH + 154]' not in starfield
+assert 'dimAccent' not in starfield and 'uint16_t accent' not in starfield
 assert "helpColor888(bodyTone)" in actions
 assert "static uint16_t helpThirdTone(void)" in actions
 assert "EspMainMenuSkin_uiInk()" not in actions
@@ -212,7 +228,7 @@ assert list(map(lambda h: int(h, 16), logo_rows)) == [
 assert "for (y = 0; y < 12; ++y)" in copyright
 assert "int top, uint16_t ink" in copyright
 
-assert "EspMainMenuSkin_uiAccent()" in actions
+assert "EspMainMenuSkin_uiAccent()" not in starfield
 # k.bmp is already a 20x20 tiled native PAK asset in gameplay.
 # In HELP it is copied as eight native nearest-neighbour 16x16 tiles,
 # creating a compact 128x16 illustration in the central reading window.
@@ -611,7 +627,7 @@ assert 'if (shift == helpSpaceShift &&' in actions
 assert 'helpExpectedFrameFNV = finalFNV;' in actions
 
 
-assert "EspMainMenuSkin_uiAccentDim()" in actions
+assert "EspMainMenuSkin_uiAccentDim()" not in starfield
 assert "menuSystem->scrollIndex -= MAIN_HELP_VISIBLE_LINES;" in actions
 assert "menuSystem->scrollIndex += MAIN_HELP_VISIBLE_LINES;" in actions
 assert "else return; /* gaps between plates" in actions
