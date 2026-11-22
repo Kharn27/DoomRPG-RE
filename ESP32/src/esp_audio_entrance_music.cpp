@@ -13,6 +13,7 @@
 #include <stdio.h>
 
 #include "esp_audio_entrance_adpcm.h"
+#include "esp_audio_entrance_heap_guard.h"
 #include "esp_audio_clock_guard.h"
 #include "esp_native_sfx_pcm_mix.h"
 #include "esp_native_sfx_wav.h"
@@ -1031,7 +1032,7 @@ static void begin(bool intro,bool menu,EspAudioLoadingTrack gameplayTrack) {
     failure="none";
     heapBefore=heap_caps_get_free_size(MALLOC_CAP_8BIT);
     const uint32_t largest=heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-    if (heapBefore<61440U||largest<24576U) {
+    if (!EspAudioMusic_heapBeforeRingOk(heapBefore,largest)) {
         printf("[ENTRANCEMUSIC] SILENT reason=heap_guard "
                "heap8=%u largest8=%u\n",
                (unsigned)heapBefore,(unsigned)largest);
@@ -1085,9 +1086,22 @@ static void begin(bool intro,bool menu,EspAudioLoadingTrack gameplayTrack) {
 
     ring=(uint8_t*)heap_caps_malloc(
         kRingCapacity,MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
-    if (!ring ||
-        heap_caps_get_free_size(MALLOC_CAP_8BIT)<49152U ||
-        heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)<16384U) {
+    const uint32_t postRingHeap8=heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    const uint32_t postRingLargest8=
+        heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    if (!EspAudioMusic_heapAfterRingOk(ring!=nullptr,postRingHeap8,
+                                      postRingLargest8)) {
+        /* Keep the failure fail-closed, but expose whether the internal ring
+         * allocation or the conservative post-ring reserve was rejected.
+         * A restored V11 LOAD retains more memory than a fresh session. */
+        printf("[ENTRANCEMUSIC] HEAP-POST-REJECT ring=%u "
+               "before=%u after=%u largestBefore=%u largestAfter=%u "
+               "minAfter=%u minLargest=%u\n",
+               (unsigned)(ring!=nullptr),(unsigned)heapBefore,
+               (unsigned)postRingHeap8,(unsigned)largest,
+               (unsigned)postRingLargest8,
+               (unsigned)ESP_AUDIO_MUSIC_POST_MIN_HEAP8,
+               (unsigned)ESP_AUDIO_MUSIC_POST_MIN_LARGEST8);
         closeMusic("FAIL-HEAP");
         return;
     }

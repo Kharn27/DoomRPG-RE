@@ -18,6 +18,7 @@ typedef enum {
 } EspMainMenuSkinState;
 
 /* ROM-only glyph palettes, persisted in the native 12-byte SD config.
+ * Glyphs use dark-to-light top-to-bottom RGB565 ramps (5/7/9 rows).
  * No RAM framebuffer copy and no change to the industrial metal chassis. */
 #define ESP_MAIN_MENU_THEME_CLASSIC 0U
 #define ESP_MAIN_MENU_THEME_INFERNO 1U
@@ -33,8 +34,8 @@ uint16_t EspMainMenuSkin_letterTone(int row, int rows);
 uint16_t EspMainMenuSkin_accentTone(EspMainMenuSkinState state);
 
 /* Six-row loading progress ink, independently colored by the selected theme.
- * CLASSIC follows its refreshed yellow/bronze/red-copper ramp. Bounds
- * checked, ROM-only (no cache or extra framebuffer). */
+ * All three gradients run dark-to-light top-to-bottom. Bounds checked,
+ * ROM-only (no cache or extra framebuffer). */
 uint16_t EspMainMenuSkin_progressTone(int row, int rows);
 
 /* Shared 160x120 native-menu accents for HUB/SYSTEM/fullscreen reports.
