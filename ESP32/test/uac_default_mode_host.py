@@ -188,6 +188,7 @@ assert 'EspUacMenuPreview_enterOptions();' in video
 assert 'paintedPage==page' in preview and 'optionsEnabledMask==paintedEnabledMask' not in preview
 assert 'kOptionsVideo[]={"BACK","LUMINOSITE","ORIENTATION","THEME"}' in preview
 assert 'kOptionsBrightness[]={"25%","50%","75%","100%"}' in preview
+assert 'case ESP_UAC_OPTIONS_BRIGHTNESS: return index<4?' in preview
 assert 'kOptionsBrightness[]={"BACK","25%","50%","75%","100%"}' not in preview
 for name in ('ROOT','VIDEO','BRIGHTNESS','ORIENTATION','THEME','SOUND_ON','SOUND_OFF','VOLUME'):
     assert 'ESP_UAC_OPTIONS_'+name in header
