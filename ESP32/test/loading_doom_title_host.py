@@ -52,7 +52,7 @@ assert "drawMiniTextAt" in painter
 assert "EspAssetPack_" not in painter
 assert "EspNativeIndexedBmp_" not in painter
 assert "malloc(" not in production[start:production.index(
-    "/* Same MENU_MAIN chassis", start
+    "static void drawMetricCard", start
 )]
 
 harness = r"""
