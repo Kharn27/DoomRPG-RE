@@ -360,13 +360,13 @@ int main(void) {
     /* Exact menu and LOADING face bands, no halo or second text pass. */
     {
         static const uint16_t menu[9] = {
-            0x7433U, 0x7433U, 0x7433U,
+            0x6c35U, 0x6c35U, 0x6c35U,
             0xc638U, 0xc638U, 0xc638U,
-            0xe62fU, 0xe62fU, 0xe62fU
+            0xedceU, 0xedceU, 0xedceU
         };
         static const uint16_t loading[5] = {
-            0x7433U, 0xc638U, 0xc638U,
-            0xe62fU, 0xe62fU
+            0x6c35U, 0xc638U, 0xc638U,
+            0xedceU, 0xedceU
         };
         int row;
         for (row = 0; row < 9; ++row)
@@ -378,12 +378,12 @@ int main(void) {
         assert(EspMainMenuSkin_letterTone(9, 9) == 0U);
         assert(EspMainMenuSkin_letterTone(0, 0) == 0U);
         assert(EspMainMenuSkin_letterTone(0, 6) == 0U);
-        assert(EspMainMenuSkin_letterTone(0, 7) == 0x7433U);
+        assert(EspMainMenuSkin_letterTone(0, 7) == 0x6c35U);
         assert(EspMainMenuSkin_letterTone(3, 7) == 0xc638U);
-        assert(EspMainMenuSkin_letterTone(6, 7) == 0xe62fU);
+        assert(EspMainMenuSkin_letterTone(6, 7) == 0xedceU);
         static const uint16_t classicFill[6] = {
-            0x532fU, 0x7433U, 0x7433U,
-            0xc638U, 0xc638U, 0xe62fU
+            0x42f0U, 0x6c35U, 0x6c35U,
+            0xc638U, 0xc638U, 0xedceU
         };
         for (int y=0;y<6;++y)
             assert(EspMainMenuSkin_progressTone(y,6) == classicFill[y]);
@@ -394,14 +394,14 @@ int main(void) {
     assert(EspMainMenuSkin_getTheme() == ESP_MAIN_MENU_THEME_CLASSIC);
     assert(EspMainMenuSkin_uiAccent() == 0xfd20U);
     assert(EspMainMenuSkin_uiAccentDim() == 0x7a80U);
-    assert(EspMainMenuSkin_uiInk() == 0xe62fU);
+    assert(EspMainMenuSkin_uiInk() == 0xedceU);
     /* Exact RGB565 CLASSIC reference: blue-gray top -> neutral gray
      * center -> warm pale yellow-orange foot; never copper/brown. */
     {
         const uint16_t top = EspMainMenuSkin_letterTone(0, 9);
         const uint16_t mid = EspMainMenuSkin_letterTone(4, 9);
         const uint16_t foot = EspMainMenuSkin_letterTone(8, 9);
-        assert(top==0x7433U && mid==0xc638U && foot==0xe62fU);
+        assert(top==0x6c35U && mid==0xc638U && foot==0xedceU);
         const unsigned tr=(top>>11)&31U,tg=(top>>5)&63U,tb=top&31U;
         const unsigned mr=(mid>>11)&31U,mg=(mid>>5)&63U,mb=mid&31U;
         const unsigned fr=(foot>>11)&31U,fg=(foot>>5)&63U,fb=foot&31U;
@@ -555,7 +555,7 @@ int main(void) {
                 const int textY = t + 8 +
                     (state == ESP_MAIN_MENU_SKIN_CONFIRM ? 1 : 0);
                 const uint16_t topColor =
-                    state == ESP_MAIN_MENU_SKIN_IDLE ? 0x7433U : 0xffffU;
+                    state == ESP_MAIN_MENU_SKIN_IDLE ? 0x6c35U : 0xffffU;
                 assert(fb[t * W + l + 10] ==
                        (state == ESP_MAIN_MENU_SKIN_IDLE ? 0x838dU :
                         state == ESP_MAIN_MENU_SKIN_ARMED ? 0xa4d1U : 0x83ceU));
@@ -570,8 +570,8 @@ int main(void) {
                     for (int xx = l + 6; xx <= r - 6; ++xx) {
                         const uint16_t pixel = fb[yy * W + xx];
                         const int isFace = state == ESP_MAIN_MENU_SKIN_IDLE
-                            ? pixel == 0xe62fU || pixel == 0xc638U ||
-                              pixel == 0x7433U
+                            ? pixel == 0xedceU || pixel == 0xc638U ||
+                              pixel == 0x6c35U
                             : pixel == 0xffffU;
                         if (isFace) {
                             ++faces;
