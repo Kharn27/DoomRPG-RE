@@ -187,8 +187,8 @@ int main(void) {
             ++cases;
 
             settle(&view,288,224);
-            fixtureFlags=0U; /* topology unlinked */
-            assert(findCandidateForSprite(&view,17U,&candidate)==1);
+            fixtureFlags=0U; /* topology unlinked: generic invalid, subtype10 main skips */
+            assert(findCandidateForSprite(&view,17U,&candidate)==(subtype==10U));
             assert(candidate.monster==NULL);
             fixtureFlags=ESP_MAP_SPRITE_TOPOLOGY_LINKED |
                          ESP_MAP_SPRITE_TOPOLOGY_ALIVE;
