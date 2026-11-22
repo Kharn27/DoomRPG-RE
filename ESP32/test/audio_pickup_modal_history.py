@@ -10,6 +10,30 @@ def restore_pre_audio_pickup_modal_resources(source):
     assert current.count(include) == 1, "AUDIO-PICKUP #419 include drift"
     current = current.replace(include, "", 1)
 
+    # Restore the exact original pickup sound hook and remove the tiny,
+    # post-F27 pure weapon-cue mapping before older GAME-PICKUP inverses.
+    cue_import = '#include "esp_audio_pickup_cue.h"\n'
+    cue_var = '    uint16_t pickupSoundId = 5060U;\n'
+    cue_loop = (
+        "    /* Original Entity_touched(eType=5) plays 5057 for every regular\n"
+        "     * firearm pickup, including duplicates. Axe and extinguisher use 5060.\n"
+        "     * Resolve across all committed resources BEFORE the first-help loop\n"
+        "     * can stop at the first unknown-weapon dialog. */\n"
+        "    for (i = 0U; i < appliedCount; ++i) {\n"
+        "        if (applied[i].type == RESOURCE_TYPE_WEAPON &&\n"
+        "            EspAudioPickupCue_weapon(applied[i].subtype) == 5057U)\n"
+        "            pickupSoundId = 5057U;\n"
+        "    }\n\n"
+    )
+    cue_dynamic = "EspNativeAudioIntent_publish(pickupSoundId,0U,3U)"
+    cue_original = "EspNativeAudioIntent_publish(5060U,0U,3U)"
+    for token in (cue_import, cue_var, cue_loop, cue_dynamic):
+        assert current.count(token) == 1, "AUDIO-PICKUP original weapon routing drift"
+    current = (current.replace(cue_import, "", 1)
+                      .replace(cue_var, "", 1)
+                      .replace(cue_loop, "", 1)
+                      .replace(cue_dynamic, cue_original, 1))
+
     begin = ("        if (firstWeaponDialog != NULL) {\n"
              "            EspNativeGameplayDialogBeginStatus dialogStatus =")
     after = '        DRPG_LOGD("[PLAYERRES] FEEDBACK'
