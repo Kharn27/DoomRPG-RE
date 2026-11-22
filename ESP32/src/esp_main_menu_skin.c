@@ -17,16 +17,18 @@ typedef struct {
 /* Compact original Doom-like pixel-metal lettering. The reference is
  * ONE BIG WORD per control (not two tiny lines). The 5x9 masks use 108 bytes
  * of flash, no font atlas, texture, cache, mutable state or heap. */
-/* CLASSIC photographic copper/brass trial: dark patina -> aged bronze ->
- * warm pale gold. Source a.bmp grayscale remains unmodified. INFERNO and
- * PHOSPHORE are byte-exact. Values are RGB565, no new state or heap. */
-#define CLASSIC_PALE_YELLOW 0xfef4U /* approx. #F9DCA3 */
-#define CLASSIC_GOLD_BRONZE 0xd4aaU /* approx. #D29753 */
-#define CLASSIC_RED_COPPER  0x9285U /* approx. #93502E */
+/* CLASSIC font reference: steel blue-gray -> neutral metal gray ->
+ * light yellow-orange. SD a.bmp glyphs remain grayscale and untouched.
+ * The selected UAC label darkens the SAME ramp in the existing blink path.
+ * Literal RGB565 from requested RGB888 values; no state or heap. */
+#define CLASSIC_STEEL_BLUE 0x7433U /* #74879A */
+#define CLASSIC_METAL_GRAY 0xc638U /* #C7C7C2 */
+#define CLASSIC_PALE_AMBER 0xe62fU /* #E6C57A */
+#define CLASSIC_DIM_STEEL  0x532fU /* #526578, LOADING first band */
 
 static const SkinPalette palettes[3] = {
     /*      base    steel   top     dark    groove  copper  ink     face  */
-    {0x0800U,0x4a48U,0x838dU,0x0820U,0x3123U,0xd344U,0x2103U,CLASSIC_GOLD_BRONZE},
+    {0x0800U,0x4a48U,0x838dU,0x0820U,0x3123U,0xd344U,0x2103U,CLASSIC_METAL_GRAY},
     {0x1000U,0x632bU,0xa4d1U,0x0800U,0x39a5U,0xf447U,0x3001U,0xffffU},
     {0x0800U,0x4248U,0x83ceU,0x0800U,0x2903U,0xdba5U,0x2800U,0xffffU}
 };
@@ -73,11 +75,12 @@ uint16_t EspMainMenuSkin_letterTone(int row, int rows) {
         if (row < (2 * rows + 2) / 3) return PHOSPHORE_ELECTRIC_GREEN;
         return PHOSPHORE_TURQUOISE;
     }
-    /* CLASSIC original pale yellow -> bronze -> copper, read bottom-to-top. */
-    if (row < (rows + 2) / 3) return CLASSIC_PALE_YELLOW;
+    /* CLASSIC: steel blue-gray at top, neutral metal gray in the
+     * middle, pale warm amber at bottom (lookup is mirrored above). */
+    if (row < (rows + 2) / 3) return CLASSIC_PALE_AMBER;
     if (row < (2 * rows + 2) / 3)
         return palettes[ESP_MAIN_MENU_SKIN_IDLE].typeFace;
-    return CLASSIC_RED_COPPER;
+    return CLASSIC_STEEL_BLUE;
 }
 
 uint16_t EspMainMenuSkin_accentTone(EspMainMenuSkinState state) {
@@ -98,8 +101,8 @@ uint16_t EspMainMenuSkin_progressTone(int row, int rows) {
     /* LOADING uses the same six RGB565 tones, reversed dark-to-light.
      * Only filled pixels change; geometry/ownership stay unchanged. */
     static const uint16_t gradients[3][6] = {
-        {0x61c3U, CLASSIC_RED_COPPER, CLASSIC_RED_COPPER,
-         CLASSIC_GOLD_BRONZE, CLASSIC_GOLD_BRONZE, CLASSIC_PALE_YELLOW},
+        {CLASSIC_DIM_STEEL, CLASSIC_STEEL_BLUE, CLASSIC_STEEL_BLUE,
+         CLASSIC_METAL_GRAY, CLASSIC_METAL_GRAY, CLASSIC_PALE_AMBER},
         /* INFERNO: six genuinely red rows, not an amber face with a red seam. */
         {0x9002U, 0xb003U, 0xd004U, 0xf804U, 0xf905U, 0xf946U},
         /* PHOSPHORE: turquoise through electric lime to pale green. */
@@ -112,7 +115,7 @@ uint16_t EspMainMenuSkin_progressTone(int row, int rows) {
 }
 
 /* One shared, immutable palette for native modal surfaces. CLASSIC keeps
- * historical HUB accent seams while using the new pale yellow text ink;
+ * historical HUB accent seams while using the new pale amber text ink;
  * danger, health and armor remain semantic colors at their call sites. */
 uint16_t EspMainMenuSkin_uiAccent(void) {
     static const uint16_t colors[3] = {0xfd20U, 0xf926U, 0x87e0U};
@@ -125,7 +128,7 @@ uint16_t EspMainMenuSkin_uiAccentDim(void) {
 }
 
 uint16_t EspMainMenuSkin_uiInk(void) {
-    static const uint16_t colors[3] = {CLASSIC_PALE_YELLOW, INFERNO_PALE_ROSE, PHOSPHORE_PALE_GREEN};
+    static const uint16_t colors[3] = {CLASSIC_PALE_AMBER, INFERNO_PALE_ROSE, PHOSPHORE_PALE_GREEN};
     return colors[selectedLetterTheme];
 }
 
