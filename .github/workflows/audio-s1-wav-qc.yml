@@ -8,12 +8,12 @@ permissions:
   contents: read
 jobs:
   audit:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Inspect real SD WAVs with firmware IMA parser and decoded signal metrics
         run: |
-          command -v ffmpeg
+          if ! command -v ffmpeg; then sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg; fi
           command -v cc
           python3 ESP32/tools/audio_wav_quality_audit.py
