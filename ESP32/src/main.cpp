@@ -34,6 +34,9 @@
 #if DOOMRPG_RES60_P8_TEXEL
 #include "esp_res60_texture_probe.h"
 #endif
+#if DOOMRPG_RES60_P12_INVENTORY_CACHE
+#include "esp_res60_inventory_cache.h"
+#endif
 #include "esp_legacy_prerender_startup.h"
 #include "esp_render_startup_bridge.h"
 #include "soft_xpt2046.h"
@@ -682,6 +685,9 @@ void loop()
                 /* New preview session: forbid stale swatch across MENU/START. */
                 EspRes60TextureProbe_reset();
 #endif
+#if DOOMRPG_RES60_P12_INVENTORY_CACHE
+                EspRes60InventoryCache_reset();
+#endif
                 if (PlatformVideo_showRes60WorldPreviewQuarterTurns(0U)) {
                     res60QuarterTurns = 0U;
                     res60MenuVisible = false;
@@ -723,6 +729,9 @@ void loop()
                     res60QuarterTurns = 0U;
 #if DOOMRPG_RES60_P8_TEXEL
                     EspRes60TextureProbe_reset();
+#endif
+#if DOOMRPG_RES60_P12_INVENTORY_CACHE
+                    EspRes60InventoryCache_reset();
 #endif
                 }
             } else {
