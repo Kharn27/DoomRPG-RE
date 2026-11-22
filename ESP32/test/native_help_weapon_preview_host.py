@@ -172,8 +172,13 @@ static void sweepTest(void) {
     for (y = 0; y < 120; ++y)
         for (x = 0; x < 160; ++x) frame[y * 160 + x] = sky;
     helpDrawWeaponGridMini(frame, 12U);
+    helpWeaponMiniReady = 0U;
+    helpDrawWeaponGridMini(frame, 0U);
+    helpWeaponMiniReady = 1U;
+    helpDrawWeaponGridMini(NULL, 0U);
     for (y = 0; y < 120; ++y)
         for (x = 0; x < 160; ++x) assert(frame[y * 160 + x] == sky);
+    assert(memcmp(immutable, helpWeaponMini, sizeof(immutable)) == 0);
 }
 
 static void cueTest(void) {
