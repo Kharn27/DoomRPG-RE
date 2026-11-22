@@ -32,6 +32,9 @@ typedef struct EspRes60WorldProbeReport_s {
 #if DOOMRPG_RES60_P11_PROFILE
     uint32_t inventoryUs, loadUs, p3Us, textureUs, releaseUs;
 #endif
+#if DOOMRPG_RES60_P12_INVENTORY_CACHE
+    uint8_t inventoryCacheHit;
+#endif
 #if DOOMRPG_RES60_P8_TEXEL
     EspRes60TextureProbeReport texture;
 #endif
