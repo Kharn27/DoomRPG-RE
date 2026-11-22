@@ -9,6 +9,9 @@
 #include "esp_map_catalog.h"
 #include "esp_map_runtime.h"
 #include "esp_res60_world_probe.h"
+#if DOOMRPG_RES60_P12_INVENTORY_CACHE
+#include "esp_res60_inventory_cache.h"
+#endif
 #if DOOMRPG_RES60_P11_PROFILE
 #include "esp_res60_profile.h"
 #endif
@@ -56,6 +59,9 @@ static int renderIntroCore(uint16_t* framebuffer,
     uint8_t cameraAngle;
     int loaded = 0;
     int success = 0;
+#if DOOMRPG_RES60_P12_INVENTORY_CACHE
+    uint8_t inventoryHit = 0U;
+#endif
 
     memset(&inv, 0, sizeof(inv));
     memset(&report, 0, sizeof(report));
@@ -76,18 +82,32 @@ static int renderIntroCore(uint16_t* framebuffer,
     /* Original compressed/packed source is never extracted map-wide. The
      * normal BSP reader inventories the real PAK through bounded windows,
      * then native EspMapRuntime builds one compact immutable arena. */
+#if DOOMRPG_RES60_P12_INVENTORY_CACHE
+    if (!EspRes60InventoryCache_read(mapName, &inv, &inventoryHit)) {
+        EspRes60InventoryCache_reset();
+        printf("[RES60P3] FAIL CLOSED stage=inventory-cache map=%s\n", mapName);
+        return 0;
+    }
+#else
     if (!EspBspReader_inventoryPackEntry(mapName, &inv)) {
         printf("[RES60P3] FAIL CLOSED stage=inventory map=%s\n", mapName);
         return 0;
     }
+#endif
 #if DOOMRPG_RES60_P11_PROFILE
     report.inventoryUs=EspRes60Profile_nowUs()-phaseAt;
+#endif
+#if DOOMRPG_RES60_P12_INVENTORY_CACHE
+    report.inventoryCacheHit = inventoryHit;
 #endif
     if (inv.sourceBytes == 0U || inv.crc32 == 0U ||
         inv.expectedCrc32 != inv.crc32 ||
         inv.spawnIndex >= 1024U ||
         (inv.spawnDirection & 63U) != 0U ||
         inv.lines == 0U || inv.lines > ESP_RES60_PREVIEW_MAX_LINES) {
+#if DOOMRPG_RES60_P12_INVENTORY_CACHE
+        EspRes60InventoryCache_reset();
+#endif
         printf("[RES60P3] FAIL CLOSED stage=inventory-geometry lines=%lu spawn=%u angle=%u crc=%08lx\n",
                (unsigned long)inv.lines, (unsigned int)inv.spawnIndex,
                (unsigned int)inv.spawnDirection, (unsigned long)inv.crc32);
@@ -123,6 +143,9 @@ static int renderIntroCore(uint16_t* framebuffer,
     phaseAt=EspRes60Profile_nowUs();
 #endif
     if (!EspMapRuntime_loadPackEntry(mapName, &inv)) {
+#if DOOMRPG_RES60_P12_INVENTORY_CACHE
+        EspRes60InventoryCache_reset();
+#endif
         printf("[RES60P3] FAIL CLOSED stage=compact-runtime map=%s\n", mapName);
         return 0;
     }
@@ -139,6 +162,17 @@ static int renderIntroCore(uint16_t* framebuffer,
         printf("[RES60P3] FAIL CLOSED stage=runtime-parity\n");
         goto done;
     }
+#if DOOMRPG_RES60_P12_INVENTORY_CACHE
+    /* Entry CRC/size was checked by EspMapRuntime_loadPackEntry above;
+     * reject same-CRC but changed arena bytes before drawing on a HIT. */
+    if (inventoryHit &&
+        !EspRes60InventoryCache_verify(mapName, &inv,
+                                       runtime->arenaFNV1a)) {
+        printf("[RES60P12] FAIL CLOSED stage=cached-arena-fnv\n");
+        success = 0;
+        goto done;
+    }
+#endif
 
     camera.worldX = (uint16_t)viewX;
     camera.worldY = (uint16_t)viewY;
@@ -212,9 +246,20 @@ done:
     report.releaseUs=EspRes60Profile_nowUs()-phaseAt;
 #endif
     if (EspMapRuntime_isLoaded() || EspAssetPack_isOpen()) {
+#if DOOMRPG_RES60_P12_INVENTORY_CACHE
+        EspRes60InventoryCache_reset();
+#endif
         printf("[RES60P3] FAIL CLOSED stage=cleanup compactOrPakStillActive\n");
         return 0;
     }
+#if DOOMRPG_RES60_P12_INVENTORY_CACHE
+    if (success && !EspRes60InventoryCache_commit(mapName, &inv,
+                                                   report.arenaFNV)) {
+        printf("[RES60P12] FAIL CLOSED stage=cache-commit\n");
+        success = 0;
+    }
+    if (!success) EspRes60InventoryCache_reset();
+#endif
     if (success) *outReport = report;
     return success;
 }
