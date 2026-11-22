@@ -91,3 +91,58 @@ def restore_pre_help_light_body_pages(source: str) -> str:
                     ? 0xffffffffU : helpColor888(helpBodyMiddleTone()));"""
     assert source.count(later) == 1, "HELP light body pages delta unexpectedly changed"
     return source.replace(later, earlier, 1)
+
+# HELP header/reading-window visual polish: undo ONLY these later pixels for
+# frozen SDL-F17/F29 whole-file hashes. Never update original golden SHAs.
+_PRE_FRAME_DECL = (
+    "    uint16_t accent = EspMainMenuSkin_uiAccent();\n"
+    "    uint16_t dimAccent = EspMainMenuSkin_uiAccentDim();\n"
+)
+_PRE_FRAME = """    /* Translucent dark reading window: edit the ONE shared RGB565 frame,
+     * no alpha texture/overlay allocation and no extra framebuffer. */
+    for (y = 13; y <= 98; ++y) {
+        for (x = 5; x <= 154; ++x) {
+            uint16_t* pixel = &framebuffer[y * DOOMRPG_LOGICAL_WIDTH + x];
+            *pixel = (uint16_t)((*pixel >> 1) & 0x7befU);
+        }
+        framebuffer[y * DOOMRPG_LOGICAL_WIDTH + 5] = dimAccent;
+        framebuffer[y * DOOMRPG_LOGICAL_WIDTH + 154] = dimAccent;
+    }
+    for (x = 5; x <= 154; ++x) {
+        framebuffer[12 * DOOMRPG_LOGICAL_WIDTH + x] = accent;
+        framebuffer[99 * DOOMRPG_LOGICAL_WIDTH + x] = dimAccent;
+    }
+"""
+_FRAMELESS = """    /* Keep the translucent dark reading window, without the redundant
+     * colored rectangular frame. Original c.bmp stars remain visible. */
+    for (y = 13; y <= 98; ++y) {
+        for (x = 5; x <= 154; ++x) {
+            uint16_t* pixel = &framebuffer[y * DOOMRPG_LOGICAL_WIDTH + x];
+            *pixel = (uint16_t)((*pixel >> 1) & 0x7befU);
+        }
+    }
+"""
+_HELP_HEADER = (
+    '    /* Page header + x/16 take the SECOND theme tone on every HELP page. */\n'
+    '    DoomRPG_setFontColor(doomRpg, helpColor888(helpBodyMiddleTone()));\n'
+    '    EspNativeCanvas_drawText(canvas, "HELP / CYD", 12, 0, 0);'
+)
+_PRE_HELP_HEADER = (
+    '    DoomRPG_setFontColor(doomRpg, helpColor888(helpTitleTopTone()));\n'
+    '    EspNativeCanvas_drawText(canvas, "HELP / CYD", 12, 0, 0);'
+)
+
+def restore_pre_help_frame_polish(source: str) -> str:
+    """Restore exact pre-polish header and frame for existing SDL Git SHAs."""
+    assert source.count(_HELP_HEADER) == 1, "HELP header color drift"
+    assert source.count(_FRAMELESS) == 1, "HELP frameless background drift"
+    assert source.count("    int x, y;\n") >= 1
+    source = source.replace(_HELP_HEADER, _PRE_HELP_HEADER, 1)
+    source = source.replace(_FRAMELESS, _PRE_FRAME, 1)
+    marker = "    int x, y;\n"
+    anchor = "static int helpDrawStarfield(DoomRPG_t* doomRpg) {"
+    start = source.index(anchor)
+    # Pre-polish declarations were BEFORE `int x, y`, not after it.
+    x_pos = source.index(marker, start)
+    assert source[x_pos:x_pos+len(_PRE_FRAME_DECL)] != _PRE_FRAME_DECL
+    return source[:x_pos] + _PRE_FRAME_DECL + source[x_pos:]

@@ -12,7 +12,8 @@ import subprocess
 import tempfile
 from audio_r2c_restore_menu_oracle import (restore_sound_options_action,
                                            restore_sound_options_back)
-from native_help_bottom_history import restore_pre_help_light_body_pages
+from native_help_bottom_history import (restore_pre_help_light_body_pages,
+                                        restore_pre_help_frame_polish)
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCES = ROOT / "ESP32/src"
@@ -104,6 +105,7 @@ def original_body_parity() -> None:
         # Sound activation is the only later intentional menu behavior delta.
         # Reverse it exactly without changing the historical frozen blobs.
         if filename == "native_main_menu_actions.c":
+            restored = restore_pre_help_frame_polish(restored)
             from uac_blink_history import restore_pre_uac_blink_actions
             restored = restore_pre_uac_blink_actions(restored)
             from audio_menu_m1_history import restore_pre_menu_audio_actions

@@ -8,7 +8,8 @@ This is an ABI/type cleanup, NOT removal of the transitional legacy SDL header.
 from pathlib import Path
 from sdl_f21_zone_call_boundary_host import restore_pre_f21_engine
 from native_help_bottom_history import (restore_pre_help_bottom_blue,
-                                        restore_pre_help_light_body_pages)
+                                        restore_pre_help_light_body_pages,
+                                        restore_pre_help_frame_polish)
 import hashlib
 import re
 import subprocess
@@ -52,6 +53,7 @@ for name, (sha, count) in BASELINE.items():
     # reconstruct its exact pre-blue block before verifying the immutable
     # F19 whole-file blob and native rectangle alias equivalence.
     if name == "native_main_menu_actions.c":
+        text = restore_pre_help_frame_polish(text)
         from uac_blink_history import restore_pre_uac_blink_actions
         text = restore_pre_uac_blink_actions(text)
         text = restore_pre_help_light_body_pages(text)
