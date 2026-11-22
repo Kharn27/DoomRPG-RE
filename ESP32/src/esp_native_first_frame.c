@@ -40,6 +40,20 @@
 #define MAX_SCREEN_WIDTH 160U
 #define FIRST_FRAME_ANIMATION_TIME 0U
 
+/* PERF-PORT-P1: reuse the immutable, map-owned catalog's exact palette only
+ * when the currently animated mapping still points to the same palette.
+ * The off switch is retained for host A/B or hardware rollback. */
+#ifndef DOOMRPG_PERF_PORT_PALETTE_REUSE
+#define DOOMRPG_PERF_PORT_PALETTE_REUSE 1
+#endif
+#ifndef DOOMRPG_PERF_PORT_PROFILE
+#define DOOMRPG_PERF_PORT_PROFILE 0
+#endif
+#if (DOOMRPG_PERF_PORT_PALETTE_REUSE != 0 && DOOMRPG_PERF_PORT_PALETTE_REUSE != 1) || \
+    (DOOMRPG_PERF_PORT_PROFILE != 0 && DOOMRPG_PERF_PORT_PROFILE != 1)
+#error "PERF-PORT switches must be 0 or 1"
+#endif
+
 #define LINE_FLAG_TWO_SIDED 0x00000001UL
 #define LINE_FLAG_SPRITE_SPAN 0x00000002UL
 #define LINE_FLAG_AXIS_X 0x00000008UL
@@ -82,6 +96,11 @@ typedef struct FirstFrameWork_s {
     uint32_t wallTexelDataBytes;
     uint32_t animationMs;
     uint8_t indicatorSeen;
+#if DOOMRPG_PERF_PORT_PROFILE
+    uint16_t paletteCatalogHits;
+    uint16_t palettePakReads;
+    uint32_t resolvedMicros;
+#endif
 
     uint32_t lineCandidates;
     /* Native per-frame diagnostic: never part of the Render shell. */
@@ -593,21 +612,43 @@ static int buildResolvedTextures(FirstFrameWork* work,
             return 0;
         }
 
-        if (!EspAssetPack_readRange(
-                palettes,
-                PALETTES_HEADER_BYTES + (uint32_t)paletteOffset * 2U,
-                paletteRaw,
-                sizeof(paletteRaw))) {
-            return 0;
-        }
-
         out->logicalId = (uint16_t)logical;
         out->actualId = (uint16_t)actual;
         out->paletteSourceOffset = (uint16_t)paletteOffset;
         out->sourceTexelOffset = (uint32_t)sourceOffset;
-        for (p = 0U; p < ESP_NATIVE_GRAPHICS_PALETTE_COLORS; ++p) {
-            out->paletteRgb565[p] =
-                sourceBgr565ToRgb565(readLe16(&paletteRaw[p * 2U]));
+
+        /* The catalog contains the original 16 BGR565 words loaded at
+         * map admission. Unlike the logical texture ID, the resolved pair
+         * can vary by animation phase. Compare the FULL offset (the compact
+         * catalog key is 16-bit), and never reuse a different phase's colors.
+         * The same BGR->RGB transform is applied on both paths. */
+#if DOOMRPG_PERF_PORT_PALETTE_REUSE
+        if ((uint32_t)paletteOffset <= UINT16_MAX &&
+            logicalRecord->paletteSourceOffset == (uint16_t)paletteOffset) {
+            for (p = 0U; p < ESP_NATIVE_GRAPHICS_PALETTE_COLORS; ++p) {
+                out->paletteRgb565[p] =
+                    sourceBgr565ToRgb565(logicalRecord->paletteRgb565[p]);
+            }
+#if DOOMRPG_PERF_PORT_PROFILE
+            ++work->paletteCatalogHits;
+#endif
+        } else
+#endif
+        {
+            if (!EspAssetPack_readRange(
+                    palettes,
+                    PALETTES_HEADER_BYTES + (uint32_t)paletteOffset * 2U,
+                    paletteRaw,
+                    sizeof(paletteRaw))) {
+                return 0;
+            }
+#if DOOMRPG_PERF_PORT_PROFILE
+            ++work->palettePakReads;
+#endif
+            for (p = 0U; p < ESP_NATIVE_GRAPHICS_PALETTE_COLORS; ++p) {
+                out->paletteRgb565[p] =
+                    sourceBgr565ToRgb565(readLe16(&paletteRaw[p * 2U]));
+            }
         }
     }
 
@@ -1323,10 +1364,16 @@ static int renderFrame(Render_t* render,
     }
 
     work->wallTexelDataBytes = readLe32(wallHeader);
-    if (work->wallTexelDataBytes + WALL_TEXEL_HEADER_BYTES != work->wallTexels.size ||
-        !buildResolvedTextures(work, &work->mappings, &palettes)) {
+    if (work->wallTexelDataBytes + WALL_TEXEL_HEADER_BYTES != work->wallTexels.size) {
         goto done;
     }
+#if DOOMRPG_PERF_PORT_PROFILE
+    const int64_t resolvedStart = esp_timer_get_time();
+#endif
+    if (!buildResolvedTextures(work, &work->mappings, &palettes)) goto done;
+#if DOOMRPG_PERF_PORT_PROFILE
+    work->resolvedMicros = (uint32_t)(esp_timer_get_time() - resolvedStart);
+#endif
 
     outState->ceilingRgb565 = rgb565(bspHeader[19], bspHeader[20], bspHeader[21]);
     outState->floorRgb565 = rgb565(bspHeader[16], bspHeader[17], bspHeader[18]);
@@ -1421,6 +1468,17 @@ static int renderFrame(Render_t* render,
     }
 
 done:
+#if DOOMRPG_PERF_PORT_PROFILE
+    /* This line is intentionally AFTER the palette-resolution stopwatch.
+     * Serial cost still enters the surrounding worldMicros: compare
+     * resolvedMicros between equally instrumented ON/OFF builds, not
+     * worldMicros against an uninstrumented historical firmware. */
+    printf("[PERFPORT] PALETTE ok=%d resolved=%u catalogHits=%u pakReads=%u resolveUs=%u cacheBytes=0\n",
+           ok, (unsigned int)work->resolvedCount,
+           (unsigned int)work->paletteCatalogHits,
+           (unsigned int)work->palettePakReads,
+           (unsigned int)work->resolvedMicros);
+#endif
     releaseCache(work);
     if (EspAssetPack_isOpen()) EspAssetPack_close();
     restoreRenderScratch(render, &scratch);
