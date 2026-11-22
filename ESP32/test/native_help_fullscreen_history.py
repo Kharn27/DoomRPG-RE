@@ -4,6 +4,20 @@ The source snippets below are generated from the actual diff against
 main c1a8c2820e5f7a75d8097e873905ec8e11fb53f7. Never update the frozen
 legacy Git SHA fixtures to accommodate a current UI change.
 """
+# Reverse the *later* 22 Nov CYD visual polish before the original P1
+# inverse. This keeps every frozen SDL/architecture source SHA unmodified.
+# Only HELP presentation pixels changed; the X hitbox stays untouched.
+REVERSE_POLISH = [
+    ("    if (!helpSpaceActive || helpSpaceOwner != doomRpg ||",
+     "    int x, y;\n\n    if (!helpSpaceActive || helpSpaceOwner != doomRpg ||"),
+    ("    /* HELP keeps every pixel of the native scrolling c.bmp background:\n     * no dimming, overlay, second framebuffer or extra SD/PAK read. */\n    helpSpaceShift = shift;",
+     "    /* Keep the translucent dark reading window, without the redundant\n     * colored rectangular frame. Original c.bmp stars remain visible. */\n    for (y = 13; y <= 116; ++y) {\n        for (x = 5; x <= 154; ++x) {\n            uint16_t* pixel = &framebuffer[y * DOOMRPG_LOGICAL_WIDTH + x];\n            *pixel = (uint16_t)((*pixel >> 1) & 0x7befU);\n        }\n    }\n    helpSpaceShift = shift;"),
+    ("/* Red a.bmp X at x4/y1: no visible border or backing plate.\n * Its comfortable invisible touch target still wins over left pagination. */\n\n/* Side rails",
+     "/* Framed bright-red a.bmp X lives at x4/y1. The border's hitbox has\n * priority over the left half-screen page gesture. */\nstatic void helpPaintExitFrame(uint16_t* fb) {\n    int x, y;\n    if (fb == NULL) return;\n    for (x = 1; x <= 16; ++x) {\n        fb[x] = 0xf800U;\n        fb[13 * DOOMRPG_LOGICAL_WIDTH + x] = 0xf800U;\n    }\n    for (y = 1; y < 13; ++y) {\n        fb[y * DOOMRPG_LOGICAL_WIDTH + 1] = 0xf800U;\n        fb[y * DOOMRPG_LOGICAL_WIDTH + 16] = 0xf800U;\n    }\n}\n\n/* Side rails"),
+    ("    /* Bright red native a.bmp X without a frame or dark backing. */\n    DoomRPG_setFontColor(doomRpg, 0xffff2424U);\n    EspNativeCanvas_drawText(canvas, \"X\", 4, 1, 0);",
+     "    /* One small framed X, same native a.bmp face as HELP / CYD. */\n    DoomRPG_setFontColor(doomRpg, 0xffff2424U);\n    EspNativeCanvas_drawText(canvas, \"X\", 4, 1, 0);\n    helpPaintExitFrame(framebuffer);"),
+]
+
 REWRITES = [
     ("#include \"esp_audio_entrance_music.h\" /* MENU-M0: stop title before action */\n#include \"esp_native_canvas_text.h\"\n#include \"esp_main_menu_skin.h\"\n#include \"esp_asset_pack.h\"\n#include \"esp_native_help_scene.h\"\n#include \"esp_native_help_nav.h\"\n#include \"esp_native_gameplay_hud.h\"\n#include \"esp_native_gameplay_hud_weapon_button.h\"\n#include \"esp_native_gameplay_hub_weapon_grid.h\"\n#include \"esp_native_gameplay_player_state.h\"\n#include \"esp_entity_def_type_catalog.h\"",
      "#include \"esp_audio_entrance_music.h\" /* MENU-M0: stop title before action */\n#include \"esp_native_canvas_text.h\"\n#include \"esp_main_menu_skin.h\"\n#include \"esp_asset_pack.h\"\n#include \"esp_native_help_scene.h\"\n#include \"esp_native_gameplay_hud.h\"\n#include \"esp_native_gameplay_hud_weapon_button.h\"\n#include \"esp_native_gameplay_hub_weapon_grid.h\"\n#include \"esp_native_gameplay_player_state.h\"\n#include \"esp_entity_def_type_catalog.h\""),
@@ -36,6 +50,11 @@ REWRITES = [
 ]
 
 def restore_pre_help_fullscreen_nav(source: str) -> str:
+    for current, earlier in REVERSE_POLISH:
+        assert source.count(current) == 1, (
+            "HELP polish source hunk drift",
+            current[:100], source.count(current))
+        source = source.replace(current, earlier, 1)
     for current, earlier in REWRITES:
         assert source.count(current) == 1, (
             "HELP fullscreen later-source hunk drift",
