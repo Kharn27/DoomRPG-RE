@@ -395,8 +395,15 @@ assert 'if (!bottomOnly) drawTopTouchNotches(framebuffer, stats);' in hud_c
 assert 'if (status == ESP_NATIVE_GAMEPLAY_HUD_OK && !bottomOnly) {' in hud_c
 assert 'drawWeaponTouchCorners(framebuffer, stats);' in hud_c
 assert 'paintPrepared(&prepared, framebuffer, outStats, 0)' in hud_c
+# The experimental portrait chooses the original 9-frame large atlas first,
+# but retains l.bmp as the exact bounded classic fallback. HELP shares the
+# canonical HUD painter, so its frame source remains the same as gameplay.
 assert all(f'openAsset("{x}.bmp", &bmp,' in hud_c
-           for x in ('k','m','l','o','a'))
+           for x in ('k','m','o','a'))
+assert 'openFaces(&bmp, stats, NULL)' in hud_c
+assert 'status = openFaces(&bmp, stats, &largerSelected);' in hud_c
+assert 'openAsset("l.bmp", bmp, stats)' in hud_c
+assert 'HUD_LARGER_FACE_NAME "larger HUD faces.bmp"' in hud_c
 assert 'static const int tones[3] = {1, 4, 7};' in actions
 
 # Return to the ACTUAL FIRST 2026-11-08 PAK-backed DOOR/WALL scene.
