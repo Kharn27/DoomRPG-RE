@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""FONT-NEUTRAL-P1: deterministic 4bpp BMP palette neutralization and PNG proofs.
+"""FONT-NEUTRAL-P1: deterministic 4bpp grayscale BMP assets and PNG proofs.
 
 Only original index-paletted Doom glyphs are used. No Pillow or ESP32 dependency.
 Usage: python artwork/fonts/neutral/generate.py --check  (read-only)
@@ -23,6 +23,25 @@ GAP = 16
 COMPARISON_SCALE = 2
 THEME_SCALE = 2
 GLYPHS = "ADOao08%"
+LABEL_HEIGHT = 24
+# Only the new *large neutral* BMP gets chromed-outline a/o tonal repairs.
+# Old colored sources, magenta index 2, geometry and the other 94 cells stay intact.
+LARGE_AO_REMAP = (0, 1, 2, 0, 15, 12, 4, 8, 7, 4, 7, 11, 1, 0, 12, 15)
+LABEL_FONT = {
+    "A": ("01110", "10001", "10001", "11111", "10001", "10001", "10001"),
+    "E": ("11111", "10000", "10000", "11110", "10000", "10000", "11111"),
+    "G": ("01111", "10000", "10000", "10111", "10001", "10001", "01110"),
+    "H": ("10001", "10001", "10001", "11111", "10001", "10001", "10001"),
+    "I": ("11111", "00100", "00100", "00100", "00100", "00100", "11111"),
+    "L": ("10000", "10000", "10000", "10000", "10000", "10000", "11111"),
+    "N": ("10001", "11001", "10101", "10011", "10001", "10001", "10001"),
+    "O": ("01110", "10001", "10001", "10001", "10001", "10001", "01110"),
+    "P": ("11110", "10001", "10001", "11110", "10000", "10000", "10000"),
+    "R": ("11110", "10001", "10001", "11110", "10100", "10010", "10001"),
+    "S": ("01111", "10000", "10000", "01110", "00001", "00001", "11110"),
+    "T": ("11111", "00100", "00100", "00100", "00100", "00100", "00100"),
+    "U": ("10001", "10001", "10001", "10001", "10001", "10001", "01110"),
+}
 SPECS = (
     ("a.bmp", "a_neutral.bmp", (144, 72), (9, 12), 0,
      "e088bb3f65f9314e394443dc659c643fd4cca0cd10fd5782d9b698ca16f8deae"),
@@ -82,6 +101,29 @@ def neutralize(data: bytes, transparent_index: int) -> bytes:
     return bytes(result)
 
 
+def harmonize_large_ao(data: bytes, size: tuple[int, int],
+                        cell: tuple[int, int]) -> bytes:
+    """Re-shade only a/o in new neutral large atlas, preserving their silhouette."""
+    src = inspect_bmp(data, size)
+    out = bytearray(data)
+    cw, ch = cell
+    for glyph in "ao":
+        index = ord(glyph) - 33
+        x0, y0 = index % 16 * cw, index // 16 * ch
+        for y in range(ch):
+            for x in range(cw):
+                xg, yg = x0 + x, y0 + y
+                original = pixel(src, xg, yg)
+                mapped = LARGE_AO_REMAP[original]
+                assert (original == 2) == (mapped == 2)  # unchanged magenta
+                offset = 118 + (size[1] - 1 - yg) * src["pitch"] + xg // 2
+                if xg % 2:
+                    out[offset] = (out[offset] & 0xf0) | mapped
+                else:
+                    out[offset] = (out[offset] & 0x0f) | (mapped << 4)
+    return bytes(out)
+
+
 def canvas(w: int, h: int) -> bytearray:
     return bytearray(bytes(BG) * (w * h))
 
@@ -121,6 +163,21 @@ def draw(dst: bytearray, dw: int, sheet: dict, palette: list,
                 dst[begin:begin + len(row_bytes)] = row_bytes
 
 
+def draw_label(dst: bytearray, dw: int, ox: int, oy: int,
+               text: str, color: tuple[int, int, int]) -> None:
+    """Deterministic five-by-seven caption; no Pillow/system font needed."""
+    for i, letter in enumerate(text):
+        for y, pixels in enumerate(LABEL_FONT[letter]):
+            for x, value in enumerate(pixels):
+                if value == "0":
+                    continue
+                for dy in range(2):
+                    for dx in range(2):
+                        at = ((oy + y * 2 + dy) * dw + ox + i * 12
+                              + x * 2 + dx) * 3
+                        dst[at:at + 3] = bytes(color)
+
+
 def png_chunk(name: bytes, payload: bytes) -> bytes:
     chunk = name + payload
     return struct.pack(">I", len(payload)) + chunk + struct.pack(
@@ -155,20 +212,32 @@ def render_outputs() -> dict[Path, bytes]:
         source = inspect_bmp(source_bytes, size)
         assert source["palette"][transparent] == (255, 0, 255)
         neutral_bytes = neutralize(source_bytes, transparent)
+        if original == "larger_font.bmp":
+            neutral_bytes = harmonize_large_ao(neutral_bytes, size, cell)
         neut = inspect_bmp(neutral_bytes, size)
         assert source_bytes[:54] == neutral_bytes[:54]
-        assert source_bytes[118:] == neutral_bytes[118:]
+        if original == "a.bmp":
+            assert source_bytes[118:] == neutral_bytes[118:]
         outputs[ASSETS / neutral] = neutral_bytes
 
         w, h = size
         cw, ch = cell
         scale = COMPARISON_SCALE
-        bw, bh = PADDING * 2 + w * scale * 2 + GAP, PADDING * 2 + h * scale
+        bw = PADDING * 2 + w * scale * 3 + GAP * 2
+        bh = PADDING * 2 + LABEL_HEIGHT + h * scale
         comparison = canvas(bw, bh)
+        panel_x = [PADDING + i * (w * scale + GAP) for i in range(3)]
+        for x, label_text, label_color in zip(
+                panel_x, ("ORIGINAL", "NEUTRE", "PHOSPHORE"),
+                ((255, 195, 94), (230, 232, 236), (112, 255, 172))):
+            draw_label(comparison, bw, x, PADDING, label_text, label_color)
+        top = PADDING + LABEL_HEIGHT
         draw(comparison, bw, source, source["palette"], transparent,
-             PADDING, PADDING, scale)
-        draw(comparison, bw, source, neut["palette"], transparent,
-             PADDING + w * scale + GAP, PADDING, scale)
+             panel_x[0], top, scale)
+        draw(comparison, bw, neut, neut["palette"], transparent,
+             panel_x[1], top, scale)
+        draw(comparison, bw, neut, neut["palette"], transparent,
+             panel_x[2], top, scale, stops=THEMES[2][1], cell_h=ch)
         stem = original.removesuffix(".bmp")
         outputs[PREVIEWS / (stem + "_compare.png")] = png(bw, bh, comparison)
 
@@ -183,7 +252,8 @@ def render_outputs() -> dict[Path, bytes]:
                 index = ord(glyph) - 33  # authentic Doom 16x6 cell mapping
                 assert 0 <= index < 96
                 xywh = ((index % 16) * cw, (index // 16) * ch, cw, ch)
-                draw(zoom, zw, source, palette, transparent,
+                draw(zoom, zw, source if row == 0 else neut,
+                     palette, transparent,
                      spacing + i * panel_w, spacing + row * panel_h,
                      zoom_scale, xywh)
         outputs[PREVIEWS / (stem + "_zoom.png")] = png(zw, zh, zoom)
@@ -191,7 +261,7 @@ def render_outputs() -> dict[Path, bytes]:
         tw, th = PADDING * 2 + w * THEME_SCALE, PADDING * 6 + h * THEME_SCALE * 5
         theme_image = canvas(tw, th)
         for i, (_theme_name, stops) in enumerate(THEMES):
-            draw(theme_image, tw, source, neut["palette"], transparent,
+            draw(theme_image, tw, neut, neut["palette"], transparent,
                  PADDING, PADDING + i * (h * THEME_SCALE + PADDING),
                  THEME_SCALE, stops=stops, cell_h=ch)
         outputs[PREVIEWS / (stem + "_themes.png")] = png(tw, th, theme_image)
@@ -214,7 +284,7 @@ def main() -> None:
             assert path.read_bytes() == data, "non-reproducible: " + str(path)
         print("FONT-NEUTRAL", "WRITE" if args.write else "PASS",
               path.relative_to(ROOT), len(data), sha256(data))
-    print("FONT-NEUTRAL-P1: deterministic, palette-only, no runtime changes")
+    print("FONT-NEUTRAL-P1: deterministic grayscale + large a/o indices, no runtime changes")
 
 
 if __name__ == "__main__":

@@ -9,17 +9,33 @@ Il n'y a **aucun changement firmware, HELP, UAC, gameplay, PAK ou framebuffer**.
 | `sdroot/doomrpg/img/a.bmp` | `sdroot/doomrpg/img/a_neutral.bmp` | 144×72, 16×6, 9×12 | Magenta index 0 |
 | `sdroot/doomrpg/img/larger_font.bmp` | `sdroot/doomrpg/img/larger_font_neutral.bmp` | 208×102, 16×6, 13×17 | Magenta index 2 |
 
-## Original à gauche, neutre à droite (pixels Doom réels, zoom nearest ×2)
+## Original / neutre / recoloration simulée (pixels Doom réels, zoom nearest ×2)
 
-![Petite police, original à gauche, neutre à droite](previews/a_compare.png)
+Chaque PNG compare **trois planches différentes** : **ORIGINAL** (palette
+colorée conservée), **NEUTRE** (nouveau BMP réellement en gris) et
+**PHOSPHORE** (modulation verte de cette même planche neutre, uniquement
+simulation hôte). L'aperçu ne prétend pas que le firmware applique déjà
+cette recoloration. Les légendes sont gravées dans les PNG pour éviter
+les deux planches indiscernables sans contexte.
 
-![Grande police, original à gauche, neutre à droite](previews/larger_font_compare.png)
+![Petite police, original, neutre, simulation PHOSPHORE](previews/a_compare.png)
+
+![Grande police, original, neutre, simulation PHOSPHORE](previews/larger_font_compare.png)
 
 ## Vérification rapprochée des glyphes
 
 Ligne supérieure : **originaux**. Ligne inférieure : **neutres**.
 Ordre des huit cases, gauche → droite : `A D O a o 0 8 %`.
-Les silhouettes et les corrections historiques de `a` et `o` ne sont pas retouchées.
+**Correction ciblée de la grande police neutre :** les glyphes minuscules
+`a` et `o` de l'original sont de forme correcte, mais restent visuellement
+cuivrés/sombres car leurs indices privilégient une autre gamme de la
+palette. Le nouveau `larger_font_neutral.bmp` les **réombrage** avec les
+indices chrome déjà utilisés par les autres caractères ; leurs silhouettes
+(96 pixels opaques chacun), emplacement, dimensions et clé magenta restent
+identiques. Uniquement **83 pixels de `a` et 79 de `o`** changent d'index ;
+les 94 autres cellules sont conservées nibble pour nibble.
+Le petit `a_neutral.bmp` reste strictement palette-only. Les originaux
+historiques ne sont pas modifiés.
 
 ![Glyphes petite police en zoom](previews/a_zoom.png)
 
@@ -50,9 +66,13 @@ et arrondir explicitement vers RGB565.
 
 ## Palette et compromis vérifiés
 
-La conversion ne réécrit **que les triplets B,G,R** des 15 entrées
-non transparentes, jamais leur octet réservé, leur index ou les octets
-de pixels. Les deux clés `(255,0,255,0)` restent identiques.
+La neutralisation réécrit les triplets B,G,R des 15 entrées non transparentes,
+jamais l'octet réservé. Pour `a_neutral.bmp`, les pixels/index restent
+strictement identiques. Pour `larger_font_neutral.bmp`, **exception
+volontairement bornée aux cellules `a/o`** par
+`LARGE_AO_REMAP` dans le générateur. Les deux clés magenta
+`(255,0,255,0)` et le masque de chaque glyphe restent identiques.
+La modification est détectée explicitement par les tests host.
 
 Trois stratégies comparées :
 
@@ -108,7 +128,7 @@ après quantification, surtout sur teintes sombres : à contrôler en P2/P4.
 | `a.bmp` **historique** | 5 302 | `e088bb3f65f9314e394443dc659c643fd4cca0cd10fd5782d9b698ca16f8deae` |
 | `larger_font.bmp` **historique** | 10 726 | `faa893a06e63a9ca0e223cf2bcc5216950db600a437b01ab68a156eb1b8a4908` |
 | `a_neutral.bmp` **nouveau** | 5 302 | `1724b300816bad83aba5017395a51666df532f3f19fcfd4a3958f9e72bf5657f` |
-| `larger_font_neutral.bmp` **nouveau** | 10 726 | `43b86d143d6e2e91d165da06e29f322047abeba977878d837cb699d816cb0533` |
+| `larger_font_neutral.bmp` **nouveau** | 10 726 | `2d088edce27a62ffca4a6ce01638009da3b02f34aca6f07b412d18e4c8253e15` |
 
 ## Commandes reproductibles
 
@@ -124,9 +144,11 @@ python3 artwork/fonts/neutral/generate.py --write
 La génération ne dépend **que de la bibliothèque standard Python**.
 Les PNG sont écrits en truecolor, sans filtre et avec blocs zlib *stored*
 déterministes ; ils n'entrent jamais dans `sdroot/`.
-Le test host vérifie le format BMP, les 96 cellules pixel par pixel,
-les réparations `a/o`, les masques, les indices/pixels 4 bpp, les SHA
-et la reproduction **octet par octet** des deux BMP et six PNG.
+Le test host vérifie le format BMP, les 94 cellules non concernées
+pixel par pixel dans la grande planche, l'identité totale des indices
+de la petite, les **162 substitutions exactes de `a/o`**, les masques,
+les palettes 4 bpp, les SHA et la reproduction **octet par octet**
+des deux BMP et six PNG.
 Les oracles `ESP32/test/font_sd_assets_host.py` restent **inchangés**.
 
 **Étape suivante — hors P1** : sélectionner explicitement l'atlas neutre,

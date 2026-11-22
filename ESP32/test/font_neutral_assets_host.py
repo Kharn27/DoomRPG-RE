@@ -20,13 +20,13 @@ ORIGINALS = (
      "1724b300816bad83aba5017395a51666df532f3f19fcfd4a3958f9e72bf5657f"),
     ("larger_font.bmp", "larger_font_neutral.bmp", (208, 102), (13, 17), 2, 96,
      "faa893a06e63a9ca0e223cf2bcc5216950db600a437b01ab68a156eb1b8a4908",
-     "43b86d143d6e2e91d165da06e29f322047abeba977878d837cb699d816cb0533"),
+     "2d088edce27a62ffca4a6ce01638009da3b02f34aca6f07b412d18e4c8253e15"),
 )
 PREVIEW_SIZES = {
-    "a_compare.png": (624, 176),
+    "a_compare.png": (928, 200),
     "a_zoom.png": (468, 156),
     "a_themes.png": (320, 816),
-    "larger_font_compare.png": (880, 236),
+    "larger_font_compare.png": (1312, 260),
     "larger_font_zoom.png": (524, 172),
     "larger_font_themes.png": (448, 1116),
 }
@@ -80,11 +80,15 @@ for original, neutral, dims, cell, transparent, ao_ink, sha_orig, sha_neut in OR
     assert (len(src_bytes), len(dst_bytes)) == (
         118 + (dims[0] // 2) * dims[1], 118 + (dims[0] // 2) * dims[1])
     assert src_bytes[:54] == dst_bytes[:54]  # 4bpp/stride/header identical
-    assert src_bytes[118:] == dst_bytes[118:]  # every index nibble identical
+    if original == "a.bmp":
+        assert src_bytes[118:] == dst_bytes[118:]  # small is palette-only
     expected_magenta = b"\xff\0\xff\0"
     assert src_bytes[54 + transparent * 4:58 + transparent * 4] == expected_magenta
     assert dst_bytes[54 + transparent * 4:58 + transparent * 4] == expected_magenta
-    assert gen.neutralize(src_bytes, transparent) == dst_bytes
+    expected_bytes = gen.neutralize(src_bytes, transparent)
+    if original == "larger_font.bmp":
+        expected_bytes = gen.harmonize_large_ao(expected_bytes, dims, cell)
+    assert expected_bytes == dst_bytes
     src = gen.inspect_bmp(src_bytes, dims)
     dst = gen.inspect_bmp(dst_bytes, dims)
     for i in range(16):
@@ -104,12 +108,16 @@ for original, neutral, dims, cell, transparent, ao_ink, sha_orig, sha_neut in OR
                   for y in range(ch) for x in range(cw)]
         same = [gen.pixel(dst, x0 + x, y0 + y)
                 for y in range(ch) for x in range(cw)]
-        assert actual == same, (original, code)
+        is_large_ao = original == "larger_font.bmp" and code in (
+            ord("a") - 33, ord("o") - 33)
+        assert same == ([gen.LARGE_AO_REMAP[i] for i in actual]
+                        if is_large_ao else actual), (original, code)
         if code in (ord("a") - 33, ord("o") - 33):
             assert sum(i != transparent for i in actual) == ao_ink
-    for x in range(dims[0]):
-        for y in range(dims[1]):
-            assert gen.pixel(src, x, y) == gen.pixel(dst, x, y)
+            assert sum(i != transparent for i in same) == ao_ink
+            if is_large_ao:
+                assert sum(a != b for a, b in zip(actual, same)) == (
+                    83 if code == ord("a") - 33 else 79)
 
     compare = first[gen.PREVIEWS / (original[:-4] + "_compare.png")]
     outw, outh, rendered = decode_png(compare)
@@ -117,11 +125,19 @@ for original, neutral, dims, cell, transparent, ao_ink, sha_orig, sha_neut in OR
     for y in range(dims[1]):
         for x in range(dims[0]):
             i = gen.pixel(src, x, y)
+            j = gen.pixel(dst, x, y)
             old = gen.BG if i == transparent else src["palette"][i]
-            new = gen.BG if i == transparent else dst["palette"][i]
-            assert rgb(rendered, outw, 16 + 2*x, 16 + 2*y) == tuple(old)
-            assert rgb(rendered, outw, 16 + 2*dims[0] + 16 + 2*x,
-                       16 + 2*y) == tuple(new)
+            new = gen.BG if j == transparent else dst["palette"][j]
+            tint = gen.theme_color(gen.THEMES[2][1], y % ch, ch)
+            tinted = (gen.BG if j == transparent else tuple(
+                (new[0] * channel + 127) // 255 for channel in tint))
+            yimg = gen.PADDING + gen.LABEL_HEIGHT + 2*y
+            for panel, color in enumerate((old, new, tinted)):
+                ximg = gen.PADDING + panel * (dims[0] * 2 + gen.GAP) + 2*x
+                assert rgb(rendered, outw, ximg, yimg) == tuple(color)
+    # Labeled third panel proves re-colorability, not firmware behavior.
+    assert gen.LABEL_HEIGHT == 24
+    assert len(gen.LABEL_FONT) >= 13
 
     # Blue pure is entirely blue at every ink pixel, black stays black;
     # transparent pixels are skipped, and no index cache/tone texture exists.
@@ -134,7 +150,7 @@ for original, neutral, dims, cell, transparent, ao_ink, sha_orig, sha_neut in OR
         assert tuple((ink * channel + 127) // 255
                      for channel in (0, 0, 0)) == (0, 0, 0)
     print("FONT-NEUTRAL HOST PASS", original, "->", neutral,
-          "96/96 cells + a/o, mask, key, 4bpp, palette, SHA256")
+          "94 or 96 unchanged cells + shaded a/o, mask, key, 4bpp, SHA256")
 
 for path, expected in first.items():
     assert path.is_file() and path.read_bytes() == expected, path
