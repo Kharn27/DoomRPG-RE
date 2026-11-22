@@ -152,10 +152,10 @@ present = production_signature("int EspNativeGameplayActionEngine_present(void)"
 assert present.index("if (EspNativeGameplayHub_isActive())") < present.index(
     "decorateActiveHit();"
 )
-assert present.index("return __real_Esp32PlatformVideo_present();") < present.index(
+assert present.index("return Esp32PlatformVideo_presentBase();") < present.index(
     "decoratePlayerImpact();"
 )
-assert 'extern int __real_Esp32PlatformVideo_present(void);' in source
+assert 'extern int Esp32PlatformVideo_presentBase(void);' in source
 impact = production_function("decoratePlayerImpact")
 assert "!EspNativeGameplayHub_isActive()" in impact
 assert impact.index("!EspNativeGameplayHub_isActive()") < impact.index(
@@ -182,7 +182,7 @@ void decorateActiveHit(void) { ++decorators; }
 void decorateActiveGib(void) { ++decorators; }
 void decorateNewGibs(void) { ++decorators; }
 void decoratePlayerImpact(void) { ++decorators; }
-int __real_Esp32PlatformVideo_present(void) {
+int Esp32PlatformVideo_presentBase(void) {
     ++directPresents;
     return 1;
 }

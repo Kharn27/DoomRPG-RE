@@ -40,6 +40,9 @@ bridge = (SRC / "platform_video_c_bridge.cpp").read_text(encoding="utf-8")
 header = (ROOT / "ESP32/include/platform_video_c_bridge.h").read_text()
 display = (SRC / "platform_video.cpp").read_text(encoding="utf-8")
 assert "int Esp32PlatformVideo_present(void)" in header
+assert "int Esp32PlatformVideo_presentBase(void)" in header
+assert 'extern "C" int Esp32PlatformVideo_presentBase(void)' in bridge
+assert "int Esp32PlatformVideo_present(void)" in (SRC / "esp_native_gameplay_present_gate.c").read_text()
 assert "return PlatformVideo_present() ? 1 : 0;" in bridge
 assert "bool PlatformVideo_present()" in display
 assert "uint16_t outputRow[DOOMRPG_PHYSICAL_WIDTH];" in display

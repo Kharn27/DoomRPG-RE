@@ -65,8 +65,8 @@ def source_scan():
     require(len(all_src) >= 178, "unexpectedly small production corpus")
     config = (ROOT / "platformio.ini").read_text()
     normal = config.split("[env:esp32-cyd]", 1)[1].split("[env:esp-cyd-inverted]", 1)[0]
-    require(len(re.findall(r"^\s+-Wl,--wrap=", normal, re.M)) == 1,
-            "expected 1 production wrapper after RC23")
+    require(len(re.findall(r"^\s+-Wl,--wrap=", normal, re.M)) == 0,
+            "RC24 requires zero production GNU wrappers")
     for symbol in RETIRED:
         require("-Wl,--wrap=" + symbol not in config, "retired flag " + symbol)
         for name, text in all_src.items():
@@ -74,7 +74,7 @@ def source_scan():
                     "GNU alias survives in " + name)
     require("-Wl,--wrap=EspNativeGameplayFrame_renderTurn" not in config,
             "RC23 renderTurn linker interposition resurrected")
-    require("-Wl,--wrap=Esp32PlatformVideo_present" in config,
+    require("-Wl,--wrap=Esp32PlatformVideo_present" not in config,
             "protected present wrapper lost")
     require("EspMapLineState_applyDoorCommand(" not in all_src["esp_map_line_state.c"],
             "core door leaf must not bypass public animation")

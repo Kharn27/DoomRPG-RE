@@ -97,7 +97,7 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_blit(
         ++damageGlyphs;
     return ESP_NATIVE_INDEXED_BMP_OK;
 }
-int __real_Esp32PlatformVideo_present(void) {
+int Esp32PlatformVideo_presentBase(void) {
     ++presents;
     if (failPresent != 0) { --failPresent; return 0; }
     if (directionCue.pendingValid != 0U &&
@@ -204,7 +204,7 @@ int main(void) {
         assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
             10U + side, 157U, (EspNativeGameplayDamageSide)side));
         assert(presents == 0U);
-        assert(__wrap_Esp32PlatformVideo_present());
+        assert(EspNativeGameplayActionEngine_presentBase());
         assert(presents == 1U && concurrentPresents == 1U);
         assert(actionState.viewportFlashLit &&
                actionState.viewportFlashVisible &&
@@ -228,7 +228,7 @@ int main(void) {
     strcpy(actionState.feedbackText, "8 damage!");
     EspNativeGameplayActionEngine_beginMonsterVisualWork();
     EspNativeGameplayActionEngine_stageNonlethalMonsterFlash();
-    assert(__wrap_Esp32PlatformVideo_present());
+    assert(EspNativeGameplayActionEngine_presentBase());
     assert(presents == 1U && !actionState.viewportFlashVisible &&
            actionState.feedbackPending && !damageGlyphs);
     assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
@@ -250,7 +250,7 @@ int main(void) {
     actionState.viewportFlashPending = 1U;
     actionState.viewportFlashColor565 = 0xffffU;
     actionState.viewportFlashDurationMs = 500U;
-    assert(__wrap_Esp32PlatformVideo_present());
+    assert(EspNativeGameplayActionEngine_presentBase());
     expectBorder(0U, 0x1234U, 0xffffU);
     finishBlink(1U, 0x1234U);
 
@@ -260,12 +260,12 @@ int main(void) {
     armRed();
     assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
         10U, 157U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
-    assert(__wrap_Esp32PlatformVideo_present());
+    assert(EspNativeGameplayActionEngine_presentBase());
     clockMs += 10U;
     armRed();
     assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
         11U, 159U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT));
-    assert(__wrap_Esp32PlatformVideo_present());
+    assert(EspNativeGameplayActionEngine_presentBase());
     assert(presents == 2U && concurrentPresents == 2U);
     expectBorder(ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT, 0x1234U,
                  FEEDBACK_DAMAGE_RED565);
@@ -278,10 +278,10 @@ int main(void) {
     assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
         12U, 157U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK));
     failPresent = 1;
-    assert(!__wrap_Esp32PlatformVideo_present());
+    assert(!EspNativeGameplayActionEngine_presentBase());
     assert(presents == 1U && !actionState.viewportFlashVisible &&
            actionState.viewportFlashSnapshotValid);
-    assert(__wrap_Esp32PlatformVideo_present());
+    assert(EspNativeGameplayActionEngine_presentBase());
     assert(presents == 2U && actionState.viewportFlashLit);
     expectBorder(ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK, 0x1234U,
                  FEEDBACK_DAMAGE_RED565);
@@ -293,7 +293,7 @@ int main(void) {
     armRed();
     assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
         20U, 157U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_RIGHT));
-    assert(__wrap_Esp32PlatformVideo_present());
+    assert(EspNativeGameplayActionEngine_presentBase());
     clockMs += 105U;
     failPresent = 1;
     assert(!serviceViewportFlashExpiry());
@@ -323,12 +323,12 @@ int main(void) {
     armRed();
     assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
         13U, 157U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_RIGHT));
-    assert(__wrap_Esp32PlatformVideo_present());
+    assert(EspNativeGameplayActionEngine_presentBase());
     for (unsigned y = 20U; y < 100U; ++y)
         for (unsigned x = 0U; x < 160U; ++x)
             pixels[1U + y * 160U + x] = 0x5678U;
     EspNativeGameplayActionEngine_markFreshFrame();
-    assert(__wrap_Esp32PlatformVideo_present());
+    assert(EspNativeGameplayActionEngine_presentBase());
     expectBorder(ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_RIGHT, 0x5678U,
                  FEEDBACK_DAMAGE_RED565);
     finishBlink(2U, 0x5678U);
@@ -339,7 +339,7 @@ int main(void) {
     armRed();
     assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
         14U, 157U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
-    assert(__wrap_Esp32PlatformVideo_present());
+    assert(EspNativeGameplayActionEngine_presentBase());
     clockMs += 105U;
     poll();
     assert(!actionState.viewportFlashLit);
@@ -347,7 +347,7 @@ int main(void) {
         for (unsigned x = 0U; x < 160U; ++x)
             pixels[1U + y * 160U + x] = 0x5678U;
     EspNativeGameplayActionEngine_markFreshFrame();
-    assert(__wrap_Esp32PlatformVideo_present());
+    assert(EspNativeGameplayActionEngine_presentBase());
     assert(presents == 3U && !actionState.viewportFlashLit);
     expectClean(0x5678U);
     clockMs += 65U;
@@ -366,10 +366,10 @@ int main(void) {
     assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
         15U, 157U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
     controls = 1;
-    assert(__wrap_Esp32PlatformVideo_present());
+    assert(EspNativeGameplayActionEngine_presentBase());
     assert(presents == 1U && !actionState.viewportFlashSnapshotValid);
     controls = 0;
-    assert(__wrap_Esp32PlatformVideo_present());
+    assert(EspNativeGameplayActionEngine_presentBase());
     assert(actionState.viewportFlashSnapshotValid);
     finishBlink(2U, 0x1234U);
 
@@ -377,7 +377,7 @@ int main(void) {
     automapOwner = 1;
     armRed();
     for (unsigned i = 1U; i <= 160U * 120U; ++i) pixels[i] = 0x4567U;
-    assert(__wrap_Esp32PlatformVideo_present());
+    assert(EspNativeGameplayActionEngine_presentBase());
     assert(presents == 1U && !actionState.viewportFlashPending &&
            !actionState.viewportFlashVisible);
     assert(!EspNativeGameplayActionEngine_queueDirectionalDamage(
@@ -392,15 +392,15 @@ int main(void) {
     seedUnpainted();
     worldActive = 0;
     facingDirty = 1;
-    assert(__wrap_Esp32PlatformVideo_present());
-    assert(__wrap_Esp32PlatformVideo_present());
+    assert(EspNativeGameplayActionEngine_presentBase());
+    assert(EspNativeGameplayActionEngine_presentBase());
     assert(topBarTiles == 0U && facingDirty == 1 && presents == 2U);
     firstWorldLease = 1;
-    assert(__wrap_Esp32PlatformVideo_present());
+    assert(EspNativeGameplayActionEngine_presentBase());
     assert(topBarTiles == 1U && facingDirty == 0 && presents == 3U);
     firstWorldLease = 0;
     worldActive = 1;
-    assert(__wrap_Esp32PlatformVideo_present());
+    assert(EspNativeGameplayActionEngine_presentBase());
     assert(presents == 4U);
 
     /* Reproduce true CYD scheduling, not just pure lease math:
@@ -423,7 +423,7 @@ int main(void) {
         paintOriginalImpactOnSharedRed);
     EspNativeGameplayActionEngine_beginMonsterVisualWork();
     EspNativeGameplayActionEngine_stageNonlethalMonsterFlash();
-    assert(__wrap_Esp32PlatformVideo_present());
+    assert(EspNativeGameplayActionEngine_presentBase());
     assert(presents == 1U && impactPaintCalls == 0U &&
            impactWithRedPresent == 0U);
     assert(pixels[1U+60U*160U+80U]!=0xdde1U);
