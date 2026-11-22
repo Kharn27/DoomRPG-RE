@@ -85,7 +85,13 @@ shim = r'''
 /* Reuse the production FIRE-VIS-P2 eligibility policy. Keep only this
  * CROSS-specific fixture's deterministic animationDrift clock override. */
 #define EspNativeAmbientSprite_frame EspNativeAmbientSprite_realClockFrame
+#define EspNativeAmbientSprite_rasterCandidate EspNativeAmbientSprite_realCandidate
+#define EspNativeAmbientSprite_fast EspNativeAmbientSprite_realFast
+#define EspNativeAmbientSprite_rapid EspNativeAmbientSprite_realRapid
 #include "esp_native_ambient_sprite.h"
+#undef EspNativeAmbientSprite_rapid
+#undef EspNativeAmbientSprite_fast
+#undef EspNativeAmbientSprite_rasterCandidate
 #undef EspNativeAmbientSprite_frame
 
 #define CROSS 0x04000000UL
