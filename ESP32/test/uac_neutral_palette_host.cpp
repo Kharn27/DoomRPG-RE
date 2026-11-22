@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
+#include <initializer_list>
 int main(){
     constexpr uint16_t classic=0xff34U,inferno=0xfe78U,phosphore=0xc7b8U;
     assert(EspUacFontTheme_isGrayRgb565(0x0000U));
