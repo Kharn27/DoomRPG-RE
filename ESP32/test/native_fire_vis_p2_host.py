@@ -32,20 +32,21 @@ def body(signature: str, text: str = SRC) -> str:
     raise AssertionError("Unclosed C body: " + signature)
 
 
-# No existing hardcoded 375ms rule may change for non-fire entities.
+# The original 375ms idle clock covers all fast sprites, including fire.
 assert "#define AMBIENT_FAST_MS 375U" in HEAD
 assert "#define AMBIENT_RAPID_MS 250U" in HEAD
 assert "return type == 10U" in HEAD
 assert "(info & 0x04000000UL) == 0U" in HEAD
 assert "EspNativeAmbientSprite_eligible(info,type)" in HEAD
 assert "return (uint8_t)(((ms+phase)/250U)&3U);" in HEAD
-assert "EspNativeAmbientSprite_fireChanged(ambientFireIndex," in SRC
-assert "ambientFireVisible &&" in SRC
-assert "else if (EspNativeAmbientSprite_fast(entityType))" in SRC
+assert "EspNativeAmbientSprite_fireChanged(ambientFireIndex," not in SRC
+assert "ambientFireVisible" not in SRC
+assert "else if (EspNativeAmbientSprite_fast(entityType))" not in SRC
+assert "if (EspNativeAmbientSprite_fast(entityType))" in SRC
 assert "++stats->fireRasterCount;" in SRC
 assert "if (stats->fireRasterCount == 0U)" in SRC
 assert "++stats->ambientCandidates;" in SRC
-assert "ambientFireVisible=(uint8_t)(stats.fireRasterCount!=0U);" in SRC
+assert "++stats->ambientFastCandidates;" in SRC
 assert "else EspNativeSpriteRenderer_suspendAmbient();" in SRC
 assert "EspNativeAmbientSprite_rasterCandidate(" in SRC
 assert "if (!glow && EspNativeAmbientSprite_fireEligible(" in SRC
@@ -80,8 +81,6 @@ POLICY = "\n\n".join(body(s) for s in (
 STATES = (
     "static uint32_t ambientSampleMs, ambientPresentedMs;\n"
     "static uint8_t ambientCandidates, ambientFastCandidates, ambientRapidCandidates;\n"
-    "static uint8_t ambientFireVisible, ambientFirePhase;\n"
-    "static uint16_t ambientFireIndex;\n"
     "static uint8_t ambientSuspended;\n"
 )
 assert STATES.replace("\n","") .replace(" ","") in SRC.replace("\n","").replace(" ","")
@@ -95,11 +94,9 @@ int EspNativeFirstFrame_indicatorDue(uint32_t ms) { (void)ms; return indicator_d
 ''' + STATES + POLICY + r'''
 static void arm(uint16_t index, uint32_t ms) {
     EspNativeSpriteRenderer_resetAmbient();
-    ambientCandidates=1U;
-    ambientFireVisible=1U;
-    ambientFireIndex=index;
+    (void)index;
+    ambientCandidates=ambientFastCandidates=1U;
     ambientPresentedMs=ms;
-    ambientFirePhase=EspNativeAmbientSprite_frame(0,10,0,index,ms);
 }
 int main(void) {
     uint32_t ms, n;
@@ -116,18 +113,19 @@ int main(void) {
     assert(EspNativeAmbientSprite_fireChanged(0,0,249U)==0);
     assert(EspNativeAmbientSprite_fireChanged(0,0,250U)!=0);
 
-    /* Four real original clock phases, all presented in order when a
-       redraw is requested immediately after each boundary. */
+    /* Fire still selects all four ORIGINAL 250ms asset phases, but its
+       raster requests now obey the shared 375ms ambient clock.
+       Thus the LCD can skip intermediate phases intentionally. */
     arm(index,0);
-    assert(!EspNativeSpriteRenderer_ambientDue(193));
-    assert(EspNativeSpriteRenderer_ambientDue(194));
+    assert(!EspNativeSpriteRenderer_ambientDue(249));
+    assert(!EspNativeSpriteRenderer_ambientDue(374));
+    assert(EspNativeSpriteRenderer_ambientDue(375));
     for(n=1;n<=12U;n++) {
-        const uint32_t at=n*250U-56U;
-        const uint8_t expected=(uint8_t)(n&3U);
+        const uint32_t at=n*375U;
+        const uint8_t sampled=EspNativeAmbientSprite_frame(0,10,0,index,at);
         assert(EspNativeSpriteRenderer_ambientDue(at));
-        ambientFirePhase=EspNativeAmbientSprite_frame(0,10,0,index,at);
+        assert(sampled==(uint8_t)(((at+56U)/250U)&3U));
         ambientPresentedMs=at;
-        assert(ambientFirePhase==expected);
         assert(!EspNativeSpriteRenderer_ambientDue(at+1U));
     }
     /* Slow policy remains 375ms for non-fire fast sprites and 4s
@@ -155,11 +153,14 @@ int main(void) {
     indicator_due=1;
     assert(EspNativeSpriteRenderer_ambientDue(1));
     indicator_due=0;
-    /* A phase change before the coarse 375ms test is no longer skipped. */
+    /* A real fire phase boundary alone cannot preempt the 375ms idle
+       repaint. Pending player actions already take the input path first. */
     arm(0,0);
-    assert(EspNativeSpriteRenderer_ambientDue(250));
+    assert(!EspNativeSpriteRenderer_ambientDue(250));
+    assert(!EspNativeSpriteRenderer_ambientDue(374));
+    assert(EspNativeSpriteRenderer_ambientDue(375));
     assert(EspNativeAmbientSprite_due(250,0,1,0,1)==0);
-    puts("FIRE-VIS-P2: real-C fire phase clock + normal fast/rapid/slow and fail-closed PASS");
+    puts("FIRE-VIS-P2: real-C fire 375ms + fast/rapid/slow and fail-closed PASS");
     return 0;
 }
 '''
