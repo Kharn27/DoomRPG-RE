@@ -235,6 +235,9 @@ jobs:
             -o /tmp/doomrpg-monster-budget-test
           /tmp/doomrpg-monster-budget-test
 
+      - name: GAME-S1 subtype10 original RNG gate and conservative raise admission (host C)
+        run: python ESP32/test/monster_subtype10_admission_host.py
+
       - name: Test native monster attack visual timeline and impact admission (host C)
         run: |
           cc -O2 -std=c11 -Wall -Wextra -Werror -Wno-unused-variable \
