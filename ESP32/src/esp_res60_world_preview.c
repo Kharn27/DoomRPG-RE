@@ -16,6 +16,14 @@
  * Compiled out of 160x120 production; 512 * 2B = 1024B BSS. */
 #define RES60_P9_MAX_LINES 512U
 static uint16_t wedgeIndices[RES60_P9_MAX_LINES];
+#if DOOMRPG_RES60_P14_LINE_SNAPSHOT
+/* 512 x 16B = 8192B BSS, no heap/stack explosion. Camera-specific lines
+ * are validated and decoded once during the existing P9 preflight, then
+ * consumed 192 times without re-reading immutable compact BSP records.
+ * Only valid for P13's retained immutable map, never mutable world lines. */
+typedef char EspRes60P14_Line16[(sizeof(EspRes60PreviewLine)==16U)?1:-1];
+static EspRes60PreviewLine candidateLines[RES60_P9_MAX_LINES];
+#endif
 
 /* All 192 cardinal rays lie inside |lateral| <= 191/192 * forward.
  * If both endpoints are strictly outside the same half-plane, the
@@ -190,7 +198,11 @@ int EspRes60Preview_render(uint16_t* framebuffer, size_t framebufferBytes,
         ++stats.readerCalls;
 #if DOOMRPG_RES60_P9_WEDGE
         if(insideCardinalWedge(camera,&line)) {
-            wedgeIndices[candidateCount++]=(uint16_t)index;
+            wedgeIndices[candidateCount]=(uint16_t)index;
+#if DOOMRPG_RES60_P14_LINE_SNAPSHOT
+            candidateLines[candidateCount]=line;
+#endif
+            ++candidateCount;
         } else {
             ++stats.wedgeRejected;
         }
@@ -233,11 +245,19 @@ int EspRes60Preview_render(uint16_t* framebuffer, size_t framebufferBytes,
 #if DOOMRPG_RES60_P9_WEDGE
             lineIndex=wedgeIndices[index];
 #endif
+#if DOOMRPG_RES60_P14_LINE_SNAPSHOT
+            /* P13 guarantees immutable arena validity for the whole frame;
+             * preflight already checked every source line. The snapshot is
+             * indexed in original P9 order, including ties/special flags. */
+            const EspRes60PreviewLine line=candidateLines[index];
+#else
             EspRes60PreviewLine line;
+#endif
             int64_t num, den;
 #if DOOMRPG_RES60_P10_WALL_MATERIAL
             int64_t paramNum;
 #endif
+#if !DOOMRPG_RES60_P14_LINE_SNAPSHOT
             memset(&line, 0, sizeof(line));
             if (!reader(lineIndex, &line, context) || !validLine(&line)) {
                 /* Admission changed mid-frame. This is a read-only
@@ -246,6 +266,7 @@ int EspRes60Preview_render(uint16_t* framebuffer, size_t framebufferBytes,
                 return 0;
             }
             ++stats.readerCalls;
+#endif
             ++stats.rayTests;
             if ((line.flags & (ESP_RES60_PREVIEW_SPRITE_SPAN |
                                 ESP_RES60_PREVIEW_OCCLUDER_ONLY)) != 0U) {

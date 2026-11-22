@@ -145,6 +145,18 @@
 #if DOOMRPG_RES60_P13_MAP_LEASE && (!DOOMRPG_RES60_P12_INVENTORY_CACHE || !DOOMRPG_RES60_P7_NAV || !DOOMRPG_RES60_P1_DIAGNOSTIC)
 #error "RES60-P13 requires isolated P12/P7 192x144 preview"
 #endif
+/* P14: candidate BSP lines decoded once per frame into a single bounded
+ * 8KiB static scratch after strict preflight; no second map or framebuffer.
+ * Only P13 immutable RES60 preview may skip mid-ray source callbacks. */
+#ifndef DOOMRPG_RES60_P14_LINE_SNAPSHOT
+#define DOOMRPG_RES60_P14_LINE_SNAPSHOT 0
+#endif
+#if DOOMRPG_RES60_P14_LINE_SNAPSHOT != 0 && DOOMRPG_RES60_P14_LINE_SNAPSHOT != 1
+#error "RES60-P14 line snapshot flag must be 0 or 1"
+#endif
+#if DOOMRPG_RES60_P14_LINE_SNAPSHOT && (!DOOMRPG_RES60_P13_MAP_LEASE || !DOOMRPG_RES60_P9_WEDGE || !DOOMRPG_RES60_P10_WALL_MATERIAL)
+#error "RES60-P14 requires isolated P13/P9/P10 immutable-map preview"
+#endif
 #if DOOMRPG_RES60_P1_DIAGNOSTIC
 #define DOOMRPG_VIDEO_BUFFER_WIDTH 192
 #define DOOMRPG_VIDEO_BUFFER_HEIGHT 144

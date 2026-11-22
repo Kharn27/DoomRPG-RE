@@ -742,6 +742,15 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
         (unsigned long)report.texture.pixels,
         wallTextureSamples);
 #endif
+#if DOOMRPG_RES60_P14_LINE_SNAPSHOT
+    Serial.printf("[RES60P14] SNAPSHOT lines=%lu candidates=%lu bytesBss=%lu readerCalls=%lu avoidedDecodes=%lu raysUs=%lu owner=P13-immutable\n",
+        (unsigned long)report.lineCount,
+        (unsigned long)report.raster.wedgeCandidates,
+        (unsigned long)(512U*sizeof(EspRes60PreviewLine)),
+        (unsigned long)report.raster.readerCalls,
+        (unsigned long)report.raster.rayTests,
+        (unsigned long)report.raster.raysUs);
+#endif
 #if DOOMRPG_RES60_P9_WEDGE
     Serial.printf("[RES60P9] WEDGE lines=%lu candidates=%lu culled=%lu rayTests=%lu legacyRayTests=%lu rawP3FNV=%08lx\n",
         (unsigned long)report.lineCount,

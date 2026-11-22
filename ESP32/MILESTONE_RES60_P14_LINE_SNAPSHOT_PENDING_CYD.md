@@ -1,0 +1,25 @@
+# RES60-P14 — per-frame bounded 8KiB line snapshot, CI candidate / CYD PENDING
+
+**Branch:** `agent/esp32-res60-p1`, [experimental draft PR #364](https://github.com/Kharn27/DoomRPG-RE/pull/364). Depends on the physical-CYD **P13 bounded PASS** from [report P13](MILESTONE_RES60_P13_MAP_LEASE_PENDING_CYD.md). The **normal 160×120 engine is never modified**. P14 remains exclusively the 192×144 preview of `/intro.bsp`, **not** an enabled native Doom RPG game at 60%.
+
+## Hotspot and precise tradeoff
+
+The P13 real-CYD log `platformio-device-monitor-261122-103251.log` has **46 views / 44 successful turns**, including `raysUs≈138ms` when facing north (64). P9 eliminates off-wedge segments conservatively, leaving **346 candidate BSP lines × 192 rays = 66,432 ray tests** in the north view. Each P13 ray loop calls `readCompactLine()` and `EspMapRuntime_getLine()` for every candidate, repeatedly decoding the **same immutable** native BSP record. P13 now keeps the **single 14,095-byte compact map runtime** for the whole preview session and validates the resident arena FNV and declared PAK metadata before each rendered view.
+
+P14 does not optimize ray intersection math and does not change ray count. It copies the already-validated **P9 candidate lines**, including each exact source index and flags, into a single `EspRes60PreviewLine[512]` **8,192-byte BSS scratch**, after the existing per-line preflight and before framebuffer mutation. Every ray then consumes those predecoded snapshot records in the original P9 order; there is no second `EspMapRuntime` arena, no second framebuffer, no persistent map-wide texel cache, no extra heap allocation and **no mutable world**. Per-frame scratch is overwritten; it is not retained across sessions. P9's existing `wedgeIndices[512]` owner remains 1,024 bytes.
+
+**Costs and risks:** adds an unconditional **8192B static BSS** *to the opt-in RES60 firmware only*. Expected observable reduction is in `raysUs`; actual CPU saving, `heap8`, largest block, stack and minimum heap must be measured on the real CYD. A source that mutates its lines while a single frame is being projected would be a semantic difference from the old read-every-ray probe, so P14 is **hard-gated behind P13's immutable map lease**. The host fixture checks corrupted/invalid preflight before any framebuffer write. No general mutable reader API should reuse this optimization.
+
+## P14 invariants, host tests, CI
+
+- Flag `DOOMRPG_RES60_P14_LINE_SNAPSHOT=1` needs P13 + P9 + P10; only `esp32-cyd-res60` and its `-inverted` subclass opt in. Production `esp32-cyd`, `esp-cyd-inverted`, `esp32-cyd-trace`, `esp32-cyd-bringup` retain the original renderer and no P14 symbols or BSS.
+- Real `EspRes60Preview_render` does identical preflight/broad-phase and exact `rayHit`, nearest-wall comparison, UV source fraction, clipping, shading, FNV and `EspRes60WallMaterial_record`; only the redundant line reader is replaced by the preflight snapshot.
+- Strict native C11 host `ESP32/test/res60_p14_line_snapshot_host.py`: compile P13 and P14 **from the same real C projector** with opposite flags; assert **all 55,296 framebuffer bytes**, both canaries, original FNV, intersection/visible wall/depth/center-line, P10 source-texture plan per column and 260 random/adversarial four-cardinal frames match. Decode-count P14 = 1 per source line; P13 = preflight + all P9 ray tests. Includes a 480-line fixture, failed reader, invalid line and 513-line overflow rejected **before** image mutation. Check production exclusion and negative flag compile.
+- New serial `[RES60P14] SNAPSHOT lines=480 candidates=... bytesBss=8192 readerCalls=480 avoidedDecodes=<rayTests> raysUs=...`, prior P9/P10/P11/P12/P13/FNV witnesses unchanged. Do not interpret `avoidedDecodes` as fewer rays: it counts repeated line decodes eliminated, **not** intersections/candidates skipped.
+- All existing host/production CI tests and both RES60 profiles must pass before actual hardware testing.
+
+## Hardware protocol / PASS gate
+
+Flash only `cd ESP32 && pio run -e esp32-cyd-res60-inverted -t upload -t monitor`. START double tap, rotate RIGHT and LEFT through all cardinal directions repeatedly, MENU, second START, MENU. Compare this candidate against **P13 same-hardware same-profiler** rather than older nonprofiled results. Inspect `raysUs`, `preparedUs`, `heap8`, `largest8`, `minHeap8` and input responsiveness; no guessing if changes are lost in instrumentation noise. Confirm `P14 readers=480` even north with 66,432 ray tests, all four exact P3 FNVs N64 `ed9b68c4`, E0 `48ae8442`, S192 `2697640d`, W128 `f43a2791`, north P10 `sampleFNV=e1f75a15` 26 columns/650 pixels, P8 swatch `e627fa0d`, P12/P13 session resets and closed PAK. No panic/WDT. If RAM cost ~8KiB outweighs responsiveness, keep as experimental or revert.
+
+**Status:** P14 code candidate **NOT CYD tested**, no P14 performance claim, PR #364 remains **DRAFT/not merge-ready**. The prior tested P13 code SHA is `67608a586502802656c58f5b26c867253c0b88c2`; its hardware proof must not be attributed to P14.
