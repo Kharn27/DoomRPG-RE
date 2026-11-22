@@ -362,11 +362,11 @@ int main(void) {
         static const uint16_t menu[9] = {
             0x6c35U, 0x6c35U, 0x6c35U,
             0xc638U, 0xc638U, 0xc638U,
-            0xedceU, 0xedceU, 0xedceU
+            0xf4caU, 0xf4caU, 0xf4caU
         };
         static const uint16_t loading[5] = {
             0x6c35U, 0xc638U, 0xc638U,
-            0xedceU, 0xedceU
+            0xf4caU, 0xf4caU
         };
         int row;
         for (row = 0; row < 9; ++row)
@@ -380,10 +380,10 @@ int main(void) {
         assert(EspMainMenuSkin_letterTone(0, 6) == 0U);
         assert(EspMainMenuSkin_letterTone(0, 7) == 0x6c35U);
         assert(EspMainMenuSkin_letterTone(3, 7) == 0xc638U);
-        assert(EspMainMenuSkin_letterTone(6, 7) == 0xedceU);
+        assert(EspMainMenuSkin_letterTone(6, 7) == 0xf4caU);
         static const uint16_t classicFill[6] = {
             0x42f0U, 0x6c35U, 0x6c35U,
-            0xc638U, 0xc638U, 0xedceU
+            0xc638U, 0xc638U, 0xf4caU
         };
         for (int y=0;y<6;++y)
             assert(EspMainMenuSkin_progressTone(y,6) == classicFill[y]);
@@ -394,14 +394,14 @@ int main(void) {
     assert(EspMainMenuSkin_getTheme() == ESP_MAIN_MENU_THEME_CLASSIC);
     assert(EspMainMenuSkin_uiAccent() == 0xfd20U);
     assert(EspMainMenuSkin_uiAccentDim() == 0x7a80U);
-    assert(EspMainMenuSkin_uiInk() == 0xedceU);
+    assert(EspMainMenuSkin_uiInk() == 0xf4caU);
     /* Exact RGB565 CLASSIC reference: blue-gray top -> neutral gray
      * center -> warm pale yellow-orange foot; never copper/brown. */
     {
         const uint16_t top = EspMainMenuSkin_letterTone(0, 9);
         const uint16_t mid = EspMainMenuSkin_letterTone(4, 9);
         const uint16_t foot = EspMainMenuSkin_letterTone(8, 9);
-        assert(top==0x6c35U && mid==0xc638U && foot==0xedceU);
+        assert(top==0x6c35U && mid==0xc638U && foot==0xf4caU);
         const unsigned tr=(top>>11)&31U,tg=(top>>5)&63U,tb=top&31U;
         const unsigned mr=(mid>>11)&31U,mg=(mid>>5)&63U,mb=mid&31U;
         const unsigned fr=(foot>>11)&31U,fg=(foot>>5)&63U,fb=foot&31U;
@@ -570,7 +570,7 @@ int main(void) {
                     for (int xx = l + 6; xx <= r - 6; ++xx) {
                         const uint16_t pixel = fb[yy * W + xx];
                         const int isFace = state == ESP_MAIN_MENU_SKIN_IDLE
-                            ? pixel == 0xedceU || pixel == 0xc638U ||
+                            ? pixel == 0xf4caU || pixel == 0xc638U ||
                               pixel == 0x6c35U
                             : pixel == 0xffffU;
                         if (isFace) {
