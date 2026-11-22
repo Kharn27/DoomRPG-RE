@@ -14,6 +14,8 @@ SRC = ROOT / "src"
 music = (SRC / "esp_audio_entrance_music.cpp").read_text()
 pickup = (SRC / "esp_native_gameplay_player_resources.c").read_text()
 api = (SRC / "esp_audio_entrance_music.h").read_text()
+original = (ROOT.parent / "src/Entity.c").read_text()
+weapon_cue = (SRC / "esp_audio_pickup_cue.h").read_text()
 gate = (SRC / "esp_audio_pickup_modal_gate.h").read_text()
 
 def extract(source: str, signature: str) -> str:
@@ -48,13 +50,23 @@ assert music.count('static void mixPendingSfxOne()') == 1
 
 # Real resource owner: semantic commit+render succeeds, then publish+handoff,
 # then and ONLY then the modal obtains its long-lived font/PAK lease.
-assert pickup.count('EspNativeAudioIntent_publish(5060U,0U,3U)') == 1
+# Legacy has two distinct pickup cues. Exact source of truth: Entity_touched.
+legacy_weapon = original.split('case 5: {', 1)[1].split('case 10: {', 1)[0]
+assert legacy_weapon.count('sound = 5057;') >= 2
+assert legacy_weapon.count('sound = 5060;') >= 2
+for name in ('Shotgun', 'Chaingun', 'Super', 'Rocket', 'Plasma', 'BFG'):
+    assert name in legacy_weapon
+assert 'EspAudioPickupCue_weapon' in weapon_cue
+assert '#include "esp_audio_pickup_cue.h"' in pickup
+assert pickup.count('EspNativeAudioIntent_publish(pickupSoundId,0U,3U)') == 1
+assert 'EspAudioPickupCue_weapon(applied[i].subtype)' in pickup
+assert 'if (id!=5045U && id!=5046U && id!=5060U && id!=5057U)' in music
 assert pickup.count('EspNativeGameplayDialog_beginStandalone(firstWeaponDialog)') == 1
 assert pickup.count('EspEntranceMusic_handoffPickupBeforeModal(') == 1
 anchor = pickup.index('if (!syncRedraw ||\n        rerender(')
 assert anchor < pickup.index('[PLAYERRES] COMMIT')
 assert (pickup.index('[PLAYERRES] COMMIT') <
-        pickup.index('EspNativeAudioIntent_publish(5060U,0U,3U)') <
+        pickup.index('EspNativeAudioIntent_publish(pickupSoundId,0U,3U)') <
         pickup.index('EspEntranceMusic_handoffPickupBeforeModal(') <
         pickup.index('EspNativeGameplayDialog_beginStandalone(firstWeaponDialog)'))
 assert 'if (firstWeaponDialog != NULL && pickupCuePublished)' in pickup
@@ -69,6 +81,7 @@ prefix = r"""
 #include "esp_native_sfx_wav.h"
 #include "esp_native_sfx_pcm_mix.h"
 #include "esp_audio_pickup_modal_gate.h"
+#include "esp_audio_pickup_cue.h"
 
 enum { kSilent=0U, kPlay=3U, ESP_AUDIO_LOADING_TRACK_DEFERRED=0U };
 static constexpr uint32_t kRate=22050U;
@@ -94,6 +107,7 @@ static FakeVoice fireSfx={false},genericSfx[kGenericSfxVoiceCount]={};
 static bool packOpen=false, musicSafe=true, mapFlash=true, resident=true;
 static bool pakPresent=true, validWav=true, readSucceeds=true;
 static bool refillSucceeds=true, simPartial=false;
+static uint16_t currentSfxId=5060U;
 static uint32_t pakOpens=0U, pakCloses=0U, pakReads=0U;
 static uint32_t refills=0U, mixerCalls=0U, closeMusicCalls=0U;
 static const char* failure="simulated";
@@ -111,8 +125,12 @@ static void EspAssetPack_close() {
     packOpen=false; ++pakCloses;
 }
 static int EspAssetPack_findEntry(const char* name, EspAssetPackEntry* e) {
-    if (!packOpen || std::strcmp(name,"5060.wav")!=0) return 0;
-    e->flags=0U;e->size=44U+7040U;return 1;
+    if (!packOpen) return 0;
+    const char* expected=currentSfxId==5057U?"5057.wav":"5060.wav";
+    if (std::strcmp(name,expected)!=0) return 0;
+    e->flags=0U;
+    e->size=44U+(currentSfxId==5057U?8640U:7040U);
+    return 1;
 }
 static void le16(uint8_t* p,uint16_t n) {
     p[0]=(uint8_t)n;p[1]=(uint8_t)(n>>8);
@@ -131,7 +149,7 @@ static int EspAssetPack_readRange(
     le16(p+20,1U);le16(p+22,1U);
     le32(p+24,8000U);le32(p+28,16000U);
     le16(p+32,2U);le16(p+34,16U);
-    std::memcpy(p+36,"data",4);le32(p+40,7040U);
+    std::memcpy(p+36,"data",4);le32(p+40,e->size-44U);
     if (!validWav) p[0]='!';
     ++pakReads;return 1;
 }
@@ -153,7 +171,8 @@ static void mixPendingSfxOne() {
     assert(phase==kPlay && !packOpen);
     EspNativeAudioIntent next={};
     assert(EspNativeAudioIntent_nextAfter(sfxSeenSequence,&next));
-    assert(next.resourceId==5060U && next.sequence==sfxSeenSequence+1U);
+    assert(next.resourceId==currentSfxId);
+    assert(next.sequence==sfxSeenSequence+1U);
     ++mixerCalls;
     sfxSeenSequence=next.sequence;
     EspNativeAudioIntent_acknowledgeThrough(sfxSeenSequence);
@@ -176,8 +195,9 @@ static void resetFake(uint32_t q=12000U) {
     refillSucceeds=true;simPartial=false;
     pakOpens=pakCloses=pakReads=refills=mixerCalls=closeMusicCalls=0U;
 }
-static uint32_t newPickup() {
-    assert(EspNativeAudioIntent_publish(5060U,0U,3U));
+static uint32_t newPickup(uint16_t id=5060U) {
+    currentSfxId=id;
+    assert(EspNativeAudioIntent_publish(id,0U,3U));
     return EspNativeAudioIntent_count();
 }
 static void pending(uint32_t n) {
@@ -192,9 +212,40 @@ static void pending(uint32_t n) {
 int main() {
     assert(EspNativeSfxPcm_outputFrames(3520U,kRate)==9702U);
     assert(9702U+kSfxLeadFrames<kRingCapacity);
+    assert(EspNativeSfxPcm_outputFrames(4320U,kRate)==11907U);
+    assert(11907U+kSfxLeadFrames==12931U);
+    assert(12931U<kRingCapacity);
+    /* Actual legacy route, including duplicates: Axe/Fire Ext generic,
+       every firearm uses original 5057 as weapon-ready SFX. */
+    assert(EspAudioPickupCue_weapon(0U)==5060U);
+    assert(EspAudioPickupCue_weapon(1U)==5060U);
+    for (uint8_t subtype=2U;subtype<12U;++subtype)
+        assert(EspAudioPickupCue_weapon(subtype)==5057U);
+
+    /* Real 5057 admission before its standalone modal: full PCM,
+       correct source length and ACK exactly once, without new ring. */
+    resetFake(12931U);
+    uint32_t seq=newPickup(5057U);
+    assert(EspEntranceMusic_handoffPickupBeforeModal(seq)==1);
+    assert(refills==0U && pakReads==1U && pakOpens==pakCloses);
+    assert(sfxPlayedCount==1U && mixerCalls==1U);
+    assert(!EspEntranceMusic_handoffPickupBeforeModal(seq));
+    assert(mixerCalls==1U);
+    resetFake(12930U);
+    seq=newPickup(5057U);
+    assert(EspEntranceMusic_handoffPickupBeforeModal(seq)==1);
+    assert(refills==1U && mixerCalls==1U);
+    resetFake(12000U);
+    seq=newPickup(5057U);
+    assert(EspEntranceMusic_handoffPickupBeforeModal(seq)==1);
+    assert(refills>=1U && refills<=4U);
+    resetFake(1U);
+    seq=newPickup(5057U);
+    assert(!EspEntranceMusic_handoffPickupBeforeModal(seq));
+    pending(1U);
 
     resetFake();
-    uint32_t seq=newPickup();
+    seq=newPickup();
     assert(EspEntranceMusic_handoffPickupBeforeModal(seq)==1);
     assert(sfxSeenSequence==seq && sfxPlayedCount==1U);
     assert(mixerCalls==1U);
@@ -289,7 +340,7 @@ int main() {
     resetFake();seq=newPickup();
     assert(!EspEntranceMusic_handoffPickupBeforeModal(seq+1U));pending(1U);
 
-    std::puts("PASS AUDIO-PICKUP #419: real C++ owner + real C FIFO/WAV/PCM gate, 24 bounded scenarios");
+    std::puts("PASS AUDIO-PICKUP #419: original 5057/5060 sound routing and real C++ handoff/FIFO/WAV gates");
     return 0;
 }
 """
@@ -307,4 +358,4 @@ with tempfile.TemporaryDirectory(prefix="doom-audio-pickup-419-") as temp:
         ["c++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
          "-I", str(SRC), str(code), str(obj), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True, timeout=10)
-print("PASS AUDIO-PICKUP #419: source order + native owner boundary + single ACK")
+print("PASS AUDIO-PICKUP #419: original weapon 5057 + Axe/Fire Ext 5060, pre-modal FIFO ACK")
