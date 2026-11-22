@@ -5,6 +5,9 @@ s=(Path(__file__).resolve().parents[1]/"src"/"esp_uac_menu_preview.cpp").read_te
 for marker in (
     '#include "esp_uac_font_theme.h"',
     'fontIsNeutral=fromSD && bmp.paletteCount==16U;',
+    'constexpr int kGlyphW=9,kGlyphH=12;',
+    'bmp.width!=144U || bmp.height!=72U',
+    'name=a.bmp backing=%s',
     'EspUacFontTheme_tintColor(fontSourcePalette[k],tone);',
     'EspUacFontTheme_scale565(color,2U,5U)',
     'EspUacMenuPreview_needsBlink(void)',
