@@ -376,6 +376,9 @@ bool PlatformVideo_begin(TFT_eSPI* display) {
                   (unsigned)p17LargestBefore,
                   (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
                   (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT));
+#if DOOMRPG_RES60_P18_LOCAL_SNAPSHOT
+    Serial.println("[RES60P18] ALIAS source=P17-heap localPerFrame=1 allocationsPerRay=0 framebuffers=1");
+#endif
 #endif
     return true;
 }

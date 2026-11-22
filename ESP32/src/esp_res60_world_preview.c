@@ -212,9 +212,16 @@ int EspRes60Preview_render(uint16_t* framebuffer, size_t framebufferBytes,
     stats.centerLineIndex = UINT32_MAX;
     if (outStats != NULL) *outStats = stats;
 #if DOOMRPG_RES60_P17_HEAP_SNAPSHOT
-    /* No implicit allocation on a frame path, even when caller forgot boot
-     * ownership or a previous explicit allocation failed. */
+    /* P18 pins P17's sole owner pointer for the duration of the synchronous
+     * frame. The optional read callback cannot change ownership mid-frame;
+     * invalidation before writes is fail-closed, never a hot-ray allocation. */
+#if DOOMRPG_RES60_P18_LOCAL_SNAPSHOT
+    EspRes60P15SnapshotLine* const frameSnapshot=candidateLines;
+    if (frameSnapshot == NULL) return 0;
+#else
+    /* P17 baseline remains available as the untouched A/B oracle. */
     if (candidateLines == NULL) return 0;
+#endif
 #endif
 #if DOOMRPG_RES60_P10_WALL_MATERIAL
     /* Invalidate the entire previous frame before any input admission. */
@@ -242,6 +249,9 @@ int EspRes60Preview_render(uint16_t* framebuffer, size_t framebufferBytes,
         EspRes60PreviewLine line;
         memset(&line, 0, sizeof(line));
         if (!reader(index, &line, context) || !validLine(&line)) return 0;
+#if DOOMRPG_RES60_P18_LOCAL_SNAPSHOT
+        if (candidateLines != frameSnapshot) return 0;
+#endif
         ++stats.preflightLines;
         ++stats.readerCalls;
 #if DOOMRPG_RES60_P9_WEDGE
@@ -254,8 +264,13 @@ int EspRes60Preview_render(uint16_t* framebuffer, size_t framebufferBytes,
                     RES60_P15_SPRITE_BIT : 0U) |
                 ((line.flags & ESP_RES60_PREVIEW_OCCLUDER_ONLY) ?
                     RES60_P15_OCCLUDER_BIT : 0U));
+#if DOOMRPG_RES60_P18_LOCAL_SNAPSHOT
+            frameSnapshot[candidateCount]=(EspRes60P15SnapshotLine){
+                line.x1,line.y1,line.x2,line.y2,line.texture,sourceAndFlags};
+#else
             candidateLines[candidateCount]=(EspRes60P15SnapshotLine){
                 line.x1,line.y1,line.x2,line.y2,line.texture,sourceAndFlags};
+#endif
 #else
             wedgeIndices[candidateCount]=(uint16_t)index;
 #if DOOMRPG_RES60_P14_LINE_SNAPSHOT
@@ -303,7 +318,11 @@ int EspRes60Preview_render(uint16_t* framebuffer, size_t framebufferBytes,
 #endif
             uint32_t lineIndex=index;
 #if DOOMRPG_RES60_P15_COMPACT_SNAPSHOT
+#if DOOMRPG_RES60_P18_LOCAL_SNAPSHOT
+            const EspRes60P15SnapshotLine* entry=&frameSnapshot[index];
+#else
             const EspRes60P15SnapshotLine* entry=&candidateLines[index];
+#endif
             lineIndex=(uint32_t)(entry->sourceAndFlags & RES60_P15_SOURCE_MASK);
             const EspRes60PreviewLine line={
                 entry->x1,entry->y1,entry->x2,entry->y2,entry->texture,

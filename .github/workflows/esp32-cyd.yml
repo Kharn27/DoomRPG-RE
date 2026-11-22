@@ -105,6 +105,9 @@ jobs:
       - name: RES60-P17 heap-vs-BSS compact snapshot real C 261-frame and UV oracle
         run: python ESP32/test/res60_p17_heap_snapshot_host.py
 
+      - name: RES60-P18 frame-local heap snapshot real C 261-frame and UV oracle
+        run: python ESP32/test/res60_p18_local_snapshot_host.py
+
       - name: Test AUDIO-R1 bounded PCM, DAC GPIO26 and game handoff (host C)
         run: python ESP32/test/audio_r1_analog_pcm_host.py
 
