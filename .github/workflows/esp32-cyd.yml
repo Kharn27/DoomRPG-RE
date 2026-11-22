@@ -930,6 +930,14 @@ jobs:
         working-directory: ESP32
         run: pio run -e esp32-cyd-trace
 
+      - name: Build isolated RES60 192x144 P12 candidate (classic CYD)
+        working-directory: ESP32
+        run: pio run -e esp32-cyd-res60
+
+      - name: Build isolated RES60 192x144 P12 candidate (alternate panel)
+        working-directory: ESP32
+        run: pio run -e esp32-cyd-res60-inverted
+
       - name: SDL-F13 reject dormant controller and mode globals in all three linked ELF
         run: python ESP32/test/sdl_f13_dead_input_mode_host.py --elf
 
