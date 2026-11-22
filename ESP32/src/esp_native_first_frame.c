@@ -1468,19 +1468,18 @@ static int renderFrame(Render_t* render,
     }
 
 done:
+    releaseCache(work);
+    if (EspAssetPack_isOpen()) EspAssetPack_close();
 #if DOOMRPG_PERF_PORT_PROFILE
-    /* This line is intentionally AFTER the palette-resolution stopwatch.
-     * Serial cost still enters the surrounding worldMicros: compare
-     * resolvedMicros between equally instrumented ON/OFF builds, not
-     * worldMicros against an uninstrumented historical firmware. */
+    /* Log only after releasing both wall leases and the PAK: do not
+     * prolong the exclusive pack lease for Serial diagnostics.
+     * resolveUs excludes this printf; worldMicros still includes it. */
     printf("[PERFPORT] PALETTE ok=%d resolved=%u catalogHits=%u pakReads=%u resolveUs=%u cacheBytes=0\n",
            ok, (unsigned int)work->resolvedCount,
            (unsigned int)work->paletteCatalogHits,
            (unsigned int)work->palettePakReads,
            (unsigned int)work->resolvedMicros);
 #endif
-    releaseCache(work);
-    if (EspAssetPack_isOpen()) EspAssetPack_close();
     restoreRenderScratch(render, &scratch);
     free(work);
     return ok;
