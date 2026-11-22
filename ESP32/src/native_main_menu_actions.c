@@ -192,8 +192,6 @@ static int helpDrawStarfield(DoomRPG_t* doomRpg) {
                         DOOMRPG_LOGICAL_HEIGHT};
     EspNativeRect wrap = {DOOMRPG_LOGICAL_WIDTH - shift, 0,
                      DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT};
-    uint16_t accent = EspMainMenuSkin_uiAccent();
-    uint16_t dimAccent = EspMainMenuSkin_uiAccentDim();
     int x, y;
 
     if (!helpSpaceActive || helpSpaceOwner != doomRpg ||
@@ -207,19 +205,13 @@ static int helpDrawStarfield(DoomRPG_t* doomRpg) {
         (shift > 0 && EspNativeTexture_blit(helpSpaceBG.imgBitmap, NULL, &wrap) != 0))
         return 0;
 
-    /* Translucent dark reading window: edit the ONE shared RGB565 frame,
-     * no alpha texture/overlay allocation and no extra framebuffer. */
+    /* Keep the translucent dark reading window, without the redundant
+     * colored rectangular frame. Original c.bmp stars remain visible. */
     for (y = 13; y <= 98; ++y) {
         for (x = 5; x <= 154; ++x) {
             uint16_t* pixel = &framebuffer[y * DOOMRPG_LOGICAL_WIDTH + x];
             *pixel = (uint16_t)((*pixel >> 1) & 0x7befU);
         }
-        framebuffer[y * DOOMRPG_LOGICAL_WIDTH + 5] = dimAccent;
-        framebuffer[y * DOOMRPG_LOGICAL_WIDTH + 154] = dimAccent;
-    }
-    for (x = 5; x <= 154; ++x) {
-        framebuffer[12 * DOOMRPG_LOGICAL_WIDTH + x] = accent;
-        framebuffer[99 * DOOMRPG_LOGICAL_WIDTH + x] = dimAccent;
     }
     helpSpaceShift = shift;
     return 1;
@@ -784,7 +776,8 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
             (void)helpBuildWeaponGridMini(framebuffer);
     }
     if (!helpDrawStarfield(doomRpg)) return 0;
-    DoomRPG_setFontColor(doomRpg, helpColor888(helpTitleTopTone()));
+    /* Page header + x/16 take the SECOND theme tone on every HELP page. */
+    DoomRPG_setFontColor(doomRpg, helpColor888(helpBodyMiddleTone()));
     EspNativeCanvas_drawText(canvas, "HELP / CYD", 12, 0, 0);
     snprintf(page, sizeof(page), "%d/%d",
                  (menuSystem->scrollIndex + MAIN_HELP_VISIBLE_LINES - 1) /
