@@ -81,8 +81,9 @@ for original, neutral, dims, cell, transparent, ao_ink, sha_orig, sha_neut in OR
         118 + (dims[0] // 2) * dims[1], 118 + (dims[0] // 2) * dims[1])
     assert src_bytes[:54] == dst_bytes[:54]  # 4bpp/stride/header identical
     assert src_bytes[118:] == dst_bytes[118:]  # every index nibble identical
-    assert src_bytes[54 + transparent * 4:58 + transparent * 4] == (
-        dst_bytes[54 + transparent * 4:58 + transparent * 4] == b"\xff\0\xff\0")
+    expected_magenta = b"\xff\0\xff\0"
+    assert src_bytes[54 + transparent * 4:58 + transparent * 4] == expected_magenta
+    assert dst_bytes[54 + transparent * 4:58 + transparent * 4] == expected_magenta
     assert gen.neutralize(src_bytes, transparent) == dst_bytes
     src = gen.inspect_bmp(src_bytes, dims)
     dst = gen.inspect_bmp(dst_bytes, dims)
