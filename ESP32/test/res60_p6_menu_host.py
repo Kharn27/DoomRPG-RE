@@ -67,8 +67,8 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_blit(
  assert(active && w==192 && h==144);
  if(b->width==192) {
    assert(b->height==128 && sx==0 && sy==0 && rw==192 && x==0 && tr==0);
-   assert((bgBatchCount==0 && rh==128 && y==0) ||
-          (bgBatchCount==1 && rh==16 && y==128));
+   assert(((bgBatchCount%2)==0 && rh==128 && y==0) ||
+          ((bgBatchCount%2)==1 && rh==16 && y==128));
    for(uint16_t yy=0;yy<rh;++yy)
      for(uint16_t xx=0;xx<rw;++xx)
        fb[((size_t)y+yy)*w+xx]=0x1234U;
@@ -127,17 +127,16 @@ int main(void){
    assert(EspRes60Menu_onTap(px,py,&selected)==ESP_RES60_MENU_TAP_UNSUPPORTED);
  }
  assert(selected==3);
- selected=-1;
- assert(EspRes60Menu_onTap(270,53,&selected)==ESP_RES60_MENU_TAP_START_PREVIEW);
+assert(EspRes60Menu_onTap(0,0,&selected)==ESP_RES60_MENU_TAP_SELECTION);
  assert(selected==-1);
- assert(EspRes60Menu_onTap(0,0,&selected)==ESP_RES60_MENU_TAP_SELECTION);
+assert(EspRes60Menu_onTap(270,53,&selected)==ESP_RES60_MENU_TAP_START_PREVIEW);
  assert(selected==-1);
  assert(EspRes60Menu_onTap(0,0,&selected)==ESP_RES60_MENU_TAP_NO_CHANGE);
  assert(EspRes60Menu_onTap(-2,0,&selected)==ESP_RES60_MENU_TAP_INVALID);
  assert(EspRes60Menu_onTap(270,53,NULL)==ESP_RES60_MENU_TAP_INVALID);
  selected=-2;assert(EspRes60Menu_onTap(270,53,&selected)==ESP_RES60_MENU_TAP_INVALID);
  assert(opens==3 && closes==3 && !active);
- puts("RES60-P6 original title, industrial skin, four hitboxes, two-tap, fail-closed and canaries PASS");
+ puts("RES60-P6 original title, industrial skin, four hitboxes, one-tap START, fail-closed and canaries PASS");
  return 0;
 }
 """
