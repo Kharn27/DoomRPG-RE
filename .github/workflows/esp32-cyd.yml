@@ -108,6 +108,9 @@ jobs:
       - name: Test AUDIO-LOAD-L1 sound before first post-loading gameplay present
         run: python ESP32/test/audio_loading_l1_ready_prestart_host.py
 
+      - name: AUDIO-LOAD-V11 saved-game 46KiB heap reserve (real C, 13 mutants)
+        run: python ESP32/test/audio_load_v11_heap_guard_host.py
+
       - name: Test Junction M_DEAD SD track route and fail-closed prestart lifecycle
         run: python ESP32/test/audio_junction_m_dead_host.py
 
