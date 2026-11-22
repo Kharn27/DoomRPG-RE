@@ -9,6 +9,9 @@
 #include "esp_video_nearest.h"
 #include "esp_res60_layout.h"
 #include "esp_res60_world_probe.h"
+#if DOOMRPG_RES60_P12_INVENTORY_CACHE
+#include "esp_res60_inventory_cache.h"
+#endif
 #if DOOMRPG_RES60_P11_PROFILE
 #include "esp_res60_profile.h"
 extern "C" uint32_t EspRes60Profile_nowUs(void) {
@@ -684,6 +687,9 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
     const uint32_t started=micros();
     if (!EspRes60WorldProbe_renderIntroQuarterTurns(framebuffer,
             kFramebufferBytes, turns, &report)) {
+#if DOOMRPG_RES60_P12_INVENTORY_CACHE
+        EspRes60InventoryCache_reset();
+#endif
         Serial.println("[RES60P7] FAIL CLOSED stage=compact-map-projection");
         return false;
     }
@@ -693,6 +699,9 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
                            (uint8_t)(report.spawnAngle - turns * 64U),
                            turns) || EspAssetPack_isOpen() ||
         EspMapRuntime_isLoaded()) {
+#if DOOMRPG_RES60_P12_INVENTORY_CACHE
+        EspRes60InventoryCache_reset();
+#endif
         Serial.println("[RES60P7] FAIL CLOSED stage=navigation-or-leases");
         return false;
     }
@@ -779,6 +788,9 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
         (unsigned long)(micros()-started),
         wallTextureSamples);
     if (!PlatformVideo_present()) {
+#if DOOMRPG_RES60_P12_INVENTORY_CACHE
+        EspRes60InventoryCache_reset();
+#endif
         Serial.println("[RES60P7] FAIL CLOSED stage=LCD_PRESENT");
         return false;
     }
