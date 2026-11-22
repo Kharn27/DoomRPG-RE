@@ -146,3 +146,26 @@ def restore_pre_help_frame_polish(source: str) -> str:
     x_pos = source.index(marker, start)
     assert source[x_pos:x_pos+len(_PRE_FRAME_DECL)] != _PRE_FRAME_DECL
     return source[:x_pos] + _PRE_FRAME_DECL + source[x_pos:]
+
+
+# PAGE4 changes postdate frozen SDL-F17/F19/F29 source blobs. Reverse only
+# the newer UI body-color and ROM text ordering while reconstructing those
+# historical sources. Never change the original SHA fixtures.
+_PRE_PAGE4_MODEL = "    \"Moves take a turn.\",\n    \"Enemies take turns.\",\n    \"Plan each attack.\",\n    \"Actions use turns.\",\n    \"Think before moving.\","
+_POST_PAGE4_MODEL = "    \"Moves take a turn.\",\n    \"Enemies take turns.\",\n    \"Actions use turns.\",\n    \"Plan each attack.\",\n    \"Think before moving.\","
+_PRE_PAGE4_COMMENT = "            /* HELP pages 2-4 and 12-16 use the first (light) theme tone\n             * for body text. Section titles keep their 3-band gradient. */"
+_POST_PAGE4_COMMENT = "            /* HELP pages 2-4 and 12-16 use the first (light) theme tone,\n             * except page 4 body copy: neutral white independent of theme.\n             * Both page titles and HELP / CYD keep their themed colors. */"
+_PRE_PAGE4_COLOR = "                (menuSystem->scrollIndex == 0 && i == 5)\n                    ? 0xffffffffU : helpColor888(bodyTone));"
+_POST_PAGE4_COLOR = "                ((menuSystem->scrollIndex == 0 && i == 5) ||\n                 scroll == 3 * MAIN_HELP_VISIBLE_LINES)\n                    ? 0xffffffffU : helpColor888(bodyTone));"
+
+
+def restore_pre_help_page4_model(source: str) -> str:
+    assert source.count(_POST_PAGE4_MODEL) == 1, "HELP page4 text source drift"
+    return source.replace(_POST_PAGE4_MODEL, _PRE_PAGE4_MODEL, 1)
+
+
+def restore_pre_help_page4_actions(source: str) -> str:
+    assert source.count(_POST_PAGE4_COMMENT) == 1, "HELP page4 comment drift"
+    assert source.count(_POST_PAGE4_COLOR) == 1, "HELP page4 white ink drift"
+    return source.replace(_POST_PAGE4_COMMENT, _PRE_PAGE4_COMMENT, 1).replace(
+        _POST_PAGE4_COLOR, _PRE_PAGE4_COLOR, 1)

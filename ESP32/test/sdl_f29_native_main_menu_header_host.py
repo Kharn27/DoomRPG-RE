@@ -13,7 +13,9 @@ import tempfile
 from audio_r2c_restore_menu_oracle import (restore_sound_options_action,
                                            restore_sound_options_back)
 from native_help_bottom_history import (restore_pre_help_light_body_pages,
-                                        restore_pre_help_frame_polish)
+                                        restore_pre_help_frame_polish,
+                                         restore_pre_help_page4_model,
+                                         restore_pre_help_page4_actions)
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCES = ROOT / "ESP32/src"
@@ -96,6 +98,10 @@ def original_body_parity() -> None:
         # former .c modules, each with its own original SDL.h include.
         # Restore every one of those original imports before whole-blob SHA.
         restored = current.replace(marker, old_import).decode("utf-8")
+        if filename == "native_main_menu_model.c":
+            restored = restore_pre_help_page4_model(restored)
+        elif filename == "native_main_menu_actions.c":
+            restored = restore_pre_help_page4_actions(restored)
         # ARCH-RC18 changed only the public menu callback handoff names.
         # Restore those exact pre-RC18 aliases before the frozen F29 Git SHA,
         # without updating, weakening, or replacing any historical SHA.

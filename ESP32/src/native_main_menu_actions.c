@@ -945,8 +945,9 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
             helpPaintCopyrightMark(framebuffer, y, tone);
         }
         else if (line[0] != '\0') {
-            /* HELP pages 2-4 and 12-16 use the first (light) theme tone
-             * for body text. Section titles keep their 3-band gradient. */
+            /* HELP pages 2-4 and 12-16 use the first (light) theme tone,
+             * except page 4 body copy: neutral white independent of theme.
+             * Both page titles and HELP / CYD keep their themed colors. */
             const int scroll = menuSystem->scrollIndex;
             const uint16_t bodyTone =
                 ((scroll >= MAIN_HELP_VISIBLE_LINES &&
@@ -955,7 +956,8 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
                   scroll <= 15 * MAIN_HELP_VISIBLE_LINES))
                     ? helpTitleTopTone() : helpBodyMiddleTone();
             DoomRPG_setFontColor(doomRpg,
-                (menuSystem->scrollIndex == 0 && i == 5)
+                ((menuSystem->scrollIndex == 0 && i == 5) ||
+                 scroll == 3 * MAIN_HELP_VISIBLE_LINES)
                     ? 0xffffffffU : helpColor888(bodyTone));
             EspNativeCanvas_drawText(canvas, line, 12, y, 0);
         }
