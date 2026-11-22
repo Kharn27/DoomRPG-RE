@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """SDL-F24: three *compiled* native BSP/first-frame/script C units do not
 import the legacy SDL.h themselves. Preserve host/geometry-oracle legacy
-prefixes, and use exact original Git blobs to prevent ANY behavioral edits.
+prefixes, and keep the original Git blob oracle after strictly reversing approved later owner edits.
 
 PlatformIO CI builds all 3 Xtensa profiles; compiledb verifies these actual
 translation units were compiled, and the same ELF audit retains zero SDL_*
@@ -57,6 +57,12 @@ def source_gate() -> None:
         assert current.startswith(prefix), f"{name}: no host/geometry guard"
         assert current.count(b"#include <SDL.h>") == 1, name
         old = b"#include <SDL.h>\n" + current[len(prefix):]
+        if name == "esp_native_first_frame.c":
+            # PERF-PORT-P1 modifies only the palette resolution owner.
+            # Reverse all five approved hunks exactly, then preserve the
+            # original SDL-F24 Git blob guard on every other byte.
+            from perf_port_p1_history import restore_pre_perf_port_p1
+            old = restore_pre_perf_port_p1(old)
         if name == "esp_native_bsp_visibility.c":
             from arch_rc21_history import restore_pre_rc21
             old = restore_pre_rc21(name, old)
@@ -75,7 +81,7 @@ def source_gate() -> None:
         assert '#include "DoomRPG.h"' in body, name
     print("SDL-F24 PASS source: three historical Git blobs exact; "
           "BSP / first-frame / event chain direct SDL.h only for host/geometry; "
-          "all real C implementation bodies byte-identical")
+          "unchanged historical bodies verified (P1 inverse exact)")
 
 
 def header_probe() -> None:
