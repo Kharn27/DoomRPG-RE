@@ -149,8 +149,8 @@ assert 'helpPaintPageChevron(framebuffer, 0, menuSystem->scrollIndex < maxScroll
 assert '"HELP / CYD", 22, 0, 0' in actions
 assert '"X", 4, 1, 0' in actions
 assert 'DoomRPG_setFontColor(doomRpg, 0xffff2424U)' in actions
-assert 'helpPaintExitFrame(framebuffer)' in actions
-assert 'static void helpPaintExitFrame(' in actions
+assert 'helpPaintExitFrame' not in actions  # red X has no border
+assert 'static void helpPaintPageChevron(' in actions
 assert 'static void helpPaintPageChevron(' in actions
 
 # All HELP copy consumes the live industrial font theme.
@@ -166,17 +166,17 @@ assert 'helpColor888(helpBodyMiddleTone())' in help_header
 assert help_header.index('helpColor888(helpBodyMiddleTone())') < help_header.index('"HELP / CYD"')
 assert help_header.index('"HELP / CYD"') < help_header.index('EspNativeCanvas_drawText(canvas, page,')
 assert 'snprintf(page, sizeof(page), "%d/%d"' in help_header
-# Border removed; the extended 150x104 reading field and original
-# starfield still come from the SAME framebuffer on every repaint.
+# No rectangular frame, no dark/translucent overlay. The real PAK
+# c.bmp starfield goes straight to the ONE shared framebuffer on each paint.
 starfield = actions.split('static int helpDrawStarfield(',1)[1].split('static uint32_t helpColor888(',1)[0]
-assert 'for (y = 13; y <= 116; ++y)' in starfield
-assert 'for (x = 5; x <= 154; ++x)' in starfield
-assert '*pixel = (uint16_t)((*pixel >> 1) & 0x7befU);' in starfield
-assert 'framebuffer[12 * DOOMRPG_LOGICAL_WIDTH + x]' not in starfield
-assert 'framebuffer[99 * DOOMRPG_LOGICAL_WIDTH + x]' not in starfield
-assert 'framebuffer[y * DOOMRPG_LOGICAL_WIDTH + 5]' not in starfield
-assert 'framebuffer[y * DOOMRPG_LOGICAL_WIDTH + 154]' not in starfield
+assert 'EspNativeTexture_blit(helpSpaceBG.imgBitmap, NULL, &primary)' in starfield
+assert 'EspNativeTexture_blit(helpSpaceBG.imgBitmap, NULL, &wrap)' in starfield
+assert 'helpSpaceShift = shift;' in starfield
+assert 'for (y = 13;' not in starfield
+assert '*pixel =' not in starfield
+assert 'framebuffer[' not in starfield
 assert 'dimAccent' not in starfield and 'uint16_t accent' not in starfield
+assert '0x7befU' not in starfield
 assert "helpColor888(bodyTone)" in actions
 assert "static uint16_t helpThirdTone(void)" in actions
 assert "EspMainMenuSkin_uiInk()" not in actions
