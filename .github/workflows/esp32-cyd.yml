@@ -150,6 +150,9 @@ jobs:
       - name: PERF-PORT-P1 actual C palette resolver ON/OFF and fail-closed parity
         run: python ESP32/test/perf_port_palette_host.py
 
+      - name: PERF-PORT-P1 A/B configuration: native CYD ON and reference OFF
+        run: python ESP32/test/perf_port_ab_profiles_host.py
+
       - name: FIRE-VIS-P1 real C fire routing, bitshape reader and masked saturated spans
         run: python ESP32/test/native_fire_visual_host.py
 
@@ -890,6 +893,13 @@ jobs:
         working-directory: ESP32
         run: pio run -e esp32-cyd
 
+      - name: PERF-PORT-P1 build independent OFF reference and verify compiled C defines
+        working-directory: ESP32
+        run: |
+          pio run -e esp32-cyd-perf-off
+          pio run -e esp32-cyd-perf-off -t compiledb
+          python test/perf_port_ab_profiles_host.py --compiledb compile_commands.json
+
       - name: Assert the two release builds compile the SAME engine units and defines
         working-directory: ESP32
         run: |
@@ -1059,6 +1069,8 @@ jobs:
             ESP32/.pio/build/*/native_wrap_inventory.json
             ESP32/.pio/build/esp32-cyd/*.bin
             ESP32/.pio/build/esp32-cyd/firmware.elf
+            ESP32/.pio/build/esp32-cyd-perf-off/firmware.bin
+            ESP32/.pio/build/esp32-cyd-perf-off/firmware.elf
             ESP32/.pio/build/esp-cyd-inverted/*.bin
             ESP32/.pio/build/esp-cyd-inverted/firmware.elf
             ESP32/.pio/build/esp32-cyd/sdl_a_elf_report.json
