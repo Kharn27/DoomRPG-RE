@@ -178,6 +178,18 @@
 #if DOOMRPG_RES60_P16_HEAP_TOPOLOGY && (!DOOMRPG_RES60_P15_COMPACT_SNAPSHOT || !DOOMRPG_RES60_P13_MAP_LEASE || !DOOMRPG_RES60_P11_PROFILE || !DOOMRPG_RES60_P1_DIAGNOSTIC)
 #error "RES60-P16 requires isolated P15/P13/P11 immutable preview"
 #endif
+/* P17 controlled A/B: move only 6144B P15 snapshot BSS into a
+ * single bounded owner allocated after the one real framebuffer.
+ * Must never compile into production or implicitly allocate per render. */
+#ifndef DOOMRPG_RES60_P17_HEAP_SNAPSHOT
+#define DOOMRPG_RES60_P17_HEAP_SNAPSHOT 0
+#endif
+#if DOOMRPG_RES60_P17_HEAP_SNAPSHOT != 0 && DOOMRPG_RES60_P17_HEAP_SNAPSHOT != 1
+#error "RES60-P17 heap snapshot flag must be 0 or 1"
+#endif
+#if DOOMRPG_RES60_P17_HEAP_SNAPSHOT && (!DOOMRPG_RES60_P16_HEAP_TOPOLOGY || !DOOMRPG_RES60_P15_COMPACT_SNAPSHOT || !DOOMRPG_RES60_P13_MAP_LEASE || !DOOMRPG_RES60_P1_DIAGNOSTIC)
+#error "RES60-P17 requires isolated P16/P15/P13 preview"
+#endif
 #if DOOMRPG_RES60_P1_DIAGNOSTIC
 #define DOOMRPG_VIDEO_BUFFER_WIDTH 192
 #define DOOMRPG_VIDEO_BUFFER_HEIGHT 144

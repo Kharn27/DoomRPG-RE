@@ -9,6 +9,9 @@
 #include "esp_video_nearest.h"
 #include "esp_res60_layout.h"
 #include "esp_res60_world_probe.h"
+#if DOOMRPG_RES60_P17_HEAP_SNAPSHOT
+#include "esp_res60_world_preview.h"
+#endif
 #if DOOMRPG_RES60_P12_INVENTORY_CACHE
 #include "esp_res60_inventory_cache.h"
 #endif
@@ -353,6 +356,26 @@ bool PlatformVideo_begin(TFT_eSPI* display) {
 #endif
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
     Serial.println("[HITBOX] Physical overlay enabled; framebuffer hashes remain untouched");
+#endif
+#if DOOMRPG_RES60_P17_HEAP_SNAPSHOT
+    /* P17 acquisition happens once only AFTER framebuffer allocation and
+     * P16 framebuffer-ready probes. This is an A/B of allocator topology.
+     * Fail before showing any geometry and rollback the owned framebuffer. */
+    const size_t p17LargestBefore=heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    const size_t p17FreeBefore=heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    if (!EspRes60Preview_snapshotBegin()) {
+        free(framebuffer);
+        framebuffer=nullptr;
+        Serial.println("[RES60P17] FAIL CLOSED stage=one-shot-6144B-owner");
+        return false;
+    }
+    Serial.printf("[RES60P17] SNAPSHOT owner=HEAP bytes=6144 addr=%p framebuffer=%p heap8Before=%u heap8After=%u largest8Before=%u largest8After=%u minHeap8=%u lifecycle=once-after-framebuffer\n",
+                  EspRes60Preview_snapshotAddress(),(void*)framebuffer,
+                  (unsigned)p17FreeBefore,
+                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+                  (unsigned)p17LargestBefore,
+                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+                  (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT));
 #endif
     return true;
 }
@@ -794,7 +817,11 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
         wallTextureSamples);
 #endif
 #if DOOMRPG_RES60_P15_COMPACT_SNAPSHOT
+#if DOOMRPG_RES60_P17_HEAP_SNAPSHOT
+    Serial.printf("[RES60P17] COMPACT lines=%lu candidates=%lu snapshotBss=0 snapshotHeap=6144 indexBss=0 P14CombinedBss=9216 savedBss=9216 readerCalls=%lu raysUs=%lu heap8=%u largest8=%u minHeap8=%u owner=P13-immutable\n",
+#else
     Serial.printf("[RES60P15] COMPACT lines=%lu candidates=%lu snapshotBss=6144 indexBss=0 P14CombinedBss=9216 savedBss=3072 readerCalls=%lu raysUs=%lu heap8=%u largest8=%u minHeap8=%u owner=P13-immutable\n",
+#endif
         (unsigned long)report.lineCount,
         (unsigned long)report.raster.wedgeCandidates,
         (unsigned long)report.raster.readerCalls,

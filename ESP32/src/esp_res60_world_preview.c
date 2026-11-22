@@ -3,6 +3,9 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
+#if DOOMRPG_RES60_P17_HEAP_SNAPSHOT
+#include <stdlib.h>
+#endif
 
 #include "esp_res60_world_preview.h"
 #if DOOMRPG_RES60_P11_PROFILE
@@ -33,12 +36,36 @@ typedef struct EspRes60P15SnapshotLine_s {
     uint16_t sourceAndFlags;
 } EspRes60P15SnapshotLine;
 typedef char EspRes60P15_Line12[(sizeof(EspRes60P15SnapshotLine)==12U)?1:-1];
+#if DOOMRPG_RES60_P17_HEAP_SNAPSHOT
+static EspRes60P15SnapshotLine* candidateLines=NULL;
+#else
 static EspRes60P15SnapshotLine candidateLines[RES60_P9_MAX_LINES];
+#endif
 #else
 /* P14 frozen: 8192B snapshot and 1024B P9 index. */
 typedef char EspRes60P14_Line16[(sizeof(EspRes60PreviewLine)==16U)?1:-1];
 static EspRes60PreviewLine candidateLines[RES60_P9_MAX_LINES];
 #endif
+#endif
+
+#if DOOMRPG_RES60_P17_HEAP_SNAPSHOT
+/* P17 allocates only from the ordinary INTERNAL/8BIT heap on classic
+ * no-PSRAM CYD. Never allocate from the raycast, BSP or UV hot paths. */
+int EspRes60Preview_snapshotBegin(void) {
+    if (candidateLines != NULL) return 1;
+    candidateLines=(EspRes60P15SnapshotLine*)malloc(
+        sizeof(EspRes60P15SnapshotLine)*RES60_P9_MAX_LINES);
+    return candidateLines != NULL;
+}
+void EspRes60Preview_snapshotEnd(void) {
+    if (candidateLines != NULL) {
+        free(candidateLines);
+        candidateLines=NULL;
+    }
+}
+const void* EspRes60Preview_snapshotAddress(void) {
+    return candidateLines;
+}
 #endif
 
 /* All 192 cardinal rays lie inside |lateral| <= 191/192 * forward.
@@ -184,6 +211,11 @@ int EspRes60Preview_render(uint16_t* framebuffer, size_t framebufferBytes,
     memset(&stats, 0, sizeof(stats));
     stats.centerLineIndex = UINT32_MAX;
     if (outStats != NULL) *outStats = stats;
+#if DOOMRPG_RES60_P17_HEAP_SNAPSHOT
+    /* No implicit allocation on a frame path, even when caller forgot boot
+     * ownership or a previous explicit allocation failed. */
+    if (candidateLines == NULL) return 0;
+#endif
 #if DOOMRPG_RES60_P10_WALL_MATERIAL
     /* Invalidate the entire previous frame before any input admission. */
     EspRes60WallMaterial_reset();

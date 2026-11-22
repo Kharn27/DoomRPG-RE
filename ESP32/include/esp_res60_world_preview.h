@@ -59,6 +59,14 @@ typedef struct EspRes60PreviewStats_s {
 typedef int (*EspRes60PreviewReadLine)(uint32_t index,
                                      EspRes60PreviewLine* outLine, void* ctx);
 
+#if DOOMRPG_RES60_P17_HEAP_SNAPSHOT
+/* P17: bounded session-owned 6144B scratch, acquired explicitly ONCE after
+ * framebuffer startup. No allocation in render; caller owns begin/end. */
+int EspRes60Preview_snapshotBegin(void);
+void EspRes60Preview_snapshotEnd(void);
+const void* EspRes60Preview_snapshotAddress(void);
+#endif
+
 /* Full-surface fail-closed inputs; two-pass preflight prevents partial writes
  * on bad source geometry. No secondary framebuffer and no row-sized scratch.
  * The 192x96 region contains raycast *flat shaded* real map walls; no wall
