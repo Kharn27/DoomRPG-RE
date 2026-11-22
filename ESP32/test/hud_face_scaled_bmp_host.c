@@ -92,7 +92,7 @@ int main(void) {
         2, 3, 33U, 2U, 0U, NULL) == ESP_NATIVE_INDEXED_BMP_INVALID);
 
     /* An invalid palette index fails closed rather than drawing garbage. */
-    imageRows[(36U - 34U - 1U) * 4U + 1U] = 99U;
+    imageRows[(36U - 33U - 1U) * 4U + 1U] = 99U;
     assert(EspNativeIndexedBmp_blitScaledNearest(
         &bmp, framebuffer, 8U, 8U, 0U, 32U, 4U, 4U,
         2, 3, 2U, 2U, 0U, NULL) == ESP_NATIVE_INDEXED_BMP_UNSUPPORTED);
