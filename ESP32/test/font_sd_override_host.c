@@ -110,6 +110,73 @@ int main(void) {
     fixture(pakLarge, sizeof(pakLarge), 208U, 102U, 3U);
     fixture(sdLarge, sizeof(sdLarge), 208U, 102U, 16U);
 
+    /* UAC 120: the MENU_MAIN PAK is closed while SD soundtrack runs.
+     * Standalone loader must select SD larger_font without opening PAK,
+     * reject malformed SD, and never grant standalone access to other names. */
+    assert(!pakOpen);
+    assert(EspNativeIndexedBmp_openSdFontStandalone(
+               "larger_font.bmp", &bmp, &stats) ==
+           ESP_NATIVE_INDEXED_BMP_NOT_FOUND);
+    sdEnabled[1] = 1U;
+    prior = pakReads;
+    assert(EspNativeIndexedBmp_openSdFontStandalone(
+               "larger_font.bmp", &bmp, &stats) ==
+           ESP_NATIVE_INDEXED_BMP_OK &&
+           bmp.sdFontSource == ESP_NATIVE_FONT_SD_LARGER &&
+           bmp.width == 208U && bmp.height == 102U);
+    assert(pakReads == prior && sdReads == 2U);
+    uint16_t glyph[13U * 17U] = {0};
+    assert(EspNativeIndexedBmp_blit(&bmp, glyph, 13U, 17U,
+                                   0U, 34U, 13U, 17U,
+                                   0, 0, 1U, &stats) ==
+           ESP_NATIVE_INDEXED_BMP_OK);
+    assert(glyph[0] == 0xffffU);
+    assert(pakReads == prior);
+    /* The small atlas used by UAC MUST also work with PAK closed.
+     * Real a.bmp has palette index 2 = black; it must remain usable. */
+    sdEnabled[0] = 1U;
+    prior = pakReads;
+    unsigned priorSdReads = sdReads;
+    assert(EspNativeIndexedBmp_openSdFontStandalone(
+               "a.bmp", &bmp, &stats) == ESP_NATIVE_INDEXED_BMP_OK &&
+           bmp.sdFontSource == ESP_NATIVE_FONT_SD_STANDARD &&
+           bmp.width == 144U && bmp.height == 72U &&
+           bmp.bitsPerPixel == 4U && bmp.paletteCount == 16U);
+    assert(pakReads == prior && sdReads == priorSdReads + 2U);
+    uint16_t smallGlyph[9U * 12U] = {0};
+    assert(EspNativeIndexedBmp_blit(&bmp, smallGlyph, 9U, 12U,
+                                   0U, 0U, 9U, 12U,
+                                   0, 0, 1U, &stats) ==
+           ESP_NATIVE_INDEXED_BMP_OK);
+    assert(pakReads == prior);
+    /* Reject malformed small atlas geometry, without opening PAK. */
+    le32(sdA + 18, 143U);
+    assert(EspNativeIndexedBmp_openSdFontStandalone(
+               "a.bmp", &bmp, &stats) ==
+           ESP_NATIVE_INDEXED_BMP_UNSUPPORTED);
+    assert(rejects == 1U && !sdEnabled[0]);
+    fixture(sdA, sizeof(sdA), 144U, 72U, 16U);
+    assert(EspNativeIndexedBmp_openSdFontStandalone(
+               "g.bmp", &bmp, &stats) == ESP_NATIVE_INDEXED_BMP_INVALID);
+    pakOpen = 1U;
+    assert(EspNativeIndexedBmp_openSdFontStandalone(
+               "larger_font.bmp", &bmp, &stats) ==
+           ESP_NATIVE_INDEXED_BMP_INVALID);
+    assert(EspNativeIndexedBmp_openSdFontStandalone(
+               "a.bmp", &bmp, &stats) ==
+           ESP_NATIVE_INDEXED_BMP_INVALID);
+    pakOpen = 0U;
+    /* Reset the small-atlas rejection count before the large case. */
+    rejects = 0U;
+    le32(sdLarge + 18, 207U);
+    assert(EspNativeIndexedBmp_openSdFontStandalone(
+               "larger_font.bmp", &bmp, &stats) ==
+           ESP_NATIVE_INDEXED_BMP_UNSUPPORTED);
+    assert(rejects == 1U && !sdEnabled[1]);
+    fixture(sdLarge, sizeof(sdLarge), 208U, 102U, 16U);
+    rejects = 0U;
+    sdReads = pakReads = 0U;
+
     /* Missing override: exact historical PAK range path, no new SD read. */
     pakOpen = 1U;
     assert(EspNativeIndexedBmp_open("a.bmp", &bmp, &stats) ==

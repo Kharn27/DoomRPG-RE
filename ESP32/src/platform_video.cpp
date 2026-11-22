@@ -461,6 +461,12 @@ bool PlatformVideo_present() {
     }
 
 #if !DOOMRPG_RES60_P1_DIAGNOSTIC
+    /* Activated by the native MENU_MAIN touch owner without allocation.
+     * The first present after root composition/heap/FNV validation consumes
+     * this marker and chooses UAC-120 or the fail-closed classic fallback. */
+    (void)EspUacMenuPreview_enterDefault();
+    (void)EspUacMenuPreview_enterOptions();
+
     /* Experimental UAC owns the *physical* scanout only while MENU_MAIN is
      * active. Do not briefly display the old dashboard before every UAC
      * selection (flicker/two SPI frame writes). The proven normal presenter

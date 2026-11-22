@@ -28,6 +28,7 @@
 #include "platform_touch_events.h"
 #include "platform_video_c_bridge.h" /* present() in ALL build profiles */
 #include "platform_video_config.h"
+#include "esp_uac_menu_preview.h"
 
 #ifndef DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
 #define DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY 0
@@ -165,6 +166,7 @@ static int paintOptionsState(int selectedItem, int armed) {
     }
 
     optionsExpectedFrameFNV = nextHash;
+    EspUacMenuPreview_optionsPage(ESP_UAC_OPTIONS_ROOT,selectedItem,armed,0x07U);
     (void)Esp32PlatformVideo_present();
     printf("[OPTIONBACK] VISUAL item=%d armed=%d brightness=%u framebufferFNV=%08x\n",
            selectedItem, armed, (unsigned int)Esp32Backlight_percent(),
@@ -181,6 +183,9 @@ static int paintVideoState(int selectedItem, int armed) {
         return 0;
     }
     optionsExpectedFrameFNV = nextHash;
+    EspUacMenuPreview_optionsPage(ESP_UAC_OPTIONS_VIDEO,selectedItem,armed,
+        (uint8_t)(0x09U | (Esp32Backlight_isReady()?0x02U:0U) |
+                  (Esp32Orientation_isReady()?0x04U:0U)));
     (void)Esp32PlatformVideo_present();
     printf("[OPTIONSVIDEO] VISUAL item=%d armed=%d framebufferFNV=%08x\n",
            selectedItem, armed, (unsigned int)nextHash);
@@ -196,6 +201,8 @@ static int paintLuminositeState(void) {
         return 0;
     }
     optionsExpectedFrameFNV = nextHash;
+    EspUacMenuPreview_optionsPage(ESP_UAC_OPTIONS_BRIGHTNESS,
+        (int)(Esp32Backlight_percent()/25U),1,0x1fU);
     (void)Esp32PlatformVideo_present();
     printf("[OPTIONSBRIGHTNESS] VISUAL percent=%u framebufferFNV=%08x\n",
            (unsigned int)Esp32Backlight_percent(), (unsigned int)nextHash);
@@ -226,6 +233,8 @@ static int paintSoundMenuState(int selected,int armed) {
     if (!DoomRPG_esp32PaintMainMenuSoundDashboardSelection(
             optionsDoomRpg,selected,armed,&nextHash)) return 0;
     optionsExpectedFrameFNV=nextHash;
+    EspUacMenuPreview_optionsPage(EspNativeAudioIntent_isSoundEnabled()?
+        ESP_UAC_OPTIONS_SOUND_ON:ESP_UAC_OPTIONS_SOUND_OFF,selected,armed,0x07U);
     presentSoundUiFrame();
     printf("[OPTIONSSOUND] MENU state=%s item=%d armed=%d framebufferFNV=%08x\n",
            EspNativeAudioIntent_isSoundEnabled()?"ON":"OFF",
@@ -246,6 +255,9 @@ static int paintSoundState(int armedChoice) {
         return 0;
     }
     optionsExpectedFrameFNV=nextHash;
+    EspUacMenuPreview_optionsPage(ESP_UAC_OPTIONS_VOLUME,
+        armedChoice>=0?armedChoice:(int)(percent==0U?1U:percent/25U),
+        1,0x1fU);
     presentSoundUiFrame();
     printf("[OPTIONSSOUND] VISUAL percent=%u armed=%d framebufferFNV=%08x\n",
            (unsigned)percent,armedChoice,(unsigned)nextHash);
@@ -260,6 +272,8 @@ static int paintOrientationState(void) {
         return 0;
     }
     optionsExpectedFrameFNV = nextHash;
+    EspUacMenuPreview_optionsPage(ESP_UAC_OPTIONS_ORIENTATION,
+        (int)Esp32Orientation_get()+1,1,0x07U);
     (void)Esp32PlatformVideo_present();
     printf("[OPTIONSORIENTATION] VISUAL mode=%s framebufferFNV=%08x\n",
            Esp32Orientation_get() ? "INVERSE" : "NORMAL",
@@ -275,6 +289,8 @@ static int paintThemeState(void) {
         return 0;
     }
     optionsExpectedFrameFNV = nextHash;
+    EspUacMenuPreview_optionsPage(ESP_UAC_OPTIONS_THEME,
+        (int)EspMainMenuSkin_getTheme()+1,1,0x0fU);
     (void)Esp32PlatformVideo_present();
     printf("[OPTIONSTHEME] VISUAL theme=%u framebufferFNV=%08x\n",
            (unsigned int)EspMainMenuSkin_getTheme(), (unsigned int)nextHash);
@@ -301,6 +317,9 @@ static int paintArmedPreference(int layer, int selectedItem) {
             optionsDoomRpg, EspMainMenuSkin_getTheme(), selectedItem, &hash);
     if (!ok || !hash) return 0;
     optionsExpectedFrameFNV = hash;
+    EspUacMenuPreview_optionsPage(layer==1?ESP_UAC_OPTIONS_BRIGHTNESS:
+        layer==2?ESP_UAC_OPTIONS_ORIENTATION:ESP_UAC_OPTIONS_THEME,
+        selectedItem,1,0x1fU);
     (void)Esp32PlatformVideo_present();
     printf("[OPTIONCHOICE] ARM layer=%d item=%d confirm=second-released-tap frame=%08x\n",
            layer, selectedItem, (unsigned)hash);
@@ -367,16 +386,27 @@ static void optionsBackTap(int16_t screenX,
                            uint16_t rawX,
                            uint16_t rawY) {
     int item;
+    const int uacInstant=EspUacMenuPreview_optionsActive();
 
     if (!optionsBackActive || optionsDoomRpg == NULL) return;
 
     optionsTapCount++;
-    item = (luminositeOpen || soundOpen) ? luminositeItemAt(screenX, screenY) :
+    /* Match the visible 110px UAC plates exactly; do not permit taps on
+     * the invisible old logical cards hidden under the physical overlay. */
+    item = EspUacMenuPreview_optionsActive() ?
+           EspUacMenuPreview_optionsHit(screenX,screenY) :
+           ((luminositeOpen || soundOpen) ? luminositeItemAt(screenX, screenY) :
            (soundMenuOpen ? optionsItemAt(screenX, screenY) :
            (orientationOpen ? orientationItemAt(screenX, screenY) :
            (themeOpen ? themeItemAt(screenX, screenY) :
            (videoOpen ? videoItemAt(screenX, screenY) :
-                        optionsItemAt(screenX, screenY)))));
+                        optionsItemAt(screenX, screenY))))));
+    /* Native UAC volume has four physical preset slots, no BACK.
+     * Map only those taps to the preexisting semantic preset IDs 1..4. */
+    if(soundOpen && uacInstant && item>=0)++item;
+    /* Brightness uses the same four physical preset slots as VOLUME.
+     * The immutable native brightness model still addresses choices 1..4. */
+    if(luminositeOpen && uacInstant && item>=0)++item;
     printf("[OPTIONBACK] TAP n=%u raw=%u,%u pressure=%u physical=%d,%d logical=%d,%d layer=%s item=%d armedItem=%d\n",
            (unsigned int)optionsTapCount, rawX, rawY, pressure,
            screenX, screenY, screenX / DOOMRPG_INTEGER_SCALE,
@@ -419,7 +449,7 @@ static void optionsBackTap(int16_t screenX,
             return;
         }
         if (item >= 1 && item < DOOMRPG_ESP32_BRIGHTNESS_CARD_COUNT) {
-            if (armedItem != item) {
+            if (armedItem != item && !uacInstant) {
                 if (!paintSoundState(item)) {
                     optionsBackActive=0;
                     PlatformInput_setTapCallback(NULL);
@@ -452,9 +482,10 @@ static void optionsBackTap(int16_t screenX,
             registerOptionsHitboxOverlay();
 #endif
             printf("[OPTIONSSOUND] SELECT %u->%u changed=%s "
-                   "autoBack=SOUND persistence=session\n",
+                   "confirmation=%s autoBack=SOUND persistence=session\n",
                    (unsigned)before,(unsigned)after,
-                   before==after?"no":"yes");
+                   before==after?"no":"yes",
+                   uacInstant?"single-tap":"two-tap");
             return;
         }
         if (armedItem!=-1) {
@@ -556,7 +587,7 @@ static void optionsBackTap(int16_t screenX,
             return;
         }
         if (item >= 1 && item < DOOMRPG_ESP32_BRIGHTNESS_CARD_COUNT) {
-            if (armedItem != item) {
+            if (armedItem != item && !uacInstant) {
                 if (!paintArmedPreference(1, item)) {
                     optionsBackActive = 0;
                     PlatformInput_setTapCallback(NULL);
@@ -600,9 +631,10 @@ static void optionsBackTap(int16_t screenX,
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
             registerOptionsHitboxOverlay();
 #endif
-            printf("[OPTIONSBRIGHTNESS] SELECT %u->%u changed=%s confirmation=two-tap autoBack=VIDEO persistence=sd-v3\n",
+            printf("[OPTIONSBRIGHTNESS] SELECT %u->%u changed=%s confirmation=%s autoBack=VIDEO persistence=sd-v3\n",
                    (unsigned)before, (unsigned)after,
-                   before == after ? "no" : "yes");
+                   before == after ? "no" : "yes",
+                   uacInstant ? "single-tap" : "two-tap");
             return;
         }
         if (armedItem != -1) {
@@ -831,8 +863,8 @@ static void optionsBackTap(int16_t screenX,
                 return;
             }
             luminositeOpen = 1U;
-            printf("[OPTIONSBRIGHTNESS] OPEN from=VIDEO percent=%u presets=25/50/75/100 confirmTap=2 autoBack=VIDEO\n",
-                   (unsigned)Esp32Backlight_percent());
+            printf("[OPTIONSBRIGHTNESS] OPEN from=VIDEO percent=%u presets=25/50/75/100 confirmTap=%d autoBack=VIDEO\n",
+                   (unsigned)Esp32Backlight_percent(),uacInstant?1:2);
         } else if (item == VIDEO_ORIENTATION_ITEM) {
             if (!paintOrientationState()) {
                 optionsBackActive = 0;

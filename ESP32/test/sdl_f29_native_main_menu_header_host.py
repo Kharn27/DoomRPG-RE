@@ -104,11 +104,17 @@ def original_body_parity() -> None:
         # Sound activation is the only later intentional menu behavior delta.
         # Reverse it exactly without changing the historical frozen blobs.
         if filename == "native_main_menu_actions.c":
+            from uac_blink_history import restore_pre_uac_blink_actions
+            restored = restore_pre_uac_blink_actions(restored)
             from audio_menu_m1_history import restore_pre_menu_audio_actions
             restored = restore_pre_menu_audio_actions(restored)
         if filename == "native_main_menu_options_action.c":
+            from uac_options_history import restore_pre_uac_options_action
+            restored = restore_pre_uac_options_action(restored)
             restored = restore_sound_options_action(restored)
         elif filename == "native_main_menu_options_back.c":
+            from uac_options_history import restore_pre_uac_options_back
+            restored = restore_pre_uac_options_back(restored)
             restored = restore_sound_options_back(restored)
             restored = restore_pre_build_c1_options_present_header(restored)
         elif filename == "native_main_menu_start_action.c":

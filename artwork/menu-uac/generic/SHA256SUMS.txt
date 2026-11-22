@@ -1,4 +1,4 @@
-5f4b4be66ac9f2bbb4170e14b4214cc802b5968f772a50d5937da1c3c7c5c93d  sources/menu_generic_120.png
-6a188ff11105257f15ab50c1b0671675f6377cbe3fedbb1ea3efa6942268edda  ../../../sdroot/doomrpg/img/menu_generic_120.bmp
-1c512ac4f270afc50dcd0565d4669de23c7b40914937e4a599bcf8136df520d8  sources/menu_generic_240.png
-f634d8e47b67c8cd54ffd8fabcddafd3e84c2d461a0a9d098efa86b6114cede8  ../../../sdroot/doomrpg/img/menu_generic_240.bmp
+f54d26e80a6f6465d7d53be73cca0c877347c64081b83e21ec3ae70ef39c9b5b  sources/menu_generic_120.png
+1aa91c6aa6a1ac515be55c9552ee84f22bea550a1c6e0951b3eef23a525b2274  ../../../sdroot/doomrpg/img/menu_generic_120.bmp
+03bdd4c5e5316e87d119a177df2735a66a3401b3645bf1e37a6fe46c7ae96bf4  sources/menu_generic_240.png
+f997d230794197756dee8b6fe05d2a57b941366ef7c8258143c7ddb322d18c9f  ../../../sdroot/doomrpg/img/menu_generic_240.bmp

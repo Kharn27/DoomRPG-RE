@@ -1,6 +1,6 @@
 # Bouton UAC générique — 120 / 240
 
-Le bouton est extrait du START UAC existant et nettoyé avec Adobe : plus de lettres, pentagramme, icône ou logement circulaire, seulement le métal et ses bordures. La police Doom RPG sera dessinée **séparément** par le jeu dans un milestone ultérieur.
+Le bouton a été nettoyé depuis START puis **recadré pixel par pixel sur le contour alpha et les bordures métalliques exactes du bouton START** : pas de bande rectangulaire opaque sur la première et dernière ligne. Le centre conserve le métal vierge, sans lettres ni icône. Le texte est dessiné par le jeu uniquement en mode UAC 120, à partir de la grande police Doom 4 bits et de sa palette canonique.
 
 | Version | Dimensions natives | PNG source | BMP SD |
 |---|---|---|---|
@@ -30,4 +30,94 @@ L'option --write reconstruit les BMP et le manifeste SHA256SUMS.txt. Sources, RE
 
 Une seule image générique retenue coûterait **8 800 octets** en RGB565 pour l'écran 240 ou **2 200 octets** pour l'écran 120, indépendamment de START / LOAD / OPTIONS / HELP. Les états inactifs seraient dérivés par assombrissement logiciel, et la police serait dessinée à la volée.
 
-**Ce PR est graphique uniquement.** Il ne remplace aucun des 16 BMP historiques et ne modifie ni le rendu, ni la RAM du firmware. La PR #406 actuelle utilise encore 4 patches actifs × 8 800 = 35 200 octets : l'économie future reste à développer puis mesurer sur le vrai CYD. Les nouveaux BMP sont facultatifs jusqu'à l'intégration.
+**Depuis la PR #413**, le menu UAC 120 utilise effectivement ce bouton unique et le cache de glyphes temporaire. Le 240→120 et le 240 direct continuent volontairement d'utiliser les BMP historiques pour comparer. Les gains RAM exacts et le verdict esthétique restent à confirmer par le firmware normal et le vrai CYD. Les nouveaux BMP sont facultatifs jusqu'à l'intégration.
+
+## Rectification de la silhouette après retour CYD (PR #413)
+
+L'audit initial a montré un défaut objectif : en 120, la première ligne
+du générique avait **54 pixels opaques** contre **20** sur START original ;
+en 240, **109 contre 36**. Le script
+`tools/repair_assets.py --write` recopie **l'alpha exact de START**
+et le liseré/biseau d'origine sur les bandes périphériques, sans reprendre
+le texte. Les PNG maîtres 55×20 et 110×40, les BMP V4 SD et le
+`SHA256SUMS.txt` sont reconstruits de façon reproductible.
+
+Pour vérifier sans écriture :
+
+    python artwork/menu-uac/generic/tools/repair_assets.py --check
+    python artwork/menu-uac/generic/tools/export_generic.py --check
+
+Les anciens BMP spécifiques restent intacts pour les deux modes 240 de
+comparaison. Après le correctif, il faut **recopier les nouveaux BMP génériques
+et `larger_font.bmp` sur la carte SD** et redémarrer le CYD.
+
+## Preuves de rendu corrigé (PR #413)
+
+![Simulation du mode 120 pour les quatre choix START LOAD OPTIONS HELP](previews/proof_120_four_selections.png)
+
+![Simulation du menu 120 avec START sélectionné](previews/preview_120_start.png)
+
+Ces PNG sont reconstruits depuis les **BMP SD finaux**, le châssis
+`menu_frame_120.bmp` et les pixels indexés de `larger_font.bmp`, en
+respectant le scale x2 des boutons et le **nearest-neighbor 13×17 → 14×27
+physique** des glyphes, centrés dans les boutons 110×40 (OPTIONS 98px,
+marges latérales de 6px). Aucun nouveau bitmap ni cache de glyphes agrandi.
+Ils servent de revue graphique reproductible, **pas de PASS sur matériel**.
+
+    python artwork/menu-uac/generic/tools/render_corrected_120.py --check
+
+La grande police SD possède désormais **96 glyphes homogènes**,
+tous reconstruits selon le même algorithme depuis `a.bmp` (y compris
+les minuscules `a` et `o`). Le rendu ci-dessus
+est recalculé à partir du BMP indexé final, non de la version provisoire.
+[Voir le zoom de l'atlas complet](../../fonts/previews/larger_font_clean_zoom.png).
+
+## UAC natif 120 comme menu d'accueil par défaut (PR #413, PENDING CYD)
+
+L'activation tactile de MENU_MAIN marque `EspUacMenuPreview_armDefault()`
+sans aucune allocation. Au premier `PlatformVideo_present()`, **après** les
+contrôles invariants du modèle, FNV framebuffer, activation tactile,
+`heap8` et `largest8` de `DoomRPG_esp32RepaintOpaqueMainMenu`,
+`EspUacMenuPreview_enterDefault()` vérifie
+`menu_frame_120.bmp`, `menu_generic_120.bmp` et la grande police
+indexée (SD d'abord, PAK natif en repli). Il peint le menu 120 au
+premier `PlatformVideo_present()` et à chaque retour au menu principal
+depuis Options/Help ou la reprise. En cas d'erreur de lecture ou de
+rendu, **le menu CLASSIC d'origine reste le fallback**.
+
+Le clic sur le logo permet encore de comparer **120 → 240→120 → 240
+direct → 120**, sans sélectionner CLASSIC par simple navigation.
+La police est rendue **14×27** au lieu de 13×17 pixels physiques ;
+elle reste issue du même cache 4bpp de 12 glyphes, alloué uniquement en
+MENU_MAIN et libéré au reset, sans augmenter la RAM.
+
+Pour vérifier : `python ESP32/test/uac_default_mode_host.py`,
+`python artwork/menu-uac/generic/tools/render_corrected_120.py --check`.
+Le firmware normal est `esp32-cyd`; **aucun nouveau test CYD
+ou gain de RAM mesuré sur matériel n'est revendiqué ici**.
+
+### Ajustement optique Y+1
+
+Pour le menu UAC 120 par défaut, les lettres 14×27 sont positionnées
+**1 pixel physique plus bas**, afin de laisser 7 px de marge supérieure et
+6 px de marge inférieure sur le métal 110×40. La source de glyphes, le cache
+1 428 B et la disposition horizontale restent inchangés. Preuves PNG
+reproductibles avec `render_corrected_120.py --check`.
+
+### UAC-OPTIONS — déclinaison physique des sous-menus (22 novembre 2026)
+
+Le même `menu_frame_120.bmp` et **le même fichier** `menu_generic_120.bmp`
+sont utilisés pour les pages OPTIONS (3 boutons), VIDEO/THEME (4 boutons),
+LUMINOSITE/VOLUME (5 boutons plus petits, 110×32), ORIENTATION (3 boutons)
+et SOUND (3 boutons). Aucune nouvelle texture SD. Les labels proviennent de
+`larger_font.bmp` (cache indexé temporaire borné : **25×17×7 = 2 975 B**).
+Les noms longs sont ré-échantillonnés horizontalement pour préserver 6 px de
+biseau à gauche et à droite. Le tactile utilise strictement les mêmes rectangles
+physiques que le painter ; deux taps/confirmation/réglages natifs inchangés.
+
+Le MENU_MAIN réduit son texte à **14×23** et le place à **+2 px optiques** :
+10 px de marge haute et 7 px de marge basse dans la plaque 110×40.
+La source indexée 13×17, la palette et les BMP sont identiques.
+Le framebuffer logique reste 160×120; les vues procédurales sont utilisées en
+fallback si préflight échoue. **PENDING vrai CYD** : contrôler l'alignement, les
+7 pages, les actions, les touches hors-bouton, RAM, les logs.
