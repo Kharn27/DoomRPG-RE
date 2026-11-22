@@ -24,6 +24,12 @@ def section(code:str,start:str,end:str)->str:
 assert 'void EspUacMenuPreview_armDefault(void);' in header
 assert 'int EspUacMenuPreview_enterDefault(void);' in header
 assert 'constexpr int kPaintGlyphW=15,kPaintGlyphH=25,kPaintAdvance=13;' in preview
+assert 'constexpr int kMainGlyphW=17,kMainGlyphH=27,kMainGlyphAdvance=13;' in preview
+assert 'constexpr int kMainLabelYOffset=3;' in preview
+assert 'const bool mainLabel=page==ESP_UAC_OPTIONS_NONE;' in preview
+assert '(mainLabel?kMainGlyphW:kPaintGlyphW):advance;' in preview
+assert '(mainLabel?kMainGlyphH:kPaintGlyphH));' in preview
+assert '(mainLabel?kMainLabelYOffset:' in preview
 assert 'constexpr int kLabelYOffset=1;' in preview
 assert 'const int sourceY=paintY*kGlyphH/textH;' in preview
 assert 'constexpr int kGlyphW=9,kGlyphH=12;' in preview
@@ -166,18 +172,21 @@ assert present.index('EspUacMenuPreview_enterDefault()') < present.index('EspUac
 assert 'EspUacMenuPreview_reset();' in present
 
 for label in ("START","LOAD","OPTIONS","HELP"):
-    width=len(label)*13+2  # 15px ink with 13px advance, 2px overlap
+    width=(len(label)-1)*13+17  # main only: 17x27 glyph, 13px advance
     x=(110-width)//2
     assert x>=6 and x+width<=104,(label,x)
-y=(40-25)//2+1
-assert y==8 and y+25==33  # 8px upper / 7px lower clearance
+y=(40-27)//2+3
+assert y==9 and y+27==36  # lower by 1px, 27px vs 25px high
+# Submenus remain exactly as before, sharing the SAME bounded 1500B cache.
+assert (40-25)//2+1==8
 assert 25*12*5==1500
-for x in range(15):
-    sx=x*9//15
-    assert 0<=sx<9
-for y in range(25):
-    sy=y*12//25
-    assert 0<=sy<12
+for w,h in ((17,27),(15,25)):
+    for x in range(w):
+        sx=x*9//w
+        assert 0<=sx<9
+    for y in range(h):
+        sy=y*12//h
+        assert 0<=sy<12
 
 activate_options=(root/"ESP32/src/native_main_menu_options_action.c").read_text()
 assert 'EspUacMenuPreview_armOptions();' in activate_options
@@ -209,5 +218,5 @@ for y in range(32):
     assert (y*40//32)//2==sy
     assert 0<=sy<20
 assert 'esp_uac_menu_preview.h' in options and 'EspUacMenuPreview_optionsPage(' in options
-print("UAC-DEFAULT+OPTIONS HOST PASS: same a.bmp as HELP, 15x25 glyphs, 1500B bounded font cache,")
+print("UAC-DEFAULT+OPTIONS HOST PASS: same a.bmp as HELP, MAIN 17x27 / submenu 15x25, 1500B bounded font cache,")
 print("                              cached SD BMP, two-tap navigation, one-tap percentages only, bounded rows")
