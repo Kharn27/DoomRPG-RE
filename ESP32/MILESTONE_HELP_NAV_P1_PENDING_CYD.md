@@ -1,7 +1,7 @@
 # HELP-NAV-P1 — Écran d'aide plein cadre et navigation par demi-écran
 
-**Statut : navigation validée partiellement sur vrai CYD ; finition visuelle PENDING CYD.**
-La double CI précédente ne remplace pas le nouveau test visuel sans cadre ni voile.
+**Statut : PASS visuel CYD du 22 novembre 2026 ; double CI PASS ; fusion explicitement autorisée.**
+Le rendu final sans cadre ni voile est approuvé par l'utilisateur sur le vrai CYD ; aucun nouveau log Serial de cette finition n'a été joint.
 
 **Source de référence :** `main=c1a8c2820e5f7a75d8097e873905ec8e11fb53f7` au départ,
 `ESP32/MILESTONE_PR332_HELP_VISUAL_CYD_PASS.md` pour la fidélité existante
@@ -77,8 +77,9 @@ est absent. La CI lance les oracles historiques en complément.
 5. Capturer `[MAINHELP] READY/PAINT/PAGE-PREV/PAGE-NEXT`, sorties,
    éventuels `FAILED`, et les budgets mémoire du firmware normal.
 
-Aucun résultat visuel, tactile ou RAM de cette variante n'est inventé
-avant la capture réelle.
+Le log matériel précédent couvre la navigation et le retour par le X ;
+la finition visuelle finale est attestée par le retour utilisateur, sans
+nouvelle mesure RAM ni nouveau log du firmware final.
 
 ## Premier log réel : version avant retrait du cadre/voile
 
@@ -101,6 +102,22 @@ voile noir translucide du texte**. Le nouveau code garde le X natif et son
 hitbox prioritaire, la police `a.bmp`, les chevrons et la pagination,
 mais supprime `helpPaintExitFrame` et la boucle de dimming RGB565
 dans `helpDrawStarfield`. Le framebuffer reçoit ainsi les pixels exacts du
-blit de `c.bmp` ; **pas de cache ou d'allocation ajoutés**. Cette variante
-visuelle précise **n'est pas encore testée sur le CYD**. La lisibilité des
-textes sur toutes les étoiles devra être jugée à l'écran.
+blit de `c.bmp` ; **pas de cache ou d'allocation ajoutés**. La variante sans cadre ni voile est **approuvée visuellement** par le testeur
+sur son CYD le 22 novembre : « Ca claque ! Merci. Tu peux fusionner :) ».
+Aucun log Serial complémentaire n'a été transmis avec ce verdict ; ne pas
+extrapoler à un test d'endurance, aux trois thèmes ni à la page 16/16.
+
+## Décision finale de validation
+
+L'utilisateur approuve visuellement la version définitive **sans cadre du X
+et sans assombrissement du fond c.bmp** et demande explicitement sa fusion.
+Ce PASS visuel, combiné à la capture précédente pour les parcours
+page suivante/précédente et retour au menu, et à la **double CI SUCCESS**
+au commit de code `750e10d768991dd027acc55237a0373bb68db328`,
+permet la fusion de PR #435. Tests de code, historique SDL, build firmware
+normal `esp32-cyd`, profil inversé et test hôte pixel-perfect PASS.
+
+- Push : https://github.com/Kharn27/DoomRPG-RE/actions/runs/45051473237
+- PR : https://github.com/Kharn27/DoomRPG-RE/actions/runs/45051469143
+- Aucun changement de code après le PASS utilisateur : cette mise à jour
+  documentaire est **docs-only** et ne redéfinit pas les mesures matérielles.
