@@ -13,7 +13,9 @@ import tempfile
 from audio_r2c_restore_menu_oracle import (restore_sound_options_action,
                                            restore_sound_options_back)
 from native_help_bottom_history import (restore_pre_help_light_body_pages,
-                                        restore_pre_help_frame_polish)
+                                        restore_pre_help_frame_polish,
+                                        restore_pre_help_weapon_sweep_actions,
+                                        restore_pre_help_weapon_sweep_model)
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCES = ROOT / "ESP32/src"
@@ -105,6 +107,7 @@ def original_body_parity() -> None:
         # Sound activation is the only later intentional menu behavior delta.
         # Reverse it exactly without changing the historical frozen blobs.
         if filename == "native_main_menu_actions.c":
+            restored = restore_pre_help_weapon_sweep_actions(restored)
             restored = restore_pre_help_frame_polish(restored)
             from uac_blink_history import restore_pre_uac_blink_actions
             restored = restore_pre_uac_blink_actions(restored)
@@ -124,6 +127,8 @@ def original_body_parity() -> None:
         elif filename == "native_main_menu_actions.c":
             # Undo only the later HELP page-2 ink before the frozen F29 blob.
             restored = restore_pre_help_light_body_pages(restored)
+        elif filename == "native_main_menu_model.c":
+            restored = restore_pre_help_weapon_sweep_model(restored)
         assert git_blob(restored.encode("utf-8")) == blob, (
             f"{filename}: original pre-F29 Git blob not preserved exactly")
         assert current.count(old_import) == expected, filename
