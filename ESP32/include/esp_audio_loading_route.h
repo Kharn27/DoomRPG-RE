@@ -9,16 +9,19 @@ extern "C" {
 #endif
 
 /* Allocation-free map soundtrack selection. Loading never opens SD; maps
- * without an explicitly assigned track remain deferred (including map 10). */
+ * without an explicitly assigned track remain deferred (including map 10).
+ * Sector 1 is catalogue 2 /level01.bsp with BSP header loadMapId=3. */
 typedef enum EspAudioLoadingTrack_e {
     ESP_AUDIO_LOADING_TRACK_DEFERRED = 0,
     ESP_AUDIO_LOADING_TRACK_M_STALKS = 1,
-    ESP_AUDIO_LOADING_TRACK_M_DEAD = 2
+    ESP_AUDIO_LOADING_TRACK_M_DEAD = 2,
+    ESP_AUDIO_LOADING_TRACK_M_E1M3 = 3
 } EspAudioLoadingTrack;
 
 static inline EspAudioLoadingTrack EspAudioLoadingRoute_forMap(uint8_t mapId) {
     switch (mapId) {
         case ESP_MAP_ID_INTRO: return ESP_AUDIO_LOADING_TRACK_M_STALKS;
+        case ESP_MAP_ID_SECTOR_1: return ESP_AUDIO_LOADING_TRACK_M_E1M3;
         case ESP_MAP_ID_JUNCTION: return ESP_AUDIO_LOADING_TRACK_M_DEAD;
         default: return ESP_AUDIO_LOADING_TRACK_DEFERRED;
     }
@@ -33,6 +36,8 @@ static inline EspAudioLoadingTrack EspAudioLoadingRoute_forView(
     uint8_t catalogMapId, uint8_t bspLoadMapId) {
     if (catalogMapId == ESP_MAP_ID_INTRO && bspLoadMapId == 1U)
         return ESP_AUDIO_LOADING_TRACK_M_STALKS;
+    if (catalogMapId == ESP_MAP_ID_SECTOR_1 && bspLoadMapId == 3U)
+        return ESP_AUDIO_LOADING_TRACK_M_E1M3;
     if (catalogMapId == ESP_MAP_ID_JUNCTION && bspLoadMapId == 2U)
         return ESP_AUDIO_LOADING_TRACK_M_DEAD;
     return ESP_AUDIO_LOADING_TRACK_DEFERRED;
@@ -43,6 +48,7 @@ static inline const char* EspAudioLoadingRoute_trackName(
     switch (track) {
         case ESP_AUDIO_LOADING_TRACK_M_STALKS: return "M_STALKS.wav";
         case ESP_AUDIO_LOADING_TRACK_M_DEAD: return "M_DEAD.wav";
+        case ESP_AUDIO_LOADING_TRACK_M_E1M3: return "M_E1M3.wav";
         default: return "none";
     }
 }

@@ -44,6 +44,8 @@ constexpr char kPrimary[]="/doomrpg/music/opl/M_STALKS.wav";
 constexpr char kRootFallback[]="/M_STALKS.wav";
 constexpr char kJunctionPrimary[]="/doomrpg/music/opl/M_DEAD.wav";
 constexpr char kJunctionFallback[]="/M_DEAD.wav";
+constexpr char kSector1Primary[]="/doomrpg/music/opl/M_E1M3.wav";
+constexpr char kSector1Fallback[]="/M_E1M3.wav";
 constexpr char kIntroPrimary[]="/doomrpg/music/opl/M_IN_CIT.wav";
 constexpr char kIntroFallback[]="/M_IN_CIT.wav";
 constexpr char kMenuPrimary[]="/doomrpg/music/opl/M_DM2TTL.wav";
@@ -252,7 +254,9 @@ static const char* activeTrackName() {
     return activeIntroTrack ? "INTRO" :
            (activeMenuTrack ? "MENU" :
             (activeGameplayTrack==ESP_AUDIO_LOADING_TRACK_M_DEAD
-                 ? "JUNCTION" : "ENTRANCE"));
+                 ? "JUNCTION" :
+             (activeGameplayTrack==ESP_AUDIO_LOADING_TRACK_M_E1M3
+                 ? "SECTOR1" : "ENTRANCE")));
 }
 static uint16_t activeGainDiv() {
     return activeIntroTrack ? kIntroGainDiv :
@@ -1048,6 +1052,13 @@ static void begin(bool intro,bool menu,EspAudioLoadingTrack gameplayTrack) {
                          (activeMenuTrack?kMenuFallback:
                           (activeGameplayTrack==ESP_AUDIO_LOADING_TRACK_M_DEAD
                                 ? kJunctionFallback:kRootFallback));
+    /* Sector 1 joins the existing SD/IMA producer, not a second engine.
+     * Keep intro/menu/Entrance/Junction path selection byte-identical. */
+    if (!activeIntroTrack && !activeMenuTrack &&
+        activeGameplayTrack==ESP_AUDIO_LOADING_TRACK_M_E1M3) {
+        requested=kSector1Primary;
+        fallback=kSector1Fallback;
+    }
     path=requested;
     printf("[ENTRANCEMUSIC] OPEN path=%s fallback=%s "
            "expected=WAV-IMA-ADPCM-mono-22050\n",requested,fallback);
@@ -1399,7 +1410,7 @@ void EspEntranceMusic_service(bool gameplayActive,bool sdReady) {
     /* A title visit is an explicit owner lifetime. Do not restart when the
      * UI changes to HELP/OPTIONS/LOAD or when the finite WAV completes. */
     const bool menu=sdReady&&!gameplayActive&&!intro&&menuSessionLatched;
-    /* Intro, menu and both configured maps share one reader/ISR/ring.
+    /* Intro, menu and configured maps share one reader/ISR/ring.
      * A different map must not inherit the previous SD music stream. */
     if ((!configuredGameplay && !intro && !menu) || !soundOn ||
         (attempted && (activeIntroTrack!=intro || activeMenuTrack!=menu ||
