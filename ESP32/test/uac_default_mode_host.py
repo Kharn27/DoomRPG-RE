@@ -58,7 +58,8 @@ assert 'frameBatch.bytes=frameCache.pixels;' in preview
 assert 'buttonBatch.bytes=genericCache.pixels;' in preview
 assert 'const bool patch=previous>=0&&previous<pageCount(optionsPage);' in preview
 assert 'const int regions=patch?(previous==selected?1:2):1;' in preview
-assert 'const int previous=(current==paintedMode && paintedPage==page)?' in preview
+assert 'const int previous=(current==paintedMode && paintedPage==page &&' in preview
+assert 'paintedTheme==theme)?' in preview  # force FULL repaint on a new theme
 assert 'kOptionsVolume[]={"25%","50%","75%","100%"}' in preview
 assert 'page==ESP_UAC_OPTIONS_VOLUME)return 4;' in preview
 assert 'selected-=1;mask=0x0fU;' in preview
