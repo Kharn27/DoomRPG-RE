@@ -1,37 +1,46 @@
-"""Strict inverse of exactly GAME-S1 subtype10 P1 for frozen Git-blob tests.
+"""Frozen historical source inverse for GAME-S1 subtype10 P1.
 
-This historical oracle does not touch the firmware. The current full C source
-must match the pinned feature-branch Git blob; the recovered earlier source
-must match the pinned main Git blob. A future edit fails closed until reviewed.
+Every changed C hunk is reversed verbatim with exact multiplicity, then both
+the current and restored Git blob IDs are checked. This does not alter the
+firmware or relax old historical hashes.
 """
 import hashlib
-from pathlib import Path
-import subprocess
 
-BASE = "d9896fcf5f07ab8d41935565002792b608a41333"
 EXPECTED = {
     "esp_native_gameplay_monster_active_sequence.c": (
-        "2637539668f8a46c37e157772cd73a33101c4b0e", "369339178076eac89e8cc0f7b47d0fb5540619d9"
+        "2637539668f8a46c37e157772cd73a33101c4b0e",
+        "369339178076eac89e8cc0f7b47d0fb5540619d9",
     ),
 }
+_REVERSE_ACTIVE_SEQUENCE = (
+    ("#include \"esp_native_gameplay_monster_position.h\"\n#include \"esp_native_gameplay_monster_subtype10_policy.h\"\n#include \"esp_native_process_rng_owner.h\"\n#include \"esp_native_rng_replay_guard.h\"\n",
+     ""),
+    ("\n/* P1 admission: inspect the original single <84 byte without consuming it.\n * When the byte crosses a refill boundary, borrow the already-proven RNG\n * reservation and restore the live Random_t before leaving preflight.\n * This preview deliberately does NOT invent an inactive-monster list order.\n * If at least one viable corpse is found, defer rather than revive the wrong\n * corpse or publish a half-owned weapon18/animation/activation transaction. */\ntypedef enum Subtype10Admission_e {\n    SUBTYPE10_NOT_READY = 0,\n    SUBTYPE10_FALLBACK = 1,\n    SUBTYPE10_RAISE_DEFER = 2\n} Subtype10Admission;\n\nstatic Subtype10Admission subtype10AdmitFallback(\n    uint16_t attackerSprite, uint8_t* outRoll, uint16_t* outCorpse) {\n    Random_t* live = EspNativeProcessRng_live();\n    Random_t saved;\n    uint8_t prepared = 0U;\n    uint8_t roll;\n    const EspNativeGameplayMonsterView* monsters;\n    const EspNativeGameplayMonsterPositionRecord* attackerPos;\n    const EspMapSpriteTopologyView* topology;\n    uint32_t i;\n\n    if (outRoll != NULL) *outRoll = 0U;\n    if (outCorpse != NULL) *outCorpse = ACTIVESEQ_NO_SPRITE;\n    if (live == NULL || outRoll == NULL || outCorpse == NULL ||\n        live->nextRand < 0 || live->nextRand >= RANDTABLESIZE ||\n        !EspNativeRngReplayGuard_beginProbeBoundary(\n            live, &saved, &prepared)) {\n        return SUBTYPE10_NOT_READY;\n    }\n    /* beginProbeBoundary() exposes the reserved new table for this preview. */\n    if (live->nextRand < 0 || live->nextRand >= RANDTABLESIZE) {\n        if (prepared != 0U) {\n            (void)EspNativeRngReplayGuard_endProbeBoundary(\n                live, &saved, prepared);\n        }\n        return SUBTYPE10_NOT_READY;\n    }\n    roll = live->randTable[live->nextRand];\n    if (prepared != 0U &&\n        !EspNativeRngReplayGuard_endProbeBoundary(live, &saved, prepared)) {\n        return SUBTYPE10_NOT_READY;\n    }\n    *outRoll = roll;\n    if (!EspNativeSubtype10_wantsRaise(roll)) {\n        return SUBTYPE10_FALLBACK;\n    }\n\n    monsters = EspNativeGameplayMonsterState_view();\n    topology = EspMapSpriteTopology_view();\n    attackerPos = EspNativeGameplayMonsterPosition_find(attackerSprite);\n    if (monsters == NULL || monsters->records == NULL ||\n        topology == NULL || attackerPos == NULL ||\n        topology->spriteCount > 1024U) {\n        return SUBTYPE10_NOT_READY;\n    }\n\n    for (i = 0U; i < monsters->count; ++i) {\n        const EspNativeGameplayMonsterRecord* corpse = &monsters->records[i];\n        const EspNativeGameplayMonsterPositionRecord* pos;\n        int32_t dx;\n        int32_t dy;\n        uint8_t visual = 0U;\n        uint8_t occupied = 0U;\n        uint32_t j;\n\n        if (corpse->alive != 0U || corpse->spriteIndex == attackerSprite) {\n            continue;\n        }\n        pos = EspNativeGameplayMonsterPosition_find(corpse->spriteIndex);\n        if (pos == NULL || !EspMapSpriteTopology_getVisualState(\n                corpse->spriteIndex, &visual)) {\n            return SUBTYPE10_NOT_READY;\n        }\n        dx = (int32_t)pos->worldX - (int32_t)attackerPos->worldX;\n        dy = (int32_t)pos->worldY - (int32_t)attackerPos->worldY;\n        if (!EspNativeSubtype10_candidateEligible(\n                dx, dy, 1U, 0U, 0U)) {\n            continue;\n        }\n        /* The native renderer knows hidden gib vs corpse, but P1 cannot\n         * establish every legacy 0x1000000/0x2000000 bit (notably after LOAD).\n         * A nearby non-hidden death/corpse must therefore be deferred. */\n        if ((visual & 0x80U) != 0U) continue;\n        if ((visual & 0x0fU) != 2U && (visual & 0x0fU) != 4U) {\n            return SUBTYPE10_NOT_READY;\n        }\n\n        /* Exact 16263 *entity* occupancy mask; links/line overlays not\n         * represented by this topology remain conservatively unsupported.\n         * This is only a negative gate, never authority to resurrect. */\n        for (j = 0U; j < topology->spriteCount; ++j) {\n            uint8_t type = 0U, subtype = 0U;\n            uint16_t linkState = 0U, linkOrder = 0U;\n            if (!EspMapSpriteTopology_getEntity(\n                    j, &type, &subtype, &linkState, &linkOrder)) {\n                return SUBTYPE10_NOT_READY;\n            }\n            if (type < 16U &&\n                (ESP_NATIVE_SUBTYPE10_RAISE_OCCUPANCY_MASK &\n                 (1U << type)) != 0U &&\n                (linkState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) != 0U &&\n                (linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK) ==\n                    pos->tileIndex) {\n                occupied = 1U;\n                break;\n            }\n        }\n        if (EspNativeSubtype10_candidateEligible(\n                dx, dy, 1U, 0U, occupied)) {\n            *outCorpse = corpse->spriteIndex;\n            return SUBTYPE10_RAISE_DEFER;\n        }\n    }\n    return SUBTYPE10_FALLBACK;\n}\n\n",
+     ""),
+    ("        uint8_t subtype10Prepared = 0U;\n        uint8_t subtype10OldAlt = 0U;\n        uint8_t subtype10Roll = 0U;\n        uint16_t subtype10Corpse = ACTIVESEQ_NO_SPRITE;\n        Random_t subtype10Before;\n",
+     ""),
+    ("            Subtype10Admission admission = subtype10AdmitFallback(\n                spriteIndex, &subtype10Roll, &subtype10Corpse);\n            if (admission != SUBTYPE10_FALLBACK) {\n                printf(\"[MONSTERSUB10] %s turn=%u ordinal=%u/%u sprite=%u corpse=%u rollPreview=%u rngConsumed=0 mutation=no reason=%s\\n\",\n                       admission == SUBTYPE10_RAISE_DEFER\n                           ? \"RAISE-DEFER\" : \"DEFER\",\n                       (unsigned int)activeSeq.expandedTurns,\n                       (unsigned int)(ordinal + 1U),\n                       (unsigned int)activationCount,\n                       (unsigned int)spriteIndex,\n                       (unsigned int)subtype10Corpse,\n                       (unsigned int)subtype10Roll,\n                       admission == SUBTYPE10_RAISE_DEFER\n                           ? \"weapon18-revive-transaction-unowned\"\n                           : \"rng-or-corpse-preflight-not-ready\");\n                continue;\n            }\n            /* Legacy consumes this byte BEFORE toggling the alternate\n             * attack flag, even if no inactive monster is reanimable. */\n            subtype10Before = *EspNativeProcessRng_live();\n            if (DoomRPG_randNextByte(EspNativeProcessRng_live()) !=\n                    subtype10Roll) {\n                *EspNativeProcessRng_live() = subtype10Before;\n                printf(\"[MONSTERSUB10] DEFER sprite=%u reason=preview-live-roll-mismatch rngRollback=yes mutation=no\\n\",\n                       (unsigned int)spriteIndex);\n                continue;\n            }\n            subtype10OldAlt = monster->alternateAttack;\n            if (!EspNativeGameplayMonsterState_toggleAlternateAttack(\n                    spriteIndex, subtype10OldAlt)) {\n                *EspNativeProcessRng_live() = subtype10Before;\n                printf(\"[MONSTERSUB10] DEFER sprite=%u reason=alternate-state-not-owned rngRollback=yes mutation=no\\n\",\n                       (unsigned int)spriteIndex);\n                continue;\n            }\n            subtype10Prepared = 1U;\n            DRPG_LOGI(\"[MONSTERSUB10] FALLBACK turn=%u ordinal=%u/%u sprite=%u roll=%u raiseRoll=%u eligibleCorpse=none rngCalls=1 alt=%u->%u next=ordinary-ai\\n\",\n                      (unsigned int)activeSeq.expandedTurns,\n                      (unsigned int)(ordinal + 1U),\n                      (unsigned int)activationCount,\n                      (unsigned int)spriteIndex,\n                      (unsigned int)subtype10Roll,\n                      (unsigned int)EspNativeSubtype10_wantsRaise(subtype10Roll),\n                      (unsigned int)subtype10OldAlt,\n                      (unsigned int)(subtype10OldAlt ^ 1U));\n",
+     "            printf(\"[MONSTERACTIVESEQ] MEMBER-DEFER turn=%u ordinal=%u/%u sprite=%u subtype=%u cause=special-ai-unowned mutation=no rngConsumed=0\\n\",\n                   (unsigned int)activeSeq.expandedTurns,\n                   (unsigned int)(ordinal + 1U),\n                   (unsigned int)activationCount,\n                   (unsigned int)spriteIndex,\n                   (unsigned int)monster->subtype);\n            continue;\n"),
+    ("            if (subtype10Prepared != 0U) {\n                /* Member-probe never published: undo the special-prefix\n                 * mutable record and live logical RNG before aborting. */\n                const int altRestored =\n                    EspNativeGameplayMonsterState_toggleAlternateAttack(\n                        spriteIndex, (uint8_t)(subtype10OldAlt ^ 1U));\n                *EspNativeProcessRng_live() = subtype10Before;\n                printf(\"[MONSTERSUB10] ROLLBACK sprite=%u altExact=%s rngRestored=yes reason=member-probe-invalid\\n\",\n                       (unsigned int)spriteIndex,\n                       altRestored ? \"yes\" : \"NO\");\n            }\n",
+     ""),
+)
 
-def _git_blob(source):
-    return hashlib.sha1(
-        b"blob " + str(len(source)).encode() + b"\0" + source
-    ).hexdigest()
+def _git_blob(data):
+    return hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
 
 def restore_pre_s1_subtype10(name, data):
     if name not in EXPECTED:
         return data
-    was_bytes = isinstance(data, bytes)
-    current = data if was_bytes else data.encode("utf-8")
+    as_bytes = isinstance(data, bytes)
+    current = data if as_bytes else data.encode("utf-8")
     head_hash, base_hash = EXPECTED[name]
-    assert _git_blob(current) == head_hash, (
-        "GAME-S1 subtype10 current source changed outside frozen inverse", name
-    )
-    path = "ESP32/src/" + name
-    baseline = subprocess.check_output(["git", "show", f"{BASE}:{path}"])
-    assert _git_blob(baseline) == base_hash, (
-        "GAME-S1 subtype10 baseline historical source drifted", name
-    )
-    return baseline if was_bytes else baseline.decode("utf-8")
+    assert _git_blob(current) == head_hash, ("GAME-S1 current source drift", name)
+    source = current.decode("utf-8")
+    for newer, older in _REVERSE_ACTIVE_SEQUENCE:
+        assert source.count(newer) == 1, (
+            "GAME-S1 frozen inverse hunk drift", name, newer[:80]
+        )
+        source = source.replace(newer, older, 1)
+    original = source.encode("utf-8")
+    assert _git_blob(original) == base_hash, ("GAME-S1 original blob drift", name)
+    return original if as_bytes else source
