@@ -36,6 +36,13 @@ int EspEntranceMusic_prestartMenuBeforeFirstFrame(void);
 int EspEntranceMusic_prestartGameplayBeforeFirstFrame(uint8_t targetMapId);
 void EspEntranceMusic_service(bool gameplayActive,bool sdReady);
 void EspEntranceMusic_pumpGameplay(void);
+/* AUDIO-PICKUP #419: after a successful world/player pickup commit and its
+ * 5060 intent publish, but BEFORE first-weapon standalone dialog opens the
+ * PAK lease. Same Arduino audio owner; bounded PCM/ring reads. Returns 1
+ * only after the complete cue was mixed into the existing music ring.
+ * Returns 0 without consuming the pickup FIFO record when unavailable;
+ * normal consumer then handles it after the modal is closed. */
+int EspEntranceMusic_handoffPickupBeforeModal(uint32_t pickupSequence);
 /* Only the currently playing MENU soundtrack, on the main Arduino task.
  * May be called between completed SD/TFT menu strips or SHA chunks.
  * No bus lock, ISR I/O, SFX, gameplay owner or new audio buffer.
