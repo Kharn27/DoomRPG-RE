@@ -404,6 +404,74 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_blit(
     return ESP_NATIVE_INDEXED_BMP_OK;
 }
 
+/* Bounded alternate HUD-face scaler. Only one sampled indexed BMP row is
+ * resident at a time, in the same scratch used by the ordinary blitter.
+ * Deliberately do not allocate an RGB565 frame or decompress an atlas. */
+EspNativeIndexedBmpStatus EspNativeIndexedBmp_blitScaledNearest(
+    const EspNativeIndexedBmp* bmp,
+    uint16_t* framebuffer,
+    uint16_t framebufferWidth,
+    uint16_t framebufferHeight,
+    uint16_t sourceX,
+    uint16_t sourceY,
+    uint16_t sourceWidth,
+    uint16_t sourceHeight,
+    int16_t destinationX,
+    int16_t destinationY,
+    uint16_t destinationWidth,
+    uint16_t destinationHeight,
+    uint8_t transparentMagenta,
+    EspNativeIndexedBmpStats* stats) {
+    uint16_t cachedSourceY = UINT16_MAX;
+    uint16_t y;
+    if (bmp == NULL || framebuffer == NULL || framebufferWidth == 0U ||
+        framebufferHeight == 0U || sourceWidth == 0U ||
+        sourceHeight == 0U || destinationWidth == 0U ||
+        destinationHeight == 0U || sourceWidth > 256U ||
+        sourceHeight > 256U || destinationWidth > 32U ||
+        destinationHeight > 32U || bmp->filePitch == 0U ||
+        bmp->filePitch > ESP_NATIVE_INDEXED_BMP_MAX_ROW_BYTES) {
+        return ESP_NATIVE_INDEXED_BMP_INVALID;
+    }
+    if ((uint32_t)sourceX + sourceWidth > bmp->width ||
+        (uint32_t)sourceY + sourceHeight > bmp->height) {
+        return ESP_NATIVE_INDEXED_BMP_UNSUPPORTED;
+    }
+    for (y = 0U; y < destinationHeight; ++y) {
+        const uint16_t sampledY = (uint16_t)(
+            sourceY + (((uint32_t)(2U * y + 1U) * sourceHeight) /
+                       (2U * destinationHeight)));
+        const int32_t destY = (int32_t)destinationY + y;
+        uint16_t x;
+        if (destY < 0 || destY >= framebufferHeight) continue;
+        if (sampledY != cachedSourceY) {
+            if (!readSourceRow(bmp, sampledY, indexedBmpScratch, stats))
+                return ESP_NATIVE_INDEXED_BMP_READ_FAILED;
+            cachedSourceY = sampledY;
+        }
+        for (x = 0U; x < destinationWidth; ++x) {
+            const int32_t destX = (int32_t)destinationX + x;
+            uint16_t sampledX;
+            uint16_t index;
+            uint16_t color;
+            if (destX < 0 || destX >= framebufferWidth) continue;
+            sampledX = (uint16_t)(
+                sourceX + (((uint32_t)(2U * x + 1U) * sourceWidth) /
+                           (2U * destinationWidth)));
+            index = sampleIndex(bmp, indexedBmpScratch, sampledX);
+            if (index >= bmp->paletteCount)
+                return ESP_NATIVE_INDEXED_BMP_UNSUPPORTED;
+            color = bmp->paletteRgb565[index];
+            if (transparentMagenta != 0U &&
+                color == BMP_TRANSPARENT_MAGENTA_RGB565) continue;
+            framebuffer[(uint32_t)destY * framebufferWidth +
+                        (uint32_t)destX] = color;
+            if (stats != NULL) ++stats->pixelsWritten;
+        }
+    }
+    return ESP_NATIVE_INDEXED_BMP_OK;
+}
+
 EspNativeIndexedBmpStatus EspNativeIndexedBmp_tile(
     const EspNativeIndexedBmp* bmp,
     uint16_t* framebuffer,
