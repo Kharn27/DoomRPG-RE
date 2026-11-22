@@ -123,3 +123,18 @@ d'interprétation**, corrigée **avant tout test physique de ce candidat**.
 **Ce candidat corrigé reste PENDING TEST CYD.** Les résultats audio PASS
 du deuxième test concernent la version précédente `e1007bd...`, pas
 ce mélange C4 SD / E4 PAK. Aucun merge automatique.
+
+
+## Troisième test réel — C4 SD stable dès BEGIN, E4 PAK, PASS CYD / MERGE-READY
+
+**Log :** `platformio-device-monitor-261122-185034.log`, 1 578 lignes, SHA256 `b758888db044859d4e03d47fee55d392927dc710c450f89519a3c188a39e5df9`.
+Candidat de référence par contexte GitHub : `fef1c4c525c67d9709f41f676bd9950b0fd38457` (le log ne contient pas le SHA binaire).
+- `e.bmp` : source SD volontairement désactivée ; `[MAINSTART] INTRO-ASSET e.bmp ... backing=pak` et `[NATIVEIMAGE] DECODE 128x128 4-bpp ...` ; **aucun** `[WALLSD] ACTIVE name=e.bmp`. Le fichier SD corrigé reste exactement au blob `0768ffd1d1bb45a3206c347c8022f36689591f3c` (12 022 pixels clé magenta).
+- `c.bmp` : `[WALLSD] ACTIVE name=c.bmp source=SD indexed=4 bytes=12406` puis `[TRANSITIONLOAD] BEGIN ... backgroundSource=SD font=a.bmp-themed theme=2`. Les frames n=2..8 restent toutes `backgroundSource=SD`, `overall=7..100` : pas de bascule vers le ciel PAK.
+- LOADING font native : `[LOADFONT] READY name=a.bmp backing=SD glyphs=7 inkBytes=420 theme=2`.
+- Audio intro `M_IN_CIT.wav` : `PLAY`, `PRESTART ready=1`, `FINAL underruns=0 recoveries=0` ; Entrance `M_STALKS.wav` : `PLAY`, `PRESTART ready=1 beforeWorldPresent=1`, et `STREAM` jusqu'à 50 s avec `underflows=0 recoveries=0`.
+- RAM : `[RAMBUDGET] RESERVE ... margin8=16444 ... advisory=HEADROOM_OK`, `shapeData=mediaTexels=NULL`, aucune erreur fatale observée dans ce log.
+- Point **distinct à suivre** : pendant la navigation dans l'aide du menu, le titre `M_DM2TTL.wav` subit un manque d'alimentation (`FINAL underruns=13633, recoveries=1`, `maxPublishGapMs=1214`). Cela ne touche pas le chemin de chargement C4 SD/E4 PAK ni l'intro/Entrance (0 underrun) ; ne pas prétendre audio menu parfait.
+- Validation utilisateur : conserver exactement cette combinaison et autorisation explicite de fusion. Double CI sur le HEAD code `fef1c4c` : SUCCESS (push et PR). Les modifications post-PASS ci-présentes sont **documentation uniquement**.
+
+**Statut : WALL-SD-P1 matériellement validé, merge-ready pour la combinaison c.bmp SD + e.bmp PAK, e.bmp SD corrigé préservé.**
