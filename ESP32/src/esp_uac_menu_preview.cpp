@@ -575,7 +575,8 @@ static bool draw(const uint16_t* fb,uint16_t stride,TFT_eSPI* lcd,
 } // namespace
 
 extern "C" int EspUacMenuPreview_mode(void){return mode;}
-extern "C" int EspUacMenuPreview_needsBlink(uint32_t nowMs){
+extern "C" int EspUacMenuPreview_needsBlink(void){
+    const uint32_t nowMs=millis();
     return mode==kNative120 && paintedMode==kNative120 && fontReady &&
            (((nowMs-blinkEpochMs)/kBlinkHalfPeriodMs)&1U)!=(unsigned)paintedDark;
 }
