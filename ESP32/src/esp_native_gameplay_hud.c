@@ -200,11 +200,14 @@ static int validateFaces(const EspNativeIndexedBmp* bmp) {
 
 /* Large-status originals can exceed the 20px logical HUD band. Bound
  * source dimensions and scale only that one selected frame, never the atlas. */
+#if DOOMRPG_HUD_LARGER_FACE_EXPERIMENT
 static int validateLargerFaces(const EspNativeIndexedBmp* bmp) {
     return bmp != NULL && bmp->width > 0U && bmp->width <= 256U &&
            bmp->height >= 9U && (bmp->height % 9U) == 0U &&
            (bmp->height / 9U) <= 256U;
 }
+
+#endif
 
 static EspNativeGameplayHudStatus openFaces(
     EspNativeIndexedBmp* bmp,
@@ -492,7 +495,7 @@ static EspNativeGameplayHudStatus paintPrepared(
                 heap_caps_get_free_size(MALLOC_CAP_8BIT);
             faceProbeLoggedMask |=
                 (uint16_t)(1U << prepared->faceState);
-            printf("[HUDFACE] mode=%s state=%u source=%ux%u drawn=%ux%u scaled=%u packReads=%u bytes=%u heap8Before=%u heap8After=%u largest8=%u atlasRetained=0\\n",
+            printf("[HUDFACE] mode=%s state=%u source=%ux%u drawn=%ux%u scaled=%u packReads=%u bytes=%u heap8Before=%u heap8After=%u largest8=%u atlasRetained=0\n",
                    largerSelected != 0U ? "larger" : "classic",
                    (unsigned int)prepared->faceState,
                    (unsigned int)faceWidth, (unsigned int)faceHeight,
