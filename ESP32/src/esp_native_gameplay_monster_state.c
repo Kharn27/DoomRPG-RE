@@ -685,6 +685,23 @@ const EspNativeGameplayMonsterRecord* EspNativeGameplayMonsterState_find(
     return EspNativeGameplayMonsterState_findMutable(spriteIndex);
 }
 
+int EspNativeGameplayMonsterState_toggleAlternateAttack(
+    uint16_t spriteIndex, uint8_t expectedBefore) {
+    EspNativeGameplayMonsterRecord* record;
+    if (expectedBefore > 1U || !EspNativeGameplayMonsterState_isReady()) {
+        return 0;
+    }
+    record = EspNativeGameplayMonsterState_findMutable(spriteIndex);
+    if (record == NULL || record->alive == 0U ||
+        record->subtype != 10U ||
+        record->alternateAttack != expectedBefore) {
+        return 0;
+    }
+    record->alternateAttack ^= 1U;
+    monsterView.stateFNV1a = recordsFNV();
+    return monsterView.stateFNV1a != 0U;
+}
+
 int EspNativeGameplayMonsterState_actionService(DoomRPG_t* doomRpg) {
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
     const EspMapSpriteTopologyView* topology = EspMapSpriteTopology_view();

@@ -17,6 +17,10 @@
 #include "esp_native_gameplay_monster_active_sequence.h"
 #include "esp_native_gameplay_monster_movement.h"
 #include "esp_native_gameplay_monster_movement_probe.h"
+#include "esp_native_gameplay_monster_position.h"
+#include "esp_native_gameplay_monster_subtype10_policy.h"
+#include "esp_native_process_rng_owner.h"
+#include "esp_native_rng_replay_guard.h"
 #include "esp_native_gameplay_monster_retaliation.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_monster_turn.h"
@@ -102,6 +106,125 @@ int EspNativeBspVisibility_mapSpriteVisible(
     (void)EspNativeGameplayMonsterActivation_observeVisible(
         (uint16_t)mapSpriteIndex, subtype, tile);
     return visible;
+}
+
+
+/* P1 admission: inspect the original single <84 byte without consuming it.
+ * When the byte crosses a refill boundary, borrow the already-proven RNG
+ * reservation and restore the live Random_t before leaving preflight.
+ * This preview deliberately does NOT invent an inactive-monster list order.
+ * If at least one viable corpse is found, defer rather than revive the wrong
+ * corpse or publish a half-owned weapon18/animation/activation transaction. */
+typedef enum Subtype10Admission_e {
+    SUBTYPE10_NOT_READY = 0,
+    SUBTYPE10_FALLBACK = 1,
+    SUBTYPE10_RAISE_DEFER = 2
+} Subtype10Admission;
+
+static Subtype10Admission subtype10AdmitFallback(
+    uint16_t attackerSprite, uint8_t* outRoll, uint16_t* outCorpse) {
+    Random_t* live = EspNativeProcessRng_live();
+    Random_t saved;
+    uint8_t prepared = 0U;
+    uint8_t roll;
+    const EspNativeGameplayMonsterView* monsters;
+    const EspNativeGameplayMonsterPositionRecord* attackerPos;
+    const EspMapSpriteTopologyView* topology;
+    uint32_t i;
+
+    if (outRoll != NULL) *outRoll = 0U;
+    if (outCorpse != NULL) *outCorpse = ACTIVESEQ_NO_SPRITE;
+    if (live == NULL || outRoll == NULL || outCorpse == NULL ||
+        live->nextRand < 0 || live->nextRand >= RANDTABLESIZE ||
+        !EspNativeRngReplayGuard_beginProbeBoundary(
+            live, &saved, &prepared)) {
+        return SUBTYPE10_NOT_READY;
+    }
+    /* beginProbeBoundary() exposes the reserved new table for this preview. */
+    if (live->nextRand < 0 || live->nextRand >= RANDTABLESIZE) {
+        if (prepared != 0U) {
+            (void)EspNativeRngReplayGuard_endProbeBoundary(
+                live, &saved, prepared);
+        }
+        return SUBTYPE10_NOT_READY;
+    }
+    roll = live->randTable[live->nextRand];
+    if (prepared != 0U &&
+        !EspNativeRngReplayGuard_endProbeBoundary(live, &saved, prepared)) {
+        return SUBTYPE10_NOT_READY;
+    }
+    *outRoll = roll;
+    if (!EspNativeSubtype10_wantsRaise(roll)) {
+        return SUBTYPE10_FALLBACK;
+    }
+
+    monsters = EspNativeGameplayMonsterState_view();
+    topology = EspMapSpriteTopology_view();
+    attackerPos = EspNativeGameplayMonsterPosition_find(attackerSprite);
+    if (monsters == NULL || monsters->records == NULL ||
+        topology == NULL || attackerPos == NULL ||
+        topology->spriteCount > 1024U) {
+        return SUBTYPE10_NOT_READY;
+    }
+
+    for (i = 0U; i < monsters->count; ++i) {
+        const EspNativeGameplayMonsterRecord* corpse = &monsters->records[i];
+        const EspNativeGameplayMonsterPositionRecord* pos;
+        int32_t dx;
+        int32_t dy;
+        uint8_t visual = 0U;
+        uint8_t occupied = 0U;
+        uint32_t j;
+
+        if (corpse->alive != 0U || corpse->spriteIndex == attackerSprite) {
+            continue;
+        }
+        pos = EspNativeGameplayMonsterPosition_find(corpse->spriteIndex);
+        if (pos == NULL || !EspMapSpriteTopology_getVisualState(
+                corpse->spriteIndex, &visual)) {
+            return SUBTYPE10_NOT_READY;
+        }
+        dx = (int32_t)pos->worldX - (int32_t)attackerPos->worldX;
+        dy = (int32_t)pos->worldY - (int32_t)attackerPos->worldY;
+        if (!EspNativeSubtype10_candidateEligible(
+                dx, dy, 1U, 0U, 0U)) {
+            continue;
+        }
+        /* The native renderer knows hidden gib vs corpse, but P1 cannot
+         * establish every legacy 0x1000000/0x2000000 bit (notably after LOAD).
+         * A nearby non-hidden death/corpse must therefore be deferred. */
+        if ((visual & 0x80U) != 0U) continue;
+        if ((visual & 0x0fU) != 2U && (visual & 0x0fU) != 4U) {
+            return SUBTYPE10_NOT_READY;
+        }
+
+        /* Exact 16263 *entity* occupancy mask; links/line overlays not
+         * represented by this topology remain conservatively unsupported.
+         * This is only a negative gate, never authority to resurrect. */
+        for (j = 0U; j < topology->spriteCount; ++j) {
+            uint8_t type = 0U, subtype = 0U;
+            uint16_t linkState = 0U, linkOrder = 0U;
+            if (!EspMapSpriteTopology_getEntity(
+                    j, &type, &subtype, &linkState, &linkOrder)) {
+                return SUBTYPE10_NOT_READY;
+            }
+            if (type < 16U &&
+                (ESP_NATIVE_SUBTYPE10_RAISE_OCCUPANCY_MASK &
+                 (1U << type)) != 0U &&
+                (linkState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) != 0U &&
+                (linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK) ==
+                    pos->tileIndex) {
+                occupied = 1U;
+                break;
+            }
+        }
+        if (EspNativeSubtype10_candidateEligible(
+                dx, dy, 1U, 0U, occupied)) {
+            *outCorpse = corpse->spriteIndex;
+            return SUBTYPE10_RAISE_DEFER;
+        }
+    }
+    return SUBTYPE10_FALLBACK;
 }
 
 static void clearCompositionOverrides(void) {
@@ -317,6 +440,11 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
         uint32_t attackBefore;
         uint32_t attackAfter;
         uint8_t committed = 0U;
+        uint8_t subtype10Prepared = 0U;
+        uint8_t subtype10OldAlt = 0U;
+        uint8_t subtype10Roll = 0U;
+        uint16_t subtype10Corpse = ACTIVESEQ_NO_SPRITE;
+        Random_t subtype10Before;
         int transactionStatus = 1;
 
         ordinal = activeSeq.turnOrdinal;
@@ -339,13 +467,51 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
             continue;
         }
         if (monster->subtype == ACTIVESEQ_SUBTYPE_SPECIAL_AI) {
-            printf("[MONSTERACTIVESEQ] MEMBER-DEFER turn=%u ordinal=%u/%u sprite=%u subtype=%u cause=special-ai-unowned mutation=no rngConsumed=0\n",
-                   (unsigned int)activeSeq.expandedTurns,
-                   (unsigned int)(ordinal + 1U),
-                   (unsigned int)activationCount,
-                   (unsigned int)spriteIndex,
-                   (unsigned int)monster->subtype);
-            continue;
+            Subtype10Admission admission = subtype10AdmitFallback(
+                spriteIndex, &subtype10Roll, &subtype10Corpse);
+            if (admission != SUBTYPE10_FALLBACK) {
+                printf("[MONSTERSUB10] %s turn=%u ordinal=%u/%u sprite=%u corpse=%u rollPreview=%u rngConsumed=0 mutation=no reason=%s\n",
+                       admission == SUBTYPE10_RAISE_DEFER
+                           ? "RAISE-DEFER" : "DEFER",
+                       (unsigned int)activeSeq.expandedTurns,
+                       (unsigned int)(ordinal + 1U),
+                       (unsigned int)activationCount,
+                       (unsigned int)spriteIndex,
+                       (unsigned int)subtype10Corpse,
+                       (unsigned int)subtype10Roll,
+                       admission == SUBTYPE10_RAISE_DEFER
+                           ? "weapon18-revive-transaction-unowned"
+                           : "rng-or-corpse-preflight-not-ready");
+                continue;
+            }
+            /* Legacy consumes this byte BEFORE toggling the alternate
+             * attack flag, even if no inactive monster is reanimable. */
+            subtype10Before = *EspNativeProcessRng_live();
+            if (DoomRPG_randNextByte(EspNativeProcessRng_live()) !=
+                    subtype10Roll) {
+                *EspNativeProcessRng_live() = subtype10Before;
+                printf("[MONSTERSUB10] DEFER sprite=%u reason=preview-live-roll-mismatch rngRollback=yes mutation=no\n",
+                       (unsigned int)spriteIndex);
+                continue;
+            }
+            subtype10OldAlt = monster->alternateAttack;
+            if (!EspNativeGameplayMonsterState_toggleAlternateAttack(
+                    spriteIndex, subtype10OldAlt)) {
+                *EspNativeProcessRng_live() = subtype10Before;
+                printf("[MONSTERSUB10] DEFER sprite=%u reason=alternate-state-not-owned rngRollback=yes mutation=no\n",
+                       (unsigned int)spriteIndex);
+                continue;
+            }
+            subtype10Prepared = 1U;
+            DRPG_LOGI("[MONSTERSUB10] FALLBACK turn=%u ordinal=%u/%u sprite=%u roll=%u raiseRoll=%u eligibleCorpse=none rngCalls=1 alt=%u->%u next=ordinary-ai\n",
+                      (unsigned int)activeSeq.expandedTurns,
+                      (unsigned int)(ordinal + 1U),
+                      (unsigned int)activationCount,
+                      (unsigned int)spriteIndex,
+                      (unsigned int)subtype10Roll,
+                      (unsigned int)EspNativeSubtype10_wantsRaise(subtype10Roll),
+                      (unsigned int)subtype10OldAlt,
+                      (unsigned int)(subtype10OldAlt ^ 1U));
         }
 
         beforeTurn = EspNativeGameplayMonsterTurn_view();
@@ -354,6 +520,17 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
             doomRpg, spriteIndex);
 
         if (memberStatus == ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_INVALID) {
+            if (subtype10Prepared != 0U) {
+                /* Member-probe never published: undo the special-prefix
+                 * mutable record and live logical RNG before aborting. */
+                const int altRestored =
+                    EspNativeGameplayMonsterState_toggleAlternateAttack(
+                        spriteIndex, (uint8_t)(subtype10OldAlt ^ 1U));
+                *EspNativeProcessRng_live() = subtype10Before;
+                printf("[MONSTERSUB10] ROLLBACK sprite=%u altExact=%s rngRestored=yes reason=member-probe-invalid\n",
+                       (unsigned int)spriteIndex,
+                       altRestored ? "yes" : "NO");
+            }
             ++activeSeq.deferredTurns;
             activeSeq.turnInProgress = 0U;
             printf("[MONSTERACTIVESEQ] DEFER turn=%u ordinal=%u/%u sprite=%u subtype=%u cause=member-probe-failed prefixCommitted=yes mutation=no-additional rngConsumed=0-additional\n",
