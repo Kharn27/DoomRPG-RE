@@ -12,9 +12,9 @@ def restore_pre_res60_p1(main: str) -> str:
     # P12's RES60-only snapshot API is an additional isolated header.
     # Strip the exact gate before restoring the historical Root-J2 Git blob;
     # do not change or regenerate its golden SHA.
-    p12_include = ('#if DOOMRPG_RES60_P12_INVENTORY_CACHE\\n'
-                   '#include "esp_res60_inventory_cache.h"\\n'
-                   '#endif\\n')
+    p12_include = ('#if DOOMRPG_RES60_P12_INVENTORY_CACHE\n'
+                   '#include "esp_res60_inventory_cache.h"\n'
+                   '#endif\n')
     if p12_include in main:
         assert main.count(p12_include) == 1, "P12 include scope changed"
         main = main.replace(p12_include, "", 1)
