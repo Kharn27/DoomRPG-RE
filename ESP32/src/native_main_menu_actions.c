@@ -77,6 +77,8 @@
  * The TOP HUD miniature retains its existing y43 position. */
 #define MAIN_HELP_BOTTOM_HUD_BAR_Y (MAIN_HELP_HUD_BAR_Y - MAIN_HELP_LINE_HEIGHT)
 #define MAIN_HELP_WEAPON_PAGE_SCROLL (10 * MAIN_HELP_VISIBLE_LINES)
+/* One grid-cell focus every 320ms: 12 slots/3.84s, no separate FPS loop. */
+#define MAIN_HELP_WEAPON_SWEEP_MS 320U
 /* Full available HELP viewport under the caption (y27..38) and above
  * the navigation footer (y100..119): 144x60, x8..151/y39..98. */
 #define MAIN_HELP_WEAPON_MINI_X 8
@@ -90,6 +92,7 @@ static Image_t helpSpaceBG;
 static Image_t helpHudBarBG;
 static DoomRPG_t* helpSpaceOwner;
 static uint32_t helpSpaceEpoch;
+static uint32_t helpWeaponSweepEpoch;
 static int helpSpaceShift;
 static int helpSpaceActive;
 static int helpLoggedScroll = -1;
@@ -128,6 +131,7 @@ static void helpStop(void) {
     helpBottomHudReady = 0U;
     helpWeaponMiniReady = 0U;
     helpWeaponMiniAttempted = 0U;
+    helpWeaponSweepEpoch = 0U;
     EspNativeHelpScene_reset();
 }
 
@@ -161,6 +165,7 @@ static int helpStart(DoomRPG_t* doomRpg) {
     helpBottomHudReady = 0U;
     helpWeaponMiniReady = 0U;
     helpWeaponMiniAttempted = 0U;
+    helpWeaponSweepEpoch = 0U;
     /* Once the gameplay lease has closed, this read-only peek still finds
      * the last COMMITTED raw-flash map header. It never stages/loads a map. */
     {
@@ -693,14 +698,46 @@ done:
            EspAssetPack_isOpen() ? 0U : 1U);
     return ok;
 }
-static void helpDrawWeaponGridMini(uint16_t* fb) {
-    int x, y;
-    if (fb == NULL || !helpWeaponMiniReady) return;
+/* Help-only presentation: NEVER redraw native PAK sprites or mutate
+ * helpWeaponMini. Copy the immutable miniature and replace the sampled,
+ * sometimes incomplete equipped outline with a closed 2px border in all
+ * twelve cells. Only the current cell is neon green; the others are steel.
+ * 4x3 / 36x20 is the exact geometry of the existing 144x60 miniature. */
+static uint8_t helpWeaponSweepSlot(uint32_t elapsedMs) {
+    return (uint8_t)((elapsedMs / MAIN_HELP_WEAPON_SWEEP_MS) %
+                     ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_SLOT_COUNT);
+}
+
+static void helpDrawWeaponGridMini(uint16_t* fb, uint8_t activeSlot) {
+    int x, y, slot, inset;
+    if (fb == NULL || !helpWeaponMiniReady ||
+        activeSlot >= ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_SLOT_COUNT)
+        return;
     for (y = 0; y < MAIN_HELP_WEAPON_MINI_H; ++y)
         for (x = 0; x < MAIN_HELP_WEAPON_MINI_W; ++x)
             fb[(MAIN_HELP_WEAPON_MINI_Y + y) * DOOMRPG_LOGICAL_WIDTH +
                MAIN_HELP_WEAPON_MINI_X + x] =
                 helpWeaponMini[y * MAIN_HELP_WEAPON_MINI_W + x];
+
+    /* Every pass starts from the same cached source: no ghost highlights,
+     * cumulative tint, extra framebuffer, asset read or gameplay mutation. */
+    for (slot = 0; slot < ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_SLOT_COUNT; ++slot) {
+        const int left = MAIN_HELP_WEAPON_MINI_X + (slot % 4) * 36;
+        const int top = MAIN_HELP_WEAPON_MINI_Y + (slot / 4) * 20;
+        const uint16_t ink = slot == activeSlot ? 0x07e0U : 0x4208U;
+        for (inset = 0; inset < 2; ++inset) {
+            const int l = left + inset, r = left + 35 - inset;
+            const int t = top + inset, b = top + 19 - inset;
+            for (x = l; x <= r; ++x) {
+                fb[t * DOOMRPG_LOGICAL_WIDTH + x] = ink;
+                fb[b * DOOMRPG_LOGICAL_WIDTH + x] = ink;
+            }
+            for (y = t + 1; y < b; ++y) {
+                fb[y * DOOMRPG_LOGICAL_WIDTH + l] = ink;
+                fb[y * DOOMRPG_LOGICAL_WIDTH + r] = ink;
+            }
+        }
+    }
 }
 
 /* WEAPON SELECT: the actual x100..159 ammo touch-zone from the shared
@@ -847,12 +884,17 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
             MAIN_HELP_WEAPON_PAGE_SCROLL + 1);
         if (title == NULL || caption == NULL ||
             visible != MAIN_HELP_VISIBLE_LINES) return 0;
+        /* Start at the first weapon on each page entry, including return
+         * from 12/16; never restart the sweep during breath redraws. */
+        if (helpLoggedScroll != MAIN_HELP_WEAPON_PAGE_SCROLL)
+            helpWeaponSweepEpoch = DoomRPG_GetUpTimeMS();
         helpDrawThemedPageTitle(doomRpg, canvas, title, 12, 14);
         DoomRPG_setFontColor(doomRpg, 0xffffffffU);
         EspNativeCanvas_drawText(canvas, caption, 12, 27, 0);
         helpDrawWeaponButtonCue(framebuffer);
         if (helpWeaponMiniReady) {
-            helpDrawWeaponGridMini(framebuffer);
+            helpDrawWeaponGridMini(framebuffer, helpWeaponSweepSlot(
+                DoomRPG_GetUpTimeMS() - helpWeaponSweepEpoch));
         }
         else {
             /* Corrupt/missing PAK fails closed, never a fabricated weapon. */
