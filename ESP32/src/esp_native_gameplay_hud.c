@@ -15,6 +15,16 @@
 #include "platform_video_c_bridge.h"
 #include "platform_video_config.h"
 
+#if defined(ARDUINO_ARCH_ESP32)
+#include "esp_heap_caps.h"
+#endif
+
+/* Experimental CYD build: use the original larger HUD portrait atlas when
+ * present in DoomRPG-ESP32.pak, without changing gameplay face semantics. */
+#ifndef DOOMRPG_HUD_LARGER_FACE_EXPERIMENT
+#define DOOMRPG_HUD_LARGER_FACE_EXPERIMENT 1
+#endif
+
 #if DOOMRPG_LOGICAL_WIDTH != 160 || DOOMRPG_LOGICAL_HEIGHT != 120
 #error "The first native gameplay HUD contract is defined only for 160x120"
 #endif
@@ -38,6 +48,9 @@
 #define HUD_HEALTH_X 2
 #define HUD_ARMOR_X 35
 #define HUD_FACE_X 66
+#define HUD_FACE_FIT_WIDTH 18U
+#define HUD_FACE_FIT_HEIGHT 20U
+#define HUD_LARGER_FACE_NAME "larger HUD faces.bmp"
 #define HUD_AMMO_X 85
 #define HUD_ORIENTATION_X 126
 #define HUD_ORIENTATION_ARROW_X 128
@@ -53,6 +66,9 @@
 #define HUD_WEAPON_TOUCH_NEON_AMBER 0xfd20U
 
 static EspNativeGameplayHudState hudState;
+#if defined(ARDUINO_ARCH_ESP32)
+static uint16_t faceProbeLoggedMask;
+#endif
 
 static uint16_t rgb565(uint32_t rgb888) {
     uint8_t red = (uint8_t)((rgb888 >> 16) & 0xffU);
@@ -182,6 +198,51 @@ static int validateFaces(const EspNativeIndexedBmp* bmp) {
            (bmp->height / 9U) <= HUD_BOTTOM_HEIGHT;
 }
 
+/* Large-status originals can exceed the 20px logical HUD band. Bound
+ * source dimensions and scale only that one selected frame, never the atlas. */
+static int validateLargerFaces(const EspNativeIndexedBmp* bmp) {
+    return bmp != NULL && bmp->width > 0U && bmp->width <= 256U &&
+           bmp->height >= 9U && (bmp->height % 9U) == 0U &&
+           (bmp->height / 9U) <= 256U;
+}
+
+static EspNativeGameplayHudStatus openFaces(
+    EspNativeIndexedBmp* bmp,
+    EspNativeGameplayHudStats* stats,
+    uint8_t* largerSelected) {
+    if (largerSelected != NULL) *largerSelected = 0U;
+#if DOOMRPG_HUD_LARGER_FACE_EXPERIMENT
+    if (openAsset(HUD_LARGER_FACE_NAME, bmp, stats) ==
+            ESP_NATIVE_GAMEPLAY_HUD_OK && validateLargerFaces(bmp)) {
+        if (largerSelected != NULL) *largerSelected = 1U;
+        return ESP_NATIVE_GAMEPLAY_HUD_OK;
+    }
+#endif
+    if (openAsset("l.bmp", bmp, stats) != ESP_NATIVE_GAMEPLAY_HUD_OK ||
+        !validateFaces(bmp)) return ESP_NATIVE_GAMEPLAY_HUD_RESOURCE_FAILED;
+    return ESP_NATIVE_GAMEPLAY_HUD_OK;
+}
+
+static void fitLargerFace(uint16_t sourceW, uint16_t sourceH,
+                          uint16_t* outW, uint16_t* outH) {
+    uint16_t w = sourceW;
+    uint16_t h = sourceH;
+    if (w > HUD_FACE_FIT_WIDTH || h > HUD_FACE_FIT_HEIGHT) {
+        if ((uint32_t)w * HUD_FACE_FIT_HEIGHT >
+            (uint32_t)h * HUD_FACE_FIT_WIDTH) {
+            h = (uint16_t)(((uint32_t)h * HUD_FACE_FIT_WIDTH) / w);
+            w = HUD_FACE_FIT_WIDTH;
+        } else {
+            w = (uint16_t)(((uint32_t)w * HUD_FACE_FIT_HEIGHT) / h);
+            h = HUD_FACE_FIT_HEIGHT;
+        }
+        if (w == 0U) w = 1U;
+        if (h == 0U) h = 1U;
+    }
+    *outW = w;
+    *outH = h;
+}
+
 static int validateArrow(const EspNativeIndexedBmp* bmp) {
     return bmp != NULL && bmp->width > 0U && bmp->width <= 32U &&
            bmp->height > 0U && bmp->height <= HUD_BOTTOM_HEIGHT;
@@ -200,8 +261,8 @@ static EspNativeGameplayHudStatus preflightResources(
         !validateStatusBar(&bmp)) return ESP_NATIVE_GAMEPLAY_HUD_RESOURCE_FAILED;
     if (openAsset("m.bmp", &bmp, stats) != ESP_NATIVE_GAMEPLAY_HUD_OK ||
         !validateIcons(&bmp)) return ESP_NATIVE_GAMEPLAY_HUD_RESOURCE_FAILED;
-    if (openAsset("l.bmp", &bmp, stats) != ESP_NATIVE_GAMEPLAY_HUD_OK ||
-        !validateFaces(&bmp)) return ESP_NATIVE_GAMEPLAY_HUD_RESOURCE_FAILED;
+    if (openFaces(&bmp, stats, NULL) != ESP_NATIVE_GAMEPLAY_HUD_OK)
+        return ESP_NATIVE_GAMEPLAY_HUD_RESOURCE_FAILED;
     if (openAsset("o.bmp", &bmp, stats) != ESP_NATIVE_GAMEPLAY_HUD_OK ||
         !validateArrow(&bmp)) return ESP_NATIVE_GAMEPLAY_HUD_RESOURCE_FAILED;
     if (openAsset("a.bmp", &bmp, stats) != ESP_NATIVE_GAMEPLAY_HUD_OK ||
@@ -365,24 +426,87 @@ static EspNativeGameplayHudStatus paintPrepared(
         if (status != ESP_NATIVE_GAMEPLAY_HUD_OK) return status;
     }
 
-    status = openAsset("l.bmp", &bmp, stats);
-    if (status != ESP_NATIVE_GAMEPLAY_HUD_OK || !validateFaces(&bmp)) return ESP_NATIVE_GAMEPLAY_HUD_RESOURCE_FAILED;
-    faceWidth = bmp.width;
-    faceHeight = (uint16_t)(bmp.height / 9U);
-    if (stats != NULL) {
-        stats->faceWidth = faceWidth;
-        stats->faceHeight = faceHeight;
-        stats->faceState = prepared->faceState;
+    {
+        uint8_t largerSelected = 0U;
+        uint16_t drawFaceWidth;
+        uint16_t drawFaceHeight;
+        int drawFaceX;
+#if defined(ARDUINO_ARCH_ESP32)
+        const uint32_t heap8Before = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+        const uint32_t readsBefore = stats == NULL ? 0U : stats->packReads;
+        const uint32_t bytesBefore = stats == NULL ? 0U : stats->bytesRead;
+#endif
+        status = openFaces(&bmp, stats, &largerSelected);
+        if (status != ESP_NATIVE_GAMEPLAY_HUD_OK)
+            return ESP_NATIVE_GAMEPLAY_HUD_RESOURCE_FAILED;
+        faceWidth = bmp.width;
+        faceHeight = (uint16_t)(bmp.height / 9U);
+        drawFaceWidth = faceWidth;
+        drawFaceHeight = faceHeight;
+        drawFaceX = faceX;
+        if (largerSelected != 0U) {
+            fitLargerFace(faceWidth, faceHeight,
+                          &drawFaceWidth, &drawFaceHeight);
+            drawFaceX += ((int)HUD_FACE_FIT_WIDTH - drawFaceWidth) / 2;
+        }
+        if (stats != NULL) {
+            stats->faceWidth = drawFaceWidth;
+            stats->faceHeight = drawFaceHeight;
+            stats->faceState = prepared->faceState;
+        }
+        drawVerticalLine(framebuffer, faceX - 1, HUD_BOTTOM_Y,
+                         DOOMRPG_LOGICAL_HEIGHT - 1, rgb565(0x323232U), stats);
+        if (drawFaceWidth == faceWidth && drawFaceHeight == faceHeight) {
+            status = drawBmp(&bmp, framebuffer, 0U,
+                             (uint16_t)(prepared->faceState * faceHeight),
+                             faceWidth, faceHeight,
+                             drawFaceX, dy - (int)(drawFaceHeight >> 1),
+                             HUD_OPAQUE, stats);
+        } else {
+            EspNativeIndexedBmpStats scaledStats;
+            memset(&scaledStats, 0, sizeof(scaledStats));
+            status = EspNativeIndexedBmp_blitScaledNearest(
+                &bmp, framebuffer,
+                DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
+                0U, (uint16_t)(prepared->faceState * faceHeight),
+                faceWidth, faceHeight,
+                (int16_t)drawFaceX,
+                (int16_t)(dy - (int)(drawFaceHeight >> 1)),
+                drawFaceWidth, drawFaceHeight, HUD_OPAQUE, &scaledStats)
+                == ESP_NATIVE_INDEXED_BMP_OK
+                ? ESP_NATIVE_GAMEPLAY_HUD_OK
+                : ESP_NATIVE_GAMEPLAY_HUD_RESOURCE_FAILED;
+            mergeBmpStats(stats, &scaledStats);
+        }
+        if (status != ESP_NATIVE_GAMEPLAY_HUD_OK) return status;
+        drawVerticalLine(framebuffer,
+                         largerSelected != 0U
+                             ? faceX + (int)HUD_FACE_FIT_WIDTH
+                             : faceX + drawFaceWidth,
+                         HUD_BOTTOM_Y, DOOMRPG_LOGICAL_HEIGHT - 1,
+                         rgb565(0x828282U), stats);
+#if defined(ARDUINO_ARCH_ESP32)
+        if (stats != NULL && prepared->faceState < 9U &&
+            (faceProbeLoggedMask & (uint16_t)(1U << prepared->faceState)) == 0U) {
+            const uint32_t heap8After =
+                heap_caps_get_free_size(MALLOC_CAP_8BIT);
+            faceProbeLoggedMask |=
+                (uint16_t)(1U << prepared->faceState);
+            printf("[HUDFACE] mode=%s state=%u source=%ux%u drawn=%ux%u scaled=%u packReads=%u bytes=%u heap8Before=%u heap8After=%u largest8=%u atlasRetained=0\\n",
+                   largerSelected != 0U ? "larger" : "classic",
+                   (unsigned int)prepared->faceState,
+                   (unsigned int)faceWidth, (unsigned int)faceHeight,
+                   (unsigned int)drawFaceWidth, (unsigned int)drawFaceHeight,
+                   (unsigned int)(drawFaceWidth != faceWidth ||
+                                  drawFaceHeight != faceHeight),
+                   (unsigned int)(stats->packReads - readsBefore),
+                   (unsigned int)(stats->bytesRead - bytesBefore),
+                   (unsigned int)heap8Before,
+                   (unsigned int)heap8After,
+                   (unsigned int)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        }
+#endif
     }
-    drawVerticalLine(framebuffer, faceX - 1, HUD_BOTTOM_Y,
-                     DOOMRPG_LOGICAL_HEIGHT - 1, rgb565(0x323232U), stats);
-    status = drawBmp(&bmp, framebuffer, 0U,
-                     (uint16_t)(prepared->faceState * faceHeight),
-                     faceWidth, faceHeight,
-                     faceX, dy - (int)(faceHeight >> 1), HUD_OPAQUE, stats);
-    if (status != ESP_NATIVE_GAMEPLAY_HUD_OK) return status;
-    drawVerticalLine(framebuffer, faceX + faceWidth, HUD_BOTTOM_Y,
-                     DOOMRPG_LOGICAL_HEIGHT - 1, rgb565(0x828282U), stats);
 
     status = openAsset("o.bmp", &bmp, stats);
     if (status != ESP_NATIVE_GAMEPLAY_HUD_OK || !validateArrow(&bmp)) return ESP_NATIVE_GAMEPLAY_HUD_RESOURCE_FAILED;
@@ -468,6 +592,9 @@ int EspNativeGameplayHud_paintHelpBottomBand(uint16_t* framebuffer) {
 
 void EspNativeGameplayHud_reset(void) {
     memset(&hudState, 0, sizeof(hudState));
+#if defined(ARDUINO_ARCH_ESP32)
+    faceProbeLoggedMask = 0U;
+#endif
 }
 
 int EspNativeGameplayHud_isReady(void) {
