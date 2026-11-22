@@ -103,7 +103,8 @@ with tempfile.TemporaryDirectory(prefix="audio-s1-p1-") as td:
     binary=Path(td)/"s1"
     source.write_text(c)
     subprocess.run(["cc","-std=c11","-O2","-Wall","-Wextra","-Werror",
-                    "-pedantic","-I",str(INC),str(source),"-o",str(binary)],
+                    "-pedantic","-I",str(INC),"-I",str(SRC),
+                    str(source),"-o",str(binary)],
                    cwd=ROOT.parent,check=True)
     subprocess.run([str(binary)],cwd=ROOT.parent,check=True)
 
