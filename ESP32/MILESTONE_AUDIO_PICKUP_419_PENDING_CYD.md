@@ -1,11 +1,79 @@
-# AUDIO-PICKUP #419 — handoff et SFX d'arme original 5057 avant dialogue (PENDING CYD)
+# AUDIO-PICKUP #419 — SFX d'arme original 5057 avant dialogue (PASS CYD borné)
 
 **Issue :** [#419](https://github.com/Kharn27/DoomRPG-RE/issues/419).
 **PR :** [#422](https://github.com/Kharn27/DoomRPG-RE/pull/422).
 **Branche :** `agent/audio-pickup-419-modal-handoff`.
 **Base exacte de main :** `d6c47f5a2906355b82329ecd21dff5ff44d09abc` (ARCH-RC24 et FIRE-VIS-P2 inclus).
-**Statut : correction de fidélité 5057 à tester sur vrai CYD ; pas encore de PASS de cette version.**
+**Statut : PASS CYD borné sur la version 5057 du 22 novembre 2026 ; voir l'addendum en tête.**
 Le premier candidat 5060 (SHA `733d2c17fb4304fd9bc97c635b6ab97a35005861`) a passé la double CI et une lecture de log CYD, mais est **fonctionnellement incorrect** pour les armes à feu.
+
+## Clôture matérielle de la version 5057 — **PASS CYD borné** (22 novembre 2026)
+
+- **Vrai classic CYD**, firmware normal `esp32-cyd` candidat logiciel
+  `c73081f391aea2c7392ba76db7491187b5dde9f2`; attribution fondée sur
+  la branche/HEAD indiqué et le log utilisateur, aucun SHA binaire émis sur
+  le port série. Log `platformio-device-monitor-261122-084424.log` :
+  **1 209 lignes / 149 083 octets**, SHA256
+  `bf62f2f473b360416ad74d720f40a6a5049689f5e07ffd31f12c7e84de14ec27`.
+  Retour utilisateur : **« impeccable tu peux fusionner si il n'ya pas de defaut »**.
+- **Axe (tile655, subtype0)** : `[PLAYERRES] COMMIT` →
+  `[AUDIOINTENT] PUBLISH seq=9 resource=5060` →
+  `[SFXP1] MIX id=5060 outputFrames=9702 mixed=9702` →
+  `[AUDIOPICKUP] HANDOFF seq=9 id=5060 status=MIXED
+  mixedBeforeModal=1 ack=1 frames=9702 refills=0 packClosed=1` →
+  `[DIALOG] OPEN-STANDALONE`. Aucun nouvel allocateur SFX
+  (`heapAlloc=0`).
+- **Shotgun (tile659, subtype3)** : `[PLAYERRES] COMMIT
+  ... action=weapon rollback=closed` →
+  `[AUDIOINTENT] PUBLISH seq=17 resource=5057` →
+  `[SFXP1] MIX id=5057 name=5057.wav sampleFrames=4320
+  outputFrames=11907 mixed=11907 leadFrames=1024 ... heapAlloc=0` →
+  `[SFXGAIN] clippedLow=0 clippedHigh=0` →
+  `[AUDIOPICKUP] HANDOFF seq=17 id=5057 status=MIXED
+  mixedBeforeModal=1 ack=1 frames=11907 refills=0 packClosed=1` →
+  `[DIALOG] OPEN-STANDALONE`. Une seule acquisition et un seul mix
+  enregistré ; **pas de 5060** sur ce pickup Shotgun. Le logger utilise
+  maintenant un vrai saut de ligne ; plus de `\\n` textuel.
+- **Munitions** (tiles657 et 627) : `resource=5060`, mix
+  `mixed=9702/9702` sur la voie audio habituelle.
+- **Contexte combiné** : MENU → LOAD V11 slot09
+  `version=11 ... restored-exact` → musique `M_STALKS.wav`
+  `PRESTART ready=1 failClosed=0` → 18 MOVE, 2 TURN, 4
+  `DOORANIM COMPLETE`, 2 `MONSTERCOMBAT COMMIT`, 4 pickups
+  (deux premières armes et deux munitions) et 2 `DIALOG CLOSE`.
+  Un `[RAMBUDGET] ... advisory=HEADROOM_OK` avec
+  `margin8=11976`, après ring audio `heap8=48480
+  largest8=31732`, `shapeData=0x0 mediaTexels=0x0`.
+  Trois témoins musicaux `[ENTRANCEMUSIC] STREAM` à environ
+  10/21/31 secondes : `underflows=0`, `recoveries=0`,
+  `maxSilentFrames=0` et aucun `[SFXP1/SFXP2] DROP`.
+  Aucun panic, WDT ou `FAIL-HEAP` observé.
+- **Limites strictes** : le log s'interrompt en jeu après ~54 secondes
+  d'uptime et **ne contient pas de `[ENTRANCEMUSIC] FINAL` de cette
+  dernière session ni d'`[AUDIOINTENT] AUDIT` post-LOAD** ;
+  impossible d'en déduire un audit final de session ou un test de
+  sortie/reset. La première Fire Ext, un doublon d'arme à feu, une
+  FIFO `DEFER` et un scénario PAK absent ne sont pas exercés
+  physiquement dans cette capture ; les cas de garde sont
+  couverts par le test hôte. Les 0 underrun sont des témoins
+  STREAM, pas un `FINAL` complet. Pas de preuve acoustique
+  enregistrée indépendante du retour positif utilisateur.
+
+### Gates, code gelé et merge
+
+Le dernier HEAD **de code** est
+`c73081f391aea2c7392ba76db7491187b5dde9f2`.
+Double CI sur ce SHA : [push **SUCCESS** #44998917701](https://github.com/Kharn27/DoomRPG-RE/actions/runs/44998917701)
+et [PR **SUCCESS** #44998922207](https://github.com/Kharn27/DoomRPG-RE/actions/runs/44998922207),
+233 étapes sans erreur chacun, quatre profils ELF.
+**Après validation matérielle, seuls les fichiers documentaires changent**.
+Ce PASS est **borné à la fidélité 5057/5060, la ponctualité
+pré-modale et l'absence d'anomalie dans les témoins observés**.
+L'utilisateur autorise explicitement la fusion ; vérifier la CI du
+HEAD documentaire avant fusion, puis fermer #419 si la PR est
+effectivement fusionnée.
+
+---
 
 ## Cause réelle documentée (CYD avant #419)
 
