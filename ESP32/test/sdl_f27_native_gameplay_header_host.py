@@ -181,13 +181,13 @@ def original_body_parity() -> None:
             # older SFX-P1/P2 inverses and frozen SDL-F27 blob equality.
             # Do not update the frozen SHA or loosen the real-body oracle.
             barrel_hook = (
-                b"            /* Game_gsprite_allocAnim(game, 1, ...) in original Game.c\\n"
-                b"             * plays 5061 at priority 4 for each barrel explosion.\\n"
-                b"             * The native chain owns a rollback-capable transaction, so emit\\n"
-                b"             * only AFTER its world/RNG/player commit is closed. One cue per\\n"
-                b"             * committed chain; per-wave timing needs its own milestone. */\\n"
-                b"            if (barrelRemoved != 0U && barrelExplosionArmed != 0U)\\n"
-                b"                (void)EspNativeAudioIntent_publish(5061U, 0U, 4U);\\n"
+                b"            /* Game_gsprite_allocAnim(game, 1, ...) in original Game.c\n"
+                b"             * plays 5061 at priority 4 for each barrel explosion.\n"
+                b"             * The native chain owns a rollback-capable transaction, so emit\n"
+                b"             * only AFTER its world/RNG/player commit is closed. One cue per\n"
+                b"             * committed chain; per-wave timing needs its own milestone. */\n"
+                b"            if (barrelRemoved != 0U && barrelExplosionArmed != 0U)\n"
+                b"                (void)EspNativeAudioIntent_publish(5061U, 0U, 4U);\n"
             )
             on_commit = b"barrelExplosionSound=5061-on-commit"
             original = b"barrelExplosionSound=5061-deferred"
