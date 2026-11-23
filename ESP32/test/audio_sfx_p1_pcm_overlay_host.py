@@ -96,3 +96,50 @@ with tempfile.TemporaryDirectory(prefix="doom-sfx-p1-") as td:
                     "-I",str(src),str(s),"-o",str(binary)],check=True,cwd=root)
     subprocess.run([str(binary)],check=True,cwd=root)
 print("PASS AUDIO-SFX-P1: two real native gameplay cues, PCM16/8k mix over R2e ring within 46ms")
+
+
+# BARREL-5061 P1: actual committed C branch extracted into a host harness.
+# Original Game_gsprite_allocAnim(index=1) plays 5061 with priority=4.
+legacy=(root/"src/Game.c").read_text()
+assert "Sound_playSound(game->doomRpg->sound, 5061, 0, 4);" in legacy
+barrel=gameplay[gameplay.index('if (isBarrel) {\n            printf("[BARREL] COMMIT'):]
+barrel=barrel[:barrel.index("\n        if (isFireMiss) {")]
+cue="if (barrelRemoved != 0U && barrelExplosionArmed != 0U)"
+assert barrel.count(cue)==1
+assert barrel.count("EspNativeAudioIntent_publish(5061U, 0U, 4U)")==1
+assert barrel.index("[BARREL] COMMIT") < barrel.index(cue)
+assert gameplay.count("EspNativeAudioIntent_publish(5061U, 0U, 4U)")==1
+assert "barrelExplosionSound=5061-on-commit" in barrel
+statement=barrel[barrel.index(cue):]
+statement=statement[:statement.index(";")+1]
+barrel_test=r"""
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+static uint8_t barrelRemoved, barrelExplosionArmed;
+static unsigned published, lastId, lastFlags, lastPriority;
+static int EspNativeAudioIntent_publish(uint16_t id, uint8_t flags,
+                                        uint8_t priority) {
+    ++published;lastId=id;lastFlags=flags;lastPriority=priority;
+    return 1;
+}
+static void commit(void) {
+""" + statement + r"""
+}
+int main(void) {
+    barrelRemoved=0U;barrelExplosionArmed=1U;commit();assert(!published);
+    barrelRemoved=1U;barrelExplosionArmed=0U;commit();assert(!published);
+    barrelRemoved=1U;barrelExplosionArmed=1U;commit();
+    assert(published==1U && lastId==5061U &&
+           lastFlags==0U && lastPriority==4U);
+    puts("BARREL-5061: real commit branch exact cue + no early/rollback cue PASS");
+    return 0;
+}
+"""
+with tempfile.TemporaryDirectory(prefix="doom-barrel-5061-") as td:
+    code=Path(td)/"barrel.c"
+    exe=Path(td)/"barrel"
+    code.write_text(barrel_test)
+    subprocess.run(["cc","-std=c11","-Wall","-Wextra","-Werror",
+                    "-pedantic",str(code),"-o",str(exe)],check=True,cwd=root)
+    subprocess.run([str(exe)],check=True,cwd=root)
