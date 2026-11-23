@@ -4276,7 +4276,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
         }
 
         if (isBarrel) {
-            printf("[BARREL] COMMIT seq=%u sprite=%u weapon=%u ammoType=%u ammo=%u->%u playerFNV=%08x->%08x loops=%u hits=%u rngCombat=%u rngBlast=%u damage=%ld armorDamage=%ld removed=%u chainRemoved=%u playerRadiusHits=%u explosion=%s sound=%u-deferred barrelExplosionSound=5061-deferred radius=barrel-chain-wave+player-owned/other-hurtable-families-fail-closed turnAdvance=PLAYER_ATTACK-requested rollback=closed\n",
+            printf("[BARREL] COMMIT seq=%u sprite=%u weapon=%u ammoType=%u ammo=%u->%u playerFNV=%08x->%08x loops=%u hits=%u rngCombat=%u rngBlast=%u damage=%ld armorDamage=%ld removed=%u chainRemoved=%u playerRadiusHits=%u explosion=%s sound=%u-deferred barrelExplosionSound=5061-on-commit radius=barrel-chain-wave+player-owned/other-hurtable-families-fail-closed turnAdvance=PLAYER_ATTACK-requested rollback=closed\n",
                    (unsigned int)pending.sequence,
                    (unsigned int)pending.spriteIndex,
                    (unsigned int)pending.weapon,
@@ -4297,6 +4297,13 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                    (unsigned int)barrelPlayerHits,
                    barrelExplosionArmed != 0U ? "native-180x3-each" : "none",
                    crateWeapon != NULL ? (unsigned int)crateWeapon->resourceId : 0U);
+            /* Game_gsprite_allocAnim(game, 1, ...) in original Game.c
+             * plays 5061 at priority 4 for each barrel explosion.
+             * The native chain owns a rollback-capable transaction, so emit
+             * only AFTER its world/RNG/player commit is closed. One cue per
+             * committed chain; per-wave timing needs its own milestone. */
+            if (barrelRemoved != 0U && barrelExplosionArmed != 0U)
+                (void)EspNativeAudioIntent_publish(5061U, 0U, 4U);
         }
 
         if (isFireMiss) {
