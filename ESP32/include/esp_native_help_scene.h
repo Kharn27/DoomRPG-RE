@@ -27,6 +27,15 @@ uint8_t EspNativeHelpScene_breathStep(uint32_t elapsedMs);
 uint8_t EspNativeHelpScene_breathLevel(uint8_t step);
 uint8_t EspNativeHelpScene_breathPower(uint8_t level);
 
+/* Passive main-gameplay miniature: same immutable PAK wall projection as
+ * ACTION GAMEPLAY, nearest-neighbour to 128x48 inside the real HUD bars.
+ * Pure framebuffer paint; no touch overlays, world or additional cache. */
+#define ESP_NATIVE_HELP_GAMEPLAY_X 16
+#define ESP_NATIVE_HELP_GAMEPLAY_Y 46
+#define ESP_NATIVE_HELP_GAMEPLAY_W 128
+#define ESP_NATIVE_HELP_GAMEPLAY_H 48
+int EspNativeHelpScene_paintGameplay(uint16_t* framebuffer);
+
 int EspNativeHelpScene_paint(uint16_t* framebuffer, uint8_t level);
 int EspNativeHelpScene_paintRow(uint16_t* framebuffer, uint8_t sourceRow,
                                 uint8_t level);

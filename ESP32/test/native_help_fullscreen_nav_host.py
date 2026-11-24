@@ -126,20 +126,20 @@ static void touchContract(void) {
     assert(EspNativeHelpNav_hit(79,119)==ESP_NATIVE_HELP_NAV_PREVIOUS);
     assert(EspNativeHelpNav_hit(80,119)==ESP_NATIVE_HELP_NAV_NEXT);
     int page=0;
-    for(int i=0;i<15;++i) {
-        page=EspNativeHelpNav_scroll(page,112,ESP_NATIVE_HELP_NAV_NEXT);
+    for(int i=0;i<16;++i) {
+        page=EspNativeHelpNav_scroll(page,119,ESP_NATIVE_HELP_NAV_NEXT);
         assert(page==(i+1)*7);
     }
-    assert(page==105);
-    assert(EspNativeHelpNav_scroll(page,112,ESP_NATIVE_HELP_NAV_NEXT)==105);
-    assert(EspNativeHelpNav_scroll(page,112,ESP_NATIVE_HELP_NAV_CLOSE)==105);
-    for(int i=14;i>=0;--i) {
-        page=EspNativeHelpNav_scroll(page,112,ESP_NATIVE_HELP_NAV_PREVIOUS);
+    assert(page==112);
+    assert(EspNativeHelpNav_scroll(page,119,ESP_NATIVE_HELP_NAV_NEXT)==112);
+    assert(EspNativeHelpNav_scroll(page,119,ESP_NATIVE_HELP_NAV_CLOSE)==112);
+    for(int i=15;i>=0;--i) {
+        page=EspNativeHelpNav_scroll(page,119,ESP_NATIVE_HELP_NAV_PREVIOUS);
         assert(page==i*7);
     }
-    assert(EspNativeHelpNav_scroll(page,112,ESP_NATIVE_HELP_NAV_PREVIOUS)==0);
-    assert(EspNativeHelpNav_scroll(-9,112,ESP_NATIVE_HELP_NAV_NEXT)==7);
-    assert(EspNativeHelpNav_scroll(999,112,ESP_NATIVE_HELP_NAV_NEXT)==105);
+    assert(EspNativeHelpNav_scroll(page,119,ESP_NATIVE_HELP_NAV_PREVIOUS)==0);
+    assert(EspNativeHelpNav_scroll(-9,119,ESP_NATIVE_HELP_NAV_NEXT)==7);
+    assert(EspNativeHelpNav_scroll(999,119,ESP_NATIVE_HELP_NAV_NEXT)==112);
     assert(EspNativeHelpNav_scroll(0,0,ESP_NATIVE_HELP_NAV_NEXT)==0);
     assert(EspNativeHelpNav_scroll(0,3,ESP_NATIVE_HELP_NAV_NEXT)==0);
 }
