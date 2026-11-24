@@ -2,7 +2,30 @@
 #include <assert.h>
 #include <stdio.h>
 #include "esp_perf_game_p1.h"
+#include "esp_perf_trace_cache.h"
 int main(void) {
+    {
+        EspPerfTraceCache cache={0};
+        int value=-99;
+        assert(!EspPerfTraceCache_lookup(&cache,32,32,96,32,1,0xff87,0,&value));
+        EspPerfTraceCache_begin(&cache);
+        EspPerfTraceCache_store(&cache,32,32,96,32,1,0xff87,0,1);
+        assert(EspPerfTraceCache_lookup(&cache,32,32,96,32,1,0xff87,0,&value) && value==1);
+        assert(!EspPerfTraceCache_lookup(&cache,96,32,32,32,1,0xff87,0,&value));
+        assert(!EspPerfTraceCache_lookup(&cache,32,32,96,32,2,0xff87,0,&value));
+        assert(!EspPerfTraceCache_lookup(&cache,32,32,96,32,1,0xff87,1,&value));
+        assert(!EspPerfTraceCache_lookup(&cache,32,32,96,32,1,0xf387,0,&value));
+        EspPerfTraceCache_store(&cache,32,32,32,96,1,0xff87,0,-2);
+        assert(!EspPerfTraceCache_lookup(&cache,32,32,32,96,1,0xff87,0,&value));
+        for(unsigned i=0;i<40;i++) EspPerfTraceCache_store(&cache,(int32_t)i,0,0,0,1,1,0,0);
+        assert(cache.count==ESP_PERF_TRACE_CAPACITY);
+        EspPerfTraceCache_end(&cache);
+        assert(!EspPerfTraceCache_lookup(&cache,32,32,96,32,1,0xff87,0,&value));
+        EspPerfTraceCache_begin(&cache);
+        assert(cache.count==0);
+        EspPerfTraceCache_end(&cache);
+    }
+
     EspPerfGameP1Snapshot pre={0}, mass={0};
     unsigned i;
     EspPerfGameP1_reset();

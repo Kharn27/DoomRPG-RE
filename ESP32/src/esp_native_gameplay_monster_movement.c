@@ -9,6 +9,9 @@
 #include "DoomRPG.h"
 #include "esp_perf_game_p1.h"
 #if DOOMRPG_PERF_GAME_P1
+#include "esp_perf_trace_cache.h"
+#endif
+#if DOOMRPG_PERF_GAME_P1
 #include <esp_timer.h>
 #endif
 #include "esp_native_process_rng_owner.h"
@@ -509,13 +512,26 @@ static int cardinalTraceClearBody(int32_t sourceX,
     return 1;
 }
 
+#if DOOMRPG_PERF_GAME_P1
+static EspPerfTraceCache traceCache;
+#endif
 static int cardinalTraceClear(int32_t sourceX, int32_t sourceY,
                               int32_t destX, int32_t destY,
                               uint16_t attackerSprite, uint16_t mask, int strictSpecial) {
 #if DOOMRPG_PERF_GAME_P1
     EspPerfGameP1_phaseBegin(8, (uint64_t)esp_timer_get_time());
 #endif
+#if DOOMRPG_PERF_GAME_P1
+    int cached=0;
+    int hit=EspPerfTraceCache_lookup(&traceCache,sourceX,sourceY,destX,destY,attackerSprite,mask,strictSpecial,&cached);
+#endif
     int result=cardinalTraceClearBody(sourceX,sourceY,destX,destY,attackerSprite,mask,strictSpecial);
+#if DOOMRPG_PERF_GAME_P1
+    if(traceCache.active) {
+        EspPerfGameP1_traceShadow(0,hit,hit && cached!=result);
+        if(!hit) EspPerfTraceCache_store(&traceCache,sourceX,sourceY,destX,destY,attackerSprite,mask,strictSpecial,result);
+    }
+#endif
 #if DOOMRPG_PERF_GAME_P1
     EspPerfGameP1_phaseEnd(8, (uint64_t)esp_timer_get_time());
 #endif
@@ -1112,6 +1128,7 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
 
     memset(&plan, 0, sizeof(plan));
 #if DOOMRPG_PERF_GAME_P1
+    EspPerfTraceCache_begin(&traceCache);
     EspPerfGameP1_phaseBegin(6, (uint64_t)esp_timer_get_time());
 #endif
     planStatus = aiGoalPlan(candidate.monster->spriteIndex,
@@ -1121,6 +1138,7 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
                             targetX, targetY, &probeRng, &plan);
 #if DOOMRPG_PERF_GAME_P1
     EspPerfGameP1_phaseEnd(6, (uint64_t)esp_timer_get_time());
+    EspPerfTraceCache_end(&traceCache);
 #endif
     if (planStatus == -3 || probeRng.boundary != 0U) {
         ++movementView.rngBoundaryDeferred;

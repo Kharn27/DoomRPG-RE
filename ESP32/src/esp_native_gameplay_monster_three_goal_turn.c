@@ -9,6 +9,9 @@
 #include "DoomRPG.h"
 #include "esp_perf_game_p1.h"
 #if DOOMRPG_PERF_GAME_P1
+#include "esp_perf_trace_cache.h"
+#endif
+#if DOOMRPG_PERF_GAME_P1
 #include <esp_timer.h>
 #endif
 #include "esp_native_process_rng_owner.h"
@@ -373,13 +376,26 @@ static int cardinalTraceClearBody(int32_t sourceX,
     return 1;
 }
 
+#if DOOMRPG_PERF_GAME_P1
+static EspPerfTraceCache traceCache;
+#endif
 static int cardinalTraceClear(int32_t sourceX, int32_t sourceY,
                               int32_t destX, int32_t destY,
                               uint16_t attackerSprite, uint16_t mask, int strictSpecial) {
 #if DOOMRPG_PERF_GAME_P1
     EspPerfGameP1_phaseBegin(9, (uint64_t)esp_timer_get_time());
 #endif
+#if DOOMRPG_PERF_GAME_P1
+    int cached=0;
+    int hit=EspPerfTraceCache_lookup(&traceCache,sourceX,sourceY,destX,destY,attackerSprite,mask,strictSpecial,&cached);
+#endif
     int result=cardinalTraceClearBody(sourceX,sourceY,destX,destY,attackerSprite,mask,strictSpecial);
+#if DOOMRPG_PERF_GAME_P1
+    if(traceCache.active) {
+        EspPerfGameP1_traceShadow(1,hit,hit && cached!=result);
+        if(!hit) EspPerfTraceCache_store(&traceCache,sourceX,sourceY,destX,destY,attackerSprite,mask,strictSpecial,result);
+    }
+#endif
 #if DOOMRPG_PERF_GAME_P1
     EspPerfGameP1_phaseEnd(9, (uint64_t)esp_timer_get_time());
 #endif
@@ -702,6 +718,7 @@ static int probeContinuationGoal(DoomRPG_t* doomRpg,
     probeRng.state = randomBefore;
     memset(&plan, 0, sizeof(plan));
 #if DOOMRPG_PERF_GAME_P1
+    EspPerfTraceCache_begin(&traceCache);
     EspPerfGameP1_phaseBegin(7, (uint64_t)esp_timer_get_time());
 #endif
     planStatus = aiGoalPlan(spriteIndex, monster->subtype,
@@ -711,6 +728,7 @@ static int probeContinuationGoal(DoomRPG_t* doomRpg,
                             &probeRng, &plan);
 #if DOOMRPG_PERF_GAME_P1
     EspPerfGameP1_phaseEnd(7, (uint64_t)esp_timer_get_time());
+    EspPerfTraceCache_end(&traceCache);
 #endif
     if (planStatus == -3 || probeRng.boundary != 0U) {
         printf("[MONSTER3GOAL] DEFER sprite=%u subtype=%u goal=%u/3 cause=rng-boundary-unprepared mutation=no rngConsumed=0\n",

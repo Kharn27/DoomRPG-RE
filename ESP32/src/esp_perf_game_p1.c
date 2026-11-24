@@ -23,6 +23,13 @@ static Cohort cohort[2];
 /* Actual delivered load: 0, 1..3, 4..7, 8+. Single loopTask writer. */
 static EspPerfGameP1Load load[4], pendingLoad, serviceLoad;
 static uint8_t inService;
+static uint32_t shadowCalls[2],shadowHits[2],shadowMismatch[2];
+void EspPerfGameP1_traceShadow(uint8_t kind,int hit,int mismatch) {
+    if(kind>=2 || !inService) return;
+    ++shadowCalls[kind];
+    if(hit) ++shadowHits[kind];
+    if(mismatch) ++shadowMismatch[kind];
+}
 static EspPerfGameP1Phase phases[10];
 static uint64_t phaseStart[10], phaseFrameStart[10];
 static uint32_t phaseCountStart[10];
@@ -97,6 +104,9 @@ static void reportLoad(void) {
         printf("[PERFGAMEP1E] phase=%s calls=%u wallUs=%llu maxUs=%u cumulative=yes\n",
           names[i-6],(unsigned)p->calls,(unsigned long long)p->wallUs,(unsigned)p->maxUs);
     }
+    for(i=0;i<2;i++)
+        printf("[PERFGAMEP1F] planner=%s calls=%u hits=%u mismatches=%u mode=shadow cumulative=yes\n",
+          i?"continuation":"first",(unsigned)shadowCalls[i],(unsigned)shadowHits[i],(unsigned)shadowMismatch[i]);
     printf("[PERFGAMEP1B] outsideFrames=%llu outsideFrameUs=%llu cumulative=yes\n",
       (unsigned long long)outsideFrames,(unsigned long long)outsideFrameUs);
 }
@@ -163,6 +173,9 @@ void EspPerfGameP1_reset(void) {
     memset(&serviceLoad,0,sizeof(serviceLoad));
     inService=0;outsideFrameUs=0;outsideFrames=0;
     memset(phases,0,sizeof(phases));
+    memset(shadowCalls,0,sizeof(shadowCalls));
+    memset(shadowHits,0,sizeof(shadowHits));
+    memset(shadowMismatch,0,sizeof(shadowMismatch));
     memset(phaseOpen,0,sizeof(phaseOpen));
     memset(&turn,0,sizeof(turn));
     completed=0;inputSeq=0;inputAt=0;inputConsumed=0;currentGroup=0;

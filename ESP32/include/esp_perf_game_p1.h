@@ -19,6 +19,7 @@ typedef struct EspPerfGameP1Load_s {
     uint64_t serviceUs, frameInsideUs, frameBetweenUs, nonFrameServiceUs, lcdInsideUs;
 } EspPerfGameP1Load;
 void EspPerfGameP1_serviceEnter(void);
+void EspPerfGameP1_traceShadow(uint8_t kind,int hit,int mismatch);
 /* 0/1 parent phases; 2..5 movement scopes; 6/7 goal plans, 8/9 nested cardinal traces. */
 void EspPerfGameP1_phaseBegin(uint8_t phase,uint64_t now);
 void EspPerfGameP1_phaseEnd(uint8_t phase,uint64_t now);
