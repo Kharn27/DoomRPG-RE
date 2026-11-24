@@ -5,8 +5,8 @@
 #include <stdio.h>
 int main(void) {
     const uint16_t themes[][3] = {
-        {0x2c3fU, 0x75ffU, 0xf4caU},
-        {0xc002U, 0xf965U, 0xfd34U},
+        {0x2c3fU, 0x9d56U, 0xf4caU},
+        {0x5889U, 0xf965U, 0xfd34U},
         {0x2638U, 0x87e0U, 0xc7b8U}
     };
     for (unsigned t=0;t<3;++t) for (int rows=19;rows<=23;rows+=2) {
@@ -25,7 +25,7 @@ int main(void) {
     assert(EspUacFontTheme_verticalTone(themes[0][0],themes[0][1],
                                         themes[0][2],0,25)==0x2c3fU);
     assert(EspUacFontTheme_verticalTone(themes[0][0],themes[0][1],
-                                        themes[0][2],12,25)==0x75ffU);
+                                        themes[0][2],12,25)==0x9d56U);
     assert(EspUacFontTheme_verticalTone(themes[0][0],themes[0][1],
                                         themes[0][2],24,25)==0xf4caU);
     for (int row=0;row<23;++row) {

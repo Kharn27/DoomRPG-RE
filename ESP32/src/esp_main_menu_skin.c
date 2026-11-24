@@ -17,26 +17,26 @@ typedef struct {
 /* Compact original Doom-like pixel-metal lettering. The reference is
  * ONE BIG WORD per control (not two tiny lines). The 5x9 masks use 108 bytes
  * of flash, no font atlas, texture, cache, mutable state or heap. */
-/* CLASSIC font: saturated cobalt -> clear ice blue -> original warm
- * amber. Preserve the orange third band and neutral metal chassis.
- * The SD a.bmp atlas stays byte-exact, only presentation ink changes.
- * Three RGB565 ROM tones, identical blink policy and zero heap. */
+/* CLASSIC font: saturated cobalt -> neutral steel gray -> warm amber.
+ * Keep the vivid blue top and original orange foot. Only presentation
+ * palette changes; SD a.bmp glyph indices, chassis and RAM are unchanged. */
 #define CLASSIC_STEEL_BLUE 0x2c3fU /* #2986FF: vivid cobalt */
-#define CLASSIC_ICE_BLUE   0x75ffU /* #73BEFF: luminous ice blue */
+#define CLASSIC_METAL_GRAY 0x9d56U /* #9CAAB5: neutral metal steel */
 #define CLASSIC_PALE_AMBER 0xf4caU /* #F39A50: original warm orange */
 #define CLASSIC_DIM_STEEL  0x42f0U /* #455D84, darker blue LOADING band */
 
 static const SkinPalette palettes[3] = {
     /*      base    steel   top     dark    groove  copper  ink     face  */
-    {0x0800U,0x4a48U,0x838dU,0x0820U,0x3123U,0xd344U,0x2103U,CLASSIC_ICE_BLUE},
+    {0x0800U,0x4a48U,0x838dU,0x0820U,0x3123U,0xd344U,0x2103U,CLASSIC_METAL_GRAY},
     {0x1000U,0x632bU,0xa4d1U,0x0800U,0x39a5U,0xf447U,0x3001U,0xffffU},
     {0x0800U,0x4248U,0x83ceU,0x0800U,0x2903U,0xdba5U,0x2800U,0xffffU}
 };
 
-/* INFERNO: deep Doom red top, electric scarlet center and a luminous
- * pale scarlet foot. Avoid washed-out rose, purple and orange. */
-#define INFERNO_PALE_ROSE 0xfd34U /* #FFA6A5: vivid light scarlet */
-#define INFERNO_MID_RED   0xf965U /* #FF2D29: electric red */
+/* INFERNO: dark plum-violet top fading to electric scarlet and pale
+ * scarlet. Original middle/foot, dark-to-light direction unchanged. */
+#define INFERNO_DEEP_VIOLET 0x5889U /* #5A104A: dark prune violet */
+#define INFERNO_PALE_ROSE   0xfd34U /* #FFA6A5: vivid light scarlet */
+#define INFERNO_MID_RED     0xf965U /* #FF2D29: electric red */
 
 /* PHOSPHORE RGB565 tones stay byte-exact: turquoise -> electric -> pale.
  * The metallic accent seams and ungraded modal ink stay unchanged. */
@@ -66,7 +66,7 @@ uint16_t EspMainMenuSkin_letterTone(int row, int rows) {
          * Masks, shadows and geometry are unchanged. */
         if (row < (rows + 2) / 3) return INFERNO_PALE_ROSE;
         if (row < (2 * rows + 2) / 3) return INFERNO_MID_RED;
-        return 0xc002U;
+        return INFERNO_DEEP_VIOLET;
     }
     if (selectedLetterTheme == ESP_MAIN_MENU_THEME_PHOSPHORE) {
         /* Original pale -> electric -> turquoise lookup, now mirrored.
@@ -75,7 +75,7 @@ uint16_t EspMainMenuSkin_letterTone(int row, int rows) {
         if (row < (2 * rows + 2) / 3) return PHOSPHORE_ELECTRIC_GREEN;
         return PHOSPHORE_TURQUOISE;
     }
-    /* CLASSIC: vivid cobalt at top, ice blue in the middle, unchanged
+    /* CLASSIC: vivid cobalt at top, metal-gray middle, original
      * warm amber at bottom (lookup mirrored above). */
     if (row < (rows + 2) / 3) return CLASSIC_PALE_AMBER;
     if (row < (2 * rows + 2) / 3)
@@ -102,7 +102,7 @@ uint16_t EspMainMenuSkin_progressTone(int row, int rows) {
      * Only filled pixels change; geometry/ownership stay unchanged. */
     static const uint16_t gradients[3][6] = {
         {CLASSIC_DIM_STEEL, CLASSIC_STEEL_BLUE, CLASSIC_STEEL_BLUE,
-         CLASSIC_ICE_BLUE, CLASSIC_ICE_BLUE, CLASSIC_PALE_AMBER},
+         CLASSIC_METAL_GRAY, CLASSIC_METAL_GRAY, CLASSIC_PALE_AMBER},
         /* INFERNO: six genuinely red rows, not an amber face with a red seam. */
         {0x9002U, 0xb003U, 0xd004U, 0xf804U, 0xf905U, 0xf946U},
         /* PHOSPHORE: turquoise through electric lime to pale green. */
