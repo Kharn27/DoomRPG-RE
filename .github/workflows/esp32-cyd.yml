@@ -152,6 +152,9 @@ jobs:
       - name: Test all monster audio families against legacy (14x12) and bounded FIFO (host C)
         run: python ESP32/test/audio_monster_sfx_all_host.py
 
+      - name: MONSTER-DEATH-P1 post-XP owner, RNG and audio priority
+        run: python ESP32/test/monster_death_p1_host.py
+
       - name: Test AUDIO-382 all-published SFX mixing and Sector 1 5069 (host C)
         run: python ESP32/test/audio_sfx_382_published_window_host.py
 
