@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """SDL-F24: three *compiled* native BSP/first-frame/script C units do not
 import the legacy SDL.h themselves. Preserve host/geometry-oracle legacy
-prefixes, and use exact original Git blobs to prevent ANY behavioral edits.
+prefixes, and use exact original Git blobs to prevent unrelated behavioral
+edits (reversing the two explicitly bounded P23 renderer source changes).
 
 PlatformIO CI builds all 3 Xtensa profiles; compiledb verifies these actual
 translation units were compiled, and the same ELF audit retains zero SDL_*
-functions linked. The genuine old C body beyond the guard is bit-identical.
+functions linked. The historical C body is reconstructed exactly after explicit bounded inverses.
 """
 import argparse
 from pathlib import Path
@@ -57,6 +58,19 @@ def source_gate() -> None:
         assert current.startswith(prefix), f"{name}: no host/geometry guard"
         assert current.count(b"#include <SDL.h>") == 1, name
         old = b"#include <SDL.h>\n" + current[len(prefix):]
+        if name == "esp_native_first_frame.c":
+            # P23 intentionally adds ONE permanent two-layout header and
+            # replaces ONLY the 160U constant with a build-gated capacity.
+            # Undo exactly those two edits before asserting the original
+            # full historical Git blob. Never loosen SDL-F24 identity.
+            added = b'#include "esp_native_raster_contract.h"\n'
+            new_cap = b"#define MAX_SCREEN_WIDTH ESP_NATIVE_RASTER_COLUMN_CAPACITY"
+            old_cap = b"#define MAX_SCREEN_WIDTH 160U"
+            assert old.count(added) == 1, "P23 renderer include drifted"
+            old = old.replace(added, b"", 1)
+            assert old.count(new_cap) == 1 and old_cap not in old, (
+                "P23 renderer scratch width drifted")
+            old = old.replace(new_cap, old_cap, 1)
         if name == "esp_native_bsp_visibility.c":
             from arch_rc21_history import restore_pre_rc21
             old = restore_pre_rc21(name, old)
