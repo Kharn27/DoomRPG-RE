@@ -208,3 +208,71 @@ with tempfile.TemporaryDirectory(prefix="doom-barrel-gun-") as td:
     subprocess.run(["cc","-std=c11","-Wall","-Wextra","-Werror",
                     "-pedantic",str(source),"-o",str(exe)],check=True,cwd=root)
     subprocess.run([str(exe)],check=True,cwd=root)
+
+
+# BARREL-SFX-AUDIBLE: the previous "publish both" fix started 5061 on
+# exactly the same output-frame window as pistol 5046, masking/cutting the
+# gun on the physical CYD. Check source plumbing AND compile real C policy.
+music=(root/"ESP32/src/esp_audio_entrance_music.cpp").read_text()
+pair_header=(root/"ESP32/src/esp_native_sfx_barrel_pair.h").read_text()
+assert '#include "esp_native_sfx_barrel_pair.h"' in music
+assert "EspNativeSfxBarrelPair_explosionStart(" in music
+assert "noteBarrelGun(intent,audibleEnd);" in music
+assert "noteBarrelGun(intent,start+mixed);" in music
+assert "startGenericSfx(id,intent->sequence,&audibleEnd)" in music
+assert "v->start=rdNow+kSfxLeadFrames;" in music
+assert "if (id==5061U)" in music
+assert "sfxBarrelShotSequence=0U;" in music
+assert "sfxBarrelShotEnd=0U;" in music
+assert "sfxBarrelShotSequence=intent->sequence;" in music
+assert "sfxBarrelShotEnd=audibleEnd;" in music
+assert "explosionSequence != gunSequence + 1U" in pair_header
+# Reset on music stop/change and new session, not only one test map.
+assert music.count("    sfxBarrelShotSequence=0U;") >= 3
+harness=r"""
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#include "esp_native_sfx_barrel_pair.h"
+#include "esp_native_sfx_window.h"
+enum { RING=16384U, LEAD=1024U, SHOT_FRAMES=11466U };
+int main(void) {
+    const uint32_t reader=210000U;
+    const uint32_t gunStart=reader+LEAD;
+    const uint32_t gunEnd=gunStart+SHOT_FRAMES;
+    const uint32_t nextStart=EspNativeSfxBarrelPair_explosionStart(
+        reader+LEAD,gunEnd,25U,26U);
+    assert(nextStart==gunEnd);
+    assert(nextStart-gunStart==SHOT_FRAMES); /* pistol .520s complete */
+    /* No SFX in additional storage: the delayed voice can start AFTER
+     * current music publication and waits for the ring to advance. */
+    assert(nextStart > reader+11000U);
+    assert(EspNativeSfxPcm_publishedSpan(
+        nextStart,reader+11000U,37485U,RING)==0U);
+    assert(EspNativeSfxPcm_publishedSpan(
+        nextStart,nextStart+2000U,37485U,RING)==2000U);
+    /* No artificial 8192 cap: original 5061 can continue for 37485
+     * DAC frames in the existing 16384-byte ring progressively. */
+    assert(EspNativeSfxPcm_publishedSpan(
+        nextStart,nextStart+10000U,37485U,RING)==10000U);
+    assert(EspNativeSfxBarrelPair_explosionStart(
+        reader+LEAD,gunEnd,25U,27U)==reader+LEAD); /* unrelated */
+    assert(EspNativeSfxBarrelPair_explosionStart(
+        reader+LEAD,gunEnd,0U,1U)==reader+LEAD);
+    assert(EspNativeSfxBarrelPair_explosionStart(
+        reader+LEAD,gunEnd,UINT32_MAX,0U)==reader+LEAD);
+    assert(EspNativeSfxBarrelPair_explosionStart(
+        reader+LEAD,reader+500U,25U,26U)==reader+LEAD);
+    printf("BARREL-SFX-AUDIBLE PASS: gun 11466 frames before 5061, "
+           "unrelated immediate, future ring publish, no heap\n");
+    return 0;
+}
+"""
+with tempfile.TemporaryDirectory(prefix="doom-barrel-sequence-") as td:
+    source=Path(td)/"sequence.c"
+    exe=Path(td)/"sequence"
+    source.write_text(harness)
+    subprocess.run(["cc","-std=c11","-O2","-Wall","-Wextra","-Werror",
+                    "-pedantic","-I",str(root/"ESP32/src"),str(source),
+                    "-o",str(exe)],check=True,cwd=root)
+    subprocess.run([str(exe)],check=True,cwd=root)
