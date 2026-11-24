@@ -1,4 +1,4 @@
-# RES60-P23 — premier contrat raster du renderer natif permanent (CI/CYD PENDING)
+# RES60-P23 — premier contrat raster du renderer natif permanent (double CI PASS / CYD non applicable)
 
 **Branche `agent/esp32-res60-p1`, [PR #364 DRAFT](https://github.com/Kharn27/DoomRPG-RE/pull/364).** Main de référence synchronisé au vrai `bb774e434b75f84d95cf0d6b7b0f108f7e04e6ce` (thème #451) par merge non-force `1f4ea4927eabf526b4b499c4986079aad5bcf3a4`. L'ancien FNV final RES60 P21 provenait du thème précédent ; ne pas l'utiliser comme oracle de pixels de `main` actuel sans nouvelle mesure. L'oracle géométrique BSP brut ne dépend pas de la palette.
 
@@ -28,3 +28,7 @@ La sélection, la validation et l'adresse d'une ligne `worldRow` se font sans mo
 3. Prochaine étape **P24** : exposer réellement la préparation de viewport 192 du renderer monde (sol/plafond et murs source PAK), avec oracles des frames 160 existantes et des limites exactes; n'activer aucun gameplay, sprite, arme, HUD ou audio tant que les propriétaires dépendants ne sont pas prêts.
 
 **Aucune revendication de gameplay, de gain CPU, de mémoire libre ou de conformité pixel-world 192 par P23.** Reste DRAFT ; jamais merger à main sans demande explicite.
+
+## Résultat CI code — PASS (24 novembre 2026)
+
+**SHA code testé** `906ccebdf9ed36f1ac1929244c43d718493ce8cc`. [Push #45377832089](https://github.com/Kharn27/DoomRPG-RE/actions/runs/45377832089) **SUCCESS 264 étapes** et [PR #45377841743](https://github.com/Kharn27/DoomRPG-RE/actions/runs/45377841743) **SUCCESS 264 étapes**, incluant `RES60-P23` vrai C11, `P22` source gate, tests historiques SDL-F24/F27 sous inverses strictes de seulement deux modifications P23 chacune, tous les tests existants et builds PlatformIO classic/inversé/RES60. Les anciens échecs des deux oracles, dus à l'identité Git historique attendue, ont été corrigés par une reconstruction exacte sans élargir les tolérances, et la double CI finale les confirme. Aucune modification de `PlatformVideo_present()`, de la carte ou du framebuffer actif ; pas de preuve hardware P23. Les commits après ce PASS de code doivent être **docs-only**, PR #364 toujours DRAFT. Le `main` synchronisé `bb774e434b75f84d95cf0d6b7b0f108f7e04e6ce` a changé le thème : les FNV finaux P21 restent une référence du code antérieur uniquement.
