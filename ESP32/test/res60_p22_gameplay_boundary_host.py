@@ -43,7 +43,8 @@ engine=main.index("    initializeEngineCore();",returnFromPreview)
 assert start<guard<returnFromPreview<engine
 
 world=read("src/esp_native_first_frame.c")
-assert "#define MAX_SCREEN_WIDTH 160U" in world
+assert "#define MAX_SCREEN_WIDTH ESP_NATIVE_RASTER_COLUMN_CAPACITY" in world
+assert "esp_native_raster_contract.h" in world
 assert "render->screenWidth > (int)MAX_SCREEN_WIDTH" in world
 assert "EspMapRuntime_isLoaded()" in world
 

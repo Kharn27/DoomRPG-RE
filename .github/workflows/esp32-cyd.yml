@@ -117,6 +117,9 @@ jobs:
       - name: RES60-P22 static gameplay resolution ownership and safe preview boundary
         run: python ESP32/test/res60_p22_gameplay_boundary_host.py
 
+      - name: RES60-P23 native renderer raster contract 160/192 exact C11 and column guards
+        run: python ESP32/test/res60_p23_raster_contract_host.py
+
       - name: Test AUDIO-R1 bounded PCM, DAC GPIO26 and game handoff (host C)
         run: python ESP32/test/audio_r1_analog_pcm_host.py
 

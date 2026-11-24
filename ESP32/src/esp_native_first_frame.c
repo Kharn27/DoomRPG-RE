@@ -19,6 +19,7 @@
 #include "esp_native_first_frame.h"
 #include "esp_native_plane_renderer.h"
 #include "esp_render_geometry_primitives.h"
+#include "esp_native_raster_contract.h"
 #include "esp_native_dynamic_clip.h"
 #include "esp_native_wall_indicator_animation.h"
 #include "esp_native_graphics_catalog.h"
@@ -37,7 +38,7 @@
 #define MAX_RESOLVED_TEXTURES 64U
 #define WALL_CACHE_SLOTS 3U
 #define MAX_BSP_DEPTH 64U
-#define MAX_SCREEN_WIDTH 160U
+#define MAX_SCREEN_WIDTH ESP_NATIVE_RASTER_COLUMN_CAPACITY
 #define FIRST_FRAME_ANIMATION_TIME 0U
 
 #define LINE_FLAG_TWO_SIDED 0x00000001UL

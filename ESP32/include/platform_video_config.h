@@ -224,6 +224,18 @@
 #if DOOMRPG_RES60_P21_INTERSECTION32 && (!DOOMRPG_RES60_P20_COMPACT_SERIAL || !DOOMRPG_RES60_P18_LOCAL_SNAPSHOT || !DOOMRPG_RES60_P15_COMPACT_SNAPSHOT || !DOOMRPG_RES60_P1_DIAGNOSTIC)
 #error "RES60-P21 requires isolated P20/P18/P15 preview"
 #endif
+/* P23: native renderer column scratch may be sized for 192 solely in the
+ * isolated RES60 build. This does NOT activate gameplay, change the classic
+ * logical geometry, or admit the original sprites/HUD/plane renderer. */
+#ifndef DOOMRPG_RES60_P23_NATIVE_RASTER_GEOMETRY
+#define DOOMRPG_RES60_P23_NATIVE_RASTER_GEOMETRY 0
+#endif
+#if DOOMRPG_RES60_P23_NATIVE_RASTER_GEOMETRY != 0 && DOOMRPG_RES60_P23_NATIVE_RASTER_GEOMETRY != 1
+#error "RES60-P23 raster geometry flag must be 0 or 1"
+#endif
+#if DOOMRPG_RES60_P23_NATIVE_RASTER_GEOMETRY && (!DOOMRPG_RES60_P21_INTERSECTION32 || !DOOMRPG_RES60_P18_LOCAL_SNAPSHOT || !DOOMRPG_RES60_P1_DIAGNOSTIC)
+#error "RES60-P23 requires isolated P21/P18/P1 preview"
+#endif
 #if DOOMRPG_RES60_P1_DIAGNOSTIC
 #define DOOMRPG_VIDEO_BUFFER_WIDTH 192
 #define DOOMRPG_VIDEO_BUFFER_HEIGHT 144
