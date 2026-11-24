@@ -47,6 +47,10 @@ int EspNativeGameplayMonsterCombat_cancelSplashSequence(
     struct DoomRPG_s* runtime);
 int EspNativeGameplayMonsterCombat_commitSplashSequence(
     uint32_t sequence);
+/* Publish staged original monster pain/death sounds only after the enclosing
+ * barrel transaction can no longer roll back. Non-allocating, one shot. */
+int EspNativeGameplayMonsterCombat_publishSplashAudioAfterCommit(
+    uint32_t sequence);
 int EspNativeGameplayMonsterCombat_applySplash(
     struct DoomRPG_s* runtime,
     const EspNativeGameplaySplashHit* hits,

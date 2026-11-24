@@ -461,6 +461,44 @@ void PlatformVideo_clear(uint16_t color) {
     std::fill(framebuffer, framebuffer + kPixelCount, color);
 }
 
+/* The ILI9341 owns the unchanged wallpaper in GRAM. Never present the
+ * entire shared framebuffer during LOADING: map/priming code may overwrite
+ * it while the 4-MB PAK is copied to internal flash. Region pixels must be
+ * fully opaque, freshly painted by the caller (currently the 128x18 bar).
+ * No SD/PAK access, heap allocation, framebuffer copy or hidden full redraw. */
+bool PlatformVideo_presentRegion(int logicalLeft, int logicalTop,
+                                 int logicalWidth, int logicalHeight) {
+    if (platformDisplay == nullptr || framebuffer == nullptr ||
+        logicalLeft < 0 || logicalTop < 0 ||
+        logicalWidth <= 0 || logicalHeight <= 0 ||
+        logicalWidth > DOOMRPG_LOGICAL_WIDTH ||
+        logicalHeight > DOOMRPG_LOGICAL_HEIGHT ||
+        logicalLeft > DOOMRPG_LOGICAL_WIDTH - logicalWidth ||
+        logicalTop > DOOMRPG_LOGICAL_HEIGHT - logicalHeight) return false;
+
+    uint16_t outputRow[DOOMRPG_PHYSICAL_WIDTH]; /* <=640B stack; no heap */
+    const int scaledWidth = logicalWidth * DOOMRPG_INTEGER_SCALE;
+    platformDisplay->startWrite();
+    platformDisplay->setAddrWindow(logicalLeft * DOOMRPG_INTEGER_SCALE,
+                                   logicalTop * DOOMRPG_INTEGER_SCALE,
+                                   scaledWidth,
+                                   logicalHeight * DOOMRPG_INTEGER_SCALE);
+    for (int y = logicalTop; y < logicalTop + logicalHeight; ++y) {
+        const uint16_t* source = framebuffer +
+            y * DOOMRPG_LOGICAL_WIDTH + logicalLeft;
+        for (int x = 0; x < logicalWidth; ++x) {
+            const uint16_t color = source[x];
+            const int scaledX = x * DOOMRPG_INTEGER_SCALE;
+            outputRow[scaledX] = color;
+            outputRow[scaledX + 1] = color;
+        }
+        for (int repeat = 0; repeat < DOOMRPG_INTEGER_SCALE; ++repeat)
+            platformDisplay->pushPixels(outputRow, scaledWidth);
+    }
+    platformDisplay->endWrite();
+    return true;
+}
+
 bool PlatformVideo_present() {
     if (platformDisplay == nullptr || framebuffer == nullptr) {
         return false;

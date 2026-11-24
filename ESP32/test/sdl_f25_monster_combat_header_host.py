@@ -49,6 +49,11 @@ def source_gate() -> None:
         original = restore_pre_rc20(name, original)
         from arch_rc13_history import restore_pre_rc13
         original = restore_pre_rc13(name, original)
+        if name == "esp_native_gameplay_monster_combat.c":
+            # The barrel splash audio addition must be stripped EXACTLY;
+            # do not accept any changed original monster-combat bytes.
+            from audio_barrel_splash_history import restore_pre_barrel_splash_audio
+            original = restore_pre_barrel_splash_audio(name, original)
         from audio_monster_sfx_history import restore_pre_monster_sfx
         original = restore_pre_monster_sfx(name, original.decode("utf-8")).encode("utf-8")
         if name == "esp_native_gameplay_monster_combat.c":

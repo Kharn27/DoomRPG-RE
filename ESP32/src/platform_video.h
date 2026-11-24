@@ -15,6 +15,10 @@ uint16_t* PlatformVideo_framebuffer();
 size_t PlatformVideo_framebufferSizeBytes();
 void PlatformVideo_clear(uint16_t color);
 bool PlatformVideo_present();
+/* Only the specified opaque region is pushed to ILI9341 GRAM (nearest x2).
+ * The remaining LCD pixels are retained by the controller, not re-rendered. */
+bool PlatformVideo_presentRegion(int logicalLeft, int logicalTop,
+                                 int logicalWidth, int logicalHeight);
 void PlatformVideo_showTestPattern();
 
 /* P2: diagnostic HUD/world region raster. Never calls the game renderer. */
