@@ -39,7 +39,6 @@
 #define TRANSITION_PROGRESS_WIDTH 128
 #define TRANSITION_PROGRESS_HEIGHT 18
 #define TRANSITION_PROGRESS_STEP 5U
-
 /* a.bmp: 144x72, 16 ASCII columns of 9x12 pixels. Retain ONLY the
  * seven LOADING glyphs in 4-bpp form for the duration of the loader.
  * Progress callbacks may run while physical SD is occupied by the PAK. */
@@ -101,6 +100,11 @@ typedef struct EspNativeTransitionPaintScratch_s {
 
 static EspNativeTransitionPresentationState presentation;
 
+static void clearPresentation(void) {
+    memset(&presentation, 0, sizeof(presentation));
+}
+
+
 /* This module is itself the full-frame presentation owner. Bypass the native public
  * gameplay compositor facade so loading/stats frames cannot acquire a stale
  * top-bar feedback or viewport flash while they are on screen. */
@@ -150,6 +154,7 @@ static int framebufferReady(void) {
 static uint16_t* framebuffer(void) {
     return (uint16_t*)Esp32PlatformVideo_framebuffer();
 }
+
 
 static void pixel(int x, int y, uint16_t color) {
     uint16_t* fb = framebuffer();
@@ -663,76 +668,52 @@ static int paintProgressBar(uint8_t percent) {
     return 1;
 }
 
+/* Keep the physical wallpaper and title unchanged in ILI9341 GRAM.
+ * A map-load may overwrite all 38 400 B of our SHARED logical framebuffer.
+ * Repaint just the 128x18 fully-opaque gauge and publish ONLY that LCD window;
+ * never read c.bmp/PAK, reconstruct a background, or allocate 9 600 B. */
 static void presentOverall(uint8_t percent,
                            const char* stage,
                            const char* source) {
-    uint32_t fnv;
+    uint32_t fnv = 2166136261U;
+    const uint16_t* fb = framebuffer();
 
-    if (!presentation.loadingActive) return;
+    if (!presentation.loadingActive || fb == NULL) return;
     if (percent > 100U) percent = 100U;
     if (percent < presentation.lastPercent) percent = presentation.lastPercent;
-
-    /*
-     * The logical framebuffer is shared with gameplay.  A suppressed gameplay
-     * present can still have writers that touched that buffer before reaching
-     * the present gate.  Never rely on the previous loading frame remaining
-     * byte-identical: reconstruct the complete loading frame immediately
-     * before every physical progress present.
-     */
-    {
-        EspNativeTransitionPaintScratch scratch;
-        char target[24];
-        int openedHere = 0;
-
-        memset(&scratch, 0, sizeof(scratch));
-        if (!drawFixedStarfield(&scratch.star, &scratch.stats, &openedHere)) {
-            if (openedHere && EspAssetPack_isOpen()) EspAssetPack_close();
-            printf("[TRANSITIONLOAD] FRAME-DEFER stage=%s overall=%u reason=background-redraw\n",
-                   stage != NULL ? stage : "LOAD",
-                   (unsigned int)percent);
-            return;
-        }
-
-        formatMapLabel(presentation.targetMapId, target, sizeof(target));
-        if (!paintLoadingCard(target)) {
-            if (openedHere && EspAssetPack_isOpen()) EspAssetPack_close();
-            return;
-        }
-        if (!paintProgressBar(percent)) {
-            if (openedHere && EspAssetPack_isOpen()) EspAssetPack_close();
-            return;
-        }
-
-        if (!Esp32PlatformVideo_presentBase()) {
-            if (openedHere && EspAssetPack_isOpen()) EspAssetPack_close();
-            printf("[TRANSITIONLOAD] FRAME-DEFER stage=%s overall=%u reason=present-failed\n",
-                   stage != NULL ? stage : "LOAD",
-                   (unsigned int)percent);
-            return;
-        }
-
-        if (openedHere && EspAssetPack_isOpen()) EspAssetPack_close();
-
-        {
-            const uint32_t now = nowMs();
-            const uint32_t gap = now - presentation.audioLastPresentMs;
-            if (gap > presentation.audioMaxPresentGapMs)
-                presentation.audioMaxPresentGapMs = gap;
-            presentation.audioLastPresentMs = now;
-        }
-        presentation.lastPercent = percent;
-        ++presentation.frames;
-        fnv = frameFNV();
-
-        printf("[TRANSITIONLOAD] FRAME n=%u stage=%s overall=%u background=repainted backgroundSource=%s assetReads=%u source=%s frame=%08x\n",
-               (unsigned int)presentation.frames,
-               stage != NULL ? stage : "LOAD",
-               (unsigned int)percent,
-               presentation.backgroundSd ? "SD" : "PAK",
-               (unsigned int)scratch.stats.packReads,
-               source != NULL ? source : "generic",
-               (unsigned int)fnv);
+    if (!paintProgressBar(percent)) return;
+    if (!Esp32PlatformVideo_presentRegionBase(
+            TRANSITION_PROGRESS_LEFT, TRANSITION_PROGRESS_TOP,
+            TRANSITION_PROGRESS_WIDTH, TRANSITION_PROGRESS_HEIGHT)) {
+        printf("[TRANSITIONLOAD] FRAME-DEFER stage=%s overall=%u reason=region-present-failed\n",
+               stage != NULL ? stage : "LOAD", (unsigned int)percent);
+        return;
     }
+    {
+        const uint32_t now = nowMs();
+        const uint32_t gap = now - presentation.audioLastPresentMs;
+        if (gap > presentation.audioMaxPresentGapMs)
+            presentation.audioMaxPresentGapMs = gap;
+        presentation.audioLastPresentMs = now;
+    }
+    presentation.lastPercent = percent;
+    ++presentation.frames;
+    /* Hash ONLY the 128x18 fully-owned region; the other shared framebuffer
+     * pixels can be unrelated target-world render work during loading. */
+    for (int y = TRANSITION_PROGRESS_TOP;
+         y < TRANSITION_PROGRESS_TOP + TRANSITION_PROGRESS_HEIGHT; ++y) {
+        for (int x = TRANSITION_PROGRESS_LEFT;
+             x < TRANSITION_PROGRESS_LEFT + TRANSITION_PROGRESS_WIDTH; ++x) {
+            const uint16_t c = fb[y * DOOMRPG_LOGICAL_WIDTH + x];
+            fnv = (fnv ^ (uint8_t)c) * 16777619U;
+            fnv = (fnv ^ (uint8_t)(c >> 8U)) * 16777619U;
+        }
+    }
+    printf("[TRANSITIONLOAD] FRAME n=%u stage=%s overall=%u present=region-128x18 background=lcd-retained backgroundSource=%s assetReads=%u source=%s regionFNV=%08x\n",
+           (unsigned int)presentation.frames,
+           stage != NULL ? stage : "LOAD", (unsigned int)percent,
+           presentation.backgroundSd ? "SD" : "PAK",
+           0U, source != NULL ? source : "generic", (unsigned int)fnv);
 }
 
 int EspNativeTransitionPresentation_showStats(
@@ -864,7 +845,7 @@ int EspNativeTransitionPresentation_beginLoading(uint8_t targetMapId) {
      * done so for ST_INTRO, making this an idempotent safety boundary. */
     EspEntranceMusic_stopBeforeLoading();
 
-    memset(&presentation, 0, sizeof(presentation));
+    clearPresentation();
     memset(&scratch, 0, sizeof(scratch));
 
     /* SD-only overrides are readable before the physical PAK opens. */
@@ -881,7 +862,7 @@ int EspNativeTransitionPresentation_beginLoading(uint8_t targetMapId) {
 
     formatMapLabel(targetMapId, target, sizeof(target));
 
-    /* First frame and all progress redraws share the same bounded panel. */
+    /* One full wallpaper+title+gauge present; subsequent steps are TFT regions. */
     if (!paintLoadingCard(target)) goto done;
 
     if (!paintProgressBar(0U)) goto done;
@@ -921,7 +902,7 @@ int EspNativeTransitionPresentation_beginLoading(uint8_t targetMapId) {
 
 done:
     if (openedHere && EspAssetPack_isOpen()) EspAssetPack_close();
-    if (!ok) memset(&presentation, 0, sizeof(presentation));
+    if (!ok) clearPresentation();
     return ok;
 }
 
@@ -999,7 +980,7 @@ void EspNativeTransitionPresentation_abortLoading(const char* reason) {
                (unsigned int)presentation.lastPercent,
                reason != NULL ? reason : "load-failed");
     }
-    memset(&presentation, 0, sizeof(presentation));
+    clearPresentation();
 }
 
 void EspNativeTransitionPresentation_releaseLoading(const char* reason) {
@@ -1013,13 +994,13 @@ void EspNativeTransitionPresentation_releaseLoading(const char* reason) {
            (unsigned int)elapsed,
            (unsigned int)presentation.lastPercent,
            reason != NULL ? reason : "session-ready");
-    memset(&presentation, 0, sizeof(presentation));
+    clearPresentation();
 }
 
 void EspNativeTransitionPresentation_endLoading(void) {
     uint32_t elapsed;
     if (!presentation.loadingActive) {
-        memset(&presentation, 0, sizeof(presentation));
+        clearPresentation();
         return;
     }
     if (presentation.lastPercent < 100U) {
@@ -1032,9 +1013,9 @@ void EspNativeTransitionPresentation_endLoading(void) {
            (unsigned int)presentation.frames,
            (unsigned int)elapsed,
            (unsigned int)presentation.lastPercent);
-    memset(&presentation, 0, sizeof(presentation));
+    clearPresentation();
 }
 
 void EspNativeTransitionPresentation_reset(void) {
-    memset(&presentation, 0, sizeof(presentation));
+    clearPresentation();
 }
