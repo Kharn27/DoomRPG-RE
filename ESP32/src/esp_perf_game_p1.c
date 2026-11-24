@@ -3,8 +3,10 @@
 #include <limits.h>
 #include "esp_perf_trace_cache.h"
 #include "esp_perf_spatial_sprite.h"
+#include "esp_perf_spatial_line.h"
 EspPerfTraceCache EspPerfGameP1_sharedTraceCache;
 EspPerfSpatialSpriteIndex EspPerfGameP1_spatialSpriteIndex;
+EspPerfSpatialLineIndex EspPerfGameP1_spatialLineIndex;
 #include <stdio.h>
 #include <string.h>
 #define BINS 15U
@@ -29,6 +31,17 @@ static EspPerfGameP1Load load[4], pendingLoad, serviceLoad;
 static uint8_t inService;
 static uint32_t shadowCalls[2],shadowHits[2],shadowMismatch[2];
 static uint32_t spatialChecks[2],spatialMismatch[2];
+static uint32_t lineChecks[3],lineMismatch[3],lineBuilds,lineBuildFailed;
+void EspPerfGameP1_lineBuild(int success) {
+    if(!inService) return;
+    ++lineBuilds;
+    if(!success) ++lineBuildFailed;
+}
+void EspPerfGameP1_lineShadow(uint8_t kind,int mismatch) {
+    if(kind>=3U || !inService) return;
+    ++lineChecks[kind];
+    if(mismatch) ++lineMismatch[kind];
+}
 void EspPerfGameP1_spatialShadow(uint8_t kind,int mismatch) {
     if(kind>=2 || !inService) return;
     ++spatialChecks[kind];
@@ -123,6 +136,13 @@ static void reportLoad(void) {
           (unsigned)spatialMismatch[i],
           DOOMRPG_PERF_SPATIAL_FAST?"fast":"shadow",
           (unsigned)ESP_PERF_SPATIAL_SPRITE_CAPACITY);
+    for(i=0;i<3;i++)
+        printf("[PERFGAMEP1J] query=%s checks=%u mismatches=%u mode=%s builds=%u failedBuilds=%u capacity=%u cumulative=yes\\n",
+           i==0?"first-block":i==1?"first-source":"continuation-block",
+           (unsigned)lineChecks[i],(unsigned)lineMismatch[i],
+           DOOMRPG_PERF_LINE_FAST?"fast":"shadow",
+           (unsigned)lineBuilds,(unsigned)lineBuildFailed,
+           (unsigned)ESP_PERF_SPATIAL_LINE_CAPACITY);
     printf("[PERFGAMEP1B] outsideFrames=%llu outsideFrameUs=%llu cumulative=yes\n",
       (unsigned long long)outsideFrames,(unsigned long long)outsideFrameUs);
 }
@@ -194,6 +214,10 @@ void EspPerfGameP1_reset(void) {
     memset(shadowMismatch,0,sizeof(shadowMismatch));
     memset(spatialChecks,0,sizeof(spatialChecks));
     memset(spatialMismatch,0,sizeof(spatialMismatch));
+    memset(lineChecks,0,sizeof(lineChecks));
+    memset(lineMismatch,0,sizeof(lineMismatch));
+    lineBuilds=0;lineBuildFailed=0;
+    EspPerfSpatialLine_end(&EspPerfGameP1_spatialLineIndex);
     EspPerfSpatialSprite_end(&EspPerfGameP1_spatialSpriteIndex);
     memset(phaseOpen,0,sizeof(phaseOpen));
     memset(&turn,0,sizeof(turn));

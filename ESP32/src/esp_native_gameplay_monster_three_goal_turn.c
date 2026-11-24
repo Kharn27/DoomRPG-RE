@@ -11,6 +11,7 @@
 #if DOOMRPG_PERF_GAME_P1
 #include "esp_perf_trace_cache.h"
 #include "esp_perf_spatial_sprite.h"
+#include "esp_perf_spatial_line.h"
 #endif
 #if DOOMRPG_PERF_GAME_P1
 #include <esp_timer.h>
@@ -34,6 +35,7 @@
 #include "esp_native_rng_replay_guard.h"
 #include "esp_player_view_state.h"
 
+#define ESP_PERF_LINE_FIRST_KIND 2
 #define THREEGOAL_MAP_WIDTH 32U
 #define THREEGOAL_TILE_SIZE 64
 #define THREEGOAL_TILE_CENTER 32
@@ -176,7 +178,7 @@ static int lineEntityTile(const EspMapLine* line, uint16_t* outTile) {
     return 1;
 }
 
-static int closedLineBlocksTile(uint16_t tile, uint16_t mask) {
+static int closedLineBlocksTileReference(uint16_t tile, uint16_t mask) {
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
     uint32_t i;
     if (runtime == NULL || !EspEntityDefTypeCatalog_isReady()) return -1;
@@ -210,6 +212,61 @@ static int closedLineBlocksTile(uint16_t tile, uint16_t mask) {
     }
     return 0;
 }
+#if DOOMRPG_PERF_GAME_P1
+/* P1j independent full reference remains authoritative in shadow mode. */
+static int closedLineBlocksTileIndexed(uint16_t tile, uint16_t mask) {
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    uint32_t i;
+    if (runtime == NULL || !EspEntityDefTypeCatalog_isReady()) return -1;
+
+    i = EspPerfSpatialLine_first(&EspPerfGameP1_spatialLineIndex, tile);
+    while (i != ESP_PERF_SPATIAL_LINE_NONE) {
+        EspMapLine line;
+        uint32_t lookup;
+        uint16_t lineTile;
+        uint8_t open;
+        uint8_t type;
+        uint8_t subtype;
+        int hasDefinition;
+
+        uint32_t lineIndex = i;
+        i = EspPerfGameP1_spatialLineIndex.next[i];
+        if (!EspMapLineState_getOpen(lineIndex, &open)) return -1;
+        if (open != 0U) continue;
+        if (!EspMapRuntime_getLine(lineIndex, &line)) return -1;
+        lookup = THREEGOAL_LINE_ENTITY_DEF_BASE + (uint32_t)line.texture;
+        hasDefinition = lookup < ESP_ENTITY_DEF_TYPE_CATALOG_LIMIT &&
+                        EspEntityDefTypeCatalog_getTypeAndSubtype(
+                            (uint16_t)lookup, &type, &subtype);
+        (void)subtype;
+        if (!hasDefinition) {
+            if ((line.flags & THREEGOAL_LINE_ENTITY_FALLBACK_FLAGS) == 0U) continue;
+            type = 0U;
+        }
+        if (!typeInMask(type, mask)) continue;
+        if (!lineEntityTile(&line, &lineTile)) return -1;
+        if (lineTile == tile) return 1;
+    }
+    return 0;
+}
+static int closedLineBlocksTile(uint16_t tile, uint16_t mask) {
+    if(EspPerfGameP1_spatialLineIndex.active) {
+        const int indexed=closedLineBlocksTileIndexed(tile,mask);
+#if DOOMRPG_PERF_LINE_FAST
+        EspPerfGameP1_lineShadow(ESP_PERF_LINE_FIRST_KIND,0);
+        return indexed;
+#else
+        const int reference=closedLineBlocksTileReference(tile,mask);
+        EspPerfGameP1_lineShadow(ESP_PERF_LINE_FIRST_KIND, indexed!=reference);
+        return reference;
+#endif
+    }
+    return closedLineBlocksTileReference(tile,mask);
+}
+#else
+#define closedLineBlocksTile closedLineBlocksTileReference
+#endif
+
 
 static int specialEntityBlocks(uint32_t spriteIndex,
                                int32_t sourceX,
@@ -798,6 +855,7 @@ static int probeContinuationGoal(DoomRPG_t* doomRpg,
     EspPerfTraceCache_begin(&traceCache);
     EspPerfGameP1_phaseBegin(7, (uint64_t)esp_timer_get_time());
     (void)EspPerfSpatialSprite_begin(&EspPerfGameP1_spatialSpriteIndex);
+    EspPerfGameP1_lineBuild(EspPerfSpatialLine_begin(&EspPerfGameP1_spatialLineIndex, lineEntityTile));
 #endif
     planStatus = aiGoalPlan(spriteIndex, monster->subtype,
                             (int32_t)position->worldX,
@@ -806,6 +864,7 @@ static int probeContinuationGoal(DoomRPG_t* doomRpg,
                             &probeRng, &plan);
 #if DOOMRPG_PERF_GAME_P1
     EspPerfGameP1_phaseEnd(7, (uint64_t)esp_timer_get_time());
+    EspPerfSpatialLine_end(&EspPerfGameP1_spatialLineIndex);
     EspPerfSpatialSprite_end(&EspPerfGameP1_spatialSpriteIndex);
     EspPerfTraceCache_end(&traceCache);
 #endif

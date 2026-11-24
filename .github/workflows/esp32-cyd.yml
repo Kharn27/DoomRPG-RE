@@ -548,6 +548,12 @@ jobs:
             ESP32/test/perf_game_spatial_sprite_host.c -o /tmp/doomrpg-perf-spatial
           /tmp/doomrpg-perf-spatial
 
+      - name: PERF-GAME-P1j compact projected line index oracle (host C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \\
+            ESP32/test/perf_game_spatial_line_host.c -o /tmp/doomrpg-perf-line
+          /tmp/doomrpg-perf-line
+
       - name: Test SDL-F20 eight native owner header-independent C sources
         run: python ESP32/test/sdl_f20_native_leaf_header_host.py
 
