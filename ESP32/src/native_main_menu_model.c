@@ -103,7 +103,7 @@ void EspNativeMainMenu_transitionCanvasState(DoomCanvas_t* doomCanvas, DoomRPG_t
  * no SD allocation/read and no pointer-heavy MenuItem table. Normally
  * 20 glyphs max at 7px advance/x12. The BOTTOM HUD page alone has two
  * longer lines with dedicated x8 / split-x45 bounded placement. */
-#define MAIN_HELP_MAX_LINES 112
+#define MAIN_HELP_MAX_LINES 119
 static const char* const helpLines[] = {
     "DOOM RPG ON CYD",
     "Kharn27",
@@ -133,18 +133,25 @@ static const char* const helpLines[] = {
     "Actions use turns.",
     "Plan each attack.",
     "Think before moving.",
-    "TOP HUD BAR",
-    "3 VIRTUAL BUTTONS",
-    "LEFT: game menu",
-    "CENTER: pass a turn",
-    "RIGHT: show automap",
-    "",
-    "",
     "MAIN GAMEPLAY",
     "",
     "",
     "",
     "",
+    "",
+    "",
+    "ACTION GAMEPLAY",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "TOP HUD BAR",
+    "3 VIRTUAL BUTTONS",
+    "LEFT: game menu",
+    "CENTER: pass a turn",
+    "RIGHT: show automap",
     "",
     "",
     "TOP ROW: MOVE",
