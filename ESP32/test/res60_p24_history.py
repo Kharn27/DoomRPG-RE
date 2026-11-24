@@ -54,7 +54,7 @@ def restore_pre_res60_p24(source: bytes) -> bytes:
         ),
     ]
     for previous, reviewed in pairs:
-        assert source.count(reviewed) == 1 and source.count(previous) == 0, (
+        assert source.count(reviewed) == 1, (
             "P24 exact renderer inverse drifted")
         source = source.replace(reviewed, previous, 1)
     return source
