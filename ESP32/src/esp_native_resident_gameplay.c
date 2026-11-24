@@ -547,6 +547,10 @@ static void serviceTurn(Render_t* render,
     }
 
     ++gameplayState.turns;
+#if DOOMRPG_PERF_GAME_P1
+    EspPerfGameP1_inputCommit(intent->sequence,
+                                   (uint64_t)esp_timer_get_time());
+#endif
     printf("[RESIDENTGAMEPLAY] TURN n=%u seq=%u action=%s angle=%u->%u committed=yes\n",
            (unsigned int)gameplayState.turns,
            (unsigned int)result.sequence,
@@ -787,6 +791,10 @@ static void serviceMove(Render_t* render,
                    (unsigned int)result.destTile,
                    (unsigned int)uncovered);
         }
+#if DOOMRPG_PERF_GAME_P1
+        EspPerfGameP1_inputCommit(intent->sequence,
+                                   (uint64_t)esp_timer_get_time());
+#endif
         printf("[RESIDENTGAMEPLAY] MOVE-DIALOG n=%u seq=%u action=%s tile=%u->%u event=%u cmd=%u opcode=%u active=yes back=%s pauseScript=yes skipTurn=yes continuation=preflighted committed=yes\n",
                (unsigned int)gameplayState.dialogs,
                (unsigned int)result.sequence,
@@ -812,6 +820,10 @@ static void serviceMove(Render_t* render,
                (unsigned int)uncovered);
     }
     ++gameplayState.moves;
+#if DOOMRPG_PERF_GAME_P1
+    EspPerfGameP1_inputCommit(intent->sequence,
+                                   (uint64_t)esp_timer_get_time());
+#endif
     printf("[RESIDENTGAMEPLAY] MOVE n=%u seq=%u action=%s tile=%u->%u delta=%d,%d pos=%d,%d moveEvents=door15/16+message4+force24+enter-dialog8/26-live-other-deferred committed=yes\n",
            (unsigned int)gameplayState.moves,
            (unsigned int)result.sequence,
