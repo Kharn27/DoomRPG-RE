@@ -43,6 +43,10 @@ def source_gate() -> None:
         assert data.startswith(prefix), f"{name}: lost host/geometry include"
         assert data.count(b"#include <SDL.h>") == 1, name
         original = b"#include <SDL.h>\n" + data[len(prefix):]
+        if name == "esp_native_gameplay_monster_active_sequence.c":
+            from perf_game_p1_history import restore_pre_perf_game_p1_active_sequence
+            original = restore_pre_perf_game_p1_active_sequence(
+                original.decode("utf-8")).encode("utf-8")
         from arch_rc21_history import restore_pre_rc21
         original = restore_pre_rc21(name, original)
         from arch_rc20_history import restore_pre_rc20
