@@ -589,26 +589,33 @@ int EspMapSpriteTopology_restoreMonsterSnapshot(
     if (fullScope == 0U && legacyMonsterScope == 0U &&
         legacyEnemyOnly == 0U) return 0;
 
-    for (i = 0U; i < snapshot->count; ++i) {
-        const EspMapSpriteTopologyMonsterRecord* record =
-            &snapshot->records[i];
+    /* Count alone does not establish that the record set is complete:
+     * require each current map entity of the selected scope, in canonical
+     * sprite order. Reject omissions/substitutions before the first write.
+     * This works for old enemy-only/V9-V11 and new human-inclusive V11. */
+    {
+        uint32_t cursor = 0U;
         const uint16_t identityMask =
             ESP_MAP_SPRITE_TOPOLOGY_EXISTS |
             ESP_MAP_SPRITE_TOPOLOGY_HAS_SPRITE_ENT;
-        uint16_t live;
-        uint8_t type;
 
-        if (record->spriteIndex >= topologyView.spriteCount) return 0;
-        live = linkStateAt(record->spriteIndex);
-        type = entityTypes[record->spriteIndex];
-        if ((type != ESP_MAP_ENTITY_TYPE_ENEMY &&
-             (legacyEnemyOnly != 0U ||
-              (type != ESP_MAP_ENTITY_TYPE_DESTRUCTIBLE &&
-               (fullScope == 0U || type != ESP_MAP_ENTITY_TYPE_HUMAN)))) ||
-            (live & identityMask) !=
-                (record->linkState & identityMask)) {
-            return 0;
+        for (i = 0U; i < topologyView.spriteCount; ++i) {
+            const uint8_t type = entityTypes[i];
+            const EspMapSpriteTopologyMonsterRecord* record;
+            if (type != ESP_MAP_ENTITY_TYPE_ENEMY &&
+                (legacyEnemyOnly != 0U ||
+                 (type != ESP_MAP_ENTITY_TYPE_DESTRUCTIBLE &&
+                  (fullScope == 0U ||
+                   type != ESP_MAP_ENTITY_TYPE_HUMAN)))) {
+                continue;
+            }
+            if (cursor >= snapshot->count ||
+                snapshot->records[cursor].spriteIndex != i) return 0;
+            record = &snapshot->records[cursor++];
+            if ((linkStateAt(i) & identityMask) !=
+                (record->linkState & identityMask)) return 0;
         }
+        if (cursor != snapshot->count) return 0;
     }
 
     for (i = 0U; i < snapshot->count; ++i) {
