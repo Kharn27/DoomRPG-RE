@@ -9,6 +9,11 @@ static EspMapRuntimeView runtime;
 static EspMapLine projected[ESP_PERF_SPATIAL_LINE_CAPACITY];
 static int failAt=-1;
 static int invalidAt=-1;
+static int failOpenAt=-1;
+int EspMapLineState_getOpen(uint32_t i,uint8_t* out) {
+    if(i>=runtime.lineCount || (int)i==failOpenAt || out==NULL) return 0;
+    *out=(uint8_t)(i&1U); return 1;
+}
 const EspMapRuntimeView* EspMapRuntime_view(void) {return &runtime;}
 int EspMapRuntime_getLine(uint32_t i,EspMapLine* out) {
     if(i>=runtime.lineCount || (int)i==failAt || out==NULL) return 0;
@@ -53,8 +58,23 @@ int main(void) {
     /* Dynamic door/geometry projection must trigger a fresh build per goal. */
     projected[10].x1=127U;projected[10].y1=128U;projected[10].flags=1U;
     assert(EspPerfSpatialLine_begin(&idx,tileOf));
-    assert(EspPerfSpatialLine_bucket( (uint16_t)((2U*32U)+2U))==
-           EspPerfSpatialLine_bucket((uint16_t)(((128U>>6U)*32U)+(128U>>6U))));
+    /* Verify actual membership after crossing a bucket boundary. */
+    projected[10].x1=255U; projected[10].y1=256U;
+    assert(EspPerfSpatialLine_begin(&idx,tileOf));
+    for(tile=0;tile<1024U;tile++) {
+        uint16_t cur=EspPerfSpatialLine_first(&idx,(uint16_t)tile);
+        int found=0;
+        while(cur!=ESP_PERF_SPATIAL_LINE_NONE) {
+            if(cur==10U) ++found;
+            cur=idx.next[cur];
+        }
+        assert(found==(EspPerfSpatialLine_bucket((uint16_t)tile)==
+                       EspPerfSpatialLine_bucket(132U)));
+    }
+    failOpenAt=447;
+    assert(!EspPerfSpatialLine_begin(&idx,tileOf) && !idx.active);
+    assert(EspPerfSpatialLine_first(&idx,132U)==ESP_PERF_SPATIAL_LINE_NONE);
+    failOpenAt=-1;
     EspPerfSpatialLine_end(&idx);
     failAt=12;
     assert(!EspPerfSpatialLine_begin(&idx,tileOf) && !idx.active);

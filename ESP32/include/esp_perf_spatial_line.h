@@ -2,6 +2,7 @@
 #define ESP_PERF_SPATIAL_LINE_H
 #include <stdint.h>
 #include "esp_map_runtime.h"
+#include "esp_map_line_state.h"
 
 /* P1j: reversible one-plan index of public projected line geometry.
  * 4x4-tile buckets; ascending insertion yields DESCENDING line order.
@@ -11,7 +12,7 @@
 #define ESP_PERF_SPATIAL_LINE_BUCKETS 64U
 #define ESP_PERF_SPATIAL_LINE_NONE UINT16_MAX
 #ifndef DOOMRPG_PERF_LINE_FAST
-#define DOOMRPG_PERF_LINE_FAST 0
+#define DOOMRPG_PERF_LINE_FAST 1
 #endif
 typedef int (*EspPerfSpatialLineTileFn)(const EspMapLine*, uint16_t*);
 typedef struct EspPerfSpatialLineIndex_s {
@@ -42,7 +43,13 @@ static inline int EspPerfSpatialLine_begin(EspPerfSpatialLineIndex* idx,
     for(i=0U;i<runtime->lineCount;++i) {
         EspMapLine line;
         uint16_t tile;
-        uint8_t bucket;
+        uint8_t bucket, open;
+        /* Validate even off-bucket open-state reads before publishing fast scope.
+         * The synchronous planner cannot mutate door owners or render scope. */
+        if(!EspMapLineState_getOpen(i,&open)) {
+            EspPerfSpatialLine_end(idx);
+            return 0;
+        }
         /* Public getter: never circumvent projected native ownership. */
         if(!EspMapRuntime_getLine(i,&line) || !tileFn(&line,&tile) ||
            tile>=1024U) {
