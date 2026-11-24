@@ -59,6 +59,10 @@ def source_gate() -> None:
         assert current.count(b"#include <SDL.h>") == 1, name
         old = b"#include <SDL.h>\n" + current[len(prefix):]
         if name == "esp_native_first_frame.c":
+            # P24 only changes the scalar viewport preflight and row origins.
+            # Reconstruct the exact pre-P24 C source before P23's two inverses.
+            from res60_p24_history import restore_pre_res60_p24
+            old = restore_pre_res60_p24(old)
             # P23 intentionally adds ONE permanent two-layout header and
             # replaces ONLY the 160U constant with a build-gated capacity.
             # Undo exactly those two edits before asserting the original

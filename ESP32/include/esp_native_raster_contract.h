@@ -118,4 +118,43 @@ static inline int EspNativeRasterContract_worldRow(
     *pixelCount = current->worldWidth;
     return 1;
 }
+
+/* P24: prepare a world-only view of the ONE already-owned RGB565 framebuffer.
+ * This descriptor is scalar and caller-owned, never a second pixel buffer.
+ * It does not authorize the 192 gameplay route or the plane/sprite/HUD owners.
+ * A RES60 admission is possible only when the P23 192-column build is present.
+ * Every rejected request leaves the output descriptor untouched. */
+typedef struct EspNativeRasterWorldViewport_s {
+    EspNativeRasterContract raster;
+    size_t worldFirstPixel;
+} EspNativeRasterWorldViewport;
+
+static inline int EspNativeRasterContract_prepareWorld(
+    EspNativeRasterMode mode, size_t framebufferBytes, int pitchBytes,
+    int screenWidth, int screenHeight, unsigned int columnCapacity,
+    EspNativeRasterWorldViewport* out)
+{
+    EspNativeRasterContract geometry;
+    EspNativeRasterWorldViewport prepared;
+    size_t offset;
+    size_t count;
+    if (out == NULL ||
+        !EspNativeRasterContract_select(mode, &geometry) ||
+        !EspNativeRasterContract_validate(&geometry, framebufferBytes) ||
+        pitchBytes != (int)geometry.pitchPixels * (int)sizeof(uint16_t) ||
+        screenWidth != (int)geometry.worldWidth ||
+        screenHeight != (int)geometry.worldHeight ||
+        columnCapacity < geometry.worldWidth ||
+        columnCapacity > ESP_NATIVE_RASTER_COLUMN_CAPACITY ||
+        !EspNativeRasterContract_worldRow(&geometry, framebufferBytes,
+                                          0U, &offset, &count) ||
+        count != geometry.worldWidth) {
+        return 0;
+    }
+    prepared.raster = geometry;
+    prepared.worldFirstPixel = offset;
+    *out = prepared;
+    return 1;
+}
+
 #endif /* DOOMRPG_ESP_NATIVE_RASTER_CONTRACT_H */
