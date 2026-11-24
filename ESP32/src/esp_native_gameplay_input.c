@@ -1,6 +1,7 @@
 #include <string.h>
 
 #include "esp_native_gameplay_input.h"
+#include "esp_perf_game_p1.h"
 /* ARCH-RC6: strong transition reset on ESP32, without the old GNU ld wrap.
  * Tiny standalone input fixtures intentionally omit the transition owner.
  * Their weak declaration is host-only; the firmware cannot silently omit it. */
@@ -243,6 +244,7 @@ EspNativeGameplayInputStatus EspNativeGameplayInput_consumeBase(
     if (!inputState.pending) return ESP_NATIVE_GAMEPLAY_INPUT_EMPTY;
     *outIntent = inputState;
     inputState.pending = 0U;
+    EspPerfGameP1_inputConsumed(outIntent->sequence);
     if (Esp32NativeGameplayInputProbe_observeConsumed != NULL) {
         Esp32NativeGameplayInputProbe_observeConsumed(outIntent);
     }
