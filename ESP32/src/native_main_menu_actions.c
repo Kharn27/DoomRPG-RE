@@ -51,7 +51,8 @@
 /* Fifth guide page: an 80%-scale, centred illustration, NOT the live
  * top screen bar. Logical game hitboxes are 0..31 / 32..127 / 128..159.
  * Multiply by 4/5 to keep their 1:3:1 proportion in the miniature. */
-#define MAIN_HELP_HUD_PAGE_SCROLL (4 * MAIN_HELP_VISIBLE_LINES)
+#define MAIN_HELP_GAMEPLAY_PAGE_SCROLL (4 * MAIN_HELP_VISIBLE_LINES)
+#define MAIN_HELP_HUD_PAGE_SCROLL (5 * MAIN_HELP_VISIBLE_LINES)
 #define MAIN_HELP_HUD_BAR_X 16
 #define MAIN_HELP_HUD_BAR_Y 43
 #define MAIN_HELP_HUD_BAR_WIDTH 128
@@ -63,14 +64,17 @@
 #define MAIN_HELP_HUD_PASS_RIGHT 102
 #define MAIN_HELP_HUD_MAP_LEFT 103
 /* Breath constants and easing now live in esp_native_help_scene.h. */
-#define MAIN_HELP_SCENE_PAGE_SCROLL (5 * MAIN_HELP_VISIBLE_LINES)
-#define MAIN_HELP_ROW_FIRST_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)
-#define MAIN_HELP_ROW_LAST_SCROLL (8 * MAIN_HELP_VISIBLE_LINES)
-#define MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL (9 * MAIN_HELP_VISIBLE_LINES)
+#define MAIN_HELP_SCENE_PAGE_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)
+/* MAIN GAMEPLAY is page 5; TOP HUD page 6, ACTION GAMEPLAY page 7. */
+#define MAIN_HELP_GAMEPLAY_TOP_Y (ESP_NATIVE_HELP_GAMEPLAY_Y - MAIN_HELP_HUD_BAR_HEIGHT)
+#define MAIN_HELP_GAMEPLAY_BOTTOM_Y (ESP_NATIVE_HELP_GAMEPLAY_Y + ESP_NATIVE_HELP_GAMEPLAY_H)
+#define MAIN_HELP_ROW_FIRST_SCROLL (7 * MAIN_HELP_VISIBLE_LINES)
+#define MAIN_HELP_ROW_LAST_SCROLL (9 * MAIN_HELP_VISIBLE_LINES)
+#define MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL (10 * MAIN_HELP_VISIBLE_LINES)
 /* BOTTOM HUD has no redundant subtitle: preview and labels move up 12px.
  * The TOP HUD miniature retains its existing y43 position. */
 #define MAIN_HELP_BOTTOM_HUD_BAR_Y (MAIN_HELP_HUD_BAR_Y - 12)
-#define MAIN_HELP_WEAPON_PAGE_SCROLL (10 * MAIN_HELP_VISIBLE_LINES)
+#define MAIN_HELP_WEAPON_PAGE_SCROLL (11 * MAIN_HELP_VISIBLE_LINES)
 /* Keep the original 144x60 cached grid, enlarge only its presentation to
  * 144x76 down to y114 without growing the 17280-byte owner. */
 #define MAIN_HELP_WEAPON_MINI_X 8
@@ -312,7 +316,8 @@ static int helpIsAnimatedScenePage(int scroll) {
            helpIsRowHelpPage(scroll);
 }
 static int helpIsAnimatedHudPage(int scroll) {
-    return scroll == MAIN_HELP_HUD_PAGE_SCROLL ||
+    return scroll == MAIN_HELP_GAMEPLAY_PAGE_SCROLL ||
+           scroll == MAIN_HELP_HUD_PAGE_SCROLL ||
            scroll == MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL ||
            scroll == MAIN_HELP_WEAPON_PAGE_SCROLL;
 }
@@ -753,6 +758,35 @@ static void helpDrawWeaponButtonCue(uint16_t* fb) {
     helpHudBreathStep = step;
 }
 
+/* Complete illustrative gameplay frame in 128x80, x16..143/y30..109.
+ * Reuse the already-owned 128x16 native top/bottom miniatures and the
+ * immutable PAK-perspective painter. The only copy is row-wise inside the
+ * live framebuffer; no screenshot, second frame, player or action grid. */
+static int helpPaintMainGameplayOverview(uint16_t* fb) {
+    int y;
+    if (fb == NULL || !helpBottomHudReady ||
+        !EspNativeHelpScene_isReady()) return 0;
+    /* The original TOP HUD printer owns its MENU/PASS/MAP glyphs. Move its
+     * rows UP into the display miniature; the scene overwrites the old
+     * y43..58 drawing in this same framebuffer before presentation. */
+    if (!helpPaintTopHudIllustration(fb)) return 0;
+    for (y = 0; y < MAIN_HELP_HUD_BAR_HEIGHT; ++y) {
+        memcpy(&fb[(MAIN_HELP_GAMEPLAY_TOP_Y + y) *
+                   DOOMRPG_LOGICAL_WIDTH + MAIN_HELP_HUD_BAR_X],
+               &fb[(MAIN_HELP_HUD_BAR_Y + y) *
+                   DOOMRPG_LOGICAL_WIDTH + MAIN_HELP_HUD_BAR_X],
+               MAIN_HELP_HUD_BAR_WIDTH * sizeof(uint16_t));
+    }
+    if (!EspNativeHelpScene_paintGameplay(fb)) return 0;
+    for (y = 0; y < MAIN_HELP_HUD_BAR_HEIGHT; ++y) {
+        memcpy(&fb[(MAIN_HELP_GAMEPLAY_BOTTOM_Y + y) *
+                   DOOMRPG_LOGICAL_WIDTH + MAIN_HELP_HUD_BAR_X],
+               &helpBottomHudMini[y * MAIN_HELP_HUD_BAR_WIDTH],
+               MAIN_HELP_HUD_BAR_WIDTH * sizeof(uint16_t));
+    }
+    return 1;
+}
+
 static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
     DoomCanvas_t* canvas;
     EspNativeMenuState_t* menuSystem;
@@ -787,11 +821,13 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
     if (visible > menuSystem->maxItems) visible = menuSystem->maxItems;
     end = menuSystem->scrollIndex + visible;
 
+    if ((menuSystem->scrollIndex == MAIN_HELP_GAMEPLAY_PAGE_SCROLL ||
+         menuSystem->scrollIndex == MAIN_HELP_WEAPON_PAGE_SCROLL) &&
+        !helpBottomHudReady)
+        (void)helpPaintBottomHudIllustration(framebuffer);
     if (menuSystem->scrollIndex == MAIN_HELP_WEAPON_PAGE_SCROLL) {
         /* Also works when the user directly opens this help page without
          * visiting BOTTOM HUD BAR first. Every source is PAK-native. */
-        if (!helpBottomHudReady)
-            (void)helpPaintBottomHudIllustration(framebuffer);
         if (!helpWeaponMiniAttempted)
             (void)helpBuildWeaponGridMini(framebuffer);
     }
@@ -809,7 +845,17 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
                      MAIN_HELP_VISIBLE_LINES);
     EspNativeCanvas_drawText(canvas, page, 121, 0, 0);
 
-    if (menuSystem->scrollIndex == MAIN_HELP_HUD_PAGE_SCROLL) {
+    if (menuSystem->scrollIndex == MAIN_HELP_GAMEPLAY_PAGE_SCROLL) {
+        const char* title = DoomRPG_esp32MainMenuHelpLine(
+            MAIN_HELP_GAMEPLAY_PAGE_SCROLL);
+        if (title == NULL || visible != MAIN_HELP_VISIBLE_LINES) return 0;
+        helpDrawThemedPageTitle(doomRpg, canvas, title, 12, 14);
+        if (!EspNativeHelpScene_isReady() || !helpBottomHudReady) {
+            DoomRPG_setFontColor(doomRpg, 0xffffffffU);
+            EspNativeCanvas_drawText(canvas, "Preview unavailable", 12, 54, 0);
+        } else if (!helpPaintMainGameplayOverview(framebuffer)) return 0;
+    }
+    else if (menuSystem->scrollIndex == MAIN_HELP_HUD_PAGE_SCROLL) {
         /* This one page replaces three abstract rows with the genuine
          * gameplay bar, plus three labels below. No touch owners change. */
         const char* title = DoomRPG_esp32MainMenuHelpLine(
@@ -885,7 +931,7 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
     }
     else if (menuSystem->scrollIndex == MAIN_HELP_SCENE_PAGE_SCROLL &&
              EspNativeHelpScene_isReady()) {
-        /* MAIN GAMEPLAY: illustrative PAK scene with nine touch areas.
+        /* ACTION GAMEPLAY: illustrative PAK scene with nine touch areas.
          * The next three pages detail one control row each. */
         const char* title = DoomRPG_esp32MainMenuHelpLine(
             MAIN_HELP_SCENE_PAGE_SCROLL);
@@ -945,19 +991,20 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
             helpPaintCopyrightMark(framebuffer, y, tone);
         }
         else if (line[0] != '\0') {
-            /* HELP pages 2-4 and 12-16 use the first (light) theme tone,
-             * except page 4 body copy: neutral white independent of theme.
-             * Both page titles and HELP / CYD keep their themed colors. */
+            /* HELP pages 2-4 use the same neutral white body ink,
+             * independent of theme. Pages 13-17 retain the light theme tone.
+             * Section titles and HELP / CYD remain theme-colored. */
             const int scroll = menuSystem->scrollIndex;
             const uint16_t bodyTone =
                 ((scroll >= MAIN_HELP_VISIBLE_LINES &&
                   scroll <= 3 * MAIN_HELP_VISIBLE_LINES) ||
-                 (scroll >= 11 * MAIN_HELP_VISIBLE_LINES &&
-                  scroll <= 15 * MAIN_HELP_VISIBLE_LINES))
+                 (scroll >= 12 * MAIN_HELP_VISIBLE_LINES &&
+                  scroll <= 16 * MAIN_HELP_VISIBLE_LINES))
                     ? helpTitleTopTone() : helpBodyMiddleTone();
             DoomRPG_setFontColor(doomRpg,
                 ((menuSystem->scrollIndex == 0 && i == 5) ||
-                 scroll == 3 * MAIN_HELP_VISIBLE_LINES)
+                 (scroll >= MAIN_HELP_VISIBLE_LINES &&
+                  scroll <= 3 * MAIN_HELP_VISIBLE_LINES))
                     ? 0xffffffffU : helpColor888(bodyTone));
             EspNativeCanvas_drawText(canvas, line, 12, y, 0);
         }

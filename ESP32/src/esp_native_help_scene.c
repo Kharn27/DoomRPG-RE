@@ -444,6 +444,41 @@ static void helpPaintOriginalBackground(uint16_t* fb) {
         }
     }
 }
+
+/* The same sampled PAK 4bpp wall/perspective as ACTION GAMEPLAY, reduced
+ * nearest-neighbour into the 128x48 corridor between both mini HUD bars.
+ * No 3x3 action borders/glyphs, live world, screenshot or new allocation. */
+int EspNativeHelpScene_paintGameplay(uint16_t* fb) {
+    int x, y;
+    if (fb == NULL || !material.ready) return 0;
+    for (x = 0; x < ESP_NATIVE_HELP_GAMEPLAY_W; ++x) {
+        const int lx = x * PREVIEW_W / ESP_NATIVE_HELP_GAMEPLAY_W;
+        const int flank = lx < 54 ? lx :
+                          lx >= 90 ? (PREVIEW_W - 1 - lx) : 54;
+        const int wallTop = 19 * flank / 54;
+        const int wallBottom = (PREVIEW_H - 1) - 17 * flank / 54;
+        for (y = 0; y < ESP_NATIVE_HELP_GAMEPLAY_H; ++y) {
+            const int ly = y * PREVIEW_H / ESP_NATIVE_HELP_GAMEPLAY_H;
+            uint16_t ink;
+            if (ly < wallTop)
+                ink = (uint16_t)(0x0842U + ((uint16_t)ly << 5));
+            else if (ly > wallBottom)
+                ink = (uint16_t)(0x1042U +
+                                 ((uint16_t)(PREVIEW_H - 1 - ly) << 5));
+            else {
+                const int u = lx < 54 ? lx * 2 : lx >= 90
+                             ? (PREVIEW_W - 1 - lx) * 2 : (lx - 54) * 2;
+                const int v = (ly - wallTop) * 63 /
+                              (wallBottom - wallTop + 1);
+                ink = sampleWall(u, v);
+            }
+            fb[(ESP_NATIVE_HELP_GAMEPLAY_Y + y) * DOOMRPG_LOGICAL_WIDTH +
+               ESP_NATIVE_HELP_GAMEPLAY_X + x] = ink;
+        }
+    }
+    return 1;
+}
+
 int EspNativeHelpScene_paint(uint16_t* fb, uint8_t level) {
     static const int xZone[4] = {0, 48, 96, PREVIEW_W};
     static const int yZone[4] = {0, 22, 45, PREVIEW_H};

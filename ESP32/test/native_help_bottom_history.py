@@ -157,14 +157,75 @@ _PRE_PAGE4_COMMENT = "            /* HELP pages 2-4 and 12-16 use the first (lig
 _POST_PAGE4_COMMENT = "            /* HELP pages 2-4 and 12-16 use the first (light) theme tone,\n             * except page 4 body copy: neutral white independent of theme.\n             * Both page titles and HELP / CYD keep their themed colors. */"
 _PRE_PAGE4_COLOR = "                (menuSystem->scrollIndex == 0 && i == 5)\n                    ? 0xffffffffU : helpColor888(bodyTone));"
 _POST_PAGE4_COLOR = "                ((menuSystem->scrollIndex == 0 && i == 5) ||\n                 scroll == 3 * MAIN_HELP_VISIBLE_LINES)\n                    ? 0xffffffffU : helpColor888(bodyTone));"
+# HELP-234: newer neutral-white body on pages 2/3 as well as page 4.
+# Reverse it before the frozen PAGE4 and earlier SDL history rewinds.
+_POST_PAGE234_COMMENT = """            /* HELP pages 2-4 use the same neutral white body ink,
+             * independent of theme. Pages 12-16 retain the light theme tone.
+             * Section titles and HELP / CYD remain theme-colored. */"""
+_POST_PAGE234_COLOR = "                ((menuSystem->scrollIndex == 0 && i == 5) ||\n                 (scroll >= MAIN_HELP_VISIBLE_LINES &&\n                  scroll <= 3 * MAIN_HELP_VISIBLE_LINES))\n                    ? 0xffffffffU : helpColor888(bodyTone));"
+
+
+
+# HELP-17 replaces only the current 17-page catalogue/preview UI before
+# reconstructing historic SDL hashes. Exact previous source restored; do
+# not modify frozen golden blob SHAs or the actual production renderer.
+_PRE_HELP17_MODEL = "    \"TOP HUD BAR\",\n    \"3 VIRTUAL BUTTONS\",\n    \"LEFT: game menu\",\n    \"CENTER: pass a turn\",\n    \"RIGHT: show automap\",\n    \"\",\n    \"\",\n    \"MAIN GAMEPLAY\",\n    \"\",\n    \"\",\n    \"\",\n    \"\",\n    \"\",\n    \"\","
+_POST_HELP17_MODEL = "    \"MAIN GAMEPLAY\",\n    \"\",\n    \"\",\n    \"\",\n    \"\",\n    \"\",\n    \"\",\n    \"TOP HUD BAR\",\n    \"3 VIRTUAL BUTTONS\",\n    \"LEFT: game menu\",\n    \"CENTER: pass a turn\",\n    \"RIGHT: show automap\",\n    \"\",\n    \"\",\n    \"ACTION GAMEPLAY\",\n    \"\",\n    \"\",\n    \"\",\n    \"\",\n    \"\",\n    \"\","
+_HELP17_ACTION_DELTA = [
+    ("#define MAIN_HELP_GAMEPLAY_PAGE_SCROLL (4 * MAIN_HELP_VISIBLE_LINES)\n#define MAIN_HELP_HUD_PAGE_SCROLL (5 * MAIN_HELP_VISIBLE_LINES)", "#define MAIN_HELP_HUD_PAGE_SCROLL (4 * MAIN_HELP_VISIBLE_LINES)"),
+    ("#define MAIN_HELP_SCENE_PAGE_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)\n/* MAIN GAMEPLAY is page 5; TOP HUD page 6, ACTION GAMEPLAY page 7. */\n#define MAIN_HELP_GAMEPLAY_TOP_Y (ESP_NATIVE_HELP_GAMEPLAY_Y - MAIN_HELP_HUD_BAR_HEIGHT)\n#define MAIN_HELP_GAMEPLAY_BOTTOM_Y (ESP_NATIVE_HELP_GAMEPLAY_Y + ESP_NATIVE_HELP_GAMEPLAY_H)", "#define MAIN_HELP_SCENE_PAGE_SCROLL (5 * MAIN_HELP_VISIBLE_LINES)"),
+    ("#define MAIN_HELP_ROW_FIRST_SCROLL (7 * MAIN_HELP_VISIBLE_LINES)", "#define MAIN_HELP_ROW_FIRST_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)"),
+    ("#define MAIN_HELP_ROW_LAST_SCROLL (9 * MAIN_HELP_VISIBLE_LINES)", "#define MAIN_HELP_ROW_LAST_SCROLL (8 * MAIN_HELP_VISIBLE_LINES)"),
+    ("#define MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL (10 * MAIN_HELP_VISIBLE_LINES)", "#define MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL (9 * MAIN_HELP_VISIBLE_LINES)"),
+    ("#define MAIN_HELP_WEAPON_PAGE_SCROLL (11 * MAIN_HELP_VISIBLE_LINES)", "#define MAIN_HELP_WEAPON_PAGE_SCROLL (10 * MAIN_HELP_VISIBLE_LINES)"),
+    ("static int helpIsAnimatedHudPage(int scroll) {\n    return scroll == MAIN_HELP_GAMEPLAY_PAGE_SCROLL ||\n           scroll == MAIN_HELP_HUD_PAGE_SCROLL ||", "static int helpIsAnimatedHudPage(int scroll) {\n    return scroll == MAIN_HELP_HUD_PAGE_SCROLL ||"),
+    ("    if ((menuSystem->scrollIndex == MAIN_HELP_GAMEPLAY_PAGE_SCROLL ||\n         menuSystem->scrollIndex == MAIN_HELP_WEAPON_PAGE_SCROLL) &&\n        !helpBottomHudReady)\n        (void)helpPaintBottomHudIllustration(framebuffer);\n    if (menuSystem->scrollIndex == MAIN_HELP_WEAPON_PAGE_SCROLL) {\n        /* Also works when the user directly opens this help page without\n         * visiting BOTTOM HUD BAR first. Every source is PAK-native. */\n        if (!helpWeaponMiniAttempted)", "    if (menuSystem->scrollIndex == MAIN_HELP_WEAPON_PAGE_SCROLL) {\n        /* Also works when the user directly opens this help page without\n         * visiting BOTTOM HUD BAR first. Every source is PAK-native. */\n        if (!helpBottomHudReady)\n            (void)helpPaintBottomHudIllustration(framebuffer);\n        if (!helpWeaponMiniAttempted)"),
+    ("             * independent of theme. Pages 13-17 retain the light theme tone.", "             * independent of theme. Pages 12-16 retain the light theme tone."),
+    ("(scroll >= 12 * MAIN_HELP_VISIBLE_LINES &&\n                  scroll <= 16 * MAIN_HELP_VISIBLE_LINES)", "(scroll >= 11 * MAIN_HELP_VISIBLE_LINES &&\n                  scroll <= 15 * MAIN_HELP_VISIBLE_LINES)"),
+    ("/* ACTION GAMEPLAY: illustrative PAK scene with nine touch areas.", "/* MAIN GAMEPLAY: illustrative PAK scene with nine touch areas."),
+]
+
+
+def _restore_pre_help17_model(source: str) -> str:
+    assert source.count("#define MAIN_HELP_MAX_LINES 119") == 1
+    assert source.count(_POST_HELP17_MODEL) == 1
+    return source.replace("#define MAIN_HELP_MAX_LINES 119",
+                          "#define MAIN_HELP_MAX_LINES 112", 1).replace(
+                              _POST_HELP17_MODEL, _PRE_HELP17_MODEL, 1)
+
+
+def _restore_pre_help17_actions(source: str) -> str:
+    for current, previous in _HELP17_ACTION_DELTA:
+        assert source.count(current) == 1, "HELP17 historical delta drift"
+        source = source.replace(current, previous, 1)
+    start_tag = "/* Complete illustrative gameplay frame in 128x80,"
+    end_tag = "static int paintHelp("
+    assert source.count(start_tag) == 1 and source.count(end_tag) == 1
+    start = source.index(start_tag)
+    end = source.index(end_tag, start)
+    source = source[:start] + source[end:]
+    first_tag = "    if (menuSystem->scrollIndex == MAIN_HELP_GAMEPLAY_PAGE_SCROLL) {"
+    next_tag = "    else if (menuSystem->scrollIndex == MAIN_HELP_HUD_PAGE_SCROLL) {"
+    assert source.count(first_tag) == 1 and source.count(next_tag) == 1
+    first = source.index(first_tag, source.index("static int paintHelp("))
+    last = source.index(next_tag, first)
+    return (source[:first] +
+            "    if (menuSystem->scrollIndex == MAIN_HELP_HUD_PAGE_SCROLL) {" +
+            source[last + len(next_tag):])
 
 
 def restore_pre_help_page4_model(source: str) -> str:
+    source = _restore_pre_help17_model(source)
     assert source.count(_POST_PAGE4_MODEL) == 1, "HELP page4 text source drift"
     return source.replace(_POST_PAGE4_MODEL, _PRE_PAGE4_MODEL, 1)
 
 
 def restore_pre_help_page4_actions(source: str) -> str:
+    source = _restore_pre_help17_actions(source)
+    assert source.count(_POST_PAGE234_COMMENT) == 1, "HELP page2/3 comment drift"
+    assert source.count(_POST_PAGE234_COLOR) == 1, "HELP page2/3 white ink drift"
+    source = source.replace(_POST_PAGE234_COMMENT, _POST_PAGE4_COMMENT, 1)
+    source = source.replace(_POST_PAGE234_COLOR, _POST_PAGE4_COLOR, 1)
     assert source.count(_POST_PAGE4_COMMENT) == 1, "HELP page4 comment drift"
     assert source.count(_POST_PAGE4_COLOR) == 1, "HELP page4 white ink drift"
     return source.replace(_POST_PAGE4_COMMENT, _PRE_PAGE4_COMMENT, 1).replace(
