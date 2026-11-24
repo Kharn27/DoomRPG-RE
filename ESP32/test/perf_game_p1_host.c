@@ -42,6 +42,11 @@ int main(void) {
     EspPerfGameP1_sequence(2000020,2000030,9,9,1,0,24,1,0);
     assert(EspPerfGameP1_snapshot(1,&mass) && mass.aborted==1 && mass.turns==7);
     EspPerfGameP1_reset();
+    EspPerfGameP1_abort(); /* failure in the *first* body invocation */
+    EspPerfGameP1_sequence(2000000,2000010,0,1,0,0,24,0,0);
+    assert(EspPerfGameP1_snapshot(1,&mass));
+    assert(mass.aborted==1 && mass.turns==0);
+    EspPerfGameP1_reset();
     assert(EspPerfGameP1_snapshot(0,&pre) && pre.turns==0);
     puts("perf_game_p1_host: PASS bounded histograms, cohorts, CPU/gap, attribution, abort");
     return 0;
