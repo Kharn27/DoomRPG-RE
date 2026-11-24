@@ -2133,6 +2133,16 @@ int EspNativeResidentGameplay_exitAutomapForDamage(
                         reason != NULL ? reason : "AUTOMAP-DAMAGE");
 }
 
+static void EspNativeResidentGameplay_serviceBody(struct DoomRPG_s* doomRpgBase);
+
+/* Keep the public entrypoint before the real body for structural gate checks. */
+void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
+    EspNativeResidentGameplay_serviceBody(doomRpgBase);
+#if DOOMRPG_PERF_GAME_P1
+    EspPerfGameP1_inputDispatchDone((uint64_t)esp_timer_get_time());
+#endif
+}
+
 static void EspNativeResidentGameplay_serviceBody(struct DoomRPG_s* doomRpgBase) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     EspNativeGameplayInputState intent;
@@ -2671,12 +2681,3 @@ static void EspNativeResidentGameplay_serviceBody(struct DoomRPG_s* doomRpgBase)
     }
 }
 
-
-/* Input response proxy = accepted touch -> return of consuming service,
- * not proof of game-state commit or physical panel presentation. */
-void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
-    EspNativeResidentGameplay_serviceBody(doomRpgBase);
-#if DOOMRPG_PERF_GAME_P1
-    EspPerfGameP1_inputDispatchDone((uint64_t)esp_timer_get_time());
-#endif
-}
