@@ -91,3 +91,142 @@ def restore_pre_help_light_body_pages(source: str) -> str:
                     ? 0xffffffffU : helpColor888(helpBodyMiddleTone()));"""
     assert source.count(later) == 1, "HELP light body pages delta unexpectedly changed"
     return source.replace(later, earlier, 1)
+
+# HELP header/reading-window visual polish: undo ONLY these later pixels for
+# frozen SDL-F17/F29 whole-file hashes. Never update original golden SHAs.
+_PRE_FRAME_DECL = (
+    "    uint16_t accent = EspMainMenuSkin_uiAccent();\n"
+    "    uint16_t dimAccent = EspMainMenuSkin_uiAccentDim();\n"
+)
+_PRE_FRAME = """    /* Translucent dark reading window: edit the ONE shared RGB565 frame,
+     * no alpha texture/overlay allocation and no extra framebuffer. */
+    for (y = 13; y <= 98; ++y) {
+        for (x = 5; x <= 154; ++x) {
+            uint16_t* pixel = &framebuffer[y * DOOMRPG_LOGICAL_WIDTH + x];
+            *pixel = (uint16_t)((*pixel >> 1) & 0x7befU);
+        }
+        framebuffer[y * DOOMRPG_LOGICAL_WIDTH + 5] = dimAccent;
+        framebuffer[y * DOOMRPG_LOGICAL_WIDTH + 154] = dimAccent;
+    }
+    for (x = 5; x <= 154; ++x) {
+        framebuffer[12 * DOOMRPG_LOGICAL_WIDTH + x] = accent;
+        framebuffer[99 * DOOMRPG_LOGICAL_WIDTH + x] = dimAccent;
+    }
+"""
+_FRAMELESS = """    /* Keep the translucent dark reading window, without the redundant
+     * colored rectangular frame. Original c.bmp stars remain visible. */
+    for (y = 13; y <= 98; ++y) {
+        for (x = 5; x <= 154; ++x) {
+            uint16_t* pixel = &framebuffer[y * DOOMRPG_LOGICAL_WIDTH + x];
+            *pixel = (uint16_t)((*pixel >> 1) & 0x7befU);
+        }
+    }
+"""
+_HELP_HEADER = (
+    '    /* Page header + x/16 take the SECOND theme tone on every HELP page. */\n'
+    '    DoomRPG_setFontColor(doomRpg, helpColor888(helpBodyMiddleTone()));\n'
+    '    EspNativeCanvas_drawText(canvas, "HELP / CYD", 12, 0, 0);'
+)
+_PRE_HELP_HEADER = (
+    '    DoomRPG_setFontColor(doomRpg, helpColor888(helpTitleTopTone()));\n'
+    '    EspNativeCanvas_drawText(canvas, "HELP / CYD", 12, 0, 0);'
+)
+
+def restore_pre_help_frame_polish(source: str) -> str:
+    """Restore exact pre-polish header and frame for existing SDL Git SHAs."""
+    assert source.count(_HELP_HEADER) == 1, "HELP header color drift"
+    assert source.count(_FRAMELESS) == 1, "HELP frameless background drift"
+    assert source.count("    int x, y;\n") >= 1
+    source = source.replace(_HELP_HEADER, _PRE_HELP_HEADER, 1)
+    source = source.replace(_FRAMELESS, _PRE_FRAME, 1)
+    marker = "    int x, y;\n"
+    anchor = "static int helpDrawStarfield(DoomRPG_t* doomRpg) {"
+    start = source.index(anchor)
+    # Pre-polish declarations were BEFORE `int x, y`, not after it.
+    x_pos = source.index(marker, start)
+    assert source[x_pos:x_pos+len(_PRE_FRAME_DECL)] != _PRE_FRAME_DECL
+    return source[:x_pos] + _PRE_FRAME_DECL + source[x_pos:]
+
+
+# PAGE4 changes postdate frozen SDL-F17/F19/F29 source blobs. Reverse only
+# the newer UI body-color and ROM text ordering while reconstructing those
+# historical sources. Never change the original SHA fixtures.
+_PRE_PAGE4_MODEL = "    \"Moves take a turn.\",\n    \"Enemies take turns.\",\n    \"Plan each attack.\",\n    \"Actions use turns.\",\n    \"Think before moving.\","
+_POST_PAGE4_MODEL = "    \"Moves take a turn.\",\n    \"Enemies take turns.\",\n    \"Actions use turns.\",\n    \"Plan each attack.\",\n    \"Think before moving.\","
+_PRE_PAGE4_COMMENT = "            /* HELP pages 2-4 and 12-16 use the first (light) theme tone\n             * for body text. Section titles keep their 3-band gradient. */"
+_POST_PAGE4_COMMENT = "            /* HELP pages 2-4 and 12-16 use the first (light) theme tone,\n             * except page 4 body copy: neutral white independent of theme.\n             * Both page titles and HELP / CYD keep their themed colors. */"
+_PRE_PAGE4_COLOR = "                (menuSystem->scrollIndex == 0 && i == 5)\n                    ? 0xffffffffU : helpColor888(bodyTone));"
+_POST_PAGE4_COLOR = "                ((menuSystem->scrollIndex == 0 && i == 5) ||\n                 scroll == 3 * MAIN_HELP_VISIBLE_LINES)\n                    ? 0xffffffffU : helpColor888(bodyTone));"
+# HELP-234: newer neutral-white body on pages 2/3 as well as page 4.
+# Reverse it before the frozen PAGE4 and earlier SDL history rewinds.
+_POST_PAGE234_COMMENT = """            /* HELP pages 2-4 use the same neutral white body ink,
+             * independent of theme. Pages 12-16 retain the light theme tone.
+             * Section titles and HELP / CYD remain theme-colored. */"""
+_POST_PAGE234_COLOR = "                ((menuSystem->scrollIndex == 0 && i == 5) ||\n                 (scroll >= MAIN_HELP_VISIBLE_LINES &&\n                  scroll <= 3 * MAIN_HELP_VISIBLE_LINES))\n                    ? 0xffffffffU : helpColor888(bodyTone));"
+
+
+
+# HELP-17 replaces only the current 17-page catalogue/preview UI before
+# reconstructing historic SDL hashes. Exact previous source restored; do
+# not modify frozen golden blob SHAs or the actual production renderer.
+_PRE_HELP17_MODEL = "    \"TOP HUD BAR\",\n    \"3 VIRTUAL BUTTONS\",\n    \"LEFT: game menu\",\n    \"CENTER: pass a turn\",\n    \"RIGHT: show automap\",\n    \"\",\n    \"\",\n    \"MAIN GAMEPLAY\",\n    \"\",\n    \"\",\n    \"\",\n    \"\",\n    \"\",\n    \"\","
+_POST_HELP17_MODEL = "    \"MAIN GAMEPLAY\",\n    \"\",\n    \"\",\n    \"\",\n    \"\",\n    \"\",\n    \"\",\n    \"TOP HUD BAR\",\n    \"3 VIRTUAL BUTTONS\",\n    \"LEFT: game menu\",\n    \"CENTER: pass a turn\",\n    \"RIGHT: show automap\",\n    \"\",\n    \"\",\n    \"ACTION GAMEPLAY\",\n    \"\",\n    \"\",\n    \"\",\n    \"\",\n    \"\",\n    \"\","
+_HELP17_ACTION_DELTA = [
+    ("#define MAIN_HELP_GAMEPLAY_PAGE_SCROLL (4 * MAIN_HELP_VISIBLE_LINES)\n#define MAIN_HELP_HUD_PAGE_SCROLL (5 * MAIN_HELP_VISIBLE_LINES)", "#define MAIN_HELP_HUD_PAGE_SCROLL (4 * MAIN_HELP_VISIBLE_LINES)"),
+    ("#define MAIN_HELP_SCENE_PAGE_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)\n/* MAIN GAMEPLAY is page 5; TOP HUD page 6, ACTION GAMEPLAY page 7. */\n#define MAIN_HELP_GAMEPLAY_TOP_Y (ESP_NATIVE_HELP_GAMEPLAY_Y - MAIN_HELP_HUD_BAR_HEIGHT)\n#define MAIN_HELP_GAMEPLAY_BOTTOM_Y (ESP_NATIVE_HELP_GAMEPLAY_Y + ESP_NATIVE_HELP_GAMEPLAY_H)", "#define MAIN_HELP_SCENE_PAGE_SCROLL (5 * MAIN_HELP_VISIBLE_LINES)"),
+    ("#define MAIN_HELP_ROW_FIRST_SCROLL (7 * MAIN_HELP_VISIBLE_LINES)", "#define MAIN_HELP_ROW_FIRST_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)"),
+    ("#define MAIN_HELP_ROW_LAST_SCROLL (9 * MAIN_HELP_VISIBLE_LINES)", "#define MAIN_HELP_ROW_LAST_SCROLL (8 * MAIN_HELP_VISIBLE_LINES)"),
+    ("#define MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL (10 * MAIN_HELP_VISIBLE_LINES)", "#define MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL (9 * MAIN_HELP_VISIBLE_LINES)"),
+    ("#define MAIN_HELP_WEAPON_PAGE_SCROLL (11 * MAIN_HELP_VISIBLE_LINES)", "#define MAIN_HELP_WEAPON_PAGE_SCROLL (10 * MAIN_HELP_VISIBLE_LINES)"),
+    ("static int helpIsAnimatedHudPage(int scroll) {\n    return scroll == MAIN_HELP_GAMEPLAY_PAGE_SCROLL ||\n           scroll == MAIN_HELP_HUD_PAGE_SCROLL ||", "static int helpIsAnimatedHudPage(int scroll) {\n    return scroll == MAIN_HELP_HUD_PAGE_SCROLL ||"),
+    ("    if ((menuSystem->scrollIndex == MAIN_HELP_GAMEPLAY_PAGE_SCROLL ||\n         menuSystem->scrollIndex == MAIN_HELP_WEAPON_PAGE_SCROLL) &&\n        !helpBottomHudReady)\n        (void)helpPaintBottomHudIllustration(framebuffer);\n    if (menuSystem->scrollIndex == MAIN_HELP_WEAPON_PAGE_SCROLL) {\n        /* Also works when the user directly opens this help page without\n         * visiting BOTTOM HUD BAR first. Every source is PAK-native. */\n        if (!helpWeaponMiniAttempted)", "    if (menuSystem->scrollIndex == MAIN_HELP_WEAPON_PAGE_SCROLL) {\n        /* Also works when the user directly opens this help page without\n         * visiting BOTTOM HUD BAR first. Every source is PAK-native. */\n        if (!helpBottomHudReady)\n            (void)helpPaintBottomHudIllustration(framebuffer);\n        if (!helpWeaponMiniAttempted)"),
+    ("             * independent of theme. Pages 13-17 retain the light theme tone.", "             * independent of theme. Pages 12-16 retain the light theme tone."),
+    ("(scroll >= 12 * MAIN_HELP_VISIBLE_LINES &&\n                  scroll <= 16 * MAIN_HELP_VISIBLE_LINES)", "(scroll >= 11 * MAIN_HELP_VISIBLE_LINES &&\n                  scroll <= 15 * MAIN_HELP_VISIBLE_LINES)"),
+    ("/* ACTION GAMEPLAY: illustrative PAK scene with nine touch areas.", "/* MAIN GAMEPLAY: illustrative PAK scene with nine touch areas."),
+]
+
+
+def _restore_pre_help17_model(source: str) -> str:
+    assert source.count("#define MAIN_HELP_MAX_LINES 119") == 1
+    assert source.count(_POST_HELP17_MODEL) == 1
+    return source.replace("#define MAIN_HELP_MAX_LINES 119",
+                          "#define MAIN_HELP_MAX_LINES 112", 1).replace(
+                              _POST_HELP17_MODEL, _PRE_HELP17_MODEL, 1)
+
+
+def _restore_pre_help17_actions(source: str) -> str:
+    for current, previous in _HELP17_ACTION_DELTA:
+        assert source.count(current) == 1, "HELP17 historical delta drift"
+        source = source.replace(current, previous, 1)
+    start_tag = "/* Complete illustrative gameplay frame in 128x80,"
+    end_tag = "static int paintHelp("
+    assert source.count(start_tag) == 1 and source.count(end_tag) == 1
+    start = source.index(start_tag)
+    end = source.index(end_tag, start)
+    source = source[:start] + source[end:]
+    first_tag = "    if (menuSystem->scrollIndex == MAIN_HELP_GAMEPLAY_PAGE_SCROLL) {"
+    next_tag = "    else if (menuSystem->scrollIndex == MAIN_HELP_HUD_PAGE_SCROLL) {"
+    assert source.count(first_tag) == 1 and source.count(next_tag) == 1
+    first = source.index(first_tag, source.index("static int paintHelp("))
+    last = source.index(next_tag, first)
+    return (source[:first] +
+            "    if (menuSystem->scrollIndex == MAIN_HELP_HUD_PAGE_SCROLL) {" +
+            source[last + len(next_tag):])
+
+
+def restore_pre_help_page4_model(source: str) -> str:
+    source = _restore_pre_help17_model(source)
+    assert source.count(_POST_PAGE4_MODEL) == 1, "HELP page4 text source drift"
+    return source.replace(_POST_PAGE4_MODEL, _PRE_PAGE4_MODEL, 1)
+
+
+def restore_pre_help_page4_actions(source: str) -> str:
+    source = _restore_pre_help17_actions(source)
+    assert source.count(_POST_PAGE234_COMMENT) == 1, "HELP page2/3 comment drift"
+    assert source.count(_POST_PAGE234_COLOR) == 1, "HELP page2/3 white ink drift"
+    source = source.replace(_POST_PAGE234_COMMENT, _POST_PAGE4_COMMENT, 1)
+    source = source.replace(_POST_PAGE234_COLOR, _POST_PAGE4_COLOR, 1)
+    assert source.count(_POST_PAGE4_COMMENT) == 1, "HELP page4 comment drift"
+    assert source.count(_POST_PAGE4_COLOR) == 1, "HELP page4 white ink drift"
+    return source.replace(_POST_PAGE4_COMMENT, _PRE_PAGE4_COMMENT, 1).replace(
+        _POST_PAGE4_COLOR, _PRE_PAGE4_COLOR, 1)

@@ -149,6 +149,9 @@ jobs:
       - name: Test all monster audio families against legacy (14x12) and bounded FIFO (host C)
         run: python ESP32/test/audio_monster_sfx_all_host.py
 
+      - name: Test AUDIO-382 all-published SFX mixing and Sector 1 5069 (host C)
+        run: python ESP32/test/audio_sfx_382_published_window_host.py
+
       - name: Test generic monster sight and sparse idle audio lifecycle (host C)
         run: python ESP32/test/audio_monster_ambience_host.py
 
@@ -483,6 +486,16 @@ jobs:
             ESP32/test/font_sd_tint_host.c -o /tmp/doomrpg-font-sd-tint
           /tmp/doomrpg-font-sd-tint
 
+      - name: WALL-SD-P1 indexed wallpapers, transparency, bounded SD and PAK fallback
+        run: |
+          python ESP32/test/wallpaper_sd_assets_host.py
+          cc -O2 -std=c11 -Wall -Wextra -Werror -DDOOMRPG_ESP32=1 -IESP32/include \
+            ESP32/src/esp_native_indexed_bmp.c \
+            ESP32/src/esp_native_indexed_image.c \
+            ESP32/test/wallpaper_sd_override_host.c \
+            -o /tmp/doomrpg-wallpaper-sd
+          /tmp/doomrpg-wallpaper-sd
+
       - name: SDL-C1 native indexed image decoder, PAK lease and failure rollback
         run: |
           cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include \
@@ -741,6 +754,7 @@ jobs:
       - name: Test native CYD HELP animated starfield, guide and touch parity
         run: |
           python ESP32/test/native_main_help_host.py
+          python ESP32/test/native_help_fullscreen_nav_host.py
           python ESP32/test/native_bottom_help_breath_host.py
           python ESP32/test/native_help_weapon_preview_host.py
 
@@ -878,6 +892,12 @@ jobs:
         run: |
           cc -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include ESP32/test/test_sys_touch.c ESP32/src/esp_native_gameplay_save_touch.c -o /tmp/doomrpg-sys-touch-test
           /tmp/doomrpg-sys-touch-test
+
+      - name: Verify FONTSD ACTIVE de-duplicated on repeated indexed-BMP opens (host C11)
+        run: python ESP32/test/font_sd_active_log_host.py
+
+      - name: Test themed Doom a.bmp LOADING title and fallback (real C11 painter)
+        run: python ESP32/test/loading_doom_title_host.py
 
       - name: Test loading bar flash scales and cache boundary (host C11)
         run: |

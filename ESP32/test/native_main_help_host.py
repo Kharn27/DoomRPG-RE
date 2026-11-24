@@ -26,14 +26,14 @@ def macro(name):
 start = model.index("static const char* const helpLines[]")
 end = model.index("#define MAIN_HELP_LINE_COUNT", start)
 lines = re.findall(r'^\s*"([^"]*)",$', model[start:end], re.M)
-assert len(lines) == 112
+assert len(lines) == 119
 assert len(lines) % 7 == 0
-assert [lines[p * 7] for p in range(16)] == [
+assert [lines[p * 7] for p in range(17)] == [
     "DOOM RPG ON CYD", "DOOM RPG: THE GAME", "MENU CONTROLS",
-    "TURN-BASED GAME", "TOP HUD BAR", "MAIN GAMEPLAY",
-    "TOP ROW: MOVE", "MIDDLE ROW: ACTION", "BOTTOM ROW: WEAPONS",
-    "BOTTOM HUD BAR", "WEAPON SELECT", "ACTION / CENTER",
-    "WEAPONS & STATUS", "SYSTEM / SAVE LOAD",
+    "TURN-BASED GAME", "MAIN GAMEPLAY", "TOP HUD BAR",
+    "ACTION GAMEPLAY", "TOP ROW: MOVE", "MIDDLE ROW: ACTION",
+    "BOTTOM ROW: WEAPONS", "BOTTOM HUD BAR", "WEAPON SELECT",
+    "ACTION / CENTER", "WEAPONS & STATUS", "SYSTEM / SAVE LOAD",
     "TACTICAL TIPS", "ABOUT CYD PORT"]
 assert lines[1:6] == [
     "Kharn27", "Erick V. Garcia", "id + Fountainhead",
@@ -43,40 +43,44 @@ assert lines[7:14] == [
     "As a lone marine,", "explore dark halls,", "fight turn by turn,",
     "Find keys, secrets."]
 assert lines[6] == ""  # no unwanted DOWN: controls callout
-# The fifth page (before CYD TOUCH) illustrates the real 160x20
-# upper HUD in miniature; preserve weapon guidance on the next relevant page.
-hud_page = lines[4 * 7 : 5 * 7]
+# Page 4/16 swaps explanatory text rows 3 and 4 only.
+assert lines[3 * 7 : 4 * 7] == [
+    "TURN-BASED GAME", "", "Moves take a turn.", "Enemies take turns.",
+    "Actions use turns.", "Plan each attack.", "Think before moving."]
+# Page 5 shows gameplay, page 6 teaches the TOP HUD;
+# page 7 retains the nine animated ACTION GAMEPLAY zones.
+assert lines[4 * 7 : 5 * 7] == ["MAIN GAMEPLAY", "", "", "", "", "", ""]
+assert lines[6 * 7 : 7 * 7] == ["ACTION GAMEPLAY", "", "", "", "", "", ""]
+hud_page = lines[5 * 7 : 6 * 7]
 assert hud_page == [
     "TOP HUD BAR", "3 VIRTUAL BUTTONS", "LEFT: game menu",
     "CENTER: pass a turn", "RIGHT: show automap", "", ""]
-assert lines[12 * 7 + 6] == "Tap gun: weapons"
-scene_page = lines[5 * 7 : 6 * 7]
-assert scene_page == ["MAIN GAMEPLAY", "", "", "", "", "", ""]
-assert [lines[i * 7 : i * 7 + 5] for i in range(6, 9)] == [
+assert lines[13 * 7 + 6] == "Tap gun: weapons"
+assert [lines[i * 7 : i * 7 + 5] for i in range(7, 10)] == [
     ["TOP ROW: MOVE", "3 TOP TOUCH ZONES", "LEFT: STRAFE LEFT",
      "CENTER: MOVE FORWARD", "RIGHT: STRAFE RIGHT"],
     ["MIDDLE ROW: ACTION", "3 MIDDLE TOUCH ZONES", "LEFT: TURN LEFT",
      "CENTER: ATTACK / USE", "RIGHT: TURN RIGHT"],
     ["BOTTOM ROW: WEAPONS", "3 BOTTOM TOUCH ZONES", "LEFT: PREV WEAPON",
      "CENTER: MOVE BACK", "RIGHT: NEXT WEAPON"]]
-assert all(lines[i * 7 + 5:i * 7 + 7] == ["", ""] for i in range(6, 9))
-assert "#define MAIN_HELP_MAX_LINES 112" in model
-assert lines[9 * 7 : 10 * 7] == [
+assert all(lines[i * 7 + 5:i * 7 + 7] == ["", ""] for i in range(7, 10))
+assert "#define MAIN_HELP_MAX_LINES 119" in model
+assert lines[10 * 7 : 11 * 7] == [
     "BOTTOM HUD BAR", "LEFT: HP + ARMOR", "CENTER: FACE / AMMO",
     "RIGHT: DIRECTION / AMMO", "Touch for weapon menu", "", ""]
 assert "STATUS AT A GLANCE" not in lines
-assert lines[9 * 7 + 3].startswith("RIGHT: ")
-assert lines[9 * 7 + 4] == "Touch for weapon menu"
-assert lines[10 * 7 : 11 * 7] == [
+assert lines[10 * 7 + 3].startswith("RIGHT: ")
+assert lines[10 * 7 + 4] == "Touch for weapon menu"
+assert lines[11 * 7 : 12 * 7] == [
     "WEAPON SELECT", "Tap gun icon", "", "", "", "", ""]
 
 assert "DOWN: controls" not in lines
 # Two long strings on BOTTOM HUD are explicitly positioned across the 160px
 # width. Every other guide entry remains within 20x7px / x12.
 assert max(len(line) for i, line in enumerate(lines)
-           if i not in (9 * 7 + 3, 9 * 7 + 4)) <= 20
-assert len(lines[9 * 7 + 3]) == 23
-assert len(lines[9 * 7 + 4]) == 21
+           if i not in (10 * 7 + 3, 10 * 7 + 4)) <= 20
+assert len(lines[10 * 7 + 3]) == 23
+assert len(lines[10 * 7 + 4]) == 21
 assert 2 + (len("RIGHT:") - 1) * 7 + 9 == 46
 assert 46 + (len("DIRECTION / AMMO") - 1) * 7 + 9 == 160
 assert 8 + (len("Touch for weapon menu") - 1) * 7 + 9 == 157
@@ -128,47 +132,71 @@ assert "void DoomRPG_esp32MainMenuHelpService(void);" in header
 assert loop.index("Esp32IntroClock_service();") < loop.index("DoomRPG_esp32MainMenuHelpService();")
 assert "EspNativeIntroState_begin(" not in actions
 
-# Three plates map pixel-for-pixel to their touch rectangles, with
-# two inert spacer columns; no geometry beyond the single 160x120 frame.
+# Fullscreen navigation: no bottom plates, one X in the header and two
+# 80-pixel-wide touch halves. The X wins over previous on its own rectangle.
 assert macro("MAIN_HELP_VISIBLE_LINES") == 7
-assert macro("MAIN_HELP_LINE_HEIGHT") == 12
-assert macro("MAIN_HELP_FOOTER_TOP") == 100
-assert macro("MAIN_HELP_BUTTON_BOTTOM") == 119
-x_spans = [(macro("MAIN_HELP_BACK_LEFT"), macro("MAIN_HELP_BACK_RIGHT")),
-           (macro("MAIN_HELP_UP_LEFT"), macro("MAIN_HELP_UP_RIGHT")),
-           (macro("MAIN_HELP_DOWN_LEFT"), macro("MAIN_HELP_DOWN_RIGHT"))]
-assert x_spans == [(1, 51), (54, 104), (107, 158)]
-for y in range(120):
-    for x in range(160):
-        touches = [idx for idx, (left, right) in enumerate(x_spans)
-                   if left <= x <= right and 100 <= y <= 119]
-        assert len(touches) <= 1
-        if y < 100: assert not touches
-assert actions.count("!EspMainMenuSkin_paintPlate(") == 3
-assert actions.count("!EspMainMenuSkin_paintText(") == 3
-# All HELP copy now consumes the live theme's industrial font palette.
-# For every theme: top=CLASSIC warm ivory / INFERNO pale rose /
-# PHOSPHORE mint, middle=CLASSIC amber / INFERNO bronze / PHOSPHORE green.
+assert macro("MAIN_HELP_LINE_HEIGHT") == 14
+assert "MAIN_HELP_FOOTER_TOP" not in actions
+assert "MAIN_HELP_BACK_LEFT" not in actions
+assert "MAIN_HELP_BUTTON_BOTTOM" not in actions
+assert "EspMainMenuSkin_paintPlate(framebuffer" not in actions
+assert "EspMainMenuSkin_paintText(framebuffer" not in actions
+assert '#include "esp_native_help_nav.h"' in actions
+assert "EspNativeHelpNav_hit(logicalX, logicalY)" in actions
+assert "EspNativeHelpNav_scroll(" in actions
+assert "if (action == ESP_NATIVE_HELP_NAV_CLOSE)" in actions
+assert "DoomRPG_esp32MainMenuReturnToMain(" in actions
+assert "if (menuSystem->scrollIndex == beforeScroll) return;" in actions
+assert 'input=header-x+left-prev+right-next' in actions
+assert 'helpPaintPageChevron(framebuffer, 1, menuSystem->scrollIndex > 0)' in actions
+assert 'helpPaintPageChevron(framebuffer, 0, menuSystem->scrollIndex < maxScroll)' in actions
+assert '"HELP / CYD", 22, 0, 0' in actions
+assert '"X", 4, 1, 0' in actions
+assert 'DoomRPG_setFontColor(doomRpg, 0xffff2424U)' in actions
+assert 'helpPaintExitFrame' not in actions  # red X has no border
+assert 'static void helpPaintPageChevron(' in actions
+assert 'static void helpPaintPageChevron(' in actions
+
+# All HELP copy consumes the live industrial font theme.
+# The HEADER alone uses the exact center (second) stop; page titles and
+# body text keep their existing separate three-stop behavior.
 assert "static uint16_t helpTitleTopTone(void)" in actions
 assert "static uint16_t helpBodyMiddleTone(void)" in actions
 assert "return EspMainMenuSkin_letterTone(1, 9);" in actions
 assert "return EspMainMenuSkin_letterTone(4, 9);" in actions
-assert "helpColor888(helpTitleTopTone())" in actions
+assert "helpColor888(helpTitleTopTone())" not in actions.split('if (!helpDrawStarfield(doomRpg)) return 0;',1)[1].split('if (menuSystem->scrollIndex == MAIN_HELP_HUD_PAGE_SCROLL)',1)[0]
+help_header = actions.split('if (!helpDrawStarfield(doomRpg)) return 0;',1)[1].split('if (menuSystem->scrollIndex == MAIN_HELP_HUD_PAGE_SCROLL)',1)[0]
+assert 'helpColor888(helpBodyMiddleTone())' in help_header
+assert help_header.index('helpColor888(helpBodyMiddleTone())') < help_header.index('"HELP / CYD"')
+assert help_header.index('"HELP / CYD"') < help_header.index('EspNativeCanvas_drawText(canvas, page,')
+assert 'snprintf(page, sizeof(page), "%d/%d"' in help_header
+# No rectangular frame, no dark/translucent overlay. The real PAK
+# c.bmp starfield goes straight to the ONE shared framebuffer on each paint.
+starfield = actions.split('static int helpDrawStarfield(',1)[1].split('static uint32_t helpColor888(',1)[0]
+assert 'EspNativeTexture_blit(helpSpaceBG.imgBitmap, NULL, &primary)' in starfield
+assert 'EspNativeTexture_blit(helpSpaceBG.imgBitmap, NULL, &wrap)' in starfield
+assert 'helpSpaceShift = shift;' in starfield
+assert 'for (y = 13;' not in starfield
+assert '*pixel =' not in starfield
+assert 'framebuffer[' not in starfield
+assert 'dimAccent' not in starfield and 'uint16_t accent' not in starfield
+assert '0x7befU' not in starfield
 assert "helpColor888(bodyTone)" in actions
 assert "static uint16_t helpThirdTone(void)" in actions
 assert "EspMainMenuSkin_uiInk()" not in actions
 assert 'helpPaintCopyrightMark(framebuffer, y, tone);' in actions
 assert '"Kharn27"' in model
-# HELP pages 2-4 and 12-16 take the first/light tone for body copy.
-# The gradient headings, page-1 white tribute, and pages 5-11 stay intact.
-light_pages = (2, 3, 4, 12, 13, 14, 15, 16)
+# HELP pages 2-4 have neutral white explanatory ink, as requested.
+# Page titles and HELP/CYD stay themed; pages 12-16 retain the light
+# theme-tone body and the page-1 tribute remains unchanged.
+light_pages = (2, 3, 4, 13, 14, 15, 16, 17)
 assert [lines[(page - 1) * 7] for page in light_pages] == [
     "DOOM RPG: THE GAME", "MENU CONTROLS", "TURN-BASED GAME",
     "ACTION / CENTER", "WEAPONS & STATUS", "SYSTEM / SAVE LOAD",
     "TACTICAL TIPS", "ABOUT CYD PORT",
 ]
-assert [page for page in range(1, 17)
-        if (2 <= page <= 4) or (12 <= page <= 16)] == list(light_pages)
+assert [page for page in range(1, 18)
+        if (2 <= page <= 4) or (13 <= page <= 17)] == list(light_pages)
 assert all(lines[(page - 1) * 7] for page in light_pages)
 body_branch = actions.split("else if (line[0] != '\\0') {", 1)[1].split(
     "y += MAIN_HELP_LINE_HEIGHT;", 1
@@ -176,11 +204,16 @@ body_branch = actions.split("else if (line[0] != '\\0') {", 1)[1].split(
 assert "const int scroll = menuSystem->scrollIndex;" in body_branch
 assert "scroll >= MAIN_HELP_VISIBLE_LINES &&" in body_branch
 assert "scroll <= 3 * MAIN_HELP_VISIBLE_LINES" in body_branch
-assert "scroll >= 11 * MAIN_HELP_VISIBLE_LINES &&" in body_branch
-assert "scroll <= 15 * MAIN_HELP_VISIBLE_LINES" in body_branch
+assert "scroll >= 12 * MAIN_HELP_VISIBLE_LINES &&" in body_branch
+assert "scroll <= 16 * MAIN_HELP_VISIBLE_LINES" in body_branch
 assert "? helpTitleTopTone() : helpBodyMiddleTone();" in body_branch
 assert "helpColor888(bodyTone)" in body_branch
 assert "(menuSystem->scrollIndex == 0 && i == 5)" in body_branch
+assert "((menuSystem->scrollIndex == 0 && i == 5) ||\n                 (scroll >= MAIN_HELP_VISIBLE_LINES &&\n                  scroll <= 3 * MAIN_HELP_VISIBLE_LINES))" in body_branch
+# Exhaust the fixed 16-page help catalogue: only pages 2/3/4 get white
+# body by this branch (plus the preexisting page-1 tribute line).
+assert [page for page in range(1, 18) if 7 <= (page - 1) * 7 <= 21] == [2, 3, 4]
+assert "? 0xffffffffU : helpColor888(bodyTone)" in body_branch
 assert "helpDrawThemedPageTitle(doomRpg, canvas, line, 12, y);" in actions
 assert "EspMainMenuSkin_letterTone(band * 3 + 1, 9)" in actions
 assert "DoomRPG_setClipTrue(doomRpg, x, y + band * 4," in actions
@@ -192,8 +225,8 @@ assert "static const uint16_t rows[12]" in actions
 assert "for (x = 0; x < 12; ++x)" in actions
 assert "fb[(top + y) * DOOMRPG_LOGICAL_WIDTH + 12 + x] = ink;" in actions
 assert 'i % MAIN_HELP_VISIBLE_LINES == 0' in actions
-# The logo and section heading never occupy the footer/button pixels;
-# the original 9x12 explanation glyphs and 12px line height remain unchanged.
+# The 9x12 atlas is unchanged; 14px line pitch reclaims the retired footer.
+# Seven rows begin at y14 and end at y109, within the new y116 dark window.
 assert 26 + 12 - 1 == 37 and 12 + 12 - 1 < 27
 assert "y = 14;" in actions
 assert "y += MAIN_HELP_LINE_HEIGHT;" in actions
@@ -212,7 +245,7 @@ assert list(map(lambda h: int(h, 16), logo_rows)) == [
 assert "for (y = 0; y < 12; ++y)" in copyright
 assert "int top, uint16_t ink" in copyright
 
-assert "EspMainMenuSkin_uiAccent()" in actions
+assert "EspMainMenuSkin_uiAccent()" not in starfield
 # k.bmp is already a 20x20 tiled native PAK asset in gameplay.
 # In HELP it is copied as eight native nearest-neighbour 16x16 tiles,
 # creating a compact 128x16 illustration in the central reading window.
@@ -228,7 +261,7 @@ assert 'helpHudBarBG.width != MAIN_HELP_HUD_SOURCE_TILE' in actions
 assert 'DoomRPG_freeImage(helpSpaceOwner, &helpHudBarBG);' in actions
 assert 'helpPaintTopHudIllustration(framebuffer)' in actions
 assert 'if (menuSystem->scrollIndex == MAIN_HELP_HUD_PAGE_SCROLL)' in actions
-assert '#define MAIN_HELP_HUD_PAGE_SCROLL (4 * MAIN_HELP_VISIBLE_LINES)' in actions
+assert '#define MAIN_HELP_HUD_PAGE_SCROLL (5 * MAIN_HELP_VISIBLE_LINES)' in actions
 assert macro("MAIN_HELP_HUD_BAR_X") == 16
 assert macro("MAIN_HELP_HUD_BAR_Y") == 43
 assert macro("MAIN_HELP_HUD_BAR_WIDTH") == 128
@@ -291,9 +324,31 @@ assert 43 + 16 - 1 < 64 and 43 + 16 - 1 < 100
 assert 27 + 12 - 1 < 43
 assert 88 + 12 - 1 < 100
 
+scene_api = (INC / "esp_native_help_scene.h").read_text()
+# Page 5: three native miniatures, 128x80 at x16..143/y30..109:
+# real top k.bmp, immutable PAK wall/perspective with NO action contours,
+# and actual bottom k/m/l/o/a HUD from the already-allocated bounded cache.
+assert '#define MAIN_HELP_GAMEPLAY_PAGE_SCROLL (4 * MAIN_HELP_VISIBLE_LINES)' in actions
+assert 'static int helpPaintMainGameplayOverview(uint16_t* fb)' in actions
+assert 'EspNativeHelpScene_paintGameplay(fb)' in actions
+assert 'if (!helpPaintMainGameplayOverview(framebuffer)) return 0;' in actions
+assert 'MAIN_HELP_GAMEPLAY_TOP_Y + y' in actions
+assert 'MAIN_HELP_GAMEPLAY_BOTTOM_Y + y' in actions
+assert '#define ESP_NATIVE_HELP_GAMEPLAY_X 16' in scene_api
+assert '#define ESP_NATIVE_HELP_GAMEPLAY_Y 46' in scene_api
+assert '#define ESP_NATIVE_HELP_GAMEPLAY_W 128' in scene_api
+assert '#define ESP_NATIVE_HELP_GAMEPLAY_H 48' in scene_api
+assert 'int EspNativeHelpScene_paintGameplay(uint16_t* framebuffer)' in scene_api
+passive = actions.split('static int helpPaintMainGameplayOverview(uint16_t* fb)',1)[1].split('static int paintHelp(',1)[0]
+assert 'helpPaintTopHudIllustration(fb)' in passive
+assert 'helpBottomHudMini[y * MAIN_HELP_HUD_BAR_WIDTH]' in passive
+assert 'helpPaintTouchCell(' not in passive
+assert 'helpPaintTouchDividers(' not in passive
+assert 30 + 16 == 46 and 46 + 48 == 94 and 94 + 16 == 110
+assert 16 + 128 == 144 and 110 < 120
+
 # One smoothstep breath source, 32 x 80ms = 2.56s.
 # Keep backing intact; both 1-pixel colored borders and colored glyphs breathe.
-scene_api = (INC / "esp_native_help_scene.h").read_text()
 scene = (SRC / "esp_native_help_scene.c").read_text()
 hud_c = (SRC / "esp_native_gameplay_hud.c").read_text()
 frame_c = (SRC / "esp_native_gameplay_frame.c").read_text()
@@ -328,14 +383,14 @@ assert 'EspNativeGameplayHud_routeInitial(' not in actions
 assert 'DoomRPG_esp32MainMenuReturnToMain(' in actions
 
 # Real HUD miniature is produced by gameplay's own 5-asset painter.
-# Source bottom y100..119 is only scratch, overwritten by HELP footer plates.
+# The real HUD source y100..119 is a temporary scratch before starfield repaint.
 assert 'static uint16_t helpBottomHudMini[MAIN_HELP_HUD_BAR_WIDTH *' in actions
 assert 'helpBottomHudReady = 0U;' in actions
 assert 'EspNativeGameplayHud_paintHelpBottomBand(fb)' in actions
 assert 'static int helpPaintBottomHudIllustration(' in actions
-assert '#define MAIN_HELP_BOTTOM_HUD_BAR_Y (MAIN_HELP_HUD_BAR_Y - MAIN_HELP_LINE_HEIGHT)' in actions
+assert '#define MAIN_HELP_BOTTOM_HUD_BAR_Y (MAIN_HELP_HUD_BAR_Y - 12)' in actions
 assert macro("MAIN_HELP_HUD_BAR_Y") == 43
-assert macro("MAIN_HELP_LINE_HEIGHT") == 12
+assert macro("MAIN_HELP_LINE_HEIGHT") == 14
 assert 43 - 12 == 31
 bottom_section = actions.split(
     'static int helpPaintBottomHudIllustration(uint16_t* fb) {', 1
@@ -355,7 +410,7 @@ assert 31 + 16 - 1 == 46 < 52
 assert 52 + 12 == 64 and 64 + 12 == 76
 assert 76 + 12 == 88 and 88 + 12 == 100
 assert 'helpPaintBottomHudIllustration(framebuffer)' in actions
-assert 'MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL (9 * MAIN_HELP_VISIBLE_LINES)' in actions
+assert 'MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL (10 * MAIN_HELP_VISIBLE_LINES)' in actions
 assert 'helpBottomHudMini[y * MAIN_HELP_HUD_BAR_WIDTH + x]' in actions
 assert 'static uint16_t helpTintBottomHudWeaponBlue(' in actions
 assert 'helpTintBottomHudWeaponBlue(*pixel, power)' in actions
@@ -390,9 +445,9 @@ assert 'static const int tones[3] = {1, 4, 7};' in actions
 pack = (SRC / "esp_asset_pack.cpp").read_text()
 pack_api = (INC / "esp_asset_pack.h").read_text()
 controls = (SRC / "esp_native_gameplay_controls.c").read_text()
-assert '#define MAIN_HELP_SCENE_PAGE_SCROLL (5 * MAIN_HELP_VISIBLE_LINES)' in actions
-assert '#define MAIN_HELP_ROW_FIRST_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)' in actions
-assert '#define MAIN_HELP_ROW_LAST_SCROLL (8 * MAIN_HELP_VISIBLE_LINES)' in actions
+assert '#define MAIN_HELP_SCENE_PAGE_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)' in actions
+assert '#define MAIN_HELP_ROW_FIRST_SCROLL (7 * MAIN_HELP_VISIBLE_LINES)' in actions
+assert '#define MAIN_HELP_ROW_LAST_SCROLL (9 * MAIN_HELP_VISIBLE_LINES)' in actions
 assert 'helpIsRowHelpPage(menuSystem->scrollIndex)' in actions
 assert 'EspNativeHelpScene_paintRow(' in actions
 assert '63 + (i - 2) * MAIN_HELP_LINE_HEIGHT' in actions
@@ -461,14 +516,17 @@ for color in ('NEON_GREEN_CORE  0x07e0U',
     assert color in controls
 
 # Weapon selector: exact existing PAK bitshapes/mappings 4x3 painter,
-# local demonstration player only, increased to the maximum space under
-# the subtitle and above the unchanged menu footer, bounded BSS 144x60.
+# local demonstration player only, same 144x60 BSS stretched to 144x76
+# inside the newly usable footer space.
 grid_c = (SRC / 'esp_native_gameplay_hub_weapon_grid.c').read_text()
-assert '#define MAIN_HELP_WEAPON_PAGE_SCROLL (10 * MAIN_HELP_VISIBLE_LINES)' in actions
+assert '#define MAIN_HELP_WEAPON_PAGE_SCROLL (11 * MAIN_HELP_VISIBLE_LINES)' in actions
 assert '#define MAIN_HELP_WEAPON_MINI_X 8' in actions
 assert '#define MAIN_HELP_WEAPON_MINI_Y 39' in actions
 assert '#define MAIN_HELP_WEAPON_MINI_W 144' in actions
 assert '#define MAIN_HELP_WEAPON_MINI_H 60' in actions
+assert '#define MAIN_HELP_WEAPON_DRAW_H 76' in actions
+assert 'const int sourceY = y * MAIN_HELP_WEAPON_MINI_H /' in actions
+assert 'for (y = 0; y < MAIN_HELP_WEAPON_DRAW_H; ++y)' in actions
 assert 'static uint16_t helpWeaponMini[MAIN_HELP_WEAPON_MINI_W *' in actions
 assert 'helpBuildWeaponGridMini(framebuffer)' in actions
 assert 'helpDrawWeaponGridMini(framebuffer);' in actions
@@ -504,10 +562,10 @@ assert 'const int sx = 2 + x * 155 / (MAIN_HELP_WEAPON_MINI_W - 1);' in actions
 assert 'selectedWeapon >= ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COUNT' in grid_c
 assert 'EspAssetPack_findEntry("stexels.bin", &stexels)' in grid_c
 assert 'GRID_CELL_WIDTH 39' in grid_c and 'GRID_CELL_HEIGHT 28' in grid_c
-# Exact available space: caption at y27..38, grid at y39..98,
-# footer begins y100. Source pixels x2..157/y35..118 are ALL covered.
+# Caption at y27..38, cached mini 144x60, drawn scaled at y39..114.
+# The 17,280-byte source cache and native pixel backing remain unchanged.
 assert 8 + 144 - 1 == 151
-assert 39 + 60 - 1 == 98 < 100
+assert 39 + 76 - 1 == 114 < 117
 assert 27 + 12 - 1 == 38 < 39
 assert 2 + (144 - 1) * 155 // (144 - 1) == 157
 assert 35 + (60 - 1) * 83 // (60 - 1) == 118
@@ -611,10 +669,10 @@ assert 'if (shift == helpSpaceShift &&' in actions
 assert 'helpExpectedFrameFNV = finalFNV;' in actions
 
 
-assert "EspMainMenuSkin_uiAccentDim()" in actions
-assert "menuSystem->scrollIndex -= MAIN_HELP_VISIBLE_LINES;" in actions
-assert "menuSystem->scrollIndex += MAIN_HELP_VISIBLE_LINES;" in actions
-assert "else return; /* gaps between plates" in actions
+assert "EspMainMenuSkin_uiAccentDim()" not in starfield
+assert "EspNativeHelpNav_scroll(" in actions
+assert 'PAGE-%s scroll=%d->%d half=%s' in actions
+assert 'PAGE-UP scroll' not in actions and 'PAGE-DOWN scroll' not in actions
 assert "helpExpectedFrameFNV = finalFNV;" in actions
 assert "before != helpExpectedFrameFNV" in actions
 assert "helpStop();" in actions
@@ -629,6 +687,6 @@ for scroll in range(len(lines)):
     page = (clamped + 6) // 7 + 1
     assert 1 <= page <= (len(lines) + 6) // 7
 
-print("PASS HELP: 16 pages; original live-PAK wall/door illustration restored,")
+print("PASS HELP: 17 pages; original live-PAK wall/door illustration restored,")
 print("           bottom HUD button scaled to real hitbox, icon inline title,")
-print("           all 12 PAK weapon icons enlarged to 144x60, no footer caption")
+print("           12 PAK weapon icons cached 144x60, drawn 144x76; 2 half-screen touch zones")

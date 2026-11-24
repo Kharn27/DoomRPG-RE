@@ -25,7 +25,12 @@ assert "(char*)names[item]" not in layout
 # Two additional explicit text draws on BOTTOM HUD (RIGHT value and the
 # weapon-menu touch instruction) replace one former subtitle; Canvas ABI stays
 # unchanged and the native glyph-loop hash is checked below.
-assert menu.count("EspNativeCanvas_drawText(") == 15
+# HELP-NAV-P1 adds the native Doom a.bmp "X" in the header.
+# HELP-17 adds exactly one "Preview unavailable" fail-closed caption for
+# the passive gameplay page, with the SAME native text API. No glyph-loop,
+# ABI, font owner or atlas changes are involved.
+assert menu.count("EspNativeCanvas_drawText(") == 17
+assert 'EspNativeCanvas_drawText(canvas, "X", 4, 1, 0);' in menu
 assert 'EspNativeCanvas_drawText(canvas, right + 7, 46, 76, 0);' in menu
 assert 'EspNativeCanvas_drawText(canvas, touch, 8, 88, 0);' in menu
 # All child cards now use the same clipped industrial glyph painter.

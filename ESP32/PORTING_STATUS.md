@@ -1,3 +1,9 @@
+## WALL-SD-P1 — Ciel SD cohérent, planète PAK, PASS CYD (22 novembre 2026)
+
+[PR #434](https://github.com/Kharn27/DoomRPG-RE/pull/434) / [rapport matériel](MILESTONE_WALLPAPER_SD_P1_PENDING_CYD.md). Le ciel `c.bmp` BMP4 est lu depuis SD au premier écran de LOADING et à toutes ses étapes, y compris avec la police `a.bmp` thématisée. Le `e.bmp` du jeu reste le BMP4 du PAK, **sans modifier le `e.bmp` SD corrigé** (`0768ffd1d1bb45a3206c347c8022f36689591f3c`). Le log CYD `platformio-device-monitor-261122-185034.log` (SHA256 `b758888db044859d4e03d47fee55d392927dc710c450f89519a3c188a39e5df9`) valide les 8 frames source SD et le chargement Entrance. M_IN_CIT et M_STALKS `PLAY`/`PRESTART`, 0 underrun ; `HEADROOM_OK`, `shapeData/mediaTexels=NULL`. Note séparée : musique du menu en navigation Aide `underruns=13633`, à suivre indépendamment. Code HEAD validé `fef1c4c525c67d9709f41f676bd9950b0fd38457`, double CI vert ; commits post-test docs-only.
+
+---
+
 > **RES60-P18 — CANDIDAT CPU avec snapshot heap P17, CI/CYD PENDING (22 novembre 2026).** [PR #364 DRAFT](https://github.com/Kharn27/DoomRPG-RE/pull/364), [rapport](MILESTONE_RES60_P18_LOCAL_SNAPSHOT_PENDING_CYD.md). **P17 CYD PASS** sur 37 vues / 34 rotations / 3 START+MENU, FNV N/E/S/W exacts, `heap8=114564`, `minHeap8=101632`, `largest8=86004` (**+28672B** vs P16, mais heap libre total −16B). P17 `raysUs` ~6–7% plus lent que P16 (N 64.026ms contre 59.963ms). P18 teste un simple alias frame-local du pointeur P17 heap 6144B dans le raycast, avec original P17 compilable à P18=0, **sans allocation/second buffer/BSS supplémentaire**. Synchronisation main `fb8a031ad5eb3d04efc65dff0da7febc2f21dd0c` par merge non-force `7e873e0094cda5d20c70a84dd6e4d1cc6278e1f8`. Double CI + vrai Serial CYD nécessaires avant verdict CPU/RAM ; pas de merge main.
 
 ---

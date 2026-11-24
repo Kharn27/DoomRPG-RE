@@ -1,0 +1,140 @@
+# WALL-SD-P1 — audio validé au deuxième test, correction visuelle PENDING CYD
+
+**Branche :** `agent/esp32-wallpaper-sd-overrides`, [PR #434](https://github.com/Kharn27/DoomRPG-RE/pull/434) (DRAFT).
+**Base main vérifiée :** `a40d96eceb94844551a3a3fcd8036d0497d79d93`.
+**Source matérielle :** `platformio-device-monitor-261122-175956.log`,
+544 lignes, SHA256 `b9d1ba5ca3fa98b0a8d96dc702b7fb993d700e7bcc9ee3c2d54cb3d36f912cac`.
+Le candidat testé était la première version `c8/e8`, HEAD
+`56979e6d9b061ecb834012bc521f811e26a08ff8` **par contexte**
+(le Serial ne transporte pas de SHA firmware).
+
+## Premier essai : échec matériel, cause vérifiée
+
+- `[WALLSD] ACTIVE` pour les deux fichiers BMP8.
+- Menu `M_DM2TTL.wav` : `PLAY` et lecture DAC confirmée.
+- Intro `M_IN_CIT.wav` : `WAV_OK` suivi de `HEAP-POST-REJECT
+  before=66540 after=45764 minAfter=47104` puis `FAIL-HEAP`.
+- Entrée map1 `M_STALKS.wav` : `WAV_OK`, puis
+  `HEAP-POST-REJECT before=65596 after=44820 minAfter=47104`,
+  `FAIL-HEAP`. Ce ne sont pas des WAV absents ou mal encodés.
+- Image `e.bmp` : fond rose non uniforme d'après le testeur ;
+  audit exact de la palette BMP : 7 527 pixels `#FF00FF`, mais
+  3 077 pixels `(255,4,255)` et d'autres nuances proches
+  non reconnues par la clé exacte du renderer.
+
+## Correctif candidat (non encore matériellement validé)
+
+1. `c.bmp` passe de BMP8 25 654 B à **BMP4 12 406 B** avec
+   palette quantifiée RGB565 16 entrées. Coût RAM de c désormais
+   identique au c BMP4 du PAK (hors structures), soit **13 248 B
+   récupérés** par rapport au précédent test.
+2. `e.bmp` conserve le BMP8, mais **12 022 pixels** sont maintenant
+   uniformément indexés à 0 / `#FF00FF`, y compris les 4 495 pixels
+   roses parasites détectés par classification couleur.
+   Il conserve 4 362 pixels opaques ; le masque normal du moteur
+   n'est pas modifié.
+3. Le cache de ranges PAK *en gameplay* passe de 19 à 15 KiB et
+   de 288 à 256 entrées, soit **4 480 B de capacité/metadata**
+   retranchés de l'owner. Lectures flash bornées en cas de miss,
+   sans changement de format ni du framebuffer.
+4. Les gardes audio restent exactement à **61 440 B avant ring** et
+   **47 104 B / largest16 384 B après ring**. Aucun faux
+   `PLAY` ni baisse du seuil de sécurité.
+5. Projection illustrative sur les mesures de ce premier log,
+   en supposant le reste invariant : intro `45764+13248=59012`
+   B post-ring, gameplay `44820+4480=49300` B.
+   **Ce n'est pas une mesure du correctif ni une garantie de PASS**.
+
+Les override SD restent individuels, les PAK BMP4 inchangés comme
+replis, `shapeData=NULL`, `mediaTexels=NULL`; pas de PSRAM, ZIP
+runtime, buffer image pleine taille ou second reader.
+
+## Retest impératif du firmware normal esp32-cyd
+
+1. Recopier les **deux fichiers corrigés** `c.bmp` et `e.bmp`
+   sous `/doomrpg/img/` de la microSD et recompiler/reflasher le
+   HEAD corrigé (pour obtenir le nouveau cache L1).
+2. Contrôler `[WALLSD] ACTIVE c.bmp indexed=4`,
+   `e.bmp indexed=8`, les planètes, la disparition des confettis roses.
+3. Contrôler `[ENTRANCEMUSIC] PRIMING` puis `PLAY` pour
+   `M_IN_CIT.wav` et `M_STALKS.wav`, puis
+   `[INTROMUSIC] PRESTART ready=1`,
+   `[LOADAUDIO-L1] PRESTART ... ready=1`. Aucun
+   `HEAP-POST-REJECT`, aucune coupure, pas de WDT/panic.
+4. Relever `heap8`, `largest8`, `[RAMBUDGET]`, cache hit/miss
+   et fluidité tactile en gameplay. Tester ensuite LOAD si possible.
+5. Conserver la PR DRAFT jusqu'au nouveau log matériel :
+   un CI vert ne vaut pas un PASS CYD.
+
+**Statut : première version FAIL matériel ; correctif à retester.**
+
+## Deuxième vrai test — AUDIO PASS, fond loading MIXTE
+
+`platformio-device-monitor-261122-182021.log`, 537 lignes,
+SHA256 `080dbe1e2765bd43a93bda64b19bc6f3f35e5ad7c3168cc635e690fb33c4ad9a`.
+Le firmware est identifié par le contexte du test, sans SHA série :
+- menu M_DM2TTL.wav PLAY / FINAL underruns=0 recoveries=0 ;
+- intro M_IN_CIT.wav PRIMING heap8=59032 largest8=27636 /
+  PLAY / PRESTART ready=1 / FINAL underruns=0 ;
+- Entrance M_STALKS.wav PRIMING heap8=49300 largest8=34804 /
+  PLAY / PRESTART ready=1 failClosed=0 ;
+- RAMBUDGET HEADROOM_OK margin8=12732B, cache 15360B / 256 entrées,
+  shapeData=mediaTexels=NULL, aucun panic observé sur la capture.
+- MAIN UAC deux mises à jour de sélection 17 et 18 ms,
+  sdMs=0, sans underrun : manque de réactivité ressenti mais non
+  expliqué par ces deux temps de dessin. Contrat de double-tap inchangé.
+- Le chargeur affichait les étoiles PAK dans BEGIN/BSP/RUNTIME/RESTORE,
+  puis étoiles SD dès FLASH-READY : bascule visible signalée par le testeur.
+
+## Nouveau candidat visuel (non reflashé)
+
+La version initiale `e.bmp` SD est rétablie bit-à-bit (blob Git
+`16fe8cd8ddff2b18e040d69134bfb355fe2bb32b`) pour comparaison
+visuelle. Les nuances rose proche-magenta pourront réapparaître.
+Une entrée C-only SD standalone permet au premier écran de loading de
+lire la source microSD **avant** l'ouverture du PAK ; libération du
+handle après blit ligne par ligne, puis éventuel repli PAK. Source du
+premier écran verrouillée aux checkpoints ; callback PAK incompatible
+reporté plutôt que d'afficher un autre ciel.
+Fusion logique sur `main=c1a8c2820e5f7a75d8097e873905ec8e11fb53f7`
+préservant le LOADING a.bmp thématisé de #433 et son cache 420 B.
+Pas d'allocation de nouveau framebuffer ni modification audio.
+**Retest nécessaire du nouvel écran et des animations, PR reste DRAFT.**
+
+## Rectification de la demande : e.bmp du PAK, fichier SD corrigé intact
+
+La restauration du `e.bmp` SD d'origine dans le candidat intermédiaire
+`06237aa79c826c30a17bce12c82a1839e99b122a` était une **erreur
+d'interprétation**, corrigée **avant tout test physique de ce candidat**.
+
+- L'asset `sdroot/doomrpg/img/e.bmp` reprend exactement le BMP8 corrigé
+  (`0768ffd1d1bb45a3206c347c8022f36689591f3c`, 17 462 B,
+  12 022 pixels clé), sans perte de la correction des nuances roses.
+- Pour le comparatif visuel demandé, le runtime désactive expressément
+  **l'override e.bmp SD**, qui charge donc le BMP4 du **PAK natif**.
+  Aucune opération sur la microSD nécessaire pour e.bmp.
+- Le ciel `c.bmp` reste SD/BMP4 actif, et le premier cadre de LOADING
+  ainsi que son parcours restent sur la même source. Le titre LOADING
+  `a.bmp` thématisé fusionné de `main` est préservé.
+- Le test host garantit simultanément `c.bmp` SD,
+  `e.bmp` PAK malgré la présence du `e.bmp` SD, et le fichier E8
+  corrigé exact conservé dans le dépôt. Aucun seuil audio modifié.
+
+**Ce candidat corrigé reste PENDING TEST CYD.** Les résultats audio PASS
+du deuxième test concernent la version précédente `e1007bd...`, pas
+ce mélange C4 SD / E4 PAK. Aucun merge automatique.
+
+
+## Troisième test réel — C4 SD stable dès BEGIN, E4 PAK, PASS CYD / MERGE-READY
+
+**Log :** `platformio-device-monitor-261122-185034.log`, 1 578 lignes, SHA256 `b758888db044859d4e03d47fee55d392927dc710c450f89519a3c188a39e5df9`.
+Candidat de référence par contexte GitHub : `fef1c4c525c67d9709f41f676bd9950b0fd38457` (le log ne contient pas le SHA binaire).
+- `e.bmp` : source SD volontairement désactivée ; `[MAINSTART] INTRO-ASSET e.bmp ... backing=pak` et `[NATIVEIMAGE] DECODE 128x128 4-bpp ...` ; **aucun** `[WALLSD] ACTIVE name=e.bmp`. Le fichier SD corrigé reste exactement au blob `0768ffd1d1bb45a3206c347c8022f36689591f3c` (12 022 pixels clé magenta).
+- `c.bmp` : `[WALLSD] ACTIVE name=c.bmp source=SD indexed=4 bytes=12406` puis `[TRANSITIONLOAD] BEGIN ... backgroundSource=SD font=a.bmp-themed theme=2`. Les frames n=2..8 restent toutes `backgroundSource=SD`, `overall=7..100` : pas de bascule vers le ciel PAK.
+- LOADING font native : `[LOADFONT] READY name=a.bmp backing=SD glyphs=7 inkBytes=420 theme=2`.
+- Audio intro `M_IN_CIT.wav` : `PLAY`, `PRESTART ready=1`, `FINAL underruns=0 recoveries=0` ; Entrance `M_STALKS.wav` : `PLAY`, `PRESTART ready=1 beforeWorldPresent=1`, et `STREAM` jusqu'à 50 s avec `underflows=0 recoveries=0`.
+- RAM : `[RAMBUDGET] RESERVE ... margin8=16444 ... advisory=HEADROOM_OK`, `shapeData=mediaTexels=NULL`, aucune erreur fatale observée dans ce log.
+- Point **distinct à suivre** : pendant la navigation dans l'aide du menu, le titre `M_DM2TTL.wav` subit un manque d'alimentation (`FINAL underruns=13633, recoveries=1`, `maxPublishGapMs=1214`). Cela ne touche pas le chemin de chargement C4 SD/E4 PAK ni l'intro/Entrance (0 underrun) ; ne pas prétendre audio menu parfait.
+- Validation utilisateur : conserver exactement cette combinaison et autorisation explicite de fusion. Double CI sur le HEAD code `fef1c4c` : SUCCESS (push et PR). Les modifications post-PASS ci-présentes sont **documentation uniquement**.
+
+**Statut : WALL-SD-P1 matériellement validé, merge-ready pour la combinaison c.bmp SD + e.bmp PAK, e.bmp SD corrigé préservé.**
