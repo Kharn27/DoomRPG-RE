@@ -122,11 +122,13 @@ assert 'word(fb, stride, l, t, r, b, first, p,' in skin
 assert "glyphs[][9]" in skin
 assert "length * 6 - 1" in skin
 assert "row < 9" in skin and "bit < 5" in skin
-# CLASSIC stronger blue -> neutral gray -> warmer yellow-orange, shared with
-# UAC font tint and the native HELP title; old bronze/copper is retired.
-assert "#define CLASSIC_STEEL_BLUE 0x6c35U" in skin
-assert "#define CLASSIC_METAL_GRAY 0xc638U" in skin
-assert "#define CLASSIC_PALE_AMBER 0xf4caU" in skin
+# CLASSIC dark navy blue -> bright silvery neutral steel -> yellow gold,
+# shared by UAC, LOADING and HELP without touching the font atlases.
+assert "#define CLASSIC_STEEL_BLUE 0x0954U" in skin
+assert "#define CLASSIC_METAL_GRAY 0xb5d8U" in skin
+assert "#define CLASSIC_PALE_AMBER 0xfe8aU" in skin
+assert "#define INFERNO_DEEP_VIOLET 0xda6fU" in skin
+assert "#define INFERNO_MID_RED     0xf800U" in skin
 assert "#define CLASSIC_DIM_STEEL  0x42f0U" in skin
 assert "return CLASSIC_PALE_AMBER;" in skin
 assert "return CLASSIC_STEEL_BLUE;" in skin
