@@ -360,12 +360,12 @@ int main(void) {
     /* Exact menu and LOADING face bands, no halo or second text pass. */
     {
         static const uint16_t menu[9] = {
-            0x0913U, 0x0913U, 0x0913U,
+            0x0954U, 0x0954U, 0x0954U,
             0xb5d8U, 0xb5d8U, 0xb5d8U,
             0xfe8aU, 0xfe8aU, 0xfe8aU
         };
         static const uint16_t loading[5] = {
-            0x0913U, 0xb5d8U, 0xb5d8U,
+            0x0954U, 0xb5d8U, 0xb5d8U,
             0xfe8aU, 0xfe8aU
         };
         int row;
@@ -378,11 +378,11 @@ int main(void) {
         assert(EspMainMenuSkin_letterTone(9, 9) == 0U);
         assert(EspMainMenuSkin_letterTone(0, 0) == 0U);
         assert(EspMainMenuSkin_letterTone(0, 6) == 0U);
-        assert(EspMainMenuSkin_letterTone(0, 7) == 0x0913U);
+        assert(EspMainMenuSkin_letterTone(0, 7) == 0x0954U);
         assert(EspMainMenuSkin_letterTone(3, 7) == 0xb5d8U);
         assert(EspMainMenuSkin_letterTone(6, 7) == 0xfe8aU);
         static const uint16_t classicFill[6] = {
-            0x42f0U, 0x0913U, 0x0913U,
+            0x42f0U, 0x0954U, 0x0954U,
             0xb5d8U, 0xb5d8U, 0xfe8aU
         };
         for (int y=0;y<6;++y)
@@ -401,7 +401,7 @@ int main(void) {
         const uint16_t top = EspMainMenuSkin_letterTone(0, 9);
         const uint16_t mid = EspMainMenuSkin_letterTone(4, 9);
         const uint16_t foot = EspMainMenuSkin_letterTone(8, 9);
-        assert(top==0x0913U && mid==0xb5d8U && foot==0xfe8aU);
+        assert(top==0x0954U && mid==0xb5d8U && foot==0xfe8aU);
         const unsigned tr=(top>>11)&31U,tg=(top>>5)&63U,tb=top&31U;
         const unsigned mr=(mid>>11)&31U,mg=(mid>>5)&63U,mb=mid&31U;
         const unsigned fr=(foot>>11)&31U,fg=(foot>>5)&63U,fb=foot&31U;
@@ -417,7 +417,7 @@ int main(void) {
         const unsigned footR = fr*255U/31U;
         const unsigned footG = fg*255U/63U;
         const unsigned footB = fb*255U/31U;
-        assert(tb >= 18U && tb <= 21U); /* deep blue, not bright cyan */
+        assert(tb >= 18U && tb <= 21U); /* lighter navy, not bright cyan */
         assert(topB >= 145U && topB <= 175U);
         assert(topB > topG + 110U);
         assert(topG >= topR + 20U && topR <= 16U);
@@ -589,7 +589,7 @@ int main(void) {
                 const int textY = t + 8 +
                     (state == ESP_MAIN_MENU_SKIN_CONFIRM ? 1 : 0);
                 const uint16_t topColor =
-                    state == ESP_MAIN_MENU_SKIN_IDLE ? 0x0913U : 0xffffU;
+                    state == ESP_MAIN_MENU_SKIN_IDLE ? 0x0954U : 0xffffU;
                 assert(fb[t * W + l + 10] ==
                        (state == ESP_MAIN_MENU_SKIN_IDLE ? 0x838dU :
                         state == ESP_MAIN_MENU_SKIN_ARMED ? 0xa4d1U : 0x83ceU));
@@ -605,7 +605,7 @@ int main(void) {
                         const uint16_t pixel = fb[yy * W + xx];
                         const int isFace = state == ESP_MAIN_MENU_SKIN_IDLE
                             ? pixel == 0xfe8aU || pixel == 0xb5d8U ||
-                              pixel == 0x0913U
+                              pixel == 0x0954U
                             : pixel == 0xffffU;
                         if (isFace) {
                             ++faces;

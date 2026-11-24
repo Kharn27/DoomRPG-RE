@@ -20,7 +20,7 @@ typedef struct {
 /* CLASSIC Doom lettering: dark saturated marine royal blue, bright
  * cool-silver metal center and golden yellow foot. SD a.bmp glyph
  * indices, chassis, selected blink and RAM ownership are unchanged. */
-#define CLASSIC_STEEL_BLUE 0x0913U /* #08209C: deep navy blue */
+#define CLASSIC_STEEL_BLUE 0x0954U /* #0829A5: slightly brighter navy blue */
 #define CLASSIC_METAL_GRAY 0xb5d8U /* #B5BAC5: light neutral silver-steel */
 #define CLASSIC_PALE_AMBER 0xfe8aU /* #FFD252: unchanged golden yellow */
 #define CLASSIC_DIM_STEEL  0x42f0U /* #455D84, darker blue LOADING band */
