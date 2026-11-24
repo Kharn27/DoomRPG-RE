@@ -220,7 +220,106 @@ static void exerciseCapacity(void) {
     assert(!EspMapSpriteTopology_snapshotMonsters(&snap));
 }
 
+
+/* Canonical single-command event model for the actual SHOW/HIDE C owners.
+ * This is a controlled host bytecode fixture, NOT a claimed Sector1 PAK decode. */
+static EspMapEventDescriptor liveDescriptor;
+static EspMapByteCode liveCommand;
+
+int EspMapRuntime_getEvent(uint32_t index, uint32_t* value) {
+    if (index != 0U || value == NULL) return 0;
+    *value = liveDescriptor.value;
+    return 1;
+}
+int EspMapEvents_describe(const EspMapEventRef* ref,
+                          EspMapEventDescriptor* out) {
+    if (ref == NULL || out == NULL ||
+        ref->index != 0U || ref->value != liveDescriptor.value ||
+        ref->tileIndex != liveDescriptor.tileIndex) return 0;
+    *out = liveDescriptor;
+    return 1;
+}
+int EspMapEvents_getCommand(const EspMapEventDescriptor* desc,
+                            uint32_t offset, EspMapByteCode* out) {
+    if (desc == NULL || out == NULL || offset != 0U ||
+        desc->value != liveDescriptor.value ||
+        desc->firstCommandIndex != 0U ||
+        desc->commandCount != 1U) return 0;
+    *out = liveCommand;
+    return 1;
+}
+int EspMapRuntime_getMapSprite(uint32_t index, EspMapSprite* out) {
+    if (index != 3U || out == NULL) return 0;
+    memset(out, 0, sizeof(*out));
+    out->x = (uint16_t)(6U * 64U);
+    out->y = (uint16_t)(22U * 64U);
+    return 1; /* tile 710 */
+}
+static void exerciseRealShowHideThenSnapshot(void) {
+    EspMapHideResult hidden;
+    EspMapShowResult shown;
+    EspMapSpriteTopologyMonsterSnapshot snap;
+    setupFive();
+    /* Old NPC initially linked and visible; future NPC not yet revealed. */
+    setLinkState(1, ESP_MAP_SPRITE_TOPOLOGY_EXISTS |
+                    ESP_MAP_SPRITE_TOPOLOGY_HAS_SPRITE_ENT |
+                    ESP_MAP_SPRITE_TOPOLOGY_LINKED | 647U);
+    setLinkOrder(1, 9U);
+    visualStates[1] = 0U;
+    setLinkState(3, ESP_MAP_SPRITE_TOPOLOGY_EXISTS |
+                    ESP_MAP_SPRITE_TOPOLOGY_HAS_SPRITE_ENT);
+    setLinkOrder(3, 0U);
+    visualStates[3] = 0x80U;
+    refreshView();
+    memset(&liveDescriptor, 0, sizeof(liveDescriptor));
+    liveDescriptor.value = 647U;
+    liveDescriptor.eventIndex = 0U;
+    liveDescriptor.tileIndex = 647U;
+    liveDescriptor.firstCommandIndex = 0U;
+    liveDescriptor.commandEndIndex = 1U;
+    liveDescriptor.commandCount = 1U;
+    memset(&liveCommand, 0, sizeof(liveCommand));
+    liveCommand.id = ESP_MAP_OPCODE_HIDE;
+    liveCommand.arg1 = (7U | (20U << 8U)); /* tile 647 */
+    assert(EspMapSpriteTopology_applyHide(
+        &liveDescriptor, 0U, &hidden) == ESP_MAP_SPRITE_TOPOLOGY_OK);
+    assert(hidden.hiddenEntityCount == 1U &&
+           hidden.firstHiddenSpriteIndex == 1U);
+    assert((visualStates[1] & 0x80U) != 0U &&
+           (linkStateAt(1) & ESP_MAP_SPRITE_TOPOLOGY_LINKED) == 0U &&
+           linkOrderAt(1) == 0U);
+
+    liveCommand.id = ESP_MAP_OPCODE_SHOW;
+    liveCommand.arg1 = 3U;
+    assert(EspMapSpriteTopology_applyShow(
+        &liveDescriptor, 0U, &shown) == ESP_MAP_SPRITE_TOPOLOGY_OK);
+    assert(shown.spriteIndex == 3U &&
+           (visualStates[3] & 0x80U) == 0U &&
+           (linkStateAt(3) & ESP_MAP_SPRITE_TOPOLOGY_LINKED) != 0U &&
+           linkOrderAt(3) == 21U && topologyView.nextLinkOrder == 21U);
+    assert(EspMapSpriteTopology_snapshotMonsters(&snap) && snap.count == 4U);
+    /* LOAD reconstructs the old NPC from BSP, but exact V11 restores
+     * both outcomes of the real native SHOW/HIDE transaction. */
+    setLinkState(1, ESP_MAP_SPRITE_TOPOLOGY_EXISTS |
+                    ESP_MAP_SPRITE_TOPOLOGY_HAS_SPRITE_ENT |
+                    ESP_MAP_SPRITE_TOPOLOGY_LINKED | 647U);
+    setLinkOrder(1, 6U);
+    visualStates[1] = 0U;
+    setLinkState(3, ESP_MAP_SPRITE_TOPOLOGY_EXISTS |
+                    ESP_MAP_SPRITE_TOPOLOGY_HAS_SPRITE_ENT);
+    setLinkOrder(3, 0U);
+    visualStates[3] = 0x80U;
+    refreshView();
+    assert(EspMapSpriteTopology_restoreMonsterSnapshot(&snap));
+    assert((visualStates[1] & 0x80U) != 0U &&
+           (linkStateAt(1) & ESP_MAP_SPRITE_TOPOLOGY_LINKED) == 0U);
+    assert((visualStates[3] & 0x80U) == 0U &&
+           (linkStateAt(3) & ESP_MAP_SPRITE_TOPOLOGY_LINKED) != 0U &&
+           linkOrderAt(3) == 21U);
+}
+
 int main(void) {
+    exerciseRealShowHideThenSnapshot();
     exerciseNewAndOld();
     exerciseCapacity();
     puts("[GAME-S1-HUMANTOPO] PASS real C snapshot+restore full/legacy/tamper/capacity");
