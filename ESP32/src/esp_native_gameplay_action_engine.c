@@ -4276,7 +4276,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
         }
 
         if (isBarrel) {
-            printf("[BARREL] COMMIT seq=%u sprite=%u weapon=%u ammoType=%u ammo=%u->%u playerFNV=%08x->%08x loops=%u hits=%u rngCombat=%u rngBlast=%u damage=%ld armorDamage=%ld removed=%u chainRemoved=%u playerRadiusHits=%u explosion=%s sound=%u-deferred barrelExplosionSound=5061-deferred radius=barrel-chain-wave+player-owned/other-hurtable-families-fail-closed turnAdvance=PLAYER_ATTACK-requested rollback=closed\n",
+            printf("[BARREL] COMMIT seq=%u sprite=%u weapon=%u ammoType=%u ammo=%u->%u playerFNV=%08x->%08x loops=%u hits=%u rngCombat=%u rngBlast=%u damage=%ld armorDamage=%ld removed=%u chainRemoved=%u playerRadiusHits=%u explosion=%s sound=%u-deferred barrelExplosionSound=5061-on-commit radius=barrel-chain-wave+player-owned/other-hurtable-families-fail-closed turnAdvance=PLAYER_ATTACK-requested rollback=closed\n",
                    (unsigned int)pending.sequence,
                    (unsigned int)pending.spriteIndex,
                    (unsigned int)pending.weapon,
@@ -4297,6 +4297,20 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                    (unsigned int)barrelPlayerHits,
                    barrelExplosionArmed != 0U ? "native-180x3-each" : "none",
                    crateWeapon != NULL ? (unsigned int)crateWeapon->resourceId : 0U);
+            /* Combat.c: a successful player shot sounds BEFORE the impact.
+             * Barrel (eType 12) uses weaponId + 5044, priority 5 (no axe
+             * vs-enemy 5136 special case). The commit is already closed:
+             * never publish on render failure, missing ammo or rollback. */
+            if (crateWeapon != NULL && crateWeapon->resourceId != 0U)
+                (void)EspNativeAudioIntent_publish(
+                    (uint16_t)crateWeapon->resourceId, 0U, 5U);
+            /* Game_gsprite_allocAnim(game, 1, ...) in original Game.c
+             * plays 5061 at priority 4 for each barrel explosion.
+             * The native chain owns a rollback-capable transaction, so emit
+             * only AFTER its world/RNG/player commit is closed. One cue per
+             * committed chain; per-wave timing needs its own milestone. */
+            if (barrelRemoved != 0U && barrelExplosionArmed != 0U)
+                (void)EspNativeAudioIntent_publish(5061U, 0U, 4U);
         }
 
         if (isFireMiss) {

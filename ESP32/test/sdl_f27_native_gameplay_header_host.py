@@ -176,6 +176,38 @@ def original_body_parity() -> None:
         # before the frozen ten-source pre-F27 Git blob witness. No hashes
         # are rewritten, no legacy semantics are accepted as new baselines.
         if filename == "esp_native_gameplay_action_engine.c":
+            # AUDIO-BARREL-5061 is a post-commit additive cue. Undo its
+            # exact priority-4 gate and log-label delta BEFORE applying
+            # older SFX-P1/P2 inverses and frozen SDL-F27 blob equality.
+            # Do not update the frozen SHA or loosen the real-body oracle.
+            # AUDIO-BARREL-GUN: remove ONLY the added priority-5 weapon
+            # cue; the original F27 body had no native gun sound publisher.
+            gun_hook = (
+                b"            /* Combat.c: a successful player shot sounds BEFORE the impact.\n"
+                b"             * Barrel (eType 12) uses weaponId + 5044, priority 5 (no axe\n"
+                b"             * vs-enemy 5136 special case). The commit is already closed:\n"
+                b"             * never publish on render failure, missing ammo or rollback. */\n"
+                b"            if (crateWeapon != NULL && crateWeapon->resourceId != 0U)\n"
+                b"                (void)EspNativeAudioIntent_publish(\n"
+                b"                    (uint16_t)crateWeapon->resourceId, 0U, 5U);\n"
+            )
+            assert current.count(gun_hook) == 1, "BARREL-GUN priority-5 cue drift"
+            current = current.replace(gun_hook, b"", 1)
+            barrel_hook = (
+                b"            /* Game_gsprite_allocAnim(game, 1, ...) in original Game.c\n"
+                b"             * plays 5061 at priority 4 for each barrel explosion.\n"
+                b"             * The native chain owns a rollback-capable transaction, so emit\n"
+                b"             * only AFTER its world/RNG/player commit is closed. One cue per\n"
+                b"             * committed chain; per-wave timing needs its own milestone. */\n"
+                b"            if (barrelRemoved != 0U && barrelExplosionArmed != 0U)\n"
+                b"                (void)EspNativeAudioIntent_publish(5061U, 0U, 4U);\n"
+            )
+            on_commit = b"barrelExplosionSound=5061-on-commit"
+            original = b"barrelExplosionSound=5061-deferred"
+            assert current.count(barrel_hook) == 1, "BARREL-5061 exact cue drift"
+            assert current.count(on_commit) == 1, "BARREL-5061 log drift"
+            current = current.replace(barrel_hook, b"", 1)
+            current = current.replace(on_commit, original, 1)
             # AUDIO-SFX-P2 adds one committed extinguisher hook. Undo only
             # that exact two-line addition before the frozen pre-F27 blob.
             p2_hook = (

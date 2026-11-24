@@ -13,6 +13,14 @@ extern "C" int Esp32PlatformVideo_presentBase(void) {
     return PlatformVideo_present() ? 1 : 0;
 }
 
+extern "C" int Esp32PlatformVideo_presentRegionBase(int logicalLeft,
+                                                      int logicalTop,
+                                                      int logicalWidth,
+                                                      int logicalHeight) {
+    return PlatformVideo_presentRegion(logicalLeft, logicalTop,
+                                       logicalWidth, logicalHeight) ? 1 : 0;
+}
+
 
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
 extern "C" void Esp32PlatformVideo_debugOverlayClear(void) {

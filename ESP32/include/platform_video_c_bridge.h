@@ -17,6 +17,9 @@ size_t Esp32PlatformVideo_framebufferSizeBytes(void);
 int Esp32PlatformVideo_present(void);
 /* Raw physical LCD leaf: only explicit full-screen/modal owners bypass the native gate. */
 int Esp32PlatformVideo_presentBase(void);
+/* Raw bounded LCD region, only for full-opaque transition-owned overlays. */
+int Esp32PlatformVideo_presentRegionBase(int logicalLeft, int logicalTop,
+                                         int logicalWidth, int logicalHeight);
 
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
 void Esp32PlatformVideo_debugOverlayClear(void);
