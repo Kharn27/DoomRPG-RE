@@ -186,9 +186,9 @@ assert "static uint16_t helpThirdTone(void)" in actions
 assert "EspMainMenuSkin_uiInk()" not in actions
 assert 'helpPaintCopyrightMark(framebuffer, y, tone);' in actions
 assert '"Kharn27"' in model
-# HELP pages 2-4 and 12-16 normally use the first/light theme tone.
-# Page 4 body alone overrides this to neutral white, leaving headers themed.
-# The page-1 white tribute and pages 5-11 stay intact.
+# HELP pages 2-4 have neutral white explanatory ink, as requested.
+# Page titles and HELP/CYD stay themed; pages 12-16 retain the light
+# theme-tone body and the page-1 tribute remains unchanged.
 light_pages = (2, 3, 4, 12, 13, 14, 15, 16)
 assert [lines[(page - 1) * 7] for page in light_pages] == [
     "DOOM RPG: THE GAME", "MENU CONTROLS", "TURN-BASED GAME",
@@ -209,8 +209,10 @@ assert "scroll <= 15 * MAIN_HELP_VISIBLE_LINES" in body_branch
 assert "? helpTitleTopTone() : helpBodyMiddleTone();" in body_branch
 assert "helpColor888(bodyTone)" in body_branch
 assert "(menuSystem->scrollIndex == 0 && i == 5)" in body_branch
-assert "scroll == 3 * MAIN_HELP_VISIBLE_LINES" in body_branch
-assert "((menuSystem->scrollIndex == 0 && i == 5) ||\n                 scroll == 3 * MAIN_HELP_VISIBLE_LINES)" in body_branch
+assert "((menuSystem->scrollIndex == 0 && i == 5) ||\n                 (scroll >= MAIN_HELP_VISIBLE_LINES &&\n                  scroll <= 3 * MAIN_HELP_VISIBLE_LINES))" in body_branch
+# Exhaust the fixed 16-page help catalogue: only pages 2/3/4 get white
+# body by this branch (plus the preexisting page-1 tribute line).
+assert [page for page in range(1, 17) if 7 <= (page - 1) * 7 <= 21] == [2, 3, 4]
 assert "? 0xffffffffU : helpColor888(bodyTone)" in body_branch
 assert "helpDrawThemedPageTitle(doomRpg, canvas, line, 12, y);" in actions
 assert "EspMainMenuSkin_letterTone(band * 3 + 1, 9)" in actions
