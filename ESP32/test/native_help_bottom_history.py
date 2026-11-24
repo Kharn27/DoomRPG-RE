@@ -157,6 +157,13 @@ _PRE_PAGE4_COMMENT = "            /* HELP pages 2-4 and 12-16 use the first (lig
 _POST_PAGE4_COMMENT = "            /* HELP pages 2-4 and 12-16 use the first (light) theme tone,\n             * except page 4 body copy: neutral white independent of theme.\n             * Both page titles and HELP / CYD keep their themed colors. */"
 _PRE_PAGE4_COLOR = "                (menuSystem->scrollIndex == 0 && i == 5)\n                    ? 0xffffffffU : helpColor888(bodyTone));"
 _POST_PAGE4_COLOR = "                ((menuSystem->scrollIndex == 0 && i == 5) ||\n                 scroll == 3 * MAIN_HELP_VISIBLE_LINES)\n                    ? 0xffffffffU : helpColor888(bodyTone));"
+# HELP-234: newer neutral-white body on pages 2/3 as well as page 4.
+# Reverse it before the frozen PAGE4 and earlier SDL history rewinds.
+_POST_PAGE234_COMMENT = """            /* HELP pages 2-4 use the same neutral white body ink,
+             * independent of theme. Pages 12-16 retain the light theme tone.
+             * Section titles and HELP / CYD remain theme-colored. */"""
+_POST_PAGE234_COLOR = "                ((menuSystem->scrollIndex == 0 && i == 5) ||\\n                 (scroll >= MAIN_HELP_VISIBLE_LINES &&\\n                  scroll <= 3 * MAIN_HELP_VISIBLE_LINES))\\n                    ? 0xffffffffU : helpColor888(bodyTone));"
+
 
 
 def restore_pre_help_page4_model(source: str) -> str:
@@ -165,6 +172,10 @@ def restore_pre_help_page4_model(source: str) -> str:
 
 
 def restore_pre_help_page4_actions(source: str) -> str:
+    assert source.count(_POST_PAGE234_COMMENT) == 1, "HELP page2/3 comment drift"
+    assert source.count(_POST_PAGE234_COLOR) == 1, "HELP page2/3 white ink drift"
+    source = source.replace(_POST_PAGE234_COMMENT, _POST_PAGE4_COMMENT, 1)
+    source = source.replace(_POST_PAGE234_COLOR, _POST_PAGE4_COLOR, 1)
     assert source.count(_POST_PAGE4_COMMENT) == 1, "HELP page4 comment drift"
     assert source.count(_POST_PAGE4_COLOR) == 1, "HELP page4 white ink drift"
     return source.replace(_POST_PAGE4_COMMENT, _PRE_PAGE4_COMMENT, 1).replace(
