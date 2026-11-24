@@ -1,4 +1,4 @@
-# RES60-P20 — budget Serial des rotations chaudes (CI/CYD PENDING)
+# RES60-P20 — budget Serial des rotations chaudes (PASS CYD borné)
 
 **PR #364 DRAFT / branche agent/esp32-res60-p1**, après merge non-force de main `ca7fd44b595660a5e1f7ed259dd11a97d84d3d69` au commit `4e16ad6508feca4a836fb59ddc9fb4b29029f1e0`. Le hardware P19 valide le code antérieur `75fc0854fe1edf57ff68f98d9970f5375fd4edb0` mais **ne valide PAS la combinaison main ni P20**.
 

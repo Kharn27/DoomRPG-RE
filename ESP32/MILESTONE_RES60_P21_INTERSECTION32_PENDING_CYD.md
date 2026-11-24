@@ -17,3 +17,7 @@ Firmware normal de l'expérience `cd ESP32 && pio run -e esp32-cyd-res60-inverte
 Si CPU ne gagne rien ou les empreintes diffèrent, revenir immédiatement à P21=0 et **arrêter cette piste**. On n'optimise pas `PlatformVideo_present()` et on ne démarre toujours aucun gameplay 192×144 à ce milestone.
 
 **P21 ne possède aucune preuve CYD avant ce test, ne pas déclarer merge-ready.**
+
+## CI code P21 — PASS (24 novembre 2026)
+
+**Code exact double-CI : `a476eef3b5108eee1aa41c7a9f17e7024ccc7bb1`**. [push SUCCESS #45368084719](https://github.com/Kharn27/DoomRPG-RE/actions/runs/45368084719) et [PR SUCCESS #45368100671](https://github.com/Kharn27/DoomRPG-RE/actions/runs/45368100671) — 262 étapes SUCCESS chacune, y compris le nouveau test `RES60-P21` 261 frames C11, les profils de production et les deux firmwares expérimentaux RES60. Ces CI ne sont **pas** une mesure de gain Xtensa ni un test physique. Les commits suivants sont docs-only jusqu'au retour CYD.
