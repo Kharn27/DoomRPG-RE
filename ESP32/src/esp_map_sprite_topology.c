@@ -73,6 +73,7 @@ static void refreshView(void) {
     topologyView.linkedCount = 0U;
     topologyView.hiddenCount = 0U;
     topologyView.enemyCount = 0U;
+    topologyView.humanCount = 0U;
     topologyView.destructibleCount = 0U;
 
     for (i = 0U; i < topologyView.spriteCount; ++i) {
@@ -88,6 +89,9 @@ static void refreshView(void) {
         }
         if (entityTypes[i] == ESP_MAP_ENTITY_TYPE_ENEMY) {
             ++topologyView.enemyCount;
+        }
+        else if (entityTypes[i] == ESP_MAP_ENTITY_TYPE_HUMAN) {
+            ++topologyView.humanCount;
         }
         else if (entityTypes[i] == ESP_MAP_ENTITY_TYPE_DESTRUCTIBLE) {
             ++topologyView.destructibleCount;
@@ -533,16 +537,18 @@ int EspMapSpriteTopology_snapshotMonsters(
         EspMapSpriteTopologyMonsterRecord* record;
         const uint8_t type = entityTypes[i];
         if (type != ESP_MAP_ENTITY_TYPE_ENEMY &&
-            type != ESP_MAP_ENTITY_TYPE_DESTRUCTIBLE) {
+            type != ESP_MAP_ENTITY_TYPE_DESTRUCTIBLE &&
+            type != ESP_MAP_ENTITY_TYPE_HUMAN) {
             continue;
         }
         if (count >= ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_MAX ||
             i > UINT16_MAX) {
-            printf("[MAPCHECKPOINTTOPO] SNAPSHOT-FAILED reason=capacity tracked=%u cap=%u enemies=%u destructibles=%u failClosed=yes\n",
+            printf("[MAPCHECKPOINTTOPO] SNAPSHOT-FAILED reason=capacity tracked=%u cap=%u enemies=%u destructibles=%u humans=%u failClosed=yes\n",
                    (unsigned int)(count + 1U),
                    (unsigned int)ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_MAX,
                    (unsigned int)topologyView.enemyCount,
-                   (unsigned int)topologyView.destructibleCount);
+                   (unsigned int)topologyView.destructibleCount,
+                   (unsigned int)topologyView.humanCount);
             return 0;
         }
         record = &outSnapshot->records[count++];
@@ -563,6 +569,7 @@ int EspMapSpriteTopology_restoreMonsterSnapshot(
     uint32_t i;
     uint32_t trackedCount;
     uint8_t fullScope;
+    uint8_t legacyMonsterScope;
     uint8_t legacyEnemyOnly;
 
     if (runtime == NULL || !EspMapSpriteTopology_isReady() ||
@@ -572,11 +579,15 @@ int EspMapSpriteTopology_restoreMonsterSnapshot(
     }
 
     trackedCount = topologyView.enemyCount + topologyView.destructibleCount;
-    fullScope = (uint8_t)(snapshot->count == trackedCount);
+    fullScope = (uint8_t)(snapshot->count ==
+                          trackedCount + topologyView.humanCount);
+    legacyMonsterScope = (uint8_t)(fullScope == 0U &&
+                                    snapshot->count == trackedCount);
     legacyEnemyOnly =
-        (uint8_t)(fullScope == 0U &&
+        (uint8_t)(fullScope == 0U && legacyMonsterScope == 0U &&
                   snapshot->count == topologyView.enemyCount);
-    if (fullScope == 0U && legacyEnemyOnly == 0U) return 0;
+    if (fullScope == 0U && legacyMonsterScope == 0U &&
+        legacyEnemyOnly == 0U) return 0;
 
     for (i = 0U; i < snapshot->count; ++i) {
         const EspMapSpriteTopologyMonsterRecord* record =
@@ -590,10 +601,10 @@ int EspMapSpriteTopology_restoreMonsterSnapshot(
         if (record->spriteIndex >= topologyView.spriteCount) return 0;
         live = linkStateAt(record->spriteIndex);
         type = entityTypes[record->spriteIndex];
-        if ((legacyEnemyOnly != 0U
-                 ? type != ESP_MAP_ENTITY_TYPE_ENEMY
-                 : (type != ESP_MAP_ENTITY_TYPE_ENEMY &&
-                    type != ESP_MAP_ENTITY_TYPE_DESTRUCTIBLE)) ||
+        if ((type != ESP_MAP_ENTITY_TYPE_ENEMY &&
+             (legacyEnemyOnly != 0U ||
+              (type != ESP_MAP_ENTITY_TYPE_DESTRUCTIBLE &&
+               (fullScope == 0U || type != ESP_MAP_ENTITY_TYPE_HUMAN)))) ||
             (live & identityMask) !=
                 (record->linkState & identityMask)) {
             return 0;
@@ -630,16 +641,25 @@ int EspMapSpriteTopology_restoreMonsterSnapshot(
         }
     }
 
-    printf("[MAPCHECKPOINTTOPO] RESTORE arena=%08x tracked=%u enemies=%u destructibles=%u scope=%s nextOrder=%u stateFNV=%08x mutation=%s allocation=no\n",
+    if (fullScope == 0U && topologyView.humanCount != 0U) {
+        printf("[MAPCHECKPOINTTOPO] LEGACY-HUMAN-GAP humans=%u oldScope=%s humanShowHide=not-restored-from-save warning=historical-human-state-missing\n",
+               (unsigned int)topologyView.humanCount,
+               legacyEnemyOnly != 0U ? "enemy-only" : "enemy+destructible");
+    }
+    printf("[MAPCHECKPOINTTOPO] RESTORE arena=%08x tracked=%u enemies=%u destructibles=%u humans=%u scope=%s nextOrder=%u stateFNV=%08x mutation=%s allocation=no\n",
            (unsigned int)snapshot->sourceArenaFNV1a,
            (unsigned int)snapshot->count,
            (unsigned int)topologyView.enemyCount,
            (unsigned int)topologyView.destructibleCount,
-           fullScope != 0U ? "enemy+destructible-v9" : "enemy-only-legacy-v9",
+           (unsigned int)topologyView.humanCount,
+           fullScope != 0U ? "enemy+destructible+human-v11" :
+               (legacyMonsterScope != 0U ? "enemy+destructible-legacy-v11" :
+                                            "enemy-only-legacy-v9"),
            (unsigned int)snapshot->nextLinkOrder,
            (unsigned int)snapshot->stateFNV1a,
            fullScope != 0U ? "tracked-topology-exact" :
-                             "enemy-topology-exact+nonenemy-replay");
+               (legacyMonsterScope != 0U ? "enemy+destructible-exact+human-fresh" :
+                                           "enemy-topology-exact+nonenemy-replay"));
     return 1;
 }
 
