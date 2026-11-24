@@ -18,7 +18,6 @@
 #include "esp_audio_clock_guard.h"
 #include "esp_native_sfx_pcm_mix.h"
 #include "esp_native_sfx_window.h"
-#include "esp_native_sfx_barrel_pair.h"
 #include "esp_native_sfx_wav.h"
 #include "esp_asset_pack.h"
 #include "esp_audio_loading_route.h" /* explicit map track, one SD producer */
@@ -169,9 +168,6 @@ static uint32_t publishGapsOver500Ms;
 /* SFX-P1: one brief PCM16 effect, directly overlaid onto the existing
  * not-yet-consumed music ring. No second timer, ISR edits or WAV allocation. */
 static uint32_t sfxSeenSequence;
-/* Last accepted priority-5 gun cue. Its barrel 5061 must be NEXT. */
-static uint32_t sfxBarrelShotSequence;
-static uint32_t sfxBarrelShotEnd;
 static uint32_t sfxBusyUntil;
 static uint32_t sfxPlayedCount;
 static uint32_t sfxRejectedCount;
@@ -299,8 +295,6 @@ static void closeMusic(const char* reason) {
     for (uint8_t i=0U;i<kGenericSfxVoiceCount;++i)
         genericSfx[i].active=false;
     sfxDeferredSequence=0U;
-    sfxBarrelShotSequence=0U;
-    sfxBarrelShotEnd=0U;
     /* No SFX from a prior track may replay across EXIT/LOAD/MENU.
      * These explicit discards never count as PCM playback failures. */
     sfxSeenSequence=EspNativeAudioIntent_count();
@@ -598,9 +592,7 @@ static void startFireSfx(uint32_t reader,uint32_t writer) {
 /* Generic original monster/player effects: three independent PCM16 voices.
  * All 92 original PAK WAV IDs use the same validated 8k->22050 converter.
  * Long SFX stream in <=1024 published samples at a time, no heap/ISR I/O. */
-static bool startGenericSfx(uint16_t id,
-                            uint32_t sequence=0U,
-                            uint32_t* outEnd=nullptr) {
+static bool startGenericSfx(uint16_t id) {
     if (id<5042U || id>5138U || !EspAssetPack_isMapFlashActive() ||
         !EspAssetPack_isResident() || EspAssetPack_isOpen()) return false;
     GenericSfxVoice* v=nullptr;
@@ -651,23 +643,11 @@ static bool startGenericSfx(uint16_t id,
     *v=GenericSfxVoice{};
     v->entry=entry;
     v->start=rdNow+kSfxLeadFrames;
-    if (id==5061U) {
-        /* The immediately previous priority-5 gun must finish before
-         * the barrel's louder explosion. Future DAC frames are written
-         * progressively by the existing voice; no extra ring or timer. */
-        v->start=EspNativeSfxBarrelPair_explosionStart(
-            v->start,sfxBarrelShotEnd,sfxBarrelShotSequence,sequence);
-        if (v->start!=rdNow+kSfxLeadFrames)
-            printf("[SFXPAIR] BARREL id=5061 seq=%u afterGunSeq=%u delayFrames=%u noExtraBuffer=yes\n",
-                   (unsigned)sequence,(unsigned)sfxBarrelShotSequence,
-                   (unsigned)(v->start-(rdNow+kSfxLeadFrames)));
-    }
     v->sourceFrames=meta.sampleFrames;
     v->dataOffset=meta.dataOffset;
     v->output=output;
     v->id=id;
     v->active=true;
-    if (outEnd!=nullptr) *outEnd=v->start+v->output;
     printf("[SFXGEN] START id=%u sourceFrames=%u outputFrames=%u "
            "voice=%u ring=shared heapAlloc=0 verified-flash=yes\n",
            (unsigned)id,(unsigned)v->sourceFrames,(unsigned)v->output,
@@ -743,18 +723,6 @@ static void mixGenericSfx(GenericSfxVoice* v) {
     }
 }
 
-/* Consecutive committed barrel sounds: remember when the priority-5
- * weapon will finish in the DAC timebase, without storing any PCM. */
-static void noteBarrelGun(const EspNativeAudioIntent* intent,
-                          uint32_t audibleEnd) {
-    if (intent!=nullptr && intent->priority==5U &&
-        intent->resourceId>=5044U && intent->resourceId<=5055U &&
-        audibleEnd!=0U) {
-        sfxBarrelShotSequence=intent->sequence;
-        sfxBarrelShotEnd=audibleEnd;
-    }
-}
-
 static void mixPendingSfxOne() {
     if (phase!=kPlay || ring==nullptr) return;
     if (fireSfx.active) mixFireSfx();
@@ -769,8 +737,6 @@ static void mixPendingSfxOne() {
         sfxSeenSequence=intent->sequence;
         EspNativeAudioIntent_acknowledgeThrough(sfxSeenSequence);
         fireSfx.active=false;
-        sfxBarrelShotSequence=0U;
-        sfxBarrelShotEnd=0U;
         for (uint8_t i=0U;i<kGenericSfxVoiceCount;++i)
             genericSfx[i].active=false;
         return;
@@ -780,12 +746,9 @@ static void mixPendingSfxOne() {
         EspNativeAudioIntent_noteConsumerGap(sfxSeenSequence,intent->sequence);
         sfxSeenSequence=intent->sequence;
         EspNativeAudioIntent_acknowledgeThrough(sfxSeenSequence);
-        uint32_t audibleEnd=0U;
-        if (startGenericSfx(id,intent->sequence,&audibleEnd)) {
-            noteBarrelGun(intent,audibleEnd);
+        if (startGenericSfx(id))
             for (uint8_t i=0U;i<kGenericSfxVoiceCount;++i)
                 if (genericSfx[i].active) mixGenericSfx(&genericSfx[i]);
-        }
         return;
     }
     if (EspAssetPack_isOpen()) {
@@ -818,13 +781,10 @@ static void mixPendingSfxOne() {
     if (fireSfx.active || (int32_t)(sfxBusyUntil-reader)>0) {
         /* Use the common progressive voice instead of losing a pistol/pickup
          * sound while the previous one-shot still occupies the music ring. */
-        uint32_t audibleEnd=0U;
-        if (startGenericSfx(id,intent->sequence,&audibleEnd)) {
-            noteBarrelGun(intent,audibleEnd);
+        if (startGenericSfx(id))
             for (uint8_t i=0U;i<kGenericSfxVoiceCount;++i)
                 if (genericSfx[i].active && genericSfx[i].id==id)
                     mixGenericSfx(&genericSfx[i]);
-        }
         return;
     }
     if (writer-reader>kRingCapacity || !EspAssetPack_isMapFlashActive() ||
@@ -868,10 +828,7 @@ static void mixPendingSfxOne() {
          * 5046 needs 12490 frames including guard. This was the repeated
          * real-CYD 'not-entirely-buffered' pistol loss. Progressive voice
          * is already committed and streams the same original PCM in place. */
-        uint32_t audibleEnd=0U;
-        if (valid && output!=0U &&
-            startGenericSfx(id,intent->sequence,&audibleEnd)) {
-            noteBarrelGun(intent,audibleEnd);
+        if (valid && output!=0U && startGenericSfx(id)) {
             printf("[SFXP1] STREAM-FALLBACK id=%u queued=%u required=%u "
                    "reason=not-entirely-buffered loss=no\n",
                    (unsigned)id,(unsigned)(writer-reader),
@@ -948,10 +905,7 @@ static void mixPendingSfxOne() {
         }
     }
     EspAssetPack_close();
-    if (mixed!=0U) {
-        sfxBusyUntil=start+mixed;
-        noteBarrelGun(intent,start+mixed);
-    }
+    if (mixed!=0U) sfxBusyUntil=start+mixed;
     if (failed!=nullptr || mixed!=output) {
         ++sfxRejectedCount;
         EspNativeAudioIntent_notePlaybackDrop();
@@ -1190,8 +1144,6 @@ static void begin(bool intro,bool menu,EspAudioLoadingTrack gameplayTrack) {
     maxMusicPublishGapMs=0U;
     publishGapsOver500Ms=0U;
     sfxBusyUntil=0U;
-    sfxBarrelShotSequence=0U;
-    sfxBarrelShotEnd=0U;
     fireSfx.active=false;
     for (uint8_t i=0U;i<kGenericSfxVoiceCount;++i)
         genericSfx[i].active=false;

@@ -98,181 +98,144 @@ with tempfile.TemporaryDirectory(prefix="doom-sfx-p1-") as td:
 print("PASS AUDIO-SFX-P1: two real native gameplay cues, PCM16/8k mix over R2e ring within 46ms")
 
 
-# BARREL-5061 P1: actual committed C branch extracted into a host harness.
-# Original Game_gsprite_allocAnim(index=1) plays 5061 with priority=4.
-legacy=(root/"src/Game.c").read_text()
-assert "Sound_playSound(game->doomRpg->sound, 5061, 0, 4);" in legacy
-barrel=gameplay[gameplay.index('if (isBarrel) {\n            printf("[BARREL] COMMIT'):]
-barrel=barrel[:barrel.index("\n        if (isFireMiss) {")]
-cue="if (barrelRemoved != 0U && barrelExplosionArmed != 0U)"
-assert barrel.count(cue)==1
-assert barrel.count("EspNativeAudioIntent_publish(5061U, 0U, 4U)")==1
-assert barrel.index("[BARREL] COMMIT") < barrel.index(cue)
+# BARREL-VISIBLE-SFX: original Combat.c produces the gun at its firing
+# frame, while Game_gsprite_allocAnim produces 5061 on FIRST blast frame.
+# The prior candidate published both only after THREE explosion frames, then
+# added a 520ms explosion serialization: hardware heard gun AFTER animation.
+# Compile the actual source gates and test the first visible frame boundaries.
+legacy_combat=(root/"src/Combat.c").read_text()
+legacy_game=(root/"src/Game.c").read_text()
+assert "snd = (combat->attackerWeaponId + 5044);" in legacy_combat
+assert "Sound_playSound(combat->doomRpg->sound, snd, 0, 5);" in legacy_combat
+assert "Sound_playSound(game->doomRpg->sound, 5061, 0, 4);" in legacy_game
+assert "EspNativeSfxBarrelPair" not in music
+assert "sfxBarrelShotEnd" not in music
+assert not (src/"esp_native_sfx_barrel_pair.h").exists()
+assert '#include "esp_audio_entrance_music.h"' in gameplay
+assert 'sound=%u-attack-visible barrelExplosionSound=5061-first-wave-visible' in gameplay
+
+def real_if_after(text, marker, prefix):
+    pos = text.index(marker)
+    start = text.index(prefix, pos)
+    brace = text.index("{", start)
+    depth = 0
+    for i in range(brace, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1]
+    raise AssertionError("unclosed gate " + marker)
+
+gun_tag="/* BARREL-GUN-VISUAL:"
+blast_tag="/* BARREL-5061-VISUAL:"
+gun_gate=real_if_after(
+    gameplay,gun_tag,"if (isBarrel && frame.finalPresented != 0U &&")
+blast_gate=real_if_after(
+    gameplay,blast_tag,"if (waveOrdinal == 1U &&")
+assert gun_gate.count("EspNativeAudioIntent_publish(")==1
+assert gun_gate.count("EspEntranceMusic_pumpGameplay();")==1
+assert "crateWeapon->resourceId, 0U, 5U" in gun_gate
+assert blast_gate.count("EspNativeAudioIntent_publish(5061U, 0U, 4U)")==1
+assert blast_gate.count("EspEntranceMusic_pumpGameplay();")==1
+assert "barrelExplosionFrame == 0U" in blast_gate
+assert "frame.finalPresented != 0U" in blast_gate
+first_success=gameplay.index(
+    'logActionFrame(&pending, animateWeapon ? "attack" : "commit", &frame);')
+first_wave=gameplay.index('printf("[BARREL] WAVE-FRAME')
+barrel_commit=gameplay.index('printf("[BARREL] COMMIT')
+assert first_success < gameplay.index(gun_tag) < first_wave
+assert first_wave < gameplay.index(blast_tag) < barrel_commit
+commit_region=gameplay[barrel_commit:gameplay.index("if (isFireMiss) {",barrel_commit)]
+assert "EspNativeAudioIntent_publish(5061U" not in commit_region
+assert "crateWeapon->resourceId, 0U, 5U" not in commit_region
 assert gameplay.count("EspNativeAudioIntent_publish(5061U, 0U, 4U)")==1
-assert "barrelExplosionSound=5061-on-commit" in barrel
-statement=barrel[barrel.index(cue):]
-statement=statement[:statement.index(";")+1]
-barrel_test=r"""
+
+host = r"""
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
-static uint8_t barrelRemoved, barrelExplosionArmed;
-static unsigned published, lastId, lastFlags, lastPriority;
-static int EspNativeAudioIntent_publish(uint16_t id, uint8_t flags,
-                                        uint8_t priority) {
-    ++published;lastId=id;lastFlags=flags;lastPriority=priority;
-    return 1;
-}
-static void commit(void) {
-""" + statement + r"""
-}
-int main(void) {
-    barrelRemoved=0U;barrelExplosionArmed=1U;commit();assert(!published);
-    barrelRemoved=1U;barrelExplosionArmed=0U;commit();assert(!published);
-    barrelRemoved=1U;barrelExplosionArmed=1U;commit();
-    assert(published==1U && lastId==5061U &&
-           lastFlags==0U && lastPriority==4U);
-    puts("BARREL-5061: real commit branch exact cue + no early/rollback cue PASS");
-    return 0;
-}
-"""
-with tempfile.TemporaryDirectory(prefix="doom-barrel-5061-") as td:
-    code=Path(td)/"barrel.c"
-    exe=Path(td)/"barrel"
-    code.write_text(barrel_test)
-    subprocess.run(["cc","-std=c11","-Wall","-Wextra","-Werror",
-                    "-pedantic",str(code),"-o",str(exe)],check=True,cwd=root)
-    subprocess.run([str(exe)],check=True,cwd=root)
-
-
-# AUDIO-BARREL-GUN: restore legacy simultaneous shot + explosion, not just
-# barrel destruction SFX. Compile the two REAL production C statement bodies.
-combat=(root/"src/Combat.c").read_text()
-assert "snd = (combat->attackerWeaponId + 5044);" in combat
-assert "Sound_playSound(combat->doomRpg->sound, snd, 0, 5);" in combat
-gun_gate="if (crateWeapon != NULL && crateWeapon->resourceId != 0U)"
-assert barrel.count(gun_gate)==1
-assert barrel.index("[BARREL] COMMIT") < barrel.index(gun_gate) < barrel.index(cue)
-gun_expr=barrel[barrel.index(gun_gate):]
-gun_expr=gun_expr[:gun_expr.index(";")+1]
-barrel_sound_host=r"""
-#include <assert.h>
-#include <stdint.h>
-#include <stddef.h>
-#include <stdio.h>
-typedef struct {
-    uint16_t resourceId;
-} Weapon;
-static const Weapon pistol={5046U};
-static const Weapon shotgun={5047U};
-static const Weapon muted={0U};
+typedef struct {uint8_t finalPresented;} Frame;
+typedef struct {uint16_t resourceId;} Weapon;
+typedef struct {uint32_t sequence;} Pending;
+static Frame frame;
+static const Weapon pistol={5046U}, shotgun={5047U}, mute={0U};
 static const Weapon* crateWeapon;
-static uint8_t barrelRemoved, barrelExplosionArmed;
-static unsigned count;
-static uint16_t ids[4];
-static uint8_t priorities[4];
+static Pending pending={14U};
+static int isBarrel;
+static uint8_t waveOrdinal, barrelExplosionFrame, barrelRemoved;
+static uint8_t barrelExplosionArmed;
+static unsigned played, pumped, order;
+static uint16_t ids[8];
+static uint8_t priorities[8];
+static unsigned orderAtPublish[8], orderAtPump[8];
 static int EspNativeAudioIntent_publish(uint16_t id, uint8_t flags,
                                         uint8_t priority) {
-    assert(flags==0U && count<4U);
-    ids[count]=id;priorities[count]=priority;++count;
-    return 1;
+    assert(flags==0U && played<8U);
+    ids[played]=id;priorities[played]=priority;
+    orderAtPublish[played]=++order;++played;return 1;
 }
-static void committed_barrel(void) {
-""" + gun_expr + "\n" + statement + r"""
+static void EspEntranceMusic_pumpGameplay(void) {
+    assert(pumped<8U);
+    orderAtPump[pumped]=++order;++pumped;
 }
-static void clear(void) { count=0U;barrelRemoved=0U;barrelExplosionArmed=0U; }
+static void attack_presented(void) {
+""" + gun_gate + r"""
+}
+static void blast_presented(void) {
+""" + blast_gate + r"""
+}
+static void reset(void) {
+    frame.finalPresented=0U;crateWeapon=&pistol;isBarrel=1;
+    waveOrdinal=1U;barrelExplosionFrame=0U;
+    barrelRemoved=1U;barrelExplosionArmed=1U;
+    played=0U;pumped=0U;order=0U;
+}
 int main(void) {
-    /* Failed/no-shot routes must never invoke post-commit code at all.
-     * Within a committed shot a hit with no explosion still sounds the gun. */
-    clear();crateWeapon=&pistol;committed_barrel();
-    assert(count==1U && ids[0]==5046U && priorities[0]==5U);
-    clear();crateWeapon=&pistol;barrelRemoved=1U;
-    barrelExplosionArmed=1U;committed_barrel();
-    assert(count==2U && ids[0]==5046U && priorities[0]==5U &&
-           ids[1]==5061U && priorities[1]==4U);
-    clear();crateWeapon=&shotgun;barrelRemoved=1U;
-    barrelExplosionArmed=1U;committed_barrel();
-    assert(count==2U && ids[0]==5047U && ids[1]==5061U);
-    clear();crateWeapon=&muted;barrelRemoved=0U;committed_barrel();
-    assert(count==0U);
-    clear();crateWeapon=NULL;committed_barrel();
-    assert(count==0U);
-    puts("BARREL-GUN PASS: actual post-commit C plays 5046 prio5 before 5061 prio4");
+    /* A failed attack frame cannot publish a speculative gunshot. */
+    reset();attack_presented();assert(played==0U && pumped==0U);
+    reset();isBarrel=0;frame.finalPresented=1U;
+    attack_presented();assert(played==0U);
+    reset();frame.finalPresented=1U;crateWeapon=&mute;
+    attack_presented();assert(played==0U);
+    reset();frame.finalPresented=1U;crateWeapon=&shotgun;
+    attack_presented();assert(played==1U && ids[0]==5047U);
+    /* FIRST successful firing frame, BEFORE a single explosion frame. */
+    reset();frame.finalPresented=1U;
+    attack_presented();assert(played==1U && pumped==1U);
+    assert(ids[0]==5046U && priorities[0]==5U);
+    assert(orderAtPublish[0]<orderAtPump[0]);
+    frame.finalPresented=0U;
+    blast_presented();assert(played==1U); /* failed blast frame */
+    frame.finalPresented=1U;
+    waveOrdinal=2U;blast_presented();assert(played==1U);
+    waveOrdinal=1U;barrelExplosionFrame=1U;
+    blast_presented();assert(played==1U);
+    barrelExplosionFrame=0U;barrelRemoved=0U;
+    blast_presented();assert(played==1U);
+    barrelRemoved=1U;barrelExplosionArmed=0U;
+    blast_presented();assert(played==1U);
+    barrelExplosionArmed=1U;
+    blast_presented();assert(played==2U && pumped==2U);
+    assert(ids[1]==5061U && priorities[1]==4U);
+    assert(orderAtPump[0]<orderAtPublish[1] &&
+           orderAtPublish[1]<orderAtPump[1]);
+    /* An actual no-effect barrel shot still plays 5046, not 5061. */
+    reset();frame.finalPresented=1U;barrelRemoved=0U;
+    barrelExplosionArmed=0U;
+    attack_presented();blast_presented();
+    assert(played==1U && ids[0]==5046U && pumped==1U);
+    puts("BARREL-VISIBLE-SFX PASS: real C frames, 5046 before first blast, "
+         "5061 only first visible wave, no 520ms serialization, no heap");
     return 0;
 }
 """
-with tempfile.TemporaryDirectory(prefix="doom-barrel-gun-") as td:
-    source=Path(td)/"barrel_gun.c"
-    exe=Path(td)/"barrel_gun"
-    source.write_text(barrel_sound_host)
+with tempfile.TemporaryDirectory(prefix="doom-barrel-visible-") as td:
+    source=Path(td)/"barrel_visible.c"
+    exe=Path(td)/"barrel_visible"
+    source.write_text(host)
     subprocess.run(["cc","-std=c11","-Wall","-Wextra","-Werror",
-                    "-pedantic",str(source),"-o",str(exe)],check=True,cwd=root)
-    subprocess.run([str(exe)],check=True,cwd=root)
-
-
-# BARREL-SFX-AUDIBLE: the previous "publish both" fix started 5061 on
-# exactly the same output-frame window as pistol 5046, masking/cutting the
-# gun on the physical CYD. Check source plumbing AND compile real C policy.
-music=(root/"ESP32/src/esp_audio_entrance_music.cpp").read_text()
-pair_header=(root/"ESP32/src/esp_native_sfx_barrel_pair.h").read_text()
-assert '#include "esp_native_sfx_barrel_pair.h"' in music
-assert "EspNativeSfxBarrelPair_explosionStart(" in music
-assert "noteBarrelGun(intent,audibleEnd);" in music
-assert "noteBarrelGun(intent,start+mixed);" in music
-assert "startGenericSfx(id,intent->sequence,&audibleEnd)" in music
-assert "v->start=rdNow+kSfxLeadFrames;" in music
-assert "if (id==5061U)" in music
-assert "sfxBarrelShotSequence=0U;" in music
-assert "sfxBarrelShotEnd=0U;" in music
-assert "sfxBarrelShotSequence=intent->sequence;" in music
-assert "sfxBarrelShotEnd=audibleEnd;" in music
-assert "explosionSequence != gunSequence + 1U" in pair_header
-# Reset on music stop/change and new session, not only one test map.
-assert music.count("    sfxBarrelShotSequence=0U;") >= 3
-harness=r"""
-#include <assert.h>
-#include <stdint.h>
-#include <stdio.h>
-#include "esp_native_sfx_barrel_pair.h"
-#include "esp_native_sfx_window.h"
-enum { RING=16384U, LEAD=1024U, SHOT_FRAMES=11466U };
-int main(void) {
-    const uint32_t reader=210000U;
-    const uint32_t gunStart=reader+LEAD;
-    const uint32_t gunEnd=gunStart+SHOT_FRAMES;
-    const uint32_t nextStart=EspNativeSfxBarrelPair_explosionStart(
-        reader+LEAD,gunEnd,25U,26U);
-    assert(nextStart==gunEnd);
-    assert(nextStart-gunStart==SHOT_FRAMES); /* pistol .520s complete */
-    /* No SFX in additional storage: the delayed voice can start AFTER
-     * current music publication and waits for the ring to advance. */
-    assert(nextStart > reader+11000U);
-    assert(EspNativeSfxPcm_publishedSpan(
-        nextStart,reader+11000U,37485U,RING)==0U);
-    assert(EspNativeSfxPcm_publishedSpan(
-        nextStart,nextStart+2000U,37485U,RING)==2000U);
-    /* No artificial 8192 cap: original 5061 can continue for 37485
-     * DAC frames in the existing 16384-byte ring progressively. */
-    assert(EspNativeSfxPcm_publishedSpan(
-        nextStart,nextStart+10000U,37485U,RING)==10000U);
-    assert(EspNativeSfxBarrelPair_explosionStart(
-        reader+LEAD,gunEnd,25U,27U)==reader+LEAD); /* unrelated */
-    assert(EspNativeSfxBarrelPair_explosionStart(
-        reader+LEAD,gunEnd,0U,1U)==reader+LEAD);
-    assert(EspNativeSfxBarrelPair_explosionStart(
-        reader+LEAD,gunEnd,UINT32_MAX,0U)==reader+LEAD);
-    assert(EspNativeSfxBarrelPair_explosionStart(
-        reader+LEAD,reader+500U,25U,26U)==reader+LEAD);
-    printf("BARREL-SFX-AUDIBLE PASS: gun 11466 frames before 5061, "
-           "unrelated immediate, future ring publish, no heap\n");
-    return 0;
-}
-"""
-with tempfile.TemporaryDirectory(prefix="doom-barrel-sequence-") as td:
-    source=Path(td)/"sequence.c"
-    exe=Path(td)/"sequence"
-    source.write_text(harness)
-    subprocess.run(["cc","-std=c11","-O2","-Wall","-Wextra","-Werror",
-                    "-pedantic","-I",str(root/"ESP32/src"),str(source),
-                    "-o",str(exe)],check=True,cwd=root)
+                    "-pedantic",str(source),"-o",str(exe)],
+                   check=True,cwd=root)
     subprocess.run([str(exe)],check=True,cwd=root)
