@@ -122,12 +122,13 @@ assert 'word(fb, stride, l, t, r, b, first, p,' in skin
 assert "glyphs[][9]" in skin
 assert "length * 6 - 1" in skin
 assert "row < 9" in skin and "bit < 5" in skin
-# CLASSIC vivid cobalt -> metal-gray -> preserved warm orange, shared with
-# the UAC font, LOADING and native HELP title. No chassis or font atlas edit.
-assert "#define CLASSIC_STEEL_BLUE 0x2c3fU" in skin
-assert "#define CLASSIC_METAL_GRAY 0x9d56U" in skin
-assert "#define INFERNO_DEEP_VIOLET 0x5889U" in skin
-assert "#define CLASSIC_PALE_AMBER 0xf4caU" in skin
+# CLASSIC Wolf3D-style deep blue -> blue-steel -> yellow gold shared by
+# the UAC font, LOADING and native HELP title, without touching atlases.
+assert "#define CLASSIC_STEEL_BLUE 0x229aU" in skin
+assert "#define CLASSIC_METAL_GRAY 0x7d17U" in skin
+assert "#define CLASSIC_PALE_AMBER 0xfe8aU" in skin
+assert "#define INFERNO_DEEP_VIOLET 0xa12aU" in skin
+assert "#define INFERNO_MID_RED     0xf842U" in skin
 assert "#define CLASSIC_DIM_STEEL  0x42f0U" in skin
 assert "return CLASSIC_PALE_AMBER;" in skin
 assert "return CLASSIC_STEEL_BLUE;" in skin

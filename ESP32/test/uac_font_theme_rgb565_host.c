@@ -5,8 +5,8 @@
 #include <stdio.h>
 int main(void) {
     const uint16_t themes[][3] = {
-        {0x2c3fU, 0x9d56U, 0xf4caU},
-        {0x5889U, 0xf965U, 0xfd34U},
+        {0x229aU, 0x7d17U, 0xfe8aU},
+        {0xa12aU, 0xf842U, 0xfd34U},
         {0x2638U, 0x87e0U, 0xc7b8U}
     };
     for (unsigned t=0;t<3;++t) for (int rows=19;rows<=23;rows+=2) {
@@ -20,14 +20,14 @@ int main(void) {
             assert(EspUacFontTheme_tintGray(0xffffU,tone)==tone);
         }
     }
-    /* Classic's actual UI tint endpoints & grayscale midpoint remain
-     * intact in the same helper used by MENU_MAIN and OPTIONS. */
+    /* Actual deep-blue / blue-steel / golden-yellow stop coordinates
+     * flow unchanged through the MENU_MAIN / OPTIONS UAC tint helper. */
     assert(EspUacFontTheme_verticalTone(themes[0][0],themes[0][1],
-                                        themes[0][2],0,25)==0x2c3fU);
+                                        themes[0][2],0,25)==0x229aU);
     assert(EspUacFontTheme_verticalTone(themes[0][0],themes[0][1],
-                                        themes[0][2],12,25)==0x9d56U);
+                                        themes[0][2],12,25)==0x7d17U);
     assert(EspUacFontTheme_verticalTone(themes[0][0],themes[0][1],
-                                        themes[0][2],24,25)==0xf4caU);
+                                        themes[0][2],24,25)==0xfe8aU);
     for (int row=0;row<23;++row) {
         uint16_t a=EspUacFontTheme_verticalTone(themes[0][0],themes[0][1],themes[0][2],row,23);
         uint16_t b=EspUacFontTheme_verticalTone(themes[1][0],themes[1][1],themes[1][2],row,23);
