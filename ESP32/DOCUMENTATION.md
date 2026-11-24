@@ -1,3 +1,9 @@
+## PERF-GAME — epic fluidité des tours ennemis (24 novembre 2026, PLANIFIÉ)
+
+[Epic #453](https://github.com/Kharn27/DoomRPG-RE/issues/453) / [feuille de route permanente](PERF_GAME_ROADMAP.md). Simulation autoritaire ordonnée distincte de la présentation : P1 #447 (baseline/oracle), P2 #454 (hors champ), P3 #455 (budget temporel), P4 #456 (présentation groupée), puis explorations conditionnelles P5 #457 (ruche spatiale), P6 #458 (géométrie statique), P7 #459 (multicœur), option UX P8 #460. Coordination IA #442/#438/#439, audio #382/#427, police #420, sampler #340. Production 160×120 prioritaire ; étude #263 / PR #364 conservées en pause de décision. Aucun changement firmware ni gain matériel revendiqué.
+
+---
+
 ## MONSTER-DEATH-P1 — conséquences de mort natives partagées, PASS CYD borné (24 novembre 2026)
 
 [PR #452](https://github.com/Kharn27/DoomRPG-RE/pull/452) / [rapport matériel](MILESTONE_MONSTER_DEATH_P1_CYD_PASS.md). Direct et radius baril partagent `prepareDeathAfterXp` : choix sonore puis un mot RNG drop, transactions existantes conservées ; douleur P2, mort P5, gib 5091 P3. Code candidat `a4bcaf247fe8f5ecf76c9ba2fb9674c0755c1a58`, double CI code SUCCESS. Capture CYD `platformio-device-monitor-261124-094612.log` : deux barils (5099 P2, 5076 P5 après commit), trois gibs 5091, drop live, HEADROOM_OK, NULL invariants, retour menu propre et zéro overflow/gap/audibleSfxDropped. Retour auditif positif. 5095, chaîne multi-barils et familles spéciales non validés dans cette capture. Post-test docs-only.
