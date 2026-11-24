@@ -16,6 +16,11 @@ typedef struct {
     EspPerfTraceEntry entries[ESP_PERF_TRACE_CAPACITY];
     uint8_t count,active;
 } EspPerfTraceCache;
+/* Single loopTask owner; synchronous, non-overlapping goal plans. */
+extern EspPerfTraceCache EspPerfGameP1_sharedTraceCache;
+#ifndef DOOMRPG_PERF_TRACE_FAST
+#define DOOMRPG_PERF_TRACE_FAST 1
+#endif
 static inline void EspPerfTraceCache_begin(EspPerfTraceCache* c) {
     c->count=0; c->active=1;
 }

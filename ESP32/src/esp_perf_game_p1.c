@@ -1,6 +1,8 @@
 #include "esp_perf_game_p1.h"
 #if DOOMRPG_PERF_GAME_P1
 #include <limits.h>
+#include "esp_perf_trace_cache.h"
+EspPerfTraceCache EspPerfGameP1_sharedTraceCache;
 #include <stdio.h>
 #include <string.h>
 #define BINS 15U
@@ -105,8 +107,8 @@ static void reportLoad(void) {
           names[i-6],(unsigned)p->calls,(unsigned long long)p->wallUs,(unsigned)p->maxUs);
     }
     for(i=0;i<2;i++)
-        printf("[PERFGAMEP1F] planner=%s calls=%u hits=%u mismatches=%u mode=shadow cumulative=yes\n",
-          i?"continuation":"first",(unsigned)shadowCalls[i],(unsigned)shadowHits[i],(unsigned)shadowMismatch[i]);
+        printf("[PERFGAMEP1F] planner=%s calls=%u hits=%u mismatches=%u mode=%s cumulative=yes\n",
+          i?"continuation":"first",(unsigned)shadowCalls[i],(unsigned)shadowHits[i],(unsigned)shadowMismatch[i],DOOMRPG_PERF_TRACE_FAST?"fast":"shadow");
     printf("[PERFGAMEP1B] outsideFrames=%llu outsideFrameUs=%llu cumulative=yes\n",
       (unsigned long long)outsideFrames,(unsigned long long)outsideFrameUs);
 }

@@ -377,7 +377,7 @@ static int cardinalTraceClearBody(int32_t sourceX,
 }
 
 #if DOOMRPG_PERF_GAME_P1
-static EspPerfTraceCache traceCache;
+#define traceCache EspPerfGameP1_sharedTraceCache
 #endif
 static int cardinalTraceClear(int32_t sourceX, int32_t sourceY,
                               int32_t destX, int32_t destY,
@@ -389,7 +389,11 @@ static int cardinalTraceClear(int32_t sourceX, int32_t sourceY,
     int cached=0;
     int hit=EspPerfTraceCache_lookup(&traceCache,sourceX,sourceY,destX,destY,attackerSprite,mask,strictSpecial,&cached);
 #endif
+#if DOOMRPG_PERF_GAME_P1 && DOOMRPG_PERF_TRACE_FAST
+    int result=hit?cached:cardinalTraceClearBody(sourceX,sourceY,destX,destY,attackerSprite,mask,strictSpecial);
+#else
     int result=cardinalTraceClearBody(sourceX,sourceY,destX,destY,attackerSprite,mask,strictSpecial);
+#endif
 #if DOOMRPG_PERF_GAME_P1
     if(traceCache.active) {
         EspPerfGameP1_traceShadow(1,hit,hit && cached!=result);
