@@ -542,6 +542,12 @@ jobs:
       - name: Test SDL-F19 native rectangle aliases and NOTE standalone header
         run: python ESP32/test/sdl_f19_native_rect_types_host.py
 
+      - name: PERF-GAME-P1h bounded spatial sprite index (host C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+            ESP32/test/perf_game_spatial_sprite_host.c -o /tmp/doomrpg-perf-spatial
+          /tmp/doomrpg-perf-spatial
+
       - name: Test SDL-F20 eight native owner header-independent C sources
         run: python ESP32/test/sdl_f20_native_leaf_header_host.py
 
