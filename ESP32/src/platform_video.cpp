@@ -12,6 +12,9 @@
 #if DOOMRPG_RES60_P17_HEAP_SNAPSHOT
 #include "esp_res60_world_preview.h"
 #endif
+#if DOOMRPG_RES60_P20_COMPACT_SERIAL
+#include "esp_res60_serial_policy.h"
+#endif
 #if DOOMRPG_RES60_P12_INVENTORY_CACHE
 #include "esp_res60_inventory_cache.h"
 #endif
@@ -812,6 +815,30 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
 #else
     const unsigned long wallTextureSamples=0UL;
 #endif
+#if DOOMRPG_RES60_P20_COMPACT_SERIAL
+    /* P20: keep all cold evidence and all failure logs unchanged. A fully
+     * cached rotation gets ONE short witness instead of seven P8-P18
+     * paragraphs + RASTER. Serial at 115200 can block the input loop.
+     * P11 preparedUs was captured before logging in both paths. */
+    if (EspRes60Serial_compactWarm(
+            (uint8_t)report.mapLeaseHit,
+            (uint8_t)report.texture.cacheHit)) {
+        Serial.printf("[RES60P20] WARM angle=%u turns=%u mapUs=%lu raysUs=%lu preparedUs=%lu tests=%lu rawP3FNV=%08lx fnv=%08lx p10FNV=%08lx swatchFNV=%08lx heap8=%u largest8=%u minHeap8=%u\n",
+            (unsigned)report.spawnAngle, (unsigned)turns,
+            (unsigned long)report.loadUs,
+            (unsigned long)report.raster.raysUs,
+            (unsigned long)preparedUs,
+            (unsigned long)report.raster.rayTests,
+            (unsigned long)report.raster.frameFNV,
+            (unsigned long)fnv,
+            (unsigned long)report.texture.wallFNV,
+            (unsigned long)report.texture.sampleFNV,
+            (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+            (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+            (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT));
+    } else
+#endif
+    {
 #if DOOMRPG_RES60_P8_TEXEL
     Serial.printf("[RES60P8] SWATCH source=PAK map=/intro.bsp file=wtexels.bin cache=%s logical=%u catalog=%u sourceNibble=%lu catalogFNV=%08lx texelFNV=%08lx sampleFNV=%08lx bytes=%lu inset=48x48 pixels=%lu framebuffer=192x144 worldTextureSamples=%lu\n",
         report.texture.cacheHit ? "HIT" : "MISS",
@@ -913,6 +940,7 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
         (unsigned long)report.raster.frameFNV,(unsigned long)fnv,
         (unsigned long)(micros()-started),
         wallTextureSamples);
+    }
     if (!PlatformVideo_present()) {
 #if DOOMRPG_RES60_P12_INVENTORY_CACHE
         EspRes60InventoryCache_reset();
