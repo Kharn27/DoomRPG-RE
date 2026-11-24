@@ -11,7 +11,7 @@ typedef struct {
 } Dist;
 typedef struct {
     EspPerfGameP1Snapshot totals;
-    Dist wall, service, gap, member, frame, lcd, input;
+    Dist wall, service, gap, member, frame, lcd, input, commit;
     uint32_t previewFrames;
 } Cohort;
 typedef struct {
@@ -65,13 +65,15 @@ static void report(unsigned n) {
         (unsigned)c->service.maxUs,(unsigned)qms(&c->gap,50),
         (unsigned)qms(&c->gap,95),(unsigned)c->gap.maxUs,
         (unsigned)c->totals.memberSamples,(unsigned)c->member.maxUs);
-    printf("[PERFGAMEP1] group=%s composedFrames=%u previewFrames=%u frameP50LeMs=%u frameP95LeMs=%u frameMaxUs=%u framePresents=%u lcdMaxUs=%u inputResponses=%u inputP50LeMs=%u inputP95LeMs=%u inputMaxUs=%u combatBlocked=%u inputBusy=%u cumulative=yes\n",
+    printf("[PERFGAMEP1] group=%s composedFrames=%u previewFrames=%u frameP50LeMs=%u frameP95LeMs=%u frameMaxUs=%u framePresents=%u lcdMaxUs=%u inputResponses=%u inputP50LeMs=%u inputP95LeMs=%u inputMaxUs=%u committedActions=%u commitP50LeMs=%u commitP95LeMs=%u commitMaxUs=%u combatBlocked=%u inputBusy=%u cumulative=yes\n",
         n?"mass":"pre",(unsigned)c->totals.frames,(unsigned)c->previewFrames,
         (unsigned)qms(&c->frame,50),(unsigned)qms(&c->frame,95),
         (unsigned)c->frame.maxUs,(unsigned)c->totals.framePresents,
         (unsigned)c->lcd.maxUs,(unsigned)c->totals.inputResponses,
         (unsigned)qms(&c->input,50),(unsigned)qms(&c->input,95),
-        (unsigned)c->input.maxUs,(unsigned)c->totals.inputBlockedCombat,
+        (unsigned)c->input.maxUs,(unsigned)c->totals.committedActions,
+        (unsigned)qms(&c->commit,50),(unsigned)qms(&c->commit,95),
+        (unsigned)c->commit.maxUs,(unsigned)c->totals.inputBlockedCombat,
         (unsigned)c->totals.inputBusy);
 }
 void EspPerfGameP1_reset(void) {
@@ -129,6 +131,14 @@ void EspPerfGameP1_inputAccepted(uint32_t seq,uint64_t at) {
 }
 void EspPerfGameP1_inputConsumed(uint32_t seq) {
     if (inputSeq && seq==inputSeq) inputConsumed=1;
+}
+void EspPerfGameP1_inputCommit(uint32_t seq,uint64_t now) {
+    Cohort* c;
+    if (!inputConsumed || inputSeq!=seq) return;
+    c=&cohort[currentGroup];
+    record(&c->commit,delta(now,inputAt));
+    ++c->totals.committedActions;
+    c->totals.commitMaxUs=c->commit.maxUs;
 }
 void EspPerfGameP1_inputDispatchDone(uint64_t now) {
     Cohort* c;
