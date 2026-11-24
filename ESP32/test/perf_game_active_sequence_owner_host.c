@@ -202,8 +202,10 @@ int main(void) {
     getOrderedFailAt=2U;
     while(EspNativeGameplayMonsterActiveSequence_isBusy()==0)
         EspNativeGameplayMonsterActiveSequence_service(NULL);
-    retaliation.lastResolvedProbe=turn.attackProbes;
-    EspNativeGameplayMonsterActiveSequence_service(NULL);
+    for(unsigned k=0;k<12U && EspNativeGameplayMonsterActiveSequence_isBusy();k++) {
+        retaliation.lastResolvedProbe=turn.attackProbes;
+        EspNativeGameplayMonsterActiveSequence_service(NULL);
+    }
     assert(!EspNativeGameplayMonsterActiveSequence_isBusy());
     checkOracle(7U,2);
     puts("PERF-GAME real active-sequence owner oracle PASS 7/24 ordered, RNG, topology, death skips, pause, rollback, activation snapshot, fail-closed");

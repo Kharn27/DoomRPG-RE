@@ -177,6 +177,36 @@ def restore_pre_perf_game_p1_geometry(name: str, src: str) -> str:
     import re
     assert name in ('esp_native_gameplay_monster_movement.c',
                     'esp_native_gameplay_monster_three_goal_turn.c'), name
+    # Undo P1j exact line-index candidate first; the historical SHA remains
+    # pinned to the unchanged pre-P1 geometry, not the experimental code.
+    jnames = (('closedLineBlocksTile', 'closedLineSourceStatus')
+              if name.endswith('monster_movement.c')
+              else ('closedLineBlocksTile',))
+    jmarker = ('\\n#if DOOMRPG_PERF_GAME_P1\\n'
+               '/* P1j independent full reference remains authoritative in shadow mode. */\\n')
+    for jname in jnames:
+        assert src.count(jmarker) >= 1, ('P1j wrapper missing', jname)
+        start = src.index(jmarker)
+        end_marker = ('\\n#else\\n#define ' + jname + ' ' +
+                      jname + 'Reference\\n#endif\\n')
+        end = src.index(end_marker, start) + len(end_marker)
+        src = src[:start] + src[end:]
+        old_name = 'static int ' + jname + 'Reference('
+        assert src.count(old_name) == 1, ('P1j reference drift', jname)
+        src = src.replace(old_name, 'static int ' + jname + '(', 1)
+    jheader = '#include "esp_perf_spatial_line.h"\\n'
+    assert src.count(jheader) == 1, 'P1j header drift'
+    src = src.replace(jheader, '', 1)
+    jkind = '#define ESP_PERF_LINE_FIRST_KIND ' + (
+        '0' if name.endswith('monster_movement.c') else '2') + '\\n'
+    assert src.count(jkind) == 1, 'P1j kind drift'
+    src = src.replace(jkind, '', 1)
+    jbegin = ('    EspPerfGameP1_lineBuild(EspPerfSpatialLine_begin('
+              '&EspPerfGameP1_spatialLineIndex, lineEntityTile));\\n')
+    jend = '    EspPerfSpatialLine_end(&EspPerfGameP1_spatialLineIndex);\\n'
+    assert src.count(jbegin) == 1 and src.count(jend) == 1, 'P1j scope drift'
+    src = src.replace(jbegin, '', 1).replace(jend, '', 1)
+    assert 'EspPerfSpatialLine_' not in src and 'EspPerfGameP1_line' not in src
     marker = '/* P1H-SPRITE-INDEX BEGIN: shadow authority stays with the original scan. */'
     start = src.index('#if DOOMRPG_PERF_GAME_P1\n' + marker + '\n')
     end = src.index('#endif\n', src.index('/* P1H-SPRITE-INDEX END */', start)) + len('#endif\n')
