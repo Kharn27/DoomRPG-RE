@@ -159,6 +159,22 @@ static int rayHit(const EspRes60PreviewCamera* cam,
                   , int64_t* segmentParamNum
 #endif
                   ) {
+#if DOOMRPG_RES60_P21_INTERSECTION32
+    /* P21 numeric bound (C11 int32, proved for all admitted values):
+     * endpoints in [0,2048], camera in [0,2047], cardinal rays
+     * |rayX|+|rayY|<=383. Thus |sx,sy,vx,vy|<=2048,
+     * |num|<=2*2048^2=8388608, |den,u|<=383*2048=784384.
+     * num*192<=1610612736 fits signed 32 bit; FAR*den<=3212836864
+     * fits UNSIGNED 32 bit. Nearest-hit cross-products remain 64 bit.
+     * Do not enable for arbitrary map/ray formats without new bounds. */
+    const int32_t sx = (int32_t)line->x2 - (int32_t)line->x1;
+    const int32_t sy = (int32_t)line->y2 - (int32_t)line->y1;
+    const int32_t vx = (int32_t)line->x1 - (int32_t)cam->worldX;
+    const int32_t vy = (int32_t)line->y1 - (int32_t)cam->worldY;
+    int32_t den = rayX * sy - rayY * sx;
+    int32_t num = vx * sy - vy * sx;
+    int32_t u = vx * rayY - vy * rayX;
+#else
     const int64_t sx = (int64_t)line->x2 - line->x1;
     const int64_t sy = (int64_t)line->y2 - line->y1;
     const int64_t vx = (int64_t)line->x1 - cam->worldX;
@@ -166,15 +182,23 @@ static int rayHit(const EspRes60PreviewCamera* cam,
     int64_t den = (int64_t)rayX * sy - (int64_t)rayY * sx;
     int64_t num = vx * sy - vy * sx;
     int64_t u = vx * rayY - vy * rayX;
+#endif
     if (den == 0) return 0;
     if (den < 0) {
         den = -den;
         num = -num;
         u = -u;
     }
+#if DOOMRPG_RES60_P21_INTERSECTION32
+    if (num <= 0 || u < 0 || u > den ||
+        (uint32_t)num * 192U < (uint32_t)PREVIEW_NEAR * (uint32_t)den ||
+        (uint32_t)num * 192U > (uint32_t)PREVIEW_FAR * (uint32_t)den)
+        return 0;
+#else
     if (num <= 0 || u < 0 || u > den ||
         num * 192 < PREVIEW_NEAR * den ||
         num * 192 > PREVIEW_FAR * den) return 0;
+#endif
     *depthNum = num;
     *depthDen = den;
 #if DOOMRPG_RES60_P10_WALL_MATERIAL

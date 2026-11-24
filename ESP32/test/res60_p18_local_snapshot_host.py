@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """RES60-P18: real C P15 BSS vs P18 heap alias, 261 full-frame + P10 UV parity, fail-closed owner."""
 from pathlib import Path
-import configparser, subprocess, tempfile, re
+import configparser, subprocess, tempfile, re, sys
+P21_TRIAL = '--p21' in sys.argv
 
 ROOT=Path(__file__).resolve().parents[2]
 ini=configparser.ConfigParser(interpolation=None,inline_comment_prefixes=(";",))
@@ -109,8 +110,10 @@ with tempfile.TemporaryDirectory(prefix="res60-p18-") as tmp:
     subprocess.run(cc+f+["-DDOOMRPG_RES60_P17_HEAP_SNAPSHOT=0",
         "-DEspRes60Preview_render=EspRes60Preview_renderBaseline",
         "-c",projector,"-o",str(old)],check=True)
+    trialFlags=["-DDOOMRPG_RES60_P20_COMPACT_SERIAL=1",
+                "-DDOOMRPG_RES60_P21_INTERSECTION32=1"] if P21_TRIAL else []
     subprocess.run(cc+f+["-DDOOMRPG_RES60_P17_HEAP_SNAPSHOT=1",
-        "-DDOOMRPG_RES60_P18_LOCAL_SNAPSHOT=1",
+        "-DDOOMRPG_RES60_P18_LOCAL_SNAPSHOT=1"]+trialFlags+[
         "-Dmalloc=TestAlloc","-Dfree=TestFree",
         "-c",projector,"-o",str(new)],check=True)
     subprocess.run(cc+f+["-DDOOMRPG_RES60_P17_HEAP_SNAPSHOT=1",
@@ -142,4 +145,6 @@ with tempfile.TemporaryDirectory(prefix="res60-p18-") as tmp:
                         "-c",projector,"-o",str(prod)],check=True)
     symbols=subprocess.check_output(["nm","-g",str(prod)],text=True)
     assert "EspRes60Preview_snapshotBegin" not in symbols
-print("RES60-P18 HOST PASS: real P15 static vs P17 heap, 261 full-frame UV parity, bounded one-shot fail closed, BSS and production isolation")
+print(("RES60-P21 INTERSECTION32 HOST PASS" if P21_TRIAL else
+       "RES60-P18 HOST PASS") +
+      ": real P15 static 64-bit vs P17 heap render, 261 full-frame UV parity, bounded one-shot fail closed, BSS and production isolation")
