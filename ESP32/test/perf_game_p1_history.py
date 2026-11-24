@@ -180,7 +180,8 @@ def restore_pre_perf_game_p1_geometry(name: str, src: str) -> str:
     marker = '/* P1H-SPRITE-INDEX BEGIN: shadow authority stays with the original scan. */'
     start = src.index('#if DOOMRPG_PERF_GAME_P1\n' + marker + '\n')
     end = src.index('#endif\n', src.index('/* P1H-SPRITE-INDEX END */', start)) + len('#endif\n')
-    src = src[:start] + src[end:]
+    assert src[start - 1] == '\n', 'P1h extra separator drift'
+    src = src[:start - 1] + src[end:]
     assert src.count('static int blockingSpriteOnTileReference(') == 1
     src = src.replace('static int blockingSpriteOnTileReference(',
                       'static int blockingSpriteOnTile(', 1)
