@@ -4327,6 +4327,20 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                    (unsigned int)barrelPlayerHits,
                    barrelExplosionArmed != 0U ? "native-180x3-each" : "none",
                    crateWeapon != NULL ? (unsigned int)crateWeapon->resourceId : 0U);
+            /* Only NOW is the full barrel + multi-wave monster transaction
+             * irreversible. The native monster combat owner already consumed
+             * the exact legacy death/pain sound RNG; publish its bounded
+             * sound intents once, never on a rolled-back blast. The visible
+             * 5061 explosion remains anchored to wave-1 frame 0 above. */
+            if (barrelSplashCount != 0U ||
+                barrelSplashTotalHits != 0U) {
+                if (!EspNativeGameplayMonsterCombat_publishSplashAudioAfterCommit(
+                        pending.sequence)) {
+                    printf("[BARRELRADIUS] SFX-DEFER seq=%u reason=monster-audio-sequence-invalid worldCommitted=yes\n",
+                           (unsigned int)pending.sequence);
+                }
+                EspEntranceMusic_pumpGameplay();
+            }
         }
 
         if (isFireMiss) {

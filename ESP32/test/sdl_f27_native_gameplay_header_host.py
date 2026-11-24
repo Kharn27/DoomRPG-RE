@@ -75,6 +75,11 @@ def original_body_parity() -> None:
         current = (SOURCES / filename).read_bytes()
         # ARCH-RC24 has no GNU runtime alias; undo only public/physical
         # present spellings for the immutable pre-SDL-F27 source witnesses.
+        if filename == "esp_native_gameplay_action_engine.c":
+            # Strict inverse: committed monster splash sounds are additive.
+            # No relaxation of the 10 immutable historical Git blobs.
+            from audio_barrel_splash_history import restore_pre_barrel_splash_audio
+            current = restore_pre_barrel_splash_audio(filename, current)
         if filename in ("esp_native_gameplay_action_engine.c",
                         "esp_native_gameplay_gib_fx.c"):
             from arch_rc24_history import restore_pre_rc24

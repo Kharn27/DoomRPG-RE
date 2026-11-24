@@ -87,4 +87,100 @@ with tempfile.TemporaryDirectory(prefix="doomrpg-monster-sfx-") as d:
                     str(root / "ESP32/src/esp_native_audio_intent.c"),
                     "-o", str(target)], check=True)
     subprocess.run([str(target)], check=True)
+# BARREL-RADIUS-SFX: real legacy entity death uses Sound_playSound(snd,0,5).
+# Native monster splash had already consumed the exact RNG-selected sound
+# (5095 for subtype 5), but never published it. Release it only at the
+# enclosing barrel COMMIT, with no speculative sound on rollback.
+legacy_entity=(root/"src/Entity.c").read_text()
+action=(root/"ESP32/src/esp_native_gameplay_action_engine.c").read_text()
+assert "Sound_playSound(entity->doomRpg->sound, snd, 0, 5);" in legacy_entity
+assert after[5*12+8]==5095
+assert "sound = consumeDeathSound(runtime, before.subtype, &rngCalls);" in combat
+assert "sound = consumePainSound(runtime, before.subtype, &rngCalls);" in combat
+assert "splashAudioCues[splashAudioCount++] =" in combat
+assert "MONSTER_SPLASH_AUDIO_DEATH_FLAG : 0U" in combat
+assert "splashAudioSequence = 0U;" in combat
+assert "splashAudioCount = 0U;" in combat
+assert "/* Capacity is checked BEFORE mutating health, drops, or RNG." in combat
+assert "goto splash_failed;" in combat
+assert "MONSTER_SPLASH_AUDIO_CAPACITY (16U * ESP_NATIVE_GAMEPLAY_SPLASH_MAX_HITS)" in combat
+assert "static uint16_t splashAudioCues[MONSTER_SPLASH_AUDIO_CAPACITY];" in combat
+assert combat.count("EspNativeAudioIntent_publish(resource, 0U, priority)") == 1
+barrel_commit=action.index('printf("[BARREL] COMMIT')
+release=action.index("EspNativeGameplayMonsterCombat_publishSplashAudioAfterCommit(",barrel_commit)
+barrel_settle=action.index('printf("[ACTIONENGINE] ATTACK',barrel_commit)
+assert barrel_commit < release < barrel_settle
+assert "if (barrelSplashCount != 0U ||" in action[barrel_commit:release]
+assert "barrelSplashTotalHits != 0U)" in action[barrel_commit:release]
+assert "EspEntranceMusic_pumpGameplay();" in action[release:barrel_settle]
+
+start=combat.index("int EspNativeGameplayMonsterCombat_publishSplashAudioAfterCommit(")
+stop=combat.index("int EspNativeGameplayMonsterCombat_applySplash(",start)
+real_release=combat[start:stop]
+assert "splashSequenceActive != 0U) return 0;" in real_release
+assert "splashAudioSequence = 0U;" in real_release
+assert "splashAudioCount = 0U;" in real_release
+assert "DoomRPG_rand" not in real_release
+assert "EspAssetPack" not in real_release
+assert "malloc" not in real_release
+host=r"""
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#define ESP_NATIVE_GAMEPLAY_SPLASH_MAX_HITS 8U
+#define MONSTER_SPLASH_AUDIO_CAPACITY (16U * ESP_NATIVE_GAMEPLAY_SPLASH_MAX_HITS)
+#define MONSTER_SPLASH_AUDIO_DEATH_FLAG 0x8000U
+static uint16_t splashAudioCues[MONSTER_SPLASH_AUDIO_CAPACITY];
+static uint32_t splashAudioSequence;
+static uint8_t splashAudioCount, splashSequenceActive;
+static uint16_t playedIds[4];
+static uint8_t playedPriorities[4];
+static unsigned played;
+static int EspNativeAudioIntent_publish(uint16_t id, uint8_t flags,
+                                        uint8_t priority) {
+    assert(flags==0U && played<4U);
+    playedIds[played]=id;
+    playedPriorities[played]=priority;
+    ++played;
+    return 1;
+}
+""" + real_release + r"""
+int main(void) {
+    assert(sizeof(splashAudioCues)==256U);
+    /* A speculative/wrong sequence and a still-active chain cannot emit. */
+    splashAudioSequence=11U;splashAudioCount=2U;
+    splashAudioCues[0]=(uint16_t)(5095U|MONSTER_SPLASH_AUDIO_DEATH_FLAG);
+    splashAudioCues[1]=5099U;
+    assert(!played);
+    assert(EspNativeGameplayMonsterCombat_publishSplashAudioAfterCommit(12U)==0);
+    assert(!played && splashAudioCount==2U);
+    splashSequenceActive=1U;
+    assert(EspNativeGameplayMonsterCombat_publishSplashAudioAfterCommit(11U)==0);
+    assert(!played && splashAudioCount==2U);
+    /* Exact 5095/P5 death and 5099/P2 pain, causal order, one time. */
+    splashSequenceActive=0U;
+    assert(EspNativeGameplayMonsterCombat_publishSplashAudioAfterCommit(11U)==1);
+    assert(played==2U && playedIds[0]==5095U && playedPriorities[0]==5U);
+    assert(playedIds[1]==5099U && playedPriorities[1]==2U);
+    assert(splashAudioSequence==0U && splashAudioCount==0U);
+    assert(EspNativeGameplayMonsterCombat_publishSplashAudioAfterCommit(11U)==0);
+    assert(played==2U); /* no duplicate */
+    /* A rolled-back chain clears the staged state; no ghost death cry. */
+    splashAudioSequence=0U;splashAudioCount=0U;
+    assert(EspNativeGameplayMonsterCombat_publishSplashAudioAfterCommit(11U)==0);
+    assert(played==2U);
+    puts("BARREL-RADIUS-SFX PASS: real native commit publisher, "
+         "5095 death P5 and pain P2, sequence/rollback gate, 256B static");
+    return 0;
+}
+"""
+with tempfile.TemporaryDirectory(prefix="doomrpg-barrel-splash-sfx-") as d:
+    source=Path(d)/"release.c"
+    exe=Path(d)/"release"
+    source.write_text(host)
+    subprocess.run(["cc","-std=c11","-O2","-Wall","-Wextra",
+                    "-Werror","-pedantic",str(source),"-o",str(exe)],
+                   check=True)
+    subprocess.run([str(exe)],check=True)
+
 print("[MONSTERSFX] PASS 14 exact families / 168 legacy sound IDs, every attack/pain/death, 3 bounded streaming PCM voices, FIFO and flash-backed dialog music")
