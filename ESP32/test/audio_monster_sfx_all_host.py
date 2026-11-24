@@ -33,7 +33,9 @@ assert "monster->mType" in visual and "EspNativeMonsterSfx_lookup(" in visual
 assert "pendingAttackSoundAtMs=DoomRPG_GetUpTimeMS()+ATTACK_VISUAL_FRAME_MS;" in visual
 assert "EspNativeAudioIntent_publish(pendingAttackSoundId,0U,3U)" in visual
 assert "EspNativeAudioIntent_publish(shotSound,0U,5U)" in combat
-assert "EspNativeAudioIntent_publish(consequenceSound,0U,lethal?5U:2U)" in combat
+assert "EspNativeMonsterDeathConsequence_priority(" in combat
+assert "prepareDeathAfterXp(" in combat
+assert "EspNativeAudioIntent_publish(consequenceSound,0U," in combat
 assert "consumePainSound(" in combat and "consumeDeathSound(" in combat
 assert "constexpr uint8_t kGenericSfxVoiceCount=3U;" in music
 assert "EspNativeAudioIntent_nextAfter(sfxSeenSequence,&next)" in music
@@ -95,7 +97,8 @@ legacy_entity=(root/"src/Entity.c").read_text()
 action=(root/"ESP32/src/esp_native_gameplay_action_engine.c").read_text()
 assert "Sound_playSound(entity->doomRpg->sound, snd, 0, 5);" in legacy_entity
 assert after[5*12+8]==5095
-assert "sound = consumeDeathSound(runtime, before.subtype, &rngCalls);" in combat
+assert "runtime, &before, 0U, &rngCalls," in combat
+assert "runtime, &targetBefore, (uint8_t)gib, &rngCalls," in combat
 assert "sound = consumePainSound(runtime, before.subtype, &rngCalls);" in combat
 assert "splashAudioCues[splashAudioCount++] =" in combat
 assert "MONSTER_SPLASH_AUDIO_DEATH_FLAG : 0U" in combat
@@ -106,6 +109,7 @@ assert "goto splash_failed;" in combat
 assert "MONSTER_SPLASH_AUDIO_CAPACITY (16U * ESP_NATIVE_GAMEPLAY_SPLASH_MAX_HITS)" in combat
 assert "static uint16_t splashAudioCues[MONSTER_SPLASH_AUDIO_CAPACITY];" in combat
 assert combat.count("EspNativeAudioIntent_publish(resource, 0U, priority)") == 1
+assert "EspNativeMonsterDeathConsequence_priority(" in combat
 barrel_commit=action.index('printf("[BARREL] COMMIT')
 release=action.index("EspNativeGameplayMonsterCombat_publishSplashAudioAfterCommit(",barrel_commit)
 barrel_settle=action.index('printf("[ACTIONENGINE] ATTACK',barrel_commit)
@@ -127,6 +131,7 @@ host=r"""
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
+#include "esp_native_monster_death_consequence.h"
 #define ESP_NATIVE_GAMEPLAY_SPLASH_MAX_HITS 8U
 #define MONSTER_SPLASH_AUDIO_CAPACITY (16U * ESP_NATIVE_GAMEPLAY_SPLASH_MAX_HITS)
 #define MONSTER_SPLASH_AUDIO_DEATH_FLAG 0x8000U
@@ -179,7 +184,9 @@ with tempfile.TemporaryDirectory(prefix="doomrpg-barrel-splash-sfx-") as d:
     exe=Path(d)/"release"
     source.write_text(host)
     subprocess.run(["cc","-std=c11","-O2","-Wall","-Wextra",
-                    "-Werror","-pedantic",str(source),"-o",str(exe)],
+                    "-Werror","-pedantic",
+                    "-I",str(root/"ESP32/include"),
+                    str(source),"-o",str(exe)],
                    check=True)
     subprocess.run([str(exe)],check=True)
 
