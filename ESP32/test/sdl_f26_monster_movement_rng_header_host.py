@@ -60,6 +60,11 @@ def source_gate() -> None:
             before = before.replace(new_hook, old_wrappers, 1)
             before = before.replace(b"static uint8_t p1Health(",
                                     old_protos + b"static uint8_t p1Health(", 1)
+        if name in ("esp_native_gameplay_monster_movement.c",
+                    "esp_native_gameplay_monster_three_goal_turn.c"):
+            from perf_game_p1_history import restore_pre_perf_game_p1_geometry
+            before = restore_pre_perf_game_p1_geometry(
+                name, before.decode("utf-8")).encode("utf-8")
         assert git_blob(before) == sha, f"{name}: whole source body changed"
         assert current.count(b"#include <SDL.h>") == 1, name
         clean = re.sub(r"/\*[\s\S]*?\*/|//[^\n]*", "",

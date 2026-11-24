@@ -23,6 +23,10 @@
 #include "esp_native_gameplay_player_death.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_player_view_state.h"
+#include "esp_perf_game_p1.h"
+#if DOOMRPG_PERF_GAME_P1
+#include <esp_timer.h>
+#endif
 
 #define ACTIVESEQ_TYPE_ENEMY 1U
 #define ACTIVESEQ_SUBTYPE_SPECIAL_AI 10U
@@ -212,7 +216,7 @@ static void resetSequencer(const EspNativeGameplayMonsterTurnView* actual,
  * are not appended mid-turn: turnActivationCount snapshots the active-list
  * prefix when the token begins, matching one bounded Game_monsterAI() pass.
  */
-void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
+static void EspNativeGameplayMonsterActiveSequence_serviceBody(struct DoomRPG_s* doomRpg) {
     const EspNativeGameplayMonsterTurnView* actual =
         EspNativeGameplayMonsterTurn_view();
     const EspNativeGameplayMonsterRetaliationView* retaliation;
@@ -237,6 +241,7 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
 
     if (activeSeq.turnInProgress != 0U) {
         if (EspNativeGameplayPlayerDeath_isActive()) {
+            EspPerfGameP1_abort();
             printf("[MONSTERACTIVESEQ] TERMINAL turn=%u ordinal=%u/%u probe=%u cause=player-death remaining=discarded sameMonsterTurn=yes\n",
                    (unsigned int)activeSeq.expandedTurns,
                    (unsigned int)activeSeq.turnOrdinal,
@@ -300,6 +305,7 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
     if (EspNativeGameplayMonsterActivation_count() < activationCount) {
         ++activeSeq.deferredTurns;
         activeSeq.turnInProgress = 0U;
+        EspPerfGameP1_abort();
         printf("[MONSTERACTIVESEQ] DEFER turn=%u cause=activation-count-regressed snapshot=%u current=%u mutation=no rngConsumed=0\n",
                (unsigned int)activeSeq.expandedTurns,
                (unsigned int)activationCount,
@@ -324,6 +330,7 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
                 ordinal, &spriteIndex)) {
             ++activeSeq.deferredTurns;
             activeSeq.turnInProgress = 0U;
+            EspPerfGameP1_abort();
             printf("[MONSTERACTIVESEQ] DEFER turn=%u ordinal=%u activeCount=%u cause=activation-order-read mutation=no rngConsumed=0\n",
                    (unsigned int)activeSeq.expandedTurns,
                    (unsigned int)ordinal,
@@ -348,14 +355,24 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
             continue;
         }
 
+#if DOOMRPG_PERF_GAME_P1
+        const uint64_t perfMemberStart = (uint64_t)esp_timer_get_time();
+#endif
         beforeTurn = EspNativeGameplayMonsterTurn_view();
         attackBefore = beforeTurn != NULL ? beforeTurn->attackProbes : 0U;
+#if DOOMRPG_PERF_GAME_P1
+        EspPerfGameP1_phaseBegin(0, (uint64_t)esp_timer_get_time());
+#endif
         memberStatus = EspNativeGameplayMonsterTurn_probeActiveMember(
             doomRpg, spriteIndex);
+#if DOOMRPG_PERF_GAME_P1
+        EspPerfGameP1_phaseEnd(0, (uint64_t)esp_timer_get_time());
+#endif
 
         if (memberStatus == ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_INVALID) {
             ++activeSeq.deferredTurns;
             activeSeq.turnInProgress = 0U;
+            EspPerfGameP1_abort();
             printf("[MONSTERACTIVESEQ] DEFER turn=%u ordinal=%u/%u sprite=%u subtype=%u cause=member-probe-failed prefixCommitted=yes mutation=no-additional rngConsumed=0-additional\n",
                    (unsigned int)activeSeq.expandedTurns,
                    (unsigned int)(ordinal + 1U),
@@ -366,6 +383,11 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
             return;
         }
 
+#if DOOMRPG_PERF_GAME_P1
+        if (memberStatus == ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_RANGED_MOVE ||
+            memberStatus == ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_NO_IMMEDIATE_ATTACK)
+            EspPerfGameP1_phaseBegin(1, (uint64_t)esp_timer_get_time());
+#endif
         if (memberStatus == ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_RANGED_MOVE) {
             ++activeSeq.expandedMovement;
             transactionStatus = callMovementMember(
@@ -378,6 +400,13 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
                 doomRpg, spriteIndex, 1, "NO-IMMEDIATE-ATTACK", &committed);
         }
 
+#if DOOMRPG_PERF_GAME_P1
+        EspPerfGameP1_phaseEnd(1, (uint64_t)esp_timer_get_time());
+#endif
+#if DOOMRPG_PERF_GAME_P1
+        EspPerfGameP1_member(perfMemberStart, (uint64_t)esp_timer_get_time(),
+                              activeSeq.turnActivationCount);
+#endif
         ++activeSeq.turnDelivered;
         ++activeSeq.deliveredMembers;
         afterTurn = EspNativeGameplayMonsterTurn_view();
@@ -476,4 +505,22 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
                   (unsigned int)activeSeq.turnDelivered);
     }
     releaseDeferredDoorVisual(doomRpg, "monster-turn-complete");
+}
+
+/* Exactly the same one-member cooperative service; P1 only surrounds it
+ * with monotonic wall-clock samples. Macro OFF compiles out the probes. */
+void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
+#if DOOMRPG_PERF_GAME_P1
+    const uint64_t startUs = (uint64_t)esp_timer_get_time();
+    const uint32_t beforeTurn = activeSeq.expandedTurns;
+    const uint8_t beforeBusy = activeSeq.turnInProgress;
+    EspPerfGameP1_serviceEnter();
+#endif
+    EspNativeGameplayMonsterActiveSequence_serviceBody(doomRpg);
+#if DOOMRPG_PERF_GAME_P1
+    EspPerfGameP1_sequence(startUs, (uint64_t)esp_timer_get_time(),
+        beforeTurn, activeSeq.expandedTurns, beforeBusy,
+        activeSeq.turnInProgress, activeSeq.turnActivationCount,
+        activeSeq.turnDelivered, activeSeq.pauseProbe);
+#endif
 }

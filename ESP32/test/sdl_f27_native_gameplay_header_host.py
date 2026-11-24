@@ -73,6 +73,15 @@ def original_body_parity() -> None:
     marker = GUARD.encode("ascii")
     for filename, blob in BEFORE.items():
         current = (SOURCES / filename).read_bytes()
+        # Remove ONLY P1 timing additions before historical Git identity.
+        if filename == "esp_native_gameplay_frame.c":
+            from perf_game_p1_history import restore_pre_perf_game_p1_frame
+            current = restore_pre_perf_game_p1_frame(
+                current.decode("utf-8")).encode("utf-8")
+        elif filename == "esp_native_resident_gameplay.c":
+            from perf_game_p1_history import restore_pre_perf_game_p1_resident
+            current = restore_pre_perf_game_p1_resident(
+                current.decode("utf-8")).encode("utf-8")
         # ARCH-RC24 has no GNU runtime alias; undo only public/physical
         # present spellings for the immutable pre-SDL-F27 source witnesses.
         if filename == "esp_native_gameplay_action_engine.c":

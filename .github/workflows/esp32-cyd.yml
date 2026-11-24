@@ -160,7 +160,6 @@ jobs:
             ESP32/test/game_s1_human_topology_host.c -Wl,--gc-sections \
             -o /tmp/doomrpg-game-s1-humantopo
           /tmp/doomrpg-game-s1-humantopo
-
       - name: ARCH-RC21 packed sprite, projected sprite, BSP admission and activation (6 real C, 14 mutants)
         run: python ESP32/test/native_sprite_visibility_reads_boundary_host.py
 
@@ -248,6 +247,13 @@ jobs:
             ESP32/test/monster_active_sequence_budget_host.c \
             -o /tmp/doomrpg-monster-budget-test
           /tmp/doomrpg-monster-budget-test
+
+      - name: PERF-GAME-P1 deterministic instrumentation owner (host C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -DDOOMRPG_PERF_GAME_P1=1 -IESP32/include \
+            ESP32/src/esp_perf_game_p1.c ESP32/test/perf_game_p1_host.c \
+            -o /tmp/doomrpg-perf-game-p1
+          /tmp/doomrpg-perf-game-p1
 
       - name: Test native monster attack visual timeline and impact admission (host C)
         run: |
@@ -542,6 +548,28 @@ jobs:
 
       - name: Test SDL-F19 native rectangle aliases and NOTE standalone header
         run: python ESP32/test/sdl_f19_native_rect_types_host.py
+
+      - name: PERF-GAME-P1h bounded spatial sprite index (host C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+            ESP32/test/perf_game_spatial_sprite_host.c -o /tmp/doomrpg-perf-spatial
+          /tmp/doomrpg-perf-spatial
+
+      - name: PERF-GAME-P1j compact projected line index oracle (host C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+            ESP32/test/perf_game_spatial_line_host.c -o /tmp/doomrpg-perf-line
+          /tmp/doomrpg-perf-line
+
+      - name: PERF-GAME-P1 true active-sequence owner deterministic oracle (host C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+            -DDOOMRPG_ESP32=1 -DDOOMRPG_PERF_GAME_P1=0 \
+            -IESP32/include -IESP32/src -Isrc \
+            ESP32/src/esp_native_gameplay_monster_active_sequence.c \
+            ESP32/test/perf_game_active_sequence_owner_host.c \
+            -Wl,--gc-sections -o /tmp/doomrpg-perf-actual-seq
+          /tmp/doomrpg-perf-actual-seq
 
       - name: Test SDL-F20 eight native owner header-independent C sources
         run: python ESP32/test/sdl_f20_native_leaf_header_host.py
