@@ -73,6 +73,18 @@ def original_body_parity() -> None:
     marker = GUARD.encode("ascii")
     for filename, blob in BEFORE.items():
         current = (SOURCES / filename).read_bytes()
+        if filename == "esp_native_gameplay_frame.c":
+            # RES60-P23 changes ONLY the constant's spelling and adds ONE
+            # permanent layout header. Strictly invert both before restoring
+            # the original ten complete pre-F27 Git blobs.
+            added = b'#include "esp_native_raster_contract.h"\n'
+            modern = b"#define HUD_ROWS ESP_NATIVE_RASTER_CLASSIC_HUD_ROWS"
+            historical = b"#define HUD_ROWS 20U"
+            assert current.count(added) == 1, "P23 frame header drifted"
+            current = current.replace(added, b"", 1)
+            assert current.count(modern) == 1 and historical not in current, (
+                "P23 frame HUD constant drifted")
+            current = current.replace(modern, historical, 1)
         # ARCH-RC24 has no GNU runtime alias; undo only public/physical
         # present spellings for the immutable pre-SDL-F27 source witnesses.
         if filename == "esp_native_gameplay_action_engine.c":
