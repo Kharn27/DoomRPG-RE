@@ -1,3 +1,9 @@
+## MONSTER-DEATH-P1 — conséquences de mort natives partagées, PASS CYD borné (24 novembre 2026)
+
+[PR #452](https://github.com/Kharn27/DoomRPG-RE/pull/452) / [rapport matériel](MILESTONE_MONSTER_DEATH_P1_CYD_PASS.md). Direct et radius baril partagent `prepareDeathAfterXp` : choix sonore puis un mot RNG drop, transactions existantes conservées ; douleur P2, mort P5, gib 5091 P3. Code candidat `a4bcaf247fe8f5ecf76c9ba2fb9674c0755c1a58`, double CI code SUCCESS. Capture CYD `platformio-device-monitor-261124-094612.log` : deux barils (5099 P2, 5076 P5 après commit), trois gibs 5091, drop live, HEADROOM_OK, NULL invariants, retour menu propre et zéro overflow/gap/audibleSfxDropped. Retour auditif positif. 5095, chaîne multi-barils et familles spéciales non validés dans cette capture. Post-test docs-only.
+
+---
+
 ## WALL-SD-P1 — Ciel SD cohérent, planète PAK, PASS CYD (22 novembre 2026)
 
 [PR #434](https://github.com/Kharn27/DoomRPG-RE/pull/434) / [rapport matériel](MILESTONE_WALLPAPER_SD_P1_PENDING_CYD.md). Le ciel `c.bmp` BMP4 est lu depuis SD au premier écran de LOADING et à toutes ses étapes, y compris avec la police `a.bmp` thématisée. Le `e.bmp` du jeu reste le BMP4 du PAK, **sans modifier le `e.bmp` SD corrigé** (`0768ffd1d1bb45a3206c347c8022f36689591f3c`). Le log CYD `platformio-device-monitor-261122-185034.log` (SHA256 `b758888db044859d4e03d47fee55d392927dc710c450f89519a3c188a39e5df9`) valide les 8 frames source SD et le chargement Entrance. M_IN_CIT et M_STALKS `PLAY`/`PRESTART`, 0 underrun ; `HEADROOM_OK`, `shapeData/mediaTexels=NULL`. Note séparée : musique du menu en navigation Aide `underruns=13633`, à suivre indépendamment. Code HEAD validé `fef1c4c525c67d9709f41f676bd9950b0fd38457`, double CI vert ; commits post-test docs-only.

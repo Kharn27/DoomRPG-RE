@@ -21,6 +21,7 @@
 #include "esp_native_gameplay_hub_action_gate.h"
 #include "esp_native_gameplay_level_up.h"
 #include "esp_native_gameplay_monster_combat.h"
+#include "esp_native_monster_death_consequence.h"
 #include "esp_native_audio_intent.h"
 #include "esp_native_gameplay_monster_pain_tint.h"
 #include "esp_native_gameplay_monster_state.h"
@@ -440,6 +441,32 @@ static uint16_t consumeDeathSound(DoomRPG_t* runtime,
     return deathSounds[subtype][pick % count];
 }
 
+/* MONSTER-DEATH-P1: shared post-XP, pre-drop-commit stage for the direct
+ * and barrel-radius pathways. The CALLER has already applied XP (including
+ * any level-up RNG), and still owns the complete world/player/RNG rollback.
+ * This prepares no persistent drops and publishes no sound: strictly
+ * death-sound RNG (or gib 5091 without sound RNG), then one drop RNG word,
+ * then a pure drop plan. A failed plan MUST be undone by the caller's
+ * existing transaction snapshot. Special deaths are rejected upstream. */
+static int prepareDeathAfterXp(
+    DoomRPG_t* runtime,
+    const EspNativeGameplayMonsterRecord* before,
+    uint8_t gib,
+    uint32_t* ioRngCalls,
+    EspNativeGameplayMonsterDropSpawnPlan* outPlan,
+    uint16_t* outSound,
+    uint32_t* outDropRoll) {
+    if (runtime == NULL || before == NULL || ioRngCalls == NULL ||
+        outPlan == NULL || outSound == NULL || outDropRoll == NULL ||
+        before->subtype >= MONSTER_SUBTYPE_COUNT || gib > 1U ||
+        specialDeath(before->subtype)) return 0;
+    *outSound = gib != 0U
+        ? 5091U : consumeDeathSound(runtime, before->subtype, ioRngCalls);
+    *outDropRoll = (uint32_t)DoomRPG_randNextInt(EspNativeProcessRng_live());
+    ++(*ioRngCalls);
+    return EspNativeGameplayMonsterDrop_prepare(*outDropRoll, before, outPlan);
+}
+
 static void logFrame(const MonsterCombatPending* pending,
                      const char* phase,
                      const EspNativeGameplayFrameStats* frame) {
@@ -659,18 +686,9 @@ static int servicePending(DoomRPG_t* runtime) {
             rngCalls += xpResult.rngCalls;
             if (xpResult.levelUps != 0U) levelUpPopup = 1;
 
-            if (gib) {
-                consequenceSound = 5091U;
-            }
-            else {
-                consequenceSound = consumeDeathSound(runtime,
-                                                      target->subtype,
-                                                      &rngCalls);
-            }
-            dropRoll = (uint32_t)DoomRPG_randNextInt(EspNativeProcessRng_live());
-            ++rngCalls;
-            if (!EspNativeGameplayMonsterDrop_prepare(
-                    dropRoll, &targetBefore, &dropPlan)) {
+            if (!prepareDeathAfterXp(
+                    runtime, &targetBefore, (uint8_t)gib, &rngCalls,
+                    &dropPlan, &consequenceSound, &dropRoll)) {
                 *target = targetBefore;
                 (*EspNativeProcessRng_live()) = randomBefore;
                 (void)EspNativeGameplayPlayerState_restore(&playerBefore);
@@ -838,7 +856,9 @@ static int servicePending(DoomRPG_t* runtime) {
         const uint16_t shotSound=pending.weapon==0U ? 5136U : weapon->resourceId;
         if (shotSound!=0U) (void)EspNativeAudioIntent_publish(shotSound,0U,5U);
         if (consequenceSound!=0U) {
-            (void)EspNativeAudioIntent_publish(consequenceSound,0U,lethal?5U:2U);
+            (void)EspNativeAudioIntent_publish(consequenceSound,0U,
+                EspNativeMonsterDeathConsequence_priority(
+                    (uint8_t)lethal, (uint8_t)gib));
             /* Visual pain began before the attack frame was rendered. Anchor
              * a separate short audio hold to this actual sound publication. */
             if (!lethal && EspNativeAudioIntent_isSoundEnabled()) {
@@ -1018,8 +1038,9 @@ int EspNativeGameplayMonsterCombat_publishSplashAudioAfterCommit(
     for (i = 0U; i < splashAudioCount; ++i) {
         const uint16_t packed = splashAudioCues[i];
         const uint16_t resource = (uint16_t)(packed & 0x7fffU);
-        const uint8_t priority =
-            (packed & MONSTER_SPLASH_AUDIO_DEATH_FLAG) != 0U ? 5U : 2U;
+        const uint8_t priority = EspNativeMonsterDeathConsequence_priority(
+            (uint8_t)((packed & MONSTER_SPLASH_AUDIO_DEATH_FLAG) != 0U),
+            0U);
         if (EspNativeAudioIntent_publish(resource, 0U, priority)) ++emitted;
         printf("[MONSTERRADIUS] SFX-COMMIT seq=%u ordinal=%u/%u resource=%u priority=%u emitted=%u rollback=closed\n",
                (unsigned int)sequence, (unsigned int)(i + 1U),
@@ -1113,12 +1134,10 @@ int EspNativeGameplayMonsterCombat_applySplash(
                 popup = xp;
                 needsPopup = 1;
             }
-            sound = consumeDeathSound(runtime, before.subtype, &rngCalls);
-            dropRoll = (uint32_t)DoomRPG_randNextInt(EspNativeProcessRng_live());
-            ++rngCalls;
             memset(&drop, 0, sizeof(drop));
-            if (!EspNativeGameplayMonsterDrop_prepare(
-                    dropRoll, &before, &drop) ||
+            if (!prepareDeathAfterXp(
+                    runtime, &before, 0U, &rngCalls,
+                    &drop, &sound, &dropRoll) ||
                 (drop.outcome == ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SPAWN &&
                  !EspNativeGameplayMonsterDrop_commit(&drop))) {
                 goto splash_failed;
