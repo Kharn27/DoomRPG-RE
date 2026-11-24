@@ -23,12 +23,12 @@ static Cohort cohort[2];
 /* Actual delivered load: 0, 1..3, 4..7, 8+. Single loopTask writer. */
 static EspPerfGameP1Load load[4], pendingLoad, serviceLoad;
 static uint8_t inService;
-static EspPerfGameP1Phase phases[2];
-static uint64_t phaseStart[2], phaseFrameStart[2];
-static uint32_t phaseCountStart[2];
-static uint8_t phaseOpen[2];
+static EspPerfGameP1Phase phases[6];
+static uint64_t phaseStart[6], phaseFrameStart[6];
+static uint32_t phaseCountStart[6];
+static uint8_t phaseOpen[6];
 void EspPerfGameP1_phaseBegin(uint8_t phase,uint64_t now) {
-    if(phase>=2 || !inService) return;
+    if(phase>=6 || !inService) return;
     phaseOpen[phase]=1;
     phaseStart[phase]=now;
     phaseFrameStart[phase]=serviceLoad.frameInsideUs;
@@ -37,7 +37,7 @@ void EspPerfGameP1_phaseBegin(uint8_t phase,uint64_t now) {
 void EspPerfGameP1_phaseEnd(uint8_t phase,uint64_t now) {
     uint64_t elapsed;
     EspPerfGameP1Phase* p;
-    if(phase>=2 || !phaseOpen[phase]) return;
+    if(phase>=6 || !phaseOpen[phase]) return;
     phaseOpen[phase]=0;
     elapsed=now>=phaseStart[phase]?now-phaseStart[phase]:0;
     p=&phases[phase];
@@ -48,7 +48,7 @@ void EspPerfGameP1_phaseEnd(uint8_t phase,uint64_t now) {
     if(elapsed>p->maxUs) p->maxUs=elapsed>UINT32_MAX?UINT32_MAX:(uint32_t)elapsed;
 }
 int EspPerfGameP1_phaseSnapshot(uint8_t phase,EspPerfGameP1Phase* out) {
-    if(phase>=2 || !out) return 0;
+    if(phase>=6 || !out) return 0;
     *out=phases[phase];
     return 1;
 }
@@ -79,6 +79,15 @@ static void reportLoad(void) {
         printf("[PERFGAMEP1C] phase=%s calls=%u wallUs=%llu frameUs=%llu residualUs=%llu frames=%u maxUs=%u cumulative=yes\n",
           i?"movement-and-post-goals":"immediate-attack-probe",(unsigned)p->calls,
           (unsigned long long)p->wallUs,(unsigned long long)p->frameUs,
+          (unsigned long long)(p->wallUs>=p->frameUs?p->wallUs-p->frameUs:0),
+          (unsigned)p->frames,(unsigned)p->maxUs);
+    }
+    for(i=2;i<6;i++) {
+        static const char* const names[]={"first-planner","first-publisher","continuation-planner","continuation-publisher"};
+        const EspPerfGameP1Phase* p=&phases[i];
+        printf("[PERFGAMEP1D] phase=%s calls=%u wallUs=%llu frameUs=%llu residualUs=%llu frames=%u maxUs=%u cumulative=yes\n",
+          names[i-2],(unsigned)p->calls,(unsigned long long)p->wallUs,
+          (unsigned long long)p->frameUs,
           (unsigned long long)(p->wallUs>=p->frameUs?p->wallUs-p->frameUs:0),
           (unsigned)p->frames,(unsigned)p->maxUs);
     }

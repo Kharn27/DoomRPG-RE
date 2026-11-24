@@ -19,6 +19,7 @@ typedef struct EspPerfGameP1Load_s {
     uint64_t serviceUs, frameInsideUs, frameBetweenUs, nonFrameServiceUs, lcdInsideUs;
 } EspPerfGameP1Load;
 void EspPerfGameP1_serviceEnter(void);
+/* 0/1 parent phases; 2..5 disjoint nested movement call scopes. */
 void EspPerfGameP1_phaseBegin(uint8_t phase,uint64_t now);
 void EspPerfGameP1_phaseEnd(uint8_t phase,uint64_t now);
 typedef struct EspPerfGameP1Phase_s {

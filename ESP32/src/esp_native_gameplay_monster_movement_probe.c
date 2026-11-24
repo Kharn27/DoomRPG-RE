@@ -6,6 +6,10 @@
 #include <string.h>
 
 #include "DoomRPG.h"
+#include "esp_perf_game_p1.h"
+#if DOOMRPG_PERF_GAME_P1
+#include <esp_timer.h>
+#endif
 #include "esp_native_process_rng_owner.h"
 
 #include "doomrpg_log.h"
@@ -93,10 +97,22 @@ int EspNativeGameplayMonsterMovementProbe_serviceMember(
                                                        &prepared)) {
             printf("[MONSTERMOVERNG] ARM trigger=%s next=127->0 prepared=%u liveRandom=temporary-post-refill reservation=persistent\n",
                    trigger, (unsigned int)prepared);
+#if DOOMRPG_PERF_GAME_P1
+            EspPerfGameP1_phaseBegin(2, (uint64_t)esp_timer_get_time());
+#endif
             EspNativeGameplayMonsterMovement_service(doomRpgBase);
+#if DOOMRPG_PERF_GAME_P1
+            EspPerfGameP1_phaseEnd(2, (uint64_t)esp_timer_get_time());
+#endif
+#if DOOMRPG_PERF_GAME_P1
+            EspPerfGameP1_phaseBegin(3, (uint64_t)esp_timer_get_time());
+#endif
             publishStatus = EspNativeGameplayMonsterMovementPublish_afterProbe(
                 doomRpgBase, trigger, &saved, prepared, plannedBefore, &publish);
 
+#if DOOMRPG_PERF_GAME_P1
+            EspPerfGameP1_phaseEnd(3, (uint64_t)esp_timer_get_time());
+#endif
             if (prepared != 0U && publish.boundaryClosed == 0U) {
                 restoredExact = EspNativeRngReplayGuard_endProbeBoundary(
                     EspNativeProcessRng_live(), &saved, prepared);
@@ -118,13 +134,31 @@ int EspNativeGameplayMonsterMovementProbe_serviceMember(
 
         printf("[MONSTERMOVERNG] DEFER trigger=%s cause=rng-reservation-conflict action=movement-fail-closed\n",
                trigger);
+#if DOOMRPG_PERF_GAME_P1
+        EspPerfGameP1_phaseBegin(2, (uint64_t)esp_timer_get_time());
+#endif
         EspNativeGameplayMonsterMovement_service(doomRpgBase);
+#if DOOMRPG_PERF_GAME_P1
+        EspPerfGameP1_phaseEnd(2, (uint64_t)esp_timer_get_time());
+#endif
         return 0;
     }
 
+#if DOOMRPG_PERF_GAME_P1
+    EspPerfGameP1_phaseBegin(2, (uint64_t)esp_timer_get_time());
+#endif
     EspNativeGameplayMonsterMovement_service(doomRpgBase);
+#if DOOMRPG_PERF_GAME_P1
+    EspPerfGameP1_phaseEnd(2, (uint64_t)esp_timer_get_time());
+#endif
+#if DOOMRPG_PERF_GAME_P1
+    EspPerfGameP1_phaseBegin(3, (uint64_t)esp_timer_get_time());
+#endif
     publishStatus = EspNativeGameplayMonsterMovementPublish_afterProbe(
         doomRpgBase, trigger, NULL, 0U, plannedBefore, &publish);
+#if DOOMRPG_PERF_GAME_P1
+    EspPerfGameP1_phaseEnd(3, (uint64_t)esp_timer_get_time());
+#endif
     servicePostMoveGoal(doomRpgBase, trigger, &publish);
     if (outCommitted != NULL) *outCommitted = publish.committed;
     return publishStatus;

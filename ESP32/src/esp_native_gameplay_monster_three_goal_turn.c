@@ -7,6 +7,10 @@
 #include <string.h>
 
 #include "DoomRPG.h"
+#include "esp_perf_game_p1.h"
+#if DOOMRPG_PERF_GAME_P1
+#include <esp_timer.h>
+#endif
 #include "esp_native_process_rng_owner.h"
 
 #include "esp_entity_def_type_catalog.h"
@@ -829,12 +833,24 @@ static int publishContinuationGoal(DoomRPG_t* doomRpg,
         printf("[MONSTER3GOALRNG] ARM sprite=%u goal=%u/3 next=127->0 prepared=%u liveRandom=temporary-post-refill reservation=persistent\n",
                (unsigned int)spriteIndex, (unsigned int)goalStep,
                (unsigned int)prepared);
+#if DOOMRPG_PERF_GAME_P1
+        EspPerfGameP1_phaseBegin(4, (uint64_t)esp_timer_get_time());
+#endif
         planStatus = probeContinuationGoal(doomRpg, spriteIndex, goalStep,
                                            plannedBefore);
+#if DOOMRPG_PERF_GAME_P1
+        EspPerfGameP1_phaseEnd(4, (uint64_t)esp_timer_get_time());
+#endif
         if (planStatus == 1) {
+#if DOOMRPG_PERF_GAME_P1
+            EspPerfGameP1_phaseBegin(5, (uint64_t)esp_timer_get_time());
+#endif
             publishOk = EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
                 doomRpg, "NO-IMMEDIATE-ATTACK", &saved, prepared,
                 plannedBefore, &syntheticMovementView, outPublish);
+#if DOOMRPG_PERF_GAME_P1
+            EspPerfGameP1_phaseEnd(5, (uint64_t)esp_timer_get_time());
+#endif
         }
         else {
             publishOk = 0;
@@ -861,12 +877,24 @@ static int publishContinuationGoal(DoomRPG_t* doomRpg,
         if (!publishOk || outPublish->committed == 0U) return -1;
     }
     else {
+#if DOOMRPG_PERF_GAME_P1
+        EspPerfGameP1_phaseBegin(4, (uint64_t)esp_timer_get_time());
+#endif
         planStatus = probeContinuationGoal(doomRpg, spriteIndex, goalStep,
                                            plannedBefore);
+#if DOOMRPG_PERF_GAME_P1
+        EspPerfGameP1_phaseEnd(4, (uint64_t)esp_timer_get_time());
+#endif
         if (planStatus <= 0) return planStatus;
+#if DOOMRPG_PERF_GAME_P1
+        EspPerfGameP1_phaseBegin(5, (uint64_t)esp_timer_get_time());
+#endif
         publishOk = EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
             doomRpg, "NO-IMMEDIATE-ATTACK", NULL, 0U,
             plannedBefore, &syntheticMovementView, outPublish);
+#if DOOMRPG_PERF_GAME_P1
+        EspPerfGameP1_phaseEnd(5, (uint64_t)esp_timer_get_time());
+#endif
         if (!publishOk || outPublish->committed == 0U) return -1;
     }
 
