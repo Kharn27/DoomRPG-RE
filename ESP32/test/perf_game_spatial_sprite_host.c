@@ -18,7 +18,7 @@ int main(void) {
  uint16_t i;
  view.spriteCount=278;
  states[2]=ESP_MAP_SPRITE_TOPOLOGY_LINKED | 199U;
- states[5]=ESP_MAP_SPRITE_TOPOLOGY_LINKED | 200U;
+ states[5]=ESP_MAP_SPRITE_TOPOLOGY_LINKED | 198U;
  states[60]=ESP_MAP_SPRITE_TOPOLOGY_LINKED | 199U;
  states[260]=ESP_MAP_SPRITE_TOPOLOGY_LINKED | 900U;
  assert(EspPerfSpatialSprite_begin(&idx));
