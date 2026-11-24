@@ -324,6 +324,7 @@ assert 43 + 16 - 1 < 64 and 43 + 16 - 1 < 100
 assert 27 + 12 - 1 < 43
 assert 88 + 12 - 1 < 100
 
+scene_api = (INC / "esp_native_help_scene.h").read_text()
 # Page 5: three native miniatures, 128x80 at x16..143/y30..109:
 # real top k.bmp, immutable PAK wall/perspective with NO action contours,
 # and actual bottom k/m/l/o/a HUD from the already-allocated bounded cache.
@@ -348,7 +349,6 @@ assert 16 + 128 == 144 and 110 < 120
 
 # One smoothstep breath source, 32 x 80ms = 2.56s.
 # Keep backing intact; both 1-pixel colored borders and colored glyphs breathe.
-scene_api = (INC / "esp_native_help_scene.h").read_text()
 scene = (SRC / "esp_native_help_scene.c").read_text()
 hud_c = (SRC / "esp_native_gameplay_hud.c").read_text()
 frame_c = (SRC / "esp_native_gameplay_frame.c").read_text()
