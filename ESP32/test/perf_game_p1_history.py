@@ -130,3 +130,23 @@ def restore_pre_perf_game_p1_active_sequence(src: str) -> str:
         '\n')
     assert 'EspPerfGameP1_' not in src and 'esp_perf_game_p1.h' not in src
     return src
+
+
+def restore_pre_perf_game_p1_frame(src: str) -> str:
+    """Restore the complete pre-P1 frame compositor before pinned SDL-F27 checks."""
+    include = '#include <esp_timer.h>\n#include "esp_perf_game_p1.h"\n'
+    former = '#include <esp_timer.h>\n'
+    assert src.count(include) == 1, "P1 frame import drift"
+    src = src.replace(include, former, 1)
+    hook = (
+        '    *outStats = *stats;\n'
+        '    EspPerfGameP1_frame(stats->totalMicros, stats->presentMicros,\n'
+        '                         (uint8_t)preview, (uint8_t)publish,\n'
+        '                         stats->finalPresented);\n'
+        '    frameScratch.busy = 0U;'
+    )
+    assert src.count(hook) == 1, "P1 frame probe drift"
+    src = src.replace(hook,
+                      '    *outStats = *stats;\n    frameScratch.busy = 0U;', 1)
+    assert 'EspPerfGameP1_' not in src and 'esp_perf_game_p1.h' not in src
+    return src
