@@ -23,12 +23,12 @@ static Cohort cohort[2];
 /* Actual delivered load: 0, 1..3, 4..7, 8+. Single loopTask writer. */
 static EspPerfGameP1Load load[4], pendingLoad, serviceLoad;
 static uint8_t inService;
-static EspPerfGameP1Phase phases[6];
-static uint64_t phaseStart[6], phaseFrameStart[6];
-static uint32_t phaseCountStart[6];
-static uint8_t phaseOpen[6];
+static EspPerfGameP1Phase phases[10];
+static uint64_t phaseStart[10], phaseFrameStart[10];
+static uint32_t phaseCountStart[10];
+static uint8_t phaseOpen[10];
 void EspPerfGameP1_phaseBegin(uint8_t phase,uint64_t now) {
-    if(phase>=6 || !inService) return;
+    if(phase>=10 || !inService) return;
     phaseOpen[phase]=1;
     phaseStart[phase]=now;
     phaseFrameStart[phase]=serviceLoad.frameInsideUs;
@@ -37,7 +37,7 @@ void EspPerfGameP1_phaseBegin(uint8_t phase,uint64_t now) {
 void EspPerfGameP1_phaseEnd(uint8_t phase,uint64_t now) {
     uint64_t elapsed;
     EspPerfGameP1Phase* p;
-    if(phase>=6 || !phaseOpen[phase]) return;
+    if(phase>=10 || !phaseOpen[phase]) return;
     phaseOpen[phase]=0;
     elapsed=now>=phaseStart[phase]?now-phaseStart[phase]:0;
     p=&phases[phase];
@@ -48,7 +48,7 @@ void EspPerfGameP1_phaseEnd(uint8_t phase,uint64_t now) {
     if(elapsed>p->maxUs) p->maxUs=elapsed>UINT32_MAX?UINT32_MAX:(uint32_t)elapsed;
 }
 int EspPerfGameP1_phaseSnapshot(uint8_t phase,EspPerfGameP1Phase* out) {
-    if(phase>=6 || !out) return 0;
+    if(phase>=10 || !out) return 0;
     *out=phases[phase];
     return 1;
 }
@@ -90,6 +90,12 @@ static void reportLoad(void) {
           (unsigned long long)p->frameUs,
           (unsigned long long)(p->wallUs>=p->frameUs?p->wallUs-p->frameUs:0),
           (unsigned)p->frames,(unsigned)p->maxUs);
+    }
+    for(i=6;i<10;i++) {
+        static const char* const names[]={"first-aiGoalPlan","continuation-aiGoalPlan","first-cardinalTrace","continuation-cardinalTrace"};
+        const EspPerfGameP1Phase* p=&phases[i];
+        printf("[PERFGAMEP1E] phase=%s calls=%u wallUs=%llu maxUs=%u cumulative=yes\n",
+          names[i-6],(unsigned)p->calls,(unsigned long long)p->wallUs,(unsigned)p->maxUs);
     }
     printf("[PERFGAMEP1B] outsideFrames=%llu outsideFrameUs=%llu cumulative=yes\n",
       (unsigned long long)outsideFrames,(unsigned long long)outsideFrameUs);

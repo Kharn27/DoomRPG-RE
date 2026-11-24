@@ -278,7 +278,7 @@ static int blockingSpriteOnTile(uint16_t tile,
     return found;
 }
 
-static int cardinalTraceClear(int32_t sourceX,
+static int cardinalTraceClearBody(int32_t sourceX,
                               int32_t sourceY,
                               int32_t destX,
                               int32_t destY,
@@ -371,6 +371,19 @@ static int cardinalTraceClear(int32_t sourceX,
         if (spriteBlock > 0) return 0;
     }
     return 1;
+}
+
+static int cardinalTraceClear(int32_t sourceX, int32_t sourceY,
+                              int32_t destX, int32_t destY,
+                              uint16_t attackerSprite, uint16_t mask, int strictSpecial) {
+#if DOOMRPG_PERF_GAME_P1
+    EspPerfGameP1_phaseBegin(9, (uint64_t)esp_timer_get_time());
+#endif
+    int result=cardinalTraceClearBody(sourceX,sourceY,destX,destY,attackerSprite,mask,strictSpecial);
+#if DOOMRPG_PERF_GAME_P1
+    EspPerfGameP1_phaseEnd(9, (uint64_t)esp_timer_get_time());
+#endif
+    return result;
 }
 
 static ThreeGoalPathResult calcPath(uint16_t attackerSprite,
@@ -688,11 +701,17 @@ static int probeContinuationGoal(DoomRPG_t* doomRpg,
     memset(&probeRng, 0, sizeof(probeRng));
     probeRng.state = randomBefore;
     memset(&plan, 0, sizeof(plan));
+#if DOOMRPG_PERF_GAME_P1
+    EspPerfGameP1_phaseBegin(7, (uint64_t)esp_timer_get_time());
+#endif
     planStatus = aiGoalPlan(spriteIndex, monster->subtype,
                             (int32_t)position->worldX,
                             (int32_t)position->worldY,
                             player->destX, player->destY,
                             &probeRng, &plan);
+#if DOOMRPG_PERF_GAME_P1
+    EspPerfGameP1_phaseEnd(7, (uint64_t)esp_timer_get_time());
+#endif
     if (planStatus == -3 || probeRng.boundary != 0U) {
         printf("[MONSTER3GOAL] DEFER sprite=%u subtype=%u goal=%u/3 cause=rng-boundary-unprepared mutation=no rngConsumed=0\n",
                (unsigned int)spriteIndex, (unsigned int)monster->subtype,

@@ -73,6 +73,14 @@ int main(void) {
         EspPerfGameP1_phaseBegin(0,1000);
         EspPerfGameP1_phaseEnd(0,1200);
         EspPerfGameP1_phaseBegin(1,1300);
+        EspPerfGameP1_phaseBegin(6,1300);
+        EspPerfGameP1_phaseBegin(8,1310);
+        EspPerfGameP1_phaseEnd(8,1340);
+        EspPerfGameP1_phaseBegin(8,1340);
+        EspPerfGameP1_phaseEnd(8,1380);
+        EspPerfGameP1_phaseEnd(6,1400);
+        assert(EspPerfGameP1_phaseSnapshot(8,&p) && p.calls==2 && p.wallUs==70 && p.maxUs==40);
+        assert(EspPerfGameP1_phaseSnapshot(6,&p) && p.calls==1 && p.wallUs==100);
         EspPerfGameP1_phaseBegin(3,1400);
         EspPerfGameP1_frame(2000,500,0,1,1);
         EspPerfGameP1_phaseEnd(3,4000);

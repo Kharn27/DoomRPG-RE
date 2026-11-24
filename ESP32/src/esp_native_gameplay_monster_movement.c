@@ -7,6 +7,10 @@
 #include <string.h>
 
 #include "DoomRPG.h"
+#include "esp_perf_game_p1.h"
+#if DOOMRPG_PERF_GAME_P1
+#include <esp_timer.h>
+#endif
 #include "esp_native_process_rng_owner.h"
 
 #include "doomrpg_log.h"
@@ -375,7 +379,7 @@ static int blockingSpriteOnTile(uint16_t tile,
     return found;
 }
 
-static int cardinalTraceClear(int32_t sourceX,
+static int cardinalTraceClearBody(int32_t sourceX,
                               int32_t sourceY,
                               int32_t destX,
                               int32_t destY,
@@ -503,6 +507,19 @@ static int cardinalTraceClear(int32_t sourceX,
         if (spriteBlock > 0) return 0;
     }
     return 1;
+}
+
+static int cardinalTraceClear(int32_t sourceX, int32_t sourceY,
+                              int32_t destX, int32_t destY,
+                              uint16_t attackerSprite, uint16_t mask, int strictSpecial) {
+#if DOOMRPG_PERF_GAME_P1
+    EspPerfGameP1_phaseBegin(8, (uint64_t)esp_timer_get_time());
+#endif
+    int result=cardinalTraceClearBody(sourceX,sourceY,destX,destY,attackerSprite,mask,strictSpecial);
+#if DOOMRPG_PERF_GAME_P1
+    EspPerfGameP1_phaseEnd(8, (uint64_t)esp_timer_get_time());
+#endif
+    return result;
 }
 
 static PathResult calcPath(uint16_t attackerSprite,
@@ -1094,11 +1111,17 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
     }
 
     memset(&plan, 0, sizeof(plan));
+#if DOOMRPG_PERF_GAME_P1
+    EspPerfGameP1_phaseBegin(6, (uint64_t)esp_timer_get_time());
+#endif
     planStatus = aiGoalPlan(candidate.monster->spriteIndex,
                             candidate.monster->subtype,
                             (int32_t)candidate.position->worldX,
                             (int32_t)candidate.position->worldY,
                             targetX, targetY, &probeRng, &plan);
+#if DOOMRPG_PERF_GAME_P1
+    EspPerfGameP1_phaseEnd(6, (uint64_t)esp_timer_get_time());
+#endif
     if (planStatus == -3 || probeRng.boundary != 0U) {
         ++movementView.rngBoundaryDeferred;
         printf("[MONSTERMOVE] RNG-BOUNDARY-DEFER trigger=%s n=%u sprite=%u stage=visit-choice rngCalls=%u hiddenGenerator=untouched-by-movement-probe mutation=no\n",
