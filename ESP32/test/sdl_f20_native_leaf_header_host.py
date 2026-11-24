@@ -46,6 +46,9 @@ for name, old_sha in BASELINE.items():
     # pre-RC17 bytes for this ONE frozen historical Git SHA; never move SHA
     # targets or apply a permissive source comparison.
     from arch_rc17_history import restore_pre_rc17
+    if name == "esp_native_gameplay_monster_movement_probe.c":
+        from perf_game_p1_history import restore_pre_perf_game_p1_movement_probe
+        current = restore_pre_perf_game_p1_movement_probe(current)
     historical = restore_pre_rc17(name, current)
     restored = "#include <SDL.h>\n" + historical[len(host_header):]
     assert git_blob(restored) == old_sha, name

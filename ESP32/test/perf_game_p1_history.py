@@ -154,3 +154,69 @@ def restore_pre_perf_game_p1_frame(src: str) -> str:
                       '    *outStats = *stats;\n    frameScratch.busy = 0U;', 1)
     assert 'EspPerfGameP1_' not in src and 'esp_perf_game_p1.h' not in src
     return src
+
+
+def restore_pre_perf_game_p1_movement_probe(src: str) -> str:
+    """Reverse exactly ten P1 timing hooks, retaining SDL-F20 historical SHA."""
+    import re
+    header = ('#include "esp_perf_game_p1.h"\n'
+              '#if DOOMRPG_PERF_GAME_P1\n#include <esp_timer.h>\n#endif\n')
+    assert src.count(header) == 1, "P1 movement-probe header drift"
+    src = src.replace(header, "", 1)
+    pattern = (r'(?m)^#if DOOMRPG_PERF_GAME_P1\n'
+               r'[ ]*EspPerfGameP1_phase(?:Begin|End)\([23], \(uint64_t\)esp_timer_get_time\(\)\);\n'
+               r'#endif\n')
+    src, count = re.subn(pattern, "", src)
+    assert count == 10, ("P1 movement-probe clock hooks drift", count)
+    assert 'EspPerfGameP1_' not in src
+    return src
+
+
+def restore_pre_perf_game_p1_geometry(name: str, src: str) -> str:
+    """Remove only P1/P1h additions before SDL-F26 exact original Git SHA."""
+    import re
+    assert name in ('esp_native_gameplay_monster_movement.c',
+                    'esp_native_gameplay_monster_three_goal_turn.c'), name
+    marker = '/* P1H-SPRITE-INDEX BEGIN: shadow authority stays with the original scan. */'
+    start = src.index('#if DOOMRPG_PERF_GAME_P1\n' + marker + '\n')
+    end = src.index('#endif\n', src.index('/* P1H-SPRITE-INDEX END */', start)) + len('#endif\n')
+    src = src[:start] + src[end:]
+    assert src.count('static int blockingSpriteOnTileReference(') == 1
+    src = src.replace('static int blockingSpriteOnTileReference(',
+                      'static int blockingSpriteOnTile(', 1)
+    header = ('#include "esp_perf_game_p1.h"\n'
+              '#if DOOMRPG_PERF_GAME_P1\n'
+              '#include "esp_perf_trace_cache.h"\n'
+              '#include "esp_perf_spatial_sprite.h"\n'
+              '#endif\n'
+              '#if DOOMRPG_PERF_GAME_P1\n'
+              '#include <esp_timer.h>\n#endif\n')
+    assert src.count(header) == 1, "P1 geometry header drift"
+    src = src.replace(header, '', 1)
+    wrapper_start = src.index('#if DOOMRPG_PERF_GAME_P1\n#define traceCache ')
+    target = ('static PathResult calcPath(' if name.endswith('monster_movement.c')
+              else 'static ThreeGoalPathResult calcPath(')
+    wrapper_end = src.index(target, wrapper_start)
+    src = src[:wrapper_start] + src[wrapper_end:]
+    assert src.count('static int cardinalTraceClearBody(') == 1
+    src = src.replace('static int cardinalTraceClearBody(',
+                      'static int cardinalTraceClear(', 1)
+    phase = 6 if name.endswith('monster_movement.c') else 7
+    b = ('#if DOOMRPG_PERF_GAME_P1\n'
+         '    EspPerfTraceCache_begin(&traceCache);\n'
+         f'    EspPerfGameP1_phaseBegin({phase}, (uint64_t)esp_timer_get_time());\n'
+         '    (void)EspPerfSpatialSprite_begin(&EspPerfGameP1_spatialSpriteIndex);\n'
+         '#endif\n')
+    e = ('#if DOOMRPG_PERF_GAME_P1\n'
+         f'    EspPerfGameP1_phaseEnd({phase}, (uint64_t)esp_timer_get_time());\n'
+         '    EspPerfSpatialSprite_end(&EspPerfGameP1_spatialSpriteIndex);\n'
+         '    EspPerfTraceCache_end(&traceCache);\n#endif\n')
+    assert src.count(b) == 1 and src.count(e) == 1, "P1h scope drift"
+    src = src.replace(b, '', 1).replace(e, '', 1)
+    pattern = (r'(?m)^#if DOOMRPG_PERF_GAME_P1\n'
+               r'[ ]*EspPerfGameP1_phase(?:Begin|End)\([45], \(uint64_t\)esp_timer_get_time\(\)\);\n'
+               r'#endif\n')
+    src, count = re.subn(pattern, '', src)
+    assert count == (0 if phase == 6 else 8), ("P1 continuation clock drift", count)
+    assert 'EspPerfGameP1_' not in src and 'EspPerfTraceCache' not in src
+    return src
