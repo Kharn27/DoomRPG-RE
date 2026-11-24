@@ -360,12 +360,12 @@ int main(void) {
     /* Exact menu and LOADING face bands, no halo or second text pass. */
     {
         static const uint16_t menu[9] = {
-            0x229aU, 0x229aU, 0x229aU,
+            0x01ffU, 0x01ffU, 0x01ffU,
             0x7d17U, 0x7d17U, 0x7d17U,
             0xfe8aU, 0xfe8aU, 0xfe8aU
         };
         static const uint16_t loading[5] = {
-            0x229aU, 0x7d17U, 0x7d17U,
+            0x01ffU, 0x7d17U, 0x7d17U,
             0xfe8aU, 0xfe8aU
         };
         int row;
@@ -378,11 +378,11 @@ int main(void) {
         assert(EspMainMenuSkin_letterTone(9, 9) == 0U);
         assert(EspMainMenuSkin_letterTone(0, 0) == 0U);
         assert(EspMainMenuSkin_letterTone(0, 6) == 0U);
-        assert(EspMainMenuSkin_letterTone(0, 7) == 0x229aU);
+        assert(EspMainMenuSkin_letterTone(0, 7) == 0x01ffU);
         assert(EspMainMenuSkin_letterTone(3, 7) == 0x7d17U);
         assert(EspMainMenuSkin_letterTone(6, 7) == 0xfe8aU);
         static const uint16_t classicFill[6] = {
-            0x42f0U, 0x229aU, 0x229aU,
+            0x42f0U, 0x01ffU, 0x01ffU,
             0x7d17U, 0x7d17U, 0xfe8aU
         };
         for (int y=0;y<6;++y)
@@ -395,13 +395,13 @@ int main(void) {
     assert(EspMainMenuSkin_uiAccent() == 0xfd20U);
     assert(EspMainMenuSkin_uiAccentDim() == 0x7a80U);
     assert(EspMainMenuSkin_uiInk() == 0xfe8aU);
-    /* CLASSIC: Wolf3D-like deep royal blue -> cold metal-blue steel ->
-     * strong golden yellow foot; not copper/brown or generic gray. */
+    /* CLASSIC: full-electric Wolf3D-style deep royal blue -> cold
+     * blue-steel -> golden yellow; no generic gray/copper. */
     {
         const uint16_t top = EspMainMenuSkin_letterTone(0, 9);
         const uint16_t mid = EspMainMenuSkin_letterTone(4, 9);
         const uint16_t foot = EspMainMenuSkin_letterTone(8, 9);
-        assert(top==0x229aU && mid==0x7d17U && foot==0xfe8aU);
+        assert(top==0x01ffU && mid==0x7d17U && foot==0xfe8aU);
         const unsigned tr=(top>>11)&31U,tg=(top>>5)&63U,tb=top&31U;
         const unsigned mr=(mid>>11)&31U,mg=(mid>>5)&63U,mb=mid&31U;
         const unsigned fr=(foot>>11)&31U,fg=(foot>>5)&63U,fb=foot&31U;
@@ -417,8 +417,9 @@ int main(void) {
         const unsigned footR = fr*255U/31U;
         const unsigned footG = fg*255U/63U;
         const unsigned footB = fb*255U/31U;
-        assert(topB > 190U && topB > topG + 110U);
-        assert(topG > topR + 35U && topR < 70U);
+        assert(tb == 31U && tr == 0U); /* maximum B, zero R */
+        assert(topB == 255U && topB > topG + 175U);
+        assert(topG > topR + 45U && topR < 10U);
         assert(midB > midG + 20U && midG > midR + 25U);
         assert(midB - midR > 50U && midB - midR < 100U);
         assert(midR > topR && midG > topG);
@@ -429,22 +430,22 @@ int main(void) {
     assert(EspMainMenuSkin_setTheme(ESP_MAIN_MENU_THEME_INFERNO));
     assert(EspMainMenuSkin_uiAccent() == 0xf926U);
     assert(EspMainMenuSkin_uiAccentDim() == 0x9002U);
-    /* INFERNO: lighter red-wine violet top, near-pure electric red center,
+    /* INFERNO: ruby-metallic red violet top, maximum pure Doom red center,
      * luminous scarlet foot. Modal ink and metal seams unchanged. */
     assert(EspMainMenuSkin_uiInk() == 0xfd34U);
     {
         static const uint16_t hot[5] = {
-            0xa12aU, 0xf842U, 0xf842U,
+            0xda6fU, 0xf800U, 0xf800U,
             0xfd34U, 0xfd34U
         };
         static const uint16_t hot7[7] = {
-            0xa12aU, 0xa12aU, 0xf842U,
-            0xf842U, 0xfd34U, 0xfd34U,
+            0xda6fU, 0xda6fU, 0xf800U,
+            0xf800U, 0xfd34U, 0xfd34U,
             0xfd34U
         };
         static const uint16_t hot9[9] = {
-            0xa12aU, 0xa12aU, 0xa12aU,
-            0xf842U, 0xf842U, 0xf842U,
+            0xda6fU, 0xda6fU, 0xda6fU,
+            0xf800U, 0xf800U, 0xf800U,
             0xfd34U, 0xfd34U, 0xfd34U
         };
         const uint16_t rose = EspMainMenuSkin_letterTone(8, 9);
@@ -458,8 +459,8 @@ int main(void) {
         assert(green > ((0xfd12U >> 5) & 63U));
         assert(blue > (0xfd12U & 31U));
         assert(blue * 2U < green);
-        /* Warm violet has R>B>G and strong red presence. Center stays
-         * maximum red with very little G/B for a true electric glow. */
+        /* Warm ruby-violet has RGB888 R>B>G; center is byte-exact pure
+         * red RGB565, maximally saturated without pink/orange tint. */
         assert(((middleRed >> 11) & 31U) == 31U);
         assert(((middleRed >> 11) & 31U) == ((rose >> 11) & 31U));
         assert(((middleRed >> 11) & 31U) > ((foot >> 11) & 31U));
@@ -471,18 +472,24 @@ int main(void) {
         assert(((middleRed >> 5) & 63U) < ((foot >> 5) & 63U));
         assert((middleRed & 31U) < (rose & 31U));
         assert((middleRed & 31U) < (foot & 31U));
-        assert((foot & 31U) > ((foot >> 5) & 63U));
-        assert(((foot >> 11) & 31U) > (foot & 31U));
-        assert(((foot >> 11) & 31U) >= 19U);
-        assert(((foot >> 11) & 31U) <= 23U);
-        assert(((middleRed >> 5) & 63U) <= 3U);
-        assert((middleRed & 31U) <= 3U);
+        /* Compare equal 8-bit channels: RGB565 green has six bits, so
+         * comparing raw B(5) to G(6) would reject a valid red-violet. */
+        const unsigned topR = ((foot >> 11) & 31U) * 255U / 31U;
+        const unsigned topG = ((foot >> 5) & 63U) * 255U / 63U;
+        const unsigned topB = (foot & 31U) * 255U / 31U;
+        assert(topR > topB && topB > topG);
+        assert(topR >= 210U && topG >= 65U && topB >= 110U);
+        assert(topR > ((0xa12aU >> 11) & 31U) * 255U / 31U);
+        assert(topG > ((0xa12aU >> 5) & 63U) * 255U / 63U);
+        assert(((middleRed >> 5) & 63U) == 0U);
+        assert((middleRed & 31U) == 0U);
+        assert(middleRed == 0xf800U);
         /* Less blue, more red than the previous raspberry candidate. */
         assert(((middleRed >> 11) & 31U) > ((0xd270U >> 11) & 31U));
         assert((middleRed & 31U) < (0xd270U & 31U));
-        /* Top is visibly REDDER and brighter than the previous #5A104A,
-         * but still darker than the central pure neon red. */
-        assert(foot == 0xa12aU);
+        /* The ruby metallic top is clearly lighter and redder than the
+         * earlier wine-violet candidate, while pure red dominates. */
+        assert(foot == 0xda6fU);
         assert(((foot >> 11) & 31U) > ((0x5889U >> 11) & 31U));
         assert(((foot >> 11) & 31U) < ((middleRed >> 11) & 31U));
         for (int row = 0; row < 5; ++row)
@@ -579,7 +586,7 @@ int main(void) {
                 const int textY = t + 8 +
                     (state == ESP_MAIN_MENU_SKIN_CONFIRM ? 1 : 0);
                 const uint16_t topColor =
-                    state == ESP_MAIN_MENU_SKIN_IDLE ? 0x229aU : 0xffffU;
+                    state == ESP_MAIN_MENU_SKIN_IDLE ? 0x01ffU : 0xffffU;
                 assert(fb[t * W + l + 10] ==
                        (state == ESP_MAIN_MENU_SKIN_IDLE ? 0x838dU :
                         state == ESP_MAIN_MENU_SKIN_ARMED ? 0xa4d1U : 0x83ceU));
@@ -595,7 +602,7 @@ int main(void) {
                         const uint16_t pixel = fb[yy * W + xx];
                         const int isFace = state == ESP_MAIN_MENU_SKIN_IDLE
                             ? pixel == 0xfe8aU || pixel == 0x7d17U ||
-                              pixel == 0x229aU
+                              pixel == 0x01ffU
                             : pixel == 0xffffU;
                         if (isFace) {
                             ++faces;

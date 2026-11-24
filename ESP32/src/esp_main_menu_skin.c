@@ -17,10 +17,10 @@ typedef struct {
 /* Compact original Doom-like pixel-metal lettering. The reference is
  * ONE BIG WORD per control (not two tiny lines). The 5x9 masks use 108 bytes
  * of flash, no font atlas, texture, cache, mutable state or heap. */
-/* CLASSIC Doom lettering: deep royal blue (Wolf3D-like), cold steel
+/* CLASSIC Doom lettering: full-blue electric royal blue, cold steel
  * center and golden yellow foot. SD a.bmp glyph indices, chassis,
  * selected blink behavior and RAM ownership remain unchanged. */
-#define CLASSIC_STEEL_BLUE 0x229aU /* #2151D6: deep saturated blue */
+#define CLASSIC_STEEL_BLUE 0x01ffU /* #003DFF: full-scale cobalt blue */
 #define CLASSIC_METAL_GRAY 0x7d17U /* #7BA2BD: cold blue-steel */
 #define CLASSIC_PALE_AMBER 0xfe8aU /* #FFD252: brighter golden yellow */
 #define CLASSIC_DIM_STEEL  0x42f0U /* #455D84, darker blue LOADING band */
@@ -32,11 +32,11 @@ static const SkinPalette palettes[3] = {
     {0x0800U,0x4248U,0x83ceU,0x0800U,0x2903U,0xdba5U,0x2800U,0xffffU}
 };
 
-/* INFERNO: red-biased wine violet at the top, near-pure neon red
+/* INFERNO: brighter ruby-metallic red violet at the top, pure DOOM red
  * center, luminous scarlet foot. Preserve row direction, glyph masks. */
-#define INFERNO_DEEP_VIOLET 0xa12aU /* #A52452: red-violet wine */
+#define INFERNO_DEEP_VIOLET 0xda6fU /* #DE4D7B: brighter ruby-violet steel */
 #define INFERNO_PALE_ROSE   0xfd34U /* #FFA6A5: unchanged scarlet */
-#define INFERNO_MID_RED     0xf842U /* #FF0810: electric pure red */
+#define INFERNO_MID_RED     0xf800U /* #FF0000: pure maximum red */
 
 /* PHOSPHORE RGB565 tones stay byte-exact: turquoise -> electric -> pale.
  * The metallic accent seams and ungraded modal ink stay unchanged. */
@@ -75,8 +75,8 @@ uint16_t EspMainMenuSkin_letterTone(int row, int rows) {
         if (row < (2 * rows + 2) / 3) return PHOSPHORE_ELECTRIC_GREEN;
         return PHOSPHORE_TURQUOISE;
     }
-    /* CLASSIC: deep royal blue top, cold steel center, new golden
-     * yellow bottom (lookup mirrored above). */
+    /* CLASSIC: saturated full-blue royal top, cold steel center,
+     * golden yellow bottom (lookup mirrored above). */
     if (row < (rows + 2) / 3) return CLASSIC_PALE_AMBER;
     if (row < (2 * rows + 2) / 3)
         return palettes[ESP_MAIN_MENU_SKIN_IDLE].typeFace;

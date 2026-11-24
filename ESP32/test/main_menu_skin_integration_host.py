@@ -124,11 +124,11 @@ assert "length * 6 - 1" in skin
 assert "row < 9" in skin and "bit < 5" in skin
 # CLASSIC Wolf3D-style deep blue -> blue-steel -> yellow gold shared by
 # the UAC font, LOADING and native HELP title, without touching atlases.
-assert "#define CLASSIC_STEEL_BLUE 0x229aU" in skin
+assert "#define CLASSIC_STEEL_BLUE 0x01ffU" in skin
 assert "#define CLASSIC_METAL_GRAY 0x7d17U" in skin
 assert "#define CLASSIC_PALE_AMBER 0xfe8aU" in skin
-assert "#define INFERNO_DEEP_VIOLET 0xa12aU" in skin
-assert "#define INFERNO_MID_RED     0xf842U" in skin
+assert "#define INFERNO_DEEP_VIOLET 0xda6fU" in skin
+assert "#define INFERNO_MID_RED     0xf800U" in skin
 assert "#define CLASSIC_DIM_STEEL  0x42f0U" in skin
 assert "return CLASSIC_PALE_AMBER;" in skin
 assert "return CLASSIC_STEEL_BLUE;" in skin
