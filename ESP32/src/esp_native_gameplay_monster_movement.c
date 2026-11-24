@@ -10,6 +10,7 @@
 #include "esp_perf_game_p1.h"
 #if DOOMRPG_PERF_GAME_P1
 #include "esp_perf_trace_cache.h"
+#include "esp_perf_spatial_sprite.h"
 #endif
 #if DOOMRPG_PERF_GAME_P1
 #include <esp_timer.h>
@@ -338,7 +339,7 @@ static int specialEntityBlocks(uint32_t spriteIndex,
 
 /* Return 1 blocked, 0 clear, -1 not ready, -2 deliberately unsupported special
  * crossing during calcPath's tile-origin legacy subpath. */
-static int blockingSpriteOnTile(uint16_t tile,
+static int blockingSpriteOnTileReference(uint16_t tile,
                                 int32_t sourceX,
                                 int32_t sourceY,
                                 int32_t destX,
@@ -381,6 +382,77 @@ static int blockingSpriteOnTile(uint16_t tile,
     }
     return found;
 }
+
+#if DOOMRPG_PERF_GAME_P1
+/* P1H-SPRITE-INDEX BEGIN: shadow authority stays with the original scan. */
+static int blockingSpriteOnTileIndexed(uint16_t tile,
+                                int32_t sourceX,
+                                int32_t sourceY,
+                                int32_t destX,
+                                int32_t destY,
+                                uint16_t attackerSprite,
+                                uint16_t mask,
+                                int strictSpecial) {
+    const EspMapSpriteTopologyView* topology = EspMapSpriteTopology_view();
+    uint16_t bestOrder = 0U;
+    int found = 0;
+    uint32_t i;
+
+    if (topology == NULL) return -1;
+    for (i = EspPerfSpatialSprite_first(&EspPerfGameP1_spatialSpriteIndex, tile);
+         i != ESP_PERF_SPATIAL_SPRITE_NONE;
+         i = EspPerfGameP1_spatialSpriteIndex.next[i]) {
+        uint8_t type;
+        uint8_t subtype;
+        uint16_t linkState;
+        uint16_t linkOrder;
+        int specialBlocks;
+
+        if (i == attackerSprite) continue;
+        if (!EspMapSpriteTopology_getEntity(i, &type, &subtype,
+                                            &linkState, &linkOrder)) return -1;
+        (void)subtype;
+        if ((linkState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) == 0U ||
+            (linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK) != tile ||
+            !typeInMask(type, mask)) {
+            continue;
+        }
+        if (type == MOVE_TYPE_SPECIAL_TRACE || type == MOVE_TYPE_SPECIAL_TRACE_2) {
+            if (strictSpecial) return -2;
+            specialBlocks = specialEntityBlocks(i, sourceX, sourceY, destX, destY);
+            if (specialBlocks < 0) return -1;
+            if (specialBlocks == 0) continue;
+        }
+        if (!found || linkOrder > bestOrder) {
+            found = 1;
+            bestOrder = linkOrder;
+        }
+    }
+    return found;
+}
+
+static int blockingSpriteOnTile(uint16_t tile,
+                                 int32_t sourceX,int32_t sourceY,
+                                 int32_t destX,int32_t destY,
+                                 uint16_t attackerSprite,uint16_t mask,
+                                 int strictSpecial) {
+    if(EspPerfGameP1_spatialSpriteIndex.active != 0U) {
+        const int indexed = blockingSpriteOnTileIndexed(tile, sourceX, sourceY, destX, destY, attackerSprite, mask, strictSpecial);
+#if DOOMRPG_PERF_SPATIAL_FAST
+        EspPerfGameP1_spatialShadow(0,0);
+        return indexed;
+#else
+        const int reference = blockingSpriteOnTileReference(tile, sourceX, sourceY, destX, destY, attackerSprite, mask, strictSpecial);
+        EspPerfGameP1_spatialShadow(0,indexed!=reference);
+        return reference;
+#endif
+    }
+    return blockingSpriteOnTileReference(tile, sourceX, sourceY, destX, destY, attackerSprite, mask, strictSpecial);
+}
+/* P1H-SPRITE-INDEX END */
+#else
+#define blockingSpriteOnTile blockingSpriteOnTileReference
+#endif
 
 static int cardinalTraceClearBody(int32_t sourceX,
                               int32_t sourceY,
@@ -1134,6 +1206,7 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
 #if DOOMRPG_PERF_GAME_P1
     EspPerfTraceCache_begin(&traceCache);
     EspPerfGameP1_phaseBegin(6, (uint64_t)esp_timer_get_time());
+    (void)EspPerfSpatialSprite_begin(&EspPerfGameP1_spatialSpriteIndex);
 #endif
     planStatus = aiGoalPlan(candidate.monster->spriteIndex,
                             candidate.monster->subtype,
@@ -1142,6 +1215,7 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
                             targetX, targetY, &probeRng, &plan);
 #if DOOMRPG_PERF_GAME_P1
     EspPerfGameP1_phaseEnd(6, (uint64_t)esp_timer_get_time());
+    EspPerfSpatialSprite_end(&EspPerfGameP1_spatialSpriteIndex);
     EspPerfTraceCache_end(&traceCache);
 #endif
     if (planStatus == -3 || probeRng.boundary != 0U) {

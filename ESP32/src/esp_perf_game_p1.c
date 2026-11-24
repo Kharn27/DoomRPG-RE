@@ -2,7 +2,9 @@
 #if DOOMRPG_PERF_GAME_P1
 #include <limits.h>
 #include "esp_perf_trace_cache.h"
+#include "esp_perf_spatial_sprite.h"
 EspPerfTraceCache EspPerfGameP1_sharedTraceCache;
+EspPerfSpatialSpriteIndex EspPerfGameP1_spatialSpriteIndex;
 #include <stdio.h>
 #include <string.h>
 #define BINS 15U
@@ -26,6 +28,12 @@ static Cohort cohort[2];
 static EspPerfGameP1Load load[4], pendingLoad, serviceLoad;
 static uint8_t inService;
 static uint32_t shadowCalls[2],shadowHits[2],shadowMismatch[2];
+static uint32_t spatialChecks[2],spatialMismatch[2];
+void EspPerfGameP1_spatialShadow(uint8_t kind,int mismatch) {
+    if(kind>=2 || !inService) return;
+    ++spatialChecks[kind];
+    if(mismatch) ++spatialMismatch[kind];
+}
 void EspPerfGameP1_traceShadow(uint8_t kind,int hit,int mismatch) {
     if(kind>=2 || !inService) return;
     ++shadowCalls[kind];
@@ -109,6 +117,12 @@ static void reportLoad(void) {
     for(i=0;i<2;i++)
         printf("[PERFGAMEP1F] planner=%s calls=%u hits=%u mismatches=%u mode=%s cumulative=yes\n",
           i?"continuation":"first",(unsigned)shadowCalls[i],(unsigned)shadowHits[i],(unsigned)shadowMismatch[i],DOOMRPG_PERF_TRACE_FAST?"fast":"shadow");
+    for(i=0;i<2;i++)
+        printf("[PERFGAMEP1H] planner=%s spatialSpriteChecks=%u spatialSpriteMismatch=%u mode=%s bucket=4x4 capacity=%u cumulative=yes\n",
+          i?"continuation":"first",(unsigned)spatialChecks[i],
+          (unsigned)spatialMismatch[i],
+          DOOMRPG_PERF_SPATIAL_FAST?"fast":"shadow",
+          (unsigned)ESP_PERF_SPATIAL_SPRITE_CAPACITY);
     printf("[PERFGAMEP1B] outsideFrames=%llu outsideFrameUs=%llu cumulative=yes\n",
       (unsigned long long)outsideFrames,(unsigned long long)outsideFrameUs);
 }
@@ -178,6 +192,9 @@ void EspPerfGameP1_reset(void) {
     memset(shadowCalls,0,sizeof(shadowCalls));
     memset(shadowHits,0,sizeof(shadowHits));
     memset(shadowMismatch,0,sizeof(shadowMismatch));
+    memset(spatialChecks,0,sizeof(spatialChecks));
+    memset(spatialMismatch,0,sizeof(spatialMismatch));
+    EspPerfSpatialSprite_end(&EspPerfGameP1_spatialSpriteIndex);
     memset(phaseOpen,0,sizeof(phaseOpen));
     memset(&turn,0,sizeof(turn));
     completed=0;inputSeq=0;inputAt=0;inputConsumed=0;currentGroup=0;
