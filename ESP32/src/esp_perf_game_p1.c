@@ -23,7 +23,7 @@ static Cohort cohort[2];
 static Turn turn;
 static uint32_t completed, inputSeq;
 static uint64_t inputAt;
-static uint8_t inputConsumed, currentGroup;
+static uint8_t inputConsumed, currentGroup, abortBeforeFirstSample;
 static uint32_t delta(uint64_t end,uint64_t start) {
     uint64_t d = end >= start ? end-start : 0;
     return d > UINT32_MAX ? UINT32_MAX : (uint32_t)d;
@@ -80,15 +80,27 @@ void EspPerfGameP1_reset(void) {
     memset(cohort,0,sizeof(cohort));
     memset(&turn,0,sizeof(turn));
     completed=0;inputSeq=0;inputAt=0;inputConsumed=0;currentGroup=0;
+    abortBeforeFirstSample=0;
 }
 void EspPerfGameP1_abort(void) {
-    if (turn.open) ++cohort[turn.group].totals.aborted;
+    if (turn.open) {
+        ++cohort[turn.group].totals.aborted;
+    } else {
+        /* A fail-closed first service has not yet passed its wrapper.
+         * Count it as aborted, NEVER as a successful zero-duration turn. */
+        abortBeforeFirstSample=1;
+    }
     turn.open=0;
 }
 void EspPerfGameP1_sequence(uint64_t start,uint64_t end,uint32_t previous,
     uint32_t next,uint8_t beforeBusy,uint8_t afterBusy,
     uint32_t historical,uint32_t delivered,uint32_t pauseProbe) {
     Cohort* c;
+    if (abortBeforeFirstSample) {
+        ++cohort[groupFor(historical)].totals.aborted;
+        abortBeforeFirstSample=0;
+        return;
+    }
     if (next!=previous && next!=0) {
         if(turn.open) EspPerfGameP1_abort();
         memset(&turn,0,sizeof(turn));
