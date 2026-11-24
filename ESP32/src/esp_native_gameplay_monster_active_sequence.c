@@ -509,4 +509,3 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
         activeSeq.turnDelivered, activeSeq.pauseProbe);
 #endif
 }
-
