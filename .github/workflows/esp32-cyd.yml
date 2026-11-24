@@ -554,6 +554,16 @@ jobs:
             ESP32/test/perf_game_spatial_line_host.c -o /tmp/doomrpg-perf-line
           /tmp/doomrpg-perf-line
 
+      - name: PERF-GAME-P1 true active-sequence owner deterministic oracle (host C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+            -DDOOMRPG_ESP32=1 -DDOOMRPG_PERF_GAME_P1=0 \
+            -IESP32/include -IESP32/src -Isrc \
+            ESP32/src/esp_native_gameplay_monster_active_sequence.c \
+            ESP32/test/perf_game_active_sequence_owner_host.c \
+            -Wl,--gc-sections -o /tmp/doomrpg-perf-actual-seq
+          /tmp/doomrpg-perf-actual-seq
+
       - name: Test SDL-F20 eight native owner header-independent C sources
         run: python ESP32/test/sdl_f20_native_leaf_header_host.py
 
