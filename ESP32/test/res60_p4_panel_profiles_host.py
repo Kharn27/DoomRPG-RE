@@ -40,6 +40,7 @@ assert pilot_flags == [
     "-D", "DOOMRPG_RES60_P16_HEAP_TOPOLOGY=1",
     "-D", "DOOMRPG_RES60_P17_HEAP_SNAPSHOT=1",
     "-D", "DOOMRPG_RES60_P18_LOCAL_SNAPSHOT=1",
+    "-D", "DOOMRPG_RES60_P20_COMPACT_SERIAL=1",
     "-I.pio/libdeps/esp32-cyd-res60/TFT_eSPI",
 ]
 assert p4_flags == [
