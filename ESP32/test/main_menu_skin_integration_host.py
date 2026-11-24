@@ -122,10 +122,10 @@ assert 'word(fb, stride, l, t, r, b, first, p,' in skin
 assert "glyphs[][9]" in skin
 assert "length * 6 - 1" in skin
 assert "row < 9" in skin and "bit < 5" in skin
-# CLASSIC Wolf3D-style deep blue -> blue-steel -> yellow gold shared by
-# the UAC font, LOADING and native HELP title, without touching atlases.
-assert "#define CLASSIC_STEEL_BLUE 0x01ffU" in skin
-assert "#define CLASSIC_METAL_GRAY 0x7d17U" in skin
+# CLASSIC dark navy blue -> bright silvery neutral steel -> yellow gold,
+# shared by UAC, LOADING and HELP without touching the font atlases.
+assert "#define CLASSIC_STEEL_BLUE 0x0913U" in skin
+assert "#define CLASSIC_METAL_GRAY 0xb5d8U" in skin
 assert "#define CLASSIC_PALE_AMBER 0xfe8aU" in skin
 assert "#define INFERNO_DEEP_VIOLET 0xda6fU" in skin
 assert "#define INFERNO_MID_RED     0xf800U" in skin

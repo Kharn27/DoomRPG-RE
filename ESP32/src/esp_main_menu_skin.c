@@ -17,12 +17,12 @@ typedef struct {
 /* Compact original Doom-like pixel-metal lettering. The reference is
  * ONE BIG WORD per control (not two tiny lines). The 5x9 masks use 108 bytes
  * of flash, no font atlas, texture, cache, mutable state or heap. */
-/* CLASSIC Doom lettering: full-blue electric royal blue, cold steel
- * center and golden yellow foot. SD a.bmp glyph indices, chassis,
- * selected blink behavior and RAM ownership remain unchanged. */
-#define CLASSIC_STEEL_BLUE 0x01ffU /* #003DFF: full-scale cobalt blue */
-#define CLASSIC_METAL_GRAY 0x7d17U /* #7BA2BD: cold blue-steel */
-#define CLASSIC_PALE_AMBER 0xfe8aU /* #FFD252: brighter golden yellow */
+/* CLASSIC Doom lettering: dark saturated marine royal blue, bright
+ * cool-silver metal center and golden yellow foot. SD a.bmp glyph
+ * indices, chassis, selected blink and RAM ownership are unchanged. */
+#define CLASSIC_STEEL_BLUE 0x0913U /* #08209C: deep navy blue */
+#define CLASSIC_METAL_GRAY 0xb5d8U /* #B5BAC5: light neutral silver-steel */
+#define CLASSIC_PALE_AMBER 0xfe8aU /* #FFD252: unchanged golden yellow */
 #define CLASSIC_DIM_STEEL  0x42f0U /* #455D84, darker blue LOADING band */
 
 static const SkinPalette palettes[3] = {
@@ -75,8 +75,8 @@ uint16_t EspMainMenuSkin_letterTone(int row, int rows) {
         if (row < (2 * rows + 2) / 3) return PHOSPHORE_ELECTRIC_GREEN;
         return PHOSPHORE_TURQUOISE;
     }
-    /* CLASSIC: saturated full-blue royal top, cold steel center,
-     * golden yellow bottom (lookup mirrored above). */
+    /* CLASSIC: deep navy-blue top, silvery cold-steel center,
+     * unchanged golden yellow bottom (lookup mirrored above). */
     if (row < (rows + 2) / 3) return CLASSIC_PALE_AMBER;
     if (row < (2 * rows + 2) / 3)
         return palettes[ESP_MAIN_MENU_SKIN_IDLE].typeFace;

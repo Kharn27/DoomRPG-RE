@@ -5,7 +5,7 @@
 #include <stdio.h>
 int main(void) {
     const uint16_t themes[][3] = {
-        {0x01ffU, 0x7d17U, 0xfe8aU},
+        {0x0913U, 0xb5d8U, 0xfe8aU},
         {0xda6fU, 0xf800U, 0xfd34U},
         {0x2638U, 0x87e0U, 0xc7b8U}
     };
@@ -20,12 +20,12 @@ int main(void) {
             assert(EspUacFontTheme_tintGray(0xffffU,tone)==tone);
         }
     }
-    /* Actual deep-blue / blue-steel / golden-yellow stop coordinates
+    /* Actual navy / silvery metal / golden-yellow stop coordinates
      * flow unchanged through the MENU_MAIN / OPTIONS UAC tint helper. */
     assert(EspUacFontTheme_verticalTone(themes[0][0],themes[0][1],
-                                        themes[0][2],0,25)==0x01ffU);
+                                        themes[0][2],0,25)==0x0913U);
     assert(EspUacFontTheme_verticalTone(themes[0][0],themes[0][1],
-                                        themes[0][2],12,25)==0x7d17U);
+                                        themes[0][2],12,25)==0xb5d8U);
     assert(EspUacFontTheme_verticalTone(themes[0][0],themes[0][1],
                                         themes[0][2],24,25)==0xfe8aU);
     for (int row=0;row<23;++row) {
