@@ -155,9 +155,9 @@ jobs:
 
       - name: GAME-S1 #444 true C topology snapshot/restore for human SHOW/HIDE (V11 old/new)
         run: |
-          cc -O2 -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \\
-            -IESP32/test/host_include -IESP32/include \\
-            ESP32/test/game_s1_human_topology_host.c -Wl,--gc-sections \\
+          cc -O2 -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+            -IESP32/test/host_include -IESP32/include \
+            ESP32/test/game_s1_human_topology_host.c -Wl,--gc-sections \
             -o /tmp/doomrpg-game-s1-humantopo
           /tmp/doomrpg-game-s1-humantopo
 
