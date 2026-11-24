@@ -23,9 +23,39 @@ static Cohort cohort[2];
 /* Actual delivered load: 0, 1..3, 4..7, 8+. Single loopTask writer. */
 static EspPerfGameP1Load load[4], pendingLoad, serviceLoad;
 static uint8_t inService;
+static EspPerfGameP1Phase phases[2];
+static uint64_t phaseStart[2], phaseFrameStart[2];
+static uint32_t phaseCountStart[2];
+static uint8_t phaseOpen[2];
+void EspPerfGameP1_phaseBegin(uint8_t phase,uint64_t now) {
+    if(phase>=2 || !inService) return;
+    phaseOpen[phase]=1;
+    phaseStart[phase]=now;
+    phaseFrameStart[phase]=serviceLoad.frameInsideUs;
+    phaseCountStart[phase]=serviceLoad.framesInside;
+}
+void EspPerfGameP1_phaseEnd(uint8_t phase,uint64_t now) {
+    uint64_t elapsed;
+    EspPerfGameP1Phase* p;
+    if(phase>=2 || !phaseOpen[phase]) return;
+    phaseOpen[phase]=0;
+    elapsed=now>=phaseStart[phase]?now-phaseStart[phase]:0;
+    p=&phases[phase];
+    ++p->calls;
+    p->wallUs+=elapsed;
+    p->frameUs+=serviceLoad.frameInsideUs-phaseFrameStart[phase];
+    p->frames+=serviceLoad.framesInside-phaseCountStart[phase];
+    if(elapsed>p->maxUs) p->maxUs=elapsed>UINT32_MAX?UINT32_MAX:(uint32_t)elapsed;
+}
+int EspPerfGameP1_phaseSnapshot(uint8_t phase,EspPerfGameP1Phase* out) {
+    if(phase>=2 || !out) return 0;
+    *out=phases[phase];
+    return 1;
+}
 static uint64_t outsideFrameUs, outsideFrames;
 void EspPerfGameP1_serviceEnter(void) {
     memset(&serviceLoad,0,sizeof(serviceLoad));
+    memset(phaseOpen,0,sizeof(phaseOpen));
     inService=1;
 }
 int EspPerfGameP1_loadSnapshot(uint8_t bucket, EspPerfGameP1Load* out) {
@@ -43,6 +73,14 @@ static void reportLoad(void) {
           (unsigned)p->framesBetween,(unsigned long long)p->serviceUs,
           (unsigned long long)p->frameInsideUs,(unsigned long long)p->frameBetweenUs,
           (unsigned long long)p->nonFrameServiceUs,(unsigned long long)p->lcdInsideUs);
+    }
+    for(i=0;i<2;i++) {
+        const EspPerfGameP1Phase* p=&phases[i];
+        printf("[PERFGAMEP1C] phase=%s calls=%u wallUs=%llu frameUs=%llu residualUs=%llu frames=%u maxUs=%u cumulative=yes\n",
+          i?"movement-and-post-goals":"immediate-attack-probe",(unsigned)p->calls,
+          (unsigned long long)p->wallUs,(unsigned long long)p->frameUs,
+          (unsigned long long)(p->wallUs>=p->frameUs?p->wallUs-p->frameUs:0),
+          (unsigned)p->frames,(unsigned)p->maxUs);
     }
     printf("[PERFGAMEP1B] outsideFrames=%llu outsideFrameUs=%llu cumulative=yes\n",
       (unsigned long long)outsideFrames,(unsigned long long)outsideFrameUs);
@@ -109,6 +147,8 @@ void EspPerfGameP1_reset(void) {
     memset(&pendingLoad,0,sizeof(pendingLoad));
     memset(&serviceLoad,0,sizeof(serviceLoad));
     inService=0;outsideFrameUs=0;outsideFrames=0;
+    memset(phases,0,sizeof(phases));
+    memset(phaseOpen,0,sizeof(phaseOpen));
     memset(&turn,0,sizeof(turn));
     completed=0;inputSeq=0;inputAt=0;inputConsumed=0;currentGroup=0;
     abortBeforeFirstSample=0;

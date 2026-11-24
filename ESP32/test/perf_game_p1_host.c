@@ -66,6 +66,20 @@ int main(void) {
         EspPerfGameP1_sequence(30000,30100,1,2,0,0,31,0,0);
         assert(EspPerfGameP1_loadSnapshot(0,&p) && p.turns==1 && p.maxDelivered==0);
     }
+    {
+        EspPerfGameP1Phase p={0};
+        EspPerfGameP1_reset();
+        EspPerfGameP1_serviceEnter();
+        EspPerfGameP1_phaseBegin(0,1000);
+        EspPerfGameP1_phaseEnd(0,1200);
+        EspPerfGameP1_phaseBegin(1,1300);
+        EspPerfGameP1_frame(2000,500,0,1,1);
+        EspPerfGameP1_phaseEnd(1,4300);
+        EspPerfGameP1_phaseEnd(1,4500);
+        assert(EspPerfGameP1_phaseSnapshot(0,&p) && p.calls==1 && p.wallUs==200 && p.frameUs==0);
+        assert(EspPerfGameP1_phaseSnapshot(1,&p) && p.calls==1 && p.wallUs==3000 && p.frameUs==2000 && p.frames==1 && p.maxUs==3000);
+        EspPerfGameP1_sequence(1000,5000,0,1,0,0,31,1,0);
+    }
     puts("perf_game_p1_host: PASS bounded histograms, cohorts, CPU/gap, attribution, abort");
     return 0;
 }

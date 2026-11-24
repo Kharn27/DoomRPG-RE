@@ -360,8 +360,14 @@ static void EspNativeGameplayMonsterActiveSequence_serviceBody(struct DoomRPG_s*
 #endif
         beforeTurn = EspNativeGameplayMonsterTurn_view();
         attackBefore = beforeTurn != NULL ? beforeTurn->attackProbes : 0U;
+#if DOOMRPG_PERF_GAME_P1
+        EspPerfGameP1_phaseBegin(0, (uint64_t)esp_timer_get_time());
+#endif
         memberStatus = EspNativeGameplayMonsterTurn_probeActiveMember(
             doomRpg, spriteIndex);
+#if DOOMRPG_PERF_GAME_P1
+        EspPerfGameP1_phaseEnd(0, (uint64_t)esp_timer_get_time());
+#endif
 
         if (memberStatus == ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_INVALID) {
             ++activeSeq.deferredTurns;
@@ -377,6 +383,11 @@ static void EspNativeGameplayMonsterActiveSequence_serviceBody(struct DoomRPG_s*
             return;
         }
 
+#if DOOMRPG_PERF_GAME_P1
+        if (memberStatus == ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_RANGED_MOVE ||
+            memberStatus == ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_NO_IMMEDIATE_ATTACK)
+            EspPerfGameP1_phaseBegin(1, (uint64_t)esp_timer_get_time());
+#endif
         if (memberStatus == ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_RANGED_MOVE) {
             ++activeSeq.expandedMovement;
             transactionStatus = callMovementMember(
@@ -389,6 +400,9 @@ static void EspNativeGameplayMonsterActiveSequence_serviceBody(struct DoomRPG_s*
                 doomRpg, spriteIndex, 1, "NO-IMMEDIATE-ATTACK", &committed);
         }
 
+#if DOOMRPG_PERF_GAME_P1
+        EspPerfGameP1_phaseEnd(1, (uint64_t)esp_timer_get_time());
+#endif
 #if DOOMRPG_PERF_GAME_P1
         EspPerfGameP1_member(perfMemberStart, (uint64_t)esp_timer_get_time(),
                               activeSeq.turnActivationCount);

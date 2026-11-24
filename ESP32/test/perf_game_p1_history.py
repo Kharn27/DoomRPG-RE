@@ -79,6 +79,9 @@ def restore_pre_perf_game_p1_active_sequence(src: str) -> str:
         '#include <esp_timer.h>\n'
         '#endif\n',
         '#include "esp_player_view_state.h"\n')
+    undo("#if DOOMRPG_PERF_GAME_P1\n        EspPerfGameP1_phaseBegin(0, (uint64_t)esp_timer_get_time());\n#endif\n        memberStatus = EspNativeGameplayMonsterTurn_probeActiveMember(\n            doomRpg, spriteIndex);\n#if DOOMRPG_PERF_GAME_P1\n        EspPerfGameP1_phaseEnd(0, (uint64_t)esp_timer_get_time());\n#endif", "        memberStatus = EspNativeGameplayMonsterTurn_probeActiveMember(\n            doomRpg, spriteIndex);")
+    undo("#if DOOMRPG_PERF_GAME_P1\n        if (memberStatus == ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_RANGED_MOVE ||\n            memberStatus == ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_NO_IMMEDIATE_ATTACK)\n            EspPerfGameP1_phaseBegin(1, (uint64_t)esp_timer_get_time());\n#endif\n        if (memberStatus == ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_RANGED_MOVE) {", "        if (memberStatus == ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_RANGED_MOVE) {")
+    undo("#if DOOMRPG_PERF_GAME_P1\n        EspPerfGameP1_phaseEnd(1, (uint64_t)esp_timer_get_time());\n#endif\n#if DOOMRPG_PERF_GAME_P1\n        EspPerfGameP1_member(perfMemberStart,", "#if DOOMRPG_PERF_GAME_P1\n        EspPerfGameP1_member(perfMemberStart,")
     undo('static void EspNativeGameplayMonsterActiveSequence_serviceBody(',
          'void EspNativeGameplayMonsterActiveSequence_service(')
     undo(

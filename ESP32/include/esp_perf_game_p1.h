@@ -19,6 +19,13 @@ typedef struct EspPerfGameP1Load_s {
     uint64_t serviceUs, frameInsideUs, frameBetweenUs, nonFrameServiceUs, lcdInsideUs;
 } EspPerfGameP1Load;
 void EspPerfGameP1_serviceEnter(void);
+void EspPerfGameP1_phaseBegin(uint8_t phase,uint64_t now);
+void EspPerfGameP1_phaseEnd(uint8_t phase,uint64_t now);
+typedef struct EspPerfGameP1Phase_s {
+    uint64_t wallUs, frameUs;
+    uint32_t calls, frames, maxUs;
+} EspPerfGameP1Phase;
+int EspPerfGameP1_phaseSnapshot(uint8_t phase,EspPerfGameP1Phase* out);
 int EspPerfGameP1_loadSnapshot(uint8_t bucket, EspPerfGameP1Load* out);
 void EspPerfGameP1_reset(void);
 void EspPerfGameP1_sequence(uint64_t startUs, uint64_t endUs,
