@@ -9,9 +9,9 @@ extern "C" {
 #endif
 typedef struct EspPerfGameP1Snapshot_s {
     uint32_t turns, services, busyCalls, pausedCalls, delivered, aborted;
-    uint32_t memberSamples, frames, framePresents, inputResponses;
+    uint32_t memberSamples, frames, framePresents, inputResponses, committedActions;
     uint32_t inputBlockedCombat, inputBusy;
-    uint32_t wallMaxUs, serviceMaxUs, gapMaxUs, memberMaxUs, frameMaxUs, inputMaxUs;
+    uint32_t wallMaxUs, serviceMaxUs, gapMaxUs, memberMaxUs, frameMaxUs, inputMaxUs, commitMaxUs;
 } EspPerfGameP1Snapshot;
 #if DOOMRPG_PERF_GAME_P1
 void EspPerfGameP1_reset(void);
@@ -23,6 +23,7 @@ void EspPerfGameP1_abort(void);
 void EspPerfGameP1_member(uint64_t startUs,uint64_t endUs,uint32_t activeCount);
 void EspPerfGameP1_inputAccepted(uint32_t sequence,uint64_t atUs);
 void EspPerfGameP1_inputConsumed(uint32_t sequence);
+void EspPerfGameP1_inputCommit(uint32_t sequence,uint64_t nowUs);
 void EspPerfGameP1_inputDispatchDone(uint64_t nowUs);
 void EspPerfGameP1_inputBlockedCombat(void);
 void EspPerfGameP1_inputBusy(void);
@@ -41,6 +42,7 @@ static inline void EspPerfGameP1_member(uint64_t a,uint64_t b,uint32_t c) {
 }
 static inline void EspPerfGameP1_inputAccepted(uint32_t a,uint64_t b) {(void)a;(void)b;}
 static inline void EspPerfGameP1_inputConsumed(uint32_t a) {(void)a;}
+static inline void EspPerfGameP1_inputCommit(uint32_t a,uint64_t b) {(void)a;(void)b;}
 static inline void EspPerfGameP1_inputDispatchDone(uint64_t a) {(void)a;}
 static inline void EspPerfGameP1_inputBlockedCombat(void) {}
 static inline void EspPerfGameP1_inputBusy(void) {}
