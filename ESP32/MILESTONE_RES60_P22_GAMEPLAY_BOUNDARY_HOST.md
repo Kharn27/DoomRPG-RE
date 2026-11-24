@@ -33,3 +33,7 @@ Ajouter `ESP32/test/res60_p22_gameplay_boundary_host.py` au workflow. C'est un *
 4. **Session/économie RAM :** réintroduire gameplay, input, musique et événements vers les propriétaires natifs existants, mesure du CYD normal, impossible de déclarer GO avant test vrai matériel.
 
 **Décision : P21 conclut la phase micro-optimisation du preview. P22 est un audit de frontières, pas un prétendu gameplay 192x144.** Le chantier reste DRAFT, sans merge dans main.
+
+## Résultat des contrôles de code P22 — double CI SUCCESS (24 novembre 2026)
+
+**Commit exact du code P22 `1a114b48daca6874e2c3137b343bd9db3cdbc22b`**, sans aucune modification du programme compilé (ajout d'un test Python, d'une documentation, et d'une étape CI seulement). [Workflow push #45372593782](https://github.com/Kharn27/DoomRPG-RE/actions/runs/45372593782) : **SUCCESS, 263 étapes**. [Workflow PR #45372607423](https://github.com/Kharn27/DoomRPG-RE/actions/runs/45372607423) : **SUCCESS, 263 étapes**. Le test de garde `RES60-P22 static gameplay resolution ownership and safe preview boundary` passe dans les deux. Compilations 160x120 et profils RES60 classic/inversé passées. Le rapport est donc **PASS HOST seulement** : **aucun nouveau test CYD n'est pertinent ni revendiqué sur ce commit sans modification du firmware**. Pas de baseline perf P22 ; P21 reste la référence matérielle.
