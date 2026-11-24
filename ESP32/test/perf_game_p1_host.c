@@ -21,11 +21,13 @@ int main(void) {
     EspPerfGameP1_frame(50000,10000,1,1,1);
     EspPerfGameP1_inputAccepted(6,130000);
     EspPerfGameP1_inputConsumed(6);
+    EspPerfGameP1_inputCommit(6,138000);
     EspPerfGameP1_inputDispatchDone(142000);
     EspPerfGameP1_inputBlockedCombat();
     EspPerfGameP1_inputBusy();
     assert(EspPerfGameP1_snapshot(0,&pre));
-    assert(pre.inputResponses==1 && pre.inputBlockedCombat==1 && pre.inputBusy==1);
+    assert(pre.inputResponses==1 && pre.committedActions==1 && pre.commitMaxUs==8000);
+    assert(pre.inputBlockedCombat==1 && pre.inputBusy==1);
     assert(pre.frames==1 && pre.framePresents==1 && pre.memberSamples==1);
     for(i=0;i<7;i++) {
         const uint32_t id=2+i;
