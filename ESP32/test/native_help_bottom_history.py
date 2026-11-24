@@ -162,7 +162,7 @@ _POST_PAGE4_COLOR = "                ((menuSystem->scrollIndex == 0 && i == 5) |
 _POST_PAGE234_COMMENT = """            /* HELP pages 2-4 use the same neutral white body ink,
              * independent of theme. Pages 12-16 retain the light theme tone.
              * Section titles and HELP / CYD remain theme-colored. */"""
-_POST_PAGE234_COLOR = "                ((menuSystem->scrollIndex == 0 && i == 5) ||\\n                 (scroll >= MAIN_HELP_VISIBLE_LINES &&\\n                  scroll <= 3 * MAIN_HELP_VISIBLE_LINES))\\n                    ? 0xffffffffU : helpColor888(bodyTone));"
+_POST_PAGE234_COLOR = "                ((menuSystem->scrollIndex == 0 && i == 5) ||\n                 (scroll >= MAIN_HELP_VISIBLE_LINES &&\n                  scroll <= 3 * MAIN_HELP_VISIBLE_LINES))\n                    ? 0xffffffffU : helpColor888(bodyTone));"
 
 
 
