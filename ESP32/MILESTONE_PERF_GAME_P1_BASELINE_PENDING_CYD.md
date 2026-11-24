@@ -34,3 +34,8 @@ Measured clocks: ESP-IDF \`esp_timer_get_time()\`, monotonic microseconds since 
 ## Remaining P1 gates (do not close #447 yet)
 
 The new host fixture tests observer accumulation, cohorts, aborted turns and input token attribution, **not the actual active-sequence implementation with mocked 7–24 live/dead members**. The existing \`monster_active_sequence_budget_host.c\` tests only the budget predicate, not complete AI/RNG/oracle behavior. Need to add true owner oracle, paired state/RNG/topology fingerprints, committed-action latency probes for SELECT/PASS/other actions, complete direct UI-present counts / redraw reasons, and numeric thresholds after a real baseline. Only then consider P2–P4; no guessed gains and no premature parallelism.
+
+
+## P1b — completed-turn frame attribution (candidate)
+
+First CYD acquisition prompted a narrower follow-up: actual delivered buckets 0 / 1–3 / 4–7 / 8+ (IDs 0–3), independent of historical prefix. [PERFGAMEP1B] records cumulative compositor time within sequencer calls, between calls while a turn is open, and outside the sequencer turn. LCD time is a subset of frame time; nonFrameServiceUs subtracts measured compositor time from service wall time, **not pure AI CPU**. Pre-existing logs, audio pumps after frame measurement, transactions, preemption remain in residual. Aborted turns excluded from completed buckets. Final attack retaliation may outlive sequencer completion; outside is not synonymous with ambient. No direct UI present census, no visibility decision, no gameplay or budget change. Same normal env and scenario for next CYD capture. The true simulation oracle and finer AI/transaction timings remain pending.

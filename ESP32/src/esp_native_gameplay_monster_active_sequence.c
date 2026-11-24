@@ -500,6 +500,7 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
     const uint64_t startUs = (uint64_t)esp_timer_get_time();
     const uint32_t beforeTurn = activeSeq.expandedTurns;
     const uint8_t beforeBusy = activeSeq.turnInProgress;
+    EspPerfGameP1_serviceEnter();
 #endif
     EspNativeGameplayMonsterActiveSequence_serviceBody(doomRpg);
 #if DOOMRPG_PERF_GAME_P1

@@ -48,6 +48,24 @@ int main(void) {
     assert(mass.aborted==1 && mass.turns==0);
     EspPerfGameP1_reset();
     assert(EspPerfGameP1_snapshot(0,&pre) && pre.turns==0);
+    {
+        EspPerfGameP1Load p={0};
+        EspPerfGameP1_serviceEnter();
+        EspPerfGameP1_frame(2000,500,0,1,1);
+        EspPerfGameP1_sequence(10000,15000,0,1,0,1,31,1,0);
+        EspPerfGameP1_frame(3000,1000,1,1,1);
+        EspPerfGameP1_serviceEnter();
+        EspPerfGameP1_frame(1000,300,0,1,1);
+        EspPerfGameP1_sequence(20000,24000,1,1,1,0,31,7,0);
+        EspPerfGameP1_frame(7000,2000,1,1,1);
+        assert(EspPerfGameP1_loadSnapshot(2,&p));
+        assert(p.turns==1 && p.maxDelivered==7 && p.framesInside==2 && p.framesBetween==1);
+        assert(p.serviceUs==9000 && p.frameInsideUs==3000 && p.frameBetweenUs==3000);
+        assert(p.nonFrameServiceUs==6000 && p.lcdInsideUs==800);
+        EspPerfGameP1_serviceEnter();
+        EspPerfGameP1_sequence(30000,30100,1,2,0,0,31,0,0);
+        assert(EspPerfGameP1_loadSnapshot(0,&p) && p.turns==1 && p.maxDelivered==0);
+    }
     puts("perf_game_p1_host: PASS bounded histograms, cohorts, CPU/gap, attribution, abort");
     return 0;
 }

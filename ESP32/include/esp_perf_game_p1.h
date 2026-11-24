@@ -14,6 +14,12 @@ typedef struct EspPerfGameP1Snapshot_s {
     uint32_t wallMaxUs, serviceMaxUs, gapMaxUs, memberMaxUs, frameMaxUs, inputMaxUs, commitMaxUs;
 } EspPerfGameP1Snapshot;
 #if DOOMRPG_PERF_GAME_P1
+typedef struct EspPerfGameP1Load_s {
+    uint32_t turns, framesInside, framesBetween, maxDelivered;
+    uint64_t serviceUs, frameInsideUs, frameBetweenUs, nonFrameServiceUs, lcdInsideUs;
+} EspPerfGameP1Load;
+void EspPerfGameP1_serviceEnter(void);
+int EspPerfGameP1_loadSnapshot(uint8_t bucket, EspPerfGameP1Load* out);
 void EspPerfGameP1_reset(void);
 void EspPerfGameP1_sequence(uint64_t startUs, uint64_t endUs,
     uint32_t beforeTurn, uint32_t afterTurn, uint8_t beforeBusy,

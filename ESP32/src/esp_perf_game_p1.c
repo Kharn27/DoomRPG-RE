@@ -20,6 +20,33 @@ typedef struct {
     uint8_t group, open;
 } Turn;
 static Cohort cohort[2];
+/* Actual delivered load: 0, 1..3, 4..7, 8+. Single loopTask writer. */
+static EspPerfGameP1Load load[4], pendingLoad, serviceLoad;
+static uint8_t inService;
+static uint64_t outsideFrameUs, outsideFrames;
+void EspPerfGameP1_serviceEnter(void) {
+    memset(&serviceLoad,0,sizeof(serviceLoad));
+    inService=1;
+}
+int EspPerfGameP1_loadSnapshot(uint8_t bucket, EspPerfGameP1Load* out) {
+    if(bucket>=4 || !out) return 0;
+    *out=load[bucket];
+    return 1;
+}
+static void reportLoad(void) {
+    unsigned i;
+    for(i=0;i<4;i++) {
+        const EspPerfGameP1Load* p=&load[i];
+        if(!p->turns) continue;
+        printf("[PERFGAMEP1B] bucket=%u turns=%u maxDelivered=%u framesInside=%u framesBetween=%u serviceUs=%llu frameInsideUs=%llu frameBetweenUs=%llu nonFrameServiceUs=%llu lcdInsideUs=%llu cumulative=yes\n",
+          i,(unsigned)p->turns,(unsigned)p->maxDelivered,(unsigned)p->framesInside,
+          (unsigned)p->framesBetween,(unsigned long long)p->serviceUs,
+          (unsigned long long)p->frameInsideUs,(unsigned long long)p->frameBetweenUs,
+          (unsigned long long)p->nonFrameServiceUs,(unsigned long long)p->lcdInsideUs);
+    }
+    printf("[PERFGAMEP1B] outsideFrames=%llu outsideFrameUs=%llu cumulative=yes\n",
+      (unsigned long long)outsideFrames,(unsigned long long)outsideFrameUs);
+}
 static Turn turn;
 static uint32_t completed, inputSeq;
 static uint64_t inputAt;
@@ -78,6 +105,10 @@ static void report(unsigned n) {
 }
 void EspPerfGameP1_reset(void) {
     memset(cohort,0,sizeof(cohort));
+    memset(load,0,sizeof(load));
+    memset(&pendingLoad,0,sizeof(pendingLoad));
+    memset(&serviceLoad,0,sizeof(serviceLoad));
+    inService=0;outsideFrameUs=0;outsideFrames=0;
     memset(&turn,0,sizeof(turn));
     completed=0;inputSeq=0;inputAt=0;inputConsumed=0;currentGroup=0;
     abortBeforeFirstSample=0;
@@ -96,6 +127,7 @@ void EspPerfGameP1_sequence(uint64_t start,uint64_t end,uint32_t previous,
     uint32_t next,uint8_t beforeBusy,uint8_t afterBusy,
     uint32_t historical,uint32_t delivered,uint32_t pauseProbe) {
     Cohort* c;
+    inService=0;
     if (abortBeforeFirstSample) {
         ++cohort[groupFor(historical)].totals.aborted;
         abortBeforeFirstSample=0;
@@ -104,11 +136,19 @@ void EspPerfGameP1_sequence(uint64_t start,uint64_t end,uint32_t previous,
     if (next!=previous && next!=0) {
         if(turn.open) EspPerfGameP1_abort();
         memset(&turn,0,sizeof(turn));
+        memset(&pendingLoad,0,sizeof(pendingLoad));
         turn.start=start;turn.lastEnd=start;turn.id=next;
         turn.group=groupFor(historical);turn.open=1;
         currentGroup=turn.group;
     }
-    if (!turn.open || next!=turn.id) return;
+    if (!turn.open || next!=turn.id) {
+        outsideFrames+=serviceLoad.framesInside;
+        outsideFrameUs+=serviceLoad.frameInsideUs;
+        return;
+    }
+    pendingLoad.framesInside+=serviceLoad.framesInside;
+    pendingLoad.frameInsideUs+=serviceLoad.frameInsideUs;
+    pendingLoad.lcdInsideUs+=serviceLoad.lcdInsideUs;
     c=&cohort[turn.group];
     if(turn.services && start>=turn.lastEnd)
         turn.gapUs=sat(turn.gapUs,delta(start,turn.lastEnd));
@@ -129,8 +169,22 @@ void EspPerfGameP1_sequence(uint64_t start,uint64_t end,uint32_t previous,
     c->totals.wallMaxUs=c->wall.maxUs;
     c->totals.serviceMaxUs=c->service.maxUs;
     c->totals.gapMaxUs=c->gap.maxUs;
+    {
+        unsigned bucket=delivered==0?0:delivered<=3?1:delivered<=7?2:3;
+        EspPerfGameP1Load* p=&load[bucket];
+        ++p->turns;
+        if(delivered>p->maxDelivered) p->maxDelivered=delivered;
+        p->framesInside+=pendingLoad.framesInside;
+        p->framesBetween+=pendingLoad.framesBetween;
+        p->serviceUs+=turn.serviceUs;
+        p->frameInsideUs+=pendingLoad.frameInsideUs;
+        p->frameBetweenUs+=pendingLoad.frameBetweenUs;
+        p->lcdInsideUs+=pendingLoad.lcdInsideUs;
+        if(turn.serviceUs>=pendingLoad.frameInsideUs)
+            p->nonFrameServiceUs+=turn.serviceUs-pendingLoad.frameInsideUs;
+    }
     turn.open=0;
-    if (++completed % REPORT_PERIOD==0U) {report(0);report(1);}
+    if (++completed % REPORT_PERIOD==0U) {report(0);report(1);reportLoad();}
 }
 void EspPerfGameP1_member(uint64_t start,uint64_t end,uint32_t historical) {
     Cohort* c=&cohort[groupFor(historical)];
@@ -169,6 +223,17 @@ void EspPerfGameP1_frame(uint32_t total,uint32_t lcd,uint8_t preview,
                          uint8_t publish,uint8_t presented) {
     Cohort* c=&cohort[currentGroup];
     (void)publish;
+    if(inService) {
+        ++serviceLoad.framesInside;
+        serviceLoad.frameInsideUs+=total;
+        if(presented) serviceLoad.lcdInsideUs+=lcd;
+    } else if(turn.open) {
+        ++pendingLoad.framesBetween;
+        pendingLoad.frameBetweenUs+=total;
+    } else {
+        ++outsideFrames;
+        outsideFrameUs+=total;
+    }
     ++c->totals.frames;
     if(preview) ++c->previewFrames;
     if(presented) ++c->totals.framePresents;

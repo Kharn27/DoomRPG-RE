@@ -118,6 +118,7 @@ def restore_pre_perf_game_p1_active_sequence(src: str) -> str:
         '    const uint64_t startUs = (uint64_t)esp_timer_get_time();\n'
         '    const uint32_t beforeTurn = activeSeq.expandedTurns;\n'
         '    const uint8_t beforeBusy = activeSeq.turnInProgress;\n'
+        '    EspPerfGameP1_serviceEnter();\n'
         '#endif\n'
         '    EspNativeGameplayMonsterActiveSequence_serviceBody(doomRpg);\n'
         '#if DOOMRPG_PERF_GAME_P1\n'
