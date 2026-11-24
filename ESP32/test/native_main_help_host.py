@@ -30,8 +30,8 @@ assert len(lines) == 119
 assert len(lines) % 7 == 0
 assert [lines[p * 7] for p in range(17)] == [
     "DOOM RPG ON CYD", "DOOM RPG: THE GAME", "MENU CONTROLS",
-    "TURN-BASED GAME", "MAIN GAMEPLAY", "ACTION GAMEPLAY",
-    "TOP HUD BAR", "TOP ROW: MOVE", "MIDDLE ROW: ACTION",
+    "TURN-BASED GAME", "MAIN GAMEPLAY", "TOP HUD BAR",
+    "ACTION GAMEPLAY", "TOP ROW: MOVE", "MIDDLE ROW: ACTION",
     "BOTTOM ROW: WEAPONS", "BOTTOM HUD BAR", "WEAPON SELECT",
     "ACTION / CENTER", "WEAPONS & STATUS", "SYSTEM / SAVE LOAD",
     "TACTICAL TIPS", "ABOUT CYD PORT"]
@@ -47,11 +47,11 @@ assert lines[6] == ""  # no unwanted DOWN: controls callout
 assert lines[3 * 7 : 4 * 7] == [
     "TURN-BASED GAME", "", "Moves take a turn.", "Enemies take turns.",
     "Actions use turns.", "Plan each attack.", "Think before moving."]
-# Page 5 is the passive gameplay screenshot, page 6 the existing actions.
-# The original TOP HUD tutorial follows them as page 7.
+# Page 5 shows gameplay, page 6 teaches the TOP HUD;
+# page 7 retains the nine animated ACTION GAMEPLAY zones.
 assert lines[4 * 7 : 5 * 7] == ["MAIN GAMEPLAY", "", "", "", "", "", ""]
-assert lines[5 * 7 : 6 * 7] == ["ACTION GAMEPLAY", "", "", "", "", "", ""]
-hud_page = lines[6 * 7 : 7 * 7]
+assert lines[6 * 7 : 7 * 7] == ["ACTION GAMEPLAY", "", "", "", "", "", ""]
+hud_page = lines[5 * 7 : 6 * 7]
 assert hud_page == [
     "TOP HUD BAR", "3 VIRTUAL BUTTONS", "LEFT: game menu",
     "CENTER: pass a turn", "RIGHT: show automap", "", ""]
@@ -261,7 +261,7 @@ assert 'helpHudBarBG.width != MAIN_HELP_HUD_SOURCE_TILE' in actions
 assert 'DoomRPG_freeImage(helpSpaceOwner, &helpHudBarBG);' in actions
 assert 'helpPaintTopHudIllustration(framebuffer)' in actions
 assert 'if (menuSystem->scrollIndex == MAIN_HELP_HUD_PAGE_SCROLL)' in actions
-assert '#define MAIN_HELP_HUD_PAGE_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)' in actions
+assert '#define MAIN_HELP_HUD_PAGE_SCROLL (5 * MAIN_HELP_VISIBLE_LINES)' in actions
 assert macro("MAIN_HELP_HUD_BAR_X") == 16
 assert macro("MAIN_HELP_HUD_BAR_Y") == 43
 assert macro("MAIN_HELP_HUD_BAR_WIDTH") == 128
@@ -445,7 +445,7 @@ assert 'static const int tones[3] = {1, 4, 7};' in actions
 pack = (SRC / "esp_asset_pack.cpp").read_text()
 pack_api = (INC / "esp_asset_pack.h").read_text()
 controls = (SRC / "esp_native_gameplay_controls.c").read_text()
-assert '#define MAIN_HELP_SCENE_PAGE_SCROLL (5 * MAIN_HELP_VISIBLE_LINES)' in actions
+assert '#define MAIN_HELP_SCENE_PAGE_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)' in actions
 assert '#define MAIN_HELP_ROW_FIRST_SCROLL (7 * MAIN_HELP_VISIBLE_LINES)' in actions
 assert '#define MAIN_HELP_ROW_LAST_SCROLL (9 * MAIN_HELP_VISIBLE_LINES)' in actions
 assert 'helpIsRowHelpPage(menuSystem->scrollIndex)' in actions

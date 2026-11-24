@@ -52,7 +52,7 @@
  * top screen bar. Logical game hitboxes are 0..31 / 32..127 / 128..159.
  * Multiply by 4/5 to keep their 1:3:1 proportion in the miniature. */
 #define MAIN_HELP_GAMEPLAY_PAGE_SCROLL (4 * MAIN_HELP_VISIBLE_LINES)
-#define MAIN_HELP_HUD_PAGE_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)
+#define MAIN_HELP_HUD_PAGE_SCROLL (5 * MAIN_HELP_VISIBLE_LINES)
 #define MAIN_HELP_HUD_BAR_X 16
 #define MAIN_HELP_HUD_BAR_Y 43
 #define MAIN_HELP_HUD_BAR_WIDTH 128
@@ -64,8 +64,8 @@
 #define MAIN_HELP_HUD_PASS_RIGHT 102
 #define MAIN_HELP_HUD_MAP_LEFT 103
 /* Breath constants and easing now live in esp_native_help_scene.h. */
-#define MAIN_HELP_SCENE_PAGE_SCROLL (5 * MAIN_HELP_VISIBLE_LINES)
-/* MAIN GAMEPLAY is page 5; ACTION GAMEPLAY with live touch contours page 6. */
+#define MAIN_HELP_SCENE_PAGE_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)
+/* MAIN GAMEPLAY is page 5; TOP HUD page 6, ACTION GAMEPLAY page 7. */
 #define MAIN_HELP_GAMEPLAY_TOP_Y (ESP_NATIVE_HELP_GAMEPLAY_Y - MAIN_HELP_HUD_BAR_HEIGHT)
 #define MAIN_HELP_GAMEPLAY_BOTTOM_Y (ESP_NATIVE_HELP_GAMEPLAY_Y + ESP_NATIVE_HELP_GAMEPLAY_H)
 #define MAIN_HELP_ROW_FIRST_SCROLL (7 * MAIN_HELP_VISIBLE_LINES)
@@ -931,7 +931,7 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
     }
     else if (menuSystem->scrollIndex == MAIN_HELP_SCENE_PAGE_SCROLL &&
              EspNativeHelpScene_isReady()) {
-        /* MAIN GAMEPLAY: illustrative PAK scene with nine touch areas.
+        /* ACTION GAMEPLAY: illustrative PAK scene with nine touch areas.
          * The next three pages detail one control row each. */
         const char* title = DoomRPG_esp32MainMenuHelpLine(
             MAIN_HELP_SCENE_PAGE_SCROLL);

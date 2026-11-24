@@ -170,10 +170,10 @@ _POST_PAGE234_COLOR = "                ((menuSystem->scrollIndex == 0 && i == 5)
 # reconstructing historic SDL hashes. Exact previous source restored; do
 # not modify frozen golden blob SHAs or the actual production renderer.
 _PRE_HELP17_MODEL = "    \"TOP HUD BAR\",\n    \"3 VIRTUAL BUTTONS\",\n    \"LEFT: game menu\",\n    \"CENTER: pass a turn\",\n    \"RIGHT: show automap\",\n    \"\",\n    \"\",\n    \"MAIN GAMEPLAY\",\n    \"\",\n    \"\",\n    \"\",\n    \"\",\n    \"\",\n    \"\","
-_POST_HELP17_MODEL = "    \"MAIN GAMEPLAY\",\n    \"\",\n    \"\",\n    \"\",\n    \"\",\n    \"\",\n    \"\",\n    \"ACTION GAMEPLAY\",\n    \"\",\n    \"\",\n    \"\",\n    \"\",\n    \"\",\n    \"\",\n    \"TOP HUD BAR\",\n    \"3 VIRTUAL BUTTONS\",\n    \"LEFT: game menu\",\n    \"CENTER: pass a turn\",\n    \"RIGHT: show automap\",\n    \"\",\n    \"\","
+_POST_HELP17_MODEL = "    \"MAIN GAMEPLAY\",\n    \"\",\n    \"\",\n    \"\",\n    \"\",\n    \"\",\n    \"\",\n    \"TOP HUD BAR\",\n    \"3 VIRTUAL BUTTONS\",\n    \"LEFT: game menu\",\n    \"CENTER: pass a turn\",\n    \"RIGHT: show automap\",\n    \"\",\n    \"\",\n    \"ACTION GAMEPLAY\",\n    \"\",\n    \"\",\n    \"\",\n    \"\",\n    \"\",\n    \"\","
 _HELP17_ACTION_DELTA = [
-    ("#define MAIN_HELP_GAMEPLAY_PAGE_SCROLL (4 * MAIN_HELP_VISIBLE_LINES)\n#define MAIN_HELP_HUD_PAGE_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)", "#define MAIN_HELP_HUD_PAGE_SCROLL (4 * MAIN_HELP_VISIBLE_LINES)"),
-    ("#define MAIN_HELP_SCENE_PAGE_SCROLL (5 * MAIN_HELP_VISIBLE_LINES)\n/* MAIN GAMEPLAY is page 5; ACTION GAMEPLAY with live touch contours page 6. */\n#define MAIN_HELP_GAMEPLAY_TOP_Y (ESP_NATIVE_HELP_GAMEPLAY_Y - MAIN_HELP_HUD_BAR_HEIGHT)\n#define MAIN_HELP_GAMEPLAY_BOTTOM_Y (ESP_NATIVE_HELP_GAMEPLAY_Y + ESP_NATIVE_HELP_GAMEPLAY_H)", "#define MAIN_HELP_SCENE_PAGE_SCROLL (5 * MAIN_HELP_VISIBLE_LINES)"),
+    ("#define MAIN_HELP_GAMEPLAY_PAGE_SCROLL (4 * MAIN_HELP_VISIBLE_LINES)\n#define MAIN_HELP_HUD_PAGE_SCROLL (5 * MAIN_HELP_VISIBLE_LINES)", "#define MAIN_HELP_HUD_PAGE_SCROLL (4 * MAIN_HELP_VISIBLE_LINES)"),
+    ("#define MAIN_HELP_SCENE_PAGE_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)\n/* MAIN GAMEPLAY is page 5; TOP HUD page 6, ACTION GAMEPLAY page 7. */\n#define MAIN_HELP_GAMEPLAY_TOP_Y (ESP_NATIVE_HELP_GAMEPLAY_Y - MAIN_HELP_HUD_BAR_HEIGHT)\n#define MAIN_HELP_GAMEPLAY_BOTTOM_Y (ESP_NATIVE_HELP_GAMEPLAY_Y + ESP_NATIVE_HELP_GAMEPLAY_H)", "#define MAIN_HELP_SCENE_PAGE_SCROLL (5 * MAIN_HELP_VISIBLE_LINES)"),
     ("#define MAIN_HELP_ROW_FIRST_SCROLL (7 * MAIN_HELP_VISIBLE_LINES)", "#define MAIN_HELP_ROW_FIRST_SCROLL (6 * MAIN_HELP_VISIBLE_LINES)"),
     ("#define MAIN_HELP_ROW_LAST_SCROLL (9 * MAIN_HELP_VISIBLE_LINES)", "#define MAIN_HELP_ROW_LAST_SCROLL (8 * MAIN_HELP_VISIBLE_LINES)"),
     ("#define MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL (10 * MAIN_HELP_VISIBLE_LINES)", "#define MAIN_HELP_BOTTOM_HUD_PAGE_SCROLL (9 * MAIN_HELP_VISIBLE_LINES)"),
@@ -182,6 +182,7 @@ _HELP17_ACTION_DELTA = [
     ("    if ((menuSystem->scrollIndex == MAIN_HELP_GAMEPLAY_PAGE_SCROLL ||\n         menuSystem->scrollIndex == MAIN_HELP_WEAPON_PAGE_SCROLL) &&\n        !helpBottomHudReady)\n        (void)helpPaintBottomHudIllustration(framebuffer);\n    if (menuSystem->scrollIndex == MAIN_HELP_WEAPON_PAGE_SCROLL) {\n        /* Also works when the user directly opens this help page without\n         * visiting BOTTOM HUD BAR first. Every source is PAK-native. */\n        if (!helpWeaponMiniAttempted)", "    if (menuSystem->scrollIndex == MAIN_HELP_WEAPON_PAGE_SCROLL) {\n        /* Also works when the user directly opens this help page without\n         * visiting BOTTOM HUD BAR first. Every source is PAK-native. */\n        if (!helpBottomHudReady)\n            (void)helpPaintBottomHudIllustration(framebuffer);\n        if (!helpWeaponMiniAttempted)"),
     ("             * independent of theme. Pages 13-17 retain the light theme tone.", "             * independent of theme. Pages 12-16 retain the light theme tone."),
     ("(scroll >= 12 * MAIN_HELP_VISIBLE_LINES &&\n                  scroll <= 16 * MAIN_HELP_VISIBLE_LINES)", "(scroll >= 11 * MAIN_HELP_VISIBLE_LINES &&\n                  scroll <= 15 * MAIN_HELP_VISIBLE_LINES)"),
+    ("/* ACTION GAMEPLAY: illustrative PAK scene with nine touch areas.", "/* MAIN GAMEPLAY: illustrative PAK scene with nine touch areas."),
 ]
 
 
