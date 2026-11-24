@@ -137,7 +137,7 @@ static void reportLoad(void) {
           DOOMRPG_PERF_SPATIAL_FAST?"fast":"shadow",
           (unsigned)ESP_PERF_SPATIAL_SPRITE_CAPACITY);
     for(i=0;i<3;i++)
-        printf("[PERFGAMEP1J] query=%s checks=%u mismatches=%u mode=%s builds=%u failedBuilds=%u capacity=%u cumulative=yes\\n",
+        printf("[PERFGAMEP1J] query=%s checks=%u mismatches=%u mode=%s builds=%u failedBuilds=%u capacity=%u cumulative=yes\n",
            i==0?"first-block":i==1?"first-source":"continuation-block",
            (unsigned)lineChecks[i],(unsigned)lineMismatch[i],
            DOOMRPG_PERF_LINE_FAST?"fast":"shadow",

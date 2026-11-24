@@ -550,7 +550,7 @@ jobs:
 
       - name: PERF-GAME-P1j compact projected line index oracle (host C)
         run: |
-          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \\
+          cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
             ESP32/test/perf_game_spatial_line_host.c -o /tmp/doomrpg-perf-line
           /tmp/doomrpg-perf-line
 
