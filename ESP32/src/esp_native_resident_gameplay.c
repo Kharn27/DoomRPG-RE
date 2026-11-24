@@ -42,6 +42,7 @@
 #include "esp_native_gameplay_hub.h"
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_input.h"
+#include "esp_perf_game_p1.h"
 #include "esp_native_gameplay_level_up.h"
 #include "esp_native_gameplay_move_events.h"
 #include "esp_native_gameplay_monster_attack_visual.h"
@@ -214,6 +215,7 @@ static void onGameplayTap(int16_t screenX,
     if (EspNativeGameplayMonsterAttackVisual_isBusy() ||
         EspNativeGameplayMonsterActiveSequence_isBusy()) {
         ++gameplayState.taps;
+        EspPerfGameP1_inputBlockedCombat();
         printf("[RESIDENTGAMEPLAY] COMBAT-INPUT-BLOCK tap=%u logical=%d,%d owner=monster-turn-or-attack queued=no feedback=none\n",
                (unsigned int)gameplayState.taps,
                logicalX,
@@ -295,6 +297,10 @@ static void onGameplayTap(int16_t screenX,
         ++gameplayState.taps;
         status = EspNativeGameplayInput_route(&hit, logicalX, logicalY);
         if (status == ESP_NATIVE_GAMEPLAY_INPUT_OK) {
+#if DOOMRPG_PERF_GAME_P1
+            EspPerfGameP1_inputAccepted(EspNativeGameplayInput_peek()->sequence,
+                                         (uint64_t)esp_timer_get_time());
+#endif
             printf("[RESIDENTGAMEPLAY] QUEUE tap=%u action=%s zone=%u logical=%d,%d context=DIALOG tapDomain=owned-screen feedback=none\n",
                    (unsigned int)gameplayState.taps,
                    EspNativeGameplayInput_actionName(hit.action),
@@ -303,6 +309,7 @@ static void onGameplayTap(int16_t screenX,
                    logicalY);
         }
         else if (status == ESP_NATIVE_GAMEPLAY_INPUT_BUSY) {
+            EspPerfGameP1_inputBusy();
             printf("[RESIDENTGAMEPLAY] BUSY tap=%u action=%s context=DIALOG pending=1\n",
                    (unsigned int)gameplayState.taps,
                    EspNativeGameplayInput_actionName(hit.action));
@@ -316,6 +323,10 @@ static void onGameplayTap(int16_t screenX,
     ++gameplayState.taps;
     status = EspNativeGameplayInput_route(&hit, logicalX, logicalY);
     if (status == ESP_NATIVE_GAMEPLAY_INPUT_OK) {
+#if DOOMRPG_PERF_GAME_P1
+        EspPerfGameP1_inputAccepted(EspNativeGameplayInput_peek()->sequence,
+                                     (uint64_t)esp_timer_get_time());
+#endif
         /* Replace any prior touch pixel lease before drawing a new one.
          * World input is already admitted; no time-based cooldown. */
         if (EspNativeGameplayControls_isActive() &&
@@ -362,6 +373,7 @@ static void onGameplayTap(int16_t screenX,
                (unsigned int)feedbackStats.overlayFNV);
     }
     else if (status == ESP_NATIVE_GAMEPLAY_INPUT_BUSY) {
+        EspPerfGameP1_inputBusy();
         printf("[RESIDENTGAMEPLAY] BUSY tap=%u action=%s pending=1\n",
                (unsigned int)gameplayState.taps,
                EspNativeGameplayInput_actionName(hit.action));
@@ -1962,6 +1974,7 @@ void EspNativeResidentGameplay_reset(void) {
     EspNativeGameplayPlayerDeath_reset();
     EspNativeSpriteRenderer_resetAmbient();
     memset(&gameplayState,0,sizeof(gameplayState));
+    EspPerfGameP1_reset();
 }
 
 int EspNativeResidentGameplay_armCheckpointResume(void) {
@@ -2108,7 +2121,7 @@ int EspNativeResidentGameplay_exitAutomapForDamage(
                         reason != NULL ? reason : "AUTOMAP-DAMAGE");
 }
 
-void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
+static void EspNativeResidentGameplay_serviceBody(struct DoomRPG_s* doomRpgBase) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     EspNativeGameplayInputState intent;
     EspNativeGameplayInputStatus inputStatus;
@@ -2644,4 +2657,14 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
                (unsigned int)intent.action);
         break;
     }
+}
+
+
+/* Input response proxy = accepted touch -> return of consuming service,
+ * not proof of game-state commit or physical panel presentation. */
+void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
+    EspNativeResidentGameplay_serviceBody(doomRpgBase);
+#if DOOMRPG_PERF_GAME_P1
+    EspPerfGameP1_inputDispatchDone((uint64_t)esp_timer_get_time());
+#endif
 }
