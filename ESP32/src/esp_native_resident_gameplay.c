@@ -2680,4 +2680,3 @@ static void EspNativeResidentGameplay_serviceBody(struct DoomRPG_s* doomRpgBase)
         break;
     }
 }
-
