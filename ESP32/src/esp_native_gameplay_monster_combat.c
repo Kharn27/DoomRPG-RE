@@ -21,6 +21,7 @@
 #include "esp_native_gameplay_hub_action_gate.h"
 #include "esp_native_gameplay_level_up.h"
 #include "esp_native_gameplay_monster_combat.h"
+#include "esp_native_monster_death_consequence.h"
 #include "esp_native_audio_intent.h"
 #include "esp_native_gameplay_monster_pain_tint.h"
 #include "esp_native_gameplay_monster_state.h"
@@ -45,6 +46,10 @@
 #define MONSTER_MAX_SPRITES 1024U
 #define MONSTER_GIB_BITS_BYTES (MONSTER_MAX_SPRITES / 8U)
 #define MONSTER_CORPSE_BITS_BYTES (MONSTER_MAX_SPRITES / 8U)
+/* 16 barrels per chain, at most 8 monster hits per blast: 256B static.
+ * Resource IDs fit 15 bits; high bit encodes death priority 5 vs pain 2. */
+#define MONSTER_SPLASH_AUDIO_CAPACITY (16U * ESP_NATIVE_GAMEPLAY_SPLASH_MAX_HITS)
+#define MONSTER_SPLASH_AUDIO_DEATH_FLAG 0x8000U
 
 /* Direct single-target standard weapons currently have complete native combat
  * semantics. Fire Ext is also direct against eType==1 monsters in the legacy
@@ -123,6 +128,10 @@ static EspNativeGameplayPlayerXpResult splashLevelUp;
 static uint32_t splashLevelUpSequence;
 static uint8_t splashSequenceActive;
 static uint32_t splashSequenceNumber;
+/* Non-allocating post-commit sound intents, never part of world mutation. */
+static uint16_t splashAudioCues[MONSTER_SPLASH_AUDIO_CAPACITY];
+static uint32_t splashAudioSequence;
+static uint8_t splashAudioCount;
 _Static_assert(sizeof(MonsterCombatOwner) <= 384U,
                "monster combat rollback owner must remain small and bounded");
 
@@ -312,6 +321,8 @@ void EspNativeGameplayMonsterCombat_reset(void) {
     splashLevelUpSequence = 0U;
     splashSequenceActive = 0U;
     splashSequenceNumber = 0U;
+    splashAudioSequence = 0U;
+    splashAudioCount = 0U;
     painSoundHoldUntilMs=0U;
     painSoundHoldSprite=MONSTER_NO_SPRITE;
     combatOwner.view.pendingSpriteIndex = MONSTER_NO_SPRITE;
@@ -428,6 +439,32 @@ static uint16_t consumeDeathSound(DoomRPG_t* runtime,
     pick = DoomRPG_randNextByte(EspNativeProcessRng_live());
     ++(*ioRngCalls);
     return deathSounds[subtype][pick % count];
+}
+
+/* MONSTER-DEATH-P1: shared post-XP, pre-drop-commit stage for the direct
+ * and barrel-radius pathways. The CALLER has already applied XP (including
+ * any level-up RNG), and still owns the complete world/player/RNG rollback.
+ * This prepares no persistent drops and publishes no sound: strictly
+ * death-sound RNG (or gib 5091 without sound RNG), then one drop RNG word,
+ * then a pure drop plan. A failed plan MUST be undone by the caller's
+ * existing transaction snapshot. Special deaths are rejected upstream. */
+static int prepareDeathAfterXp(
+    DoomRPG_t* runtime,
+    const EspNativeGameplayMonsterRecord* before,
+    uint8_t gib,
+    uint32_t* ioRngCalls,
+    EspNativeGameplayMonsterDropSpawnPlan* outPlan,
+    uint16_t* outSound,
+    uint32_t* outDropRoll) {
+    if (runtime == NULL || before == NULL || ioRngCalls == NULL ||
+        outPlan == NULL || outSound == NULL || outDropRoll == NULL ||
+        before->subtype >= MONSTER_SUBTYPE_COUNT || gib > 1U ||
+        specialDeath(before->subtype)) return 0;
+    *outSound = gib != 0U
+        ? 5091U : consumeDeathSound(runtime, before->subtype, ioRngCalls);
+    *outDropRoll = (uint32_t)DoomRPG_randNextInt(EspNativeProcessRng_live());
+    ++(*ioRngCalls);
+    return EspNativeGameplayMonsterDrop_prepare(*outDropRoll, before, outPlan);
 }
 
 static void logFrame(const MonsterCombatPending* pending,
@@ -649,18 +686,9 @@ static int servicePending(DoomRPG_t* runtime) {
             rngCalls += xpResult.rngCalls;
             if (xpResult.levelUps != 0U) levelUpPopup = 1;
 
-            if (gib) {
-                consequenceSound = 5091U;
-            }
-            else {
-                consequenceSound = consumeDeathSound(runtime,
-                                                      target->subtype,
-                                                      &rngCalls);
-            }
-            dropRoll = (uint32_t)DoomRPG_randNextInt(EspNativeProcessRng_live());
-            ++rngCalls;
-            if (!EspNativeGameplayMonsterDrop_prepare(
-                    dropRoll, &targetBefore, &dropPlan)) {
+            if (!prepareDeathAfterXp(
+                    runtime, &targetBefore, (uint8_t)gib, &rngCalls,
+                    &dropPlan, &consequenceSound, &dropRoll)) {
                 *target = targetBefore;
                 (*EspNativeProcessRng_live()) = randomBefore;
                 (void)EspNativeGameplayPlayerState_restore(&playerBefore);
@@ -828,7 +856,9 @@ static int servicePending(DoomRPG_t* runtime) {
         const uint16_t shotSound=pending.weapon==0U ? 5136U : weapon->resourceId;
         if (shotSound!=0U) (void)EspNativeAudioIntent_publish(shotSound,0U,5U);
         if (consequenceSound!=0U) {
-            (void)EspNativeAudioIntent_publish(consequenceSound,0U,lethal?5U:2U);
+            (void)EspNativeAudioIntent_publish(consequenceSound,0U,
+                EspNativeMonsterDeathConsequence_priority(
+                    (uint8_t)lethal, (uint8_t)gib));
             /* Visual pain began before the attack frame was rendered. Anchor
              * a separate short audio hold to this actual sound publication. */
             if (!lethal && EspNativeAudioIntent_isSoundEnabled()) {
@@ -947,6 +977,8 @@ static int restoreSplashSnapshot(DoomRPG_t* runtime) {
     combatOwner = splashRollback.combat;
     splashSequenceActive = 0U;
     splashSequenceNumber = 0U;
+    splashAudioSequence = 0U;
+    splashAudioCount = 0U;
     splashLevelUpSequence = 0U;
     memset(&splashLevelUp, 0, sizeof(splashLevelUp));
     return exact;
@@ -965,6 +997,8 @@ int EspNativeGameplayMonsterCombat_beginSplashSequence(
     splashRollback.random = (*EspNativeProcessRng_live());
     splashSequenceActive = 1U;
     splashSequenceNumber = sequence;
+    splashAudioSequence = sequence;
+    splashAudioCount = 0U;
     printf("[MONSTERRADIUS] SEQUENCE-BEGIN seq=%u snapshot=monster+drop+player+rng+visual owner=bounded-BSS rollback=armed\n",
            (unsigned int)sequence);
     return 1;
@@ -988,6 +1022,34 @@ int EspNativeGameplayMonsterCombat_commitSplashSequence(
     splashSequenceNumber = 0U;
     printf("[MONSTERRADIUS] SEQUENCE-COMMIT seq=%u order=blast-then-impact-per-wave rng=live-interleaved rollback=closed\n",
            (unsigned int)sequence);
+    return 1;
+}
+
+/* A barrel may roll back later chain waves: never play a monster sound
+ * while the splash is speculative. Release the exact already-selected legacy
+ * SFX IDs only at the enclosing ActionEngine irreversible BARREL COMMIT.
+ * No RNG, renderer, SD, PAK or heap work occurs in this audio publisher. */
+int EspNativeGameplayMonsterCombat_publishSplashAudioAfterCommit(
+    uint32_t sequence) {
+    uint8_t i;
+    uint8_t emitted = 0U;
+    if (sequence == 0U || splashAudioSequence != sequence ||
+        splashSequenceActive != 0U) return 0;
+    for (i = 0U; i < splashAudioCount; ++i) {
+        const uint16_t packed = splashAudioCues[i];
+        const uint16_t resource = (uint16_t)(packed & 0x7fffU);
+        const uint8_t priority = EspNativeMonsterDeathConsequence_priority(
+            (uint8_t)((packed & MONSTER_SPLASH_AUDIO_DEATH_FLAG) != 0U),
+            0U);
+        if (EspNativeAudioIntent_publish(resource, 0U, priority)) ++emitted;
+        printf("[MONSTERRADIUS] SFX-COMMIT seq=%u ordinal=%u/%u resource=%u priority=%u emitted=%u rollback=closed\n",
+               (unsigned int)sequence, (unsigned int)(i + 1U),
+               (unsigned int)splashAudioCount,
+               (unsigned int)resource, (unsigned int)priority,
+               (unsigned int)emitted);
+    }
+    splashAudioSequence = 0U;
+    splashAudioCount = 0U;
     return 1;
 }
 
@@ -1023,6 +1085,16 @@ int EspNativeGameplayMonsterCombat_applySplash(
                 &splashRollback.player)) return 0;
         splashRollback.combat = combatOwner;
         splashRollback.random = (*EspNativeProcessRng_live());
+        splashAudioSequence = sequence;
+        splashAudioCount = 0U;
+    }
+    /* Capacity is checked BEFORE mutating health, drops, or RNG. If more
+     * victims than the bounded 16x8 contract, roll back the entire chain. */
+    if (splashAudioSequence != sequence ||
+        (uint16_t)splashAudioCount + count >
+            MONSTER_SPLASH_AUDIO_CAPACITY) {
+        i = 0U;
+        goto splash_failed;
     }
     memset(&popup, 0, sizeof(popup));
 
@@ -1062,12 +1134,10 @@ int EspNativeGameplayMonsterCombat_applySplash(
                 popup = xp;
                 needsPopup = 1;
             }
-            sound = consumeDeathSound(runtime, before.subtype, &rngCalls);
-            dropRoll = (uint32_t)DoomRPG_randNextInt(EspNativeProcessRng_live());
-            ++rngCalls;
             memset(&drop, 0, sizeof(drop));
-            if (!EspNativeGameplayMonsterDrop_prepare(
-                    dropRoll, &before, &drop) ||
+            if (!prepareDeathAfterXp(
+                    runtime, &before, 0U, &rngCalls,
+                    &drop, &sound, &dropRoll) ||
                 (drop.outcome == ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SPAWN &&
                  !EspNativeGameplayMonsterDrop_commit(&drop))) {
                 goto splash_failed;
@@ -1115,6 +1185,12 @@ int EspNativeGameplayMonsterCombat_applySplash(
                    (unsigned int)((before.param1 >> 16U) & 0xffU),
                    (int)armorAfter,
                    (unsigned int)sound);
+        }
+        /* Exactly the RNG-selected original cue: no second random draw. */
+        if (sound != 0U) {
+            splashAudioCues[splashAudioCount++] =
+                (uint16_t)(sound | (hpAfter == 0
+                    ? MONSTER_SPLASH_AUDIO_DEATH_FLAG : 0U));
         }
     }
 

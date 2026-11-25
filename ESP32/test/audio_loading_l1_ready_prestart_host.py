@@ -88,3 +88,40 @@ assert 'EspEntranceMusic_prestartGameplay' not in isr
 assert 'SD.' not in isr and 'delay(' not in isr
 
 print('PASS AUDIO-LOAD-L1: final-ready loading -> scan PAK -> one music prestart -> world present, no loader audio')
+
+
+# DIRECT CHANGEMAP L1: target world must remain physically hidden until the
+# verified SFX scan and clock prestart have completed. On the hardware witness
+# before this fix, the direct route released LOADING at map commit (~13.8s),
+# then FIRST_FRAME became visible while 92 cues were scanned and ~1s clock
+# guard ran. The checkpoint/START route already has correct ordering.
+handoff=(src/"esp_native_gameplay_transition_handoff.c").read_text()
+first=(src/"esp_native_first_frame.c").read_text()
+gate=(src/"esp_native_gameplay_present_gate.c").read_text()
+direct=handoff[handoff.index("static void performHandoff("):
+               handoff.index("static void onStatsAcknowledged(")]
+assert 'EspNativeTransitionPresentation_beginLoading(targetMapId)' in direct
+assert 'EspNativeTransitionPresentation_endLoading();' not in direct
+assert direct.index('EspMapCommittedTransition_commit(') < direct.index(
+    '[NATIVECHANGEMAP] LOADING-HANDOFF') < direct.index(
+    'EspNativeGameplaySession_configure(')
+assert 'owner=retained-until-session-active audio=before-world-present' in direct
+assert 'EspNativeTransitionPresentation_endLoading();' in handoff.split(
+    "static void performHandoff(",1)[0]  # failHandoff still cleans up
+first_route=first.split("EspNativeFirstFrameStatus EspNativeFirstFrame_route(",1)[1]
+first_route=first_route.split("EspNativeFirstFrameStatus EspNativeFirstFrame_renderGameplayViewport",1)[0]
+assert 'Esp32PlatformVideo_present()' in first_route
+assert 'if (EspNativeTransitionPresentation_isLoadingActive()) {' in gate
+assert gate.index('if (EspNativeTransitionPresentation_isLoadingActive()) {') < gate.index(
+    'return EspNativeGameplayActionEngine_present();')
+session_active=sess[sess.index('if (EspNativeTransitionPresentation_isLoadingActive()) {',
+                              sess.index('sessionState.stage = SESSION_STAGE_ACTIVE;')):]
+assert (
+    session_active.index('EspNativeTransitionPresentation_checkpointProgress(100U') <
+    session_active.index('EspNativeTransitionPresentation_releaseLoading(') <
+    session_active.index('EspNativeSfxProbe_service(true);') <
+    session_active.index('EspEntranceMusic_prestartGameplayBeforeFirstFrame(') <
+    session_active.index('if (!Esp32PlatformVideo_present())')
+)
+assert 'shapeData' in sess and 'mediaTexels' in sess
+print('PASS DIRECT-LOAD-L1: CHANGEMAP retains screen until SFX scan -> music prestart -> first world present')

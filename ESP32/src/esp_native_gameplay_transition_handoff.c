@@ -462,7 +462,14 @@ static void performHandoff(uint8_t acknowledgeStats) {
         failHandoff("RESIDENT_COMMIT", (unsigned int)committedStatus);
         return;
     }
-    EspNativeTransitionPresentation_endLoading();
+    /* Keep the complete LOADING screen through the target session prime.
+     * The previous endLoading() here released its present gate too early:
+     * FIRST_FRAME/HUD became visible, then the 92-SFX scan and ~1s audio
+     * clock guard ran with an already-visible silent Sector 1 frame.
+     * Session ACTIVE already owns READY -> FINAL-HUD -> prestart music ->
+     * one physical world present, as on START/LOAD. Avoid a second owner. */
+    printf("[NATIVECHANGEMAP] LOADING-HANDOFF targetMap=%u owner=retained-until-session-active audio=before-world-present\n",
+           (unsigned int)targetMapId);
 
     printf("[NATIVECHANGEMAP] COMMIT sourceMap=%u targetMap=%u gameplayLoadMapId=%u phase=%u arena=%u payload=%u nodes=%u lines=%u sprites=%u events=%u rollback=no\n",
            (unsigned int)sourceMapId,

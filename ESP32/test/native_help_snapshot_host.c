@@ -15,6 +15,7 @@
 #define WALL_LEN 2048
 #define NUM_TEXTURES 5
 static uint16_t softFrame[W * H], brightFrame[W * H], rowFrame[W * H];
+static uint16_t passiveFrame[W * H]; /* host-only: bounds/pixel oracle */
 static uint8_t mappingData[78];
 static uint8_t paletteData[4 + NUM_TEXTURES * 32];
 static uint8_t wallData[4 + NUM_TEXTURES * WALL_LEN];
@@ -175,6 +176,46 @@ int main(void) {
 
     assert(EspNativeHelpScene_paint(softFrame, 0));
     assert(EspNativeHelpScene_paint(brightFrame, 16));
+    /* Passive 128x48 native scene: same wall PAK as action page but NO
+     * 3x3 action-grid pixels, exact bounds and no extra PAK reads/heap. */
+    memset(passiveFrame, 0x5a, sizeof(passiveFrame));
+    assert(EspNativeHelpScene_paintGameplay(passiveFrame));
+    assert(!EspNativeHelpScene_paintGameplay(NULL));
+    {
+        unsigned int compared = 0U;
+        for (y = 0; y < H; ++y) {
+            for (x = 0; x < W; ++x) {
+                const uint16_t px = passiveFrame[y * W + x];
+                if (x < ESP_NATIVE_HELP_GAMEPLAY_X ||
+                    x >= ESP_NATIVE_HELP_GAMEPLAY_X +
+                         ESP_NATIVE_HELP_GAMEPLAY_W ||
+                    y < ESP_NATIVE_HELP_GAMEPLAY_Y ||
+                    y >= ESP_NATIVE_HELP_GAMEPLAY_Y +
+                         ESP_NATIVE_HELP_GAMEPLAY_H) {
+                    assert(px == 0x5a5aU);
+                    continue;
+                }
+                assert(px != 0x5a5aU);
+                /* Overlay neon is absent on the passive game picture. */
+                assert(px != 0x07e0U && px != 0xf800U &&
+                       px != 0xffe0U);
+                {
+                    const int sx = 8 +
+                        (x - ESP_NATIVE_HELP_GAMEPLAY_X) * 144 /
+                         ESP_NATIVE_HELP_GAMEPLAY_W;
+                    const int sy = 29 +
+                        (y - ESP_NATIVE_HELP_GAMEPLAY_Y) * 68 /
+                         ESP_NATIVE_HELP_GAMEPLAY_H;
+                    if (!breathAllowed(sx, sy)) {
+                        assert(px == softFrame[sy * W + sx]);
+                        ++compared;
+                    }
+                }
+            }
+        }
+        assert(compared > 50U);
+    }
+    assert(packReads == readCount);
     original = hashArea(brightFrame, 8, 29, 144, 68);
     assert(original != 0U);
     /* The first-generation wall-perspective never loads a raycaster:
@@ -252,6 +293,7 @@ int main(void) {
 
     EspNativeHelpScene_reset();
     assert(!EspNativeHelpScene_isReady());
+    assert(!EspNativeHelpScene_paintGameplay(passiveFrame));
     puts("PASS original PAK wall HELP: door perspective, cold-boot, map+PAK source variation, 3 rows, RGB soft breath");
     return 0;
 }

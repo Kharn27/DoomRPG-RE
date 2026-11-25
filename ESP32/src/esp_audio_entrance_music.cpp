@@ -17,6 +17,7 @@
 #include "esp_audio_pickup_modal_gate.h"
 #include "esp_audio_clock_guard.h"
 #include "esp_native_sfx_pcm_mix.h"
+#include "esp_native_sfx_window.h"
 #include "esp_native_sfx_wav.h"
 #include "esp_asset_pack.h"
 #include "esp_audio_loading_route.h" /* explicit map track, one SD producer */
@@ -664,10 +665,11 @@ static void mixGenericSfx(GenericSfxVoice* v) {
                (unsigned)v->id,(unsigned)v->next,(unsigned)v->output);
         v->active=false;++sfxRejectedCount; EspNativeAudioIntent_notePlaybackDrop();return;
     }
-    if (first>=wrNow) return;
-    uint32_t n=wrNow-first;
-    if (n>8192U) n=8192U; /* up to 371ms ahead; >=100ms native frame */
-    if (n>v->output-v->next) n=v->output-v->next;
+    /* AUDIO #382: consume the entire ALREADY-published future window.
+     * The former 8192-frame slice stranded ready samples over long turns.
+     * Existing per-64-frame live reader guard below still fails closed. */
+    const uint32_t n=EspNativeSfxPcm_publishedSpan(
+        first,wrNow,v->output-v->next,kRingCapacity);
     if (n==0U) return;
     if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) return;
     uint8_t scratch[kSfxReadBytes];

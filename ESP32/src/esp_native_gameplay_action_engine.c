@@ -14,6 +14,7 @@
 #include "doomrpg_log.h"
 #include "esp_asset_pack.h"
 #include "esp_native_audio_intent.h"
+#include "esp_audio_entrance_music.h"
 #include "esp_entity_def_type_catalog.h"
 #include "esp_map_line_state.h"
 #include "esp_map_runtime.h"
@@ -3625,6 +3626,21 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
 
         logActionFrame(&pending, animateWeapon ? "attack" : "commit", &frame);
 
+        /* BARREL-GUN-VISUAL: original Combat_playerSeq sounds the weapon at
+         * its firing pose, NOT after all the world/explosion animations.
+         * The real attack frame has been presented and PAK is closed. This
+         * cue describes that already visible shot even if a later wave
+         * needs rollback; a failed/no-present attack never reaches here. */
+        if (isBarrel && frame.finalPresented != 0U &&
+            crateWeapon != NULL && crateWeapon->resourceId != 0U) {
+            (void)EspNativeAudioIntent_publish(
+                (uint16_t)crateWeapon->resourceId, 0U, 5U);
+            EspEntranceMusic_pumpGameplay();
+            printf("[BARRELAUDIO] GUN-VISIBLE seq=%u resource=%u priority=5 phase=attack-frame audioPump=immediate\n",
+                   (unsigned int)pending.sequence,
+                   (unsigned int)crateWeapon->resourceId);
+        }
+
         if (isBarrel && barrelExplosionArmed != 0U) {
             uint8_t waveStart = 0U;
             uint8_t waveOrdinal = 0U;
@@ -3751,6 +3767,20 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                            (unsigned int)ACTION_TRAP_EXPLOSION_LOGICAL,
                            (unsigned int)frame.frameAfterFNV,
                            (unsigned int)frame.finalPresented);
+                    /* BARREL-5061-VISUAL: original Game_gsprite_allocAnim
+                     * starts the blast sound when its first actual frame
+                     * becomes visible, not after 3 frames and radius work.
+                     * Exactly one intent per chain, no speculative sound
+                     * if the wave frame was not presented successfully. */
+                    if (waveOrdinal == 1U &&
+                        barrelExplosionFrame == 0U &&
+                        barrelRemoved != 0U && barrelExplosionArmed != 0U &&
+                        frame.finalPresented != 0U) {
+                        (void)EspNativeAudioIntent_publish(5061U, 0U, 4U);
+                        EspEntranceMusic_pumpGameplay();
+                        printf("[BARRELAUDIO] BLAST-VISIBLE seq=%u resource=5061 priority=4 wave=1 frame=0 audioPump=immediate\n",
+                               (unsigned int)pending.sequence);
+                    }
                 }
                 EspNativeSpriteRenderer_clearTransient();
 
@@ -4276,7 +4306,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
         }
 
         if (isBarrel) {
-            printf("[BARREL] COMMIT seq=%u sprite=%u weapon=%u ammoType=%u ammo=%u->%u playerFNV=%08x->%08x loops=%u hits=%u rngCombat=%u rngBlast=%u damage=%ld armorDamage=%ld removed=%u chainRemoved=%u playerRadiusHits=%u explosion=%s sound=%u-deferred barrelExplosionSound=5061-deferred radius=barrel-chain-wave+player-owned/other-hurtable-families-fail-closed turnAdvance=PLAYER_ATTACK-requested rollback=closed\n",
+            printf("[BARREL] COMMIT seq=%u sprite=%u weapon=%u ammoType=%u ammo=%u->%u playerFNV=%08x->%08x loops=%u hits=%u rngCombat=%u rngBlast=%u damage=%ld armorDamage=%ld removed=%u chainRemoved=%u playerRadiusHits=%u explosion=%s sound=%u-attack-visible barrelExplosionSound=5061-first-wave-visible radius=barrel-chain-wave+player-owned/other-hurtable-families-fail-closed turnAdvance=PLAYER_ATTACK-requested rollback=closed\n",
                    (unsigned int)pending.sequence,
                    (unsigned int)pending.spriteIndex,
                    (unsigned int)pending.weapon,
@@ -4297,6 +4327,20 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                    (unsigned int)barrelPlayerHits,
                    barrelExplosionArmed != 0U ? "native-180x3-each" : "none",
                    crateWeapon != NULL ? (unsigned int)crateWeapon->resourceId : 0U);
+            /* Only NOW is the full barrel + multi-wave monster transaction
+             * irreversible. The native monster combat owner already consumed
+             * the exact legacy death/pain sound RNG; publish its bounded
+             * sound intents once, never on a rolled-back blast. The visible
+             * 5061 explosion remains anchored to wave-1 frame 0 above. */
+            if (barrelSplashCount != 0U ||
+                barrelSplashTotalHits != 0U) {
+                if (!EspNativeGameplayMonsterCombat_publishSplashAudioAfterCommit(
+                        pending.sequence)) {
+                    printf("[BARRELRADIUS] SFX-DEFER seq=%u reason=monster-audio-sequence-invalid worldCommitted=yes\n",
+                           (unsigned int)pending.sequence);
+                }
+                EspEntranceMusic_pumpGameplay();
+            }
         }
 
         if (isFireMiss) {

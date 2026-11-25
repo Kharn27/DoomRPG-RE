@@ -73,8 +73,22 @@ def original_body_parity() -> None:
     marker = GUARD.encode("ascii")
     for filename, blob in BEFORE.items():
         current = (SOURCES / filename).read_bytes()
+        # Remove ONLY P1 timing additions before historical Git identity.
+        if filename == "esp_native_gameplay_frame.c":
+            from perf_game_p1_history import restore_pre_perf_game_p1_frame
+            current = restore_pre_perf_game_p1_frame(
+                current.decode("utf-8")).encode("utf-8")
+        elif filename == "esp_native_resident_gameplay.c":
+            from perf_game_p1_history import restore_pre_perf_game_p1_resident
+            current = restore_pre_perf_game_p1_resident(
+                current.decode("utf-8")).encode("utf-8")
         # ARCH-RC24 has no GNU runtime alias; undo only public/physical
         # present spellings for the immutable pre-SDL-F27 source witnesses.
+        if filename == "esp_native_gameplay_action_engine.c":
+            # Strict inverse: committed monster splash sounds are additive.
+            # No relaxation of the 10 immutable historical Git blobs.
+            from audio_barrel_splash_history import restore_pre_barrel_splash_audio
+            current = restore_pre_barrel_splash_audio(filename, current)
         if filename in ("esp_native_gameplay_action_engine.c",
                         "esp_native_gameplay_gib_fx.c"):
             from arch_rc24_history import restore_pre_rc24
@@ -176,6 +190,58 @@ def original_body_parity() -> None:
         # before the frozen ten-source pre-F27 Git blob witness. No hashes
         # are rewritten, no legacy semantics are accepted as new baselines.
         if filename == "esp_native_gameplay_action_engine.c":
+            # AUDIO-BARREL-VISUAL: reverse just the two newly positioned
+            # audio callbacks before verifying the ORIGINAL frozen Git blob.
+            # The rollback/no-frame paths remain unmodified.
+            gun_visible = (
+                b"        /* BARREL-GUN-VISUAL: original Combat_playerSeq sounds the weapon at\n"
+                b"         * its firing pose, NOT after all the world/explosion animations.\n"
+                b"         * The real attack frame has been presented and PAK is closed. This\n"
+                b"         * cue describes that already visible shot even if a later wave\n"
+                b"         * needs rollback; a failed/no-present attack never reaches here. */\n"
+                b"        if (isBarrel && frame.finalPresented != 0U &&\n"
+                b"            crateWeapon != NULL && crateWeapon->resourceId != 0U) {\n"
+                b"            (void)EspNativeAudioIntent_publish(\n"
+                b"                (uint16_t)crateWeapon->resourceId, 0U, 5U);\n"
+                b"            EspEntranceMusic_pumpGameplay();\n"
+                b"            printf(\"[BARRELAUDIO] GUN-VISIBLE seq=%u resource=%u priority=5 phase=attack-frame audioPump=immediate\\n\",\n"
+                b"                   (unsigned int)pending.sequence,\n"
+                b"                   (unsigned int)crateWeapon->resourceId);\n"
+                b"        }\n\n"
+            )
+            blast_visible = (
+                b"                    /* BARREL-5061-VISUAL: original Game_gsprite_allocAnim\n"
+                b"                     * starts the blast sound when its first actual frame\n"
+                b"                     * becomes visible, not after 3 frames and radius work.\n"
+                b"                     * Exactly one intent per chain, no speculative sound\n"
+                b"                     * if the wave frame was not presented successfully. */\n"
+                b"                    if (waveOrdinal == 1U &&\n"
+                b"                        barrelExplosionFrame == 0U &&\n"
+                b"                        barrelRemoved != 0U && barrelExplosionArmed != 0U &&\n"
+                b"                        frame.finalPresented != 0U) {\n"
+                b"                        (void)EspNativeAudioIntent_publish(5061U, 0U, 4U);\n"
+                b"                        EspEntranceMusic_pumpGameplay();\n"
+                b"                        printf(\"[BARRELAUDIO] BLAST-VISIBLE seq=%u resource=5061 priority=4 wave=1 frame=0 audioPump=immediate\\n\",\n"
+                b"                               (unsigned int)pending.sequence);\n"
+                b"                    }\n"
+            )
+            music_include=b'#include "esp_audio_entrance_music.h"\n'
+            visual_log=(
+                b"explosion=%s sound=%u-attack-visible "
+                b"barrelExplosionSound=5061-first-wave-visible"
+            )
+            original_log=(
+                b"explosion=%s sound=%u-deferred "
+                b"barrelExplosionSound=5061-deferred"
+            )
+            assert current.count(gun_visible)==1, "BARREL-GUN visual owner drift"
+            assert current.count(blast_visible)==1, "BARREL-5061 visual owner drift"
+            assert current.count(music_include)==1, "BARREL music pump import drift"
+            assert current.count(visual_log)==1, "BARREL audio log drift"
+            current=(current.replace(gun_visible,b"",1)
+                            .replace(blast_visible,b"",1)
+                            .replace(music_include,b"",1)
+                            .replace(visual_log,original_log,1))
             # AUDIO-SFX-P2 adds one committed extinguisher hook. Undo only
             # that exact two-line addition before the frozen pre-F27 blob.
             p2_hook = (

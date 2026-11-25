@@ -43,12 +43,26 @@ def source_gate() -> None:
         assert data.startswith(prefix), f"{name}: lost host/geometry include"
         assert data.count(b"#include <SDL.h>") == 1, name
         original = b"#include <SDL.h>\n" + data[len(prefix):]
+        if name == "esp_native_gameplay_monster_active_sequence.c":
+            from perf_game_p1_history import restore_pre_perf_game_p1_active_sequence
+            original = restore_pre_perf_game_p1_active_sequence(
+                original.decode("utf-8")).encode("utf-8")
         from arch_rc21_history import restore_pre_rc21
         original = restore_pre_rc21(name, original)
         from arch_rc20_history import restore_pre_rc20
         original = restore_pre_rc20(name, original)
         from arch_rc13_history import restore_pre_rc13
         original = restore_pre_rc13(name, original)
+        if name == "esp_native_gameplay_monster_combat.c":
+            # Restore the exact bounded P1 changes before older audio inverses.
+            from monster_death_p1_history import restore_pre_monster_death_p1
+            original = restore_pre_monster_death_p1(
+                original.decode("utf-8")).encode("utf-8")
+        if name == "esp_native_gameplay_monster_combat.c":
+            # The barrel splash audio addition must be stripped EXACTLY;
+            # do not accept any changed original monster-combat bytes.
+            from audio_barrel_splash_history import restore_pre_barrel_splash_audio
+            original = restore_pre_barrel_splash_audio(name, original)
         from audio_monster_sfx_history import restore_pre_monster_sfx
         original = restore_pre_monster_sfx(name, original.decode("utf-8")).encode("utf-8")
         if name == "esp_native_gameplay_monster_combat.c":

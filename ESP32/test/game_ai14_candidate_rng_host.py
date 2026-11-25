@@ -2,8 +2,10 @@
 """GAME-AI-14 A1: compile ACTUAL production C attack-candidate/RNG-path bodies.
 
 Mock only external arena/topology/LOS leaves, not the native algorithms.
-This covers all fourteen subtypes and both weapon variants under cardinal,
-diagonal, blocked, out-of-range and invalid-view fixtures; then compares
+This covers the 13 generic subtypes and both weapon variants under cardinal,
+diagonal, blocked, out-of-range and invalid-view fixtures; all 14 masks are tested.
+Subtype 10 requires its own behavioral oracle (#438), not a mandatory skip in production.
+Then compares
 the native movement RNG call-count calculation to an independent legacy
 Entity_aiThink expression. This does NOT claim full turn/collision parity.
 """
@@ -136,6 +138,10 @@ int main(void) {
         else if (subtype==10U) mask &= ~0x0400U;
         assert(movementMaskForSubtype((uint8_t)subtype)==mask);
 
+        if (subtype==10U) {
+            puts("[GAMEAI14-C] subtype=10 generic-candidate/RNG cases=SKIPPED special-oracle=#438 mask=PASS");
+            continue;
+        }
         for (alternate=0U; alternate<2U; ++alternate) {
             const uint8_t id=monsterAttacks[2U*subtype+alternate];
             const int i7=(1+(int)monsterRangeMin[id])/2;
@@ -151,18 +157,11 @@ int main(void) {
 
             settle(&view,288,224);  /* cardinal one tile away */
             assert(findCandidateForSprite(&view,17U,&candidate)==1);
-            if(subtype==10U) {
-                /* The pre-#440 main has an intentional subtype10 skip.
-                 * Source audit fails once this changes until the fixture
-                 * is reviewed for the new owner and special RNG prefix. */
-                assert(candidate.monster==NULL);
-            } else {
-                assert(candidate.monster==&fixtureMonster);
-                assert(candidate.weaponId==id);
-                assert(candidate.loops==monsterShots[subtype]);
-                assert(candidate.tileIndex==99U);
-                assert(candidate.worldDistance==4096U);
-            }
+            assert(candidate.monster==&fixtureMonster);
+            assert(candidate.weaponId==id);
+            assert(candidate.loops==monsterShots[subtype]);
+            assert(candidate.tileIndex==99U);
+            assert(candidate.worldDistance==4096U);
             ++cases;
 
             settle(&view,288,288); /* diagonal */
@@ -187,8 +186,8 @@ int main(void) {
             ++cases;
 
             settle(&view,288,224);
-            fixtureFlags=0U; /* topology unlinked: generic invalid, subtype10 main skips */
-            assert(findCandidateForSprite(&view,17U,&candidate)==(subtype==10U));
+            fixtureFlags=0U; /* topology unlinked: invalid */
+            assert(findCandidateForSprite(&view,17U,&candidate)==0);
             assert(candidate.monster==NULL);
             fixtureFlags=ESP_MAP_SPRITE_TOPOLOGY_LINKED |
                          ESP_MAP_SPRITE_TOPOLOGY_ALIVE;
@@ -196,30 +195,47 @@ int main(void) {
 
             calls=255U;
             assert(movementRngCalls("NO-IMMEDIATE-ATTACK",
-                &fixtureMonster,&view,&before,&calls)==(subtype!=10U));
-            if(subtype!=10U) assert(calls==(uint8_t)(1+(i7>0)));
-            else assert(calls==0U);
+                &fixtureMonster,&view,&before,&calls)==1);
+            assert(calls==(uint8_t)(1+(i7>0)));
             ++cases;
 
             calls=255U;
             assert(movementRngCalls("RANGED-AI",
                 &fixtureMonster,&view,&before,&calls)==
-                (subtype!=10U && i7>0));
-            if(subtype!=10U && i7>0) assert(calls==3U);
+                (i7>0));
+            if(i7>0) assert(calls==3U);
             else assert(calls==0U);
             ++cases;
 
+            /* Far cardinal and close diagonal must not consume close-bias. */
+            settle(&view,1952,224);
+            calls=255U;
+            assert(movementRngCalls("NO-IMMEDIATE-ATTACK",
+                &fixtureMonster,&view,&before,&calls)==1);
+            assert(calls==1U);
+            ++cases;
+            calls=255U;
+            assert(movementRngCalls("RANGED-AI",
+                &fixtureMonster,&view,&before,&calls)==(i7>0));
+            assert(calls==(i7>0?2U:0U));
+            ++cases;
+            settle(&view,288,288);
+            calls=255U;
+            assert(movementRngCalls("NO-IMMEDIATE-ATTACK",
+                &fixtureMonster,&view,&before,&calls)==1);
+            assert(calls==1U);
+            ++cases;
             calls=255U;
             assert(movementRngCalls("INVALID",
                 &fixtureMonster,&view,&before,&calls)==0);
             assert(calls==0U);
             ++cases;
         }
-        printf("[GAMEAI14-C] subtype=%02u variants=2 each=9 cases=18 "
+        printf("[GAMEAI14-C] subtype=%02u variants=2 each=12 cases=24 "
                "attackGate=%s metadata=legacy-matched activeRng=not-consumed\n",
-               subtype, subtype==10U?"main-legacy-defer":"native-candidate");
+               subtype, "native-candidate");
     }
-    assert(cases==14U*2U*9U);
+    assert(cases==13U*2U*12U);
     printf("[GAMEAI14-C] PASS cases=%u realBodies=3 "
            "cardinal/diagonal/range/LOS/invalid/link/aiRngCounts/masks "
            "full-turn-fidelity=NOT-PROVEN\n",cases);
@@ -250,5 +266,5 @@ with tempfile.TemporaryDirectory(prefix="gameai14_real_c_") as d:
     subprocess.run(["cc", "-std=c11","-O2","-Wall","-Wextra","-Werror",
                     str(unit),"-o",str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
-print("game_ai14_candidate_rng_host: PASS 252 actual-C path scenarios; "
+print("game_ai14_candidate_rng_host: PASS 312 generic actual-C path scenarios + 14 masks; "
       "external geometry & RNG draws stubbed, full AI parity not claimed")

@@ -12,15 +12,18 @@ layout = (root / "ESP32/include/native_main_menu_160x120_layout.h").read_text()
 
 assert '#include "esp_main_menu_skin.h"' in loading
 assert "EspMainMenuSkin_paintPlate(framebuffer()," in loading
-assert loading.count("paintLoadingCard(target)") == 2
+assert loading.count("paintLoadingCard(target)") == 1
+assert "Esp32PlatformVideo_presentRegionBase(" in loading
+assert "background=lcd-retained" in loading
 assert "fillRect(16, 32, 143, 75, COLOR_PANEL);" not in loading
 assert "EspMainMenuSkin_letterTone(row, 5)" in loading
 assert "EspMainMenuSkin_progressTone(row, trackHeight)" in loading
 assert "const uint16_t tone = row == 0 ? 0xf6afU" not in loading
 assert "return gradients[selectedLetterTheme][row];" in skin
 assert "EspMainMenuSkin_letterTone(row, 9)" in skin
-# Both loading entry and checkpoint progress repaints draw the same plates.
-# Geometry stays inside 160x120, with a visible gap between the two modules.
+# LOADING entry paints two immutable/opaque plates once. Later callbacks only
+# refresh the opaque gauge region; LCD GRAM keeps the unchanged title + c.bmp.
+# Geometry stays inside 160x120 with a gap between the two modules.
 assert "#define TRANSITION_LOADING_CARD_TOP 26" in loading
 assert "#define TRANSITION_LOADING_CARD_BOTTOM 69" in loading
 assert "#define TRANSITION_PROGRESS_LEFT 16" in loading
@@ -61,7 +64,7 @@ assert "trackLeft + fillWidth - 1, trackTop + row, tone" in loading
 assert "paintProgressBar(0U)" in loading
 assert "paintProgressBar(percent)" in loading
 assert "if (!paintProgressBar(0U)) goto done;" in loading
-assert "if (!paintProgressBar(percent)) {" in loading
+assert "if (!paintProgressBar(percent)) return;" in loading
 assert "COLOR_AMBER);" not in loading[loading.index("static int paintProgressBar("):loading.index("static void presentOverall(")]
 assert "EspMainMenuSkin_paintPlate(fb, stride, width, height," in skin
 assert "const int industrialMain = labels == dashboardLabels;" in menu
@@ -119,11 +122,13 @@ assert 'word(fb, stride, l, t, r, b, first, p,' in skin
 assert "glyphs[][9]" in skin
 assert "length * 6 - 1" in skin
 assert "row < 9" in skin and "bit < 5" in skin
-# CLASSIC stronger blue -> neutral gray -> warmer yellow-orange, shared with
-# UAC font tint and the native HELP title; old bronze/copper is retired.
-assert "#define CLASSIC_STEEL_BLUE 0x6c35U" in skin
-assert "#define CLASSIC_METAL_GRAY 0xc638U" in skin
-assert "#define CLASSIC_PALE_AMBER 0xf4caU" in skin
+# CLASSIC dark navy blue -> bright silvery neutral steel -> yellow gold,
+# shared by UAC, LOADING and HELP without touching the font atlases.
+assert "#define CLASSIC_STEEL_BLUE 0x0954U" in skin
+assert "#define CLASSIC_METAL_GRAY 0xb5d8U" in skin
+assert "#define CLASSIC_PALE_AMBER 0xfe8aU" in skin
+assert "#define INFERNO_DEEP_VIOLET 0xda6fU" in skin
+assert "#define INFERNO_MID_RED     0xf800U" in skin
 assert "#define CLASSIC_DIM_STEEL  0x42f0U" in skin
 assert "return CLASSIC_PALE_AMBER;" in skin
 assert "return CLASSIC_STEEL_BLUE;" in skin

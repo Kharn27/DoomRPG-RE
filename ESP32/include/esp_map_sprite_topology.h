@@ -30,13 +30,16 @@ extern "C" {
 #define ESP_MAP_HIDE_EFFECT_UNLINK 0x02U
 
 #define ESP_MAP_ENTITY_TYPE_ENEMY 1U
+#define ESP_MAP_ENTITY_TYPE_HUMAN 2U
 #define ESP_MAP_ENTITY_TYPE_DESTRUCTIBLE 12U
 #define ESP_MAP_ENTITY_SUBTYPE_CRATE 2U
 
 /*
- * V9 topology checkpoint tracks every enemy plus every destructible because
- * EV_SHOW may remove either family from a destination tile. The fixed capacity
- * stays bounded and fail-closed for maps that exceed it.
+ * Historical V9/V11 snapshot layout: fixed 100 x 8-byte records + 16-byte
+ * header (816 bytes on disk). New V11 writes also include entity type 2
+ * (humans): EV_HIDE/SHOW must survive SAVE/LOAD without reviving old NPCs.
+ * Older V9/V10/V11 records without humans remain readable but are lossy for
+ * this family. Over-capacity maps fail closed; Sector 5 (#380) is separate.
  */
 #define ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_MAX 100U
 
@@ -66,6 +69,7 @@ typedef struct EspMapSpriteTopologyView_s {
     uint32_t linkedCount;
     uint32_t hiddenCount;
     uint32_t enemyCount;
+    uint32_t humanCount;
     uint32_t destructibleCount;
     uint16_t nextLinkOrder;
 } EspMapSpriteTopologyView;
@@ -80,7 +84,8 @@ typedef struct EspMapSpriteTopologyMonsterRecord_s {
 
 /*
  * Historical type name retained to keep the V9 record layout/API stable.
- * Semantics are enemy + destructible topology, not enemy-only.
+ * New V11 scope covers enemy + destructible + human (type 2), while the
+ * exact 816-byte record and original V9/V11 old-scope decoding remain intact.
  */
 typedef struct EspMapSpriteTopologyMonsterSnapshot_s {
     uint32_t sourceArenaFNV1a;
@@ -164,10 +169,10 @@ int EspMapSpriteTopology_isReady(void);
 const EspMapSpriteTopologyView* EspMapSpriteTopology_view(void);
 
 /*
- * Exact pointer-free checkpoint of mutable topology for enemies and
- * destructibles. EV_SHOW can remove either family while linking its target, so
- * both must travel with the V9 spatial checkpoint. Other entity families remain
- * owned by their existing dedicated checkpoint owners.
+ * Exact pointer-free topology checkpoint for enemies, destructibles and
+ * humans (type 2) on new V11 SAVEs. Accept historical records that omit the
+ * human family, but report their irreversible coverage gap on LOAD. Other
+ * non-monster entity families are not represented here. No layout/ABI growth.
  */
 int EspMapSpriteTopology_snapshotMonsters(
     EspMapSpriteTopologyMonsterSnapshot* outSnapshot);

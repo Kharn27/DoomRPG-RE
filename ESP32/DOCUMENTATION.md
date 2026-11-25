@@ -1,3 +1,15 @@
+## GAME-S1 P1 — #444 humains SHOW/HIDE persistants, PASS CYD (24 novembre 2026)
+
+[PR #463](https://github.com/Kharn27/DoomRPG-RE/pull/463) / [issue #444](https://github.com/Kharn27/DoomRPG-RE/issues/444). Code candidat `59bb22b5ca335ead1b70c93dd1b12ae2a831e6a2` (attribution contextuelle, SHA absent du Serial), double CI code SUCCESS. Capture `platformio-device-monitor-261124-225956.log`, 997947 octets, SHA256 `2f79d12e80d126f7153e79b3c1166be44a7b871a289c56737fad021ba4e8050b`. Anciens V11 Sector1 slot05 et Junction slot01 lisibles avec LEGACY-HUMAN-GAP. Nouveau parcours depuis Junction : event24 RESUME show=2 hide=1 state=2 removed=3 (l.6376). Slot10 SAVE l.6746 puis RESTORE l.6886–6892 : 71=50 ennemis+15 destructibles+6 humains, topology FNV 18480139, script 75146bda, monsters 587abced, positions 8eee31f0, activation 9b1760b0, player 3d841e95 identiques, exact=yes. MOVE 646->647 committed=yes l.7064, utilisateur confirme absence de duplication après LOAD. HEADROOM_OK, NULL invariants, retour menu propre. PASS borné Sector1 ; pas de second SAVE post-LOAD dans cette capture, identité exacte des sprites non décodée du PAK. Layout V11 5604 B / topology 816 B inchangé, lecture ascendante uniquement : anciens firmwares ne restaurent pas le nouveau scope. Capacité 100 et audit autres cartes restent #380. Aucun changement code après test.
+
+---
+
+## MONSTER-DEATH-P1 — conséquences de mort natives partagées, PASS CYD borné (24 novembre 2026)
+
+[PR #452](https://github.com/Kharn27/DoomRPG-RE/pull/452) / [rapport matériel](MILESTONE_MONSTER_DEATH_P1_CYD_PASS.md). Direct et radius baril partagent `prepareDeathAfterXp` : choix sonore puis un mot RNG drop, transactions existantes conservées ; douleur P2, mort P5, gib 5091 P3. Code candidat `a4bcaf247fe8f5ecf76c9ba2fb9674c0755c1a58`, double CI code SUCCESS. Capture CYD `platformio-device-monitor-261124-094612.log` : deux barils (5099 P2, 5076 P5 après commit), trois gibs 5091, drop live, HEADROOM_OK, NULL invariants, retour menu propre et zéro overflow/gap/audibleSfxDropped. Retour auditif positif. 5095, chaîne multi-barils et familles spéciales non validés dans cette capture. Post-test docs-only.
+
+---
+
 ## WALL-SD-P1 — c.bmp SD au LOADING, e.bmp PAK, PASS CYD (22 novembre 2026)
 
 [PR #434](https://github.com/Kharn27/DoomRPG-RE/pull/434) / [rapport](MILESTONE_WALLPAPER_SD_P1_PENDING_CYD.md). Le log matériel `platformio-device-monitor-261122-185034.log` (SHA256 `b758888db044859d4e03d47fee55d392927dc710c450f89519a3c188a39e5df9`) confirme `c.bmp` depuis la SD au premier cadre et sur toutes les frames de LOADING, `e.bmp` BMP4 du PAK à l'intro, police `a.bmp` thématisée, `M_IN_CIT` et `M_STALKS` 0 underrun et `RAMBUDGET HEADROOM_OK`. Le fichier `e.bmp` SD 8bpp à transparence réparée est conservé bit à bit ; il est seulement désactivé à l'exécution pour ce comparatif. Un incident audio indépendant survient dans l'aide du menu (`M_DM2TTL` 13633 underruns), à surveiller. PASS code HEAD `fef1c4c525c67d9709f41f676bd9950b0fd38457`, deux workflows SUCCESS ; modifications post-PASS docs-only.
