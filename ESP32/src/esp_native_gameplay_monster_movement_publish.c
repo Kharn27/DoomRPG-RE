@@ -16,6 +16,27 @@
 #if defined(ARDUINO) && defined(DOOMRPG_ESP32)
 #include "esp_perf_move_visibility.h"
 #endif
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+#include "esp_asset_pack.h"
+#include "esp_audio_entrance_music.h"
+#include "esp_native_door_animator.h"
+#include "esp_native_first_frame.h"
+#include "esp_native_gameplay_action_engine.h"
+#include "esp_native_gameplay_controls.h"
+#include "esp_native_gameplay_gib_fx.h"
+#include "esp_native_gameplay_hub.h"
+#include "esp_native_gameplay_level_up.h"
+#include "esp_native_gameplay_monster_attack_visual.h"
+#include "esp_native_gameplay_move_events.h"
+#include "esp_native_gameplay_pickup_miniature.h"
+#include "esp_native_gameplay_player_pain_visual.h"
+#include "esp_native_gameplay_present_gate.h"
+#include "esp_native_gameplay_transition.h"
+#include "esp_native_transition_presentation.h"
+#include "esp_native_resident_gameplay.h"
+#include "esp_native_sprite_renderer.h"
+#include <esp_timer.h>
+#endif
 #include "esp_native_gameplay_monster_movement.h"
 #include "esp_native_gameplay_monster_movement_publish.h"
 #include "esp_native_gameplay_monster_state.h"
@@ -252,6 +273,31 @@ static int restorePublishedOwners(
     return topologyExact && positionExact;
 }
 
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+static int moveFrameQuiet(void) {
+    const uint32_t now = DoomRPG_GetUpTimeMS();
+    return EspNativeResidentGameplay_isActive() &&
+           EspNativeResidentGameplay_ownsWorldPresent() &&
+           !EspNativeResidentGameplay_isAutomapActive() &&
+           !EspNativeGameplayHub_isActive() &&
+           !EspNativeGameplayControls_isActive() &&
+           !EspNativeGameplayLevelUp_isActive() &&
+           !EspNativeGameplayTransition_isWaitingStats() &&
+           !EspNativeTransitionPresentation_isLoadingActive() &&
+           !EspNativeDoorAnimator_hasPendingFrames() &&
+           !EspNativeGameplayMonsterAttackVisual_isBusy() &&
+           !EspNativePlayerPainVisual_isActive(now) &&
+           !EspNativePlayerPainVisual_expiryDue(now) &&
+           !EspNativeFirstFrame_indicatorVisible() &&
+           !EspNativeGameplayPresentGate_isArmed() &&
+           !EspAssetPack_isOpen() &&
+           EspNativeGameplayMoveEvents_moveFrameQuiet() &&
+           EspNativeGameplayActionEngine_moveFrameQuiet() &&
+           EspNativeGameplayGibFx_moveFrameQuiet() &&
+           EspPickupMini_moveFrameQuiet();
+}
+#endif
+
 static int recoveryRedraw(DoomRPG_t* doomRpg,
                           const EspPlayerViewState* player,
                           EspNativeGameplayFrameStats* outFrame) {
@@ -392,11 +438,28 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
 
     memset(&frame, 0, sizeof(frame));
 #if defined(ARDUINO) && defined(DOOMRPG_ESP32)
-    EspPerfMoveVisibility_begin(publishCapture.before.spriteIndex,
-                                publishCapture.before.worldX,
-                                publishCapture.before.worldY);
+    /* First goal always renders. Only a synchronous synthetic ThreeGoal
+     * continuation can consume the one-shot prior full-frame witness. */
+    const int quietBefore = moveFrameQuiet();
+    const uint32_t nowMs = (uint32_t)(esp_timer_get_time()/1000LL);
+    const int reused = EspPerfMoveVisibility_tryReuse(
+        movement != EspNativeGameplayMonsterMovement_view(),
+        quietBefore && !EspNativeSpriteRenderer_ambientDue(nowMs),
+        publishCapture.before.spriteIndex,
+        publishCapture.before.worldX, publishCapture.before.worldY,
+        publishCapture.after.worldX, publishCapture.after.worldY, nowMs);
+    if (reused) {
+        EspEntranceMusic_pumpGameplay();
+    } else {
+        EspPerfMoveVisibility_begin(publishCapture.before.spriteIndex,
+            publishCapture.before.worldX, publishCapture.before.worldY,
+            publishCapture.after.worldX, publishCapture.after.worldY, quietBefore);
+    }
+    if (!reused &&
+#else
+    if (
 #endif
-    if (!EspNativeGameplayFrame_renderTurn(EspNativeRootOwners_live()->render,
+        !EspNativeGameplayFrame_renderTurn(EspNativeRootOwners_live()->render,
                                            (uint8_t)player->viewAngle,
                                            &frame)) {
 #if defined(ARDUINO) && defined(DOOMRPG_ESP32)
@@ -418,7 +481,7 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
     }
 
 #if defined(ARDUINO) && defined(DOOMRPG_ESP32)
-    EspPerfMoveVisibility_end(1);
+    if (!reused) EspPerfMoveVisibility_end(frame.finalPresented && moveFrameQuiet() ? 1 : 2);
 #endif
     topology = EspMapSpriteTopology_view();
     currentPosition = EspNativeGameplayMonsterPosition_find(

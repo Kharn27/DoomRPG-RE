@@ -843,6 +843,12 @@ static int buildOrder(Render_t* render,
         (void)link;
         (void)ordinal;
         ++stats->bspCandidates;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+        if (!preview && type == ENEMY_TYPE &&
+            EspNativeGameplayMonsterCombat_damageBlend(
+                (uint16_t)i, DoomRPG_GetUpTimeMS()))
+            EspPerfMoveVisibility_noteUnsafe();
+#endif
         TRACE_SPRITE(i, "[SPRITETRACE] ADMISSION sprite=%u result=candidate leaf=%u\n", (unsigned int)i, (unsigned int)leaf);
 
         recoveredCross = isLegacyCrossLogical((uint16_t)id);
@@ -1791,7 +1797,11 @@ static int renderImpl(struct Render_s* renderBase,
 #endif
 
 #if defined(ARDUINO) && defined(DOOMRPG_ESP32)
-    if (!preview) EspPerfMoveVisibility_observe(&workspace->visibility);
+    if (!preview) {
+        EspPerfMoveVisibility_observe(&workspace->visibility, ambientSampleMs);
+        if (transientWorldBatch.active != 0U)
+            EspPerfMoveVisibility_noteUnsafe();
+    }
 #endif
     stats.depthNodes = workspace->visibility.nodes;
     stats.depthLeaves = workspace->visibility.leaves;
