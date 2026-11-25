@@ -1012,6 +1012,29 @@ static int spans(Render_t* render,
                 if (glow) ++stats->glowSpanRuns;
                 else ++stats->spanRuns;
 
+                /* P2h: prove the entire normal opaque span in bounds
+                 * once. The 32-bit cursor is safe because packedBytes is
+                 * bounded to 2048 and texelStep is a nonnegative int.
+                 * Keep the original loop for additive/glow and malformed
+                 * ranges, including its exact partial-failure semantics. */
+                if (renderMode == RENDER_MODE_NORMAL && !glow &&
+                    frame->packedBytes <= MAX_TEXELS &&
+                    position >= 0 && texelStep >= 0 &&
+                    position + (int64_t)(remaining - 1) * texelStep <
+                        ((int64_t)frame->packedBytes << 13)) {
+                    uint32_t pos = (uint32_t)position;
+                    int left = remaining;
+                    while (left-- > 0) {
+                        const uint8_t packed = frame->texels[pos >> 13];
+                        *destination = frame->palette[
+                            (packed >> ((pos >> 10) & 4U)) & 15U];
+                        destination += pitch;
+                        pos += (uint32_t)texelStep;
+                    }
+                    stats->pixelsDrawn += (uint32_t)remaining;
+                    continue;
+                }
+
                 while (remaining-- > 0) {
                     uint32_t packedIndex;
                     uint8_t packed;

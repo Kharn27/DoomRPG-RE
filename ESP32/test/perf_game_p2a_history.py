@@ -176,7 +176,20 @@ P2G_WIRING_EDITS = {
     ]
 }
 
+P2H_WIRING_EDITS = {
+    "esp_native_sprite_renderer.c": [
+        [
+            "                /* P2h: prove the entire normal opaque span in bounds\n                 * once. The 32-bit cursor is safe because packedBytes is\n                 * bounded to 2048 and texelStep is a nonnegative int.\n                 * Keep the original loop for additive/glow and malformed\n                 * ranges, including its exact partial-failure semantics. */\n                if (renderMode == RENDER_MODE_NORMAL && !glow &&\n                    frame->packedBytes <= MAX_TEXELS &&\n                    position >= 0 && texelStep >= 0 &&\n                    position + (int64_t)(remaining - 1) * texelStep <\n                        ((int64_t)frame->packedBytes << 13)) {\n                    uint32_t pos = (uint32_t)position;\n                    int left = remaining;\n                    while (left-- > 0) {\n                        const uint8_t packed = frame->texels[pos >> 13];\n                        *destination = frame->palette[\n                            (packed >> ((pos >> 10) & 4U)) & 15U];\n                        destination += pitch;\n                        pos += (uint32_t)texelStep;\n                    }\n                    stats->pixelsDrawn += (uint32_t)remaining;\n                    continue;\n                }\n\n                while (remaining-- > 0) {\n                    uint32_t packedIndex;",
+            "                while (remaining-- > 0) {\n                    uint32_t packedIndex;"
+        ]
+    ]
+}
+
 def restore_pre_perf_game_p2a(name, data):
+    for newer, older in P2H_WIRING_EDITS.get(name, []):
+        a, b = newer.encode("utf-8"), older.encode("utf-8")
+        assert data.count(a) == 1, (name, "P2h wiring inverse")
+        data = data.replace(a, b, 1)
     for newer, older in P2G_WIRING_EDITS.get(name, []):
         a, b = newer.encode("utf-8"), older.encode("utf-8")
         assert data.count(a) == 1, (name, "P2g wiring inverse")

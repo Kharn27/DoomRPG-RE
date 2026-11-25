@@ -49,6 +49,13 @@ functions = "\n\n".join(extract(s) for s in (
     "static int loadFrame(",
     "static int spans(",
 ))
+# Execute the previous raster loop as a separate actual-C reference.
+span = extract("static int spans(")
+fast_start = span.index("                /* P2h: prove")
+fast_end = span.index("                while (remaining-- > 0)", fast_start)
+reference_span = (span[:fast_start] + span[fast_end:]).replace(
+    "static int spans(", "static int spansReference(", 1)
+functions += "\n\n" + reference_span
 host = r'''
 #include <assert.h>
 #include <limits.h>
@@ -57,6 +64,7 @@ host = r'''
 #include <stdlib.h>
 #include <string.h>
 #include "esp_native_fire_visual.h"
+#include "esp_native_sprite_mask.h"
 #define MAP_HEADER 16U
 #define PALETTE_HEADER 4U
 #define TEXEL_HEADER 4U
@@ -258,7 +266,53 @@ static void testModesAndRaster(void) {
  assert(!spans(&r,&line,&f,9U,0,&stats));
  puts("FIRE-VIS RGB565 real spans: fire/opaque/glow/mask/depth/legacy-carry PASS");
 }
+/* Same production C compositor, with and without the P2h fast branch.
+ * Exercise opaque/add/glow, clipped spans, depth rejection, odd nibble
+ * starts, partial padding and intentionally truncated resources. */
+static void testSpanParity(void) {
+ uint32_t rng=0x9ab81234U;
+ static uint16_t pixels[2][160U*80U];
+ for(unsigned trial=0;trial<4096U;++trial) {
+   Frame f;
+   Render_t r;
+   Line_t line;
+   EspNativeSpriteStats stats[2];
+   memset(&f,0,sizeof f);memset(&r,0,sizeof r);
+   memset(&line,0,sizeof line);memset(stats,0,sizeof stats);
+   f.width=1;f.height=1+(int)(trial%64U);
+   f.pitch=(f.height+7)/8;f.yMin=(int)(trial%7U);
+   unsigned count=0;
+   for(int y=0;y<f.height;++y) {
+     rng=rng*1664525U+1013904223U;
+     if(rng&0x80000000U) {f.mask[y/8]|=(uint8_t)(1U<<(y&7));++count;}
+   }
+   f.prefix[1]=(uint16_t)count;
+   f.packedBytes=(count+1U)/2U;
+   if(trial%7U==0U && f.packedBytes) --f.packedBytes;
+   for(unsigned i=0;i<32U;++i) {rng=rng*1664525U+1013904223U;f.texels[i]=(uint8_t)(rng>>24);}
+   for(unsigned i=0;i<16U;++i) f.palette[i]=(uint16_t)(i*4331U);
+   line.vert2.x=1<<16;
+   line.vert1.y=line.vert2.y=(int)(65536U*(1U+trial%8U));
+   r.pitch=320;r.screenHeight=80;r.screenLeft=0;r.screenRight=160;
+   r.screenTop=(int)(trial%13U);r.screenBottom=80-(int)(trial%17U);
+   r.viewZ=30+(int)(trial%61U);
+   r.columnScale[0]=trial%9U?INT_MAX:0;
+   for(unsigned i=0;i<160U*80U;++i) pixels[0][i]=(uint16_t)(i*31U+trial);
+   memcpy(pixels[1],pixels[0],sizeof pixels[0]);
+   uint8_t mode=trial%5U?0U:7U;int glow=trial%11U==0U;
+   Line_t refLine=line;
+   r.pixels=(short*)pixels[0];
+   int result=spans(&r,&line,&f,mode,glow,&stats[0]);
+   r.pixels=(short*)pixels[1];
+   int ref=spansReference(&r,&refLine,&f,mode,glow,&stats[1]);
+   assert(result==ref);
+   assert(!memcmp(pixels[0],pixels[1],sizeof pixels[0]));
+   assert(!memcmp(&stats[0],&stats[1],sizeof stats[0]));
+ }
+ puts("P2h actual C opaque fast span / original span parity PASS");
+}
 int main(void) {
+ testSpanParity();
  testAssetReader();
  testModesAndRaster();
  puts("native_fire_visual_host: PASS");
