@@ -529,21 +529,31 @@ int EspNativeBspVisibility_mapSpriteVisibleReadOnly(
 }
 
 
-/* Explicit old position, same leaf traversal as the production renderer. */
-int EspNativeBspVisibility_positionVisible(
-    const EspNativeBspVisibilityState* state, uint32_t spriteIndex,
+/* Resolve explicit coordinates through the production BSP, bypassing the spawn cache. */
+int EspNativeBspVisibility_positionLeaf(uint32_t spriteIndex,
     uint16_t x, uint16_t y, uint32_t* outLeaf) {
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
     EspMapSprite sprite;
     uint32_t leaf;
     if (outLeaf != NULL) *outLeaf = UINT32_MAX;
-    if (state == NULL || runtime == NULL ||
+    if (outLeaf == NULL || runtime == NULL ||
         spriteIndex >= runtime->mapSpriteCount ||
         !EspMapRuntime_getMapSprite(spriteIndex, &sprite)) return 0;
     sprite.x = x;
     sprite.y = y;
     if (!spriteLeaf(runtime, &sprite, &leaf) ||
         leaf >= ESP_NATIVE_BSP_VISIBILITY_MAX_NODES) return 0;
+    *outLeaf = leaf;
+    return 1;
+}
+
+int EspNativeBspVisibility_positionVisible(
+    const EspNativeBspVisibilityState* state, uint32_t spriteIndex,
+    uint16_t x, uint16_t y, uint32_t* outLeaf) {
+    uint32_t leaf;
+    if (outLeaf != NULL) *outLeaf = UINT32_MAX;
+    if (state == NULL ||
+        !EspNativeBspVisibility_positionLeaf(spriteIndex, x, y, &leaf)) return 0;
     if (outLeaf != NULL) *outLeaf = leaf;
     return (state->visibleLeaves[leaf >> 5] & (1U << (leaf & 31U))) != 0U;
 }

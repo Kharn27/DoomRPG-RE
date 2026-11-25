@@ -41,6 +41,7 @@ def extract(signature):
 CACHE = extract("static int cachedSpriteLeaf(")
 LEAF = extract("static int spriteLeaf(")
 QUERY = extract("int EspNativeBspVisibility_mapSpriteVisibleReadOnly(")
+POSITION_LEAF = extract("int EspNativeBspVisibility_positionLeaf(")
 POSITION = extract("int EspNativeBspVisibility_positionVisible(")
 DECLS = re.findall(
     r"static struct \{\s*const uint8_t\* arena;[\s\S]*?\} spriteLeafCache;",
@@ -201,7 +202,7 @@ def build_and_run(cache_body, directory, label):
     source = directory / (label + ".c")
     source.write_text(
         PREFIX + "\n" + DECLS[0] + "\n" + LEAF + "\n" +
-        cache_body + "\n" + QUERY + "\n" + POSITION + "\n" + CHECKS
+        cache_body + "\n" + QUERY + "\n" + POSITION_LEAF + "\n" + POSITION + "\n" + CHECKS
     )
     command = CC + ["-O2", "-std=c11", "-Wall", "-Wextra", "-Werror",
                     str(source), "-o", str(binary)]

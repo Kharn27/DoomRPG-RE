@@ -65,6 +65,8 @@ int EspNativeBspVisibility_mapSpriteVisibleReadOnly(
  * overlay state and gameplay activation remain outside this pure query. */
 /* Raw admission remains pure: no gameplay activation, for the native
  * composition layer only. Preview uses ReadOnly directly. */
+int EspNativeBspVisibility_positionLeaf(uint32_t spriteIndex,
+    uint16_t x, uint16_t y, uint32_t* outLeaf);
 int EspNativeBspVisibility_positionVisible(
     const EspNativeBspVisibilityState* state, uint32_t spriteIndex,
     uint16_t x, uint16_t y, uint32_t* outLeaf);
