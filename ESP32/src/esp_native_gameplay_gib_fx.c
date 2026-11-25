@@ -1272,3 +1272,9 @@ void EspNativeGameplaySessionCoordinator_reset(void) {
     impactLoggedFrame=0xffU;
     impactUnavailableProbe=0U;
 }
+
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+int EspNativeGameplayGibFx_moveFrameQuiet(void) {
+    return !gibFxOwner.active && !hitFxOwner.active;
+}
+#endif
