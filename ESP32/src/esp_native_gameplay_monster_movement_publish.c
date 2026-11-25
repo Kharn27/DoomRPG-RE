@@ -287,7 +287,8 @@ static uint32_t moveFrameBlockers(void) {
     if (EspNativeDoorAnimator_hasPendingFrames()) mask |= ESP_PERF_MOVE_BLOCK_DOOR;
     if (EspNativeGameplayMonsterAttackVisual_isBusy()) mask |= ESP_PERF_MOVE_BLOCK_ATTACK;
     if (EspNativePlayerPainVisual_isActive(now) || EspNativePlayerPainVisual_expiryDue(now)) mask |= ESP_PERF_MOVE_BLOCK_PAIN;
-    if (EspNativeFirstFrame_indicatorVisible()) mask |= ESP_PERF_MOVE_BLOCK_INDICATOR;
+    /* A visible indicator is not a pending phase change. Its absolute-clock
+     * deadline is checked separately at reuse admission, not witness seeding. */
     if (EspNativeGameplayPresentGate_isArmed()) mask |= ESP_PERF_MOVE_BLOCK_PRESENT;
     if (EspAssetPack_isOpen()) mask |= ESP_PERF_MOVE_BLOCK_PAK;
     if (!EspNativeGameplayMoveEvents_moveFrameQuiet()) mask |= ESP_PERF_MOVE_BLOCK_MOVE_EVENT;
@@ -443,6 +444,7 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
     const uint32_t blockersBefore = moveFrameBlockers();
     const uint32_t nowMs = (uint32_t)(esp_timer_get_time()/1000LL);
     const uint32_t blockers = blockersBefore |
+        (EspNativeFirstFrame_indicatorDue(nowMs) ? ESP_PERF_MOVE_BLOCK_INDICATOR : 0U) |
         (EspNativeSpriteRenderer_ambientDue(nowMs) ? ESP_PERF_MOVE_BLOCK_AMBIENT : 0U);
     const int reused = EspPerfMoveVisibility_tryReuse(
         movement != EspNativeGameplayMonsterMovement_view(),

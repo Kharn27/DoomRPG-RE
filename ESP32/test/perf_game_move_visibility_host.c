@@ -3,6 +3,7 @@
 #include <string.h>
 #include "esp_perf_move_visibility.h"
 #include "esp_native_bsp_visibility.h"
+#include "esp_native_wall_indicator_animation.h"
 static EspNativeBspVisibilityState state;
 static uint16_t liveX;
 static int fault;
@@ -81,6 +82,22 @@ int main(void) {
     start(1,100); EspPerfMoveVisibility_observe(&state,101);
     EspPerfMoveVisibility_end(1);
     assert(!reuse(1,1,160,224,120)); /* multi-frame */
+    /* Green indicator visible, but same original phase: do not reject.
+     * A changed phase must still trigger the normal compositor. */
+    start(1,100); EspPerfMoveVisibility_end(1);
+    assert(!EspNativeWallIndicator_changed(ESP_NATIVE_WALL_INDICATOR_GREEN_BIT,100,110));
+    assert(EspPerfMoveVisibility_tryReuse(1,
+        EspNativeWallIndicator_changed(ESP_NATIVE_WALL_INDICATOR_GREEN_BIT,100,110)
+            ? ESP_PERF_MOVE_BLOCK_INDICATOR : 0U,
+        7,160,32,224,32,110)==DOOMRPG_PERF_MOVE_REUSE);
+    start(1,100); EspPerfMoveVisibility_end(1);
+    assert(EspNativeWallIndicator_changed(ESP_NATIVE_WALL_INDICATOR_GREEN_BIT,100,120));
+    assert(!EspPerfMoveVisibility_tryReuse(1,
+        ESP_PERF_MOVE_BLOCK_INDICATOR | ESP_PERF_MOVE_BLOCK_AMBIENT,
+        7,160,32,224,32,120));
+    /* Red's doubled phase holds across the first raw cadence boundary. */
+    assert(!EspNativeWallIndicator_changed(ESP_NATIVE_WALL_INDICATOR_RED_BIT,300,350));
+    assert(EspNativeWallIndicator_changed(ESP_NATIVE_WALL_INDICATOR_RED_BIT,300,700));
     state.visibleLeaves[0]=3U;
     start(1,100); EspPerfMoveVisibility_end(1);
     assert(!reuse(1,1,160,224,120)); /* visible leaf */

@@ -88,8 +88,8 @@ P2C_WIRING_EDITS = {
             "    outResult->committed = 1U;\n    DRPG_LOGT(\"[MONSTERMOVELIVE] COMMIT"
         ],
         [
-            "    topology = EspMapSpriteTopology_view();",
-            "#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n    if (!reused) EspPerfMoveVisibility_end(frame.finalPresented && moveFrameQuiet() ? 1 : 2);\n#endif\n    topology = EspMapSpriteTopology_view();"
+            "    topology = EspMapSpriteTopology_view();\n    currentPosition = EspNativeGameplayMonsterPosition_find(\n        publishCapture.after.spriteIndex);",
+            "#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n    if (!reused) EspPerfMoveVisibility_end(frame.finalPresented && moveFrameQuiet() ? 1 : 2);\n#endif\n    topology = EspMapSpriteTopology_view();\n    currentPosition = EspNativeGameplayMonsterPosition_find(\n        publishCapture.after.spriteIndex);"
         ],
         [
             "publishCapture.after.worldX, publishCapture.after.worldY, blockersBefore == 0U);",
@@ -106,7 +106,24 @@ P2C_WIRING_EDITS = {
     ]
 }
 
+P2D_WIRING_EDITS = {
+    "esp_native_gameplay_monster_movement_publish.c": [
+        [
+            "    const uint32_t blockers = blockersBefore |\n        (EspNativeFirstFrame_indicatorDue(nowMs) ? ESP_PERF_MOVE_BLOCK_INDICATOR : 0U) |\n        (EspNativeSpriteRenderer_ambientDue(nowMs) ? ESP_PERF_MOVE_BLOCK_AMBIENT : 0U);",
+            "    const uint32_t blockers = blockersBefore |\n        (EspNativeSpriteRenderer_ambientDue(nowMs) ? ESP_PERF_MOVE_BLOCK_AMBIENT : 0U);"
+        ],
+        [
+            "    /* A visible indicator is not a pending phase change. Its absolute-clock\n     * deadline is checked separately at reuse admission, not witness seeding. */\n",
+            "    if (EspNativeFirstFrame_indicatorVisible()) mask |= ESP_PERF_MOVE_BLOCK_INDICATOR;\n"
+        ]
+    ]
+}
+
 def restore_pre_perf_game_p2a(name, data):
+    for newer, older in P2D_WIRING_EDITS.get(name, []):
+        a, b = newer.encode("utf-8"), older.encode("utf-8")
+        assert data.count(a) == 1, (name, "P2d wiring inverse")
+        data = data.replace(a, b, 1)
     for newer, older in P2C_WIRING_EDITS.get(name, []):
         a, b = newer.encode("utf-8"), older.encode("utf-8")
         assert data.count(a) == 1, (name, "P2c wiring inverse")
