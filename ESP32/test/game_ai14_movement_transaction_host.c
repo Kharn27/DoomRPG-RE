@@ -18,6 +18,8 @@ static unsigned int tick = 12345;
 unsigned int DoomRPG_GetTimeMS(void) { return tick; }
 unsigned int DoomRPG_GetUpTimeMS(void) { return tick; }
 void Legacy_DoomRPG_setRand(Random_t*);
+/* Private generator witness: host test only, deliberately absent from public ABI. */
+unsigned int Random_Get(void);
 unsigned int Legacy_Random_Get(void);
 
 enum Fault { OK, NO_MOVE, PREPARE_FAIL, POSITION_FAIL, TOPOLOGY_FAIL, RENDER_FAIL, POST_RENDER_FAIL };
