@@ -19,6 +19,9 @@
 #include "esp_map_runtime.h"
 #include "esp_map_sprite_topology.h"
 #include "esp_native_bsp_visibility.h"
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+#include "esp_perf_move_visibility.h"
+#endif
 #include "esp_native_sprite_visual_legacy.h"
 #include "esp_native_graphics_catalog.h"
 #include "esp_native_gameplay_monster_drop.h"
@@ -1787,6 +1790,9 @@ static int renderImpl(struct Render_s* renderBase,
     profileT2 = esp_timer_get_time();
 #endif
 
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    if (!preview) EspPerfMoveVisibility_observe(&workspace->visibility);
+#endif
     stats.depthNodes = workspace->visibility.nodes;
     stats.depthLeaves = workspace->visibility.leaves;
     stats.depthNodeCulled = workspace->visibility.nodeCull;

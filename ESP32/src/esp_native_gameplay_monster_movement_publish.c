@@ -13,6 +13,9 @@
 #include "esp_map_runtime.h"
 #include "esp_map_sprite_topology.h"
 #include "esp_native_gameplay_frame.h"
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+#include "esp_perf_move_visibility.h"
+#endif
 #include "esp_native_gameplay_monster_movement.h"
 #include "esp_native_gameplay_monster_movement_publish.h"
 #include "esp_native_gameplay_monster_state.h"
@@ -388,9 +391,17 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
     setProjected(publishCapture.after.spriteIndex, 1);
 
     memset(&frame, 0, sizeof(frame));
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    EspPerfMoveVisibility_begin(publishCapture.before.spriteIndex,
+                                publishCapture.before.worldX,
+                                publishCapture.before.worldY);
+#endif
     if (!EspNativeGameplayFrame_renderTurn(EspNativeRootOwners_live()->render,
                                            (uint8_t)player->viewAngle,
                                            &frame)) {
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+        EspPerfMoveVisibility_end(0);
+#endif
         int ownersExact = restorePublishedOwners(&relink, &publishCapture.before,
                                                  &publishCapture.after,
                                                  projectedBefore);
@@ -406,6 +417,9 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
         return 0;
     }
 
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    EspPerfMoveVisibility_end(1);
+#endif
     topology = EspMapSpriteTopology_view();
     currentPosition = EspNativeGameplayMonsterPosition_find(
         publishCapture.after.spriteIndex);
