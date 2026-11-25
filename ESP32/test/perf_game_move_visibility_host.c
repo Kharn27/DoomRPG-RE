@@ -29,14 +29,33 @@ static void start(int quiet,uint32_t ms) {
     EspPerfMoveVisibility_observe(&state,ms);
 }
 static int reuse(int continuation,int quiet,uint16_t x,uint16_t dst,uint32_t ms) {
-    return EspPerfMoveVisibility_tryReuse(continuation,quiet,7,x,32,dst,32,ms);
+    return EspPerfMoveVisibility_tryReuse(continuation,quiet ? 0U : ESP_PERF_MOVE_BLOCK_FEEDBACK,7,x,32,dst,32,ms);
 }
 int main(void) {
     memset(&state,0,sizeof(state));
     state.visibleLeaves[0]=1U;
     start(1,100); EspPerfMoveVisibility_end(1);
     assert(reuse(1,1,160,224,120)==DOOMRPG_PERF_MOVE_REUSE);
-    assert(!reuse(1,1,160,224,121)); /* single-use */
+    assert(!reuse(1,1,160,224,121)); /* cannot re-arm before commit */
+    start(1,100); EspPerfMoveVisibility_end(1);
+    assert(reuse(1,1,160,224,120)==DOOMRPG_PERF_MOVE_REUSE);
+    EspPerfMoveVisibility_commitReuse(1);
+    assert(reuse(1,1,224,160,121)==DOOMRPG_PERF_MOVE_REUSE);
+    EspPerfMoveVisibility_commitReuse(1);
+    assert(!reuse(1,1,160,224,122)); /* maximum two reused goals */
+    start(1,100); EspPerfMoveVisibility_end(1);
+    assert(reuse(1,1,160,224,120)==DOOMRPG_PERF_MOVE_REUSE);
+    EspPerfMoveVisibility_commitReuse(0);
+    assert(!reuse(1,1,224,160,121)); /* owner became busy */
+    start(1,100); EspPerfMoveVisibility_end(1);
+    assert(reuse(1,1,160,224,120)==DOOMRPG_PERF_MOVE_REUSE);
+    EspPerfMoveVisibility_invalidate();
+    EspPerfMoveVisibility_commitReuse(1);
+    assert(!reuse(1,1,224,160,121)); /* rollback invalidates witness */
+    start(1,100); EspPerfMoveVisibility_end(1);
+    assert(reuse(1,1,160,224,120)==DOOMRPG_PERF_MOVE_REUSE);
+    EspPerfMoveVisibility_commitReuse(1);
+    assert(!reuse(1,1,224,160,350)); /* original deadline not renewed */
     start(1,100); EspPerfMoveVisibility_end(1);
     assert(!reuse(0,1,160,224,120)); /* first goal */
     start(1,100); EspPerfMoveVisibility_end(1);
@@ -52,7 +71,7 @@ int main(void) {
     start(1,100); EspPerfMoveVisibility_end(1);
     assert(!reuse(1,1,160,224,99)); /* clock wrap */
     start(1,100); EspPerfMoveVisibility_end(1);
-    assert(!EspPerfMoveVisibility_tryReuse(1,1,7,160,32,224,96,120));
+    assert(!EspPerfMoveVisibility_tryReuse(1,0,7,160,32,224,96,120));
     start(1,100); EspPerfMoveVisibility_noteUnsafe(); EspPerfMoveVisibility_end(1);
     assert(!reuse(1,1,160,224,120));
     start(1,100); EspPerfMoveVisibility_end(0);

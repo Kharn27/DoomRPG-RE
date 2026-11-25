@@ -5,16 +5,30 @@
 #include <string.h>
 
 /* Only the immediately following synchronous continuation may reuse a full
- * frame. A skipped frame never seeds another reuse. No heap or framebuffer. */
+ * frame. A skipped frame can extend the original witness once after commit; never
+ * renew its time budget. No heap or framebuffer. */
 static struct {
     uint32_t leaves[ESP_NATIVE_BSP_VISIBILITY_LEAF_WORDS];
     uint32_t sampleMs;
     uint16_t sprite, x, y, destX, destY;
-    uint8_t armed, samples, classification, quiet, valid;
+    uint8_t armed, samples, classification, quiet, valid, reuseCount, pending;
 } probe;
 static uint32_t total, rejectedBoth, sourceOnly, destOnly, bothVisible, unknown;
 static uint32_t continuations, skipped, fallbackQuiet, fallbackWitness,
     fallbackLeaf, fallbackAge, eligible;
+static uint32_t blockerCounts[ESP_PERF_MOVE_BLOCK_COUNT], chained;
+
+void EspPerfMoveVisibility_invalidate(void) {
+    probe.armed = 0U;
+    probe.valid = 0U;
+    probe.pending = 0U;
+}
+
+void EspPerfMoveVisibility_commitReuse(int quiet) {
+    if (!probe.pending) return;
+    probe.pending = 0U;
+    probe.valid = (uint8_t)(quiet && probe.reuseCount < 2U);
+}
 
 void EspPerfMoveVisibility_begin(uint16_t sprite, uint16_t x, uint16_t y,
     uint16_t destX, uint16_t destY, int quiet) {
@@ -24,6 +38,8 @@ void EspPerfMoveVisibility_begin(uint16_t sprite, uint16_t x, uint16_t y,
     probe.destX = destX;
     probe.destY = destY;
     probe.samples = 0;
+    probe.reuseCount = 0U;
+    probe.pending = 0U;
     probe.classification = 4;
     probe.quiet = (uint8_t)(quiet != 0);
     probe.valid = 0;
@@ -71,16 +87,26 @@ void EspPerfMoveVisibility_end(int rendered) {
             (unsigned)fallbackQuiet,(unsigned)fallbackWitness,
             (unsigned)fallbackLeaf,(unsigned)fallbackAge,
             DOOMRPG_PERF_MOVE_REUSE ? "fast" : "shadow");
+        printf("[PERFGAMEP2C] chained=%u blockers(world/automap/hub/touch/modal/door/attack/pain/indicator/present/pak/moveEvent/feedback/fx/pickup/ambient)=", (unsigned)chained);
+        for (uint32_t i=0U; i<ESP_PERF_MOVE_BLOCK_COUNT; ++i)
+            printf("%s%u", i ? "/" : "", (unsigned)blockerCounts[i]);
+        printf(" cumulative=yes\n");
     }
 }
-int EspPerfMoveVisibility_tryReuse(int continuation, int quiet, uint16_t sprite,
+int EspPerfMoveVisibility_tryReuse(int continuation, uint32_t blockers, uint16_t sprite,
     uint16_t oldX, uint16_t oldY, uint16_t newX, uint16_t newY, uint32_t nowMs) {
     const int valid = probe.valid;
     uint32_t oldLeaf = UINT32_MAX, newLeaf = UINT32_MAX;
     probe.valid = 0;
+    probe.pending = 0U;
     if (!continuation) return 0;
     ++continuations;
-    if (!quiet) { ++fallbackQuiet; return 0; }
+    if (blockers != 0U) {
+        ++fallbackQuiet;
+        for (uint32_t i=0U; i<ESP_PERF_MOVE_BLOCK_COUNT; ++i)
+            if (blockers & (1U<<i)) ++blockerCounts[i];
+        return 0;
+    }
     if (!valid || sprite != probe.sprite ||
         oldX != probe.destX || oldY != probe.destY) {
         ++fallbackWitness; return 0;
@@ -102,6 +128,11 @@ int EspPerfMoveVisibility_tryReuse(int continuation, int quiet, uint16_t sprite,
     ++eligible;
     if (!DOOMRPG_PERF_MOVE_REUSE) return 0;
     ++skipped;
+    if (probe.reuseCount != 0U) ++chained;
+    ++probe.reuseCount;
+    probe.destX = newX;
+    probe.destY = newY;
+    probe.pending = 1U;
     printf("[PERFGAMEP2B] REUSE sprite=%u leaf=%u source=%u,%u dest=%u,%u skipped=%u continuation=%u mode=fast\n",
         (unsigned)sprite,(unsigned)oldLeaf,(unsigned)oldX,(unsigned)oldY,
         (unsigned)newX,(unsigned)newY,(unsigned)skipped,(unsigned)continuations);

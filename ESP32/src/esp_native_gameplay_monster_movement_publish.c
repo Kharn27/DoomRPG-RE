@@ -274,27 +274,27 @@ static int restorePublishedOwners(
 }
 
 #if defined(ARDUINO) && defined(DOOMRPG_ESP32)
-static int moveFrameQuiet(void) {
+/* Evaluate every read-only owner instead of hiding later blockers behind
+ * short-circuit evaluation. The bit mask preserves the P2b admission rule. */
+static uint32_t moveFrameBlockers(void) {
     const uint32_t now = DoomRPG_GetUpTimeMS();
-    return EspNativeResidentGameplay_isActive() &&
-           EspNativeResidentGameplay_ownsWorldPresent() &&
-           !EspNativeResidentGameplay_isAutomapActive() &&
-           !EspNativeGameplayHub_isActive() &&
-           !EspNativeGameplayControls_isActive() &&
-           !EspNativeGameplayLevelUp_isActive() &&
-           !EspNativeGameplayTransition_isWaitingStats() &&
-           !EspNativeTransitionPresentation_isLoadingActive() &&
-           !EspNativeDoorAnimator_hasPendingFrames() &&
-           !EspNativeGameplayMonsterAttackVisual_isBusy() &&
-           !EspNativePlayerPainVisual_isActive(now) &&
-           !EspNativePlayerPainVisual_expiryDue(now) &&
-           !EspNativeFirstFrame_indicatorVisible() &&
-           !EspNativeGameplayPresentGate_isArmed() &&
-           !EspAssetPack_isOpen() &&
-           EspNativeGameplayMoveEvents_moveFrameQuiet() &&
-           EspNativeGameplayActionEngine_moveFrameQuiet() &&
-           EspNativeGameplayGibFx_moveFrameQuiet() &&
-           EspPickupMini_moveFrameQuiet();
+    uint32_t mask = 0U;
+    if (!EspNativeResidentGameplay_isActive() || !EspNativeResidentGameplay_ownsWorldPresent()) mask |= ESP_PERF_MOVE_BLOCK_WORLD;
+    if (EspNativeResidentGameplay_isAutomapActive()) mask |= ESP_PERF_MOVE_BLOCK_AUTOMAP;
+    if (EspNativeGameplayHub_isActive()) mask |= ESP_PERF_MOVE_BLOCK_HUB;
+    if (EspNativeGameplayControls_isActive()) mask |= ESP_PERF_MOVE_BLOCK_TOUCH;
+    if (EspNativeGameplayLevelUp_isActive() || EspNativeGameplayTransition_isWaitingStats() || EspNativeTransitionPresentation_isLoadingActive()) mask |= ESP_PERF_MOVE_BLOCK_MODAL;
+    if (EspNativeDoorAnimator_hasPendingFrames()) mask |= ESP_PERF_MOVE_BLOCK_DOOR;
+    if (EspNativeGameplayMonsterAttackVisual_isBusy()) mask |= ESP_PERF_MOVE_BLOCK_ATTACK;
+    if (EspNativePlayerPainVisual_isActive(now) || EspNativePlayerPainVisual_expiryDue(now)) mask |= ESP_PERF_MOVE_BLOCK_PAIN;
+    if (EspNativeFirstFrame_indicatorVisible()) mask |= ESP_PERF_MOVE_BLOCK_INDICATOR;
+    if (EspNativeGameplayPresentGate_isArmed()) mask |= ESP_PERF_MOVE_BLOCK_PRESENT;
+    if (EspAssetPack_isOpen()) mask |= ESP_PERF_MOVE_BLOCK_PAK;
+    if (!EspNativeGameplayMoveEvents_moveFrameQuiet()) mask |= ESP_PERF_MOVE_BLOCK_MOVE_EVENT;
+    if (!EspNativeGameplayActionEngine_moveFrameQuiet()) mask |= ESP_PERF_MOVE_BLOCK_FEEDBACK;
+    if (!EspNativeGameplayGibFx_moveFrameQuiet()) mask |= ESP_PERF_MOVE_BLOCK_FX;
+    if (!EspPickupMini_moveFrameQuiet()) mask |= ESP_PERF_MOVE_BLOCK_PICKUP;
+    return mask;
 }
 #endif
 
@@ -438,13 +438,15 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
 
     memset(&frame, 0, sizeof(frame));
 #if defined(ARDUINO) && defined(DOOMRPG_ESP32)
-    /* First goal always renders. Only a synchronous synthetic ThreeGoal
-     * continuation can consume the one-shot prior full-frame witness. */
-    const int quietBefore = moveFrameQuiet();
+    /* First goal always renders. Only the synchronous ThreeGoal chain
+     * may borrow the original settled-frame witness for at most two goals. */
+    const uint32_t blockersBefore = moveFrameBlockers();
     const uint32_t nowMs = (uint32_t)(esp_timer_get_time()/1000LL);
+    const uint32_t blockers = blockersBefore |
+        (EspNativeSpriteRenderer_ambientDue(nowMs) ? ESP_PERF_MOVE_BLOCK_AMBIENT : 0U);
     const int reused = EspPerfMoveVisibility_tryReuse(
         movement != EspNativeGameplayMonsterMovement_view(),
-        quietBefore && !EspNativeSpriteRenderer_ambientDue(nowMs),
+        blockers,
         publishCapture.before.spriteIndex,
         publishCapture.before.worldX, publishCapture.before.worldY,
         publishCapture.after.worldX, publishCapture.after.worldY, nowMs);
@@ -453,7 +455,7 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
     } else {
         EspPerfMoveVisibility_begin(publishCapture.before.spriteIndex,
             publishCapture.before.worldX, publishCapture.before.worldY,
-            publishCapture.after.worldX, publishCapture.after.worldY, quietBefore);
+            publishCapture.after.worldX, publishCapture.after.worldY, blockersBefore == 0U);
     }
     if (!reused &&
 #else
@@ -480,9 +482,6 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
         return 0;
     }
 
-#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
-    if (!reused) EspPerfMoveVisibility_end(frame.finalPresented && moveFrameQuiet() ? 1 : 2);
-#endif
     topology = EspMapSpriteTopology_view();
     currentPosition = EspNativeGameplayMonsterPosition_find(
         publishCapture.after.spriteIndex);
@@ -503,6 +502,9 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
         (*EspNativeProcessRng_live()) = replayStart;
         recoveryRendered = recoveryRedraw(doomRpg, player, &recoveryFrame);
         outResult->recoveryRendered = (uint8_t)(recoveryRendered != 0);
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+        EspPerfMoveVisibility_invalidate();
+#endif
         printf("[MONSTERMOVELIVE] ROLLBACK sprite=%u cause=post-render-owner-mismatch ownersExact=%s recoveryRender=%s mutation=no\n",
                (unsigned int)publishCapture.after.spriteIndex,
                ownersExact ? "yes" : "NO",
@@ -521,6 +523,9 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
             (*EspNativeProcessRng_live()) = replayStart;
             recoveryRendered = recoveryRedraw(doomRpg, player, &recoveryFrame);
             outResult->recoveryRendered = (uint8_t)(recoveryRendered != 0);
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+            EspPerfMoveVisibility_invalidate();
+#endif
             printf("[MONSTERMOVELIVE] ROLLBACK sprite=%u cause=rng-boundary-close ownersExact=%s recoveryRender=%s mutation=no\n",
                    (unsigned int)publishCapture.after.spriteIndex,
                    ownersExact ? "yes" : "NO",
@@ -535,6 +540,11 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
     outResult->topologyFNVAfter = topology != NULL ? topology->stateFNV1a : 0U;
     outResult->rngCalls = rngCalls;
     outResult->committed = 1U;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    /* Seed/re-arm only after all topology/position/RNG checks have closed. */
+    if (reused) EspPerfMoveVisibility_commitReuse(moveFrameBlockers() == 0U);
+    else EspPerfMoveVisibility_end(frame.finalPresented && moveFrameBlockers() == 0U ? 1 : 2);
+#endif
     DRPG_LOGT("[MONSTERMOVELIVE] COMMIT trigger=%s sprite=%u tile=%u->%u pos=%u,%u->%u,%u rngCalls=%u randomCommitted=yes positionFNV=%08x->%08x topologyFNV=%08x->%08x linkOrder=%u->%u renderer=snap-destination projected=yes frame=%08x presented=%u interpolation=deferred rollback=closed\n",
            trigger,
            (unsigned int)publishCapture.before.spriteIndex,

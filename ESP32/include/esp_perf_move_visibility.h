@@ -5,6 +5,25 @@ struct EspNativeBspVisibilityState_s;
 #ifndef DOOMRPG_PERF_MOVE_REUSE
 #define DOOMRPG_PERF_MOVE_REUSE 1
 #endif
+#define ESP_PERF_MOVE_BLOCK_WORLD (1U << 0U)
+#define ESP_PERF_MOVE_BLOCK_AUTOMAP (1U << 1U)
+#define ESP_PERF_MOVE_BLOCK_HUB (1U << 2U)
+#define ESP_PERF_MOVE_BLOCK_TOUCH (1U << 3U)
+#define ESP_PERF_MOVE_BLOCK_MODAL (1U << 4U)
+#define ESP_PERF_MOVE_BLOCK_DOOR (1U << 5U)
+#define ESP_PERF_MOVE_BLOCK_ATTACK (1U << 6U)
+#define ESP_PERF_MOVE_BLOCK_PAIN (1U << 7U)
+#define ESP_PERF_MOVE_BLOCK_INDICATOR (1U << 8U)
+#define ESP_PERF_MOVE_BLOCK_PRESENT (1U << 9U)
+#define ESP_PERF_MOVE_BLOCK_PAK (1U << 10U)
+#define ESP_PERF_MOVE_BLOCK_MOVE_EVENT (1U << 11U)
+#define ESP_PERF_MOVE_BLOCK_FEEDBACK (1U << 12U)
+#define ESP_PERF_MOVE_BLOCK_FX (1U << 13U)
+#define ESP_PERF_MOVE_BLOCK_PICKUP (1U << 14U)
+#define ESP_PERF_MOVE_BLOCK_AMBIENT (1U << 15U)
+#define ESP_PERF_MOVE_BLOCK_COUNT 16U
+void EspPerfMoveVisibility_invalidate(void);
+void EspPerfMoveVisibility_commitReuse(int quiet);
 void EspPerfMoveVisibility_begin(uint16_t sprite, uint16_t x, uint16_t y,
     uint16_t destX, uint16_t destY, int quiet);
 void EspPerfMoveVisibility_observe(const struct EspNativeBspVisibilityState_s* state,
@@ -12,6 +31,6 @@ void EspPerfMoveVisibility_observe(const struct EspNativeBspVisibilityState_s* s
 void EspPerfMoveVisibility_noteUnsafe(void);
 /* 0 failed, 1 successful and reusable, 2 successful but not reusable. */
 void EspPerfMoveVisibility_end(int rendered);
-int EspPerfMoveVisibility_tryReuse(int continuation, int quiet, uint16_t sprite,
+int EspPerfMoveVisibility_tryReuse(int continuation, uint32_t blockers, uint16_t sprite,
     uint16_t oldX, uint16_t oldY, uint16_t newX, uint16_t newY, uint32_t nowMs);
 #endif

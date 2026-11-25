@@ -73,7 +73,44 @@ P2B_WIRING_EDITS = {
     ]
 }
 
+P2C_WIRING_EDITS = {
+    "esp_native_gameplay_monster_movement_publish.c": [
+        [
+            "#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n            EspPerfMoveVisibility_invalidate();\n#endif\n            printf(\"[MONSTERMOVELIVE] ROLLBACK sprite=%u cause=rng-boundary-close",
+            "            printf(\"[MONSTERMOVELIVE] ROLLBACK sprite=%u cause=rng-boundary-close"
+        ],
+        [
+            "#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n        EspPerfMoveVisibility_invalidate();\n#endif\n        printf(\"[MONSTERMOVELIVE] ROLLBACK sprite=%u cause=post-render-owner-mismatch",
+            "        printf(\"[MONSTERMOVELIVE] ROLLBACK sprite=%u cause=post-render-owner-mismatch"
+        ],
+        [
+            "    outResult->committed = 1U;\n#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n    /* Seed/re-arm only after all topology/position/RNG checks have closed. */\n    if (reused) EspPerfMoveVisibility_commitReuse(moveFrameBlockers() == 0U);\n    else EspPerfMoveVisibility_end(frame.finalPresented && moveFrameBlockers() == 0U ? 1 : 2);\n#endif\n    DRPG_LOGT(\"[MONSTERMOVELIVE] COMMIT",
+            "    outResult->committed = 1U;\n    DRPG_LOGT(\"[MONSTERMOVELIVE] COMMIT"
+        ],
+        [
+            "    topology = EspMapSpriteTopology_view();",
+            "#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n    if (!reused) EspPerfMoveVisibility_end(frame.finalPresented && moveFrameQuiet() ? 1 : 2);\n#endif\n    topology = EspMapSpriteTopology_view();"
+        ],
+        [
+            "publishCapture.after.worldX, publishCapture.after.worldY, blockersBefore == 0U);",
+            "publishCapture.after.worldX, publishCapture.after.worldY, quietBefore);"
+        ],
+        [
+            "    /* First goal always renders. Only the synchronous ThreeGoal chain\n     * may borrow the original settled-frame witness for at most two goals. */\n    const uint32_t blockersBefore = moveFrameBlockers();\n    const uint32_t nowMs = (uint32_t)(esp_timer_get_time()/1000LL);\n    const uint32_t blockers = blockersBefore |\n        (EspNativeSpriteRenderer_ambientDue(nowMs) ? ESP_PERF_MOVE_BLOCK_AMBIENT : 0U);\n    const int reused = EspPerfMoveVisibility_tryReuse(\n        movement != EspNativeGameplayMonsterMovement_view(),\n        blockers,",
+            "    /* First goal always renders. Only a synchronous synthetic ThreeGoal\n     * continuation can consume the one-shot prior full-frame witness. */\n    const int quietBefore = moveFrameQuiet();\n    const uint32_t nowMs = (uint32_t)(esp_timer_get_time()/1000LL);\n    const int reused = EspPerfMoveVisibility_tryReuse(\n        movement != EspNativeGameplayMonsterMovement_view(),\n        quietBefore && !EspNativeSpriteRenderer_ambientDue(nowMs),"
+        ],
+        [
+            "/* Evaluate every read-only owner instead of hiding later blockers behind\n * short-circuit evaluation. The bit mask preserves the P2b admission rule. */\nstatic uint32_t moveFrameBlockers(void) {\n    const uint32_t now = DoomRPG_GetUpTimeMS();\n    uint32_t mask = 0U;\n    if (!EspNativeResidentGameplay_isActive() || !EspNativeResidentGameplay_ownsWorldPresent()) mask |= ESP_PERF_MOVE_BLOCK_WORLD;\n    if (EspNativeResidentGameplay_isAutomapActive()) mask |= ESP_PERF_MOVE_BLOCK_AUTOMAP;\n    if (EspNativeGameplayHub_isActive()) mask |= ESP_PERF_MOVE_BLOCK_HUB;\n    if (EspNativeGameplayControls_isActive()) mask |= ESP_PERF_MOVE_BLOCK_TOUCH;\n    if (EspNativeGameplayLevelUp_isActive() || EspNativeGameplayTransition_isWaitingStats() || EspNativeTransitionPresentation_isLoadingActive()) mask |= ESP_PERF_MOVE_BLOCK_MODAL;\n    if (EspNativeDoorAnimator_hasPendingFrames()) mask |= ESP_PERF_MOVE_BLOCK_DOOR;\n    if (EspNativeGameplayMonsterAttackVisual_isBusy()) mask |= ESP_PERF_MOVE_BLOCK_ATTACK;\n    if (EspNativePlayerPainVisual_isActive(now) || EspNativePlayerPainVisual_expiryDue(now)) mask |= ESP_PERF_MOVE_BLOCK_PAIN;\n    if (EspNativeFirstFrame_indicatorVisible()) mask |= ESP_PERF_MOVE_BLOCK_INDICATOR;\n    if (EspNativeGameplayPresentGate_isArmed()) mask |= ESP_PERF_MOVE_BLOCK_PRESENT;\n    if (EspAssetPack_isOpen()) mask |= ESP_PERF_MOVE_BLOCK_PAK;\n    if (!EspNativeGameplayMoveEvents_moveFrameQuiet()) mask |= ESP_PERF_MOVE_BLOCK_MOVE_EVENT;\n    if (!EspNativeGameplayActionEngine_moveFrameQuiet()) mask |= ESP_PERF_MOVE_BLOCK_FEEDBACK;\n    if (!EspNativeGameplayGibFx_moveFrameQuiet()) mask |= ESP_PERF_MOVE_BLOCK_FX;\n    if (!EspPickupMini_moveFrameQuiet()) mask |= ESP_PERF_MOVE_BLOCK_PICKUP;\n    return mask;\n}",
+            "static int moveFrameQuiet(void) {\n    const uint32_t now = DoomRPG_GetUpTimeMS();\n    return EspNativeResidentGameplay_isActive() &&\n           EspNativeResidentGameplay_ownsWorldPresent() &&\n           !EspNativeResidentGameplay_isAutomapActive() &&\n           !EspNativeGameplayHub_isActive() &&\n           !EspNativeGameplayControls_isActive() &&\n           !EspNativeGameplayLevelUp_isActive() &&\n           !EspNativeGameplayTransition_isWaitingStats() &&\n           !EspNativeTransitionPresentation_isLoadingActive() &&\n           !EspNativeDoorAnimator_hasPendingFrames() &&\n           !EspNativeGameplayMonsterAttackVisual_isBusy() &&\n           !EspNativePlayerPainVisual_isActive(now) &&\n           !EspNativePlayerPainVisual_expiryDue(now) &&\n           !EspNativeFirstFrame_indicatorVisible() &&\n           !EspNativeGameplayPresentGate_isArmed() &&\n           !EspAssetPack_isOpen() &&\n           EspNativeGameplayMoveEvents_moveFrameQuiet() &&\n           EspNativeGameplayActionEngine_moveFrameQuiet() &&\n           EspNativeGameplayGibFx_moveFrameQuiet() &&\n           EspPickupMini_moveFrameQuiet();\n}"
+        ]
+    ]
+}
+
 def restore_pre_perf_game_p2a(name, data):
+    for newer, older in P2C_WIRING_EDITS.get(name, []):
+        a, b = newer.encode("utf-8"), older.encode("utf-8")
+        assert data.count(a) == 1, (name, "P2c wiring inverse")
+        data = data.replace(a, b, 1)
     for newer, older in P2B_WIRING_EDITS.get(name, []):
         a, b = newer.encode("utf-8"), older.encode("utf-8")
         assert data.count(a) == 1, (name, "P2b wiring inverse")
