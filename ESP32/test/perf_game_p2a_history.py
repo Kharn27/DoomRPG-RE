@@ -159,7 +159,28 @@ P2F_WIRING_EDITS = {
     ]
 }
 
+P2G_WIRING_EDITS = {
+    "esp_native_sprite_renderer.c": [
+        [
+            "                y = EspNativeSpriteMask_runEnd(bits, y, frame->height, 0);\n                if (y >= frame->height) break;\n\n                start = y;\n                texelBase = cursor;\n                y = EspNativeSpriteMask_runEnd(bits, y, frame->height, 1);\n                length = y - start;\n                cursor += (uint32_t)length;",
+            "                while (y < frame->height &&\n                       (bits[y / 8] & (1U << (y & 7))) == 0U) {\n                    ++y;\n                }\n                if (y >= frame->height) break;\n\n                start = y;\n                texelBase = cursor;\n                while (y < frame->height &&\n                       (bits[y / 8] & (1U << (y & 7))) != 0U) {\n                    ++cursor;\n                    ++y;\n                }\n\n                length = y - start;"
+        ],
+        [
+            "        active += EspNativeSpriteMask_countColumn(\n            column, (unsigned)frame->height);",
+            "        int y;\n        for (y = 0; y < frame->height; ++y) {\n            if ((column[y / 8] & (1U << (y & 7))) != 0U) ++active;\n        }"
+        ],
+        [
+            "#include \"esp_native_ambient_sprite.h\"\n#include \"esp_native_sprite_mask.h\"",
+            "#include \"esp_native_ambient_sprite.h\""
+        ]
+    ]
+}
+
 def restore_pre_perf_game_p2a(name, data):
+    for newer, older in P2G_WIRING_EDITS.get(name, []):
+        a, b = newer.encode("utf-8"), older.encode("utf-8")
+        assert data.count(a) == 1, (name, "P2g wiring inverse")
+        data = data.replace(a, b, 1)
     for newer, older in P2F_WIRING_EDITS.get(name, []):
         a, b = newer.encode("utf-8"), older.encode("utf-8")
         assert data.count(a) == 1, (name, "P2f wiring inverse")

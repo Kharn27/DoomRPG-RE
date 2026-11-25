@@ -726,6 +726,10 @@ jobs:
 
       - name: Test CROSS billboards share exactly one frame load (host C)
         run: python ESP32/test/native_cross_frame_reuse_host.py
+      - name: PERF-GAME-P2g packed sprite mask parity
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -I ESP32/include ESP32/test/perf_game_sprite_mask_host.c -o /tmp/doomrpg-perf-mask
+          /tmp/doomrpg-perf-mask
 
       - name: Test input dispatch without 120ms touch cooldown (host Python)
         run: python ESP32/test/native_input_latency_host.py

@@ -30,6 +30,7 @@
 #include "esp_native_sprite_renderer.h"
 #include "esp_native_fire_visual.h"
 #include "esp_native_ambient_sprite.h"
+#include "esp_native_sprite_mask.h"
 #include "esp_native_first_frame.h"
 #include "esp_player_view_state.h"
 #include "platform_video_config.h"
@@ -549,10 +550,8 @@ static int loadFrame(const Sources* sources,
     frame->prefix[0] = 0U;
     for (x = 0U; x < (uint32_t)frame->width; ++x) {
         const uint8_t* column = frame->mask + x * (uint32_t)frame->pitch;
-        int y;
-        for (y = 0; y < frame->height; ++y) {
-            if ((column[y / 8] & (1U << (y & 7))) != 0U) ++active;
-        }
+        active += EspNativeSpriteMask_countColumn(
+            column, (unsigned)frame->height);
         frame->prefix[x + 1U] = (uint16_t)active;
     }
 
@@ -983,21 +982,14 @@ static int spans(Render_t* render,
                 int64_t position;
                 uint16_t* destination;
 
-                while (y < frame->height &&
-                       (bits[y / 8] & (1U << (y & 7))) == 0U) {
-                    ++y;
-                }
+                y = EspNativeSpriteMask_runEnd(bits, y, frame->height, 0);
                 if (y >= frame->height) break;
 
                 start = y;
                 texelBase = cursor;
-                while (y < frame->height &&
-                       (bits[y / 8] & (1U << (y & 7))) != 0U) {
-                    ++cursor;
-                    ++y;
-                }
-
+                y = EspNativeSpriteMask_runEnd(bits, y, frame->height, 1);
                 length = y - start;
+                cursor += (uint32_t)length;
                 worldY = (64 - (frame->yMin + start)) - render->viewZ;
                 pixels = (length * depth) >> 17;
                 screenY = EspNativeRenderGeometry_halfScreenHeight(render->screenHeight) - ((worldY * depth) >> 17);
