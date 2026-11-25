@@ -1434,6 +1434,10 @@ static int drawAt(Render_t* render,
     animation = EspNativeAmbientSprite_frame(parent->info,entityType,
                                               entitySubtype,
                                               parent->index,ambientSampleMs);
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    EspPerfMoveVisibility_noteAmbientPhase(parent->info, entityType,
+        entitySubtype, parent->index, ambientSampleMs);
+#endif
     /* All four CROSS billboards use the same immutable logical frame and
      * one presentation clock sample. Reuse the caller-owned Frame only
      * within this four-copy group; never retain pixels or PAK offsets

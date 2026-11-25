@@ -40,6 +40,12 @@ void EspPerfMoveVisibility_begin(uint16_t sprite, uint16_t x, uint16_t y,
     uint16_t destX, uint16_t destY, int quiet);
 void EspPerfMoveVisibility_observe(const struct EspNativeBspVisibilityState_s* state,
     uint32_t sampleMs);
+/* Absolute phase window for every drawn/culled admitted billboard,
+ * including glow and CROSS copies. A phase deadline never renews on reuse. */
+void EspPerfMoveVisibility_noteAmbientPhase(uint32_t info, uint8_t type,
+    uint8_t subtype, uint16_t index, uint32_t sampleMs);
+/* Every non-movement compositor invalidates the old scene witness. */
+void EspPerfMoveVisibility_frameStarted(int preview);
 void EspPerfMoveVisibility_noteUnsafe(void);
 /* 0 failed, 1 successful and reusable, 2 successful but not reusable. */
 void EspPerfMoveVisibility_end(int rendered);

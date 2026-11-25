@@ -140,7 +140,30 @@ P2E_WIRING_EDITS = {
     ]
 }
 
+P2F_WIRING_EDITS = {
+    "esp_native_sprite_renderer.c": [
+        [
+            "    animation = EspNativeAmbientSprite_frame(parent->info,entityType,\n                                              entitySubtype,\n                                              parent->index,ambientSampleMs);\n#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n    EspPerfMoveVisibility_noteAmbientPhase(parent->info, entityType,\n        entitySubtype, parent->index, ambientSampleMs);\n#endif",
+            "    animation = EspNativeAmbientSprite_frame(parent->info,entityType,\n                                              entitySubtype,\n                                              parent->index,ambientSampleMs);"
+        ]
+    ],
+    "esp_native_gameplay_frame.c": [
+        [
+            "#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n    EspPerfMoveVisibility_frameStarted(preview);\n#endif\n    if (outStats != NULL) memset(outStats, 0, sizeof(*outStats));\n    if (frameScratch.busy) return 0;",
+            "    if (outStats != NULL) memset(outStats, 0, sizeof(*outStats));\n    if (frameScratch.busy) return 0;"
+        ],
+        [
+            "#include \"esp_audio_entrance_music.h\"\n#include \"esp_perf_move_visibility.h\"\n#endif",
+            "#include \"esp_audio_entrance_music.h\"\n#endif"
+        ]
+    ]
+}
+
 def restore_pre_perf_game_p2a(name, data):
+    for newer, older in P2F_WIRING_EDITS.get(name, []):
+        a, b = newer.encode("utf-8"), older.encode("utf-8")
+        assert data.count(a) == 1, (name, "P2f wiring inverse")
+        data = data.replace(a, b, 1)
     for newer, older in P2E_WIRING_EDITS.get(name, []):
         a, b = newer.encode("utf-8"), older.encode("utf-8")
         assert data.count(a) == 1, (name, "P2e wiring inverse")

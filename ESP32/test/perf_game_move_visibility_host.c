@@ -117,6 +117,39 @@ int main(void) {
     assert(!EspPerfMoveVisibility_firstShadowBegin(&ctx,0U,7,160,32,224,32,370));
     EspPerfMoveVisibility_invalidate();
     assert(!EspPerfMoveVisibility_firstShadowBegin(&ctx,0U,7,160,32,224,32,130));
+    /* Actual staggered phase, not elapsed idle cadence. Fire index 18:
+     * sampled clock 100+144=244 -> next phase in exactly 6 ms. */
+    start(1,100);
+    EspPerfMoveVisibility_noteAmbientPhase(0U,10U,0U,18U,100U);
+    EspPerfMoveVisibility_end(1);
+    assert(reuse(1,1,160,224,105)==DOOMRPG_PERF_MOVE_REUSE);
+    start(1,100);
+    EspPerfMoveVisibility_noteAmbientPhase(0U,10U,0U,18U,100U);
+    EspPerfMoveVisibility_end(1);
+    assert(!reuse(1,1,160,224,106));
+    /* Earliest of multiple candidates; subtype4 uses index, not index*8. */
+    start(1,100);
+    EspPerfMoveVisibility_noteAmbientPhase(0U,1U,4U,145U,100U);
+    EspPerfMoveVisibility_noteAmbientPhase(0U,10U,0U,18U,100U);
+    EspPerfMoveVisibility_end(1);
+    assert(!reuse(1,1,160,224,105));
+    /* Fixed sprites contribute no deadline. */
+    start(1,100);
+    EspPerfMoveVisibility_noteAmbientPhase(0x80000000UL,10U,0U,18U,100U);
+    EspPerfMoveVisibility_end(1);
+    assert(reuse(1,1,160,224,106)==DOOMRPG_PERF_MOVE_REUSE);
+    /* An unrelated preview or composition invalidates the prior witness. */
+    start(1,100); EspPerfMoveVisibility_end(1);
+    EspPerfMoveVisibility_frameStarted(1);
+    assert(!reuse(1,1,160,224,120));
+    start(1,100);
+    EspPerfMoveVisibility_frameStarted(1);
+    EspPerfMoveVisibility_end(1);
+    assert(!reuse(1,1,160,224,120));
+    start(1,100); EspPerfMoveVisibility_end(1);
+    EspPerfMoveVisibility_rememberContext(&ctx);
+    EspPerfMoveVisibility_frameStarted(0);
+    assert(!EspPerfMoveVisibility_firstShadowBegin(&ctx,0U,7,160,32,224,32,120));
     state.visibleLeaves[0]=3U;
     start(1,100); EspPerfMoveVisibility_end(1);
     assert(!reuse(1,1,160,224,120)); /* visible leaf */

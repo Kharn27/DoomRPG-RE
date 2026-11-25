@@ -1,5 +1,6 @@
 #include "esp_perf_move_visibility.h"
 #include "esp_native_bsp_visibility.h"
+#include "esp_native_ambient_sprite.h"
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
@@ -9,7 +10,7 @@
  * renew its time budget. No heap or framebuffer. */
 static struct {
     uint32_t leaves[ESP_NATIVE_BSP_VISIBILITY_LEAF_WORDS];
-    uint32_t sampleMs;
+    uint32_t sampleMs, phaseWindow;
     uint16_t sprite, x, y, destX, destY;
     uint8_t armed, samples, classification, quiet, valid, reuseCount, pending;
 } probe;
@@ -26,6 +27,8 @@ static uint32_t firstAttempts, firstCandidates, firstNoWitness, firstBlocked,
     firstContextMismatch, firstAge, firstLeaf, firstChecked, firstConfirmed,
     firstDisagreed, firstPixelChanged, firstSideEffects, firstQuietAfter,
     firstUnchanged, firstCurrentRejected, firstCurrentEqual;
+static uint32_t firstPhaseRejected, continuationPhaseRejected, firstPhaseCrossed,
+    firstChangedAcrossPhase, unrelatedFrames, firstPriorSample, firstPriorWindow;
 
 void EspPerfMoveVisibility_rememberContext(const EspPerfMoveVisibilityContext* context) {
     contextValid = (uint8_t)(context != NULL);
@@ -48,6 +51,9 @@ int EspPerfMoveVisibility_firstShadowBegin(const EspPerfMoveVisibilityContext* c
     if (nowMs < probe.sampleMs || nowMs - probe.sampleMs >= 250U) {
         ++firstAge; return 0;
     }
+    if (nowMs - probe.sampleMs >= probe.phaseWindow) {
+        ++firstPhaseRejected; return 0;
+    }
     if ((oldX != newX && oldY != newY) ||
         !EspNativeBspVisibility_positionLeaf(sprite, oldX, oldY, &oldLeaf) ||
         !EspNativeBspVisibility_positionLeaf(sprite, newX, newY, &newLeaf) ||
@@ -56,6 +62,8 @@ int EspPerfMoveVisibility_firstShadowBegin(const EspPerfMoveVisibilityContext* c
         ++firstLeaf; return 0;
     }
     ++firstCandidates;
+    firstPriorSample = probe.sampleMs;
+    firstPriorWindow = probe.phaseWindow;
     firstPredicted = 1U;
     return 1;
 }
@@ -73,13 +81,19 @@ void EspPerfMoveVisibility_firstShadowEnd(int rendered, uint32_t beforeFNV,
             ++firstConfirmed;
         else ++firstDisagreed;
         if (beforeFNV == 0U || beforeFNV != afterFNV) ++firstPixelChanged;
+        if (probe.samples == 1U && probe.sampleMs >= firstPriorSample &&
+            probe.sampleMs - firstPriorSample >= firstPriorWindow) {
+            ++firstPhaseCrossed;
+            if (beforeFNV == 0U || beforeFNV != afterFNV)
+                ++firstChangedAcrossPhase;
+        }
         if (sideEffects || !probe.quiet) ++firstSideEffects;
         if (!quietAfter) ++firstQuietAfter;
         if (rendered && probe.samples == 1U && probe.classification == 0U &&
             beforeFNV != 0U && beforeFNV == afterFNV &&
             !sideEffects && probe.quiet && quietAfter) ++firstUnchanged;
     }
-    if ((firstAttempts & 15U) == 0U)
+    if ((firstAttempts & 15U) == 0U) {
         printf("[PERFGAMEP2E] first=%u candidates=%u blocked=%u noWitness=%u context=%u age=%u leaf=%u checked=%u confirmed=%u disagreed=%u pixelChanged=%u sideEffects=%u busyAfter=%u unchanged=%u currentRejected=%u currentEqual=%u mode=shadow firstSkipped=0 cumulative=yes\n",
             (unsigned)firstAttempts,(unsigned)firstCandidates,(unsigned)firstBlocked,
             (unsigned)firstNoWitness,(unsigned)firstContextMismatch,(unsigned)firstAge,
@@ -87,6 +101,11 @@ void EspPerfMoveVisibility_firstShadowEnd(int rendered, uint32_t beforeFNV,
             (unsigned)firstDisagreed,(unsigned)firstPixelChanged,(unsigned)firstSideEffects,
             (unsigned)firstQuietAfter,(unsigned)firstUnchanged,
             (unsigned)firstCurrentRejected,(unsigned)firstCurrentEqual);
+        printf("[PERFGAMEP2F] firstPhaseRejected=%u continuationPhaseRejected=%u firstPhaseCrossed=%u changedAcrossPhase=%u unrelatedFrames=%u cumulative=yes\n",
+            (unsigned)firstPhaseRejected,(unsigned)continuationPhaseRejected,
+            (unsigned)firstPhaseCrossed,(unsigned)firstChangedAcrossPhase,
+            (unsigned)unrelatedFrames);
+    }
 }
 
 void EspPerfMoveVisibility_invalidate(void) {
@@ -111,6 +130,7 @@ void EspPerfMoveVisibility_begin(uint16_t sprite, uint16_t x, uint16_t y,
     probe.destX = destX;
     probe.destY = destY;
     probe.samples = 0;
+    probe.phaseWindow = UINT32_MAX;
     probe.reuseCount = 0U;
     probe.pending = 0U;
     probe.classification = 4;
@@ -133,6 +153,44 @@ void EspPerfMoveVisibility_observe(const EspNativeBspVisibilityState* state,
         state, probe.sprite, &newLeaf);
     if (oldLeaf == UINT32_MAX || newLeaf == UINT32_MAX) return;
     probe.classification = (uint8_t)((oldVisible ? 1 : 0) | (newVisible ? 2 : 0));
+}
+void EspPerfMoveVisibility_frameStarted(int preview) {
+    if (probe.armed) {
+        if (preview) EspPerfMoveVisibility_noteUnsafe();
+        return;
+    }
+    if (probe.valid || contextValid) ++unrelatedFrames;
+    EspPerfMoveVisibility_invalidate();
+}
+
+void EspPerfMoveVisibility_noteAmbientPhase(uint32_t info, uint8_t type,
+    uint8_t subtype, uint16_t index, uint32_t sampleMs) {
+    uint32_t cadence, stagger, shifted, remaining;
+    if (!probe.armed) return;
+    if (probe.samples != 1U || sampleMs != probe.sampleMs) {
+        EspPerfMoveVisibility_noteUnsafe();
+        return;
+    }
+    if (!EspNativeAmbientSprite_eligible(info, type)) return;
+    /* Same unsigned arithmetic as EspNativeAmbientSprite_frame().
+     * Include non-rasterized candidates: a new frame can have new bounds. */
+    stagger = (uint32_t)(index & 255U) * 8U;
+    if (type == 1U) {
+        cadence = EspNativeAmbientSprite_rapid(type, subtype)
+            ? AMBIENT_RAPID_MS : AMBIENT_SLOW_MS;
+        if (EspNativeAmbientSprite_rapid(type, subtype))
+            stagger = (uint32_t)(index & 255U);
+    } else if (type == 2U) {
+        cadence = 6000U;
+        stagger = (uint32_t)(index & 255U) * 256U;
+    } else cadence = 250U;
+    shifted = sampleMs + stagger;
+    remaining = cadence - shifted % cadence;
+    /* A wrap in the staggered clock may change the visual before the
+     * normal phase boundary; choose the earlier conservative deadline. */
+    if (UINT32_MAX - shifted < remaining)
+        remaining = UINT32_MAX - shifted + 1U;
+    if (remaining < probe.phaseWindow) probe.phaseWindow = remaining;
 }
 void EspPerfMoveVisibility_noteUnsafe(void) {
     if (probe.armed) probe.quiet = 0;
@@ -197,6 +255,10 @@ int EspPerfMoveVisibility_tryReuse(int continuation, uint32_t blockers, uint16_t
      * supported cadence even if no candidate currently arms that scheduler. */
     if (nowMs < probe.sampleMs || nowMs-probe.sampleMs >= 250U) {
         ++fallbackAge; return 0;
+    }
+    if (nowMs - probe.sampleMs >= probe.phaseWindow) {
+        ++continuationPhaseRejected;
+        return 0;
     }
     ++eligible;
     if (!DOOMRPG_PERF_MOVE_REUSE) return 0;

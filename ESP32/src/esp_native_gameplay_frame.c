@@ -17,6 +17,7 @@
 #include "esp_native_gameplay_frame.h"
 #if defined(ARDUINO) && defined(DOOMRPG_ESP32)
 #include "esp_audio_entrance_music.h"
+#include "esp_perf_move_visibility.h"
 #endif
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_hud.h"
@@ -206,6 +207,9 @@ static int renderComposed(
     uint32_t painVisualSampleMs = 0U;
     int ok = 0;
 
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    EspPerfMoveVisibility_frameStarted(preview);
+#endif
     if (outStats != NULL) memset(outStats, 0, sizeof(*outStats));
     if (frameScratch.busy) return 0;
     if (render == NULL || outStats == NULL || view == NULL ||
