@@ -18,10 +18,83 @@ static uint32_t continuations, skipped, fallbackQuiet, fallbackWitness,
     fallbackLeaf, fallbackAge, eligible;
 static uint32_t blockerCounts[ESP_PERF_MOVE_BLOCK_COUNT], chained;
 
+/* Previous move visibility is deliberately only a prediction in P2e.
+ * No first-goal caller may consume it as a presentation lease. */
+static EspPerfMoveVisibilityContext previousContext;
+static uint8_t contextValid, firstPending, firstPredicted;
+static uint32_t firstAttempts, firstCandidates, firstNoWitness, firstBlocked,
+    firstContextMismatch, firstAge, firstLeaf, firstChecked, firstConfirmed,
+    firstDisagreed, firstPixelChanged, firstSideEffects, firstQuietAfter,
+    firstUnchanged, firstCurrentRejected, firstCurrentEqual;
+
+void EspPerfMoveVisibility_rememberContext(const EspPerfMoveVisibilityContext* context) {
+    contextValid = (uint8_t)(context != NULL);
+    if (context != NULL) previousContext = *context;
+}
+int EspPerfMoveVisibility_firstShadowBegin(const EspPerfMoveVisibilityContext* context,
+    uint32_t blockers, uint16_t sprite, uint16_t oldX, uint16_t oldY,
+    uint16_t newX, uint16_t newY, uint32_t nowMs) {
+    uint32_t oldLeaf = UINT32_MAX, newLeaf = UINT32_MAX;
+    ++firstAttempts;
+    firstPending = 1U;
+    firstPredicted = 0U;
+    if (blockers != 0U) { ++firstBlocked; return 0; }
+    if (!probe.valid || !contextValid || context == NULL) {
+        ++firstNoWitness; return 0;
+    }
+    if (memcmp(context, &previousContext, sizeof(*context)) != 0) {
+        ++firstContextMismatch; return 0;
+    }
+    if (nowMs < probe.sampleMs || nowMs - probe.sampleMs >= 250U) {
+        ++firstAge; return 0;
+    }
+    if ((oldX != newX && oldY != newY) ||
+        !EspNativeBspVisibility_positionLeaf(sprite, oldX, oldY, &oldLeaf) ||
+        !EspNativeBspVisibility_positionLeaf(sprite, newX, newY, &newLeaf) ||
+        oldLeaf != newLeaf || oldLeaf >= ESP_NATIVE_BSP_VISIBILITY_MAX_NODES ||
+        (probe.leaves[oldLeaf >> 5] & (1U << (oldLeaf & 31U)))) {
+        ++firstLeaf; return 0;
+    }
+    ++firstCandidates;
+    firstPredicted = 1U;
+    return 1;
+}
+void EspPerfMoveVisibility_firstShadowEnd(int rendered, uint32_t beforeFNV,
+    uint32_t afterFNV, int sideEffects, int quietAfter) {
+    if (!firstPending) return;
+    firstPending = 0U;
+    if (rendered && probe.samples == 1U && probe.classification == 0U) {
+        ++firstCurrentRejected;
+        if (beforeFNV != 0U && beforeFNV == afterFNV) ++firstCurrentEqual;
+    }
+    if (firstPredicted) {
+        ++firstChecked;
+        if (rendered && probe.samples == 1U && probe.classification == 0U)
+            ++firstConfirmed;
+        else ++firstDisagreed;
+        if (beforeFNV == 0U || beforeFNV != afterFNV) ++firstPixelChanged;
+        if (sideEffects || !probe.quiet) ++firstSideEffects;
+        if (!quietAfter) ++firstQuietAfter;
+        if (rendered && probe.samples == 1U && probe.classification == 0U &&
+            beforeFNV != 0U && beforeFNV == afterFNV &&
+            !sideEffects && probe.quiet && quietAfter) ++firstUnchanged;
+    }
+    if ((firstAttempts & 15U) == 0U)
+        printf("[PERFGAMEP2E] first=%u candidates=%u blocked=%u noWitness=%u context=%u age=%u leaf=%u checked=%u confirmed=%u disagreed=%u pixelChanged=%u sideEffects=%u busyAfter=%u unchanged=%u currentRejected=%u currentEqual=%u mode=shadow firstSkipped=0 cumulative=yes\n",
+            (unsigned)firstAttempts,(unsigned)firstCandidates,(unsigned)firstBlocked,
+            (unsigned)firstNoWitness,(unsigned)firstContextMismatch,(unsigned)firstAge,
+            (unsigned)firstLeaf,(unsigned)firstChecked,(unsigned)firstConfirmed,
+            (unsigned)firstDisagreed,(unsigned)firstPixelChanged,(unsigned)firstSideEffects,
+            (unsigned)firstQuietAfter,(unsigned)firstUnchanged,
+            (unsigned)firstCurrentRejected,(unsigned)firstCurrentEqual);
+}
+
 void EspPerfMoveVisibility_invalidate(void) {
     probe.armed = 0U;
     probe.valid = 0U;
     probe.pending = 0U;
+    contextValid = 0U;
+    firstPending = 0U;
 }
 
 void EspPerfMoveVisibility_commitReuse(int quiet) {

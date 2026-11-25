@@ -119,7 +119,32 @@ P2D_WIRING_EDITS = {
     ]
 }
 
+P2E_WIRING_EDITS = {
+    "esp_native_gameplay_monster_movement_publish.c": [
+        [
+            "    else {\n        const int quietAfter = moveFrameBlockers() == 0U;\n        const EspMapAutomapStateView* afterMap = EspMapAutomapState_view();\n        if (!continuation)\n            EspPerfMoveVisibility_firstShadowEnd(frame.finalPresented,\n                frame.frameBeforeFNV, frame.frameAfterFNV,\n                shadowMap == NULL || afterMap == NULL ||\n                shadowAutomap != afterMap->stateFNV1a ||\n                shadowActivation != EspNativeGameplayMonsterActivation_count(),\n                quietAfter);\n        EspPerfMoveVisibility_end(frame.finalPresented && quietAfter ? 1 : 2);\n        EspPerfMoveVisibility_rememberContext(\n            frame.finalPresented && shadowContextReady ? &shadowContext : NULL);\n    }",
+            "    else EspPerfMoveVisibility_end(frame.finalPresented && moveFrameBlockers() == 0U ? 1 : 2);"
+        ],
+        [
+            "        if (!continuation) EspPerfMoveVisibility_firstShadowEnd(0, 0U, 0U, 1, 0);\n        EspPerfMoveVisibility_end(0);\n        EspPerfMoveVisibility_invalidate();\n#endif",
+            "        EspPerfMoveVisibility_end(0);\n#endif"
+        ],
+        [
+            "    const int continuation = movement != EspNativeGameplayMonsterMovement_view();\n    const EspMapRuntimeView* shadowRuntime = EspMapRuntime_view();\n    const EspMapLineStateView* shadowLines = EspMapLineState_viewBase();\n    const EspMapLineTextureStateView* shadowTextures = EspMapLineTextureState_view();\n    const EspMapAutomapStateView* shadowMap = EspMapAutomapState_view();\n    const uint32_t shadowActivation = EspNativeGameplayMonsterActivation_count();\n    const uint32_t shadowAutomap = shadowMap != NULL ? shadowMap->stateFNV1a : 0U;\n    EspPerfMoveVisibilityContext shadowContext;\n    memset(&shadowContext, 0, sizeof(shadowContext));\n    const int shadowContextReady = shadowRuntime != NULL &&\n        shadowLines != NULL && shadowTextures != NULL;\n    if (shadowContextReady) {\n        shadowContext.arena = shadowRuntime->arenaFNV1a;\n        shadowContext.lineFNV = shadowLines->stateFNV1a;\n        shadowContext.textureFNV = shadowTextures->stateFNV1a;\n        shadowContext.x = player->viewX;\n        shadowContext.y = player->viewY;\n        shadowContext.z = player->viewZ;\n        shadowContext.angle = player->viewAngle;\n    }\n    if (!continuation)\n        (void)EspPerfMoveVisibility_firstShadowBegin(\n            shadowContextReady ? &shadowContext : NULL, blockers,\n            publishCapture.before.spriteIndex,\n            publishCapture.before.worldX, publishCapture.before.worldY,\n            publishCapture.after.worldX, publishCapture.after.worldY, nowMs);\n    const int reused = EspPerfMoveVisibility_tryReuse(\n        continuation,\n        blockers,",
+            "    const int reused = EspPerfMoveVisibility_tryReuse(\n        movement != EspNativeGameplayMonsterMovement_view(),\n        blockers,"
+        ],
+        [
+            "#include \"esp_asset_pack.h\"\n#include \"esp_map_automap_state.h\"\n#include \"esp_map_line_state.h\"\n#include \"esp_map_line_texture_state.h\"\n#include \"esp_native_gameplay_monster_activation.h\"\n#include \"esp_audio_entrance_music.h\"",
+            "#include \"esp_asset_pack.h\"\n#include \"esp_audio_entrance_music.h\""
+        ]
+    ]
+}
+
 def restore_pre_perf_game_p2a(name, data):
+    for newer, older in P2E_WIRING_EDITS.get(name, []):
+        a, b = newer.encode("utf-8"), older.encode("utf-8")
+        assert data.count(a) == 1, (name, "P2e wiring inverse")
+        data = data.replace(a, b, 1)
     for newer, older in P2D_WIRING_EDITS.get(name, []):
         a, b = newer.encode("utf-8"), older.encode("utf-8")
         assert data.count(a) == 1, (name, "P2d wiring inverse")

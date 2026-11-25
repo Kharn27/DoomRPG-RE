@@ -22,6 +22,18 @@ struct EspNativeBspVisibilityState_s;
 #define ESP_PERF_MOVE_BLOCK_PICKUP (1U << 14U)
 #define ESP_PERF_MOVE_BLOCK_AMBIENT (1U << 15U)
 #define ESP_PERF_MOVE_BLOCK_COUNT 16U
+/* P2e shadow only: a previous movement frame is not yet an authority
+ * across cooperative service boundaries. Context equality is diagnostic. */
+typedef struct EspPerfMoveVisibilityContext_s {
+    uint32_t arena, lineFNV, textureFNV;
+    int32_t x, y, z, angle;
+} EspPerfMoveVisibilityContext;
+void EspPerfMoveVisibility_rememberContext(const EspPerfMoveVisibilityContext* context);
+int EspPerfMoveVisibility_firstShadowBegin(const EspPerfMoveVisibilityContext* context,
+    uint32_t blockers, uint16_t sprite, uint16_t oldX, uint16_t oldY,
+    uint16_t newX, uint16_t newY, uint32_t nowMs);
+void EspPerfMoveVisibility_firstShadowEnd(int rendered, uint32_t beforeFNV,
+    uint32_t afterFNV, int sideEffects, int quietAfter);
 void EspPerfMoveVisibility_invalidate(void);
 void EspPerfMoveVisibility_commitReuse(int quiet);
 void EspPerfMoveVisibility_begin(uint16_t sprite, uint16_t x, uint16_t y,

@@ -18,6 +18,10 @@
 #endif
 #if defined(ARDUINO) && defined(DOOMRPG_ESP32)
 #include "esp_asset_pack.h"
+#include "esp_map_automap_state.h"
+#include "esp_map_line_state.h"
+#include "esp_map_line_texture_state.h"
+#include "esp_native_gameplay_monster_activation.h"
 #include "esp_audio_entrance_music.h"
 #include "esp_native_door_animator.h"
 #include "esp_native_first_frame.h"
@@ -446,8 +450,34 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
     const uint32_t blockers = blockersBefore |
         (EspNativeFirstFrame_indicatorDue(nowMs) ? ESP_PERF_MOVE_BLOCK_INDICATOR : 0U) |
         (EspNativeSpriteRenderer_ambientDue(nowMs) ? ESP_PERF_MOVE_BLOCK_AMBIENT : 0U);
+    const int continuation = movement != EspNativeGameplayMonsterMovement_view();
+    const EspMapRuntimeView* shadowRuntime = EspMapRuntime_view();
+    const EspMapLineStateView* shadowLines = EspMapLineState_viewBase();
+    const EspMapLineTextureStateView* shadowTextures = EspMapLineTextureState_view();
+    const EspMapAutomapStateView* shadowMap = EspMapAutomapState_view();
+    const uint32_t shadowActivation = EspNativeGameplayMonsterActivation_count();
+    const uint32_t shadowAutomap = shadowMap != NULL ? shadowMap->stateFNV1a : 0U;
+    EspPerfMoveVisibilityContext shadowContext;
+    memset(&shadowContext, 0, sizeof(shadowContext));
+    const int shadowContextReady = shadowRuntime != NULL &&
+        shadowLines != NULL && shadowTextures != NULL;
+    if (shadowContextReady) {
+        shadowContext.arena = shadowRuntime->arenaFNV1a;
+        shadowContext.lineFNV = shadowLines->stateFNV1a;
+        shadowContext.textureFNV = shadowTextures->stateFNV1a;
+        shadowContext.x = player->viewX;
+        shadowContext.y = player->viewY;
+        shadowContext.z = player->viewZ;
+        shadowContext.angle = player->viewAngle;
+    }
+    if (!continuation)
+        (void)EspPerfMoveVisibility_firstShadowBegin(
+            shadowContextReady ? &shadowContext : NULL, blockers,
+            publishCapture.before.spriteIndex,
+            publishCapture.before.worldX, publishCapture.before.worldY,
+            publishCapture.after.worldX, publishCapture.after.worldY, nowMs);
     const int reused = EspPerfMoveVisibility_tryReuse(
-        movement != EspNativeGameplayMonsterMovement_view(),
+        continuation,
         blockers,
         publishCapture.before.spriteIndex,
         publishCapture.before.worldX, publishCapture.before.worldY,
@@ -467,7 +497,9 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
                                            (uint8_t)player->viewAngle,
                                            &frame)) {
 #if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+        if (!continuation) EspPerfMoveVisibility_firstShadowEnd(0, 0U, 0U, 1, 0);
         EspPerfMoveVisibility_end(0);
+        EspPerfMoveVisibility_invalidate();
 #endif
         int ownersExact = restorePublishedOwners(&relink, &publishCapture.before,
                                                  &publishCapture.after,
@@ -545,7 +577,20 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
 #if defined(ARDUINO) && defined(DOOMRPG_ESP32)
     /* Seed/re-arm only after all topology/position/RNG checks have closed. */
     if (reused) EspPerfMoveVisibility_commitReuse(moveFrameBlockers() == 0U);
-    else EspPerfMoveVisibility_end(frame.finalPresented && moveFrameBlockers() == 0U ? 1 : 2);
+    else {
+        const int quietAfter = moveFrameBlockers() == 0U;
+        const EspMapAutomapStateView* afterMap = EspMapAutomapState_view();
+        if (!continuation)
+            EspPerfMoveVisibility_firstShadowEnd(frame.finalPresented,
+                frame.frameBeforeFNV, frame.frameAfterFNV,
+                shadowMap == NULL || afterMap == NULL ||
+                shadowAutomap != afterMap->stateFNV1a ||
+                shadowActivation != EspNativeGameplayMonsterActivation_count(),
+                quietAfter);
+        EspPerfMoveVisibility_end(frame.finalPresented && quietAfter ? 1 : 2);
+        EspPerfMoveVisibility_rememberContext(
+            frame.finalPresented && shadowContextReady ? &shadowContext : NULL);
+    }
 #endif
     DRPG_LOGT("[MONSTERMOVELIVE] COMMIT trigger=%s sprite=%u tile=%u->%u pos=%u,%u->%u,%u rngCalls=%u randomCommitted=yes positionFNV=%08x->%08x topologyFNV=%08x->%08x linkOrder=%u->%u renderer=snap-destination projected=yes frame=%08x presented=%u interpolation=deferred rollback=closed\n",
            trigger,

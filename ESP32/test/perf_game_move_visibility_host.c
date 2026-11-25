@@ -98,6 +98,25 @@ int main(void) {
     /* Red's doubled phase holds across the first raw cadence boundary. */
     assert(!EspNativeWallIndicator_changed(ESP_NATIVE_WALL_INDICATOR_RED_BIT,300,350));
     assert(EspNativeWallIndicator_changed(ESP_NATIVE_WALL_INDICATOR_RED_BIT,300,700));
+    /* P2e: previous move witness predicts a first goal, but the real
+     * first-goal path MUST still return false even in fast mode. */
+    EspPerfMoveVisibilityContext ctx = {1U,2U,3U,100,200,0,64};
+    start(1,100); EspPerfMoveVisibility_end(1);
+    EspPerfMoveVisibility_rememberContext(&ctx);
+    assert(EspPerfMoveVisibility_firstShadowBegin(&ctx,0U,7,160,32,224,32,120));
+    assert(!reuse(0,1,160,224,120));
+    start(1,120);
+    EspPerfMoveVisibility_firstShadowEnd(1,1U,1U,0,1);
+    EspPerfMoveVisibility_end(1);
+    EspPerfMoveVisibility_rememberContext(&ctx);
+    ctx.angle = 128;
+    assert(!EspPerfMoveVisibility_firstShadowBegin(&ctx,0U,7,160,32,224,32,130));
+    ctx.angle = 64;
+    assert(!EspPerfMoveVisibility_firstShadowBegin(&ctx,ESP_PERF_MOVE_BLOCK_DOOR,7,160,32,224,32,130));
+    assert(!EspPerfMoveVisibility_firstShadowBegin(&ctx,0U,7,160,32,256,32,130));
+    assert(!EspPerfMoveVisibility_firstShadowBegin(&ctx,0U,7,160,32,224,32,370));
+    EspPerfMoveVisibility_invalidate();
+    assert(!EspPerfMoveVisibility_firstShadowBegin(&ctx,0U,7,160,32,224,32,130));
     state.visibleLeaves[0]=3U;
     start(1,100); EspPerfMoveVisibility_end(1);
     assert(!reuse(1,1,160,224,120)); /* visible leaf */
