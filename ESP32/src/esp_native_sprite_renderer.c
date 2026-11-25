@@ -930,6 +930,7 @@ static int spans(Render_t* render,
     int x2;
     int tex;
     int depth;
+    int constantScale = 0;
 
     if (renderMode != RENDER_MODE_NORMAL && renderMode != RENDER_MODE_ADD) {
         return 0;
@@ -949,14 +950,22 @@ static int spans(Render_t* render,
         depth = line->vert1.y + DoomRPG_FixedMul(offset, dSide);
     }
 
+    /* A camera-facing billboard has identical projected depth at
+     * both ends. dSide == 0 is the exact integer recurrence criterion,
+     * also covering oriented spans whose projected delta rounds to zero. */
+    if (dSide == 0 && x < x2 && depth > 0)
+        constantScale = (0x40000000 / depth) << 2;
+
     while (x < x2) {
         int scale;
         int column;
         int texelStep;
 
         if (depth <= 0) return 0;
-        scale = (0x40000000 / depth) << 2;
-        column = (int)(DoomRPG_FixedMul(tex, scale) >> 16);
+        scale = dSide == 0 ? constantScale : (0x40000000 / depth) << 2;
+        /* Occluded columns still advance both original recurrences. */
+        column = render->columnScale[x] >= scale
+            ? (int)(DoomRPG_FixedMul(tex, scale) >> 16) : 0;
         depth += dSide;
         tex += dTex;
 
@@ -1011,6 +1020,36 @@ static int spans(Render_t* render,
                 remaining = pixels;
                 if (glow) ++stats->glowSpanRuns;
                 else ++stats->spanRuns;
+
+                /* P2i: the same bounded cursor proof for mode 7.
+                 * Preserve the original approximate RGB565 carry, and
+                 * distinguish base-mode counters from glow counters. */
+                if (renderMode == RENDER_MODE_ADD &&
+                    frame->packedBytes <= MAX_TEXELS &&
+                    position >= 0 && texelStep >= 0 &&
+                    position + (int64_t)(remaining - 1) * texelStep <
+                        ((int64_t)frame->packedBytes << 13)) {
+                    uint32_t pos = (uint32_t)position;
+                    int left = remaining;
+                    while (left-- > 0) {
+                        const uint8_t packed = frame->texels[pos >> 13];
+                        const uint16_t source = frame->palette[
+                            (packed >> ((pos >> 10) & 4U)) & 15U];
+                        const uint32_t color = (uint32_t)(source & 0xf7deU) +
+                            ((uint32_t)(*destination) & 0xf7deU);
+                        const uint32_t carry = color & 0x10820U;
+                        *destination = (uint16_t)((color & 0xf7deU) |
+                            (carry >> 1) | (carry >> 2) | (carry >> 3));
+                        destination += pitch;
+                        pos += (uint32_t)texelStep;
+                    }
+                    if (glow) stats->glowPixels += (uint32_t)remaining;
+                    else {
+                        stats->pixelsDrawn += (uint32_t)remaining;
+                        stats->mode7Pixels += (uint32_t)remaining;
+                    }
+                    continue;
+                }
 
                 /* P2h: prove the entire normal opaque span in bounds
                  * once. The 32-bit cursor is safe because packedBytes is

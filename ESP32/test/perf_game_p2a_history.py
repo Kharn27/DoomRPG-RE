@@ -185,7 +185,32 @@ P2H_WIRING_EDITS = {
     ]
 }
 
+P2I_WIRING_EDITS = {
+    "esp_native_sprite_renderer.c": [
+        [
+            "                /* P2i: the same bounded cursor proof for mode 7.\n                 * Preserve the original approximate RGB565 carry, and\n                 * distinguish base-mode counters from glow counters. */\n                if (renderMode == RENDER_MODE_ADD &&\n                    frame->packedBytes <= MAX_TEXELS &&\n                    position >= 0 && texelStep >= 0 &&\n                    position + (int64_t)(remaining - 1) * texelStep <\n                        ((int64_t)frame->packedBytes << 13)) {\n                    uint32_t pos = (uint32_t)position;\n                    int left = remaining;\n                    while (left-- > 0) {\n                        const uint8_t packed = frame->texels[pos >> 13];\n                        const uint16_t source = frame->palette[\n                            (packed >> ((pos >> 10) & 4U)) & 15U];\n                        const uint32_t color = (uint32_t)(source & 0xf7deU) +\n                            ((uint32_t)(*destination) & 0xf7deU);\n                        const uint32_t carry = color & 0x10820U;\n                        *destination = (uint16_t)((color & 0xf7deU) |\n                            (carry >> 1) | (carry >> 2) | (carry >> 3));\n                        destination += pitch;\n                        pos += (uint32_t)texelStep;\n                    }\n                    if (glow) stats->glowPixels += (uint32_t)remaining;\n                    else {\n                        stats->pixelsDrawn += (uint32_t)remaining;\n                        stats->mode7Pixels += (uint32_t)remaining;\n                    }\n                    continue;\n                }\n\n                /* P2h: prove the entire normal opaque span in bounds",
+            "                /* P2h: prove the entire normal opaque span in bounds"
+        ],
+        [
+            "        scale = dSide == 0 ? constantScale : (0x40000000 / depth) << 2;\n        /* Occluded columns still advance both original recurrences. */\n        column = render->columnScale[x] >= scale\n            ? (int)(DoomRPG_FixedMul(tex, scale) >> 16) : 0;\n        depth += dSide;\n        tex += dTex;\n\n        if (render->columnScale[x] >= scale) {",
+            "        scale = (0x40000000 / depth) << 2;\n        column = (int)(DoomRPG_FixedMul(tex, scale) >> 16);\n        depth += dSide;\n        tex += dTex;\n\n        if (render->columnScale[x] >= scale) {"
+        ],
+        [
+            "    /* A camera-facing billboard has identical projected depth at\n     * both ends. dSide == 0 is the exact integer recurrence criterion,\n     * also covering oriented spans whose projected delta rounds to zero. */\n    if (dSide == 0 && x < x2 && depth > 0)\n        constantScale = (0x40000000 / depth) << 2;\n\n    while (x < x2) {\n        int scale;\n        int column;\n        int texelStep;",
+            "    while (x < x2) {\n        int scale;\n        int column;\n        int texelStep;"
+        ],
+        [
+            "    int tex;\n    int depth;\n    int constantScale = 0;\n\n    if (renderMode",
+            "    int tex;\n    int depth;\n\n    if (renderMode"
+        ]
+    ]
+}
+
 def restore_pre_perf_game_p2a(name, data):
+    for newer, older in P2I_WIRING_EDITS.get(name, []):
+        a, b = newer.encode("utf-8"), older.encode("utf-8")
+        assert data.count(a) == 1, (name, "P2i wiring inverse")
+        data = data.replace(a, b, 1)
     for newer, older in P2H_WIRING_EDITS.get(name, []):
         a, b = newer.encode("utf-8"), older.encode("utf-8")
         assert data.count(a) == 1, (name, "P2h wiring inverse")
