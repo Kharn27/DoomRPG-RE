@@ -206,7 +206,76 @@ P2I_WIRING_EDITS = {
     ]
 }
 
+P2J_WIRING_EDITS = {
+    "esp_native_sprite_renderer.c": [
+        [
+            "    *outStats = stats;\n#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE\n    P2J_STAMP(j5);\n    if (spritePerf.active && ok) {\n        /* readUs overlaps sources/load/draw; do not sum those metrics. */\n        printf(\"[PERFGAMEP2J] ordinal=%u preview=%u candidates=%u drops=%u transient=%u visibilityUs=%u orderUs=%u sourcesUs=%u drawUs=%u tailUs=%u readCalls=%u readUs=%u mapLoadCalls=%u mapLoadUs=%u mapSpanCalls=%u mapSpanUs=%u packReads=%u pixels=%u glowPixels=%u sample=1/16\\n\",\n            (unsigned)spritePerf.ordinal,(unsigned)preview,(unsigned)orderCount,\n            (unsigned)dropOrderCount,(unsigned)transientWorldBatch.active,\n            (unsigned)(j1-j0),(unsigned)(j2-j1),(unsigned)(j3-j2),\n            (unsigned)(j4-j3),(unsigned)(j5-j4),\n            (unsigned)spritePerf.readCalls,(unsigned)spritePerf.readUs,\n            (unsigned)spritePerf.loadCalls,(unsigned)spritePerf.loadUs,\n            (unsigned)spritePerf.spanCalls,(unsigned)spritePerf.spanUs,\n            (unsigned)stats.packReads,(unsigned)stats.pixelsDrawn,\n            (unsigned)stats.glowPixels);\n    }\n    spritePerf.active = 0U;\n#endif\n#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE",
+            "    *outStats = stats;\n#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE"
+        ],
+        [
+            "#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE\n    P2J_STAMP(j4);\n#endif\n    /* A complete frame need not contain a visible additive sprite or glow.",
+            "    /* A complete frame need not contain a visible additive sprite or glow."
+        ],
+        [
+            "#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE\n    P2J_STAMP(j2);\n#endif\n    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) goto done;\n    opened = 1;\n    if (!initSources(&sources, &stats)) goto done;\n#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE\n    P2J_STAMP(j3);\n#endif",
+            "    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) goto done;\n    opened = 1;\n    if (!initSources(&sources, &stats)) goto done;"
+        ],
+        [
+            "#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE\n    P2J_STAMP(j1);\n#endif\n    stats.depthNodes = workspace->visibility.nodes;",
+            "    stats.depthNodes = workspace->visibility.nodes;"
+        ],
+        [
+            "    saveScratch(render, saved);\n#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE\n    ++spritePerf.ordinal;\n    spritePerf.active = (uint8_t)((spritePerf.ordinal & 15U) == 0U);\n    if (spritePerf.active) {\n        spritePerf.readUs=spritePerf.readCalls=spritePerf.loadUs=0U;\n        spritePerf.loadCalls=spritePerf.spanUs=spritePerf.spanCalls=0U;\n        j0=esp_timer_get_time();\n    }\n#endif\n    if (scratchOwnerLogged == 0U) {",
+            "    saveScratch(render, saved);\n    if (scratchOwnerLogged == 0U) {"
+        ],
+        [
+            "    int opened = 0;\n    int ok = 0;\n#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE\n    int64_t j0=0LL,j1=0LL,j2=0LL,j3=0LL,j4=0LL,j5=0LL;\n    spritePerf.active = 0U;\n#endif\n\n    if (outStats != NULL) memset(outStats, 0, sizeof(*outStats));",
+            "    int opened = 0;\n    int ok = 0;\n\n    if (outStats != NULL) memset(outStats, 0, sizeof(*outStats));"
+        ],
+        [
+            "#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE\n        P2J_ACCUM(spanStart, spanUs, spanCalls);\n#endif\n",
+            "        P2J_ACCUM(spanStart, spanUs, spanCalls);\n"
+        ],
+        [
+            "#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE\n        P2J_START(spanStart);\n#endif\n",
+            "        P2J_START(spanStart);\n"
+        ],
+        [
+            "#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE\n        P2J_ACCUM(loadStart, loadUs, loadCalls);\n#endif\n",
+            "        P2J_ACCUM(loadStart, loadUs, loadCalls);\n"
+        ],
+        [
+            "#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE\n        P2J_START(loadStart);\n#endif\n",
+            "        P2J_START(loadStart);\n"
+        ],
+        [
+            "    {\n        P2J_START(spanStart);\n        const int drawn = spans(render, &line, frame, renderMode, glow, stats);\n        P2J_ACCUM(spanStart, spanUs, spanCalls);\n        if (tinted != 0U) {",
+            "    {\n        const int drawn = spans(render, &line, frame, renderMode, glow, stats);\n        if (tinted != 0U) {"
+        ],
+        [
+            "        P2J_ACCUM(loadStart, loadUs, loadCalls);\n        if (crossAnimation != NULL) *crossAnimation = animation;\n    }\n\n    minimum =",
+            "        if (crossAnimation != NULL) *crossAnimation = animation;\n    }\n\n    minimum ="
+        ],
+        [
+            "    else {\n        P2J_START(loadStart);\n        if (!loadFrame(sources, logical, animation, glow,\n                       frame, seenLogical, stats)) {",
+            "    else {\n        if (!loadFrame(sources, logical, animation, glow,\n                       frame, seenLogical, stats)) {"
+        ],
+        [
+            "        offset > entry->size || bytes > entry->size - offset) {\n        return 0;\n    }\n#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE\n    P2J_START(readStart);\n#endif\n    if (!EspAssetPack_readRange(entry, offset, destination, bytes)) return 0;\n#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE\n    P2J_ACCUM(readStart, readUs, readCalls);\n#endif\n    ++stats->packReads;",
+            "        offset > entry->size || bytes > entry->size - offset ||\n        !EspAssetPack_readRange(entry, offset, destination, bytes)) {\n        return 0;\n    }\n    ++stats->packReads;"
+        ],
+        [
+            "static uint8_t scratchOwnerLogged;\n\n/* P2j: bounded diagnostic, one in sixteen successful render attempts.\n * No extra reads or geometry operations. All state is renderer-private;\n * timing is disabled before publishing stats or returning to gameplay. */\n#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n#ifndef DOOMRPG_PERF_SPRITE_SAMPLE\n#define DOOMRPG_PERF_SPRITE_SAMPLE 1\n#endif\n#if DOOMRPG_PERF_SPRITE_SAMPLE\nstatic struct {\n    uint32_t ordinal, readUs, readCalls, loadUs, loadCalls, spanUs, spanCalls;\n    uint8_t active;\n} spritePerf;\n#define P2J_START(name) const int64_t name = spritePerf.active ? esp_timer_get_time() : 0LL\n#define P2J_ACCUM(name, field, calls) do { if (spritePerf.active) { \\\n    spritePerf.field += (uint32_t)(esp_timer_get_time() - (name)); \\\n    ++spritePerf.calls; } } while (0)\n#define P2J_STAMP(name) do { if (spritePerf.active) (name) = esp_timer_get_time(); } while (0)\n#else\n#define P2J_START(name) do { } while (0)\n#define P2J_ACCUM(name, field, calls) do { } while (0)\n#define P2J_STAMP(name) do { } while (0)\n#endif\n#else\n#define P2J_START(name) do { } while (0)\n#define P2J_ACCUM(name, field, calls) do { } while (0)\n#define P2J_STAMP(name) do { } while (0)\n#endif\n",
+            "static uint8_t scratchOwnerLogged;\n"
+        ]
+    ]
+}
+
 def restore_pre_perf_game_p2a(name, data):
+    for newer, older in P2J_WIRING_EDITS.get(name, []):
+        a, b = newer.encode("utf-8"), older.encode("utf-8")
+        assert data.count(a) == 1, (name, "P2j wiring inverse")
+        data = data.replace(a, b, 1)
     for newer, older in P2I_WIRING_EDITS.get(name, []):
         a, b = newer.encode("utf-8"), older.encode("utf-8")
         assert data.count(a) == 1, (name, "P2i wiring inverse")
