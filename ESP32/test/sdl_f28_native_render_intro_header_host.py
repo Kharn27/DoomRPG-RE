@@ -149,6 +149,8 @@ def original_body_parity() -> None:
     marker = GUARD.encode("ascii")
     for filename, blob in BEFORE.items():
         current = (SOURCES / filename).read_bytes()
+        from perf_game_p2a_history import restore_pre_perf_game_p2a
+        current = restore_pre_perf_game_p2a(filename, current)
         if filename == "esp_native_dynamic_line_render.c":
             # AUDIO-DOOR only adds a post-first-successful-door-frame SFX hook.
             # Undo its exact additive bytes before testing the immutable
