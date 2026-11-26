@@ -441,6 +441,7 @@ static int cardinalTraceClearBody(int32_t sourceX,
     int32_t stepY = 0;
     uint32_t distance;
     uint32_t i;
+    uint16_t playerTile = UINT16_MAX;
 
     if (!centeredCoordinate(sourceX) || !centeredCoordinate(sourceY) ||
         !centeredCoordinate(destX) || !centeredCoordinate(destY)) return -1;
@@ -460,6 +461,16 @@ static int cardinalTraceClearBody(int32_t sourceX,
     if (distance == 0U || distance > 31U) return 0;
     /* Only calcPath's single cardinal step is proven for tile-origin mode. */
     if (strictSpecial && distance != 1U) return -2;
+
+    /* Game_trace checks the player sentinel on every visited tile, including
+     * the source cell. Topology contains map entities only, so check the
+     * settled player explicitly for movement masks, never attack LOS. */
+    if ((mask & 0x0100U) != 0U) {
+        const EspPlayerViewState* player = EspPlayerView_view();
+        if (player == NULL || player->active != 1U ||
+            player->viewX != player->destX || player->viewY != player->destY ||
+            !tileIndexFor(player->destX, player->destY, &playerTile)) return -1;
+    }
 
     for (i = 1U; i <= distance; ++i) {
         int32_t prevX = sourceX + stepX * (int32_t)(i - 1U);
@@ -488,6 +499,7 @@ static int cardinalTraceClearBody(int32_t sourceX,
                 return 0;
             }
             if ((sourceFlags & ESP_MAP_TILE_WALL) != 0U) return 0;
+            if (sourceTile == playerTile) return 0;
             lineBlock = closedLineBlocksTile(sourceTile, mask);
             if (lineBlock < 0) return -1;
             if (lineBlock > 0) {
@@ -515,6 +527,7 @@ static int cardinalTraceClearBody(int32_t sourceX,
             return 0;
         }
         if ((flags & ESP_MAP_TILE_WALL) != 0U) return 0;
+        if (tile == playerTile) return 0;
         lineBlock = closedLineBlocksTile(tile, mask);
         if (lineBlock < 0) return -1;
         if (lineBlock > 0) return 0;
