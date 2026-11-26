@@ -6,6 +6,9 @@
 #include "esp_map_runtime.h"
 #include "esp_res60_inventory_cache.h"
 #include "esp_res60_map_lease.h"
+#if DOOMRPG_RES60_P28_DESCRIPTOR_LEASE
+#include "esp_native_plane_renderer.h"
+#endif
 
 /* No new frame/world buffer: only the original EspMapRuntime arena survives.
  * The owner bit cannot outlive the compact runtime after MENU/START/failure. */
@@ -52,6 +55,9 @@ static int packedEntryMatches(const char* name,
 void EspRes60MapLease_reset(void) {
     /* This probe owns the runtime only when P13 is enabled. Never borrow a
      * pointer to a renderer/scene/legacy world; reset is a session boundary. */
+#if DOOMRPG_RES60_P28_DESCRIPTOR_LEASE
+    EspNativePlaneRenderer_resetRes60Metadata();
+#endif
     EspMapRuntime_reset();
     leaseOwned = 0U;
 }

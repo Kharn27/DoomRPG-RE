@@ -53,6 +53,10 @@ def main():
     "-D", "DOOMRPG_RES60_P20_COMPACT_SERIAL=1",
     "-D", "DOOMRPG_RES60_P21_INTERSECTION32=1",
     "-D", "DOOMRPG_RES60_P23_NATIVE_RASTER_GEOMETRY=1",
+    "-D", "DOOMRPG_RES60_P25_TEXTURED_PLANES=1",
+    "-D", "DOOMRPG_RES60_P26_BATCH_INDEX=1",
+    "-D", "DOOMRPG_RES60_P27_METADATA_WINDOWS=1",
+    "-D", "DOOMRPG_RES60_P28_DESCRIPTOR_LEASE=1",
         "-I.pio/libdeps/esp32-cyd-res60/TFT_eSPI"]
     # Inverted P4 must NOT fork/redefine 192x96 geometry or gameplay.
     # Exactly one extra panel flag and a standalone TFT_eSPI include.

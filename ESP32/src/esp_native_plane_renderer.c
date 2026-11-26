@@ -57,6 +57,71 @@ typedef struct PlaneWork_s {
 
 static EspNativePlaneRenderStats planeStats;
 
+#if DOOMRPG_RES60_P28_DESCRIPTOR_LEASE
+/* Compact metadata only. All texel bytes remain transient. The exact-size
+ * allocation is owned by the preview map lease, never Classic gameplay. */
+typedef struct PlaneDescriptorLease_s {
+    const uint8_t* planeMap;
+    uint32_t arenaFNV, sourceCRC;
+    EspAssetPackEntry mappings, palettes, wall;
+    uint16_t count;
+    PlaneTextureDesc desc[];
+} PlaneDescriptorLease;
+static PlaneDescriptorLease* descriptorLease;
+static size_t descriptorBytes(uint16_t count) {
+    return sizeof(PlaneDescriptorLease)+(size_t)count*sizeof(PlaneTextureDesc);
+}
+void EspNativePlaneRenderer_resetRes60Metadata(void) {
+    if (descriptorLease != NULL) {
+        DRPG_LOGI("[RES60P28] RELEASE bytes=%u\n",
+                  (unsigned)descriptorBytes(descriptorLease->count));
+        free(descriptorLease);
+        descriptorLease=NULL;
+    }
+}
+static int sameEntry(const EspAssetPackEntry* a,const EspAssetPackEntry* b) {
+    return a->nameHash==b->nameHash && a->offset==b->offset &&
+           a->size==b->size && a->crc32==b->crc32 && a->flags==b->flags;
+}
+static int restoreDescriptors(PlaneWork* work,const EspAssetPackEntry* mappings,
+                              const EspAssetPackEntry* palettes) {
+    const PlaneDescriptorLease* c=descriptorLease;
+    if (c==NULL || c->planeMap!=work->runtime->planeMap ||
+        c->arenaFNV!=work->runtime->arenaFNV1a || c->sourceCRC!=work->runtime->sourceCrc32 ||
+        c->count!=work->textureCount || c->count>MAX_PLANE_TEXTURES ||
+        !sameEntry(&c->mappings,mappings) || !sameEntry(&c->palettes,palettes) ||
+        !sameEntry(&c->wall,&work->wallTexels)) return 0;
+    for (uint16_t i=0;i<c->count;++i)
+        if (c->desc[i].logicalId!=work->textures[i].logicalId) return 0;
+    memcpy(work->textures,c->desc,(size_t)c->count*sizeof(PlaneTextureDesc));
+    DRPG_LOGI("[RES60P28] META cache=HIT bytes=%u textures=%u\n",
+              (unsigned)descriptorBytes(c->count),(unsigned)c->count);
+    return 1;
+}
+static void retainDescriptors(const PlaneWork* work,const EspAssetPackEntry* mappings,
+                              const EspAssetPackEntry* palettes) {
+    PlaneDescriptorLease* c;
+    const size_t bytes=descriptorBytes(work->textureCount);
+    if (descriptorLease!=NULL) return;
+    c=(PlaneDescriptorLease*)malloc(bytes);
+    if (c==NULL) {
+        DRPG_LOGI("[RES60P28] META cache=FALLBACK bytes=%u\n",(unsigned)bytes);
+        return;
+    }
+    c->planeMap=work->runtime->planeMap;
+    c->arenaFNV=work->runtime->arenaFNV1a;
+    c->sourceCRC=work->runtime->sourceCrc32;
+    c->mappings=*mappings;
+    c->palettes=*palettes;
+    c->wall=work->wallTexels;
+    c->count=work->textureCount;
+    memcpy(c->desc,work->textures,(size_t)c->count*sizeof(PlaneTextureDesc));
+    descriptorLease=c;
+    DRPG_LOGI("[RES60P28] META cache=MISS bytes=%u textures=%u\n",
+              (unsigned)bytes,(unsigned)c->count);
+}
+#endif
+
 static uint16_t readLe16(const uint8_t* p) {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
 }
@@ -165,8 +230,19 @@ static int resolveTextures(PlaneWork* work) {
         !EspAssetPack_findEntry("wtexels.bin", &work->wallTexels) ||
         mappings.size < MAPPINGS_HEADER_BYTES ||
         palettes.size < PALETTES_HEADER_BYTES ||
-        work->wallTexels.size < WALL_TEXEL_HEADER_BYTES ||
-        !EspAssetPack_readRange(&mappings, 0U, mappingHeader,
+        work->wallTexels.size < WALL_TEXEL_HEADER_BYTES) return 0;
+#if DOOMRPG_RES60_P28_DESCRIPTOR_LEASE
+    if (scratch != NULL && descriptorLease != NULL) {
+        /* P13 has already checked the immutable arena on warm frames.
+         * Recheck all three PAK entry identities before using cached metadata. */
+        if (!restoreDescriptors(work,&mappings,&palettes)) {
+            DRPG_LOGE("[RES60P28] FAIL CLOSED stage=descriptor-identity\n");
+            return 0;
+        }
+        return 1;
+    }
+#endif
+    if (!EspAssetPack_readRange(&mappings, 0U, mappingHeader,
                                 sizeof(mappingHeader)) ||
         !EspAssetPack_readRange(&palettes, 0U, paletteHeader,
                                 sizeof(paletteHeader)) ||
@@ -273,6 +349,9 @@ static int resolveTextures(PlaneWork* work) {
                   (unsigned)idWindow.reads,(unsigned)pairWindow.reads,(unsigned)paletteWindow.reads,
                   (unsigned)idWindow.hits,(unsigned)pairWindow.hits,(unsigned)paletteWindow.hits);
     }
+#endif
+#if DOOMRPG_RES60_P28_DESCRIPTOR_LEASE
+    if (scratch != NULL) retainDescriptors(work,&mappings,&palettes);
 #endif
     return 1;
 }
@@ -623,6 +702,12 @@ int EspNativePlaneRenderer_renderRes60(uint16_t* framebuffer, size_t bytes,
     render.viewZ = viewZ;
     render.viewCos = angle == 0 ? 65536 : angle == 128 ? -65536 : 0;
     render.viewSin = angle == 64 ? 65536 : angle == 192 ? -65536 : 0;
+#if DOOMRPG_RES60_P28_DESCRIPTOR_LEASE
+    const int ok=renderPlanes(&render, 1);
+    if (!ok) EspNativePlaneRenderer_resetRes60Metadata();
+    return ok;
+#else
     return renderPlanes(&render, 1);
+#endif
 }
 #endif

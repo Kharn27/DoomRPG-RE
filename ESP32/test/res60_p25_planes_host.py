@@ -36,6 +36,10 @@ static uint8_t maps[44], palettes[68], wall[4100], cells[2048];
 static EspMapRuntimeView runtime;
 static int openPak = 1;
 static unsigned metadataReads;
+#if DOOMRPG_RES60_P28_DESCRIPTOR_LEASE
+static unsigned paletteCRC=1;
+static int expectWarm;
+#endif
 static uint16_t fb[192*144+2];
 
 static void le32(uint8_t* p, uint32_t v) {
@@ -61,6 +65,7 @@ static void fixture(void) {
     }
     memset(cells+1024,1,1024);
     runtime.planeMap=cells; runtime.planeMapBytes=sizeof(cells);
+    runtime.arenaFNV1a=0x12345678;runtime.sourceCrc32=0x87654321;
 }
 int EspAssetPack_isOpen(void){return openPak;}
 int EspMapRuntime_isLoaded(void){return 1;}
@@ -68,7 +73,11 @@ const EspMapRuntimeView* EspMapRuntime_view(void){return &runtime;}
 int EspAssetPack_findEntry(const char* name,EspAssetPackEntry* e){
     memset(e,0,sizeof(*e));
     if(!strcmp(name,"mappings.bin")){e->offset=1;e->size=sizeof(maps);}
-    else if(!strcmp(name,"palettes.bin")){e->offset=2;e->size=sizeof(palettes);}
+    else if(!strcmp(name,"palettes.bin")){e->offset=2;e->size=sizeof(palettes);
+#if DOOMRPG_RES60_P28_DESCRIPTOR_LEASE
+        e->crc32=paletteCRC;
+#endif
+    }
     else if(!strcmp(name,"wtexels.bin")){e->offset=3;e->size=sizeof(wall);}
     else return 0;
     return openPak;
@@ -113,7 +122,10 @@ static void trial(int w,int h,int hud,int angle){
     const EspNativePlaneRenderStats* st=EspNativePlaneRenderer_view();
     assert(st&&st->rowsRendered==(unsigned)(h-2*hud)&&st->pixelsRendered==(unsigned)(w*(h-2*hud)));
     assert(st->uniqueLogicalTextures==2&&st->cacheMisses==2&&st->texelReadBytes==4096);
-#if DOOMRPG_RES60_P27_METADATA_WINDOWS
+#if DOOMRPG_RES60_P28_DESCRIPTOR_LEASE
+    assert(metadataReads==(w==192?(expectWarm?0U:5U):8U));
+    if(w==192)expectWarm=1;
+#elif DOOMRPG_RES60_P27_METADATA_WINDOWS
     assert(metadataReads==(w==192?5U:8U));
 #else
     assert(metadataReads==8U);
@@ -133,6 +145,19 @@ int main(void){
         trial(192,144,24,angle);
 #endif
     }
+#if DOOMRPG_RES60_P28_DESCRIPTOR_LEASE
+    /* Changed PAK identity rejects BEFORE any pixels, discards old lease.
+     * A new explicit session resolves cold, then hits again. */
+    fill(); ++paletteCRC;
+    assert(!EspNativePlaneRenderer_renderRes60(fb+1,55296,544,1840,64,36));
+    assert(!EspNativePlaneRenderer_view());
+    for(size_t i=0;i<sizeof(fb)/sizeof(fb[0]);i++)assert(fb[i]==0xdead);
+    EspNativePlaneRenderer_resetRes60Metadata();
+    expectWarm=0;trial(192,144,24,64);trial(192,144,24,128);
+    EspNativePlaneRenderer_resetRes60Metadata();
+    expectWarm=0;trial(192,144,24,192);
+    EspNativePlaneRenderer_resetRes60Metadata();
+#endif
 #if DOOMRPG_RES60_P25_TEXTURED_PLANES
     fill();
     assert(!EspNativePlaneRenderer_renderRes60(fb+1,55294,544,1840,64,36));
