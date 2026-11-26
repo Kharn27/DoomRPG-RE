@@ -79,6 +79,10 @@ EspNativeGraphicsCatalog_expandSpriteDependencies(void);
 EspNativeGraphicsCatalogStatus
 EspNativeGraphicsCatalog_ensureSprite(uint16_t resourceId);
 
+/* Nonzero unique ordered immutable texture generation while ready.
+ * Sprite-only growth retains it; reset/build invalidates it; saturation
+ * returns zero forever rather than aliasing a previously issued token. */
+uint32_t EspNativeGraphicsCatalog_textureEpoch(void);
 int EspNativeGraphicsCatalog_isReady(void);
 const EspNativeGraphicsCatalogView* EspNativeGraphicsCatalog_view(void);
 

@@ -8,6 +8,10 @@ from native_boot_legals_history import restore_pre_boot_legals
 
 
 def restore_pre_audio_r1(text: str) -> str:
+    # P2V physical lamp is presentation-only; preserve all frozen Root-J hashes.
+    lamp = "    PlatformVideo_serviceTurnLamp();\n"
+    assert text.count(lamp) == 1, "P2V main-loop lamp drift"
+    text = text.replace(lamp, "", 1)
     # ARCH-RC9: main loop uses the explicit session coordinator. The
     # historical Root-J2 SHA still describes the original raw public call.
     live = "EspNativeGameplaySessionCoordinator_service(doomRpg);"

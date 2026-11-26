@@ -8,6 +8,14 @@
 #include <stddef.h>
 #include <stdlib.h>
 
+/* The independent pack provenance oracle also injects this harness. */
+#ifndef DOOMRPG_PERF_WALL_GUARD_BATCH
+#define DOOMRPG_PERF_WALL_GUARD_BATCH 0
+#endif
+
+#ifndef DOOMRPG_PERF_WALL_GUARD_MEMO
+#define DOOMRPG_PERF_WALL_GUARD_MEMO 0
+#endif
 #define MAPPINGS_HEADER_BYTES 16U
 #define MAPPING_PAIR_BYTES 8U
 #define WALL_TEXEL_HEADER_BYTES 4U
@@ -56,6 +64,16 @@ typedef struct {
 static FirstFrameFailure frameFailure;
 static LegacyWallGuard legacyWallGuards[LEGACY_WALL_GUARD_LIMIT];
 static uint8_t legacyWallGuardCount;
+#if DOOMRPG_PERF_WALL_GUARD_MEMO
+static struct {
+    LegacyWallGuard guard;
+    uint32_t epoch, textureEpoch, mappingsSize, wallSize;
+} wallGuardMemo;
+static uint32_t flashEpoch, catalogEpoch;
+static uint32_t EspNativeGraphicsCatalog_textureEpoch(void) {
+    return catalogEpoch;
+}
+#endif
 #define RECORD_FRAME_FAILURE(c,l,g,a,f,s,v0,v1,v2,v3) do { \
     if (frameFailure.code == FIRST_FRAME_FAIL_NONE) { \
         frameFailure.code=(c); frameFailure.lineIndex=(l); \
@@ -74,6 +92,16 @@ static uint64_t readBytes;
 /* HOST-ONLY physical legacy byte at source+2048, never allocated on CYD. */
 static byte legacyAtlas[65536];
 static int packOpened = 1;
+static int flashActive = 1, sourceProbe = 0;
+#if DOOMRPG_PERF_WALL_GUARD_MEMO
+static uint32_t EspAssetPack_verifiedFlashLeaseEpoch(void) {
+    return packOpened && flashActive && !sourceProbe ? flashEpoch : 0U;
+}
+#endif
+#if DOOMRPG_PERF_WALL_GUARD_BATCH
+static int EspAssetPack_isMapFlashActive(void) { return flashActive; }
+static int EspAssetPack_isSourceProbeActive(void) { return sourceProbe; }
+#endif
 static EspNativeGraphicsCatalogRecord records[2] = {{15}, {16}};
 static EspNativeGraphicsCatalogView catalog = {2, records};
 static int EspAssetPack_isOpen(void) { return packOpened; }
@@ -105,6 +133,10 @@ static void le32(uint8_t* p, uint32_t v) {
     for (int k = 0; k < 4; ++k) p[k] = (uint8_t)(v >> (8 * k));
 }
 static void fixture(void) {
+#if DOOMRPG_PERF_WALL_GUARD_MEMO
+    ++flashEpoch;
+    ++catalogEpoch;
+#endif
     const uint32_t pairs=72, bitPairs=1, ids=20;
     const uint32_t idBase = 16 + pairs * 8 + bitPairs * 8;
     memset(mappingData, 0, sizeof(mappingData));
@@ -124,6 +156,8 @@ static void fixture(void) {
     readCalls = 0;
     readBytes = 0;
     packOpened = 1;
+    flashActive = 1;
+    sourceProbe = 0;
     memset(&frameFailure, 0, sizeof(frameFailure));
     memset(legacyWallGuards, 0, sizeof(legacyWallGuards));
     legacyWallGuardCount = 0;
@@ -282,7 +316,17 @@ int main(int argc, char** argv) {
     assert(legacyWallGuards[0].packedByte==0xb4);
     assert(frameFailure.code==FIRST_FRAME_FAIL_NONE);
     unsigned afterFirst=readCalls;
+    assert(afterFirst==(DOOMRPG_PERF_WALL_GUARD_BATCH ? 6U : 12U));
+    assert(readBytes==85U);
 
+#if DOOMRPG_PERF_WALL_GUARD_MEMO
+    /* New actual frame, same verified source and ordered catalog: zero reads. */
+    legacyWallGuardCount=0;
+    memset(legacyWallGuards,0,sizeof(legacyWallGuards));
+    assert(sampleWallSpan(&work,&src,wall,0,0,2048<<13,0,1));
+    assert(framebuffer[0]==0x1004 && readCalls==afterFirst);
+    assert(legacyWallGuardCount==1);
+#endif
     /* Upper nibble and same-frame guard reuse without additional I/O. */
     assert(sampleWallSpan(&work,&src,wall,1,0,(2048<<13)+(1<<12),0,1));
     assert((uint16_t)framebuffer[1]==0x100b);
@@ -384,6 +428,51 @@ int main(int argc, char** argv) {
     assert(frameFailure.lineIndex==161U);
     assert((uint16_t)framebuffer[0]==0x5a5a && !packOpened);
 
+#if DOOMRPG_PERF_WALL_GUARD_MEMO
+    fixture();
+    assert(sampleWallSpan(&work,&src,wall,0,0,2048<<13,0,1));
+    unsigned prevReads=readCalls;
+    /* A new texture owner generation misses even with same flash lease. */
+    legacyWallGuardCount=0;
+    ++catalogEpoch;
+    records[0].resourceId=16; records[1].resourceId=15;
+    assert(sampleWallSpan(&work,&src,wall,0,0,2048<<13,0,1));
+    assert(readCalls>prevReads && framebuffer[0]==0x1004);
+    records[0].resourceId=15; records[1].resourceId=16;
+    ++catalogEpoch;
+    /* Changed verified backing generation cannot use old successor byte. */
+    ++flashEpoch;
+    texelData[WALL_TEXEL_HEADER_BYTES+32768/2]=0xc7;
+    legacyWallGuardCount=0; prevReads=readCalls;
+    assert(sampleWallSpan(&work,&src,wall,0,0,2048<<13,0,1));
+    assert(readCalls>prevReads && framebuffer[0]==0x1007);
+    /* Zero token (not ready or saturated) must bypass the memo. */
+    uint32_t savedEpoch=catalogEpoch;
+    catalogEpoch=0;
+    legacyWallGuardCount=0; prevReads=readCalls;
+    assert(sampleWallSpan(&work,&src,wall,0,0,2048<<13,0,1));
+    assert(readCalls>prevReads && framebuffer[0]==0x1007);
+    catalogEpoch=savedEpoch;
+    /* Source probe must read fresh even if a memo exists. */
+    sourceProbe=1; legacyWallGuardCount=0; prevReads=readCalls;
+    assert(sampleWallSpan(&work,&src,wall,0,0,2048<<13,0,1));
+    assert(readCalls-prevReads==12U);
+    puts("PASS P2W verified flash memo cross-frame zero reads; catalog/epoch/probe miss");
+#endif
+    /* SD and source-probe retain the independent scalar reads. */
+    for (int probe=0;probe<2;++probe) {
+        fixture();
+        flashActive=probe;sourceProbe=probe;
+        assert(sampleWallSpan(&work,&src,wall,0,0,2048<<13,0,1));
+        assert(framebuffer[0]==0x1004 && readCalls==12U && readBytes==85U);
+    }
+    /* An invalid fourth phase still rejects the entire guard in either mode. */
+    fixture();
+    le16(mappingData + 16 + 72*8 + 8 + 16*2, 69);
+    framebuffer[0]=0x5a5a;
+    assert(!sampleWallSpan(&work,&src,wall,0,0,2048<<13,0,1));
+    assert(frameFailure.code==FIRST_FRAME_FAIL_SPAN_OOB &&
+           legacyWallGuardCount==0 && framebuffer[0]==0x5a5a);
     printf("PASS native wall boundary inline spans=2000 parity=4098 golden=ae456812 successor=68 source=32768 guardMax=4 guardIO=%u reads/%llu bytes retry=0\\n", afterFirst, (unsigned long long)firstGuardBytes);
     if (argc == 3 && strcmp(argv[1],"--fixture")==0)
         return runPackFixture(argv[2]);

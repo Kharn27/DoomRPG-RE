@@ -2246,3 +2246,9 @@ EspNativeGameplayDispatchStatus EspNativeGameplayDispatch_rollbackMove(
     }
     return status;
 }
+
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+int EspNativeGameplayMoveEvents_moveFrameQuiet(void) {
+    return !transaction.active;
+}
+#endif

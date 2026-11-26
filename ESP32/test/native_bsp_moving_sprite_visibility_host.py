@@ -41,6 +41,8 @@ def extract(signature):
 CACHE = extract("static int cachedSpriteLeaf(")
 LEAF = extract("static int spriteLeaf(")
 QUERY = extract("int EspNativeBspVisibility_mapSpriteVisibleReadOnly(")
+POSITION_LEAF = extract("int EspNativeBspVisibility_positionLeaf(")
+POSITION = extract("int EspNativeBspVisibility_positionVisible(")
 DECLS = re.findall(
     r"static struct \{\s*const uint8_t\* arena;[\s\S]*?\} spriteLeafCache;",
     SOURCE,
@@ -173,6 +175,14 @@ int main(void) {
     assert(EspNativeBspVisibility_mapSpriteVisibleReadOnly(&visible,1099U,&leaf));
     assert(spriteReads == before + 2U);
 
+    /* Explicit old position must not use the live projected leaf/cache. */
+    assert(!EspNativeBspVisibility_positionVisible(&visible,279U,64U,64U,&leaf));
+    assert(leaf == 2U);
+    assert(EspNativeBspVisibility_positionVisible(&visible,279U,128U,64U,&leaf));
+    assert(leaf == 1U);
+    assert(!EspNativeBspVisibility_positionVisible(&visible,1100U,64U,64U,&leaf));
+    assert(leaf == UINT32_MAX);
+
     /* Corrupt BSP child remains fail-closed, no stale leaf admitted. */
     map.arenaFNV1a += 1U;
     nodes[0].args2 = 0xffff0001UL;
@@ -192,7 +202,7 @@ def build_and_run(cache_body, directory, label):
     source = directory / (label + ".c")
     source.write_text(
         PREFIX + "\n" + DECLS[0] + "\n" + LEAF + "\n" +
-        cache_body + "\n" + QUERY + "\n" + CHECKS
+        cache_body + "\n" + QUERY + "\n" + POSITION_LEAF + "\n" + POSITION + "\n" + CHECKS
     )
     command = CC + ["-O2", "-std=c11", "-Wall", "-Wextra", "-Werror",
                     str(source), "-o", str(binary)]

@@ -202,6 +202,9 @@ int EspNativeGameplayActionEngine_getEntity(uint32_t spriteIndex,
 int EspNativeGameplayActionEngine_present(void);
 int EspNativeGameplayActionEngine_presentBase(void);
 
+/* Read-only admission for an invisible continuation frame reuse. */
+int EspNativeGameplayActionEngine_moveFrameQuiet(void);
+
 #ifdef __cplusplus
 }
 #endif

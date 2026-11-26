@@ -56,7 +56,7 @@ PREFIX = r'''
 constexpr uint32_t kResidentMaxCachedRangeBytes = 1024U;
 constexpr uint32_t kResidentLargeRangeBytes = 2048U;
 constexpr uint32_t kReportLogicalCallThreshold = 64U;
-struct ResidentRangeRecord { uint32_t nameHash, relativeOffset; uint16_t length, dataOffset; };
+struct ResidentRangeRecord { uint32_t absoluteOffset; uint16_t length, dataOffset; };
 struct ResidentCache { uint8_t bytes[2048]; };
 struct PakIoSample { uint32_t logicalCalls; uint64_t logicalMicros; uint32_t maxLogicalMicros; };
 PakIoSample ioSample = {};
@@ -80,7 +80,7 @@ bool residentEnabled = false, residentLargeRangeEnabled = false;
 bool physicalUsesMapFlash = false, haveCache = false, flashOk = true, sdOk = true;
 ResidentCache cache = {};
 ResidentCache* residentCache = nullptr;
-ResidentRangeRecord hit = {0U, 0U, 8U, 0U};
+ResidentRangeRecord hit = {20U, 8U, 0U};
 EspAssetPackEntry sourceProbeEntry = {};
 EspAssetPackResidentStats residentStats = {};
 unsigned int flashStrictMisses = 0, storeCount = 0;
@@ -92,11 +92,11 @@ bool sourceProbeEntryExact(const EspAssetPackEntry& e) {
            e.crc32 == sourceProbeEntry.crc32 &&
            e.flags == sourceProbeEntry.flags;
 }
-ResidentRangeRecord* findResidentRange(uint32_t, uint32_t, uint32_t) {
-    return haveCache ? &hit : nullptr;
+ResidentRangeRecord* findResidentRange(uint32_t absoluteOffset, uint32_t length) {
+    return haveCache && absoluteOffset == hit.absoluteOffset && length == hit.length ? &hit : nullptr;
 }
-void storeResidentSmallRange(uint32_t, uint32_t, const void*, uint32_t) { ++storeCount; }
-void storeResidentLargeRange(uint32_t, uint32_t, const void*, uint32_t) { ++storeCount; }
+void storeResidentSmallRange(uint32_t, const void*, uint32_t) { ++storeCount; }
+void storeResidentLargeRange(uint32_t, const void*, uint32_t) { ++storeCount; }
 struct FakeFile {
     bool failSeek = false, failRead = false;
     unsigned int seeks = 0, reads = 0;
