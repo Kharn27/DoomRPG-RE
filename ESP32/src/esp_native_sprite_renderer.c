@@ -189,7 +189,7 @@ static uint8_t scratchOwnerLogged;
 #if DOOMRPG_PERF_SPRITE_SAMPLE
 static struct {
     uint32_t ordinal, readUs, readCalls, loadUs, loadCalls, spanUs, spanCalls;
-    uint32_t nearLoadsAvoided;
+    uint32_t nearLoadsAvoided, clipPayloadsAvoided, boundsUs, boundsCalls;
     uint8_t active;
 } spritePerf;
 #define P2J_START(name) const int64_t name = spritePerf.active ? esp_timer_get_time() : 0LL
@@ -504,29 +504,23 @@ static int initSources(Sources* sources, EspNativeSpriteStats* stats) {
     return 1;
 }
 
-static int loadFrame(const Sources* sources,
-                     uint16_t logical,
-                     uint32_t animation,
-                     int glow,
-                     Frame* frame,
-                     uint32_t seenLogical[8],
-                     EspNativeSpriteStats* stats) {
+typedef struct FrameLocation_s {
+    uint32_t shapeOffset;
+    uint32_t paletteOffset;
+} FrameLocation;
+
+/* Bounds are sufficient for geometry; payload is needed only to rasterize. */
+static int loadFrameBounds(const Sources* sources, uint16_t logical,
+                           uint32_t animation, Frame* frame,
+                           FrameLocation* location,
+                           EspNativeSpriteStats* stats) {
     uint8_t idBytes[2];
     uint8_t pair[8];
     uint8_t header[12];
-    uint8_t palette[32];
     uint32_t actual;
     uint32_t shapeOffset;
-    uint32_t maskOffset;
     int32_t sourceOffset;
     int32_t paletteOffset;
-    uint32_t x;
-    uint32_t active = 0U;
-    uint32_t base;
-    uint32_t relative;
-    uint32_t spriteTexelOffset;
-    uint32_t p;
-    uint32_t loadedBytes;
 
     if (logical >= sources->spriteIds || logical >= 256U ||
         EspNativeGraphicsCatalog_findSprite(logical) == NULL) {
@@ -558,10 +552,7 @@ static int loadFrame(const Sources* sources,
 
     shapeOffset = TEXEL_HEADER + (uint32_t)sourceOffset;
     if (!readRange(&sources->bitshapes, shapeOffset, header,
-                   sizeof(header), stats) ||
-        !readRange(&sources->palettes,
-                   PALETTE_HEADER + (uint32_t)paletteOffset * 2U,
-                   palette, sizeof(palette), stats)) {
+                   sizeof(header), stats)) {
         return 0;
     }
 
@@ -584,7 +575,24 @@ static int loadFrame(const Sources* sources,
 
     frame->maskBytes = (uint32_t)frame->width * (uint32_t)frame->pitch;
     if (frame->maskBytes == 0U || frame->maskBytes > MAX_MASK) return 0;
-    maskOffset = shapeOffset + SHAPE_HEADER;
+    location->shapeOffset = shapeOffset;
+    location->paletteOffset = (uint32_t)paletteOffset;
+    return 1;
+}
+
+static int loadFramePayload(const Sources* sources, int glow, Frame* frame,
+                            const FrameLocation* location,
+                            uint32_t seenLogical[8],
+                            EspNativeSpriteStats* stats) {
+    uint8_t palette[32];
+    uint32_t maskOffset, x, active = 0U, base, relative;
+    uint32_t spriteTexelOffset, p, loadedBytes;
+    const uint16_t logical = frame->logical;
+
+    if (!readRange(&sources->palettes,
+                   PALETTE_HEADER + location->paletteOffset * 2U,
+                   palette, sizeof(palette), stats)) return 0;
+    maskOffset = location->shapeOffset + SHAPE_HEADER;
     if (!readRange(&sources->bitshapes, maskOffset, frame->mask,
                    frame->maskBytes, stats)) {
         return 0;
@@ -640,6 +648,18 @@ static int loadFrame(const Sources* sources,
         }
     }
     return 1;
+}
+
+static int loadFrame(const Sources* sources,
+                     uint16_t logical,
+                     uint32_t animation,
+                     int glow,
+                     Frame* frame,
+                     uint32_t seenLogical[8],
+                     EspNativeSpriteStats* stats) {
+    FrameLocation location;
+    return loadFrameBounds(sources, logical, animation, frame, &location, stats) &&
+           loadFramePayload(sources, glow, frame, &location, seenLogical, stats);
 }
 
 /* Original Combat_updateProjectile() impact: source sprite 180..190
@@ -1513,6 +1533,12 @@ static int drawAt(Render_t* render,
     int maximum;
     int spriteX;
     int spriteY;
+#if defined(DOOMRPG_PERF_NEAR_LOAD) && DOOMRPG_PERF_NEAR_LOAD
+    /* P2r declaration BEGIN */
+    FrameLocation deferredLocation;
+    int deferredPayload = 0;
+    /* P2r declaration END */
+#endif
 #if defined(DOOMRPG_ESP32_TRACE_SPRITE)
     uint32_t tracePixelsBefore = stats->pixelsDrawn;
 #endif
@@ -1591,13 +1617,31 @@ static int drawAt(Render_t* render,
 #if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
         P2J_START(loadStart);
 #endif
+#if defined(DOOMRPG_PERF_NEAR_LOAD) && DOOMRPG_PERF_NEAR_LOAD
+        /* P2r bounds-only BEGIN */
+        if (crossAnimation == NULL && !glow &&
+            (parent->info & ORIENT_MASK) == 0U &&
+            center.x >= 0x40000 &&
+            EspAssetPack_isMapFlashActive() && !EspAssetPack_isSourceProbeActive()) {
+            if (!loadFrameBounds(sources, logical, animation, frame,
+                                 &deferredLocation, stats)) return 0;
+            deferredPayload = 1;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
+            P2J_ACCUM(loadStart, boundsUs, boundsCalls);
+#endif
+        } else
+        /* P2r bounds-only END */
+#endif
         if (!loadFrame(sources, logical, animation, glow,
                        frame, seenLogical, stats)) {
             TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=frame-failed logical=%u animation=%u glow=%u\n", (unsigned int)parent->index, (unsigned int)logical, (unsigned int)animation, (unsigned int)(glow != 0));
             return 0;
         }
 #if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
-        P2J_ACCUM(loadStart, loadUs, loadCalls);
+#if defined(DOOMRPG_PERF_NEAR_LOAD) && DOOMRPG_PERF_NEAR_LOAD
+        if (!deferredPayload)
+#endif
+            P2J_ACCUM(loadStart, loadUs, loadCalls);
 #endif
         if (crossAnimation != NULL) *crossAnimation = animation;
     }
@@ -1693,6 +1737,13 @@ static int drawAt(Render_t* render,
     }
 
     if (!EspNativeDynamicLineRender_clipLine(&line)) {
+#if defined(DOOMRPG_PERF_NEAR_LOAD) && DOOMRPG_PERF_NEAR_LOAD
+        /* P2r clip counter BEGIN */
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
+        if (deferredPayload && spritePerf.active) ++spritePerf.clipPayloadsAvoided;
+#endif
+        /* P2r clip counter END */
+#endif
         TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=clip-culled animation=%u glow=%u\n", (unsigned int)parent->index, (unsigned int)animation, (unsigned int)(glow != 0));
         if (glow) ++stats->glowClipCulled;
         else ++stats->clipCulled;
@@ -1704,6 +1755,20 @@ static int drawAt(Render_t* render,
     EspNativeRenderGeometry_projectVertex(
         render->screenWidth, EspNativeRenderGeometry_fracHalfScreenWidth(render->screenWidth),
         &line.vert2.x, &line.vert2.y, &line.vert2.z);
+#if defined(DOOMRPG_PERF_NEAR_LOAD) && DOOMRPG_PERF_NEAR_LOAD
+    /* P2r payload BEGIN */
+    if (deferredPayload) {
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
+        P2J_START(payloadStart);
+#endif
+        if (!loadFramePayload(sources, glow, frame, &deferredLocation,
+                              seenLogical, stats)) return 0;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
+        P2J_ACCUM(payloadStart, loadUs, loadCalls);
+#endif
+    }
+    /* P2r payload END */
+#endif
     /* Source Render_renderSpriteObject() sets damageBlend while this monster's
      * 100ms damageBlendTime lives. Render_getSpanMode() then saturates its
      * 16-entry palette once and clears that flag before drawing the span.
@@ -1943,6 +2008,7 @@ static int renderImpl(struct Render_s* renderBase,
         spritePerf.readUs=spritePerf.readCalls=spritePerf.loadUs=0U;
         spritePerf.loadCalls=spritePerf.spanUs=spritePerf.spanCalls=0U;
         spritePerf.nearLoadsAvoided=0U;
+        spritePerf.clipPayloadsAvoided=spritePerf.boundsUs=spritePerf.boundsCalls=0U;
         j0=esp_timer_get_time();
     }
 #endif
@@ -2148,6 +2214,9 @@ done:
         printf("[PERFGAMEP2Q] ordinal=%u preview=%u nearLoadsAvoided=%u mapLoadCalls=%u sample=1/16\n",
             (unsigned)spritePerf.ordinal, (unsigned)preview,
             (unsigned)spritePerf.nearLoadsAvoided, (unsigned)spritePerf.loadCalls);
+        printf("[PERFGAMEP2R] ordinal=%u clipPayloadsAvoided=%u boundsCalls=%u boundsUs=%u sample=1/16\n",
+            (unsigned)spritePerf.ordinal, (unsigned)spritePerf.clipPayloadsAvoided,
+            (unsigned)spritePerf.boundsCalls, (unsigned)spritePerf.boundsUs);
     }
     spritePerf.active = 0U;
 #endif

@@ -46,10 +46,19 @@ assert "frame, seenLogical, stats, &crossAnimation)" in cross
 
 # P2q: remove only the new early-return block from the historical reference;
 # the projected center is mathematically identical on both paths.
-early_start = draw.index("#if defined(DOOMRPG_PERF_NEAR_LOAD)")
-early_end = draw.index("        /* P2q early decode rejection END */", early_start)
-early_end = draw.index("#endif", early_end) + len("#endif")
-reference_draw = (draw[:early_start] + draw[early_end:]).replace(
+def strip_p2r(text):
+    for name in ("declaration", "bounds-only", "clip counter", "payload"):
+        begin = text.index("/* P2r " + name + " BEGIN */")
+        start = text.rindex("#if defined(DOOMRPG_PERF_NEAR_LOAD)", 0, begin)
+        end = text.index("#endif", text.index("/* P2r " + name + " END */", begin)) + len("#endif")
+        text = text[:start] + text[end:]
+    return text
+
+reference_input = strip_p2r(draw)
+early_start = reference_input.index("#if defined(DOOMRPG_PERF_NEAR_LOAD)")
+early_end = reference_input.index("        /* P2q early decode rejection END */", early_start)
+early_end = reference_input.index("#endif", early_end) + len("#endif")
+reference_draw = (reference_input[:early_start] + reference_input[early_end:]).replace(
     "static int drawAt(", "static int drawAtReference(", 1)
 reference_draw = reference_draw.replace(
     "EspNativeSpriteStats* stats,\n                  uint32_t* crossAnimation) {",
@@ -140,7 +149,8 @@ typedef struct {
     uint8_t fireSamplePhase;
 } EspNativeSpriteStats;
 static unsigned reads, rasters, entities, mapReads, failRead, corruptFrame, animationDrift;
-static int flashActive, sourceProbe, depthBias;
+static int flashActive, sourceProbe, depthBias, rejectClip, failPayload;
+static unsigned boundsReads, payloadReads;
 static int EspAssetPack_isMapFlashActive(void) {return flashActive;}
 static int EspAssetPack_isSourceProbeActive(void) {return sourceProbe;}
 static uint32_t clockFrame, lastOffsets[16];
@@ -187,6 +197,27 @@ static int loadFrame(const Sources* src, uint16_t logical,uint32_t animation,
     stats->packReads+=7;
     return 1;
 }
+typedef struct { uint32_t logical; } FrameLocation;
+static int loadFrameBounds(const Sources* src,uint16_t logical,uint32_t animation,
+                           Frame* frame,FrameLocation* loc,EspNativeSpriteStats* stats) {
+    (void)src;(void)stats;
+    ++reads;++boundsReads;
+    if (failRead && reads==failRead) return 0;
+    loc->logical=logical;
+    memset(frame,0,sizeof *frame);
+    frame->logical=logical;frame->actual=(uint16_t)(logical*2U+animation);
+    frame->xMin=28;frame->xMax=35;
+    return 1;
+}
+static int loadFramePayload(const Sources* src,int glow,Frame* frame,
+                            const FrameLocation* loc,uint32_t seen[8],EspNativeSpriteStats* stats) {
+    (void)src;(void)glow;(void)seen;
+    ++payloadReads;
+    if(failPayload || loc->logical!=frame->logical) return 0;
+    frame->texels[0]=(uint8_t)(frame->actual^0x5aU);
+    ++stats->frameLoads;stats->frameBytes+=5;stats->packReads+=7;
+    return 1;
+}
 static void EspNativeRenderGeometry_transformPoint(
     int viewCos_,int viewSin_,int viewSin,int viewCos,int transX,int transY,
     int* x,int* y) {
@@ -196,7 +227,7 @@ static void EspNativeRenderGeometry_transformPoint(
     *y=(*y-900)*65536;
 }
 static int EspNativeDynamicLineRender_clipLine(Line_t *line) {
-    (void)line;return 1;
+    (void)line;return !rejectClip;
 }
 static void EspNativeRenderGeometry_projectVertex(
     int width,int half,int* x,int* y,int* z) {
@@ -250,7 +281,8 @@ cases = r'''
 static void clearInput(void) {
     reads=rasters=entities=mapReads=failRead=corruptFrame=animationDrift=0U;
     clockFrame=0;
-    flashActive=sourceProbe=depthBias=0;
+    flashActive=sourceProbe=depthBias=rejectClip=failPayload=0;
+    boundsReads=payloadReads=0;
     memset(lastOffsets,0,sizeof lastOffsets);
 }
 static int runGroup(int optimized,int corrupt,int vary,int fail,
@@ -307,8 +339,31 @@ static void singleNear(int fast,int flash,int probe,int glow,int near,
     }
     if (ok && !near) assert(rasters==1U);
 }
+static void checkClip(int fast,int reject,int fail,int expectedOk,
+                      unsigned expectedPayloads) {
+    Render_t render={0};
+    Sources sources={252U};
+    Frame frame={0};
+    Order parent={7U,83U,83U,123};
+    EspNativeSpriteStats stats={0};
+    uint32_t seen[8]={0};
+    clearInput();flashActive=1;rejectClip=reject;failPayload=fail;
+    int ok=fast ? drawAt(&render,&sources,&parent,83U,0U,0,0,0,
+                         &frame,seen,&stats,NULL)
+                : drawAtReference(&render,&sources,&parent,83U,0U,0,0,0,
+                                  &frame,seen,&stats);
+    assert(ok==expectedOk && payloadReads==expectedPayloads);
+    if(reject && ok) assert(rasters==0U && stats.clipCulled==1U);
+    if(fast) assert(boundsReads==1U && reads==1U);
+    if(ok && !reject) assert(rasters==1U && stats.frameLoads==1U);
+}
 int main(void) {
     EspNativeSpriteStats oldStats,newStats;
+    checkClip(0,1,0,1,0U);
+    checkClip(1,1,0,1,0U);
+    checkClip(1,1,1,1,0U);
+    checkClip(1,0,0,1,1U);
+    checkClip(1,0,1,0,1U);
     singleNear(0,1,0,0,1,0,1,1U);
     singleNear(1,1,0,0,1,0,1,0U);
     singleNear(1,1,0,0,0,0,1,1U); /* threshold equality draws */
