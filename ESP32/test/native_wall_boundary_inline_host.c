@@ -65,14 +65,14 @@ static FirstFrameFailure frameFailure;
 static LegacyWallGuard legacyWallGuards[LEGACY_WALL_GUARD_LIMIT];
 static uint8_t legacyWallGuardCount;
 #if DOOMRPG_PERF_WALL_GUARD_MEMO
-#define WALL_MEMO_TEXTURE_LIMIT 64U
 static struct {
     LegacyWallGuard guard;
-    uint32_t epoch, mappingsSize, wallSize;
-    uint16_t count;
-    uint8_t ids[WALL_MEMO_TEXTURE_LIMIT];
+    uint32_t epoch, textureEpoch, mappingsSize, wallSize;
 } wallGuardMemo;
-static uint32_t flashEpoch;
+static uint32_t flashEpoch, catalogEpoch;
+static uint32_t EspNativeGraphicsCatalog_textureEpoch(void) {
+    return catalogEpoch;
+}
 #endif
 #define RECORD_FRAME_FAILURE(c,l,g,a,f,s,v0,v1,v2,v3) do { \
     if (frameFailure.code == FIRST_FRAME_FAIL_NONE) { \
@@ -135,6 +135,7 @@ static void le32(uint8_t* p, uint32_t v) {
 static void fixture(void) {
 #if DOOMRPG_PERF_WALL_GUARD_MEMO
     ++flashEpoch;
+    ++catalogEpoch;
 #endif
     const uint32_t pairs=72, bitPairs=1, ids=20;
     const uint32_t idBase = 16 + pairs * 8 + bitPairs * 8;
@@ -431,18 +432,27 @@ int main(int argc, char** argv) {
     fixture();
     assert(sampleWallSpan(&work,&src,wall,0,0,2048<<13,0,1));
     unsigned prevReads=readCalls;
-    /* Changed catalog order is an exact miss even with same generation. */
+    /* A new texture owner generation misses even with same flash lease. */
     legacyWallGuardCount=0;
+    ++catalogEpoch;
     records[0].resourceId=16; records[1].resourceId=15;
     assert(sampleWallSpan(&work,&src,wall,0,0,2048<<13,0,1));
     assert(readCalls>prevReads && framebuffer[0]==0x1004);
     records[0].resourceId=15; records[1].resourceId=16;
+    ++catalogEpoch;
     /* Changed verified backing generation cannot use old successor byte. */
     ++flashEpoch;
     texelData[WALL_TEXEL_HEADER_BYTES+32768/2]=0xc7;
     legacyWallGuardCount=0; prevReads=readCalls;
     assert(sampleWallSpan(&work,&src,wall,0,0,2048<<13,0,1));
     assert(readCalls>prevReads && framebuffer[0]==0x1007);
+    /* Zero token (not ready or saturated) must bypass the memo. */
+    uint32_t savedEpoch=catalogEpoch;
+    catalogEpoch=0;
+    legacyWallGuardCount=0; prevReads=readCalls;
+    assert(sampleWallSpan(&work,&src,wall,0,0,2048<<13,0,1));
+    assert(readCalls>prevReads && framebuffer[0]==0x1007);
+    catalogEpoch=savedEpoch;
     /* Source probe must read fresh even if a memo exists. */
     sourceProbe=1; legacyWallGuardCount=0; prevReads=readCalls;
     assert(sampleWallSpan(&work,&src,wall,0,0,2048<<13,0,1));

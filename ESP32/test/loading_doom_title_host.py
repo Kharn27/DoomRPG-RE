@@ -214,6 +214,7 @@ tft_harness = r"""
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
+#include "esp_turn_lamp.h"
 #define DOOMRPG_LOGICAL_WIDTH 160
 #define DOOMRPG_LOGICAL_HEIGHT 120
 #define DOOMRPG_PHYSICAL_WIDTH 320
@@ -243,6 +244,12 @@ static TFT_eSPI actualDisplay;
 static TFT_eSPI* platformDisplay=&actualDisplay;
 static uint16_t fb[160U*120U];
 static uint16_t* framebuffer=fb;
+/* Real extracted presenter has a separate presentation-only lamp owner.
+ * Loading owns the LCD, so its world predicate is false. */
+static const int kLampLeft=152, kLampTop=2, kLampSize=6;
+static bool lampWorldFrame=true;
+static EspTurnLampState lampState={123U,1U,1U};
+static int EspNativeResidentGameplay_turnLampWorld() { return 0; }
 """ + method + r"""
 int main() {
     for (unsigned i=0;i<320U*240U;i++) actualDisplay.lcd[i]=0x1234U;
@@ -253,6 +260,7 @@ int main() {
         for (int x=16;x<144;x++)
             fb[y*160+x]=(uint16_t)(0x1000U+x+(y-82)*13U);
     assert(PlatformVideo_presentRegion(16,82,128,18));
+    assert(!lampWorldFrame && !lampState.busy && !lampState.drawn);
     assert(actualDisplay.starts==1 && actualDisplay.ends==1);
     assert(actualDisplay.width==256 && actualDisplay.height==36);
     for (int py=0;py<240;py++) for (int px=0;px<320;px++) {
@@ -275,6 +283,6 @@ with tempfile.TemporaryDirectory(prefix="doomrpg-lcd-region-") as tmp:
     binary = Path(tmp) / "region-host"
     source.write_text(tft_harness)
     subprocess.run(["c++", "-O2", "-std=c++11", "-Wall", "-Wextra",
-                    "-Werror", "-pedantic", str(source), "-o", str(binary)],
+                    "-Werror", "-pedantic", "-I", str(root / "include"), str(source), "-o", str(binary)],
                    check=True)
     subprocess.run([str(binary)], check=True)

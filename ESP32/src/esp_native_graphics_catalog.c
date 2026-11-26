@@ -19,6 +19,9 @@ typedef char EspNativeGraphicsCatalogRecord_must_be_40_bytes[
 
 static EspNativeGraphicsCatalogRecord* catalogArena;
 static EspNativeGraphicsCatalogView catalogView;
+/* Texture records are immutable after build. Sprite-only expansions copy
+ * the entire ordered texture prefix unchanged. Never recycle a generation. */
+static uint32_t textureEpoch = 1U;
 
 static uint32_t readLe32(const uint8_t* p) {
     return (uint32_t)p[0] |
@@ -116,6 +119,7 @@ static EspNativeGraphicsCatalogStatus readRecord(
 }
 
 void EspNativeGraphicsCatalog_reset(void) {
+    if (textureEpoch != UINT32_MAX) ++textureEpoch;
     free(catalogArena);
     catalogArena = NULL;
     memset(&catalogView, 0, sizeof(catalogView));
@@ -124,6 +128,11 @@ void EspNativeGraphicsCatalog_reset(void) {
 int EspNativeGraphicsCatalog_isReady(void) {
     return catalogArena != NULL && catalogView.storageBytes != 0U &&
            catalogView.stateFNV1a != 0U;
+}
+
+uint32_t EspNativeGraphicsCatalog_textureEpoch(void) {
+    return EspNativeGraphicsCatalog_isReady() && textureEpoch != UINT32_MAX
+        ? textureEpoch : 0U;
 }
 
 const EspNativeGraphicsCatalogView* EspNativeGraphicsCatalog_view(void) {
@@ -260,6 +269,7 @@ EspNativeGraphicsCatalogStatus EspNativeGraphicsCatalog_buildFromRuntime(void) {
 
     EspAssetPack_close();
 
+    if (textureEpoch != UINT32_MAX) ++textureEpoch;
     catalogView.textures = catalogArena;
     catalogView.sprites = catalogArena + textureCount;
     catalogView.textureCount = textureCount;

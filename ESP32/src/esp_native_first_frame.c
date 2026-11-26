@@ -201,14 +201,11 @@ static FirstFrameFailure frameFailure;
 static LegacyWallGuard legacyWallGuards[LEGACY_WALL_GUARD_LIMIT];
 static uint8_t legacyWallGuardCount;
 #if DOOMRPG_PERF_WALL_GUARD_MEMO
-/* One successful immutable flash result. Exact ordered texture ID witness
- * (no hash collision, no retained catalog pointer), bounded to 64 IDs. */
-#define WALL_MEMO_TEXTURE_LIMIT 64U
+/* One successful immutable flash result. Nonrecycled texture-owner
+ * epoch proves exact ordered texture identity without a duplicate ID list. */
 static struct {
     LegacyWallGuard guard;
-    uint32_t epoch, mappingsSize, wallSize;
-    uint16_t count;
-    uint8_t ids[WALL_MEMO_TEXTURE_LIMIT];
+    uint32_t epoch, textureEpoch, mappingsSize, wallSize;
 } wallGuardMemo;
 #endif
 
@@ -356,23 +353,18 @@ static int prepareLegacyWallGuard(FirstFrameWork* work,
     if (catalog == NULL || catalog->textureCount == 0U) return 0;
 #if DOOMRPG_PERF_WALL_GUARD_MEMO
     const uint32_t epoch = EspAssetPack_verifiedFlashLeaseEpoch();
-    int memoEligible = epoch != 0U && catalog->textureCount <= WALL_MEMO_TEXTURE_LIMIT;
-    for (i = 0U; memoEligible && i < catalog->textureCount; ++i)
-        if (catalog->textures[i].resourceId > UINT8_MAX) memoEligible = 0;
+    const uint32_t textureEpoch = EspNativeGraphicsCatalog_textureEpoch();
+    const int memoEligible = epoch != 0U && textureEpoch != 0U;
     if (memoEligible && wallGuardMemo.epoch == epoch &&
-        wallGuardMemo.count == catalog->textureCount &&
+        wallGuardMemo.textureEpoch == textureEpoch &&
         wallGuardMemo.mappingsSize == work->mappings.size &&
         wallGuardMemo.wallSize == work->wallTexels.size &&
         wallGuardMemo.guard.valid == 1U &&
         wallGuardMemo.guard.logicalId == source->logicalId &&
         wallGuardMemo.guard.actualId == source->actualId &&
         wallGuardMemo.guard.sourceOffset == source->sourceTexelOffset) {
-        for (i = 0U; i < catalog->textureCount; ++i)
-            if (wallGuardMemo.ids[i] != catalog->textures[i].resourceId) break;
-        if (i == catalog->textureCount) {
-            legacyWallGuards[legacyWallGuardCount++] = wallGuardMemo.guard;
-            return 1;
-        }
+        legacyWallGuards[legacyWallGuardCount++] = wallGuardMemo.guard;
+        return 1;
     }
 #endif
     if (!EspAssetPack_readRange(&work->mappings, 0U, mappingHeader,
@@ -493,9 +485,7 @@ static int prepareLegacyWallGuard(FirstFrameWork* work,
         wallGuardMemo.epoch = epoch;
         wallGuardMemo.mappingsSize = work->mappings.size;
         wallGuardMemo.wallSize = work->wallTexels.size;
-        wallGuardMemo.count = catalog->textureCount;
-        for (i = 0U; i < catalog->textureCount; ++i)
-            wallGuardMemo.ids[i] = (uint8_t)catalog->textures[i].resourceId;
+        wallGuardMemo.textureEpoch = textureEpoch;
     }
 #endif
     printf("[NATIVEFRAME] BOUNDARY-INLINE logical=%u actual=%u source=%u successorActual=%u successorSource=%u byte=%02x owner=BSS bytes=%u\n",
