@@ -244,6 +244,9 @@ jobs:
       - name: GAME-AI-14 generic native C attack-candidate and RNG-count scenarios
         run: python ESP32/test/game_ai14_candidate_rng_host.py
 
+      - name: GAME-AI-14 A4 special-plane continuation original Game_trace oracle (host C)
+        run: python ESP32/test/game_ai14_special_plane_host.py
+
       - name: GAME-AI-14 native movement publication and RNG transaction (host C)
         run: python ESP32/test/game_ai14_movement_transaction_host.py
 

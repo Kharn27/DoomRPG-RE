@@ -272,7 +272,8 @@ static int specialEntityBlocks(uint32_t spriteIndex,
                                int32_t sourceX,
                                int32_t sourceY,
                                int32_t destX,
-                               int32_t destY) {
+                               int32_t destY,
+                               int tileOrigin) {
     EspMapSprite sprite;
     int32_t sprX;
     int32_t sprY;
@@ -280,6 +281,15 @@ static int specialEntityBlocks(uint32_t spriteIndex,
     if ((sprite.info & THREEGOAL_SPECIAL_TRACE_ENTITY_FLAG) == 0U) return 0;
     sprX = (int32_t)sprite.x;
     sprY = (int32_t)sprite.y;
+    /* Entity_calcPath passes tile origins (x << 6), unlike the initial
+     * Entity_aiGoal_MOVE center-to-center LOS. Tile membership is unchanged;
+     * the special-plane crossing must use the original endpoints. */
+    if (tileOrigin) {
+        sourceX -= THREEGOAL_TILE_CENTER;
+        sourceY -= THREEGOAL_TILE_CENTER;
+        destX -= THREEGOAL_TILE_CENTER;
+        destY -= THREEGOAL_TILE_CENTER;
+    }
     if ((sprite.info & THREEGOAL_SPECIAL_TRACE_Y_MASK) != 0U) {
         return (sourceY <= sprY && destY > sprY) ||
                (sourceY >= sprY && destY < sprY);
@@ -291,9 +301,8 @@ static int specialEntityBlocks(uint32_t spriteIndex,
     return 0;
 }
 
-/* Return 1 blocked, 0 clear, -1 not ready, -2 unsupported legacy special
- * crossing. This is the exact continuation-goal subset of the proven movement
- * planner and deliberately keeps the same fail-closed special-plane boundary. */
+/* Return 1 blocked, 0 clear, -1 not ready. For calcPath's single-tile
+ * subtrace, evaluate type14/15 with the legacy tile-origin endpoints. */
 static int blockingSpriteOnTileReference(uint16_t tile,
                                 int32_t sourceX,
                                 int32_t sourceY,
@@ -326,8 +335,8 @@ static int blockingSpriteOnTileReference(uint16_t tile,
         }
         if (type == THREEGOAL_TYPE_SPECIAL_TRACE ||
             type == THREEGOAL_TYPE_SPECIAL_TRACE_2) {
-            if (strictSpecial) return -2;
-            specialBlocks = specialEntityBlocks(i, sourceX, sourceY, destX, destY);
+            specialBlocks = specialEntityBlocks(i, sourceX, sourceY, destX, destY,
+                                                strictSpecial);
             if (specialBlocks < 0) return -1;
             if (specialBlocks == 0) continue;
         }
@@ -375,8 +384,8 @@ static int blockingSpriteOnTileIndexed(uint16_t tile,
         }
         if (type == THREEGOAL_TYPE_SPECIAL_TRACE ||
             type == THREEGOAL_TYPE_SPECIAL_TRACE_2) {
-            if (strictSpecial) return -2;
-            specialBlocks = specialEntityBlocks(i, sourceX, sourceY, destX, destY);
+            specialBlocks = specialEntityBlocks(i, sourceX, sourceY, destX, destY,
+                                                strictSpecial);
             if (specialBlocks < 0) return -1;
             if (specialBlocks == 0) continue;
         }
@@ -439,6 +448,8 @@ static int cardinalTraceClearBody(int32_t sourceX,
         return 0;
     }
     if (distance == 0U || distance > 31U) return 0;
+    /* Only calcPath's single cardinal step is proven for tile-origin mode. */
+    if (strictSpecial && distance != 1U) return -2;
 
     for (i = 1U; i <= distance; ++i) {
         int32_t prevX = sourceX + stepX * (int32_t)(i - 1U);
