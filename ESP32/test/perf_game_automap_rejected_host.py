@@ -15,8 +15,8 @@ prefix = r'''
 #include <string.h>
 #include "esp_native_bsp_visibility.h"
 #include "esp_map_automap_state.h"
-typedef struct { uint32_t lineCount,mapSpriteCount; } EspMapRuntimeView;
-static EspMapRuntimeView map={8,278};
+#include "esp_map_runtime.h"
+static EspMapRuntimeView map={.lineCount=8,.mapSpriteCount=278};
 static uint8_t lines[8],sprites[1100],memo[128],packedLines;
 static EspMapAutomapStateView automap={.lineRevealedBits=&packedLines,.lineCount=8,.lineBitsetBytes=1};
 static int useView;
@@ -27,7 +27,7 @@ const EspMapAutomapStateView* EspMapAutomapState_view(void){
     return useView ? &automap : NULL;
 }
 static uint32_t queries,activations,order[1100],bad=UINT32_MAX;
-static const EspMapRuntimeView* EspMapRuntime_view(void){return &map;}
+const EspMapRuntimeView* EspMapRuntime_view(void){return &map;}
 int EspMapAutomapState_isReady(void){return 1;}
 int EspMapAutomapState_getLineRevealed(uint32_t i,uint8_t* v){++lineGets;*v=lines[i];return 1;}
 int EspMapAutomapState_setLineRevealed(uint32_t i,uint8_t v){lines[i]=v;return 1;}
