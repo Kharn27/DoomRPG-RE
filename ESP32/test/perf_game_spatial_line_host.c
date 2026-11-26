@@ -45,10 +45,10 @@ int main(void) {
             uint16_t candidate;uint16_t projectedTile;
             --i;
             assert(tileOf(&projected[i],&projectedTile));
-            if(EspPerfSpatialLine_bucket(projectedTile)!=EspPerfSpatialLine_bucket((uint16_t)tile)) continue;
+            if(projectedTile!=(uint16_t)tile) continue;
             candidate=(uint16_t)i;
             assert(cur==candidate);
-            cur=idx.next[cur];
+            cur=EspPerfSpatialLine_next(&idx,cur,(uint16_t)tile);
         }
         assert(cur==ESP_PERF_SPATIAL_LINE_NONE);
     }
@@ -66,10 +66,9 @@ int main(void) {
         int found=0;
         while(cur!=ESP_PERF_SPATIAL_LINE_NONE) {
             if(cur==10U) ++found;
-            cur=idx.next[cur];
+            cur=EspPerfSpatialLine_next(&idx,cur,(uint16_t)tile);
         }
-        assert(found==(EspPerfSpatialLine_bucket((uint16_t)tile)==
-                       EspPerfSpatialLine_bucket(132U)));
+        assert(found==(tile==132U));
     }
     failOpenAt=447;
     assert(!EspPerfSpatialLine_begin(&idx,tileOf) && !idx.active);
@@ -85,7 +84,31 @@ int main(void) {
     runtime.lineCount=512U;
     for(i=448U;i<512U;i++) projected[i]=projected[i%448U];
     assert(EspPerfSpatialLine_begin(&idx,tileOf));
+    /* The maximum valid index (511) and the encoded end marker must not
+     * alias. Exercise all 16 local tiles in a single bucket, duplicates,
+     * and exhaustive descending exact-tile enumeration. */
+    for(i=0;i<runtime.lineCount;i++) {
+        projected[i].x1=(uint16_t)((i%4U)*64U);
+        projected[i].y1=(uint16_t)(((i/4U)%4U)*64U);
+        projected[i].flags=0U;
+    }
+    assert(EspPerfSpatialLine_begin(&idx,tileOf));
+    for(tile=0;tile<1024U;tile++) {
+        uint16_t cur=EspPerfSpatialLine_first(&idx,(uint16_t)tile);
+        for(i=runtime.lineCount;i>0U;) {
+            uint16_t expectedTile;
+            --i;
+            assert(tileOf(&projected[i],&expectedTile));
+            if(expectedTile!=(uint16_t)tile) continue;
+            assert(cur==i);
+            cur=EspPerfSpatialLine_next(&idx,cur,(uint16_t)tile);
+        }
+        assert(cur==ESP_PERF_SPATIAL_LINE_NONE);
+    }
+    assert(EspPerfSpatialLine_next(&idx,UINT16_MAX,0U)==ESP_PERF_SPATIAL_LINE_NONE);
+    assert(EspPerfSpatialLine_next(&idx,0U,1024U)==ESP_PERF_SPATIAL_LINE_NONE);
     EspPerfSpatialLine_end(&idx);
-    puts("P1j spatial line host PASS descending/buckets/rebuild/capacity/fail-closed");
+    assert(EspPerfSpatialLine_next(&idx,0U,0U)==ESP_PERF_SPATIAL_LINE_NONE);
+    puts("P3d spatial line host PASS exact tile/order/packed links/rebuild/capacity/fail-closed");
     return 0;
 }

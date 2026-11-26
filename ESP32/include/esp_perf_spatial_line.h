@@ -6,18 +6,26 @@
 
 /* P1j: reversible one-plan index of public projected line geometry.
  * 4x4-tile buckets; ascending insertion yields DESCENDING line order.
- * Every query re-evaluates dynamic open state, type, texture, and exact tile.
+ * P3d: pack the exact in-bucket tile into each existing next word.
+ * Queries visit only exact-tile candidates, then re-evaluate dynamic open
+ * state, type, texture and geometry. The synchronous scope is unchanged.
  * If any projection/geometry cannot be indexed, no index is published. */
 #define ESP_PERF_SPATIAL_LINE_CAPACITY 512U
 #define ESP_PERF_SPATIAL_LINE_BUCKETS 64U
 #define ESP_PERF_SPATIAL_LINE_NONE UINT16_MAX
+#define ESP_PERF_SPATIAL_LINE_LINK_MASK 0x03ffU
+#define ESP_PERF_SPATIAL_LINE_LINK_END 0x03ffU
+#define ESP_PERF_SPATIAL_LINE_LOCAL_SHIFT 10U
+#if ESP_PERF_SPATIAL_LINE_CAPACITY > ESP_PERF_SPATIAL_LINE_LINK_END
+#error Spatial line links cannot encode this capacity
+#endif
 #ifndef DOOMRPG_PERF_LINE_FAST
 #define DOOMRPG_PERF_LINE_FAST 1
 #endif
 typedef int (*EspPerfSpatialLineTileFn)(const EspMapLine*, uint16_t*);
 typedef struct EspPerfSpatialLineIndex_s {
     uint16_t first[ESP_PERF_SPATIAL_LINE_BUCKETS];
-    uint16_t next[ESP_PERF_SPATIAL_LINE_CAPACITY];
+    uint16_t next[ESP_PERF_SPATIAL_LINE_CAPACITY]; /* packed next + local tile */
     uint16_t lineCount;
     uint8_t active;
 } EspPerfSpatialLineIndex;
@@ -25,6 +33,9 @@ extern EspPerfSpatialLineIndex EspPerfGameP1_spatialLineIndex;
 static inline uint8_t EspPerfSpatialLine_bucket(uint16_t tile) {
     return (uint8_t)((((tile >> 5U) >> 2U) * 8U) +
                      ((tile & 31U) >> 2U));
+}
+static inline uint16_t EspPerfSpatialLine_localTile(uint16_t tile) {
+    return (uint16_t)(((tile >> 5U) & 3U) * 4U + (tile & 3U));
 }
 static inline void EspPerfSpatialLine_end(EspPerfSpatialLineIndex* idx) {
     if(idx != NULL) {idx->active=0U; idx->lineCount=0U;}
@@ -57,17 +68,39 @@ static inline int EspPerfSpatialLine_begin(EspPerfSpatialLineIndex* idx,
             return 0;
         }
         bucket=EspPerfSpatialLine_bucket(tile);
-        idx->next[i]=idx->first[bucket];
+        const uint16_t link = idx->first[bucket] == ESP_PERF_SPATIAL_LINE_NONE
+            ? ESP_PERF_SPATIAL_LINE_LINK_END : idx->first[bucket];
+        idx->next[i]=(uint16_t)(link |
+            (EspPerfSpatialLine_localTile(tile) << ESP_PERF_SPATIAL_LINE_LOCAL_SHIFT));
         idx->first[bucket]=(uint16_t)i;
     }
     idx->lineCount=(uint16_t)runtime->lineCount;
     idx->active=1U;
     return 1;
 }
+/* Only called with a successfully validated, synchronous one-plan index.
+ * Preserve descending order, never decode the end marker as an index. */
+static inline uint16_t EspPerfSpatialLine_match(
+        const EspPerfSpatialLineIndex* idx,uint16_t i,uint16_t tile) {
+    const uint16_t local=EspPerfSpatialLine_localTile(tile);
+    while(i < idx->lineCount) {
+        const uint16_t packed=idx->next[i];
+        if((packed >> ESP_PERF_SPATIAL_LINE_LOCAL_SHIFT)==local) return i;
+        i=(uint16_t)(packed & ESP_PERF_SPATIAL_LINE_LINK_MASK);
+    }
+    return ESP_PERF_SPATIAL_LINE_NONE;
+}
 static inline uint16_t EspPerfSpatialLine_first(
                          const EspPerfSpatialLineIndex* idx,uint16_t tile) {
     if(idx==NULL || !idx->active || tile>=1024U)
         return ESP_PERF_SPATIAL_LINE_NONE;
-    return idx->first[EspPerfSpatialLine_bucket(tile)];
+    return EspPerfSpatialLine_match(idx,idx->first[EspPerfSpatialLine_bucket(tile)],tile);
+}
+static inline uint16_t EspPerfSpatialLine_next(
+        const EspPerfSpatialLineIndex* idx,uint16_t i,uint16_t tile) {
+    if(idx==NULL || !idx->active || i>=idx->lineCount || tile>=1024U)
+        return ESP_PERF_SPATIAL_LINE_NONE;
+    return EspPerfSpatialLine_match(idx,
+        (uint16_t)(idx->next[i] & ESP_PERF_SPATIAL_LINE_LINK_MASK),tile);
 }
 #endif

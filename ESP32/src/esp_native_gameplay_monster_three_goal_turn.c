@@ -232,7 +232,7 @@ static int closedLineBlocksTileIndexed(uint16_t tile, uint16_t mask) {
         int hasDefinition;
 
         uint32_t lineIndex = i;
-        i = EspPerfGameP1_spatialLineIndex.next[i];
+        i = EspPerfSpatialLine_next(&EspPerfGameP1_spatialLineIndex, (uint16_t)i, tile);
         if (!EspMapLineState_getOpen(lineIndex, &open)) return -1;
         if (open != 0U) continue;
         if (!EspMapRuntime_getLine(lineIndex, &line)) return -1;
