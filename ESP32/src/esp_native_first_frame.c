@@ -226,11 +226,24 @@ static uint32_t readLe32(const uint8_t* p) {
 static uint32_t fnv1a32(const void* data, uint32_t length) {
     const uint8_t* p = (const uint8_t*)data;
     uint32_t hash = 2166136261U;
-    uint32_t i;
     if (p == NULL && length != 0U) return 0U;
-    for (i = 0U; i < length; ++i) {
-        hash ^= p[i];
-        hash *= 16777619U;
+    /* Byte-exact FNV-1a; no alignment assumption or speculative tail load.
+     * Unroll the hot framebuffer walk, retaining every multiply and byte. */
+    while (length >= 8U) {
+        hash = (hash ^ p[0]) * 16777619U;
+        hash = (hash ^ p[1]) * 16777619U;
+        hash = (hash ^ p[2]) * 16777619U;
+        hash = (hash ^ p[3]) * 16777619U;
+        hash = (hash ^ p[4]) * 16777619U;
+        hash = (hash ^ p[5]) * 16777619U;
+        hash = (hash ^ p[6]) * 16777619U;
+        hash = (hash ^ p[7]) * 16777619U;
+        p += 8U;
+        length -= 8U;
+    }
+    while (length != 0U) {
+        hash = (hash ^ *p++) * 16777619U;
+        --length;
     }
     return hash;
 }

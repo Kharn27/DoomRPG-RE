@@ -78,11 +78,24 @@ static uint8_t spriteFlashProfileFrames = 0U;
 
 static uint32_t fnv1aUpdate(uint32_t hash, const void* data, uint32_t bytes) {
     const uint8_t* p = (const uint8_t*)data;
-    uint32_t i;
     if (p == NULL && bytes != 0U) return 0U;
-    for (i = 0U; i < bytes; ++i) {
-        hash ^= p[i];
-        hash *= 16777619U;
+    /* Byte-exact FNV-1a; no alignment assumption or speculative tail load.
+     * Unroll the hot framebuffer walk, retaining every multiply and byte. */
+    while (bytes >= 8U) {
+        hash = (hash ^ p[0]) * 16777619U;
+        hash = (hash ^ p[1]) * 16777619U;
+        hash = (hash ^ p[2]) * 16777619U;
+        hash = (hash ^ p[3]) * 16777619U;
+        hash = (hash ^ p[4]) * 16777619U;
+        hash = (hash ^ p[5]) * 16777619U;
+        hash = (hash ^ p[6]) * 16777619U;
+        hash = (hash ^ p[7]) * 16777619U;
+        p += 8U;
+        bytes -= 8U;
+    }
+    while (bytes != 0U) {
+        hash = (hash ^ *p++) * 16777619U;
+        --bytes;
     }
     return hash;
 }
