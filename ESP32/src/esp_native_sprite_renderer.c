@@ -1791,6 +1791,9 @@ static int drawAt(Render_t* render,
             ? fullyOccludedColumns(render, &line) : 0U;
         if (occluded != 0U) {
             stats->wallOccludedColumns += occluded;
+            /* spans() succeeds even with zero drawable columns. Count
+             * this finished base object exactly as the original path. */
+            ++stats->draws;
 #if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
             if (spritePerf.active) ++spritePerf.wallPayloadsAvoided;
 #endif

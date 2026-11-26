@@ -30,6 +30,11 @@ def extract(signature):
 
 draw = extract("static int drawAt(Render_t* render,")
 cross = extract("static int drawLegacyCross(Render_t* render,")
+# Use the actual frame compositor's completion gate, not a copied equation.
+frame_source = (ROOT / "ESP32/src/esp_native_gameplay_frame.c").read_text()
+gate_start = frame_source.index("static int spriteViewAccountingComplete(")
+gate_end = frame_source.index("\n}\n", gate_start) + len("\n}")
+accounting_gate = frame_source[gate_start:gate_end]
 # Compile the actual pure native fixed-width helper alongside the extracted
 # sprite bodies: no duplicated formula and no legacy Render_t mirror.
 geom_header = (ROOT / "ESP32/include/esp_render_geometry_primitives.h").read_text()
@@ -142,6 +147,8 @@ typedef struct {
     uint32_t nearCulled,clipCulled,glowNearCulled,glowClipCulled;
     uint32_t ambientCandidates,ambientFastCandidates,ambientRapidCandidates;
     uint32_t unsupported,frameLoads,frameBytes,packReads,wallOccludedColumns;
+    uint32_t objects,hidden,bspRejected,bspCandidates,mode0Objects,mode7Objects;
+    uint32_t glowDeferred,glowCompanions;
     /* Deliberate host mirror of the new bounded production fire witnesses.
      * The CROSS-only test keeps fireRasterCount zero throughout. */
     uint32_t fireRasterCount,fireSampleMs;
@@ -372,6 +379,25 @@ static void checkWallReject(void) {
                   &frame,seen,&stats,NULL));
     assert(boundsReads==1U && payloadReads==0U && rasters==0U);
     assert(stats.wallOccludedColumns==5U && stats.ambientCandidates==0U);
+    assert(stats.draws==1U && stats.nearCulled==0U && stats.clipCulled==0U);
+    assert(stats.pixelsDrawn==0U && stats.fireRasterCount==0U);
+    /* Reproduce the failed cold-frame accounting: 278 objects, 44 hidden,
+     * 226 rejected, 8 admitted, 6 ordinary completions and 2 wall rejects. */
+    stats=(EspNativeSpriteStats){0};
+    stats.objects=278U;stats.hidden=44U;stats.bspRejected=226U;
+    stats.bspCandidates=8U;stats.mode0Objects=8U;stats.draws=6U;
+    clearInput();flashActive=1;wallReject=5;failPayload=1;
+    assert(drawAt(&render,&sources,&parent,83U,0U,0,0,0,
+                  &frame,seen,&stats,NULL));
+    assert(!spriteViewAccountingComplete(&stats)); /* one still missing */
+    assert(drawAt(&render,&sources,&parent,83U,0U,0,0,0,
+                  &frame,seen,&stats,NULL));
+    assert(spriteViewAccountingComplete(&stats));
+    assert(stats.draws==8U && stats.wallOccludedColumns==10U);
+    assert(boundsReads==2U && payloadReads==0U && rasters==0U);
+    /* The broken P2s accounting must still be rejected by the real gate. */
+    stats.draws-=2U;
+    assert(!spriteViewAccountingComplete(&stats));
 }
 int main(void) {
     EspNativeSpriteStats oldStats,newStats;
@@ -421,7 +447,7 @@ int main(void) {
 with tempfile.TemporaryDirectory(prefix="doomrpg-cross-reuse-") as td:
     unit=Path(td)/"cross.c"
     program=Path(td)/"cross"
-    unit.write_text(shim+"\n"+scalar_owner+"\n"+reference_draw+"\n"+reference_cross+
+    unit.write_text(shim+"\n"+scalar_owner+"\n"+accounting_gate+"\n"+reference_draw+"\n"+reference_cross+
                     "\n"+draw+"\n"+cross+"\n"+cases)
     for defines in ([], ["-DDOOMRPG_ESP32_TRACE_SPRITE=7"]):
         subprocess.run([
