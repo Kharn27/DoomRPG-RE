@@ -231,6 +231,9 @@ jobs:
       - name: Test moving-monster BSP leaf versus cached spawn leaf (real C + mutant)
         run: python ESP32/test/native_bsp_moving_sprite_visibility_host.py
 
+      - name: Test P2k sorted monster projection and position lookup (real C)
+        run: python ESP32/test/perf_game_monster_lookup_host.py
+
       - name: Test Sector 2 BSP visibility capacity and bounded scratch (host C)
         run: |
           cc -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include ESP32/test/native_bsp_visibility_capacity_host.c -o /tmp/doomrpg-native-bsp-visibility-test

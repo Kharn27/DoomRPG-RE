@@ -84,10 +84,16 @@ static int tileIndexFor(int32_t x, int32_t y, uint16_t* outTile) {
 }
 
 static EspNativeGameplayMonsterPositionRecord* findMutable(uint16_t spriteIndex) {
-    uint32_t i;
+    uint32_t lo = 0U, hi = positionView.count;
     if (positionRecords == NULL) return NULL;
-    for (i = 0U; i < positionView.count; ++i) {
-        if (positionRecords[i].spriteIndex == spriteIndex) return &positionRecords[i];
+    /* Position records mirror the sorted MonsterState order, including
+     * validated checkpoint restore. Movement edits coordinates, not keys. */
+    while (lo < hi) {
+        const uint32_t mid = lo + ((hi - lo) >> 1);
+        const uint16_t current = positionRecords[mid].spriteIndex;
+        if (current == spriteIndex) return &positionRecords[mid];
+        if (current < spriteIndex) lo = mid + 1U;
+        else hi = mid;
     }
     return NULL;
 }

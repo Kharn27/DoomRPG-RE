@@ -271,7 +271,26 @@ P2J_WIRING_EDITS = {
     ]
 }
 
+P2K_WIRING_EDITS = {
+    "esp_native_gameplay_monster_movement_publish.c": [
+        [
+            "static int projectionRecordIndex(uint16_t spriteIndex, uint32_t* outIndex) {\n    const EspNativeGameplayMonsterView* monsters =\n        EspNativeGameplayMonsterState_view();\n    uint32_t lo = 0U, hi;\n\n    if (outIndex != NULL) *outIndex = 0U;\n    if (monsters == NULL || monsters->records == NULL || outIndex == NULL ||\n        monsters->count > ESP_NATIVE_GAMEPLAY_MONSTER_MAX_COUNT) {\n        return 0;\n    }\n    /* MonsterState is strictly sprite-index ordered on construction and\n     * validated restore. The ordinal remains the original record index. */\n    hi = monsters->count;\n    while (lo < hi) {\n        const uint32_t mid = lo + ((hi - lo) >> 1);\n        const uint16_t current = monsters->records[mid].spriteIndex;\n        if (current == spriteIndex) {\n            *outIndex = mid;\n            return 1;\n        }\n        if (current < spriteIndex) lo = mid + 1U;\n        else hi = mid;\n    }\n    return 0;\n}",
+            "static int projectionRecordIndex(uint16_t spriteIndex, uint32_t* outIndex) {\n    const EspNativeGameplayMonsterView* monsters =\n        EspNativeGameplayMonsterState_view();\n    uint32_t i;\n\n    if (outIndex != NULL) *outIndex = 0U;\n    if (monsters == NULL || monsters->records == NULL || outIndex == NULL ||\n        monsters->count > ESP_NATIVE_GAMEPLAY_MONSTER_MAX_COUNT) {\n        return 0;\n    }\n    for (i = 0U; i < monsters->count; ++i) {\n        if (monsters->records[i].spriteIndex == spriteIndex) {\n            *outIndex = i;\n            return 1;\n        }\n    }\n    return 0;\n}"
+        ]
+    ],
+    "esp_native_gameplay_monster_position.c": [
+        [
+            "static EspNativeGameplayMonsterPositionRecord* findMutable(uint16_t spriteIndex) {\n    uint32_t lo = 0U, hi = positionView.count;\n    if (positionRecords == NULL) return NULL;\n    /* Position records mirror the sorted MonsterState order, including\n     * validated checkpoint restore. Movement edits coordinates, not keys. */\n    while (lo < hi) {\n        const uint32_t mid = lo + ((hi - lo) >> 1);\n        const uint16_t current = positionRecords[mid].spriteIndex;\n        if (current == spriteIndex) return &positionRecords[mid];\n        if (current < spriteIndex) lo = mid + 1U;\n        else hi = mid;\n    }\n    return NULL;\n}",
+            "static EspNativeGameplayMonsterPositionRecord* findMutable(uint16_t spriteIndex) {\n    uint32_t i;\n    if (positionRecords == NULL) return NULL;\n    for (i = 0U; i < positionView.count; ++i) {\n        if (positionRecords[i].spriteIndex == spriteIndex) return &positionRecords[i];\n    }\n    return NULL;\n}"
+        ]
+    ]
+}
+
 def restore_pre_perf_game_p2a(name, data):
+    for newer, older in P2K_WIRING_EDITS.get(name, []):
+        a, b = newer.encode("utf-8"), older.encode("utf-8")
+        assert data.count(a) == 1, (name, "P2k wiring inverse")
+        data = data.replace(a, b, 1)
     for newer, older in P2J_WIRING_EDITS.get(name, []):
         a, b = newer.encode("utf-8"), older.encode("utf-8")
         assert data.count(a) == 1, (name, "P2j wiring inverse")

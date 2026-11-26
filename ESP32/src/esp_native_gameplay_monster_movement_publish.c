@@ -83,18 +83,25 @@ static const uint8_t monsterWeaponValid[PUBLISH_MOVE_WEAPON_COUNT] = {
 static int projectionRecordIndex(uint16_t spriteIndex, uint32_t* outIndex) {
     const EspNativeGameplayMonsterView* monsters =
         EspNativeGameplayMonsterState_view();
-    uint32_t i;
+    uint32_t lo = 0U, hi;
 
     if (outIndex != NULL) *outIndex = 0U;
     if (monsters == NULL || monsters->records == NULL || outIndex == NULL ||
         monsters->count > ESP_NATIVE_GAMEPLAY_MONSTER_MAX_COUNT) {
         return 0;
     }
-    for (i = 0U; i < monsters->count; ++i) {
-        if (monsters->records[i].spriteIndex == spriteIndex) {
-            *outIndex = i;
+    /* MonsterState is strictly sprite-index ordered on construction and
+     * validated restore. The ordinal remains the original record index. */
+    hi = monsters->count;
+    while (lo < hi) {
+        const uint32_t mid = lo + ((hi - lo) >> 1);
+        const uint16_t current = monsters->records[mid].spriteIndex;
+        if (current == spriteIndex) {
+            *outIndex = mid;
             return 1;
         }
+        if (current < spriteIndex) lo = mid + 1U;
+        else hi = mid;
     }
     return 0;
 }
