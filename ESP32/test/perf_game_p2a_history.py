@@ -331,7 +331,28 @@ P2L_WIRING_EDITS = {
     ]
 }
 
+P2M_WIRING_EDITS = {
+    "esp_native_bsp_visibility.c": [
+        [
+            "        return EspMapRuntime_getMapSprite(spriteIndex, &sprite) &&\n#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n               projectedSpriteLeaf(runtime, &sprite, outLeaf);\n#else\n               spriteLeaf(runtime, &sprite, outLeaf);\n#endif",
+            "        return EspMapRuntime_getMapSprite(spriteIndex, &sprite) &&\n               spriteLeaf(runtime, &sprite, outLeaf);"
+        ],
+        [
+            "#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n/* P2m: exact coordinate -> immutable BSP leaf, independent of sprite ID,\n * visibility, activation, topology and animation. Only projected sprites use\n * this sidecar. A collision is a miss, never an approximate leaf. */\n#define PROJECTED_LEAF_SLOTS 64U\nstatic struct {\n    const uint8_t* arena;\n    uint32_t arenaFNV1a, nodeCount;\n    uint32_t queries, hits;\n    struct { uint16_t x, y, leaf; } slots[PROJECTED_LEAF_SLOTS];\n} projectedLeafCache;\n_Static_assert(sizeof(projectedLeafCache.slots) == 384U,\n               \"projected leaf cache must stay bounded\");\n\nstatic int projectedSpriteLeaf(const EspMapRuntimeView* runtime,\n                               const EspMapSprite* sprite,\n                               uint32_t* outLeaf) {\n    int x, y;\n    uint32_t slot, leaf;\n    if (runtime == NULL || sprite == NULL || outLeaf == NULL ||\n        runtime->arena == NULL || runtime->arenaFNV1a == 0U ||\n        runtime->nodeCount == 0U ||\n        runtime->nodeCount > ESP_NATIVE_BSP_VISIBILITY_MAX_NODES)\n        return spriteLeaf(runtime, sprite, outLeaf);\n    EspNativeSpriteVisual_coordinates(sprite->x, sprite->y,\n                                      sprite->info, &x, &y);\n    if (x < 0 || y < 0 || x > UINT16_MAX || y > UINT16_MAX)\n        return spriteLeaf(runtime, sprite, outLeaf);\n    if (projectedLeafCache.arena != runtime->arena ||\n        projectedLeafCache.arenaFNV1a != runtime->arenaFNV1a ||\n        projectedLeafCache.nodeCount != runtime->nodeCount) {\n        projectedLeafCache.arena = runtime->arena;\n        projectedLeafCache.arenaFNV1a = runtime->arenaFNV1a;\n        projectedLeafCache.nodeCount = runtime->nodeCount;\n        memset(projectedLeafCache.slots, 0xff, sizeof(projectedLeafCache.slots));\n        projectedLeafCache.queries = projectedLeafCache.hits = 0U;\n    }\n    /* Mix coarse coordinates as well as low bits: tile centers share\n     * their low six bits. Equality below is always on full coordinates. */\n    slot = (((uint32_t)x >> 5U) * 17U ^\n            ((uint32_t)y >> 5U) * 29U ^\n            (uint32_t)x ^ ((uint32_t)y << 1U)) & (PROJECTED_LEAF_SLOTS - 1U);\n    ++projectedLeafCache.queries;\n    if (projectedLeafCache.slots[slot].x == (uint16_t)x &&\n        projectedLeafCache.slots[slot].y == (uint16_t)y &&\n        projectedLeafCache.slots[slot].leaf < runtime->nodeCount) {\n        leaf = projectedLeafCache.slots[slot].leaf;\n        ++projectedLeafCache.hits;\n    } else {\n        if (!spriteLeaf(runtime, sprite, &leaf) ||\n            leaf >= runtime->nodeCount) return 0;\n        projectedLeafCache.slots[slot].x = (uint16_t)x;\n        projectedLeafCache.slots[slot].y = (uint16_t)y;\n        projectedLeafCache.slots[slot].leaf = (uint16_t)leaf;\n    }\n    if ((projectedLeafCache.queries & 1023U) == 0U)\n        printf(\"[PERFGAMEP2M] queries=%u hits=%u slots=%u arena=%08x cumulative=yes\\n\",\n               (unsigned)projectedLeafCache.queries,\n               (unsigned)projectedLeafCache.hits,\n               (unsigned)PROJECTED_LEAF_SLOTS,\n               (unsigned)projectedLeafCache.arenaFNV1a);\n    *outLeaf = leaf;\n    return 1;\n}\n#endif\n\n/* The 2 KB cache is valid only for immutable sprite positions.",
+            "/* The 2 KB cache is valid only for immutable sprite positions."
+        ],
+        [
+            "#include <stdint.h>\n#include <string.h>\n#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n#include <stdio.h>\n#endif",
+            "#include <stdint.h>\n#include <string.h>"
+        ]
+    ]
+}
+
 def restore_pre_perf_game_p2a(name, data):
+    for newer, older in P2M_WIRING_EDITS.get(name, []):
+        a, b = newer.encode("utf-8"), older.encode("utf-8")
+        assert data.count(a) == 1, (name, "P2m wiring inverse")
+        data = data.replace(a, b, 1)
     for newer, older in P2L_WIRING_EDITS.get(name, []):
         a, b = newer.encode("utf-8"), older.encode("utf-8")
         assert data.count(a) == 1, (name, "P2l wiring inverse")

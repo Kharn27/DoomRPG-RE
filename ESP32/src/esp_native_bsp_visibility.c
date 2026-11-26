@@ -4,6 +4,9 @@
 
 #include <stdint.h>
 #include <string.h>
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+#include <stdio.h>
+#endif
 
 #include "DoomRPG.h"
 #include "Render.h"
@@ -395,6 +398,72 @@ static int spriteLeaf(const EspMapRuntimeView* runtime,
     return 0;
 }
 
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+/* P2m: exact coordinate -> immutable BSP leaf, independent of sprite ID,
+ * visibility, activation, topology and animation. Only projected sprites use
+ * this sidecar. A collision is a miss, never an approximate leaf. */
+#define PROJECTED_LEAF_SLOTS 64U
+static struct {
+    const uint8_t* arena;
+    uint32_t arenaFNV1a, nodeCount;
+    uint32_t queries, hits;
+    struct { uint16_t x, y, leaf; } slots[PROJECTED_LEAF_SLOTS];
+} projectedLeafCache;
+_Static_assert(sizeof(projectedLeafCache.slots) == 384U,
+               "projected leaf cache must stay bounded");
+
+static int projectedSpriteLeaf(const EspMapRuntimeView* runtime,
+                               const EspMapSprite* sprite,
+                               uint32_t* outLeaf) {
+    int x, y;
+    uint32_t slot, leaf;
+    if (runtime == NULL || sprite == NULL || outLeaf == NULL ||
+        runtime->arena == NULL || runtime->arenaFNV1a == 0U ||
+        runtime->nodeCount == 0U ||
+        runtime->nodeCount > ESP_NATIVE_BSP_VISIBILITY_MAX_NODES)
+        return spriteLeaf(runtime, sprite, outLeaf);
+    EspNativeSpriteVisual_coordinates(sprite->x, sprite->y,
+                                      sprite->info, &x, &y);
+    if (x < 0 || y < 0 || x > UINT16_MAX || y > UINT16_MAX)
+        return spriteLeaf(runtime, sprite, outLeaf);
+    if (projectedLeafCache.arena != runtime->arena ||
+        projectedLeafCache.arenaFNV1a != runtime->arenaFNV1a ||
+        projectedLeafCache.nodeCount != runtime->nodeCount) {
+        projectedLeafCache.arena = runtime->arena;
+        projectedLeafCache.arenaFNV1a = runtime->arenaFNV1a;
+        projectedLeafCache.nodeCount = runtime->nodeCount;
+        memset(projectedLeafCache.slots, 0xff, sizeof(projectedLeafCache.slots));
+        projectedLeafCache.queries = projectedLeafCache.hits = 0U;
+    }
+    /* Mix coarse coordinates as well as low bits: tile centers share
+     * their low six bits. Equality below is always on full coordinates. */
+    slot = (((uint32_t)x >> 5U) * 17U ^
+            ((uint32_t)y >> 5U) * 29U ^
+            (uint32_t)x ^ ((uint32_t)y << 1U)) & (PROJECTED_LEAF_SLOTS - 1U);
+    ++projectedLeafCache.queries;
+    if (projectedLeafCache.slots[slot].x == (uint16_t)x &&
+        projectedLeafCache.slots[slot].y == (uint16_t)y &&
+        projectedLeafCache.slots[slot].leaf < runtime->nodeCount) {
+        leaf = projectedLeafCache.slots[slot].leaf;
+        ++projectedLeafCache.hits;
+    } else {
+        if (!spriteLeaf(runtime, sprite, &leaf) ||
+            leaf >= runtime->nodeCount) return 0;
+        projectedLeafCache.slots[slot].x = (uint16_t)x;
+        projectedLeafCache.slots[slot].y = (uint16_t)y;
+        projectedLeafCache.slots[slot].leaf = (uint16_t)leaf;
+    }
+    if ((projectedLeafCache.queries & 1023U) == 0U)
+        printf("[PERFGAMEP2M] queries=%u hits=%u slots=%u arena=%08x cumulative=yes\n",
+               (unsigned)projectedLeafCache.queries,
+               (unsigned)projectedLeafCache.hits,
+               (unsigned)PROJECTED_LEAF_SLOTS,
+               (unsigned)projectedLeafCache.arenaFNV1a);
+    *outLeaf = leaf;
+    return 1;
+}
+#endif
+
 /* The 2 KB cache is valid only for immutable sprite positions. A monster
  * with a committed native move is projected through the map-sprite accessor,
  * so its BSP leaf must follow its CURRENT coordinates, not the spawn leaf.
@@ -419,7 +488,11 @@ static int cachedSpriteLeaf(const EspMapRuntimeView* runtime,
          EspNativeGameplayMonsterMovementPublish_isProjected(
              (uint16_t)spriteIndex))) {
         return EspMapRuntime_getMapSprite(spriteIndex, &sprite) &&
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+               projectedSpriteLeaf(runtime, &sprite, outLeaf);
+#else
                spriteLeaf(runtime, &sprite, outLeaf);
+#endif
     }
 
     if (spriteLeafCache.arena != runtime->arena ||

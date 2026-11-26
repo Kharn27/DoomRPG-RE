@@ -24,7 +24,7 @@ static int EspMapAutomapState_getLineRevealed(uint32_t i,uint8_t* v){*v=lines[i]
 static int EspMapAutomapState_setLineRevealed(uint32_t i,uint8_t v){lines[i]=v;return 1;}
 static int EspMapAutomapState_getSpriteRevealed(uint32_t i,uint8_t* v){*v=sprites[i];return 1;}
 static int EspMapAutomapState_setSpriteRevealed(uint32_t i,uint8_t v){sprites[i]=v;return 1;}
-static int EspNativeBspVisibility_mapSpriteVisible(const EspNativeBspVisibilityState* s,uint32_t i,uint32_t* leaf){
+int EspNativeBspVisibility_mapSpriteVisible(const EspNativeBspVisibilityState* s,uint32_t i,uint32_t* leaf){
     (void)s; ++queries; *leaf=i==bad?UINT32_MAX:i%32U;
     if(i==bad || i%7U!=0U)return 0;
     order[activations++]=i;return 1;
