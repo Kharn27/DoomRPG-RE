@@ -159,6 +159,9 @@ uint32_t mapFlashRuntimeReadMicros = 0U;
 uint32_t ra2bSdRangeMicros = 0U;
 #endif
 MapFlashState mapFlash = {};
+/* Never reuse a memo across deactivation, re-stage or verify failure.
+ * Saturation disables the optimization instead of recycling a generation. */
+uint32_t verifiedFlashEpoch = 1U;
 EspAssetPackMapFlashProgressCallback mapFlashProgressCallback = nullptr;
 
 void notifyMapFlashProgress(uint8_t phase, uint32_t completed, uint32_t total)
@@ -243,6 +246,7 @@ bool sourceProbeEntryExact(const EspAssetPackEntry& entry)
 
 void clearMapFlashRuntime(bool clearStats)
 {
+    if (verifiedFlashEpoch != UINT32_MAX) ++verifiedFlashEpoch;
     mapFlash.partition = nullptr;
     memset(&mapFlash.header, 0, sizeof(mapFlash.header));
     mapFlash.active = 0U;
@@ -1871,6 +1875,14 @@ void EspAssetPack_residentResetStats(void)
     ra2bSdRangeMicros = 0U;
 #endif
     EspAssetPackIoProbe_afterResidentStatsReset();
+}
+
+uint32_t EspAssetPack_verifiedFlashLeaseEpoch(void)
+{
+    return verifiedFlashEpoch != UINT32_MAX && openReady &&
+           physicalUsesMapFlash && mapFlash.active && mapFlash.partition != nullptr &&
+           mapFlash.stats.verified && !EspAssetPack_isSourceProbeActive()
+               ? verifiedFlashEpoch : 0U;
 }
 
 uint32_t EspAssetPack_mapFlashRuntimeReadMicros(void)

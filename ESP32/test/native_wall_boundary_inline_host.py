@@ -56,9 +56,10 @@ def main():
         binary = Path(tmp) / "wall_boundary"
         path.write_text(source)
         cc = shlex.split(os.environ.get("CC", "cc"))
-        for batch in (0, 1):
+        for batch, memo in ((0, 0), (1, 0), (1, 1)):
             subprocess.run(cc + ["-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
                                  f"-DDOOMRPG_PERF_WALL_GUARD_BATCH={batch}",
+                                 f"-DDOOMRPG_PERF_WALL_GUARD_MEMO={memo}",
                                  "-fwrapv", str(path), "-o", str(binary)], check=True, cwd=ROOT)
             subprocess.run([str(binary)], check=True, cwd=ROOT)
 

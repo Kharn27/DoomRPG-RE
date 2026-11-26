@@ -35,6 +35,13 @@
 #define DOOMRPG_PERF_WALL_GUARD_BATCH 0
 #endif
 #endif
+#ifndef DOOMRPG_PERF_WALL_GUARD_MEMO
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+#define DOOMRPG_PERF_WALL_GUARD_MEMO 1
+#else
+#define DOOMRPG_PERF_WALL_GUARD_MEMO 0
+#endif
+#endif
 #define PALETTES_HEADER_BYTES 4U
 #define BSP_HEADER_BYTES 33U
 #define WALL_TEXEL_HEADER_BYTES 4U
@@ -193,6 +200,17 @@ static FirstFrameFailure frameFailure;
 #define LEGACY_WALL_GUARD_LIMIT 4U
 static LegacyWallGuard legacyWallGuards[LEGACY_WALL_GUARD_LIMIT];
 static uint8_t legacyWallGuardCount;
+#if DOOMRPG_PERF_WALL_GUARD_MEMO
+/* One successful immutable flash result. Exact ordered texture ID witness
+ * (no hash collision, no retained catalog pointer), bounded to 64 IDs. */
+#define WALL_MEMO_TEXTURE_LIMIT 64U
+static struct {
+    LegacyWallGuard guard;
+    uint32_t epoch, mappingsSize, wallSize;
+    uint16_t count;
+    uint8_t ids[WALL_MEMO_TEXTURE_LIMIT];
+} wallGuardMemo;
+#endif
 
 static uint16_t readLe16(const uint8_t* p) {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
@@ -323,6 +341,27 @@ static int prepareLegacyWallGuard(FirstFrameWork* work,
            sizeof(legacyWallGuards[0]));
     catalog = EspNativeGraphicsCatalog_view();
     if (catalog == NULL || catalog->textureCount == 0U) return 0;
+#if DOOMRPG_PERF_WALL_GUARD_MEMO
+    const uint32_t epoch = EspAssetPack_verifiedFlashLeaseEpoch();
+    int memoEligible = epoch != 0U && catalog->textureCount <= WALL_MEMO_TEXTURE_LIMIT;
+    for (i = 0U; memoEligible && i < catalog->textureCount; ++i)
+        if (catalog->textures[i].resourceId > UINT8_MAX) memoEligible = 0;
+    if (memoEligible && wallGuardMemo.epoch == epoch &&
+        wallGuardMemo.count == catalog->textureCount &&
+        wallGuardMemo.mappingsSize == work->mappings.size &&
+        wallGuardMemo.wallSize == work->wallTexels.size &&
+        wallGuardMemo.guard.valid == 1U &&
+        wallGuardMemo.guard.logicalId == source->logicalId &&
+        wallGuardMemo.guard.actualId == source->actualId &&
+        wallGuardMemo.guard.sourceOffset == source->sourceTexelOffset) {
+        for (i = 0U; i < catalog->textureCount; ++i)
+            if (wallGuardMemo.ids[i] != catalog->textures[i].resourceId) break;
+        if (i == catalog->textureCount) {
+            legacyWallGuards[legacyWallGuardCount++] = wallGuardMemo.guard;
+            return 1;
+        }
+    }
+#endif
     if (!EspAssetPack_readRange(&work->mappings, 0U, mappingHeader,
                                 sizeof(mappingHeader))) {
         goto done;
@@ -435,6 +474,17 @@ static int prepareLegacyWallGuard(FirstFrameWork* work,
     legacyWallGuards[legacyWallGuardCount].valid = 1U;
     legacyWallGuards[legacyWallGuardCount].sourceOffset = source->sourceTexelOffset;
     legacyWallGuards[legacyWallGuardCount].successorSourceOffset = nextSource;
+#if DOOMRPG_PERF_WALL_GUARD_MEMO
+    if (memoEligible) {
+        wallGuardMemo.guard = legacyWallGuards[legacyWallGuardCount];
+        wallGuardMemo.epoch = epoch;
+        wallGuardMemo.mappingsSize = work->mappings.size;
+        wallGuardMemo.wallSize = work->wallTexels.size;
+        wallGuardMemo.count = catalog->textureCount;
+        for (i = 0U; i < catalog->textureCount; ++i)
+            wallGuardMemo.ids[i] = (uint8_t)catalog->textures[i].resourceId;
+    }
+#endif
     printf("[NATIVEFRAME] BOUNDARY-INLINE logical=%u actual=%u source=%u successorActual=%u successorSource=%u byte=%02x owner=BSS bytes=%u\n",
            (unsigned int)legacyWallGuards[legacyWallGuardCount].logicalId,
            (unsigned int)legacyWallGuards[legacyWallGuardCount].actualId,
@@ -1490,6 +1540,9 @@ void EspNativeFirstFrame_reset(void) {
     memset(&frameFailure, 0, sizeof(frameFailure));
     memset(legacyWallGuards, 0, sizeof(legacyWallGuards));
     legacyWallGuardCount = 0U;
+#if DOOMRPG_PERF_WALL_GUARD_MEMO
+    memset(&wallGuardMemo, 0, sizeof(wallGuardMemo));
+#endif
     frameScratchLogged = 0U;
 }
 
