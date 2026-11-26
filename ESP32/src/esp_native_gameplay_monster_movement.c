@@ -111,6 +111,8 @@ typedef struct PathResult_s {
 } PathResult;
 
 static EspNativeGameplayMonsterMovementView movementView;
+/* Per-plan origin-plane witness; no retained world state. */
+static uint16_t originPlaneClear, originPlaneBlocked;
 static uint32_t observedNoAttackTurns;
 
 static int centeredCoordinate(int32_t value) {
@@ -459,7 +461,8 @@ static int specialEntityBlocks(uint32_t spriteIndex,
                                int32_t sourceX,
                                int32_t sourceY,
                                int32_t destX,
-                               int32_t destY) {
+                               int32_t destY,
+                               int tileOrigin) {
     EspMapSprite sprite;
     int32_t sprX;
     int32_t sprY;
@@ -467,6 +470,13 @@ static int specialEntityBlocks(uint32_t spriteIndex,
     if ((sprite.info & MOVE_SPECIAL_TRACE_ENTITY_FLAG) == 0U) return 0;
     sprX = (int32_t)sprite.x;
     sprY = (int32_t)sprite.y;
+    /* calcPath uses tile origins, not centers, for special-plane crossings. */
+    if (tileOrigin) {
+        sourceX -= MOVE_TILE_CENTER;
+        sourceY -= MOVE_TILE_CENTER;
+        destX -= MOVE_TILE_CENTER;
+        destY -= MOVE_TILE_CENTER;
+    }
     if ((sprite.info & MOVE_SPECIAL_TRACE_Y_MASK) != 0U) {
         return (sourceY <= sprY && destY > sprY) ||
                (sourceY >= sprY && destY < sprY);
@@ -478,8 +488,7 @@ static int specialEntityBlocks(uint32_t spriteIndex,
     return 0;
 }
 
-/* Return 1 blocked, 0 clear, -1 not ready, -2 deliberately unsupported special
- * crossing during calcPath's tile-origin legacy subpath. */
+/* Return 1 blocked, 0 clear, -1 not ready; calcPath uses tile origins. */
 static int blockingSpriteOnTileReference(uint16_t tile,
                                 int32_t sourceX,
                                 int32_t sourceY,
@@ -511,9 +520,13 @@ static int blockingSpriteOnTileReference(uint16_t tile,
             continue;
         }
         if (type == MOVE_TYPE_SPECIAL_TRACE || type == MOVE_TYPE_SPECIAL_TRACE_2) {
-            if (strictSpecial) return -2;
-            specialBlocks = specialEntityBlocks(i, sourceX, sourceY, destX, destY);
+            specialBlocks = specialEntityBlocks(i, sourceX, sourceY, destX, destY,
+                                                strictSpecial);
             if (specialBlocks < 0) return -1;
+            if (strictSpecial) {
+                if (specialBlocks) ++originPlaneBlocked;
+                else ++originPlaneClear;
+            }
             if (specialBlocks == 0) continue;
         }
         if (!found || linkOrder > bestOrder) {
@@ -559,9 +572,13 @@ static int blockingSpriteOnTileIndexed(uint16_t tile,
             continue;
         }
         if (type == MOVE_TYPE_SPECIAL_TRACE || type == MOVE_TYPE_SPECIAL_TRACE_2) {
-            if (strictSpecial) return -2;
-            specialBlocks = specialEntityBlocks(i, sourceX, sourceY, destX, destY);
+            specialBlocks = specialEntityBlocks(i, sourceX, sourceY, destX, destY,
+                                                strictSpecial);
             if (specialBlocks < 0) return -1;
+            if (strictSpecial) {
+                if (specialBlocks) ++originPlaneBlocked;
+                else ++originPlaneClear;
+            }
             if (specialBlocks == 0) continue;
         }
         if (!found || linkOrder > bestOrder) {
@@ -623,6 +640,7 @@ static int cardinalTraceClearBody(int32_t sourceX,
         return 0;
     }
     if (distance == 0U || distance > 31U) return 0;
+    if (strictSpecial && distance != 1U) return -2;
 
     for (i = 1U; i <= distance; ++i) {
         int32_t prevX = sourceX + stepX * (int32_t)(i - 1U);
@@ -794,7 +812,7 @@ static PathResult calcPath(uint16_t attackerSprite,
                 continue;
             }
             clear = cardinalTraceClear(worldX, worldY, worldDestX, worldDestY,
-                                       attackerSprite, mask, 0);
+                                       attackerSprite, mask, 1);
             if (clear == -2) {
                 result.status = -2;
                 return result;
@@ -1350,6 +1368,7 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
     (void)EspPerfSpatialSprite_begin(&EspPerfGameP1_spatialSpriteIndex);
     EspPerfGameP1_lineBuild(EspPerfSpatialLine_begin(&EspPerfGameP1_spatialLineIndex, lineEntityTile));
 #endif
+    originPlaneClear = originPlaneBlocked = 0U;
     planStatus = aiGoalPlan(candidate.monster->spriteIndex,
                             candidate.monster->subtype,
                             (int32_t)candidate.position->worldX,
@@ -1361,6 +1380,11 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
     EspPerfSpatialSprite_end(&EspPerfGameP1_spatialSpriteIndex);
     EspPerfTraceCache_end(&traceCache);
 #endif
+    if (originPlaneClear != 0U || originPlaneBlocked != 0U) {
+        printf("[AI14PLANE] planner=first sprite=%u goal=%u originClear=%u originBlocked=%u planStatus=%d\n",
+               (unsigned int)candidate.monster->spriteIndex, (unsigned int)1U,
+               (unsigned int)originPlaneClear, (unsigned int)originPlaneBlocked, planStatus);
+    }
     if (planStatus == -3 || probeRng.boundary != 0U) {
         ++movementView.rngBoundaryDeferred;
         printf("[MONSTERMOVE] RNG-BOUNDARY-DEFER trigger=%s n=%u sprite=%u stage=visit-choice rngCalls=%u hiddenGenerator=untouched-by-movement-probe mutation=no\n",

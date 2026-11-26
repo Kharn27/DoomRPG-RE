@@ -84,6 +84,8 @@ typedef struct ThreeGoalPathResult_s {
 } ThreeGoalPathResult;
 
 static EspNativeGameplayMonsterThreeGoalTurnView threeGoalView;
+/* Per-plan origin-plane witness; no retained world state. */
+static uint16_t originPlaneClear, originPlaneBlocked;
 static EspNativeGameplayMonsterMovementView syntheticMovementView;
 
 static int centeredCoordinate(int32_t value) {
@@ -272,7 +274,8 @@ static int specialEntityBlocks(uint32_t spriteIndex,
                                int32_t sourceX,
                                int32_t sourceY,
                                int32_t destX,
-                               int32_t destY) {
+                               int32_t destY,
+                               int tileOrigin) {
     EspMapSprite sprite;
     int32_t sprX;
     int32_t sprY;
@@ -280,6 +283,15 @@ static int specialEntityBlocks(uint32_t spriteIndex,
     if ((sprite.info & THREEGOAL_SPECIAL_TRACE_ENTITY_FLAG) == 0U) return 0;
     sprX = (int32_t)sprite.x;
     sprY = (int32_t)sprite.y;
+    /* Entity_calcPath passes tile origins (x << 6), unlike the initial
+     * Entity_aiGoal_MOVE center-to-center LOS. Tile membership is unchanged;
+     * the special-plane crossing must use the original endpoints. */
+    if (tileOrigin) {
+        sourceX -= THREEGOAL_TILE_CENTER;
+        sourceY -= THREEGOAL_TILE_CENTER;
+        destX -= THREEGOAL_TILE_CENTER;
+        destY -= THREEGOAL_TILE_CENTER;
+    }
     if ((sprite.info & THREEGOAL_SPECIAL_TRACE_Y_MASK) != 0U) {
         return (sourceY <= sprY && destY > sprY) ||
                (sourceY >= sprY && destY < sprY);
@@ -291,9 +303,8 @@ static int specialEntityBlocks(uint32_t spriteIndex,
     return 0;
 }
 
-/* Return 1 blocked, 0 clear, -1 not ready, -2 unsupported legacy special
- * crossing. This is the exact continuation-goal subset of the proven movement
- * planner and deliberately keeps the same fail-closed special-plane boundary. */
+/* Return 1 blocked, 0 clear, -1 not ready. For calcPath's single-tile
+ * subtrace, evaluate type14/15 with the legacy tile-origin endpoints. */
 static int blockingSpriteOnTileReference(uint16_t tile,
                                 int32_t sourceX,
                                 int32_t sourceY,
@@ -326,9 +337,13 @@ static int blockingSpriteOnTileReference(uint16_t tile,
         }
         if (type == THREEGOAL_TYPE_SPECIAL_TRACE ||
             type == THREEGOAL_TYPE_SPECIAL_TRACE_2) {
-            if (strictSpecial) return -2;
-            specialBlocks = specialEntityBlocks(i, sourceX, sourceY, destX, destY);
+            specialBlocks = specialEntityBlocks(i, sourceX, sourceY, destX, destY,
+                                                strictSpecial);
             if (specialBlocks < 0) return -1;
+            if (strictSpecial) {
+                if (specialBlocks) ++originPlaneBlocked;
+                else ++originPlaneClear;
+            }
             if (specialBlocks == 0) continue;
         }
         if (!found || linkOrder > bestOrder) {
@@ -375,9 +390,13 @@ static int blockingSpriteOnTileIndexed(uint16_t tile,
         }
         if (type == THREEGOAL_TYPE_SPECIAL_TRACE ||
             type == THREEGOAL_TYPE_SPECIAL_TRACE_2) {
-            if (strictSpecial) return -2;
-            specialBlocks = specialEntityBlocks(i, sourceX, sourceY, destX, destY);
+            specialBlocks = specialEntityBlocks(i, sourceX, sourceY, destX, destY,
+                                                strictSpecial);
             if (specialBlocks < 0) return -1;
+            if (strictSpecial) {
+                if (specialBlocks) ++originPlaneBlocked;
+                else ++originPlaneClear;
+            }
             if (specialBlocks == 0) continue;
         }
         if (!found || linkOrder > bestOrder) {
@@ -439,6 +458,8 @@ static int cardinalTraceClearBody(int32_t sourceX,
         return 0;
     }
     if (distance == 0U || distance > 31U) return 0;
+    /* Only calcPath's single cardinal step is proven for tile-origin mode. */
+    if (strictSpecial && distance != 1U) return -2;
 
     for (i = 1U; i <= distance; ++i) {
         int32_t prevX = sourceX + stepX * (int32_t)(i - 1U);
@@ -857,6 +878,7 @@ static int probeContinuationGoal(DoomRPG_t* doomRpg,
     (void)EspPerfSpatialSprite_begin(&EspPerfGameP1_spatialSpriteIndex);
     EspPerfGameP1_lineBuild(EspPerfSpatialLine_begin(&EspPerfGameP1_spatialLineIndex, lineEntityTile));
 #endif
+    originPlaneClear = originPlaneBlocked = 0U;
     planStatus = aiGoalPlan(spriteIndex, monster->subtype,
                             (int32_t)position->worldX,
                             (int32_t)position->worldY,
@@ -868,6 +890,11 @@ static int probeContinuationGoal(DoomRPG_t* doomRpg,
     EspPerfSpatialSprite_end(&EspPerfGameP1_spatialSpriteIndex);
     EspPerfTraceCache_end(&traceCache);
 #endif
+    if (originPlaneClear != 0U || originPlaneBlocked != 0U) {
+        printf("[AI14PLANE] planner=continuation sprite=%u goal=%u originClear=%u originBlocked=%u planStatus=%d\n",
+               (unsigned int)spriteIndex, (unsigned int)goalStep,
+               (unsigned int)originPlaneClear, (unsigned int)originPlaneBlocked, planStatus);
+    }
     if (planStatus == -3 || probeRng.boundary != 0U) {
         printf("[MONSTER3GOAL] DEFER sprite=%u subtype=%u goal=%u/3 cause=rng-boundary-unprepared mutation=no rngConsumed=0\n",
                (unsigned int)spriteIndex, (unsigned int)monster->subtype,
