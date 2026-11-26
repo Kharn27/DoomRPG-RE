@@ -64,6 +64,11 @@
 #define ENEMY_TYPE 1U
 #define RENDER_MODE_NORMAL 0U
 #define RENDER_MODE_ADD 7U
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+#ifndef DOOMRPG_PERF_NEAR_LOAD
+#define DOOMRPG_PERF_NEAR_LOAD 1
+#endif
+#endif
 
 /* A single reusable trace profile selects one immutable map sprite index.
  * Observe values already read by production: no extra gameplay getters, state,
@@ -184,6 +189,7 @@ static uint8_t scratchOwnerLogged;
 #if DOOMRPG_PERF_SPRITE_SAMPLE
 static struct {
     uint32_t ordinal, readUs, readCalls, loadUs, loadCalls, spanUs, spanCalls;
+    uint32_t nearLoadsAvoided;
     uint8_t active;
 } spritePerf;
 #define P2J_START(name) const int64_t name = spritePerf.active ? esp_timer_get_time() : 0LL
@@ -1539,6 +1545,37 @@ static int drawAt(Render_t* render,
         EspPerfMoveVisibility_noteAmbientPhase(parent->info, entityType,
             entitySubtype, parent->index, ambientSampleMs);
 #endif
+    /* Project the billboard center once; its depth is independent of the
+     * decoded frame bounds. Oriented sprites still require the frame. */
+    if ((parent->info & ORIENT_MASK) == 0U) {
+        memset(&center, 0, sizeof(center));
+        center.x = spriteX;
+        center.y = spriteY;
+        EspNativeRenderGeometry_transformPoint(
+        render->viewCos_, render->viewSin_, render->viewSin,
+        render->viewCos, render->viewTransX, render->viewTransY,
+        &center.x, &center.y);
+        center.x -= 0x100000;
+#if defined(DOOMRPG_PERF_NEAR_LOAD) && DOOMRPG_PERF_NEAR_LOAD
+        /* P2q early decode rejection BEGIN */
+        if (center.x < 0x40000 && crossAnimation == NULL && !glow &&
+            logical < sources->spriteIds && logical < 256U &&
+            EspNativeGraphicsCatalog_findSprite(logical) != NULL &&
+            EspAssetPack_isMapFlashActive() && !EspAssetPack_isSourceProbeActive()) {
+            TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=near-culled depth=%d animation=%u glow=%u\n", (unsigned int)parent->index, (unsigned int)center.x, (unsigned int)animation, (unsigned int)(glow != 0));
+            ++stats->nearCulled;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+            EspPerfMoveVisibility_noteAmbientNearCull(parent->info,
+                entityType, ambientSampleMs);
+#if DOOMRPG_PERF_SPRITE_SAMPLE
+            if (spritePerf.active) ++spritePerf.nearLoadsAvoided;
+#endif
+#endif
+            return 1;
+        }
+        /* P2q early decode rejection END */
+#endif
+    }
     /* All four CROSS billboards use the same immutable logical frame and
      * one presentation clock sample. Reuse the caller-owned Frame only
      * within this four-copy group; never retain pixels or PAK offsets
@@ -1572,14 +1609,6 @@ static int drawAt(Render_t* render,
     line.vert2.z = maximum - minimum;
 
     if ((parent->info & ORIENT_MASK) == 0U) {
-        memset(&center, 0, sizeof(center));
-        center.x = spriteX;
-        center.y = spriteY;
-        EspNativeRenderGeometry_transformPoint(
-        render->viewCos_, render->viewSin_, render->viewSin,
-        render->viewCos, render->viewTransX, render->viewTransY,
-        &center.x, &center.y);
-        center.x -= 0x100000;
         if (center.x < 0x40000) {
             TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=near-culled depth=%d animation=%u glow=%u\n", (unsigned int)parent->index, (int)center.x, (unsigned int)animation, (unsigned int)(glow != 0));
             if (glow) ++stats->glowNearCulled;
@@ -1913,6 +1942,7 @@ static int renderImpl(struct Render_s* renderBase,
     if (spritePerf.active) {
         spritePerf.readUs=spritePerf.readCalls=spritePerf.loadUs=0U;
         spritePerf.loadCalls=spritePerf.spanUs=spritePerf.spanCalls=0U;
+        spritePerf.nearLoadsAvoided=0U;
         j0=esp_timer_get_time();
     }
 #endif
@@ -2115,6 +2145,9 @@ done:
             (unsigned)spritePerf.spanCalls,(unsigned)spritePerf.spanUs,
             (unsigned)stats.packReads,(unsigned)stats.pixelsDrawn,
             (unsigned)stats.glowPixels);
+        printf("[PERFGAMEP2Q] ordinal=%u preview=%u nearLoadsAvoided=%u mapLoadCalls=%u sample=1/16\n",
+            (unsigned)spritePerf.ordinal, (unsigned)preview,
+            (unsigned)spritePerf.nearLoadsAvoided, (unsigned)spritePerf.loadCalls);
     }
     spritePerf.active = 0U;
 #endif

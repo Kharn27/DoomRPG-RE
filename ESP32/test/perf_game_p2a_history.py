@@ -388,7 +388,40 @@ P2P_WIRING_EDITS = {
     ]
 }
 
+P2Q_WIRING_EDITS = {
+    "esp_native_sprite_renderer.c": [
+        [
+            "#define RENDER_MODE_ADD 7U\n#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n#ifndef DOOMRPG_PERF_NEAR_LOAD\n#define DOOMRPG_PERF_NEAR_LOAD 1\n#endif\n#endif\n",
+            "#define RENDER_MODE_ADD 7U\n"
+        ],
+        [
+            "    uint32_t ordinal, readUs, readCalls, loadUs, loadCalls, spanUs, spanCalls;\n    uint32_t nearLoadsAvoided;\n",
+            "    uint32_t ordinal, readUs, readCalls, loadUs, loadCalls, spanUs, spanCalls;\n"
+        ],
+        [
+            "    /* Project the billboard center once; its depth is independent of the\n     * decoded frame bounds. Oriented sprites still require the frame. */\n    if ((parent->info & ORIENT_MASK) == 0U) {\n        memset(&center, 0, sizeof(center));\n        center.x = spriteX;\n        center.y = spriteY;\n        EspNativeRenderGeometry_transformPoint(\n        render->viewCos_, render->viewSin_, render->viewSin,\n        render->viewCos, render->viewTransX, render->viewTransY,\n        &center.x, &center.y);\n        center.x -= 0x100000;\n#if defined(DOOMRPG_PERF_NEAR_LOAD) && DOOMRPG_PERF_NEAR_LOAD\n        /* P2q early decode rejection BEGIN */\n        if (center.x < 0x40000 && crossAnimation == NULL && !glow &&\n            logical < sources->spriteIds && logical < 256U &&\n            EspNativeGraphicsCatalog_findSprite(logical) != NULL &&\n            EspAssetPack_isMapFlashActive() && !EspAssetPack_isSourceProbeActive()) {\n            TRACE_SPRITE(parent->index, \"[SPRITETRACE] DRAW sprite=%u result=near-culled depth=%d animation=%u glow=%u\\n\", (unsigned int)parent->index, (unsigned int)center.x, (unsigned int)animation, (unsigned int)(glow != 0));\n            ++stats->nearCulled;\n#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n            EspPerfMoveVisibility_noteAmbientNearCull(parent->info,\n                entityType, ambientSampleMs);\n#if DOOMRPG_PERF_SPRITE_SAMPLE\n            if (spritePerf.active) ++spritePerf.nearLoadsAvoided;\n#endif\n#endif\n            return 1;\n        }\n        /* P2q early decode rejection END */\n#endif\n    }\n    /* All four CROSS billboards use the same immutable logical frame and\n",
+            "    /* All four CROSS billboards use the same immutable logical frame and\n"
+        ],
+        [
+            "    if ((parent->info & ORIENT_MASK) == 0U) {\n        if (center.x < 0x40000) {",
+            "    if ((parent->info & ORIENT_MASK) == 0U) {\n        memset(&center, 0, sizeof(center));\n        center.x = spriteX;\n        center.y = spriteY;\n        EspNativeRenderGeometry_transformPoint(\n        render->viewCos_, render->viewSin_, render->viewSin,\n        render->viewCos, render->viewTransX, render->viewTransY,\n        &center.x, &center.y);\n        center.x -= 0x100000;\n        if (center.x < 0x40000) {"
+        ],
+        [
+            "        spritePerf.loadCalls=spritePerf.spanUs=spritePerf.spanCalls=0U;\n        spritePerf.nearLoadsAvoided=0U;\n",
+            "        spritePerf.loadCalls=spritePerf.spanUs=spritePerf.spanCalls=0U;\n"
+        ],
+        [
+            "            (unsigned)stats.glowPixels);\n        printf(\"[PERFGAMEP2Q] ordinal=%u preview=%u nearLoadsAvoided=%u mapLoadCalls=%u sample=1/16\\n\",\n            (unsigned)spritePerf.ordinal, (unsigned)preview,\n            (unsigned)spritePerf.nearLoadsAvoided, (unsigned)spritePerf.loadCalls);\n    }\n    spritePerf.active = 0U;",
+            "            (unsigned)stats.glowPixels);\n    }\n    spritePerf.active = 0U;"
+        ]
+    ]
+}
+
 def restore_pre_perf_game_p2a(name, data):
+    for newer, older in P2Q_WIRING_EDITS.get(name, []):
+        a, b = newer.encode("utf-8"), older.encode("utf-8")
+        assert data.count(a) == 1, (name, "P2q wiring inverse")
+        data = data.replace(a, b, 1)
     for newer, older in P2P_WIRING_EDITS.get(name, []):
         a, b = newer.encode("utf-8"), older.encode("utf-8")
         assert data.count(a) == 1, (name, "P2p wiring inverse")

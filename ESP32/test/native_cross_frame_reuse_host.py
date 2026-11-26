@@ -44,7 +44,13 @@ assert "crossAnimation != NULL && *crossAnimation != UINT32_MAX" in draw
 assert "uint32_t crossAnimation = UINT32_MAX;" in cross
 assert "frame, seenLogical, stats, &crossAnimation)" in cross
 
-reference_draw = draw.replace("static int drawAt(", "static int drawAtReference(", 1)
+# P2q: remove only the new early-return block from the historical reference;
+# the projected center is mathematically identical on both paths.
+early_start = draw.index("#if defined(DOOMRPG_PERF_NEAR_LOAD)")
+early_end = draw.index("        /* P2q early decode rejection END */", early_start)
+early_end = draw.index("#endif", early_end) + len("#endif")
+reference_draw = (draw[:early_start] + draw[early_end:]).replace(
+    "static int drawAt(", "static int drawAtReference(", 1)
 reference_draw = reference_draw.replace(
     "EspNativeSpriteStats* stats,\n                  uint32_t* crossAnimation) {",
     "EspNativeSpriteStats* stats) {", 1)
@@ -114,7 +120,7 @@ shim = r'''
 typedef struct { int x,y,z; } Vertex_t;
 typedef struct { Vertex_t vert1, vert2; } Line_t;
 typedef struct { uint16_t x,y; uint32_t info; } EspMapSprite;
-typedef struct { int dummy; } Sources;
+typedef struct { uint32_t spriteIds; } Sources;
 typedef struct {uint16_t index, logical;uint32_t info;int32_t sortZ;} Order;
 typedef struct {uint16_t logical,actual; int xMin,xMax;uint16_t palette[16];uint8_t texels[4];} Frame;
 typedef struct {
@@ -134,6 +140,9 @@ typedef struct {
     uint8_t fireSamplePhase;
 } EspNativeSpriteStats;
 static unsigned reads, rasters, entities, mapReads, failRead, corruptFrame, animationDrift;
+static int flashActive, sourceProbe, depthBias;
+static int EspAssetPack_isMapFlashActive(void) {return flashActive;}
+static int EspAssetPack_isSourceProbeActive(void) {return sourceProbe;}
 static uint32_t clockFrame, lastOffsets[16];
 static int EspMapRuntime_getMapSprite(uint32_t index, EspMapSprite *out) {
     ++mapReads;
@@ -183,7 +192,7 @@ static void EspNativeRenderGeometry_transformPoint(
     int* x,int* y) {
     (void)viewCos_;(void)viewSin_;(void)viewSin;(void)viewCos;
     (void)transX;(void)transY;
-    *x=0x200000+(*x-512)*65536;
+    *x=0x200000+(*x-512)*65536+depthBias;
     *y=(*y-900)*65536;
 }
 static int EspNativeDynamicLineRender_clipLine(Line_t *line) {
@@ -241,6 +250,7 @@ cases = r'''
 static void clearInput(void) {
     reads=rasters=entities=mapReads=failRead=corruptFrame=animationDrift=0U;
     clockFrame=0;
+    flashActive=sourceProbe=depthBias=0;
     memset(lastOffsets,0,sizeof lastOffsets);
 }
 static int runGroup(int optimized,int corrupt,int vary,int fail,
@@ -273,8 +283,39 @@ static int runGroup(int optimized,int corrupt,int vary,int fail,
     }
     return ok;
 }
+static void singleNear(int fast,int flash,int probe,int glow,int near,
+                       int fail,int expectedOk,unsigned expectedReads) {
+    Render_t render={0};
+    Sources sources={252U};
+    Frame frame={0};
+    Order parent={7U,83U,83U,123};
+    EspNativeSpriteStats stats={0};
+    uint32_t seen[8]={0};
+    clearInput();
+    flashActive=flash;sourceProbe=probe;
+    /* index 7 has center depth 0x170000 before this bias. */
+    depthBias=near ? -0x140000 : -0x130000;
+    failRead=(unsigned)fail;
+    int ok=fast ? drawAt(&render,&sources,&parent,83U,0U,glow,0,0,
+                         &frame,seen,&stats,NULL)
+                : drawAtReference(&render,&sources,&parent,83U,0U,glow,0,0,
+                                  &frame,seen,&stats);
+    assert(ok==expectedOk && reads==expectedReads);
+    if (ok && near) {
+        assert(rasters==0U && stats.pixelsDrawn==0U && stats.glowPixels==0U);
+        assert(glow ? stats.glowNearCulled==1U : stats.nearCulled==1U);
+    }
+    if (ok && !near) assert(rasters==1U);
+}
 int main(void) {
     EspNativeSpriteStats oldStats,newStats;
+    singleNear(0,1,0,0,1,0,1,1U);
+    singleNear(1,1,0,0,1,0,1,0U);
+    singleNear(1,1,0,0,0,0,1,1U); /* threshold equality draws */
+    singleNear(1,0,0,0,1,1,0,1U); /* SD retains fail-closed decode */
+    singleNear(1,1,1,0,1,1,0,1U); /* source probe retains decode */
+    singleNear(1,1,0,1,1,1,0,1U); /* glow retains decode */
+    singleNear(1,1,0,0,0,1,0,1U); /* visible I/O failure remains fatal */
     uint32_t oldHash,newHash,oldReads,newReads;
     int oldOk,newOk;
     oldOk=runGroup(0,0,0,0,&oldHash,&oldStats,&oldReads);
@@ -314,7 +355,7 @@ with tempfile.TemporaryDirectory(prefix="doomrpg-cross-reuse-") as td:
         subprocess.run([
             os.environ.get("CC","cc"),"-std=c11","-O2",
             "-Wall","-Wextra","-Werror","-Wno-unused-parameter",
-            "-IESP32/include",*defines,str(unit),"-o",str(program)
+            "-IESP32/include","-DDOOMRPG_PERF_NEAR_LOAD=1",*defines,str(unit),"-o",str(program)
         ],cwd=ROOT,check=True)
         subprocess.run([str(program)],cwd=ROOT,check=True)
 print("PASS CROSS four-copy renderer frame reuse normal and trace")
