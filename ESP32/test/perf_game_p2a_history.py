@@ -526,6 +526,10 @@ P2_CLEAN_WIRING_EDITS = {
 }
 
 def restore_pre_perf_game_p2a(name, data):
+    if name == "esp_native_resident_gameplay.c":
+        lamp = "/* Physical busy lamp is a presentation-only consumer of the actual combat\n * input lock. Never borrow the HUD of a full-screen modal. */\nint EspNativeResidentGameplay_turnLampWorld(void) {\n    return EspNativeResidentGameplay_isActive() &&\n           !gameplayState.exitRequested && !automapActive() &&\n           !EspNativeGameplayPlayerDeath_isActive() &&\n           !EspNativeGameplayLevelUp_isActive() &&\n           !EspNativeGameplayTransition_isWaitingStats() &&\n           !EspNativeTransitionPresentation_isLoadingActive() &&\n           !EspNativeGameplayHub_isActive() &&\n           !EspNativeGameplayDialog_isActive() &&\n           !EspNativeGameplayPassword_isActive() &&\n           !EspNativeGameplayPassword_hasPendingCompletion() &&\n           !EspNativeGameplayStore_isActive() &&\n           !EspNativeGameplayStore_closePending() &&\n           !EspNativeGameplaySave_mainSelectorActive() &&\n           !EspNativeGameplaySave_slotSelectorActive() &&\n           !EspNativeGameplayEventChain_isWaiting();\n}\n\nint EspNativeResidentGameplay_turnLampBusy(void) {\n    return EspNativeGameplayMonsterAttackVisual_isBusy() ||\n           EspNativeGameplayMonsterActiveSequence_isBusy();\n}\n\n".encode("utf-8")
+        assert data.count(lamp) == 1, (name, "P2V physical lamp inverse")
+        data = data.replace(lamp, b"", 1)
     for newer, older in P2_CLEAN_WIRING_EDITS.get(name, []):
         a, b = newer.encode("utf-8"), older.encode("utf-8")
         assert data.count(a) == 1, (name, "P2-CLEAN wiring inverse")
