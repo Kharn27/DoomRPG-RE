@@ -46,3 +46,21 @@ with tempfile.TemporaryDirectory(prefix="gameai14-move-") as tmp:
         str(p / "reference.c"), "-o", str(exe)
     ], cwd=ROOT, check=True)
     subprocess.run([str(exe)], check=True)
+
+    # A1d uses the same independent legacy generator witness, plus the real
+    # active-sequence owner. Each executable has independent process state.
+    exe = p / "sequence-oracle"
+    subprocess.run([
+        "cc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
+        "-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections",
+        "-DDOOMRPG_ESP32=1", "-DDOOMRPG_PERF_GAME_P1=0",
+        "-IESP32/test/oracles", "-IESP32/include", "-Isrc",
+        "ESP32/test/game_ai14_sequence_transaction_host.c",
+        "ESP32/src/esp_native_gameplay_monster_active_sequence.c",
+        "ESP32/src/esp_native_gameplay_monster_movement_publish.c",
+        "ESP32/src/esp_native_gameplay_monster_movement_probe.c",
+        "ESP32/src/esp_doomrpg_process_rng.c",
+        "ESP32/src/esp_native_rng_replay_guard.c",
+        str(p / "reference.c"), "-o", str(exe)
+    ], cwd=ROOT, check=True)
+    subprocess.run([str(exe)], check=True)
