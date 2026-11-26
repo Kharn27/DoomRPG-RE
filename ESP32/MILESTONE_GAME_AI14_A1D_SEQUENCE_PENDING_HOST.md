@@ -1,0 +1,5 @@
+# GAME-AI-14 A1d — sequencer and real transaction integration (CI pending)
+
+Base 7659ee3a355952b00c710bfcba3f5adae0c30aad, issue #442. Independent of #466; reuse A1b runner/reference and compile real ActiveSequence, MovementProbe, MovementPublish, process RNG and replay guard. Eight deterministic turns (offsets 0/125/126/127 × normal/invalid suffix), successful prefix, failed render with exact rollback, attack pause >6s, real RNG draw on simulated resolution, later movement or invalid member, dead/special skips, late activation excluded, no duplicate token replay. Compare full Random_t and hidden generator witness with extracted legacy RNG; position/topology/projection, link-order counter and post-move calls. Planner, attack decision/resolution and world leaves are test doubles: not full combat or Game_trace parity. No firmware changes, no CYD test required. CI pending.
+
+Rebase on 2758721d7b95b431fe0d74f1363056dcc75f2d5a after A4-P2 merge. Previous CI 45781027712 / 45781012768 double SUCCESS (8 integrated turns). Test runner and production transaction owners unchanged by A4-P2; fresh CI required. No production changes.
