@@ -189,7 +189,7 @@ static uint8_t scratchOwnerLogged;
 #if DOOMRPG_PERF_SPRITE_SAMPLE
 static struct {
     uint32_t ordinal, readUs, readCalls, loadUs, loadCalls, spanUs, spanCalls;
-    uint32_t nearLoadsAvoided, clipPayloadsAvoided, boundsUs, boundsCalls;
+    uint32_t nearLoadsAvoided, clipPayloadsAvoided, boundsUs, boundsCalls, wallPayloadsAvoided;
     uint8_t active;
 } spritePerf;
 #define P2J_START(name) const int64_t name = spritePerf.active ? esp_timer_get_time() : 0LL
@@ -1190,6 +1190,31 @@ static int spans(Render_t* render,
     return 1;
 }
 
+#if defined(DOOMRPG_PERF_NEAR_LOAD) && DOOMRPG_PERF_NEAR_LOAD
+/* P2s: same projected integer column interval and scale as spans().
+ * Only constant-depth billboards qualify. Unknown/degenerate geometry
+ * takes the original checked decoder and raster path. No pixels read. */
+static unsigned fullyOccludedColumns(const Render_t* render,
+                                     const Line_t* line) {
+    int x, x2, scale;
+    if (line->vert2.x <= line->vert1.x ||
+        line->vert1.y <= 0 || line->vert1.y != line->vert2.y ||
+        line->vert1.y < 4) return 0U;
+    x = (line->vert1.x + 65535) >> 16;
+    x2 = (line->vert2.x + 65535) >> 16;
+    if (x < render->screenLeft) x = render->screenLeft;
+    if (x2 > render->screenRight) x2 = render->screenRight;
+    if (x < 0 || x2 > render->screenWidth || x >= x2) return 0U;
+    scale = (0x40000000 / line->vert1.y) << 2;
+    if (scale <= 0) return 0U;
+    for (int c = x; c < x2; ++c) {
+        /* Equality is drawable in spans(), never reject it. */
+        if (render->columnScale[c] >= scale) return 0U;
+    }
+    return (unsigned)(x2 - x);
+}
+
+#endif
 static int drawWorldDropFrame(Render_t* render,
                               Frame* frame,
                               int32_t worldX,
@@ -1758,6 +1783,21 @@ static int drawAt(Render_t* render,
 #if defined(DOOMRPG_PERF_NEAR_LOAD) && DOOMRPG_PERF_NEAR_LOAD
     /* P2r payload BEGIN */
     if (deferredPayload) {
+        /* P2s: the existing depth buffer proves all columns invisible.
+         * Preserve the exact wall-occluded count and potential phase
+         * guard, while avoiding palette/mask/texels and span traversal. */
+        const unsigned occluded =
+            (renderMode == RENDER_MODE_NORMAL || renderMode == RENDER_MODE_ADD)
+            ? fullyOccludedColumns(render, &line) : 0U;
+        if (occluded != 0U) {
+            stats->wallOccludedColumns += occluded;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
+            if (spritePerf.active) ++spritePerf.wallPayloadsAvoided;
+#endif
+            TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=wall-occluded columns=%u\n",
+                (unsigned int)parent->index, occluded);
+            return 1;
+        }
 #if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
         P2J_START(payloadStart);
 #endif
@@ -2009,6 +2049,7 @@ static int renderImpl(struct Render_s* renderBase,
         spritePerf.loadCalls=spritePerf.spanUs=spritePerf.spanCalls=0U;
         spritePerf.nearLoadsAvoided=0U;
         spritePerf.clipPayloadsAvoided=spritePerf.boundsUs=spritePerf.boundsCalls=0U;
+        spritePerf.wallPayloadsAvoided=0U;
         j0=esp_timer_get_time();
     }
 #endif
@@ -2217,6 +2258,8 @@ done:
         printf("[PERFGAMEP2R] ordinal=%u clipPayloadsAvoided=%u boundsCalls=%u boundsUs=%u sample=1/16\n",
             (unsigned)spritePerf.ordinal, (unsigned)spritePerf.clipPayloadsAvoided,
             (unsigned)spritePerf.boundsCalls, (unsigned)spritePerf.boundsUs);
+        printf("[PERFGAMEP2S] ordinal=%u wallPayloadsAvoided=%u sample=1/16\n",
+            (unsigned)spritePerf.ordinal, (unsigned)spritePerf.wallPayloadsAvoided);
     }
     spritePerf.active = 0U;
 #endif

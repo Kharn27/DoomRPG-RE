@@ -141,7 +141,7 @@ typedef struct {
     uint32_t pixelsDrawn,glowPixels,draws,glowDraws;
     uint32_t nearCulled,clipCulled,glowNearCulled,glowClipCulled;
     uint32_t ambientCandidates,ambientFastCandidates,ambientRapidCandidates;
-    uint32_t unsupported,frameLoads,frameBytes,packReads;
+    uint32_t unsupported,frameLoads,frameBytes,packReads,wallOccludedColumns;
     /* Deliberate host mirror of the new bounded production fire witnesses.
      * The CROSS-only test keeps fireRasterCount zero throughout. */
     uint32_t fireRasterCount,fireSampleMs;
@@ -150,7 +150,7 @@ typedef struct {
 } EspNativeSpriteStats;
 static unsigned reads, rasters, entities, mapReads, failRead, corruptFrame, animationDrift;
 static int flashActive, sourceProbe, depthBias, rejectClip, failPayload;
-static unsigned boundsReads, payloadReads;
+static unsigned boundsReads, payloadReads, wallReject;
 static int EspAssetPack_isMapFlashActive(void) {return flashActive;}
 static int EspAssetPack_isSourceProbeActive(void) {return sourceProbe;}
 static uint32_t clockFrame, lastOffsets[16];
@@ -234,6 +234,9 @@ static void EspNativeRenderGeometry_projectVertex(
     (void)width;(void)half;(void)z;
     *x=(*x)/8;*y=(*y)/8;
 }
+static unsigned fullyOccludedColumns(const Render_t* render,const Line_t* line) {
+    (void)render;(void)line;return wallReject;
+}
 static int spans(Render_t* render,Line_t* line,const Frame* frame,
                  uint8_t mode,int glow,EspNativeSpriteStats* stats) {
     uint32_t numbers[6]={
@@ -282,7 +285,7 @@ static void clearInput(void) {
     reads=rasters=entities=mapReads=failRead=corruptFrame=animationDrift=0U;
     clockFrame=0;
     flashActive=sourceProbe=depthBias=rejectClip=failPayload=0;
-    boundsReads=payloadReads=0;
+    boundsReads=payloadReads=wallReject=0;
     memset(lastOffsets,0,sizeof lastOffsets);
 }
 static int runGroup(int optimized,int corrupt,int vary,int fail,
@@ -357,8 +360,22 @@ static void checkClip(int fast,int reject,int fail,int expectedOk,
     if(fast) assert(boundsReads==1U && reads==1U);
     if(ok && !reject) assert(rasters==1U && stats.frameLoads==1U);
 }
+static void checkWallReject(void) {
+    Render_t render={0};
+    Sources sources={252U};
+    Frame frame={0};
+    Order parent={7U,83U,83U,123};
+    EspNativeSpriteStats stats={0};
+    uint32_t seen[8]={0};
+    clearInput();flashActive=1;wallReject=5;failPayload=1;
+    assert(drawAt(&render,&sources,&parent,83U,0U,0,0,0,
+                  &frame,seen,&stats,NULL));
+    assert(boundsReads==1U && payloadReads==0U && rasters==0U);
+    assert(stats.wallOccludedColumns==5U && stats.ambientCandidates==0U);
+}
 int main(void) {
     EspNativeSpriteStats oldStats,newStats;
+    checkWallReject();
     checkClip(0,1,0,1,0U);
     checkClip(1,1,0,1,0U);
     checkClip(1,1,1,1,0U);

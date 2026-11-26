@@ -41,12 +41,17 @@ assert "return 0;" in draw
 assert "glowLogical = glowFor(parent->logical);" in src
 assert "renderMode == RENDER_MODE_NORMAL" in extract("static int spans(")
 
-functions = "\n\n".join(extract(s) for s in (
+location_start = src.index("typedef struct FrameLocation_s {")
+location_end = src.index("} FrameLocation;", location_start) + len("} FrameLocation;")
+functions = src[location_start:location_end] + "\n\n" + "\n\n".join(extract(s) for s in (
     "static uint16_t le16(",
     "static uint32_t le32(",
     "static uint16_t source565(",
     "static int readRange(",
+    "static int loadFrameBounds(",
+    "static int loadFramePayload(",
     "static int loadFrame(",
+    "static unsigned fullyOccludedColumns(",
     "static int spans(",
 ))
 # Execute the previous raster loop as a separate actual-C reference.
@@ -107,7 +112,7 @@ typedef struct {
 typedef struct {int x,y,z;} Vertex_t;
 typedef struct {Vertex_t vert1,vert2;} Line_t;
 typedef struct {
- int screenLeft,screenTop,screenRight,screenBottom,screenHeight;
+ int screenLeft,screenTop,screenRight,screenBottom,screenHeight,screenWidth;
  int pitch,viewZ,columnScale[160];
  short *pixels;
 } Render_t;
@@ -334,7 +339,30 @@ static void testSpanParity(void) {
  }
  puts("P2i actual C multi-column opaque/add/glow / P2h / original span parity PASS");
 }
+static void wallProof(void) {
+    Render_t r={0};
+    Line_t line={0};
+    Frame f={0};
+    EspNativeSpriteStats stats={0};
+    r.screenWidth=160;r.screenLeft=0;r.screenRight=160;
+    line.vert1.x=2<<16;line.vert2.x=7<<16;
+    line.vert1.y=line.vert2.y=1<<17;
+    const int scale=(0x40000000/line.vert1.y)<<2;
+    for(int c=2;c<7;++c) r.columnScale[c]=scale-1;
+    assert(fullyOccludedColumns(&r,&line)==5U);
+    assert(spans(&r,&line,&f,0U,0,&stats));
+    assert(stats.wallOccludedColumns==5U && stats.pixelsDrawn==0U);
+    r.columnScale[4]=scale;
+    assert(fullyOccludedColumns(&r,&line)==0U);
+    r.columnScale[4]=scale-1;r.screenLeft=3;r.screenRight=6;
+    assert(fullyOccludedColumns(&r,&line)==3U);
+    ++line.vert2.y;
+    assert(fullyOccludedColumns(&r,&line)==0U);
+    line.vert1.y=line.vert2.y=0;
+    assert(fullyOccludedColumns(&r,&line)==0U);
+}
 int main(void) {
+ wallProof();
  testSpanParity();
  testAssetReader();
  testModesAndRaster();

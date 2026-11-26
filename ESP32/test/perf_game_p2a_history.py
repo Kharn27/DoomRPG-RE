@@ -458,7 +458,36 @@ P2R_WIRING_EDITS = {
     ]
 }
 
+P2S_WIRING_EDITS = {
+    "esp_native_sprite_renderer.c": [
+        [
+            "#if defined(DOOMRPG_PERF_NEAR_LOAD) && DOOMRPG_PERF_NEAR_LOAD\n/* P2s: same projected integer column interval and scale as spans().\n * Only constant-depth billboards qualify. Unknown/degenerate geometry\n * takes the original checked decoder and raster path. No pixels read. */\nstatic unsigned fullyOccludedColumns(const Render_t* render,\n                                     const Line_t* line) {\n    int x, x2, scale;\n    if (line->vert2.x <= line->vert1.x ||\n        line->vert1.y <= 0 || line->vert1.y != line->vert2.y ||\n        line->vert1.y < 4) return 0U;\n    x = (line->vert1.x + 65535) >> 16;\n    x2 = (line->vert2.x + 65535) >> 16;\n    if (x < render->screenLeft) x = render->screenLeft;\n    if (x2 > render->screenRight) x2 = render->screenRight;\n    if (x < 0 || x2 > render->screenWidth || x >= x2) return 0U;\n    scale = (0x40000000 / line->vert1.y) << 2;\n    if (scale <= 0) return 0U;\n    for (int c = x; c < x2; ++c) {\n        /* Equality is drawable in spans(), never reject it. */\n        if (render->columnScale[c] >= scale) return 0U;\n    }\n    return (unsigned)(x2 - x);\n}\n\n#endif\nstatic int drawWorldDropFrame(Render_t* render,",
+            "static int drawWorldDropFrame(Render_t* render,"
+        ],
+        [
+            "uint32_t nearLoadsAvoided, clipPayloadsAvoided, boundsUs, boundsCalls, wallPayloadsAvoided;",
+            "uint32_t nearLoadsAvoided, clipPayloadsAvoided, boundsUs, boundsCalls;"
+        ],
+        [
+            "    if (deferredPayload) {\n        /* P2s: the existing depth buffer proves all columns invisible.\n         * Preserve the exact wall-occluded count and potential phase\n         * guard, while avoiding palette/mask/texels and span traversal. */\n        const unsigned occluded =\n            (renderMode == RENDER_MODE_NORMAL || renderMode == RENDER_MODE_ADD)\n            ? fullyOccludedColumns(render, &line) : 0U;\n        if (occluded != 0U) {\n            stats->wallOccludedColumns += occluded;\n#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE\n            if (spritePerf.active) ++spritePerf.wallPayloadsAvoided;\n#endif\n            TRACE_SPRITE(parent->index, \"[SPRITETRACE] DRAW sprite=%u result=wall-occluded columns=%u\\n\",\n                (unsigned int)parent->index, occluded);\n            return 1;\n        }\n#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE\n        P2J_START(payloadStart);",
+            "    if (deferredPayload) {\n#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE\n        P2J_START(payloadStart);"
+        ],
+        [
+            "spritePerf.clipPayloadsAvoided=spritePerf.boundsUs=spritePerf.boundsCalls=0U;\n        spritePerf.wallPayloadsAvoided=0U;",
+            "spritePerf.clipPayloadsAvoided=spritePerf.boundsUs=spritePerf.boundsCalls=0U;"
+        ],
+        [
+            "            (unsigned)spritePerf.boundsCalls, (unsigned)spritePerf.boundsUs);\n        printf(\"[PERFGAMEP2S] ordinal=%u wallPayloadsAvoided=%u sample=1/16\\n\",\n            (unsigned)spritePerf.ordinal, (unsigned)spritePerf.wallPayloadsAvoided);",
+            "            (unsigned)spritePerf.boundsCalls, (unsigned)spritePerf.boundsUs);"
+        ]
+    ]
+}
+
 def restore_pre_perf_game_p2a(name, data):
+    for newer, older in P2S_WIRING_EDITS.get(name, []):
+        a, b = newer.encode("utf-8"), older.encode("utf-8")
+        assert data.count(a) == 1, (name, "P2s wiring inverse")
+        data = data.replace(a, b, 1)
     for newer, older in P2R_WIRING_EDITS.get(name, []):
         a, b = newer.encode("utf-8"), older.encode("utf-8")
         assert data.count(a) == 1, (name, "P2r wiring inverse")
