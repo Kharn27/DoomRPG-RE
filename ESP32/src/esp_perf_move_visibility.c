@@ -10,7 +10,7 @@
  * renew its time budget. No heap or framebuffer. */
 static struct {
     uint32_t leaves[ESP_NATIVE_BSP_VISIBILITY_LEAF_WORDS];
-    uint32_t sampleMs, phaseWindow;
+    uint32_t sampleMs, phaseWindow, rasterPhaseWindow;
     uint16_t sprite, x, y, destX, destY;
     uint8_t armed, samples, classification, quiet, valid, reuseCount, pending;
 } probe;
@@ -43,6 +43,12 @@ static uint32_t semanticCandidates, semanticOwnerMismatch, semanticPhaseDue,
     semanticEffects, semanticChanged, semanticSame, semanticDueSame,
     semanticStaticSame, semanticInvalidated, actualNoop;
 static uint64_t actualNoopUs, semanticNoopUs;
+/* Compare prior conservative and rasterized phase windows at the next
+ * actual renderer sample, not the earlier request timestamp. */
+static uint32_t priorPhaseSample, priorPhaseWindow, priorRasterWindow;
+static uint32_t nearCullExcluded, rasterCrossSame, rasterCrossChanged,
+    potentialOnlySame, potentialOnlyChanged, noCrossSame, noCrossChanged,
+    phaseSampleUnknown;
 
 void EspPerfMoveVisibility_semanticRemember(uint32_t automap, uint32_t activation,
     uint32_t player, uint32_t frame, int valid) {
@@ -79,6 +85,9 @@ void EspPerfMoveVisibility_semanticBegin(const EspPerfMoveVisibilityContext* con
     semanticDue = (uint8_t)((blockers & phaseMask) != 0U ||
         nowMs - probe.sampleMs >= probe.phaseWindow);
     semanticStatic = (uint8_t)(!semanticDue && probe.phaseWindow == UINT32_MAX);
+    priorPhaseSample = probe.sampleMs;
+    priorPhaseWindow = probe.phaseWindow;
+    priorRasterWindow = probe.rasterPhaseWindow;
     ++semanticCandidates;
     if (semanticDue) ++semanticPhaseDue;
     if (semanticStatic) ++semanticStaticCandidates;
@@ -103,6 +112,20 @@ int EspPerfMoveVisibility_semanticEnd(int rendered, uint32_t beforeFNV,
     }
     if (!rejected) { ++semanticNotRejected; return 0; }
     if (effects || !probe.quiet || !quietAfter) { ++semanticEffects; return 0; }
+    if (probe.sampleMs < priorPhaseSample) ++phaseSampleUnknown;
+    else {
+        const uint32_t elapsed = probe.sampleMs - priorPhaseSample;
+        if (elapsed >= priorRasterWindow) {
+            if (equal) ++rasterCrossSame;
+            else ++rasterCrossChanged;
+        } else if (elapsed >= priorPhaseWindow) {
+            if (equal) ++potentialOnlySame;
+            else ++potentialOnlyChanged;
+        } else {
+            if (equal) ++noCrossSame;
+            else ++noCrossChanged;
+        }
+    }
     if (!equal) { ++semanticChanged; return 0; }
     ++semanticSame;
     semanticNoopUs += frameUs;
@@ -195,6 +218,11 @@ void EspPerfMoveVisibility_firstShadowEnd(int rendered, uint32_t beforeFNV,
             (unsigned)semanticDueSame,(unsigned)semanticStaticSame,
             (unsigned)semanticInvalidated,(unsigned)actualNoop,
             (unsigned long long)actualNoopUs,(unsigned long long)semanticNoopUs);
+        printf("[PERFGAMEP2P] nearCullExcluded=%u rasterCrossSame=%u rasterCrossChanged=%u potentialOnlySame=%u potentialOnlyChanged=%u noCrossSame=%u noCrossChanged=%u sampleUnknown=%u firstSkipped=0 cumulative=yes\n",
+            (unsigned)nearCullExcluded,(unsigned)rasterCrossSame,
+            (unsigned)rasterCrossChanged,(unsigned)potentialOnlySame,
+            (unsigned)potentialOnlyChanged,(unsigned)noCrossSame,
+            (unsigned)noCrossChanged,(unsigned)phaseSampleUnknown);
     }
 }
 
@@ -225,6 +253,7 @@ void EspPerfMoveVisibility_begin(uint16_t sprite, uint16_t x, uint16_t y,
     probe.destY = destY;
     probe.samples = 0;
     probe.phaseWindow = UINT32_MAX;
+    probe.rasterPhaseWindow = UINT32_MAX;
     probe.reuseCount = 0U;
     probe.pending = 0U;
     probe.classification = 4;
@@ -257,8 +286,8 @@ void EspPerfMoveVisibility_frameStarted(int preview) {
     EspPerfMoveVisibility_invalidate();
 }
 
-void EspPerfMoveVisibility_noteAmbientPhase(uint32_t info, uint8_t type,
-    uint8_t subtype, uint16_t index, uint32_t sampleMs) {
+static void notePhase(uint32_t info, uint8_t type,
+    uint8_t subtype, uint16_t index, uint32_t sampleMs, int raster) {
     uint32_t cadence, stagger, shifted, remaining;
     if (!probe.armed) return;
     if (probe.samples != 1U || sampleMs != probe.sampleMs) {
@@ -285,6 +314,25 @@ void EspPerfMoveVisibility_noteAmbientPhase(uint32_t info, uint8_t type,
     if (UINT32_MAX - shifted < remaining)
         remaining = UINT32_MAX - shifted + 1U;
     if (remaining < probe.phaseWindow) probe.phaseWindow = remaining;
+    if (raster && remaining < probe.rasterPhaseWindow)
+        probe.rasterPhaseWindow = remaining;
+}
+void EspPerfMoveVisibility_noteAmbientPhase(uint32_t info, uint8_t type,
+    uint8_t subtype, uint16_t index, uint32_t sampleMs) {
+    notePhase(info, type, subtype, index, sampleMs, 0);
+}
+void EspPerfMoveVisibility_noteAmbientRasterPhase(uint32_t info, uint8_t type,
+    uint8_t subtype, uint16_t index, uint32_t sampleMs) {
+    notePhase(info, type, subtype, index, sampleMs, 1);
+}
+void EspPerfMoveVisibility_noteAmbientNearCull(uint32_t info, uint8_t type,
+    uint32_t sampleMs) {
+    if (!probe.armed) return;
+    if (probe.samples != 1U || sampleMs != probe.sampleMs) {
+        EspPerfMoveVisibility_noteUnsafe();
+        return;
+    }
+    if (EspNativeAmbientSprite_eligible(info, type)) ++nearCullExcluded;
 }
 void EspPerfMoveVisibility_noteUnsafe(void) {
     if (probe.armed) probe.quiet = 0;

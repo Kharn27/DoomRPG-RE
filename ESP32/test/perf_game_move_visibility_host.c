@@ -127,6 +127,24 @@ int main(void) {
     EspPerfMoveVisibility_noteAmbientPhase(0U,10U,0U,18U,100U);
     EspPerfMoveVisibility_end(1);
     assert(!reuse(1,1,160,224,106));
+    /* Only phase-independent billboard near culls omit a deadline. */
+    start(1,100);
+    EspPerfMoveVisibility_noteAmbientNearCull(0U,10U,100U);
+    EspPerfMoveVisibility_end(1);
+    assert(reuse(1,1,160,224,106)==DOOMRPG_PERF_MOVE_REUSE);
+    start(1,100);
+    EspPerfMoveVisibility_noteAmbientNearCull(0U,10U,100U);
+    EspPerfMoveVisibility_noteAmbientPhase(0U,10U,0U,18U,100U);
+    EspPerfMoveVisibility_end(1);
+    assert(!reuse(1,1,160,224,106));
+    start(1,100);
+    EspPerfMoveVisibility_noteAmbientRasterPhase(0U,10U,0U,18U,100U);
+    EspPerfMoveVisibility_end(1);
+    assert(!reuse(1,1,160,224,106));
+    start(1,100);
+    EspPerfMoveVisibility_noteAmbientNearCull(0U,10U,101U);
+    EspPerfMoveVisibility_end(1);
+    assert(!reuse(1,1,160,224,105));
     /* Earliest of multiple candidates; subtype4 uses index, not index*8. */
     start(1,100);
     EspPerfMoveVisibility_noteAmbientPhase(0U,1U,4U,145U,100U);

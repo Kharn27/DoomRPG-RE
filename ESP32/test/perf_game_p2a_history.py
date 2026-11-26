@@ -371,7 +371,28 @@ P2O_WIRING_EDITS = {
     ]
 }
 
+P2P_WIRING_EDITS = {
+    "esp_native_sprite_renderer.c": [
+        [
+            "#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n    /* Oriented geometry can depend on frame bounds: retain the full guard. */\n    if ((parent->info & ORIENT_MASK) != 0U)\n        EspPerfMoveVisibility_noteAmbientPhase(parent->info, entityType,\n            entitySubtype, parent->index, ambientSampleMs);\n#endif",
+            "#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n    EspPerfMoveVisibility_noteAmbientPhase(parent->info, entityType,\n        entitySubtype, parent->index, ambientSampleMs);\n#endif"
+        ],
+        [
+            "            if (glow) ++stats->glowNearCulled;\n            else ++stats->nearCulled;\n#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n            EspPerfMoveVisibility_noteAmbientNearCull(parent->info,\n                entityType, ambientSampleMs);\n#endif\n            return 1;\n        }\n#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n        /* P2p: center depth cannot depend on frame bounds or animation. */\n        EspPerfMoveVisibility_noteAmbientPhase(parent->info, entityType,\n            entitySubtype, parent->index, ambientSampleMs);\n#endif\n\n        line.vert1 = center;",
+            "            if (glow) ++stats->glowNearCulled;\n            else ++stats->nearCulled;\n            return 1;\n        }\n\n        line.vert1 = center;"
+        ],
+        [
+            "        ++stats->ambientCandidates;\n#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n        EspPerfMoveVisibility_noteAmbientRasterPhase(parent->info, entityType,\n            entitySubtype, parent->index, ambientSampleMs);\n#endif\n        if (!glow && EspNativeAmbientSprite_fireEligible(",
+            "        ++stats->ambientCandidates;\n        if (!glow && EspNativeAmbientSprite_fireEligible("
+        ]
+    ]
+}
+
 def restore_pre_perf_game_p2a(name, data):
+    for newer, older in P2P_WIRING_EDITS.get(name, []):
+        a, b = newer.encode("utf-8"), older.encode("utf-8")
+        assert data.count(a) == 1, (name, "P2p wiring inverse")
+        data = data.replace(a, b, 1)
     for newer, older in P2O_WIRING_EDITS.get(name, []):
         a, b = newer.encode("utf-8"), older.encode("utf-8")
         assert data.count(a) == 1, (name, "P2o wiring inverse")

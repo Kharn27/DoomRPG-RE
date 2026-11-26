@@ -1534,8 +1534,10 @@ static int drawAt(Render_t* render,
                                               entitySubtype,
                                               parent->index,ambientSampleMs);
 #if defined(ARDUINO) && defined(DOOMRPG_ESP32)
-    EspPerfMoveVisibility_noteAmbientPhase(parent->info, entityType,
-        entitySubtype, parent->index, ambientSampleMs);
+    /* Oriented geometry can depend on frame bounds: retain the full guard. */
+    if ((parent->info & ORIENT_MASK) != 0U)
+        EspPerfMoveVisibility_noteAmbientPhase(parent->info, entityType,
+            entitySubtype, parent->index, ambientSampleMs);
 #endif
     /* All four CROSS billboards use the same immutable logical frame and
      * one presentation clock sample. Reuse the caller-owned Frame only
@@ -1582,8 +1584,17 @@ static int drawAt(Render_t* render,
             TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=near-culled depth=%d animation=%u glow=%u\n", (unsigned int)parent->index, (int)center.x, (unsigned int)animation, (unsigned int)(glow != 0));
             if (glow) ++stats->glowNearCulled;
             else ++stats->nearCulled;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+            EspPerfMoveVisibility_noteAmbientNearCull(parent->info,
+                entityType, ambientSampleMs);
+#endif
             return 1;
         }
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+        /* P2p: center depth cannot depend on frame bounds or animation. */
+        EspPerfMoveVisibility_noteAmbientPhase(parent->info, entityType,
+            entitySubtype, parent->index, ambientSampleMs);
+#endif
 
         line.vert1 = center;
         line.vert2.x = center.x;
@@ -1707,6 +1718,10 @@ static int drawAt(Render_t* render,
             parent->info, entityType, rasterPixelsBefore,
             glow ? stats->glowPixels : stats->pixelsDrawn)) {
         ++stats->ambientCandidates;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+        EspPerfMoveVisibility_noteAmbientRasterPhase(parent->info, entityType,
+            entitySubtype, parent->index, ambientSampleMs);
+#endif
         if (!glow && EspNativeAmbientSprite_fireEligible(
                          parent->info, entityType)) {
             /* Only completed masked pixels, never admission/near-cull,
