@@ -159,6 +159,9 @@ def original_body_parity() -> None:
             from arch_rc19_history import restore_pre_rc19_dynamic
             historical = restore_rc10_dynamic(restore_rc11_dynamic(
                 restore_pre_audio_door_dynamic(restore_pre_rc19_dynamic(current))))
+        elif filename == "esp_native_plane_renderer.c":
+            from res60_p27_plane_history import restore_pre_res60_planes
+            historical = restore_pre_res60_planes(current)
         elif filename == "esp_native_sprite_renderer.c":
             historical = restore_pre_fire_vis_sprite(restore_pre_fire_vis_p2_sprite(current))
         else:

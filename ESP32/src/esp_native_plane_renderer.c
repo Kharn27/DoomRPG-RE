@@ -15,6 +15,9 @@
 #include "esp_native_plane_renderer.h"
 #include "esp_render_geometry_primitives.h"
 #include "esp_native_raster_contract.h"
+#if DOOMRPG_RES60_P27_METADATA_WINDOWS && defined(ARDUINO)
+#include "esp_res60_profile.h"
+#endif
 
 #define MAPPINGS_HEADER_BYTES 16U
 #define MAPPING_PAIR_BYTES 8U
@@ -101,6 +104,40 @@ static int collectTextures(PlaneWork* work) {
     return work->textureCount > 0U;
 }
 
+#if DOOMRPG_RES60_P27_METADATA_WINDOWS
+/* Three independent 512-byte entry-relative windows occupy 1536 bytes of
+ * the FIRST EXISTING 2048-byte texel lease before it holds any texel.
+ * No additional payload allocation; the LRU is still invalid at this point. */
+typedef struct PlaneMetadataWindow_s {
+    uint32_t base, length, reads, hits;
+} PlaneMetadataWindow;
+static int readMetadata(const EspAssetPackEntry* entry, uint32_t offset,
+                        void* dst, size_t length, PlaneMetadataWindow* w,
+                        uint8_t* scratch) {
+    uint32_t base, available;
+    if (offset > entry->size || length > entry->size - offset) return 0;
+    if (scratch == NULL) return EspAssetPack_readRange(entry, offset, dst, length);
+    if (w->length && offset >= w->base &&
+        offset-w->base <= w->length && length <= w->length-(offset-w->base)) {
+        memcpy(dst, scratch+offset-w->base, length);
+        ++w->hits;
+        return 1;
+    }
+    base = offset & ~511U;
+    if (length > 512U-(offset-base)) base=offset;
+    available=entry->size-base;
+    if (available>512U) available=512U;
+    w->length=0U;
+    if (length>available-(offset-base) ||
+        !EspAssetPack_readRange(entry,base,scratch,available)) return 0;
+    ++w->reads;
+    w->base=base;
+    w->length=available;
+    memcpy(dst,scratch+offset-base,length);
+    return 1;
+}
+#endif
+
 static int resolveTextures(PlaneWork* work) {
     EspAssetPackEntry mappings;
     EspAssetPackEntry palettes;
@@ -117,6 +154,10 @@ static int resolveTextures(PlaneWork* work) {
     uint8_t wallHeader[WALL_TEXEL_HEADER_BYTES];
     uint32_t wallDataBytes;
     uint16_t i;
+#if DOOMRPG_RES60_P27_METADATA_WINDOWS
+    PlaneMetadataWindow idWindow={0}, pairWindow={0}, paletteWindow={0};
+    uint8_t* scratch = work != NULL ? work->cache[0].texels : NULL;
+#endif
 
     if (work == NULL || !EspAssetPack_isOpen() ||
         !EspAssetPack_findEntry("mappings.bin", &mappings) ||
@@ -172,17 +213,27 @@ static int resolveTextures(PlaneWork* work) {
         uint32_t p;
 
         if ((uint32_t)out->logicalId >= textureIdCount ||
+#if DOOMRPG_RES60_P27_METADATA_WINDOWS
+            !readMetadata(&mappings, textureIdBase + (uint32_t)out->logicalId*2U,
+                          idBytes,sizeof(idBytes),&idWindow,scratch)) return 0;
+#else
             !EspAssetPack_readRange(&mappings,
                                     textureIdBase +
                                         (uint32_t)out->logicalId * 2U,
                                     idBytes, sizeof(idBytes))) return 0;
+#endif
 
         actual = readLe16(idBytes);
         if (actual >= texelPairs || actual > UINT16_MAX ||
+#if DOOMRPG_RES60_P27_METADATA_WINDOWS
+            !readMetadata(&mappings,MAPPINGS_HEADER_BYTES+actual*MAPPING_PAIR_BYTES,
+                          pair,sizeof(pair),&pairWindow,scratch ? scratch+512U : NULL)) return 0;
+#else
             !EspAssetPack_readRange(&mappings,
                                     MAPPINGS_HEADER_BYTES +
                                         actual * MAPPING_PAIR_BYTES,
                                     pair, sizeof(pair))) return 0;
+#endif
 
         sourceOffset = (int32_t)readLe32(pair);
         paletteOffset = (int32_t)readLe32(pair + 4U);
@@ -198,10 +249,16 @@ static int resolveTextures(PlaneWork* work) {
                     (WALL_TEXEL_HEADER_BYTES +
                      ((uint32_t)sourceOffset >> 1))) return 0;
 
+#if DOOMRPG_RES60_P27_METADATA_WINDOWS
+        if (!readMetadata(&palettes,PALETTES_HEADER_BYTES+(uint32_t)paletteOffset*2U,
+                          paletteRaw,sizeof(paletteRaw),&paletteWindow,
+                          scratch ? scratch+1024U : NULL)) return 0;
+#else
         if (!EspAssetPack_readRange(
                 &palettes,
                 PALETTES_HEADER_BYTES + (uint32_t)paletteOffset * 2U,
                 paletteRaw, sizeof(paletteRaw))) return 0;
+#endif
 
         out->actualId = (uint16_t)actual;
         out->sourceTexelOffset = (uint32_t)sourceOffset;
@@ -210,6 +267,13 @@ static int resolveTextures(PlaneWork* work) {
                 sourceToFramebuffer565(readLe16(&paletteRaw[p * 2U]));
         }
     }
+#if DOOMRPG_RES60_P27_METADATA_WINDOWS
+    if (scratch != NULL) {
+        DRPG_LOGI("[RES60P27] META reads=%u/%u/%u hits=%u/%u/%u scratch=existing-lease\n",
+                  (unsigned)idWindow.reads,(unsigned)pairWindow.reads,(unsigned)paletteWindow.reads,
+                  (unsigned)idWindow.hits,(unsigned)pairWindow.hits,(unsigned)paletteWindow.hits);
+    }
+#endif
     return 1;
 }
 
@@ -470,6 +534,19 @@ static int renderPlanes(struct Render_s* renderBase, int res60) {
     work->render = render;
     work->runtime = runtime;
 
+#if DOOMRPG_RES60_P27_METADATA_WINDOWS
+    if (res60) {
+        if (!collectTextures(work) || !initCache(work)) goto done;
+#if defined(ARDUINO)
+        const uint32_t metaAt=EspRes60Profile_nowUs();
+#endif
+        if (!resolveTextures(work)) goto done;
+#if defined(ARDUINO)
+        DRPG_LOGI("[RES60P27] RESOLVE us=%lu\n",
+                  (unsigned long)(EspRes60Profile_nowUs()-metaAt));
+#endif
+    } else
+#endif
     if (!collectTextures(work) || !resolveTextures(work) || !initCache(work)) {
         goto done;
     }

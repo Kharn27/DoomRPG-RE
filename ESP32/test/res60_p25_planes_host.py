@@ -35,6 +35,7 @@ HARNESS = r"""
 static uint8_t maps[44], palettes[68], wall[4100], cells[2048];
 static EspMapRuntimeView runtime;
 static int openPak = 1;
+static unsigned metadataReads;
 static uint16_t fb[192*144+2];
 
 static void le32(uint8_t* p, uint32_t v) {
@@ -75,6 +76,7 @@ int EspAssetPack_findEntry(const char* name,EspAssetPackEntry* e){
 int EspAssetPack_readRange(const EspAssetPackEntry* e,uint32_t off,void* dst,size_t n){
     const uint8_t* src=e->offset==1?maps:e->offset==2?palettes:wall;
     if(!openPak||off>e->size||n>e->size-off)return 0;
+    if(e->offset==1||e->offset==2)++metadataReads;
     memcpy(dst,src+off,n);return 1;
 }
 static uint16_t expected(int w,int height,int x,int y,int angle,int col,int row){
@@ -94,7 +96,7 @@ static uint16_t expected(int w,int height,int x,int y,int angle,int col,int row)
 static void fill(void){for(size_t i=0;i<sizeof(fb)/sizeof(fb[0]);i++)fb[i]=0xdead;}
 static void trial(int w,int h,int hud,int angle){
     const int x=544,y=1840;
-    fill();
+    fill();metadataReads=0;
     if(w==160){
         Render_t r={0};
         r.framebuffer=(uint8_t*)(fb+1);r.pixels=(short*)(fb+1+w*hud);
@@ -111,6 +113,11 @@ static void trial(int w,int h,int hud,int angle){
     const EspNativePlaneRenderStats* st=EspNativePlaneRenderer_view();
     assert(st&&st->rowsRendered==(unsigned)(h-2*hud)&&st->pixelsRendered==(unsigned)(w*(h-2*hud)));
     assert(st->uniqueLogicalTextures==2&&st->cacheMisses==2&&st->texelReadBytes==4096);
+#if DOOMRPG_RES60_P27_METADATA_WINDOWS
+    assert(metadataReads==(w==192?5U:8U));
+#else
+    assert(metadataReads==8U);
+#endif
     assert(st->cacheHits+st->cacheMisses==st->pixelsRendered);
     for(int row=0;row<h;row++)for(int col=0;col<w;col++){
         uint16_t want=row<hud||row>=h-hud?0xdead:expected(w,h-2*hud,x,y,angle,col,row-hud);

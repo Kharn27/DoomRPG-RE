@@ -256,6 +256,16 @@
 #if DOOMRPG_RES60_P26_BATCH_INDEX && !DOOMRPG_RES60_P25_TEXTURED_PLANES
 #error "RES60-P26 requires isolated P25 textured planes"
 #endif
+/* P27: use existing plane texel lease as bounded metadata read windows. */
+#ifndef DOOMRPG_RES60_P27_METADATA_WINDOWS
+#define DOOMRPG_RES60_P27_METADATA_WINDOWS 0
+#endif
+#if DOOMRPG_RES60_P27_METADATA_WINDOWS != 0 && DOOMRPG_RES60_P27_METADATA_WINDOWS != 1
+#error "RES60-P27 flag must be 0 or 1"
+#endif
+#if DOOMRPG_RES60_P27_METADATA_WINDOWS && !DOOMRPG_RES60_P26_BATCH_INDEX
+#error "RES60-P27 requires isolated P26"
+#endif
 #if DOOMRPG_RES60_P1_DIAGNOSTIC
 #define DOOMRPG_VIDEO_BUFFER_WIDTH 192
 #define DOOMRPG_VIDEO_BUFFER_HEIGHT 144
