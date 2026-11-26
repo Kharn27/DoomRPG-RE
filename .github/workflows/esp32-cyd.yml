@@ -247,6 +247,9 @@ jobs:
       - name: GAME-AI-14 A4 special-plane continuation original Game_trace oracle (host C)
         run: python ESP32/test/game_ai14_special_plane_host.py
 
+      - name: GAME-AI-14 real cardinal collision and legacy goal-choice oracle (host C)
+        run: python ESP32/test/game_ai14_path_host.py
+
       - name: GAME-AI-14 native movement publication and RNG transaction (host C)
         run: python ESP32/test/game_ai14_movement_transaction_host.py
 
