@@ -66,6 +66,8 @@ def source_gate() -> None:
             from game_ai14_a4_p2_history import restore_first
             before = restore_first(before)
         if name == "esp_native_gameplay_monster_three_goal_turn.c":
+            from game_ai14_a4_p3_history import restore_pre_a4_p3
+            before = restore_pre_a4_p3(before)
             from game_ai14_a4_p2_history import restore_continuation_witness
             before = restore_continuation_witness(before)
             from game_ai14_a4_history import restore_pre_game_ai14_a4_p1

@@ -7,9 +7,10 @@
 #include "../src/esp_native_gameplay_monster_three_goal_turn.c"
 #else
 #include "../src/esp_native_gameplay_monster_movement.c"
-static EspPlayerViewState player;
-const EspPlayerViewState* EspPlayerView_view(void) { return &player; }
 #endif
+static EspPlayerViewState player;
+static int playerMissing;
+const EspPlayerViewState* EspPlayerView_view(void) { return playerMissing ? NULL : &player; }
 
 static EspMapRuntimeView rt;
 static EspMapSpriteTopologyView topo;
@@ -70,11 +71,9 @@ int main(void) {
     RefRoot root={&canvas,&render}; RefDef def={14};
     g.doomRpg=&root; g.entities[2].def=&def; g.entities[2].info=1;
     topo.spriteCount=2;
-#if !CONTINUATION
     player.active=1;
     player.viewX=player.destX=2016;
     player.viewY=player.destY=2016;
-#endif
     const uint32_t flags[]={0x600000U,0x20000U,0x220000U,0x1a0000U,0x7a0000U};
     const int dirs[4][2]={{1,0},{-1,0},{0,1},{0,-1}};
     const int offsets[]={-8,0,8,32,56,64,72};
@@ -118,5 +117,36 @@ int main(void) {
     assert(cardinalTraceClear(672,672,800,672,0,0xf387U,1)==-2);
     printf("PASS GAME-AI-14 A4 special-plane original Game_trace continuation=%d cases=%u blocked=%u clear=%u origin-differences=%u\n",
            CONTINUATION,cases,blocked,clear,differences);
+#if CONTINUATION
+    /* Original sentinel is checked in source AND destination cell. Test
+     * both coordinate conventions, all directions, with/without mask. */
+    topo.spriteCount=1;
+    memset(g.entityDb,0,sizeof(g.entityDb));
+    unsigned sentinelCases=0;
+    for(unsigned d=0;d<4;d++)
+    for(unsigned loc=0;loc<3;loc++)
+    for(unsigned included=0;included<2;included++)
+    for(int origin=0;origin<2;origin++) {
+        int sx=672,sy=672,dx=sx+64*dirs[d][0],dy=sy+64*dirs[d][1];
+        canvas.destX=player.viewX=player.destX=loc==0?sx:loc==1?dx:2016;
+        canvas.destY=player.viewY=player.destY=loc==0?sy:loc==1?dy:2016;
+        uint16_t mask=(uint16_t)(included?0xf387U:0xf287U);
+        int nudge=origin?32:0;
+        RefGame_trace(&g,sx-nudge,sy-nudge,dx-nudge,dy-nudge,&g.entities[3],mask);
+        int expected=g.numTraceEntities==0;
+        assert(expected==(!included || loc==2));
+        assert(cardinalTraceClear(sx,sy,dx,dy,0,mask,origin)==expected);
+        ++sentinelCases;
+    }
+    assert(sentinelCases==48);
+    playerMissing=1;
+    assert(cardinalTraceClear(672,672,736,672,0,0xf387U,0)==-1);
+    assert(cardinalTraceClear(672,672,736,672,0,0xf287U,0)==1);
+    playerMissing=0;player.active=0;
+    assert(cardinalTraceClear(672,672,736,672,0,0xf387U,1)==-1);
+    player.active=1;player.viewX=player.destX-64;
+    assert(cardinalTraceClear(672,672,736,672,0,0xf387U,1)==-1);
+    printf("PASS GAME-AI-14 A4-P3 player-sentinel original Game_trace cases=%u failClosed=3 maskExcluded=1\n",sentinelCases);
+#endif
     return 0;
 }
