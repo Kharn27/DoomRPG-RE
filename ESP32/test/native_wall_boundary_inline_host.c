@@ -285,6 +285,80 @@ invalid:
     return 0;
 }
 
+/* P3b: exact original Render_SpanMode0 parity with strided destinations,
+ * nonuniform packed texels, all lengths 1..80, both directions, zero
+ * step, fractional cursor bits, and exact endpoints. No hardware timing
+ * claim. Guard and partial failure paths retain the native contract. */
+static void testWallSpanFast(void) {
+    enum { WIDTH = 3, HEIGHT = 80, LIMIT = WALL_PACKED_BYTES << 13 };
+    uint16_t actual[WIDTH * HEIGHT], expected[WIDTH * HEIGHT];
+    uint8_t wall[WALL_PACKED_BYTES];
+    ResolvedWallTexture src = {0};
+    FirstFrameWork work = {0};
+    Render_t render = {0};
+    uint32_t rng = 0x35d173b9U;
+    fixture();
+    src.logicalId = 15; src.actualId = 40; src.sourceTexelOffset = 20480;
+    for (unsigned i = 0; i < sizeof(wall); ++i) {
+        rng = rng * 1664525U + 1013904223U;
+        wall[i] = (uint8_t)(rng >> 24);
+    }
+    for (unsigned i = 0; i < 16; ++i)
+        src.paletteRgb565[i] = (uint16_t)(i * 4111U + 7U);
+    memcpy(legacyAtlas, wall, sizeof(wall));
+    render.pitch = WIDTH * 2; render.screenRight = WIDTH;
+    render.screenBottom = HEIGHT; render.mediaTexels = legacyAtlas;
+    render.spanPalettes = src.paletteRgb565;
+    work.render = &render; work.diagnosticLineIndex = 161;
+    work.mappings.nameHash = 1; work.mappings.size = mappingBytes;
+    work.wallTexels.nameHash = 2; work.wallTexels.size = texelBytes;
+    for (unsigned n = 0; n < 6400; ++n) {
+        const int count = 1 + (int)(n % HEIGHT);
+        rng = rng * 1664525U + 1013904223U;
+        const int magnitude = n % 7 == 0 ? 0 : (int)((rng >> 8) & 131071U);
+        const int delta = magnitude * (count - 1);
+        rng = rng * 1664525U + 1013904223U;
+        const int low = n % 11 == 0 ? LIMIT - 1 - delta :
+            n % 13 == 0 ? 0 : (int)(rng % (uint32_t)(LIMIT - delta));
+        const int reverse = n % 3 == 0;
+        const int start = reverse ? low + delta : low;
+        const int step = reverse ? -magnitude : magnitude;
+        const int x = (int)(n % WIDTH);
+        const int y = (int)(n % (HEIGHT - count + 1));
+        for (unsigned j = 0; j < WIDTH * HEIGHT; ++j)
+            actual[j] = expected[j] = 0x5a5aU;
+        const uint32_t beforePixels = work.pixelsDrawn;
+        const uint32_t beforeSpans = work.spanCalls;
+        render.pixels = actual;
+        assert(sampleWallSpan(&work, &src, wall, x, y, start, step, count));
+        render.pixels = expected;
+        Render_SpanMode0(&render, x, y, start, step, count);
+        assert(memcmp(actual, expected, sizeof(actual)) == 0);
+        assert(work.pixelsDrawn == beforePixels + (uint32_t)count);
+        assert(work.spanCalls == beforeSpans + 1);
+        assert(frameFailure.code == FIRST_FRAME_FAIL_NONE && readCalls == 0);
+    }
+    /* Both partial failures are deliberately long enough for fast admission
+     * except for the unsafe endpoint (or reverse step). */
+    for (unsigned kind = 0; kind < 2; ++kind) {
+        const int start = kind ? 0 : LIMIT - 8192;
+        const int step = kind ? -1 : 16384;
+        for (unsigned j = 0; j < WIDTH * HEIGHT; ++j) actual[j] = 0x5a5aU;
+        memset(&frameFailure, 0, sizeof(frameFailure));
+        render.pixels = actual;
+        const uint32_t before = work.pixelsDrawn;
+        assert(!sampleWallSpan(&work, &src, wall, 1, 0, start, step, 4));
+        assert(actual[1] == src.paletteRgb565[wall[(uint32_t)start >> 13] & 15U]);
+        assert(work.pixelsDrawn == before + 1);
+        assert(frameFailure.code == (kind ? FIRST_FRAME_FAIL_SPAN_NEGATIVE :
+                                            FIRST_FRAME_FAIL_SPAN_OOB));
+        assert(frameFailure.lineIndex == 161 && readCalls == 0);
+        for (unsigned j = 0; j < WIDTH * HEIGHT; ++j)
+            if (j != 1) assert(actual[j] == 0x5a5aU);
+    }
+    puts("PASS P3b wall span 6400 legacy differential cases; partial failures preserved");
+}
+
 int main(int argc, char** argv) {
     fixture();
     uint8_t wall[WALL_PACKED_BYTES];
@@ -474,6 +548,7 @@ int main(int argc, char** argv) {
     assert(frameFailure.code==FIRST_FRAME_FAIL_SPAN_OOB &&
            legacyWallGuardCount==0 && framebuffer[0]==0x5a5a);
     printf("PASS native wall boundary inline spans=2000 parity=4098 golden=ae456812 successor=68 source=32768 guardMax=4 guardIO=%u reads/%llu bytes retry=0\\n", afterFirst, (unsigned long long)firstGuardBytes);
+    testWallSpanFast();
     if (argc == 3 && strcmp(argv[1],"--fixture")==0)
         return runPackFixture(argv[2]);
     if (argc != 1) {
