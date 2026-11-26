@@ -459,6 +459,7 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
         (EspNativeFirstFrame_indicatorDue(nowMs) ? ESP_PERF_MOVE_BLOCK_INDICATOR : 0U) |
         (EspNativeSpriteRenderer_ambientDue(nowMs) ? ESP_PERF_MOVE_BLOCK_AMBIENT : 0U);
     const int continuation = movement != EspNativeGameplayMonsterMovement_view();
+#if DOOMRPG_PERF_P2_SHADOW
     const EspMapRuntimeView* shadowRuntime = EspMapRuntime_view();
     const EspMapLineStateView* shadowLines = EspMapLineState_viewBase();
     const EspMapLineTextureStateView* shadowTextures = EspMapLineTextureState_view();
@@ -492,6 +493,7 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
             publishCapture.before.spriteIndex,
             publishCapture.before.worldX, publishCapture.before.worldY,
             publishCapture.after.worldX, publishCapture.after.worldY, nowMs);
+#endif
     const int reused = EspPerfMoveVisibility_tryReuse(
         continuation,
         blockers,
@@ -513,10 +515,12 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
                                            (uint8_t)player->viewAngle,
                                            &frame)) {
 #if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+#if DOOMRPG_PERF_P2_SHADOW
         if (!continuation) {
             (void)EspPerfMoveVisibility_semanticEnd(0, 0U, 0U, 1, 0, 0U, 0U);
             EspPerfMoveVisibility_firstShadowEnd(0, 0U, 0U, 1, 0);
         }
+#endif
         EspPerfMoveVisibility_end(0);
         EspPerfMoveVisibility_invalidate();
 #endif
@@ -598,6 +602,7 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
     if (reused) EspPerfMoveVisibility_commitReuse(moveFrameBlockers() == 0U);
     else {
         const int quietAfter = moveFrameBlockers() == 0U;
+#if DOOMRPG_PERF_P2_SHADOW
         const EspMapAutomapStateView* afterMap = EspMapAutomapState_view();
         const uint32_t afterActivation = EspNativeGameplayMonsterActivation_count();
         const uint32_t afterPlayer = EspNativeGameplayPlayerState_fingerprint();
@@ -610,13 +615,16 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
             EspPerfMoveVisibility_firstShadowEnd(frame.finalPresented,
                 frame.frameBeforeFNV, frame.frameAfterFNV, sideEffects, quietAfter);
         }
+#endif
         EspPerfMoveVisibility_end(frame.finalPresented && quietAfter ? 1 : 2);
+#if DOOMRPG_PERF_P2_SHADOW
         EspPerfMoveVisibility_rememberContext(
             frame.finalPresented && shadowContextReady ? &shadowContext : NULL);
         EspPerfMoveVisibility_semanticRemember(
             afterMap != NULL ? afterMap->stateFNV1a : 0U, afterActivation,
             afterPlayer, frame.frameAfterFNV,
             frame.finalPresented && quietAfter && shadowContextReady && afterMap != NULL);
+#endif
     }
 #endif
     DRPG_LOGT("[MONSTERMOVELIVE] COMMIT trigger=%s sprite=%u tile=%u->%u pos=%u,%u->%u,%u rngCalls=%u randomCommitted=yes positionFNV=%08x->%08x topologyFNV=%08x->%08x linkOrder=%u->%u renderer=snap-destination projected=yes frame=%08x presented=%u interpolation=deferred rollback=closed\n",

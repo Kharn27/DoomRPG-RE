@@ -10,13 +10,18 @@
  * renew its time budget. No heap or framebuffer. */
 static struct {
     uint32_t leaves[ESP_NATIVE_BSP_VISIBILITY_LEAF_WORDS];
-    uint32_t sampleMs, phaseWindow, rasterPhaseWindow;
+    uint32_t sampleMs, phaseWindow;
+#if DOOMRPG_PERF_P2_SHADOW
+    uint32_t rasterPhaseWindow;
+#endif
     uint16_t sprite, x, y, destX, destY;
     uint8_t armed, samples, classification, quiet, valid, reuseCount, pending;
 } probe;
 static uint32_t total, rejectedBoth, sourceOnly, destOnly, bothVisible, unknown;
 static uint32_t continuations, skipped, fallbackQuiet, fallbackWitness,
     fallbackLeaf, fallbackAge, eligible;
+static uint32_t continuationPhaseRejected;
+#if DOOMRPG_PERF_P2_SHADOW
 static uint32_t blockerCounts[ESP_PERF_MOVE_BLOCK_COUNT], chained;
 
 /* Previous move visibility is deliberately only a prediction in P2e.
@@ -27,7 +32,7 @@ static uint32_t firstAttempts, firstCandidates, firstNoWitness, firstBlocked,
     firstContextMismatch, firstAge, firstLeaf, firstChecked, firstConfirmed,
     firstDisagreed, firstPixelChanged, firstSideEffects, firstQuietAfter,
     firstUnchanged, firstCurrentRejected, firstCurrentEqual;
-static uint32_t firstPhaseRejected, continuationPhaseRejected, firstPhaseCrossed,
+static uint32_t firstPhaseRejected, firstPhaseCrossed,
     firstChangedAcrossPhase, unrelatedFrames, firstPriorSample, firstPriorWindow;
 
 /* P2o: separate geometric/owner evidence from temporal presentation.
@@ -226,16 +231,21 @@ void EspPerfMoveVisibility_firstShadowEnd(int rendered, uint32_t beforeFNV,
     }
 }
 
+#endif /* DOOMRPG_PERF_P2_SHADOW */
+
 void EspPerfMoveVisibility_invalidate(void) {
     probe.armed = 0U;
     probe.valid = 0U;
     probe.pending = 0U;
+#if DOOMRPG_PERF_P2_SHADOW
     contextValid = 0U;
     firstPending = 0U;
     semanticPrior.valid = 0U;
     if (semanticPending) ++semanticInvalidated;
     semanticPending = 0U;
     semanticPlayerBefore = 0U;
+#endif
+
 }
 
 void EspPerfMoveVisibility_commitReuse(int quiet) {
@@ -253,7 +263,9 @@ void EspPerfMoveVisibility_begin(uint16_t sprite, uint16_t x, uint16_t y,
     probe.destY = destY;
     probe.samples = 0;
     probe.phaseWindow = UINT32_MAX;
+#if DOOMRPG_PERF_P2_SHADOW
     probe.rasterPhaseWindow = UINT32_MAX;
+#endif
     probe.reuseCount = 0U;
     probe.pending = 0U;
     probe.classification = 4;
@@ -282,7 +294,9 @@ void EspPerfMoveVisibility_frameStarted(int preview) {
         if (preview) EspPerfMoveVisibility_noteUnsafe();
         return;
     }
+#if DOOMRPG_PERF_P2_SHADOW
     if (probe.valid || contextValid) ++unrelatedFrames;
+#endif
     EspPerfMoveVisibility_invalidate();
 }
 
@@ -314,8 +328,12 @@ static void notePhase(uint32_t info, uint8_t type,
     if (UINT32_MAX - shifted < remaining)
         remaining = UINT32_MAX - shifted + 1U;
     if (remaining < probe.phaseWindow) probe.phaseWindow = remaining;
+#if DOOMRPG_PERF_P2_SHADOW
     if (raster && remaining < probe.rasterPhaseWindow)
         probe.rasterPhaseWindow = remaining;
+#else
+    (void)raster;
+#endif
 }
 void EspPerfMoveVisibility_noteAmbientPhase(uint32_t info, uint8_t type,
     uint8_t subtype, uint16_t index, uint32_t sampleMs) {
@@ -332,7 +350,12 @@ void EspPerfMoveVisibility_noteAmbientNearCull(uint32_t info, uint8_t type,
         EspPerfMoveVisibility_noteUnsafe();
         return;
     }
+#if DOOMRPG_PERF_P2_SHADOW
     if (EspNativeAmbientSprite_eligible(info, type)) ++nearCullExcluded;
+#else
+    (void)info;
+    (void)type;
+#endif
 }
 void EspPerfMoveVisibility_noteUnsafe(void) {
     if (probe.armed) probe.quiet = 0;
@@ -352,6 +375,7 @@ void EspPerfMoveVisibility_end(int rendered) {
     default: ++unknown; break;
     }
     if ((total & 15U) == 0U) {
+#if DOOMRPG_PERF_P2_SHADOW
         printf("[PERFGAMEP2A] renders=%u rejectedBoth=%u sourceOnly=%u destOnly=%u bothVisible=%u unknown=%u mode=shadow skipped=0 cumulative=yes\n",
             (unsigned)total,(unsigned)rejectedBoth,(unsigned)sourceOnly,
             (unsigned)destOnly,(unsigned)bothVisible,(unsigned)unknown);
@@ -361,9 +385,17 @@ void EspPerfMoveVisibility_end(int rendered) {
             (unsigned)fallbackLeaf,(unsigned)fallbackAge,
             DOOMRPG_PERF_MOVE_REUSE ? "fast" : "shadow");
         printf("[PERFGAMEP2C] chained=%u blockers(world/automap/hub/touch/modal/door/attack/pain/indicator/present/pak/moveEvent/feedback/fx/pickup/ambient)=", (unsigned)chained);
+#if DOOMRPG_PERF_P2_SHADOW
         for (uint32_t i=0U; i<ESP_PERF_MOVE_BLOCK_COUNT; ++i)
             printf("%s%u", i ? "/" : "", (unsigned)blockerCounts[i]);
         printf(" cumulative=yes\n");
+#else
+        printf("[PERFGAMEP2CLEAN] renders=%u rejectedBoth=%u continuations=%u skipped=%u eligible=%u fallback=%u/%u/%u/%u/%u unknown=%u cumulative=yes\n",
+            (unsigned)total,(unsigned)rejectedBoth,(unsigned)continuations,
+            (unsigned)skipped,(unsigned)eligible,(unsigned)fallbackQuiet,
+            (unsigned)fallbackWitness,(unsigned)fallbackLeaf,(unsigned)fallbackAge,
+            (unsigned)continuationPhaseRejected,(unsigned)unknown);
+#endif
     }
 }
 int EspPerfMoveVisibility_tryReuse(int continuation, uint32_t blockers, uint16_t sprite,
@@ -378,6 +410,7 @@ int EspPerfMoveVisibility_tryReuse(int continuation, uint32_t blockers, uint16_t
         ++fallbackQuiet;
         for (uint32_t i=0U; i<ESP_PERF_MOVE_BLOCK_COUNT; ++i)
             if (blockers & (1U<<i)) ++blockerCounts[i];
+#endif
         return 0;
     }
     if (!valid || sprite != probe.sprite ||
@@ -405,13 +438,17 @@ int EspPerfMoveVisibility_tryReuse(int continuation, uint32_t blockers, uint16_t
     ++eligible;
     if (!DOOMRPG_PERF_MOVE_REUSE) return 0;
     ++skipped;
+#if DOOMRPG_PERF_P2_SHADOW
     if (probe.reuseCount != 0U) ++chained;
+#endif
     ++probe.reuseCount;
     probe.destX = newX;
     probe.destY = newY;
     probe.pending = 1U;
+#if DOOMRPG_PERF_P2_SHADOW
     printf("[PERFGAMEP2B] REUSE sprite=%u leaf=%u source=%u,%u dest=%u,%u skipped=%u continuation=%u mode=fast\n",
         (unsigned)sprite,(unsigned)oldLeaf,(unsigned)oldX,(unsigned)oldY,
         (unsigned)newX,(unsigned)newY,(unsigned)skipped,(unsigned)continuations);
+#endif
     return 1;
 }

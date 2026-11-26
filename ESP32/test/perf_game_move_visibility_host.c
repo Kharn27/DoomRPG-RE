@@ -98,6 +98,7 @@ int main(void) {
     /* Red's doubled phase holds across the first raw cadence boundary. */
     assert(!EspNativeWallIndicator_changed(ESP_NATIVE_WALL_INDICATOR_RED_BIT,300,350));
     assert(EspNativeWallIndicator_changed(ESP_NATIVE_WALL_INDICATOR_RED_BIT,300,700));
+#if DOOMRPG_PERF_P2_SHADOW
     /* P2e: previous move witness predicts a first goal, but the real
      * first-goal path MUST still return false even in fast mode. */
     EspPerfMoveVisibilityContext ctx = {1U,2U,3U,100,200,0,64};
@@ -117,6 +118,7 @@ int main(void) {
     assert(!EspPerfMoveVisibility_firstShadowBegin(&ctx,0U,7,160,32,224,32,370));
     EspPerfMoveVisibility_invalidate();
     assert(!EspPerfMoveVisibility_firstShadowBegin(&ctx,0U,7,160,32,224,32,130));
+#endif
     /* Actual staggered phase, not elapsed idle cadence. Fire index 18:
      * sampled clock 100+144=244 -> next phase in exactly 6 ms. */
     start(1,100);
@@ -145,6 +147,11 @@ int main(void) {
     EspPerfMoveVisibility_noteAmbientNearCull(0U,10U,101U);
     EspPerfMoveVisibility_end(1);
     assert(!reuse(1,1,160,224,105));
+    /* Raster phase witness also remains fail-closed in CLEAN. */
+    start(1,100);
+    EspPerfMoveVisibility_noteAmbientRasterPhase(0U,10U,0U,18U,101U);
+    EspPerfMoveVisibility_end(1);
+    assert(!reuse(1,1,160,224,105));
     /* Earliest of multiple candidates; subtype4 uses index, not index*8. */
     start(1,100);
     EspPerfMoveVisibility_noteAmbientPhase(0U,1U,4U,145U,100U);
@@ -164,6 +171,7 @@ int main(void) {
     EspPerfMoveVisibility_frameStarted(1);
     EspPerfMoveVisibility_end(1);
     assert(!reuse(1,1,160,224,120));
+#if DOOMRPG_PERF_P2_SHADOW
     start(1,100); EspPerfMoveVisibility_end(1);
     EspPerfMoveVisibility_rememberContext(&ctx);
     EspPerfMoveVisibility_frameStarted(0);
@@ -186,6 +194,7 @@ int main(void) {
             scenario==4U, 1, scenario==5U ? 34U : 33U, 90000U)==(scenario==0U));
         EspPerfMoveVisibility_end(1);
     }
+#endif
     state.visibleLeaves[0]=3U;
     start(1,100); EspPerfMoveVisibility_end(1);
     assert(!reuse(1,1,160,224,120)); /* visible leaf */

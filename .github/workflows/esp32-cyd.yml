@@ -572,11 +572,17 @@ jobs:
 
       - name: PERF-GAME-P2b synchronous invisible continuation lease (real C)
         run: |
-          for fast in 0 1; do
-            cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
-              -DDOOMRPG_PERF_MOVE_REUSE=$fast ESP32/src/esp_perf_move_visibility.c \
-              ESP32/test/perf_game_move_visibility_host.c -o /tmp/doomrpg-perf-move
-            /tmp/doomrpg-perf-move
+          for shadow in 0 1; do
+            for fast in 0 1; do
+              cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+                -DDOOMRPG_PERF_P2_SHADOW=$shadow -DDOOMRPG_PERF_MOVE_REUSE=$fast \
+                ESP32/src/esp_perf_move_visibility.c \
+                ESP32/test/perf_game_move_visibility_host.c -o /tmp/doomrpg-perf-move
+              /tmp/doomrpg-perf-move
+              if [ "$shadow" = 0 ]; then
+                ! nm /tmp/doomrpg-perf-move | grep -E 'EspPerfMoveVisibility_(semantic|firstShadow|rememberContext)'
+              fi
+            done
           done
 
       - name: PERF-GAME-P1 true active-sequence owner deterministic oracle (host C)
