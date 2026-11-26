@@ -32,9 +32,10 @@ layout = src[src.index("constexpr uint32_t kResidentRangeCapacityBytes"):src.ind
 layout += src[src.index("struct ResidentRangeRecord {"):src.index("struct MapFlashExcludedSpan {")]
 functions = "\n".join(body(s) for s in (
     "void clearResidentCache()", "bool validateEntry(",
-    "bool isLargeResidentRange(", "void eraseResidentRange(",
+    "bool isLargeResidentRange(", "uint32_t residentLargeRangeCount()",
+    "uint32_t residentPayloadBytesUsed()", "void eraseResidentRange(",
     "uint32_t lowestLargeRangeOffset()", "bool evictLowestLargeRange()",
-    "void recycleResidentRangeWorkingSet()", "ResidentRangeRecord* findResidentRange(",
+    "void clearLargeResidentRanges()", "void recycleResidentRangeWorkingSet()", "ResidentRangeRecord* findResidentRange(",
     "void storeResidentSmallRange(", "void storeResidentLargeRange(",
     "static int readRangeCore("))
 harness = r"""
@@ -78,10 +79,34 @@ static bool mapFlashRead(uint32_t a,void* d,size_t n,bool) {
 static bool readSdExact(void* d,size_t n){return packFile.read((uint8_t*)d,n)==n;}
 static void logMapFlashStrictMiss(const EspAssetPackEntry*,uint32_t,size_t){++strictMisses;}
 """ + functions + r"""
+static void checkLayout() {
+    uint32_t count=0,lowest=15360,small=0;
+    bool occupied[7]={};
+    for(uint32_t i=0;i<cache.rangeCount;++i) {
+        const auto& r=cache.ranges[i];
+        assert((uint32_t)r.dataOffset+r.length<=15360);
+        if(r.length==2048) {
+            ++count;
+            assert((15360-r.dataOffset)%2048==0);
+            uint32_t slot=(15360-r.dataOffset)/2048;
+            assert(slot>=1 && slot<=7 && !occupied[slot-1]);
+            occupied[slot-1]=true;
+            if(r.dataOffset<lowest)lowest=r.dataOffset;
+        } else {
+            assert(r.dataOffset==small);
+            small+=r.length;
+        }
+    }
+    for(uint32_t i=0;i<count;++i)assert(occupied[i]);
+    assert(count==residentLargeRangeCount() && lowest==lowestLargeRangeOffset());
+    assert(small==cache.bytesUsed && small<=lowest);
+    assert(residentPayloadBytesUsed()==small+count*2048);
+}
 static void expect(const EspAssetPackEntry& e,uint32_t off,uint32_t n) {
     uint8_t out[2048];
     assert(n<=sizeof(out) && readRangeCore(&e,off,out,n));
     for(uint32_t i=0;i<n;++i)assert(out[i]==byteAt(e.offset+off+i));
+    checkLayout();
 }
 int main() {
     EspAssetPackEntry a={11,1000,4000,0,0}, b={11,8000,4000,0,0};
@@ -114,9 +139,21 @@ int main() {
     assert(cache.bytesUsed<=lowestLargeRangeOffset());
     for(uint32_t i=0;i<cache.rangeCount;++i)
         assert((uint32_t)cache.ranges[i].dataOffset+cache.ranges[i].length<=15360);
+    clearLargeResidentRanges();checkLayout();
+    assert(residentLargeRangeCount()==0);
+    // Mixed inserts, disable, re-enable, evict and recycle repeatedly.
+    uint32_t rng=0x12345678;
+    for(uint32_t i=0;i<3000;++i) {
+        rng=rng*1664525U+1013904223U;
+        if(i%113==0){clearLargeResidentRanges();checkLayout();}
+        if(i%197==0){recycleResidentRangeWorkingSet();checkLayout();}
+        if(i%11==0)residentLargeRangeEnabled=!residentLargeRangeEnabled;
+        uint32_t n=(rng&3)==0?2048:1+(rng>>16)%1024;
+        expect(many,(rng>>4)%(40000-n),n);
+    }
     clearResidentCache();physicalUsesMapFlash=false;generation=3;
     expect(a,24,32);
-    puts("PASS P2Z real cache/read core: exact offset+length, SD/flash/probe/eviction; owner=18088");
+    puts("PASS P3A real cache/read core: exact offsets and contiguous large count; owner=18088");
 }
 """
 with tempfile.TemporaryDirectory(prefix="doomrpg-p2z-") as tmp:

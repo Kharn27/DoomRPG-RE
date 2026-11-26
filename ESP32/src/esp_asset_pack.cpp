@@ -76,7 +76,8 @@ struct ResidentCache {
     ResidentEntryRecord entries[kResidentEntryCacheSlots];
     uint8_t bytes[kResidentRangeCapacityBytes];
     uint32_t rangeCount;
-    uint32_t bytesUsed;
+    uint16_t bytesUsed;
+    uint16_t largeCount; /* contiguous 2048B blocks from high end */
 };
 
 struct MapFlashExcludedSpan {
@@ -207,6 +208,7 @@ void clearResidentCache()
     }
     residentCache->rangeCount = 0U;
     residentCache->bytesUsed = 0U;
+    residentCache->largeCount = 0U;
     memset(residentCache->entries, 0, sizeof(residentCache->entries));
     residentLargeRangeEnabled = false;
 }
@@ -628,16 +630,7 @@ bool isLargeResidentRange(const ResidentRangeRecord& record)
 
 uint32_t residentLargeRangeCount()
 {
-    uint32_t count = 0U;
-    if (residentCache == nullptr) {
-        return 0U;
-    }
-    for (uint32_t i = 0U; i < residentCache->rangeCount; ++i) {
-        if (isLargeResidentRange(residentCache->ranges[i])) {
-            ++count;
-        }
-    }
-    return count;
+    return residentCache != nullptr ? residentCache->largeCount : 0U;
 }
 
 uint32_t residentPayloadBytesUsed()
@@ -665,38 +658,29 @@ void eraseResidentRange(uint32_t index)
 
 uint32_t lowestLargeRangeOffset()
 {
-    uint32_t lowest = kResidentRangeCapacityBytes;
-    if (residentCache == nullptr) {
-        return lowest;
-    }
-    for (uint32_t i = 0U; i < residentCache->rangeCount; ++i) {
-        const ResidentRangeRecord& record = residentCache->ranges[i];
-        if (isLargeResidentRange(record) && record.dataOffset < lowest) {
-            lowest = record.dataOffset;
-        }
-    }
-    return lowest;
+    /* Large blocks are appended downwards and evicted from the low end.
+     * There are no holes; the count is owned by these same mutations. */
+    return kResidentRangeCapacityBytes -
+           residentLargeRangeCount() * kResidentLargeRangeBytes;
 }
 
 bool evictLowestLargeRange()
 {
-    uint32_t victim = UINT32_MAX;
-    uint32_t lowest = UINT32_MAX;
-    if (residentCache == nullptr) {
+    if (residentCache == nullptr || residentCache->largeCount == 0U) {
         return false;
     }
-    for (uint32_t i = 0U; i < residentCache->rangeCount; ++i) {
-        const ResidentRangeRecord& record = residentCache->ranges[i];
-        if (isLargeResidentRange(record) && record.dataOffset < lowest) {
-            lowest = record.dataOffset;
-            victim = i;
+    const uint32_t lowest = lowestLargeRangeOffset();
+    /* Reverse insertion order finds the lowest live large block first.
+     * eraseResidentRange preserves the order of all remaining records. */
+    for (uint32_t i = residentCache->rangeCount; i > 0U;) {
+        const ResidentRangeRecord& record = residentCache->ranges[--i];
+        if (isLargeResidentRange(record) && record.dataOffset == lowest) {
+            eraseResidentRange(i);
+            --residentCache->largeCount;
+            return true;
         }
     }
-    if (victim == UINT32_MAX) {
-        return false;
-    }
-    eraseResidentRange(victim);
-    return true;
+    return false;
 }
 
 void clearLargeResidentRanges()
@@ -713,6 +697,7 @@ void clearLargeResidentRanges()
             ++i;
         }
     }
+    residentCache->largeCount = 0U;
 }
 
 void recycleResidentRangeWorkingSet()
@@ -722,6 +707,7 @@ void recycleResidentRangeWorkingSet()
     }
     residentCache->rangeCount = 0U;
     residentCache->bytesUsed = 0U;
+    residentCache->largeCount = 0U;
 }
 
 ResidentRangeRecord* findResidentRange(uint32_t absoluteOffset,
@@ -816,6 +802,7 @@ void storeResidentLargeRange(uint32_t absoluteOffset,
     record->length = (uint16_t)length;
     record->dataOffset = (uint16_t)targetOffset;
     memcpy(residentCache->bytes + targetOffset, source, length);
+    ++residentCache->largeCount;
     ++residentStats.rangeCacheStores;
 }
 
