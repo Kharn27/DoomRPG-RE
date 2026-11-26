@@ -21,6 +21,9 @@ static uint32_t total, rejectedBoth, sourceOnly, destOnly, bothVisible, unknown;
 static uint32_t continuations, skipped, fallbackQuiet, fallbackWitness,
     fallbackLeaf, fallbackAge, eligible;
 static uint32_t continuationPhaseRejected;
+#if DOOMRPG_PERF_P2_COALESCE
+static uint32_t ambientCoalesced, crossLeafCoalesced;
+#endif
 #if DOOMRPG_PERF_P2_SHADOW
 static uint32_t blockerCounts[ESP_PERF_MOVE_BLOCK_COUNT], chained;
 
@@ -395,6 +398,10 @@ void EspPerfMoveVisibility_end(int rendered) {
             (unsigned)fallbackWitness,(unsigned)fallbackLeaf,(unsigned)fallbackAge,
             (unsigned)continuationPhaseRejected,(unsigned)unknown);
 #endif
+#if DOOMRPG_PERF_P2_COALESCE
+        printf("[PERFGAMEP2U] ambientCoalesced=%u crossLeafCoalesced=%u skipped=%u maxOriginalAgeMs=249 cumulative=yes\n",
+            (unsigned)ambientCoalesced,(unsigned)crossLeafCoalesced,(unsigned)skipped);
+#endif
     }
 }
 int EspPerfMoveVisibility_tryReuse(int continuation, uint32_t blockers, uint16_t sprite,
@@ -405,7 +412,14 @@ int EspPerfMoveVisibility_tryReuse(int continuation, uint32_t blockers, uint16_t
     probe.pending = 0U;
     if (!continuation) return 0;
     ++continuations;
-    if (blockers != 0U) {
+#if DOOMRPG_PERF_P2_COALESCE
+    /* Only the cosmetic ambient scheduler may wait for the next mandatory
+     * frame. Indicator, damage, UI, topology/PAK and all other gates remain. */
+    const uint32_t hardBlockers = blockers & ~ESP_PERF_MOVE_BLOCK_AMBIENT;
+#else
+    const uint32_t hardBlockers = blockers;
+#endif
+    if (hardBlockers != 0U) {
         ++fallbackQuiet;
 #if DOOMRPG_PERF_P2_SHADOW
         for (uint32_t i=0U; i<ESP_PERF_MOVE_BLOCK_COUNT; ++i)
@@ -417,13 +431,19 @@ int EspPerfMoveVisibility_tryReuse(int continuation, uint32_t blockers, uint16_t
         oldX != probe.destX || oldY != probe.destY) {
         ++fallbackWitness; return 0;
     }
-    /* Same rejected convex BSP leaf: no admitted sprite or draw-order change.
-     * Require a cardinal segment and a strictly bounded previous sample. */
+    /* The continuation is published as a snap, never an interpolated
+     * monster path. Both endpoints must be outside the original visible
+     * leaf set. Only P2U permits a different rejected destination leaf. */
     if ((oldX != newX && oldY != newY) ||
         !EspNativeBspVisibility_positionLeaf(sprite,oldX,oldY,&oldLeaf) ||
         !EspNativeBspVisibility_positionLeaf(sprite,newX,newY,&newLeaf) ||
-        oldLeaf != newLeaf || oldLeaf >= ESP_NATIVE_BSP_VISIBILITY_MAX_NODES ||
-        (probe.leaves[oldLeaf>>5] & (1U<<(oldLeaf&31U)))) {
+        oldLeaf >= ESP_NATIVE_BSP_VISIBILITY_MAX_NODES ||
+        newLeaf >= ESP_NATIVE_BSP_VISIBILITY_MAX_NODES ||
+#if !DOOMRPG_PERF_P2_COALESCE
+        oldLeaf != newLeaf ||
+#endif
+        (probe.leaves[oldLeaf>>5] & (1U<<(oldLeaf&31U))) ||
+        (probe.leaves[newLeaf>>5] & (1U<<(newLeaf&31U)))) {
         ++fallbackLeaf; return 0;
     }
     /* Ambient uses its existing due scheduler. Do not defer past the fastest
@@ -431,12 +451,21 @@ int EspPerfMoveVisibility_tryReuse(int continuation, uint32_t blockers, uint16_t
     if (nowMs < probe.sampleMs || nowMs-probe.sampleMs >= 250U) {
         ++fallbackAge; return 0;
     }
-    if (nowMs - probe.sampleMs >= probe.phaseWindow) {
+    const int phaseDue = nowMs - probe.sampleMs >= probe.phaseWindow;
+#if !DOOMRPG_PERF_P2_COALESCE
+    if (phaseDue) {
         ++continuationPhaseRejected;
         return 0;
     }
+#endif
     ++eligible;
     if (!DOOMRPG_PERF_MOVE_REUSE) return 0;
+#if DOOMRPG_PERF_P2_COALESCE
+    /* Do not advance the ambient presented clock or renew the witness.
+     * The next actual render or idle ambient service owns the catch-up. */
+    if (phaseDue || (blockers & ESP_PERF_MOVE_BLOCK_AMBIENT)) ++ambientCoalesced;
+    if (oldLeaf != newLeaf) ++crossLeafCoalesced;
+#endif
     ++skipped;
 #if DOOMRPG_PERF_P2_SHADOW
     if (probe.reuseCount != 0U) ++chained;

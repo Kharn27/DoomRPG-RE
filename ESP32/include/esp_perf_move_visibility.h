@@ -10,6 +10,10 @@ struct EspNativeBspVisibilityState_s;
 #ifndef DOOMRPG_PERF_P2_SHADOW
 #define DOOMRPG_PERF_P2_SHADOW 1
 #endif
+/* Experimental visual scheduling only; host baseline remains exact P2-CLEAN. */
+#ifndef DOOMRPG_PERF_P2_COALESCE
+#define DOOMRPG_PERF_P2_COALESCE 0
+#endif
 #define ESP_PERF_MOVE_BLOCK_WORLD (1U << 0U)
 #define ESP_PERF_MOVE_BLOCK_AUTOMAP (1U << 1U)
 #define ESP_PERF_MOVE_BLOCK_HUB (1U << 2U)

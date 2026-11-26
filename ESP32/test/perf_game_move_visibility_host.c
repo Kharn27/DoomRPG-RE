@@ -62,7 +62,22 @@ int main(void) {
     start(1,100); EspPerfMoveVisibility_end(1);
     assert(!reuse(1,0,160,224,120)); /* pending owner */
     start(1,100); EspPerfMoveVisibility_end(1);
-    assert(!reuse(1,1,160,256,120)); /* cross BSP leaf */
+    assert(reuse(1,1,160,256,120)==
+        (DOOMRPG_PERF_P2_COALESCE && DOOMRPG_PERF_MOVE_REUSE)); /* both rejected */
+    state.visibleLeaves[0] |= 4U;
+    start(1,100); EspPerfMoveVisibility_end(1);
+    assert(!reuse(1,1,160,256,120)); /* visible destination */
+    state.visibleLeaves[0] &= ~4U;
+    start(1,100); EspPerfMoveVisibility_end(1);
+    assert(EspPerfMoveVisibility_tryReuse(1,ESP_PERF_MOVE_BLOCK_AMBIENT,
+        7,160,32,224,32,120)==
+        (DOOMRPG_PERF_P2_COALESCE && DOOMRPG_PERF_MOVE_REUSE));
+    start(1,100); EspPerfMoveVisibility_end(1);
+    assert(!EspPerfMoveVisibility_tryReuse(1,ESP_PERF_MOVE_BLOCK_AMBIENT |
+        ESP_PERF_MOVE_BLOCK_DOOR,7,160,32,224,32,120));
+    start(1,100); EspPerfMoveVisibility_end(1);
+    assert(!EspPerfMoveVisibility_tryReuse(0,ESP_PERF_MOVE_BLOCK_AMBIENT,
+        7,160,32,224,32,120)); /* first goal never coalesced */
     start(1,100); EspPerfMoveVisibility_end(1);
     assert(!reuse(1,1,161,224,120)); /* stale source */
     start(1,100); EspPerfMoveVisibility_end(1); fault=1;
@@ -128,7 +143,8 @@ int main(void) {
     start(1,100);
     EspPerfMoveVisibility_noteAmbientPhase(0U,10U,0U,18U,100U);
     EspPerfMoveVisibility_end(1);
-    assert(!reuse(1,1,160,224,106));
+    assert(reuse(1,1,160,224,106)==
+        (DOOMRPG_PERF_P2_COALESCE && DOOMRPG_PERF_MOVE_REUSE));
     /* Only phase-independent billboard near culls omit a deadline. */
     start(1,100);
     EspPerfMoveVisibility_noteAmbientNearCull(0U,10U,100U);
@@ -138,11 +154,13 @@ int main(void) {
     EspPerfMoveVisibility_noteAmbientNearCull(0U,10U,100U);
     EspPerfMoveVisibility_noteAmbientPhase(0U,10U,0U,18U,100U);
     EspPerfMoveVisibility_end(1);
-    assert(!reuse(1,1,160,224,106));
+    assert(reuse(1,1,160,224,106)==
+        (DOOMRPG_PERF_P2_COALESCE && DOOMRPG_PERF_MOVE_REUSE));
     start(1,100);
     EspPerfMoveVisibility_noteAmbientRasterPhase(0U,10U,0U,18U,100U);
     EspPerfMoveVisibility_end(1);
-    assert(!reuse(1,1,160,224,106));
+    assert(reuse(1,1,160,224,106)==
+        (DOOMRPG_PERF_P2_COALESCE && DOOMRPG_PERF_MOVE_REUSE));
     start(1,100);
     EspPerfMoveVisibility_noteAmbientNearCull(0U,10U,101U);
     EspPerfMoveVisibility_end(1);
@@ -157,7 +175,16 @@ int main(void) {
     EspPerfMoveVisibility_noteAmbientPhase(0U,1U,4U,145U,100U);
     EspPerfMoveVisibility_noteAmbientPhase(0U,10U,0U,18U,100U);
     EspPerfMoveVisibility_end(1);
-    assert(!reuse(1,1,160,224,105));
+    assert(reuse(1,1,160,224,105)==
+        (DOOMRPG_PERF_P2_COALESCE && DOOMRPG_PERF_MOVE_REUSE));
+    /* A due phase cannot renew the original age budget. */
+    start(1,100);
+    EspPerfMoveVisibility_noteAmbientPhase(0U,10U,0U,18U,100U);
+    EspPerfMoveVisibility_end(1);
+    assert(reuse(1,1,160,224,106)==
+        (DOOMRPG_PERF_P2_COALESCE && DOOMRPG_PERF_MOVE_REUSE));
+    EspPerfMoveVisibility_commitReuse(1);
+    assert(!reuse(1,1,224,160,350));
     /* Fixed sprites contribute no deadline. */
     start(1,100);
     EspPerfMoveVisibility_noteAmbientPhase(0x80000000UL,10U,0U,18U,100U);
