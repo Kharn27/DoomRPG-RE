@@ -385,7 +385,6 @@ void EspPerfMoveVisibility_end(int rendered) {
             (unsigned)fallbackLeaf,(unsigned)fallbackAge,
             DOOMRPG_PERF_MOVE_REUSE ? "fast" : "shadow");
         printf("[PERFGAMEP2C] chained=%u blockers(world/automap/hub/touch/modal/door/attack/pain/indicator/present/pak/moveEvent/feedback/fx/pickup/ambient)=", (unsigned)chained);
-#if DOOMRPG_PERF_P2_SHADOW
         for (uint32_t i=0U; i<ESP_PERF_MOVE_BLOCK_COUNT; ++i)
             printf("%s%u", i ? "/" : "", (unsigned)blockerCounts[i]);
         printf(" cumulative=yes\n");
@@ -408,6 +407,7 @@ int EspPerfMoveVisibility_tryReuse(int continuation, uint32_t blockers, uint16_t
     ++continuations;
     if (blockers != 0U) {
         ++fallbackQuiet;
+#if DOOMRPG_PERF_P2_SHADOW
         for (uint32_t i=0U; i<ESP_PERF_MOVE_BLOCK_COUNT; ++i)
             if (blockers & (1U<<i)) ++blockerCounts[i];
 #endif
