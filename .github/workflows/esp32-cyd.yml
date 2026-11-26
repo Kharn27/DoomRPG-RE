@@ -234,6 +234,9 @@ jobs:
       - name: Test P2k sorted monster projection and position lookup (real C)
         run: python ESP32/test/perf_game_monster_lookup_host.py
 
+      - name: Test P2l automap negative visibility reuse (real C)
+        run: python ESP32/test/perf_game_automap_rejected_host.py
+
       - name: Test Sector 2 BSP visibility capacity and bounded scratch (host C)
         run: |
           cc -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include ESP32/test/native_bsp_visibility_capacity_host.c -o /tmp/doomrpg-native-bsp-visibility-test

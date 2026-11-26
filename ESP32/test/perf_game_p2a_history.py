@@ -286,7 +286,56 @@ P2K_WIRING_EDITS = {
     ]
 }
 
+P2L_WIRING_EDITS = {
+    "esp_native_bsp_visibility.h": [
+        [
+            "int EspNativeBspVisibility_publishAutomap(\n    const EspNativeBspVisibilityState* state,\n    uint16_t* outLinesMutated,\n    uint16_t* outSpritesMutated);\n/* Only for the same serialized sprite render, with no position/geometry\n * mutations since the negative admission queries. NULL uses the old route. */\nint EspNativeBspVisibility_publishAutomapWithRejected(\n    const EspNativeBspVisibilityState* state,\n    const uint8_t rejected[ESP_NATIVE_BSP_REJECT_MEMO_BYTES],\n    uint16_t* outLinesMutated, uint16_t* outSpritesMutated,\n    uint16_t* outReused);",
+            "int EspNativeBspVisibility_publishAutomap(\n    const EspNativeBspVisibilityState* state,\n    uint16_t* outLinesMutated,\n    uint16_t* outSpritesMutated);"
+        ],
+        [
+            "#define ESP_NATIVE_BSP_VISIBILITY_LINE_BYTES \\\n    (ESP_NATIVE_BSP_VISIBILITY_MAX_LINES / 8U)\n\n/* P2l: caller-owned one-render memo of successful negative queries only.\n * Hidden/unqueried and positive sprites are never skipped by automap. */\n#define ESP_NATIVE_BSP_REJECT_MEMO_SPRITES 1024U\n#define ESP_NATIVE_BSP_REJECT_MEMO_BYTES (ESP_NATIVE_BSP_REJECT_MEMO_SPRITES / 8U)",
+            "#define ESP_NATIVE_BSP_VISIBILITY_LINE_BYTES \\\n    (ESP_NATIVE_BSP_VISIBILITY_MAX_LINES / 8U)"
+        ]
+    ],
+    "esp_native_bsp_visibility.c": [
+        [
+            "int EspNativeBspVisibility_publishAutomapWithRejected(\n    const EspNativeBspVisibilityState* state,\n    const uint8_t rejected[ESP_NATIVE_BSP_REJECT_MEMO_BYTES],\n    uint16_t* outLinesMutated, uint16_t* outSpritesMutated,\n    uint16_t* outReused) {\n    const EspMapRuntimeView* runtime = EspMapRuntime_view();\n    uint32_t i;\n    uint16_t linesMutated = 0U;\n    uint16_t spritesMutated = 0U;\n    uint16_t reused = 0U;\n    if (outReused != NULL) *outReused = 0U;\n\n    if (outLinesMutated != NULL) *outLinesMutated = 0U;\n    if (outSpritesMutated != NULL) *outSpritesMutated = 0U;\n    if (state == NULL || runtime == NULL ||\n        !EspMapAutomapState_isReady() ||\n        runtime->lineCount > ESP_NATIVE_BSP_VISIBILITY_MAX_LINES) {\n        return 0;\n    }\n\n    for (i = 0U; i < runtime->lineCount; ++i) {\n        uint8_t revealed;\n        if ((state->visibleAutomapLines[i >> 3] &\n             (uint8_t)(1U << (i & 7U))) == 0U) {\n            continue;\n        }\n        if (!EspMapAutomapState_getLineRevealed(i, &revealed)) return 0;\n        if (revealed == 0U) {\n            if (!EspMapAutomapState_setLineRevealed(i, 1U)) return 0;\n            if (linesMutated != UINT16_MAX) ++linesMutated;\n        }\n    }\n\n    for (i = 0U; i < runtime->mapSpriteCount; ++i) {\n        uint32_t leaf = UINT32_MAX;\n        uint8_t revealed;\n        /* Only a previously successful, rejected leaf query can bypass\n         * the second lookup. The activation wrapper has no side effects\n         * for a negative query. Positive and unqueried sprites still use it. */\n        if (rejected != NULL &&\n            runtime->mapSpriteCount <= ESP_NATIVE_BSP_REJECT_MEMO_SPRITES &&\n            (rejected[i >> 3U] & (uint8_t)(1U << (i & 7U))) != 0U) {\n            ++reused;\n            continue;\n        }\n        if (!EspNativeBspVisibility_mapSpriteVisible(state, i, &leaf)) {\n            if (leaf == UINT32_MAX) return 0;\n            continue;\n        }\n        if (!EspMapAutomapState_getSpriteRevealed(i, &revealed)) return 0;\n        if (revealed == 0U) {\n            if (!EspMapAutomapState_setSpriteRevealed(i, 1U)) return 0;\n            if (spritesMutated != UINT16_MAX) ++spritesMutated;\n        }\n    }\n\n    if (outLinesMutated != NULL) *outLinesMutated = linesMutated;\n    if (outSpritesMutated != NULL) *outSpritesMutated = spritesMutated;\n    if (outReused != NULL) *outReused = reused;\n    return 1;\n}\n\nint EspNativeBspVisibility_publishAutomap(\n    const EspNativeBspVisibilityState* state,\n    uint16_t* outLinesMutated,\n    uint16_t* outSpritesMutated) {\n    return EspNativeBspVisibility_publishAutomapWithRejected(\n        state, NULL, outLinesMutated, outSpritesMutated, NULL);\n}\n",
+            "int EspNativeBspVisibility_publishAutomap(\n    const EspNativeBspVisibilityState* state,\n    uint16_t* outLinesMutated,\n    uint16_t* outSpritesMutated) {\n    const EspMapRuntimeView* runtime = EspMapRuntime_view();\n    uint32_t i;\n    uint16_t linesMutated = 0U;\n    uint16_t spritesMutated = 0U;\n\n    if (outLinesMutated != NULL) *outLinesMutated = 0U;\n    if (outSpritesMutated != NULL) *outSpritesMutated = 0U;\n    if (state == NULL || runtime == NULL ||\n        !EspMapAutomapState_isReady() ||\n        runtime->lineCount > ESP_NATIVE_BSP_VISIBILITY_MAX_LINES) {\n        return 0;\n    }\n\n    for (i = 0U; i < runtime->lineCount; ++i) {\n        uint8_t revealed;\n        if ((state->visibleAutomapLines[i >> 3] &\n             (uint8_t)(1U << (i & 7U))) == 0U) {\n            continue;\n        }\n        if (!EspMapAutomapState_getLineRevealed(i, &revealed)) return 0;\n        if (revealed == 0U) {\n            if (!EspMapAutomapState_setLineRevealed(i, 1U)) return 0;\n            if (linesMutated != UINT16_MAX) ++linesMutated;\n        }\n    }\n\n    for (i = 0U; i < runtime->mapSpriteCount; ++i) {\n        uint32_t leaf = UINT32_MAX;\n        uint8_t revealed;\n        if (!EspNativeBspVisibility_mapSpriteVisible(state, i, &leaf)) {\n            if (leaf == UINT32_MAX) return 0;\n            continue;\n        }\n        if (!EspMapAutomapState_getSpriteRevealed(i, &revealed)) return 0;\n        if (revealed == 0U) {\n            if (!EspMapAutomapState_setSpriteRevealed(i, 1U)) return 0;\n            if (spritesMutated != UINT16_MAX) ++spritesMutated;\n        }\n    }\n\n    if (outLinesMutated != NULL) *outLinesMutated = linesMutated;\n    if (outSpritesMutated != NULL) *outSpritesMutated = spritesMutated;\n    return 1;\n}\n"
+        ]
+    ],
+    "esp_native_sprite_renderer.c": [
+        [
+            "#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE\n        if (spritePerf.active)\n            printf(\"[PERFGAMEP2L] ordinal=%u rejectedReused=%u sprites=%u sample=1/16\\n\",\n                   (unsigned)spritePerf.ordinal, (unsigned)reused,\n                   (unsigned)runtime->mapSpriteCount);\n#endif\n        if (linesMutated != 0U || spritesMutated != 0U) {\n            printf(\"[AUTOMAPVIS] PUBLISH",
+            "        if (linesMutated != 0U || spritesMutated != 0U) {\n            printf(\"[AUTOMAPVIS] PUBLISH"
+        ],
+        [
+            "#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n        uint16_t reused = 0U;\n        /* No world changes between buildOrder and publication. Restrict\n         * reuse to no-drop frames, excluding the catalog prime path too. */\n        if (!EspNativeBspVisibility_publishAutomapWithRejected(\n                &workspace->visibility,\n                dropOrderCount == 0U && transientWorldBatch.active == 0U\n                    ? workspace->rejected : NULL,\n                &linesMutated, &spritesMutated, &reused)) {\n#else\n        if (!EspNativeBspVisibility_publishAutomap(\n                &workspace->visibility,\n                &linesMutated,\n                &spritesMutated)) {\n#endif",
+            "        if (!EspNativeBspVisibility_publishAutomap(\n                &workspace->visibility,\n                &linesMutated,\n                &spritesMutated)) {"
+        ],
+        [
+            "                    workspace->order, &stats, &orderCount, preview,\n#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n                    preview ? NULL : workspace->rejected,\n#endif\n#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE",
+            "                    workspace->order, &stats, &orderCount, preview,\n#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE"
+        ],
+        [
+            "            if (leaf == UINT32_MAX) return 0;\n#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n            if (rejected != NULL &&\n                runtime->mapSpriteCount <= ESP_NATIVE_BSP_REJECT_MEMO_SPRITES)\n                rejected[i >> 3U] |= (uint8_t)(1U << (i & 7U));\n#endif\n            ++stats->bspRejected;",
+            "            if (leaf == UINT32_MAX) return 0;\n            ++stats->bspRejected;"
+        ],
+        [
+            "                      int preview,\n#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n                      uint8_t* rejected,\n#endif\n                      SpriteOrderProbe* probe) {",
+            "                      int preview,\n                      SpriteOrderProbe* probe) {"
+        ],
+        [
+            "    EspNativeBspVisibilityState visibility;\n#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n    uint8_t rejected[ESP_NATIVE_BSP_REJECT_MEMO_BYTES];\n#endif\n} SpriteWorkspace;",
+            "    EspNativeBspVisibilityState visibility;\n} SpriteWorkspace;"
+        ]
+    ]
+}
+
 def restore_pre_perf_game_p2a(name, data):
+    for newer, older in P2L_WIRING_EDITS.get(name, []):
+        a, b = newer.encode("utf-8"), older.encode("utf-8")
+        assert data.count(a) == 1, (name, "P2l wiring inverse")
+        data = data.replace(a, b, 1)
     for newer, older in P2K_WIRING_EDITS.get(name, []):
         a, b = newer.encode("utf-8"), older.encode("utf-8")
         assert data.count(a) == 1, (name, "P2k wiring inverse")

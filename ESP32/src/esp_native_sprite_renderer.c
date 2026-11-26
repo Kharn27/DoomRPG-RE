@@ -157,6 +157,9 @@ typedef struct SpriteWorkspace_s {
     PersistentDropOrder dropOrder[ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SLOTS];
     uint32_t seenLogical[8];
     EspNativeBspVisibilityState visibility;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    uint8_t rejected[ESP_NATIVE_BSP_REJECT_MEMO_BYTES];
+#endif
 } SpriteWorkspace;
 
 typedef struct TransientWorldBatch_s {
@@ -768,6 +771,9 @@ static int buildOrder(Render_t* render,
                       EspNativeSpriteStats* stats,
                       uint32_t* outCount,
                       int preview,
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+                      uint8_t* rejected,
+#endif
                       SpriteOrderProbe* probe) {
     uint32_t i;
     uint32_t count = 0U;
@@ -858,6 +864,11 @@ static int buildOrder(Render_t* render,
         if (!visible) {
             TRACE_SPRITE(i, "[SPRITETRACE] ADMISSION sprite=%u result=bsp-rejected leaf=%u\n", (unsigned int)i, (unsigned int)leaf);
             if (leaf == UINT32_MAX) return 0;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+            if (rejected != NULL &&
+                runtime->mapSpriteCount <= ESP_NATIVE_BSP_REJECT_MEMO_SPRITES)
+                rejected[i >> 3U] |= (uint8_t)(1U << (i & 7U));
+#endif
             ++stats->bspRejected;
             continue;
         }
@@ -1934,6 +1945,9 @@ static int renderImpl(struct Render_s* renderBase,
 
     if (!buildOrder(render, runtime, &workspace->visibility,
                     workspace->order, &stats, &orderCount, preview,
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+                    preview ? NULL : workspace->rejected,
+#endif
 #if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
                     spritePhaseSampleCount < 16U ? &orderProbe : NULL
 #else
@@ -1953,13 +1967,30 @@ static int renderImpl(struct Render_s* renderBase,
     if (!preview && EspMapAutomapState_isReady()) {
         uint16_t linesMutated = 0U;
         uint16_t spritesMutated = 0U;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+        uint16_t reused = 0U;
+        /* No world changes between buildOrder and publication. Restrict
+         * reuse to no-drop frames, excluding the catalog prime path too. */
+        if (!EspNativeBspVisibility_publishAutomapWithRejected(
+                &workspace->visibility,
+                dropOrderCount == 0U && transientWorldBatch.active == 0U
+                    ? workspace->rejected : NULL,
+                &linesMutated, &spritesMutated, &reused)) {
+#else
         if (!EspNativeBspVisibility_publishAutomap(
                 &workspace->visibility,
                 &linesMutated,
                 &spritesMutated)) {
+#endif
             printf("[AUTOMAPVIS] FAILED source=world-render\n");
             goto done;
         }
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
+        if (spritePerf.active)
+            printf("[PERFGAMEP2L] ordinal=%u rejectedReused=%u sprites=%u sample=1/16\n",
+                   (unsigned)spritePerf.ordinal, (unsigned)reused,
+                   (unsigned)runtime->mapSpriteCount);
+#endif
         if (linesMutated != 0U || spritesMutated != 0U) {
             printf("[AUTOMAPVIS] PUBLISH source=world-render lines+=%u sprites+=%u mutation=render-derived\n",
                    (unsigned int)linesMutated,

@@ -566,14 +566,17 @@ int EspNativeBspVisibility_mapSpriteVisibleBase(
         state, mapSpriteIndex, outLeafIndex);
 }
 
-int EspNativeBspVisibility_publishAutomap(
+int EspNativeBspVisibility_publishAutomapWithRejected(
     const EspNativeBspVisibilityState* state,
-    uint16_t* outLinesMutated,
-    uint16_t* outSpritesMutated) {
+    const uint8_t rejected[ESP_NATIVE_BSP_REJECT_MEMO_BYTES],
+    uint16_t* outLinesMutated, uint16_t* outSpritesMutated,
+    uint16_t* outReused) {
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
     uint32_t i;
     uint16_t linesMutated = 0U;
     uint16_t spritesMutated = 0U;
+    uint16_t reused = 0U;
+    if (outReused != NULL) *outReused = 0U;
 
     if (outLinesMutated != NULL) *outLinesMutated = 0U;
     if (outSpritesMutated != NULL) *outSpritesMutated = 0U;
@@ -599,6 +602,15 @@ int EspNativeBspVisibility_publishAutomap(
     for (i = 0U; i < runtime->mapSpriteCount; ++i) {
         uint32_t leaf = UINT32_MAX;
         uint8_t revealed;
+        /* Only a previously successful, rejected leaf query can bypass
+         * the second lookup. The activation wrapper has no side effects
+         * for a negative query. Positive and unqueried sprites still use it. */
+        if (rejected != NULL &&
+            runtime->mapSpriteCount <= ESP_NATIVE_BSP_REJECT_MEMO_SPRITES &&
+            (rejected[i >> 3U] & (uint8_t)(1U << (i & 7U))) != 0U) {
+            ++reused;
+            continue;
+        }
         if (!EspNativeBspVisibility_mapSpriteVisible(state, i, &leaf)) {
             if (leaf == UINT32_MAX) return 0;
             continue;
@@ -612,5 +624,14 @@ int EspNativeBspVisibility_publishAutomap(
 
     if (outLinesMutated != NULL) *outLinesMutated = linesMutated;
     if (outSpritesMutated != NULL) *outSpritesMutated = spritesMutated;
+    if (outReused != NULL) *outReused = reused;
     return 1;
+}
+
+int EspNativeBspVisibility_publishAutomap(
+    const EspNativeBspVisibilityState* state,
+    uint16_t* outLinesMutated,
+    uint16_t* outSpritesMutated) {
+    return EspNativeBspVisibility_publishAutomapWithRejected(
+        state, NULL, outLinesMutated, outSpritesMutated, NULL);
 }
