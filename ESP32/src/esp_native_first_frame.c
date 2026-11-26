@@ -28,6 +28,13 @@
 
 #define MAPPINGS_HEADER_BYTES 16U
 #define MAPPING_PAIR_BYTES 8U
+#ifndef DOOMRPG_PERF_WALL_GUARD_BATCH
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+#define DOOMRPG_PERF_WALL_GUARD_BATCH 1
+#else
+#define DOOMRPG_PERF_WALL_GUARD_BATCH 0
+#endif
+#endif
 #define PALETTES_HEADER_BYTES 4U
 #define BSP_HEADER_BYTES 33U
 #define WALL_TEXEL_HEADER_BYTES 4U
@@ -276,6 +283,13 @@ static int prepareLegacyWallGuard(FirstFrameWork* work,
     uint8_t mappingHeader[MAPPINGS_HEADER_BYTES];
     uint8_t idBytes[2];
     uint8_t pair[MAPPING_PAIR_BYTES];
+#if DOOMRPG_PERF_WALL_GUARD_BATCH
+    /* Four consecutive pairs are one exact contiguous mappings range.
+     * Keep the original per-frame guard lifetime; no persistent cache. */
+    uint8_t phasePairs[4U * MAPPING_PAIR_BYTES];
+    const int batch = EspAssetPack_isMapFlashActive() &&
+                      !EspAssetPack_isSourceProbeActive();
+#endif
     uint8_t packedByte = 0U;
     uint32_t texelPairs;
     uint32_t bitShapePairs;
@@ -349,6 +363,16 @@ static int prepareLegacyWallGuard(FirstFrameWork* work,
             goto done;
         }
         baseActual = readLe16(idBytes);
+#if DOOMRPG_PERF_WALL_GUARD_BATCH
+        if (batch) {
+            if (baseActual >= texelPairs || texelPairs - baseActual < 4U)
+                goto done;
+            if (!EspAssetPack_readRange(
+                    &work->mappings,
+                    MAPPINGS_HEADER_BYTES + baseActual * MAPPING_PAIR_BYTES,
+                    phasePairs, sizeof(phasePairs))) goto done;
+        }
+#endif
 
         for (phase = 0U; phase < 4U; ++phase) {
             uint32_t actual = baseActual + phase;
@@ -356,14 +380,23 @@ static int prepareLegacyWallGuard(FirstFrameWork* work,
             uint32_t packedOffset;
 
             if (actual >= texelPairs) goto done;
-            if (!EspAssetPack_readRange(
-                    &work->mappings,
-                    MAPPINGS_HEADER_BYTES + actual * MAPPING_PAIR_BYTES,
-                    pair,
-                    sizeof(pair))) {
-                goto done;
+#if DOOMRPG_PERF_WALL_GUARD_BATCH
+            if (batch) {
+                sourceOffset = (int32_t)readLe32(
+                    phasePairs + phase * MAPPING_PAIR_BYTES);
             }
-            sourceOffset = (int32_t)readLe32(pair);
+            else
+#endif
+            {
+                if (!EspAssetPack_readRange(
+                        &work->mappings,
+                        MAPPINGS_HEADER_BYTES + actual * MAPPING_PAIR_BYTES,
+                        pair,
+                        sizeof(pair))) {
+                    goto done;
+                }
+                sourceOffset = (int32_t)readLe32(pair);
+            }
             if (sourceOffset < 0 || (sourceOffset & 1) != 0) goto done;
             packedOffset = WALL_TEXEL_HEADER_BYTES +
                            (uint32_t)sourceOffset / 2U;

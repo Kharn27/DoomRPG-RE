@@ -74,6 +74,11 @@ static uint64_t readBytes;
 /* HOST-ONLY physical legacy byte at source+2048, never allocated on CYD. */
 static byte legacyAtlas[65536];
 static int packOpened = 1;
+static int flashActive = 1, sourceProbe = 0;
+#if DOOMRPG_PERF_WALL_GUARD_BATCH
+static int EspAssetPack_isMapFlashActive(void) { return flashActive; }
+static int EspAssetPack_isSourceProbeActive(void) { return sourceProbe; }
+#endif
 static EspNativeGraphicsCatalogRecord records[2] = {{15}, {16}};
 static EspNativeGraphicsCatalogView catalog = {2, records};
 static int EspAssetPack_isOpen(void) { return packOpened; }
@@ -124,6 +129,8 @@ static void fixture(void) {
     readCalls = 0;
     readBytes = 0;
     packOpened = 1;
+    flashActive = 1;
+    sourceProbe = 0;
     memset(&frameFailure, 0, sizeof(frameFailure));
     memset(legacyWallGuards, 0, sizeof(legacyWallGuards));
     legacyWallGuardCount = 0;
@@ -282,6 +289,8 @@ int main(int argc, char** argv) {
     assert(legacyWallGuards[0].packedByte==0xb4);
     assert(frameFailure.code==FIRST_FRAME_FAIL_NONE);
     unsigned afterFirst=readCalls;
+    assert(afterFirst==(DOOMRPG_PERF_WALL_GUARD_BATCH ? 6U : 12U));
+    assert(readBytes==85U);
 
     /* Upper nibble and same-frame guard reuse without additional I/O. */
     assert(sampleWallSpan(&work,&src,wall,1,0,(2048<<13)+(1<<12),0,1));
@@ -384,6 +393,20 @@ int main(int argc, char** argv) {
     assert(frameFailure.lineIndex==161U);
     assert((uint16_t)framebuffer[0]==0x5a5a && !packOpened);
 
+    /* SD and source-probe retain the independent scalar reads. */
+    for (int probe=0;probe<2;++probe) {
+        fixture();
+        flashActive=probe;sourceProbe=probe;
+        assert(sampleWallSpan(&work,&src,wall,0,0,2048<<13,0,1));
+        assert(framebuffer[0]==0x1004 && readCalls==12U && readBytes==85U);
+    }
+    /* An invalid fourth phase still rejects the entire guard in either mode. */
+    fixture();
+    le16(mappingData + 16 + 72*8 + 8 + 16*2, 69);
+    framebuffer[0]=0x5a5a;
+    assert(!sampleWallSpan(&work,&src,wall,0,0,2048<<13,0,1));
+    assert(frameFailure.code==FIRST_FRAME_FAIL_SPAN_OOB &&
+           legacyWallGuardCount==0 && framebuffer[0]==0x5a5a);
     printf("PASS native wall boundary inline spans=2000 parity=4098 golden=ae456812 successor=68 source=32768 guardMax=4 guardIO=%u reads/%llu bytes retry=0\\n", afterFirst, (unsigned long long)firstGuardBytes);
     if (argc == 3 && strcmp(argv[1],"--fixture")==0)
         return runPackFixture(argv[2]);

@@ -483,7 +483,32 @@ P2S_WIRING_EDITS = {
     ]
 }
 
+P2T_WIRING_EDITS = {
+    "esp_native_first_frame.c": [
+        [
+            "            if (actual >= texelPairs) goto done;\n#if DOOMRPG_PERF_WALL_GUARD_BATCH\n            if (batch) {\n                sourceOffset = (int32_t)readLe32(\n                    phasePairs + phase * MAPPING_PAIR_BYTES);\n            }\n            else\n#endif\n            {\n                if (!EspAssetPack_readRange(\n                        &work->mappings,\n                        MAPPINGS_HEADER_BYTES + actual * MAPPING_PAIR_BYTES,\n                        pair,\n                        sizeof(pair))) {\n                    goto done;\n                }\n                sourceOffset = (int32_t)readLe32(pair);\n            }",
+            "            if (actual >= texelPairs) goto done;\n            if (!EspAssetPack_readRange(\n                    &work->mappings,\n                    MAPPINGS_HEADER_BYTES + actual * MAPPING_PAIR_BYTES,\n                    pair,\n                    sizeof(pair))) {\n                goto done;\n            }\n            sourceOffset = (int32_t)readLe32(pair);"
+        ],
+        [
+            "        baseActual = readLe16(idBytes);\n#if DOOMRPG_PERF_WALL_GUARD_BATCH\n        if (batch) {\n            if (baseActual >= texelPairs || texelPairs - baseActual < 4U)\n                goto done;\n            if (!EspAssetPack_readRange(\n                    &work->mappings,\n                    MAPPINGS_HEADER_BYTES + baseActual * MAPPING_PAIR_BYTES,\n                    phasePairs, sizeof(phasePairs))) goto done;\n        }\n#endif\n\n        for (phase = 0U; phase < 4U; ++phase) {",
+            "        baseActual = readLe16(idBytes);\n\n        for (phase = 0U; phase < 4U; ++phase) {"
+        ],
+        [
+            "    uint8_t pair[MAPPING_PAIR_BYTES];\n#if DOOMRPG_PERF_WALL_GUARD_BATCH\n    /* Four consecutive pairs are one exact contiguous mappings range.\n     * Keep the original per-frame guard lifetime; no persistent cache. */\n    uint8_t phasePairs[4U * MAPPING_PAIR_BYTES];\n    const int batch = EspAssetPack_isMapFlashActive() &&\n                      !EspAssetPack_isSourceProbeActive();\n#endif\n    uint8_t packedByte = 0U;",
+            "    uint8_t pair[MAPPING_PAIR_BYTES];\n    uint8_t packedByte = 0U;"
+        ],
+        [
+            "#define MAPPING_PAIR_BYTES 8U\n#ifndef DOOMRPG_PERF_WALL_GUARD_BATCH\n#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n#define DOOMRPG_PERF_WALL_GUARD_BATCH 1\n#else\n#define DOOMRPG_PERF_WALL_GUARD_BATCH 0\n#endif\n#endif\n",
+            "#define MAPPING_PAIR_BYTES 8U\n"
+        ]
+    ]
+}
+
 def restore_pre_perf_game_p2a(name, data):
+    for newer, older in P2T_WIRING_EDITS.get(name, []):
+        a, b = newer.encode("utf-8"), older.encode("utf-8")
+        assert data.count(a) == 1, (name, "P2t wiring inverse")
+        data = data.replace(a, b, 1)
     for newer, older in P2S_WIRING_EDITS.get(name, []):
         a, b = newer.encode("utf-8"), older.encode("utf-8")
         assert data.count(a) == 1, (name, "P2s wiring inverse")
