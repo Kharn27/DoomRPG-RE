@@ -164,3 +164,8 @@ Candidate 341d38f1d8d593d7f41f7897f675f8ef630e611d; CI 45900542964 SUCCESS. Seri
 ## Main synchronization
 
 Integrate exact main 4f7f802f288a94bf809800deaa9c44503a4589e0 as additional parent of experimental head (no history rewrite); main wins on A4-P3 three-goal player sentinel, dedicated oracle and documentation. Combine workflow steps and historical inverses; keep all nonoverlapping P2 optimizations and tests. Main A0/A1/A1b/A1c oracles retained. No merge into main.
+
+
+## P2V — physical monster-turn lamp (pending CYD)
+
+Requested tester UX: 6x6 logical (12x12 LCD) red square with black edge at x152,y2 inside top-right AUTOMAP zone; 200ms on/off, starts lit, clears when exact existing attackVisual OR activeSequence busy gate releases. Main-task only, serviced after session coordinator and every actual full world present. Physical-only 72-byte exact underlay captured from last full presentation, restored on off/idle without changing logical framebuffer/FNV, no PAK/SD/allocation/full redraw. Modal/automap/death/menu/transition ownership gates suppress lamp and discard old patch; region overlap invalidates. No new input lock or gameplay semantics. Fast turns with no observable service/present need not blink; long blocking compositor can delay edge until main task resumes. Host clock tests start/phase/full repaint/release/unsigned wrap; CYD must verify restore, overlay location and release during long hidden and visible turns, attack and modal/menu transitions. No claimed local firmware build.

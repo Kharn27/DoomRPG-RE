@@ -27,6 +27,9 @@ int EspNativeResidentGameplay_isActive(void);
  * synchronous first-WORLD-frame publisher. Never true on MENU/LOAD/INTRO. */
 int EspNativeResidentGameplay_ownsWorldPresent(void);
 int EspNativeResidentGameplay_isAutomapActive(void);
+/* Read-only physical HUD lamp admission and the actual combat input lock. */
+int EspNativeResidentGameplay_turnLampWorld(void);
+int EspNativeResidentGameplay_turnLampBusy(void);
 
 /* SYS confirmation only queues this terminal action. The Arduino loop services
  * it after the entire composed gameplay call has unwound, before new touch
