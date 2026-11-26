@@ -23,11 +23,13 @@ ref=src[start:end].replace("void Game_trace(","void RefGame_trace(",1)
 with tempfile.TemporaryDirectory(prefix="gameai14-plane-") as tmp:
     p=Path(tmp)
     (p/"legacy_trace.inc").write_text(ref)
-    exe=p/"oracle"
-    subprocess.run(["cc","-std=c11","-O2","-Wall","-Wextra","-Werror",
-                    "-ffunction-sections","-fdata-sections","-Wl,--gc-sections",
-                    "-DDOOMRPG_ESP32=1","-DDOOMRPG_PERF_GAME_P1=0",
-                    "-I",str(p),"-IESP32/test/oracles","-IESP32/include","-Isrc",
-                    "ESP32/test/game_ai14_special_plane_host.c","-o",str(exe)],
-                   cwd=ROOT,check=True)
-    subprocess.run([str(exe)],check=True)
+    for continuation in (0, 1):
+        exe=p/f"oracle-{continuation}"
+        subprocess.run(["cc","-std=c11","-O2","-Wall","-Wextra","-Werror",
+                        "-ffunction-sections","-fdata-sections","-Wl,--gc-sections",
+                        "-DDOOMRPG_ESP32=1","-DDOOMRPG_PERF_GAME_P1=0",
+                        f"-DCONTINUATION={continuation}",
+                        "-I",str(p),"-IESP32/test/oracles","-IESP32/include","-Isrc",
+                        "ESP32/test/game_ai14_special_plane_host.c","-o",str(exe)],
+                       cwd=ROOT,check=True)
+        subprocess.run([str(exe)],check=True)

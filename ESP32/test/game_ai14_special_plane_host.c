@@ -3,7 +3,13 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#if CONTINUATION
 #include "../src/esp_native_gameplay_monster_three_goal_turn.c"
+#else
+#include "../src/esp_native_gameplay_monster_movement.c"
+static EspPlayerViewState player;
+const EspPlayerViewState* EspPlayerView_view(void) { return &player; }
+#endif
 
 static EspMapRuntimeView rt;
 static EspMapSpriteTopologyView topo;
@@ -64,6 +70,11 @@ int main(void) {
     RefRoot root={&canvas,&render}; RefDef def={14};
     g.doomRpg=&root; g.entities[2].def=&def; g.entities[2].info=1;
     topo.spriteCount=2;
+#if !CONTINUATION
+    player.active=1;
+    player.viewX=player.destX=2016;
+    player.viewY=player.destY=2016;
+#endif
     const uint32_t flags[]={0x600000U,0x20000U,0x220000U,0x1a0000U,0x7a0000U};
     const int dirs[4][2]={{1,0},{-1,0},{0,1},{0,-1}};
     const int offsets[]={-8,0,8,32,56,64,72};
@@ -105,7 +116,7 @@ int main(void) {
     readFail=1;assert(cardinalTraceClear(672,672,736,672,0,0xf387U,1)==-1);
     readFail=0;
     assert(cardinalTraceClear(672,672,800,672,0,0xf387U,1)==-2);
-    printf("PASS GAME-AI-14 A4 special-plane original Game_trace cases=%u blocked=%u clear=%u origin-differences=%u\n",
-           cases,blocked,clear,differences);
+    printf("PASS GAME-AI-14 A4 special-plane original Game_trace continuation=%d cases=%u blocked=%u clear=%u origin-differences=%u\n",
+           CONTINUATION,cases,blocked,clear,differences);
     return 0;
 }

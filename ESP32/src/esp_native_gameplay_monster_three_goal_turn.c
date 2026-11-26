@@ -84,6 +84,8 @@ typedef struct ThreeGoalPathResult_s {
 } ThreeGoalPathResult;
 
 static EspNativeGameplayMonsterThreeGoalTurnView threeGoalView;
+/* Per-plan origin-plane witness; no retained world state. */
+static uint16_t originPlaneClear, originPlaneBlocked;
 static EspNativeGameplayMonsterMovementView syntheticMovementView;
 
 static int centeredCoordinate(int32_t value) {
@@ -338,6 +340,10 @@ static int blockingSpriteOnTileReference(uint16_t tile,
             specialBlocks = specialEntityBlocks(i, sourceX, sourceY, destX, destY,
                                                 strictSpecial);
             if (specialBlocks < 0) return -1;
+            if (strictSpecial) {
+                if (specialBlocks) ++originPlaneBlocked;
+                else ++originPlaneClear;
+            }
             if (specialBlocks == 0) continue;
         }
         if (!found || linkOrder > bestOrder) {
@@ -387,6 +393,10 @@ static int blockingSpriteOnTileIndexed(uint16_t tile,
             specialBlocks = specialEntityBlocks(i, sourceX, sourceY, destX, destY,
                                                 strictSpecial);
             if (specialBlocks < 0) return -1;
+            if (strictSpecial) {
+                if (specialBlocks) ++originPlaneBlocked;
+                else ++originPlaneClear;
+            }
             if (specialBlocks == 0) continue;
         }
         if (!found || linkOrder > bestOrder) {
@@ -868,6 +878,7 @@ static int probeContinuationGoal(DoomRPG_t* doomRpg,
     (void)EspPerfSpatialSprite_begin(&EspPerfGameP1_spatialSpriteIndex);
     EspPerfGameP1_lineBuild(EspPerfSpatialLine_begin(&EspPerfGameP1_spatialLineIndex, lineEntityTile));
 #endif
+    originPlaneClear = originPlaneBlocked = 0U;
     planStatus = aiGoalPlan(spriteIndex, monster->subtype,
                             (int32_t)position->worldX,
                             (int32_t)position->worldY,
@@ -879,6 +890,11 @@ static int probeContinuationGoal(DoomRPG_t* doomRpg,
     EspPerfSpatialSprite_end(&EspPerfGameP1_spatialSpriteIndex);
     EspPerfTraceCache_end(&traceCache);
 #endif
+    if (originPlaneClear != 0U || originPlaneBlocked != 0U) {
+        printf("[AI14PLANE] planner=continuation sprite=%u goal=%u originClear=%u originBlocked=%u planStatus=%d\n",
+               (unsigned int)spriteIndex, (unsigned int)goalStep,
+               (unsigned int)originPlaneClear, (unsigned int)originPlaneBlocked, planStatus);
+    }
     if (planStatus == -3 || probeRng.boundary != 0U) {
         printf("[MONSTER3GOAL] DEFER sprite=%u subtype=%u goal=%u/3 cause=rng-boundary-unprepared mutation=no rngConsumed=0\n",
                (unsigned int)spriteIndex, (unsigned int)monster->subtype,
