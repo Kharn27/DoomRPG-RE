@@ -72,6 +72,8 @@ struct ResidentEntryRecord {
 };
 
 struct ResidentCache {
+    /* Small records in insertion order, then large records in insertion
+     * order. The latter are at most seven and match descending payloads. */
     ResidentRangeRecord ranges[kResidentRangeEntryCapacity];
     ResidentEntryRecord entries[kResidentEntryCacheSlots];
     uint8_t bytes[kResidentRangeCapacityBytes];
@@ -666,21 +668,20 @@ uint32_t lowestLargeRangeOffset()
 
 bool evictLowestLargeRange()
 {
-    if (residentCache == nullptr || residentCache->largeCount == 0U) {
+    if (residentCache == nullptr || residentCache->largeCount == 0U ||
+        residentCache->largeCount > residentCache->rangeCount) {
         return false;
     }
-    const uint32_t lowest = lowestLargeRangeOffset();
-    /* Reverse insertion order finds the lowest live large block first.
-     * eraseResidentRange preserves the order of all remaining records. */
-    for (uint32_t i = residentCache->rangeCount; i > 0U;) {
-        const ResidentRangeRecord& record = residentCache->ranges[--i];
-        if (isLargeResidentRange(record) && record.dataOffset == lowest) {
-            eraseResidentRange(i);
-            --residentCache->largeCount;
-            return true;
-        }
+    const uint32_t last = residentCache->rangeCount - 1U;
+    const ResidentRangeRecord& record = residentCache->ranges[last];
+    if (!isLargeResidentRange(record) ||
+        record.dataOffset != lowestLargeRangeOffset()) {
+        return false;
     }
-    return false;
+    /* The lowest large payload is always the last descriptor. No shifting. */
+    eraseResidentRange(last);
+    --residentCache->largeCount;
+    return true;
 }
 
 void clearLargeResidentRanges()
@@ -688,15 +689,8 @@ void clearLargeResidentRanges()
     if (residentCache == nullptr) {
         return;
     }
-    uint32_t i = 0U;
-    while (i < residentCache->rangeCount) {
-        if (isLargeResidentRange(residentCache->ranges[i])) {
-            eraseResidentRange(i);
-        }
-        else {
-            ++i;
-        }
-    }
+    /* The two descriptor cohorts never interleave. */
+    residentCache->rangeCount -= residentCache->largeCount;
     residentCache->largeCount = 0U;
 }
 
@@ -716,7 +710,12 @@ ResidentRangeRecord* findResidentRange(uint32_t absoluteOffset,
     if (!residentEnabled || residentCache == nullptr) {
         return nullptr;
     }
-    for (uint32_t i = 0U; i < residentCache->rangeCount; ++i) {
+    const uint32_t smallCount =
+        residentCache->rangeCount - residentCache->largeCount;
+    const bool large = length == kResidentLargeRangeBytes;
+    const uint32_t begin = large ? smallCount : 0U;
+    const uint32_t end = large ? residentCache->rangeCount : smallCount;
+    for (uint32_t i = begin; i < end; ++i) {
         ResidentRangeRecord* record = &residentCache->ranges[i];
         if (record->absoluteOffset == absoluteOffset &&
             record->length == length) {
@@ -760,8 +759,17 @@ void storeResidentSmallRange(uint32_t absoluteOffset,
         return;
     }
 
-    ResidentRangeRecord* record =
-        &residentCache->ranges[residentCache->rangeCount++];
+    /* Insert before the large tail, moving at most seven 8-byte records.
+     * Payloads stay put and small insertion/large eviction order is exact. */
+    const uint32_t index =
+        residentCache->rangeCount - residentCache->largeCount;
+    if (residentCache->largeCount != 0U) {
+        memmove(&residentCache->ranges[index + 1U],
+                &residentCache->ranges[index],
+                residentCache->largeCount * sizeof(residentCache->ranges[0]));
+    }
+    ++residentCache->rangeCount;
+    ResidentRangeRecord* record = &residentCache->ranges[index];
     record->absoluteOffset = absoluteOffset;
     record->length = (uint16_t)length;
     record->dataOffset = (uint16_t)residentCache->bytesUsed;

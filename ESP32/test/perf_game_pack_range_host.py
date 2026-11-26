@@ -85,8 +85,10 @@ static void checkLayout() {
     for(uint32_t i=0;i<cache.rangeCount;++i) {
         const auto& r=cache.ranges[i];
         assert((uint32_t)r.dataOffset+r.length<=15360);
+        assert((r.length==2048) == (i>=cache.rangeCount-cache.largeCount));
         if(r.length==2048) {
             ++count;
+            assert(r.dataOffset==15360-count*2048);
             assert((15360-r.dataOffset)%2048==0);
             uint32_t slot=(15360-r.dataOffset)/2048;
             assert(slot>=1 && slot<=7 && !occupied[slot-1]);
@@ -104,7 +106,22 @@ static void checkLayout() {
 }
 static void expect(const EspAssetPackEntry& e,uint32_t off,uint32_t n) {
     uint8_t out[2048];
+    // Independent old full-scan lookup, including same offset/different size.
+    ResidentRangeRecord* expected=nullptr;
+    if(residentEnabled && (n<=1024 || n==2048)) {
+        for(uint32_t i=0;i<cache.rangeCount;++i) {
+            auto& r=cache.ranges[i];
+            if(r.absoluteOffset==e.offset+off && r.length==n) {
+                expected=&r;break;
+            }
+        }
+    }
+    assert(findResidentRange(e.offset+off,n)==expected);
+    const uint32_t beforeReads=reads;
+    const bool hit=!sourceProbeReady && expected &&
+        (n<=1024 || residentLargeRangeEnabled);
     assert(n<=sizeof(out) && readRangeCore(&e,off,out,n));
+    assert(reads==beforeReads+(hit?0U:1U));
     for(uint32_t i=0;i<n;++i)assert(out[i]==byteAt(e.offset+off+i));
     checkLayout();
 }
@@ -141,6 +158,22 @@ int main() {
         assert((uint32_t)cache.ranges[i].dataOffset+cache.ranges[i].length<=15360);
     clearLargeResidentRanges();checkLayout();
     assert(residentLargeRangeCount()==0);
+    // Explicit interleaved insertions, exact eviction victim and survivor
+    // identity, with a small/large key sharing an absolute source offset.
+    clearResidentCache();residentLargeRangeEnabled=true;
+    expect(many,0,2048);expect(many,0,32);
+    expect(many,4096,2048);expect(many,32,32);
+    expect(many,8192,2048);expect(many,64,64);
+    assert(cache.rangeCount==6 && cache.largeCount==3);
+    assert(evictLowestLargeRange());checkLayout();
+    assert(findResidentRange(many.offset+8192,2048)==nullptr);
+    assert(findResidentRange(many.offset+4096,2048)!=nullptr);
+    assert(findResidentRange(many.offset,2048)!=nullptr);
+    assert(findResidentRange(many.offset,32)!=nullptr);
+    clearLargeResidentRanges();checkLayout();
+    assert(cache.rangeCount==3 && cache.largeCount==0);
+    assert(findResidentRange(many.offset,2048)==nullptr);
+    assert(findResidentRange(many.offset,32)!=nullptr);
     // Mixed inserts, disable, re-enable, evict and recycle repeatedly.
     uint32_t rng=0x12345678;
     for(uint32_t i=0;i<3000;++i) {
@@ -149,11 +182,21 @@ int main() {
         if(i%197==0){recycleResidentRangeWorkingSet();checkLayout();}
         if(i%11==0)residentLargeRangeEnabled=!residentLargeRangeEnabled;
         uint32_t n=(rng&3)==0?2048:1+(rng>>16)%1024;
-        expect(many,(rng>>4)%(40000-n),n);
+        const uint32_t off=(rng>>4)%(40000-n);
+        expect(many,off,n);
+        if(i%3==0)expect(many,off,n);
+        if(i%19==0) {
+            // Check every live descriptor after relocation, including
+            // large-tail evictions and full-record recycling.
+            for(uint32_t j=0;j<cache.rangeCount;++j) {
+                auto& r=cache.ranges[j];
+                assert(findResidentRange(r.absoluteOffset,r.length)==&r);
+            }
+        }
     }
     clearResidentCache();physicalUsesMapFlash=false;generation=3;
     expect(a,24,32);
-    puts("PASS P3A real cache/read core: exact offsets and contiguous large count; owner=18088");
+    puts("PASS P3C real cache/read core: partitioned descriptors, exact lookup/eviction, owner=18088");
 }
 """
 with tempfile.TemporaryDirectory(prefix="doomrpg-p2z-") as tmp:
