@@ -350,7 +350,32 @@ P2N_WIRING_EDITS = {
     ]
 }
 
+P2O_WIRING_EDITS = {
+    "esp_native_gameplay_monster_movement_publish.c": [
+        [
+            "#include \"esp_native_gameplay_player_pain_visual.h\"\n#include \"esp_native_gameplay_player_state.h\"",
+            "#include \"esp_native_gameplay_player_pain_visual.h\""
+        ],
+        [
+            "    if (!continuation)\n        EspPerfMoveVisibility_semanticBegin(\n            shadowContextReady ? &shadowContext : NULL, blockers,\n            publishCapture.before.spriteIndex,\n            publishCapture.before.worldX, publishCapture.before.worldY,\n            publishCapture.after.worldX, publishCapture.after.worldY, nowMs,\n            shadowAutomap, shadowActivation,\n            EspNativeGameplayPlayerState_fingerprint());\n    if (!continuation)\n        (void)EspPerfMoveVisibility_firstShadowBegin(",
+            "    if (!continuation)\n        (void)EspPerfMoveVisibility_firstShadowBegin("
+        ],
+        [
+            "        if (!continuation) {\n            (void)EspPerfMoveVisibility_semanticEnd(0, 0U, 0U, 1, 0, 0U, 0U);\n            EspPerfMoveVisibility_firstShadowEnd(0, 0U, 0U, 1, 0);\n        }",
+            "        if (!continuation) EspPerfMoveVisibility_firstShadowEnd(0, 0U, 0U, 1, 0);"
+        ],
+        [
+            "        const uint32_t afterActivation = EspNativeGameplayMonsterActivation_count();\n        const uint32_t afterPlayer = EspNativeGameplayPlayerState_fingerprint();\n        const int sideEffects = shadowMap == NULL || afterMap == NULL ||\n            shadowAutomap != afterMap->stateFNV1a || shadowActivation != afterActivation;\n        if (!continuation) {\n            (void)EspPerfMoveVisibility_semanticEnd(frame.finalPresented,\n                frame.frameBeforeFNV, frame.frameAfterFNV, sideEffects,\n                quietAfter, afterPlayer, frame.totalMicros);\n            EspPerfMoveVisibility_firstShadowEnd(frame.finalPresented,\n                frame.frameBeforeFNV, frame.frameAfterFNV, sideEffects, quietAfter);\n        }\n        EspPerfMoveVisibility_end(frame.finalPresented && quietAfter ? 1 : 2);\n        EspPerfMoveVisibility_rememberContext(\n            frame.finalPresented && shadowContextReady ? &shadowContext : NULL);\n        EspPerfMoveVisibility_semanticRemember(\n            afterMap != NULL ? afterMap->stateFNV1a : 0U, afterActivation,\n            afterPlayer, frame.frameAfterFNV,\n            frame.finalPresented && quietAfter && shadowContextReady && afterMap != NULL);",
+            "        if (!continuation)\n            EspPerfMoveVisibility_firstShadowEnd(frame.finalPresented,\n                frame.frameBeforeFNV, frame.frameAfterFNV,\n                shadowMap == NULL || afterMap == NULL ||\n                shadowAutomap != afterMap->stateFNV1a ||\n                shadowActivation != EspNativeGameplayMonsterActivation_count(),\n                quietAfter);\n        EspPerfMoveVisibility_end(frame.finalPresented && quietAfter ? 1 : 2);\n        EspPerfMoveVisibility_rememberContext(\n            frame.finalPresented && shadowContextReady ? &shadowContext : NULL);"
+        ]
+    ]
+}
+
 def restore_pre_perf_game_p2a(name, data):
+    for newer, older in P2O_WIRING_EDITS.get(name, []):
+        a, b = newer.encode("utf-8"), older.encode("utf-8")
+        assert data.count(a) == 1, (name, "P2o wiring inverse")
+        data = data.replace(a, b, 1)
     for newer, older in P2N_WIRING_EDITS.get(name, []):
         a, b = newer.encode("utf-8"), older.encode("utf-8")
         assert data.count(a) == 1, (name, "P2n wiring inverse")

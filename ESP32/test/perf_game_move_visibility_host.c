@@ -150,6 +150,24 @@ int main(void) {
     EspPerfMoveVisibility_rememberContext(&ctx);
     EspPerfMoveVisibility_frameStarted(0);
     assert(!EspPerfMoveVisibility_firstShadowBegin(&ctx,0U,7,160,32,224,32,120));
+    /* P2o shadow: phase due alone does not exclude semantic measurement.
+     * Actual frame classification must be rejected; start() samples 96->160. */
+    state.visibleLeaves[0]=0U;
+    for (unsigned scenario=0; scenario<8U; ++scenario) {
+        start(1,100); EspPerfMoveVisibility_end(1);
+        EspPerfMoveVisibility_rememberContext(&ctx);
+        EspPerfMoveVisibility_semanticRemember(11U,2U,33U,44U,1);
+        EspPerfMoveVisibility_semanticBegin(&ctx,
+            scenario==6U ? ESP_PERF_MOVE_BLOCK_DOOR : ESP_PERF_MOVE_BLOCK_AMBIENT,
+            7,160,32,224,32,120,11U,scenario==1U ? 3U : 2U,33U);
+        assert(!reuse(0,1,160,224,120)); /* first goal still always renders */
+        if (scenario==7U) EspPerfMoveVisibility_invalidate();
+        start(1,120);
+        assert(EspPerfMoveVisibility_semanticEnd(1,
+            scenario==2U ? 45U : 44U, scenario==2U || scenario==3U ? 45U : 44U,
+            scenario==4U, 1, scenario==5U ? 34U : 33U, 90000U)==(scenario==0U));
+        EspPerfMoveVisibility_end(1);
+    }
     state.visibleLeaves[0]=3U;
     start(1,100); EspPerfMoveVisibility_end(1);
     assert(!reuse(1,1,160,224,120)); /* visible leaf */

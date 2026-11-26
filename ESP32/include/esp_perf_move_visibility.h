@@ -28,6 +28,17 @@ typedef struct EspPerfMoveVisibilityContext_s {
     uint32_t arena, lineFNV, textureFNV;
     int32_t x, y, z, angle;
 } EspPerfMoveVisibilityContext;
+/* P2o independent semantic shadow: phase-only blockers are ignored for
+ * measurement, never for permission to skip. */
+void EspPerfMoveVisibility_semanticBegin(const EspPerfMoveVisibilityContext* context,
+    uint32_t blockers, uint16_t sprite, uint16_t oldX, uint16_t oldY,
+    uint16_t newX, uint16_t newY, uint32_t nowMs, uint32_t automap,
+    uint32_t activation, uint32_t player);
+int EspPerfMoveVisibility_semanticEnd(int rendered, uint32_t beforeFNV,
+    uint32_t afterFNV, int sideEffects, int quietAfter,
+    uint32_t playerAfter, uint32_t frameUs);
+void EspPerfMoveVisibility_semanticRemember(uint32_t automap, uint32_t activation,
+    uint32_t player, uint32_t frame, int valid);
 void EspPerfMoveVisibility_rememberContext(const EspPerfMoveVisibilityContext* context);
 int EspPerfMoveVisibility_firstShadowBegin(const EspPerfMoveVisibilityContext* context,
     uint32_t blockers, uint16_t sprite, uint16_t oldX, uint16_t oldY,

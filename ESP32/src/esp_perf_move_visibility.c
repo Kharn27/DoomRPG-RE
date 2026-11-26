@@ -30,6 +30,87 @@ static uint32_t firstAttempts, firstCandidates, firstNoWitness, firstBlocked,
 static uint32_t firstPhaseRejected, continuationPhaseRejected, firstPhaseCrossed,
     firstChangedAcrossPhase, unrelatedFrames, firstPriorSample, firstPriorWindow;
 
+/* P2o: separate geometric/owner evidence from temporal presentation.
+ * No authority to skip; FNV equality is an observed witness, not pixel proof. */
+static struct {
+    uint32_t automap, activation, player, frame;
+    uint8_t valid;
+} semanticPrior;
+static uint32_t semanticPlayerBefore;
+static uint8_t semanticPending, semanticDue, semanticStatic;
+static uint32_t semanticCandidates, semanticOwnerMismatch, semanticPhaseDue,
+    semanticStaticCandidates, semanticContinuityMismatch, semanticNotRejected,
+    semanticEffects, semanticChanged, semanticSame, semanticDueSame,
+    semanticStaticSame, semanticInvalidated, actualNoop;
+static uint64_t actualNoopUs, semanticNoopUs;
+
+void EspPerfMoveVisibility_semanticRemember(uint32_t automap, uint32_t activation,
+    uint32_t player, uint32_t frame, int valid) {
+    semanticPrior.automap = automap;
+    semanticPrior.activation = activation;
+    semanticPrior.player = player;
+    semanticPrior.frame = frame;
+    semanticPrior.valid = (uint8_t)(valid && automap != 0U &&
+        player != 0U && frame != 0U);
+}
+void EspPerfMoveVisibility_semanticBegin(const EspPerfMoveVisibilityContext* context,
+    uint32_t blockers, uint16_t sprite, uint16_t oldX, uint16_t oldY,
+    uint16_t newX, uint16_t newY, uint32_t nowMs, uint32_t automap,
+    uint32_t activation, uint32_t player) {
+    const uint32_t phaseMask = ESP_PERF_MOVE_BLOCK_INDICATOR |
+        ESP_PERF_MOVE_BLOCK_AMBIENT;
+    uint32_t oldLeaf = UINT32_MAX, newLeaf = UINT32_MAX;
+    semanticPending = 0U;
+    semanticPlayerBefore = player;
+    if ((blockers & ~phaseMask) != 0U || !probe.valid || !contextValid ||
+        context == NULL || memcmp(context, &previousContext, sizeof(*context)) != 0 ||
+        nowMs < probe.sampleMs || nowMs - probe.sampleMs >= 250U) return;
+    if (!semanticPrior.valid || semanticPrior.automap != automap ||
+        semanticPrior.activation != activation || semanticPrior.player != player) {
+        ++semanticOwnerMismatch;
+        return;
+    }
+    if ((oldX != newX && oldY != newY) ||
+        !EspNativeBspVisibility_positionLeaf(sprite, oldX, oldY, &oldLeaf) ||
+        !EspNativeBspVisibility_positionLeaf(sprite, newX, newY, &newLeaf) ||
+        oldLeaf != newLeaf || oldLeaf >= ESP_NATIVE_BSP_VISIBILITY_MAX_NODES ||
+        (probe.leaves[oldLeaf >> 5U] & (1U << (oldLeaf & 31U)))) return;
+    semanticPending = 1U;
+    semanticDue = (uint8_t)((blockers & phaseMask) != 0U ||
+        nowMs - probe.sampleMs >= probe.phaseWindow);
+    semanticStatic = (uint8_t)(!semanticDue && probe.phaseWindow == UINT32_MAX);
+    ++semanticCandidates;
+    if (semanticDue) ++semanticPhaseDue;
+    if (semanticStatic) ++semanticStaticCandidates;
+}
+int EspPerfMoveVisibility_semanticEnd(int rendered, uint32_t beforeFNV,
+    uint32_t afterFNV, int sideEffects, int quietAfter,
+    uint32_t playerAfter, uint32_t frameUs) {
+    const int rejected = rendered && probe.samples == 1U &&
+        probe.classification == 0U;
+    const int effects = sideEffects || semanticPlayerBefore == 0U ||
+        playerAfter != semanticPlayerBefore;
+    const int equal = beforeFNV != 0U && beforeFNV == afterFNV;
+    if (rejected && !effects && equal) {
+        ++actualNoop;
+        actualNoopUs += frameUs;
+    }
+    if (!semanticPending) return 0;
+    semanticPending = 0U;
+    if (beforeFNV != semanticPrior.frame) {
+        ++semanticContinuityMismatch;
+        return 0;
+    }
+    if (!rejected) { ++semanticNotRejected; return 0; }
+    if (effects || !probe.quiet || !quietAfter) { ++semanticEffects; return 0; }
+    if (!equal) { ++semanticChanged; return 0; }
+    ++semanticSame;
+    semanticNoopUs += frameUs;
+    if (semanticDue) ++semanticDueSame;
+    if (semanticStatic) ++semanticStaticSame;
+    return 1;
+}
+
 void EspPerfMoveVisibility_rememberContext(const EspPerfMoveVisibilityContext* context) {
     contextValid = (uint8_t)(context != NULL);
     if (context != NULL) previousContext = *context;
@@ -105,6 +186,15 @@ void EspPerfMoveVisibility_firstShadowEnd(int rendered, uint32_t beforeFNV,
             (unsigned)firstPhaseRejected,(unsigned)continuationPhaseRejected,
             (unsigned)firstPhaseCrossed,(unsigned)firstChangedAcrossPhase,
             (unsigned)unrelatedFrames);
+        printf("[PERFGAMEP2O] first=%u semantic=%u ownerMismatch=%u phaseDue=%u static=%u continuityMismatch=%u notRejected=%u effectsOrBusy=%u changed=%u same=%u dueSame=%u staticSame=%u invalidated=%u actualNoop=%u actualNoopUs=%llu semanticNoopUs=%llu mode=shadow firstSkipped=0 cumulative=yes\n",
+            (unsigned)firstAttempts,(unsigned)semanticCandidates,
+            (unsigned)semanticOwnerMismatch,(unsigned)semanticPhaseDue,
+            (unsigned)semanticStaticCandidates,(unsigned)semanticContinuityMismatch,
+            (unsigned)semanticNotRejected,(unsigned)semanticEffects,
+            (unsigned)semanticChanged,(unsigned)semanticSame,
+            (unsigned)semanticDueSame,(unsigned)semanticStaticSame,
+            (unsigned)semanticInvalidated,(unsigned)actualNoop,
+            (unsigned long long)actualNoopUs,(unsigned long long)semanticNoopUs);
     }
 }
 
@@ -114,6 +204,10 @@ void EspPerfMoveVisibility_invalidate(void) {
     probe.pending = 0U;
     contextValid = 0U;
     firstPending = 0U;
+    semanticPrior.valid = 0U;
+    if (semanticPending) ++semanticInvalidated;
+    semanticPending = 0U;
+    semanticPlayerBefore = 0U;
 }
 
 void EspPerfMoveVisibility_commitReuse(int quiet) {
