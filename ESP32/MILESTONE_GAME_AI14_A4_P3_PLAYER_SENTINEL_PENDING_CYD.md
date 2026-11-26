@@ -1,0 +1,7 @@
+# GAME-AI-14 A4-P3 — continuation player sentinel (pending host/CYD)
+
+Stacked on #468 docs-only PASS 1f4e5d25d41ab32603a3228bfbd647a7a91e4342. Main stays untouched; merge #468 first, then retarget this PR to main. Original Game_trace checks player destination tile on every visited cell if mask & 0x100, including source. First planner already protects destination; continuation lacked any explicit sentinel. Even if adjacent shortcut prevents many such cases, hypothetical calcPath can score a path through the player. Add settled player preflight and source/destination rejection in continuation only, no allocations or retained state. Attack masks without 0x100 unchanged; fail closed if player unavailable or unsettled. Trace cache already scoped per plan. Source-line exception and other first-planner rules unchanged.
+
+Host: preserve A4-P2 4480 plane cases, add 48 actual Game_trace differential sentinel scenarios (4 directions × 3 player locations × 2 masks × 2 coordinate conventions), three not-ready/unsettled checks and one mask-excluded check. Historical SDL-F26 exact reversal checked against parent. Pending CI, no local firmware build.
+
+CYD after CI: repeat Sector1 save slot05, keep sprite202 alive, move/back/pass adjacent to Phantom, verify no monster shares player tile, attack shortcut and ordinary movement remain functional, send Serial. Scope only continuation player sentinel; no full legacy parity or new save claim.
