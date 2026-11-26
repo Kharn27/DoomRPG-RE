@@ -8,6 +8,11 @@
 #include <stddef.h>
 #include <stdlib.h>
 
+/* The independent pack provenance oracle also injects this harness. */
+#ifndef DOOMRPG_PERF_WALL_GUARD_BATCH
+#define DOOMRPG_PERF_WALL_GUARD_BATCH 0
+#endif
+
 #define MAPPINGS_HEADER_BYTES 16U
 #define MAPPING_PAIR_BYTES 8U
 #define WALL_TEXEL_HEADER_BYTES 4U
