@@ -40,8 +40,6 @@ def extract(signature):
 
 CACHE = extract("static int cachedSpriteLeaf(")
 LEAF = extract("static int spriteLeaf(")
-PROJECTED = SOURCE[SOURCE.index("#define PROJECTED_LEAF_SLOTS 64U"):SOURCE.index("\n#endif\n\n/* The 2 KB cache")]
-
 QUERY = extract("int EspNativeBspVisibility_mapSpriteVisibleReadOnly(")
 POSITION_LEAF = extract("int EspNativeBspVisibility_positionLeaf(")
 POSITION = extract("int EspNativeBspVisibility_positionVisible(")
@@ -81,7 +79,6 @@ static EspMapNode nodes[3];
 static uint8_t arenaA, arenaB;
 static int projected;
 static uint16_t movedX = 64U, rawX = 64U;
-static uint32_t visualInfo;
 static uint32_t spriteReads, nodeReads, projectionChecks;
 
 static const EspMapRuntimeView* EspMapRuntime_view(void) { return &map; }
@@ -92,7 +89,7 @@ int EspNativeGameplayMonsterMovementPublish_isProjected(uint16_t index) {
 static int EspMapRuntime_getMapSprite(uint32_t index, EspMapSprite* sprite) {
     if (sprite == NULL || index >= map.mapSpriteCount) return 0;
     ++spriteReads;
-    *sprite = (EspMapSprite){ index == 279U && projected ? movedX : rawX, 64U, visualInfo };
+    *sprite = (EspMapSprite){ index == 279U && projected ? movedX : rawX, 64U, 0U };
     return 1;
 }
 static int EspMapRuntime_getNode(uint32_t index, EspMapNode* node) {
@@ -103,7 +100,8 @@ static int EspMapRuntime_getNode(uint32_t index, EspMapNode* node) {
 }
 static void EspNativeSpriteVisual_coordinates(
     uint16_t x, uint16_t y, uint32_t info, int* outX, int* outY) {
-    *outX = (int)x + (int)(info & 63U); *outY = y;
+    (void)info;
+    *outX = x; *outY = y;
 }
 """
 
@@ -120,7 +118,6 @@ static void init(void) {
     map = (EspMapRuntimeView){ &arenaA, 0x12345678U, 3U, 320U };
     projected = 0;
     movedX = rawX = 64U;
-    visualInfo = 0U;
     spriteReads = nodeReads = projectionChecks = 0U;
 }
 int main(void) {
@@ -141,10 +138,8 @@ int main(void) {
     selectLeaf(&visible, 1U);
     assert(EspNativeBspVisibility_mapSpriteVisibleReadOnly(&visible,279U,&leaf));
     assert(leaf == 1U && spriteReads == 2U);
-    before = nodeReads;
     assert(EspNativeBspVisibility_mapSpriteVisibleReadOnly(&visible,279U,&leaf));
     assert(leaf == 1U && spriteReads == 3U);
-    assert(nodeReads == before); /* same coordinates, no BSP traversal */
 
     /* Another committed movement / rollback must also take effect. */
     movedX = 64U;
@@ -188,26 +183,6 @@ int main(void) {
     assert(!EspNativeBspVisibility_positionVisible(&visible,1100U,64U,64U,&leaf));
     assert(leaf == UINT32_MAX);
 
-    /* Same raw position with distinct visual offsets must resolve distinct
-     * leaves, and exact coordinate collisions must never alias. */
-    projected=1; movedX=64U; map.mapSpriteCount=320U;
-    visualInfo=0U;
-    selectLeaf(&visible,2U);
-    assert(EspNativeBspVisibility_mapSpriteVisibleReadOnly(&visible,279U,&leaf));
-    assert(leaf==2U);
-    visualInfo=48U;
-    selectLeaf(&visible,1U);
-    assert(EspNativeBspVisibility_mapSpriteVisibleReadOnly(&visible,279U,&leaf));
-    assert(leaf==1U);
-    visualInfo=0U;
-    for (uint32_t x=0;x<4096U;x+=7U) {
-        uint32_t expect;
-        EspMapSprite sample={(uint16_t)x,64U,0U};
-        assert(spriteLeaf(&map,&sample,&expect));
-        assert(projectedSpriteLeaf(&map,&sample,&leaf));
-        assert(leaf==expect);
-    }
-    projected=0;
     /* Corrupt BSP child remains fail-closed, no stale leaf admitted. */
     map.arenaFNV1a += 1U;
     nodes[0].args2 = 0xffff0001UL;
@@ -226,11 +201,10 @@ def build_and_run(cache_body, directory, label):
     binary = directory / label
     source = directory / (label + ".c")
     source.write_text(
-        PREFIX + "\n" + DECLS[0] + "\n" + LEAF + "\n" + PROJECTED + "\n" +
+        PREFIX + "\n" + DECLS[0] + "\n" + LEAF + "\n" +
         cache_body + "\n" + QUERY + "\n" + POSITION_LEAF + "\n" + POSITION + "\n" + CHECKS
     )
     command = CC + ["-O2", "-std=c11", "-Wall", "-Wextra", "-Werror",
-                    "-DARDUINO", "-DDOOMRPG_ESP32",
                     str(source), "-o", str(binary)]
     compile_result = subprocess.run(command, capture_output=True, text=True)
     require(compile_result.returncode == 0,

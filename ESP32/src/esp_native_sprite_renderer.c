@@ -1971,17 +1971,18 @@ static int renderImpl(struct Render_s* renderBase,
         uint16_t reused = 0U;
         /* No world changes between buildOrder and publication. Restrict
          * reuse to no-drop frames, excluding the catalog prime path too. */
-        if (!EspNativeBspVisibility_publishAutomapWithRejected(
+        const int automapOk = EspNativeBspVisibility_publishAutomapWithRejected(
                 &workspace->visibility,
                 dropOrderCount == 0U && transientWorldBatch.active == 0U
                     ? workspace->rejected : NULL,
-                &linesMutated, &spritesMutated, &reused)) {
+                &linesMutated, &spritesMutated, &reused);
 #else
-        if (!EspNativeBspVisibility_publishAutomap(
+        const int automapOk = EspNativeBspVisibility_publishAutomap(
                 &workspace->visibility,
                 &linesMutated,
-                &spritesMutated)) {
+                &spritesMutated);
 #endif
+        if (!automapOk) {
             printf("[AUTOMAPVIS] FAILED source=world-render\n");
             goto done;
         }

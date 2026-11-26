@@ -14,16 +14,25 @@ prefix = r'''
 #include <stdio.h>
 #include <string.h>
 #include "esp_native_bsp_visibility.h"
+#include "esp_map_automap_state.h"
 typedef struct { uint32_t lineCount,mapSpriteCount; } EspMapRuntimeView;
 static EspMapRuntimeView map={8,278};
-static uint8_t lines[8],sprites[1100],memo[128];
+static uint8_t lines[8],sprites[1100],memo[128],packedLines;
+static EspMapAutomapStateView automap={.lineRevealedBits=&packedLines,.lineCount=8,.lineBitsetBytes=1};
+static int useView;
+static uint32_t lineGets;
+const EspMapAutomapStateView* EspMapAutomapState_view(void){
+    packedLines=0;
+    for(unsigned i=0;i<8;++i)if(lines[i])packedLines|=1U<<i;
+    return useView ? &automap : NULL;
+}
 static uint32_t queries,activations,order[1100],bad=UINT32_MAX;
 static const EspMapRuntimeView* EspMapRuntime_view(void){return &map;}
-static int EspMapAutomapState_isReady(void){return 1;}
-static int EspMapAutomapState_getLineRevealed(uint32_t i,uint8_t* v){*v=lines[i];return 1;}
-static int EspMapAutomapState_setLineRevealed(uint32_t i,uint8_t v){lines[i]=v;return 1;}
-static int EspMapAutomapState_getSpriteRevealed(uint32_t i,uint8_t* v){*v=sprites[i];return 1;}
-static int EspMapAutomapState_setSpriteRevealed(uint32_t i,uint8_t v){sprites[i]=v;return 1;}
+int EspMapAutomapState_isReady(void){return 1;}
+int EspMapAutomapState_getLineRevealed(uint32_t i,uint8_t* v){++lineGets;*v=lines[i];return 1;}
+int EspMapAutomapState_setLineRevealed(uint32_t i,uint8_t v){lines[i]=v;return 1;}
+int EspMapAutomapState_getSpriteRevealed(uint32_t i,uint8_t* v){*v=sprites[i];return 1;}
+int EspMapAutomapState_setSpriteRevealed(uint32_t i,uint8_t v){sprites[i]=v;return 1;}
 int EspNativeBspVisibility_mapSpriteVisible(const EspNativeBspVisibilityState* s,uint32_t i,uint32_t* leaf){
     (void)s; ++queries; *leaf=i==bad?UINT32_MAX:i%32U;
     if(i==bad || i%7U!=0U)return 0;
@@ -41,7 +50,7 @@ int main(void){
         map.mapSpriteCount=n;
         memset(memo,0,sizeof memo);
         memset(lines,0,sizeof lines);memset(sprites,0,sizeof sprites);
-        queries=activations=0;
+        queries=activations=0;useView=0;
         assert(EspNativeBspVisibility_publishAutomapWithRejected(&state,NULL,&l0,&m0,&reused));
         assert(reused==0);
         memcpy(expected,sprites,sizeof sprites);memcpy(expectedLines,lines,sizeof lines);
@@ -51,14 +60,28 @@ int main(void){
         for(uint32_t i=0;i<n && i<1024U;++i)
             if(i%5U!=0U && i%7U!=0U)memo[i>>3]|=1U<<(i&7);
         memset(lines,0,sizeof lines);memset(sprites,0,sizeof sprites);
-        queries=activations=0;
+        queries=activations=0;useView=1;lineGets=0;
         assert(EspNativeBspVisibility_publishAutomapWithRejected(&state,memo,&l,&m,&reused));
+        assert(lineGets==0);
         assert(l==l0&&m==m0&&activations==a&&queries+reused==q);
         assert(!memcmp(expected,sprites,sizeof sprites));
         assert(!memcmp(expectedLines,lines,sizeof lines));
         assert(!memcmp(expectedOrder,order,a*sizeof(uint32_t)));
         if(n>1024U)assert(reused==0);
     }
+    map.mapSpriteCount=8;memset(memo,0,sizeof memo);useView=1;
+    memset(lines,1,sizeof lines);lineGets=0;queries=activations=0;
+    assert(EspNativeBspVisibility_publishAutomapWithRejected(&state,memo,&l,&m,&reused));
+    assert(l==0 && lineGets==0);
+    /* Trusted all-negative memo, including partial final byte. */
+    map.mapSpriteCount=11;memo[0]=memo[1]=0xff;
+    queries=activations=0;
+    assert(EspNativeBspVisibility_publishAutomapWithRejected(&state,memo,&l,&m,&reused));
+    assert(reused==11 && queries==0 && activations==0);
+    automap.lineCount=7;memset(lines,0,sizeof lines);lineGets=0;
+    assert(EspNativeBspVisibility_publishAutomapWithRejected(&state,memo,&l,&m,&reused));
+    assert(l==5 && lineGets==5);
+    automap.lineCount=8;
     map.mapSpriteCount=278;bad=5U;memset(memo,0,sizeof memo);
     assert(!EspNativeBspVisibility_publishAutomapWithRejected(&state,memo,&l,&m,&reused));
     assert(reused==0);
