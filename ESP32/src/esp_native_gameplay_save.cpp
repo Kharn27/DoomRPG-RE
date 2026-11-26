@@ -2219,6 +2219,7 @@ bool restoreV9MonsterSpatialSections(
     NativeSaveRecordV9Tail* tail;
     bool ok = false;
     uint8_t legacyEnemyOnly = 0U;
+    uint8_t humanScope = 0U;
     uint16_t replayShow = 0U;
     uint16_t replayAlreadyLinked = 0U;
     uint16_t replayHide = 0U;
@@ -2260,6 +2261,11 @@ bool restoreV9MonsterSpatialSections(
                 (uint8_t)(liveTopology->destructibleCount != 0U &&
                           tail->monsterTopology.count ==
                               liveTopology->enemyCount);
+            humanScope =
+                (uint8_t)(tail->monsterTopology.count ==
+                          liveTopology->enemyCount +
+                          liveTopology->destructibleCount +
+                          liveTopology->humanCount);
             if (legacyEnemyOnly != 0U &&
                 !recoverOneShotTopologyFromScript(
                     core, &replayShow, &replayAlreadyLinked, &replayHide)) {
@@ -2297,12 +2303,14 @@ bool restoreV9MonsterSpatialSections(
                (unsigned int)tail->monsterActivation.stateFNV1a,
                legacyEnemyOnly != 0U
                    ? "enemy-only-legacy-v9+script-replay"
-                   : "enemy+destructible-v9",
+                   : (humanScope != 0U ? "enemy+destructible+human-v11"
+                                       : "enemy+destructible-legacy-v11"),
                (unsigned int)replayShow,
                (unsigned int)replayAlreadyLinked,
                (unsigned int)replayHide,
                legacyEnemyOnly != 0U ? "tracked-enemy+replayed-nonenemy"
-                                     : "yes");
+                   : (humanScope != 0U ? "yes"
+                                       : "enemy+destructible-only;human-gap"));
     }
     else {
         EspNativeGameplayMonsterPosition_reset();
@@ -2581,7 +2589,7 @@ bool saveNow(void) {
            (unsigned long)progress.moves, (unsigned long)progress.xpBaseline,
            (unsigned int)progress.complete, (unsigned int)sizeof(progress));
 
-    printf("[NATIVESAVE] SAVE path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld returnRoute=%s/%u,%u/%u playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx recordCrc=%08lx resources=%u/%uB sprites=%u script=%lu/%lu/%uB scriptFNV=%08lx lines=%lu/%uB open=%lu locked=%lu texture10=%lu lineFNV=%08lx textureFNV=%08lx actionRemoved=%lu/%uB/%08lx crateTransforms=%u/%uB/%uB/%08lx automap=%uL/%uS/%luV/%08lx monsters=%u/%08lx topology=%u/%08lx positions=%u/%08lx activation=%u/%08lx atomic=temp+backup+rename world=monster-spatial-exact-v9\n",
+    printf("[NATIVESAVE] SAVE path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld returnRoute=%s/%u,%u/%u playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx recordCrc=%08lx resources=%u/%uB sprites=%u script=%lu/%lu/%uB scriptFNV=%08lx lines=%lu/%uB open=%lu locked=%lu texture10=%lu lineFNV=%08lx textureFNV=%08lx actionRemoved=%lu/%uB/%08lx crateTransforms=%u/%uB/%uB/%08lx automap=%uL/%uS/%luV/%08lx monsters=%u/%08lx topology=%u/%08lx positions=%u/%08lx activation=%u/%08lx atomic=temp+backup+rename world=monster+destructible+human-topology-v11\n",
            kLogPath,
            (unsigned int)record.core.version,
            (unsigned int)record.core.recordBytes,

@@ -73,6 +73,15 @@ def original_body_parity() -> None:
     marker = GUARD.encode("ascii")
     for filename, blob in BEFORE.items():
         current = (SOURCES / filename).read_bytes()
+        # Remove ONLY P1 timing additions before historical Git identity.
+        if filename == "esp_native_gameplay_frame.c":
+            from perf_game_p1_history import restore_pre_perf_game_p1_frame
+            current = restore_pre_perf_game_p1_frame(
+                current.decode("utf-8")).encode("utf-8")
+        elif filename == "esp_native_resident_gameplay.c":
+            from perf_game_p1_history import restore_pre_perf_game_p1_resident
+            current = restore_pre_perf_game_p1_resident(
+                current.decode("utf-8")).encode("utf-8")
         if filename == "esp_native_gameplay_frame.c":
             # RES60-P23 changes ONLY the constant's spelling and adds ONE
             # permanent layout header. Strictly invert both before restoring

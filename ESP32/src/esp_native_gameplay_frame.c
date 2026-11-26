@@ -9,6 +9,7 @@
 #include "Render.h"
 
 #include <esp_timer.h>
+#include "esp_perf_game_p1.h"
 
 #include "esp_asset_pack.h"
 #include "doomrpg_log.h"
@@ -555,6 +556,9 @@ done:
     stats->totalMicros = elapsedMicros(totalStart);
     if (!ok) stats->active = 0U;
     *outStats = *stats;
+    EspPerfGameP1_frame(stats->totalMicros, stats->presentMicros,
+                         (uint8_t)preview, (uint8_t)publish,
+                         stats->finalPresented);
     frameScratch.busy = 0U;
 #if defined(ARDUINO) && defined(DOOMRPG_ESP32)
     /* AUDIO-R2d cooperative main-task inter-frame refill. Renderer and PAK
