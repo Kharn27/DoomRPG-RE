@@ -253,13 +253,29 @@ static int renderIntroCore(uint16_t* framebuffer,
 #if DOOMRPG_RES60_P25_TEXTURED_PLANES
     /* The permanent native PAK plane owner paints the SAME framebuffer.
      * Only the diagnostic wall spans overwrite its pixels. */
+#if DOOMRPG_RES60_P26_BATCH_INDEX
+    const uint32_t planeOpenAt = EspRes60Profile_nowUs();
+#endif
     if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
         printf("[RES60P25] FAIL CLOSED stage=pak-open\n");
         goto done;
     }
+#if DOOMRPG_RES60_P26_BATCH_INDEX
+    const uint32_t planeRasterAt = EspRes60Profile_nowUs();
+#endif
     success = EspNativePlaneRenderer_renderRes60(
         framebuffer, framebufferBytes, viewX, viewY, cameraAngle, camera.viewZ);
+#if DOOMRPG_RES60_P26_BATCH_INDEX
+    const uint32_t planeCloseAt = EspRes60Profile_nowUs();
+#endif
     EspAssetPack_close();
+#if DOOMRPG_RES60_P26_BATCH_INDEX
+    const uint32_t planeDoneAt = EspRes60Profile_nowUs();
+    printf("[RES60P26] TIMING angle=%u openUs=%lu rasterUs=%lu closeUs=%lu batchEntries=16\n",
+           (unsigned)cameraAngle, (unsigned long)(planeRasterAt-planeOpenAt),
+           (unsigned long)(planeCloseAt-planeRasterAt),
+           (unsigned long)(planeDoneAt-planeCloseAt));
+#endif
     const EspNativePlaneRenderStats* planes = EspNativePlaneRenderer_view();
     if (!success || planes == NULL || planes->rowsRendered != 96U ||
         planes->pixelsRendered != 18432U || EspAssetPack_isOpen()) {

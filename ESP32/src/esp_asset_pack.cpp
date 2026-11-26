@@ -7,6 +7,7 @@
 #include <esp_timer.h>
 
 #include "esp_asset_pack.h"
+#include "platform_video_config.h"
 #include "esp_asset_pack_io_probe.h"
 #include "doomrpg_log.h"
 #include "esp_map_catalog.h"
@@ -1096,6 +1097,35 @@ int EspAssetPack_open(const char* path)
         return 0;
     }
 
+#if DOOMRPG_RES60_P26_BATCH_INDEX
+    /* P26: preserve EVERY entry validation and cross-batch ordering check.
+     * Sequential 16-entry windows reduce SD calls; no resident index/cache,
+     * no heap allocation, no changed PAK offsets, no extra framebuffer. */
+    {
+        constexpr uint32_t batchEntries = 16U;
+        uint8_t raw[batchEntries * kEntryBytes];
+        for (uint32_t i = 0U; i < entryCount;) {
+            const uint32_t remaining = entryCount - i;
+            const uint32_t count = remaining < batchEntries ? remaining : batchEntries;
+            if (!readSdExact(raw, count * kEntryBytes)) {
+                resetPhysicalState();
+                return 0;
+            }
+            for (uint32_t j = 0U; j < count; ++j) {
+                EspAssetPackEntry entry;
+                decodeEntry(raw + j * kEntryBytes, &entry);
+                if (!validateEntry(entry) ||
+                    (havePreviousHash && entry.nameHash <= previousHash)) {
+                    resetPhysicalState();
+                    return 0;
+                }
+                previousHash = entry.nameHash;
+                havePreviousHash = true;
+            }
+            i += count;
+        }
+    }
+#else
     for (uint32_t i = 0U; i < entryCount; ++i) {
         uint8_t raw[kEntryBytes];
         EspAssetPackEntry entry;
@@ -1115,6 +1145,7 @@ int EspAssetPack_open(const char* path)
         previousHash = entry.nameHash;
         havePreviousHash = true;
     }
+#endif
 
     physicalReady = true;
     physicalIsDefault = isDefaultPath(path);

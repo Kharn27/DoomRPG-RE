@@ -43,6 +43,8 @@ assert pilot_flags == [
     "-D", "DOOMRPG_RES60_P20_COMPACT_SERIAL=1",
     "-D", "DOOMRPG_RES60_P21_INTERSECTION32=1",
     "-D", "DOOMRPG_RES60_P23_NATIVE_RASTER_GEOMETRY=1",
+    "-D", "DOOMRPG_RES60_P25_TEXTURED_PLANES=1",
+    "-D", "DOOMRPG_RES60_P26_BATCH_INDEX=1",
     "-I.pio/libdeps/esp32-cyd-res60/TFT_eSPI",
 ]
 assert p4_flags == [
