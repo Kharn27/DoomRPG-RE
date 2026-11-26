@@ -245,3 +245,6 @@ with tempfile.TemporaryDirectory(prefix="doom-monster-death-p1-") as directory:
     subprocess.run([str(exe)], check=True)
 
 print("MONSTER-DEATH-P1 PASS: source gates, rollback/commit frontier and real compiled C")
+
+# GAME-AI-14 A2-P0: permanent original special-death contract (host only).
+subprocess.run(["python3", str(ROOT / "ESP32/test/game_ai14_special_death_host.py")], check=True)
