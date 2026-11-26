@@ -225,10 +225,11 @@ static void fillTopBottom(uint16_t* fb) {
     }
 }
 
-int EspRes60Preview_render(uint16_t* framebuffer, size_t framebufferBytes,
+static int renderPreview(uint16_t* framebuffer, size_t framebufferBytes,
                           const EspRes60PreviewCamera* camera,
                           uint32_t lineCount, EspRes60PreviewReadLine reader,
-                          void* context, EspRes60PreviewStats* outStats) {
+                          void* context, EspRes60PreviewStats* outStats,
+                          int texturedBackground) {
     EspRes60PreviewStats stats;
     uint32_t index;
     uint32_t column;
@@ -461,8 +462,9 @@ int EspRes60Preview_render(uint16_t* framebuffer, size_t framebufferBytes,
                 ? camera->ceilingRgb565 : camera->floorRgb565;
             const int wall = hit && (int32_t)row >= top &&
                              (int32_t)row < bottom;
-            framebuffer[((size_t)ESP_RES60_WORLD_Y + row) * ESP_RES60_WIDTH +
-                        column] = wall ? wallColor : bg;
+            if (wall || !texturedBackground)
+                framebuffer[((size_t)ESP_RES60_WORLD_Y + row) * ESP_RES60_WIDTH +
+                            column] = wall ? wallColor : bg;
             if (wall) ++stats.wallPixels;
         }
 #if DOOMRPG_RES60_P11_PROFILE
@@ -486,5 +488,22 @@ int EspRes60Preview_render(uint16_t* framebuffer, size_t framebufferBytes,
 #endif
     return 1;
 }
+
+int EspRes60Preview_render(uint16_t* framebuffer, size_t framebufferBytes,
+                          const EspRes60PreviewCamera* camera,
+                          uint32_t lineCount, EspRes60PreviewReadLine reader,
+                          void* context, EspRes60PreviewStats* outStats) {
+    return renderPreview(framebuffer, framebufferBytes, camera, lineCount,
+                         reader, context, outStats, 0);
+}
+#if DOOMRPG_RES60_P25_TEXTURED_PLANES
+int EspRes60Preview_renderWithPlanes(uint16_t* framebuffer, size_t framebufferBytes,
+                          const EspRes60PreviewCamera* camera,
+                          uint32_t lineCount, EspRes60PreviewReadLine reader,
+                          void* context, EspRes60PreviewStats* outStats) {
+    return renderPreview(framebuffer, framebufferBytes, camera, lineCount,
+                         reader, context, outStats, 1);
+}
+#endif
 
 #endif /* DOOMRPG_RES60_P3_WORLD: production 50% keeps no new world code */

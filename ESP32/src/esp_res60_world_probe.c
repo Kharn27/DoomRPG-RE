@@ -9,6 +9,9 @@
 #include "esp_map_catalog.h"
 #include "esp_map_runtime.h"
 #include "esp_res60_world_probe.h"
+#if DOOMRPG_RES60_P25_TEXTURED_PLANES
+#include "esp_native_plane_renderer.h"
+#endif
 #if DOOMRPG_RES60_P12_INVENTORY_CACHE
 #include "esp_res60_inventory_cache.h"
 #endif
@@ -247,9 +250,36 @@ static int renderIntroCore(uint16_t* framebuffer,
 #if DOOMRPG_RES60_P11_PROFILE
     phaseAt=EspRes60Profile_nowUs();
 #endif
+#if DOOMRPG_RES60_P25_TEXTURED_PLANES
+    /* The permanent native PAK plane owner paints the SAME framebuffer.
+     * Only the diagnostic wall spans overwrite its pixels. */
+    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
+        printf("[RES60P25] FAIL CLOSED stage=pak-open\n");
+        goto done;
+    }
+    success = EspNativePlaneRenderer_renderRes60(
+        framebuffer, framebufferBytes, viewX, viewY, cameraAngle, camera.viewZ);
+    EspAssetPack_close();
+    const EspNativePlaneRenderStats* planes = EspNativePlaneRenderer_view();
+    if (!success || planes == NULL || planes->rowsRendered != 96U ||
+        planes->pixelsRendered != 18432U || EspAssetPack_isOpen()) {
+        printf("[RES60P25] FAIL CLOSED stage=planes\n");
+        success = 0;
+        goto done;
+    }
+    printf("[RES60P25] PLANES angle=%u rows=%lu pixels=%lu textures=%u cache=%luH/%luM/%luE reads=%luB pak=CLOSED\n",
+           (unsigned)cameraAngle, (unsigned long)planes->rowsRendered,
+           (unsigned long)planes->pixelsRendered, (unsigned)planes->uniqueLogicalTextures,
+           (unsigned long)planes->cacheHits, (unsigned long)planes->cacheMisses,
+           (unsigned long)planes->cacheEvictions, (unsigned long)planes->texelReadBytes);
+    success = EspRes60Preview_renderWithPlanes(framebuffer, framebufferBytes, &camera,
+                                     runtime->lineCount, readCompactLine,
+                                     (void*)runtime, &report.raster);
+#else
     success = EspRes60Preview_render(framebuffer, framebufferBytes, &camera,
                                      runtime->lineCount, readCompactLine,
                                      (void*)runtime, &report.raster);
+#endif
 #if DOOMRPG_RES60_P11_PROFILE
     report.p3Us=EspRes60Profile_nowUs()-phaseAt;
 #endif

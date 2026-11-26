@@ -76,6 +76,15 @@ int EspRes60Preview_render(uint16_t* framebuffer, size_t framebufferBytes,
                           uint32_t lineCount, EspRes60PreviewReadLine reader,
                           void* context, EspRes60PreviewStats* outStats);
 
+#if DOOMRPG_RES60_P25_TEXTURED_PLANES
+/* Same raycast; preserve the already-painted native floor/ceiling outside
+ * wall spans. Caller must complete native plane rendering first. */
+int EspRes60Preview_renderWithPlanes(uint16_t* framebuffer, size_t framebufferBytes,
+                          const EspRes60PreviewCamera* camera,
+                          uint32_t lineCount, EspRes60PreviewReadLine reader,
+                          void* context, EspRes60PreviewStats* outStats);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

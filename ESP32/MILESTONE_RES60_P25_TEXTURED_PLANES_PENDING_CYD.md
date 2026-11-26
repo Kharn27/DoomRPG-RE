@@ -1,0 +1,5 @@
+# RES60-P25 — native textured planes, CI/CYD pending
+
+P24 Classic smoke test and prior preview were received 24 Nov; firmware SHA not printed. P25 enables the actual native PAK plane renderer in the isolated 192x96 preview, borrowing its one RGB565 framebuffer. The flat preview API stays available for historic oracles. Only wall spans overwrite textured background. Existing six adaptive 2048-byte leases are released before preview raycast; no second framebuffer or permanent plane cache. Cardinal camera only. PAK closes before presentation. Classic gameplay remains 160x120. New main synchronized at 4bc36f2577082ffea3ef60d32c93a2bac8f821ed. Older RES60 summaries remain in their individual milestones and earlier branch history.
+
+Test `esp32-cyd-res60-inverted`: START, four rotations, MENU, START again. Require [RES60P25] PLANES rows=96 pixels=18432, no FAIL CLOSED/WDT, stable FNV by direction and RAM after release. New final/raw FNV expected; no performance claim until hardware. No sprites/audio/192 gameplay. PR #364 DRAFT.

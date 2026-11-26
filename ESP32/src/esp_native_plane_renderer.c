@@ -14,6 +14,7 @@
 #include "esp_map_runtime.h"
 #include "esp_native_plane_renderer.h"
 #include "esp_render_geometry_primitives.h"
+#include "esp_native_raster_contract.h"
 
 #define MAPPINGS_HEADER_BYTES 16U
 #define MAPPING_PAIR_BYTES 8U
@@ -431,7 +432,7 @@ const EspNativePlaneRenderStats* EspNativePlaneRenderer_view(void) {
     return planeStats.active == 1U ? &planeStats : NULL;
 }
 
-int EspNativePlaneRenderer_render(struct Render_s* renderBase) {
+static int renderPlanes(struct Render_s* renderBase, int res60) {
     Render_t* render = (Render_t*)renderBase;
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
     PlaneWork* work;
@@ -442,7 +443,9 @@ int EspNativePlaneRenderer_render(struct Render_s* renderBase) {
     if (render == NULL || runtime == NULL ||
         !EspMapRuntime_isLoaded() || !EspAssetPack_isOpen() ||
         render->pixels == NULL || render->framebuffer == NULL ||
-        render->screenWidth != 160 || render->screenHeight != 80 ||
+        (!res60 && (render->screenWidth != 160 || render->screenHeight != 80)) ||
+        (res60 && (!DOOMRPG_RES60_P25_TEXTURED_PLANES ||
+                   render->screenWidth != 192 || render->screenHeight != 96)) ||
         render->screenLeft != 0 || render->screenTop != 0 ||
         render->screenRight != render->screenWidth ||
         render->screenBottom != render->screenHeight ||
@@ -515,3 +518,34 @@ done:
     }
     return ok;
 }
+ 
+int EspNativePlaneRenderer_render(struct Render_s* renderBase) {
+    return renderPlanes(renderBase, 0);
+}
+
+#if DOOMRPG_RES60_P25_TEXTURED_PLANES
+int EspNativePlaneRenderer_renderRes60(uint16_t* framebuffer, size_t bytes,
+                                      int x, int y, int angle, int viewZ) {
+    EspNativeRasterWorldViewport viewport;
+    Render_t render;
+    EspNativePlaneRenderer_reset();
+    if (framebuffer == NULL || x < 0 || x >= 2048 ||
+        y < 0 || y >= 2048 || viewZ < 0 || viewZ > 64 ||
+        (angle != 0 && angle != 64 && angle != 128 && angle != 192) ||
+        !EspNativeRasterContract_prepareWorld(
+            ESP_NATIVE_RASTER_RES60, bytes, 384, 192, 96,
+            ESP_NATIVE_RASTER_COLUMN_CAPACITY, &viewport)) return 0;
+    memset(&render, 0, sizeof(render));
+    render.framebuffer = (uint8_t*)framebuffer;
+    render.pixels = (short*)(framebuffer + viewport.worldFirstPixel);
+    render.pitch = (int)viewport.raster.pitchPixels * 2;
+    render.screenWidth = render.screenRight = viewport.raster.worldWidth;
+    render.screenHeight = render.screenBottom = viewport.raster.worldHeight;
+    render.viewX = x;
+    render.viewY = y;
+    render.viewZ = viewZ;
+    render.viewCos = angle == 0 ? 65536 : angle == 128 ? -65536 : 0;
+    render.viewSin = angle == 64 ? 65536 : angle == 192 ? -65536 : 0;
+    return renderPlanes(&render, 1);
+}
+#endif

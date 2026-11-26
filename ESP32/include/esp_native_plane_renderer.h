@@ -2,6 +2,8 @@
 #define DOOMRPG_ESP32_NATIVE_PLANE_RENDERER_H
 
 #include <stdint.h>
+#include <stddef.h>
+#include "platform_video_config.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,6 +34,12 @@ int EspNativeWorldPlane_renderAtColumnReset(struct Render_s* render);
  * fail-closed minimum under later gameplay memory pressure. */
 int EspNativePlaneRenderer_render(struct Render_s* render);
 const EspNativePlaneRenderStats* EspNativePlaneRenderer_view(void);
+#if DOOMRPG_RES60_P25_TEXTURED_PLANES
+/* Borrow the single preview framebuffer and caller-owned open PAK.
+ * No gameplay engine, second framebuffer or retained plane allocation. */
+int EspNativePlaneRenderer_renderRes60(uint16_t* framebuffer, size_t bytes,
+                                      int x, int y, int angle, int viewZ);
+#endif
 
 #ifdef __cplusplus
 }
