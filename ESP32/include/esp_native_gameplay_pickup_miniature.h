@@ -79,6 +79,9 @@ void EspPickupMini_beforePresent(uint32_t nowMs);
 void EspPickupMini_afterPresent(uint32_t nowMs);
 int EspPickupMini_due(uint32_t nowMs);
 
+/* Read-only admission for an invisible continuation frame reuse. */
+int EspPickupMini_moveFrameQuiet(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -73,6 +73,8 @@ def original_body_parity() -> None:
     marker = GUARD.encode("ascii")
     for filename, blob in BEFORE.items():
         current = (SOURCES / filename).read_bytes()
+        from perf_game_p2a_history import restore_pre_perf_game_p2a
+        current = restore_pre_perf_game_p2a(filename, current)
         # Remove ONLY P1 timing additions before historical Git identity.
         if filename == "esp_native_gameplay_frame.c":
             from perf_game_p1_history import restore_pre_perf_game_p1_frame

@@ -45,6 +45,8 @@ extern "C" uint32_t EspRes60Profile_nowUs(void) {
 #include "esp_native_orientation.h"
 #include "esp_uac_menu_preview.h"
 #include "doomrpg_log.h"
+#include "esp_native_resident_gameplay.h"
+#include "esp_turn_lamp.h"
 
 namespace {
 
@@ -78,6 +80,39 @@ static void res60P16_printHeapTopology(const char* phase) {
                              after.largest_free_block==before.largest_free_block));
 }
 #endif
+
+/* Physical-only overlay: snapshot the exact last presented HUD patch, not
+ * the potentially newer shared framebuffer. No owner edits, heap, PAK or
+ * world redraw. 6x6 logical pixels inside the AUTOMAP touch zone (128..159). */
+constexpr int kLampLeft = 152, kLampTop = 2, kLampSize = 6;
+static_assert(kLampLeft + kLampSize <= DOOMRPG_LOGICAL_WIDTH &&
+              kLampTop + kLampSize <= 20 && DOOMRPG_INTEGER_SCALE == 2,
+              "turn lamp must fit classic CYD top HUD");
+uint16_t lampUnderlay[kLampSize * kLampSize];
+EspTurnLampState lampState = {};
+bool lampWorldFrame = false;
+
+void turnLampWrite(bool on) {
+    if (platformDisplay == nullptr) return;
+    const int width = kLampSize * DOOMRPG_INTEGER_SCALE;
+    uint16_t row[kLampSize * DOOMRPG_INTEGER_SCALE];
+    platformDisplay->startWrite();
+    platformDisplay->setAddrWindow(kLampLeft * DOOMRPG_INTEGER_SCALE,
+                                  kLampTop * DOOMRPG_INTEGER_SCALE,
+                                  width, width);
+    for (int y = 0; y < kLampSize; ++y) {
+        for (int x = 0; x < kLampSize; ++x) {
+            const bool edge = x == 0 || y == 0 ||
+                              x == kLampSize-1 || y == kLampSize-1;
+            const uint16_t color = on ? (edge ? 0x0000U : 0xF800U)
+                                      : lampUnderlay[y*kLampSize+x];
+            row[x*2] = row[x*2+1] = color;
+        }
+        for (int repeat = 0; repeat < DOOMRPG_INTEGER_SCALE; ++repeat)
+            platformDisplay->pushPixels(row, width);
+    }
+    platformDisplay->endWrite();
+}
 
 /* Dedicated backlight LEDC channel; no RGB565 data or frame presentation is
  * ever modified by this owner. TFT_eSPI initializes active-high GPIO21. */
@@ -476,6 +511,14 @@ bool PlatformVideo_presentRegion(int logicalLeft, int logicalTop,
         logicalLeft > DOOMRPG_LOGICAL_WIDTH - logicalWidth ||
         logicalTop > DOOMRPG_LOGICAL_HEIGHT - logicalHeight) return false;
 
+    /* A regional owner can replace the patch independently of this lamp.
+     * Forget the old baseline on overlap; never restore stale HUD pixels. */
+    if (!EspNativeResidentGameplay_turnLampWorld() ||
+        (logicalLeft < kLampLeft+kLampSize && logicalLeft+logicalWidth > kLampLeft &&
+         logicalTop < kLampTop+kLampSize && logicalTop+logicalHeight > kLampTop)) {
+        lampWorldFrame = false;
+        EspTurnLamp_reset(&lampState);
+    }
     uint16_t outputRow[DOOMRPG_PHYSICAL_WIDTH]; /* <=640B stack; no heap */
     const int scaledWidth = logicalWidth * DOOMRPG_INTEGER_SCALE;
     platformDisplay->startWrite();
@@ -499,10 +542,25 @@ bool PlatformVideo_presentRegion(int logicalLeft, int logicalTop,
     return true;
 }
 
+void PlatformVideo_serviceTurnLamp() {
+    if (!lampWorldFrame || !EspNativeResidentGameplay_turnLampWorld()) {
+        /* A modal/transition owns the next paint; never restore world HUD
+         * over it. Its opaque presentation replaces the physical patch. */
+        lampWorldFrame = false;
+        EspTurnLamp_reset(&lampState);
+        return;
+    }
+    const int change = EspTurnLamp_update(&lampState, millis(),
+                         EspNativeResidentGameplay_turnLampBusy());
+    if (change != 0) turnLampWrite(change > 0);
+}
+
 bool PlatformVideo_present() {
     if (platformDisplay == nullptr || framebuffer == nullptr) {
         return false;
     }
+    lampWorldFrame = false;
+    EspTurnLamp_replaced(&lampState);
 
 #if !DOOMRPG_RES60_P1_DIAGNOSTIC
     /* Activated by the native MENU_MAIN touch owner without allocation.
@@ -566,6 +624,16 @@ bool PlatformVideo_present() {
 #endif
 
     platformDisplay->endWrite();
+    /* Record only pixels actually sent in this full frame. Repaint the
+     * indicator after every world present without restarting its clock. */
+    lampWorldFrame = EspNativeResidentGameplay_turnLampWorld() != 0;
+    if (lampWorldFrame) {
+        for (int y=0; y<kLampSize; ++y)
+            for (int x=0; x<kLampSize; ++x)
+                lampUnderlay[y*kLampSize+x] =
+                    framebuffer[(kLampTop+y)*DOOMRPG_LOGICAL_WIDTH+kLampLeft+x];
+    }
+    PlatformVideo_serviceTurnLamp();
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
     drawDebugOverlay();
 #endif

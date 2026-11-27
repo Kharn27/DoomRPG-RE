@@ -125,6 +125,9 @@ int EspNativeGameplayMoveEvents_finishPendingDialog(uint32_t sequence);
 int EspNativeGameplayMoveEvents_hasPendingMessage(uint32_t sequence);
 int EspNativeGameplayMoveEvents_finishPendingMessage(uint32_t sequence);
 
+/* Read-only admission for an invisible continuation frame reuse. */
+int EspNativeGameplayMoveEvents_moveFrameQuiet(void);
+
 #ifdef __cplusplus
 }
 #endif

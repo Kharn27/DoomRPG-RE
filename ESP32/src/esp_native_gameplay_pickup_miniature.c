@@ -202,3 +202,9 @@ int EspPickupMini_due(uint32_t nowMs) {
         nowMs - state.shownMs >= MINI_BACKLOG_MIN_MS) return 1;
     return litAt(nowMs - state.shownMs) != (state.lit != 0U);
 }
+
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+int EspPickupMini_moveFrameQuiet(void) {
+    return !state.active && !state.count;
+}
+#endif

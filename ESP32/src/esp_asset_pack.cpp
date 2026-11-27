@@ -49,9 +49,12 @@ constexpr uint32_t kMapFlashEraseChunkBytes = 64U * 1024U;
 constexpr uint32_t kMapFlashMaxExcludedMaps = ESP_MAP_CATALOG_COUNT - 1U;
 constexpr uint8_t kMapFlashMaxMissLogs = 8U;
 
+/* The physical backing is immutable for the lifetime of this cache.
+ * A validated source PAK absolute offset + length identifies the bytes
+ * exactly, including across aliases. resetPhysicalState clears all records
+ * before changing backing; the authoritative SD probe bypasses this cache. */
 struct ResidentRangeRecord {
-    uint32_t nameHash;
-    uint32_t relativeOffset;
+    uint32_t absoluteOffset;
     uint16_t length;
     uint16_t dataOffset;
 };
@@ -60,7 +63,7 @@ static_assert(kResidentRangeCapacityBytes <= UINT16_MAX,
               "resident payload offsets must fit uint16_t");
 static_assert(kResidentLargeRangeBytes <= UINT16_MAX,
               "resident range lengths must fit uint16_t");
-static_assert(sizeof(ResidentRangeRecord) == 12U,
+static_assert(sizeof(ResidentRangeRecord) == 8U,
               "resident range metadata must stay compact");
 
 struct ResidentEntryRecord {
@@ -74,7 +77,8 @@ struct ResidentCache {
     ResidentEntryRecord entries[kResidentEntryCacheSlots];
     uint8_t bytes[kResidentRangeCapacityBytes];
     uint32_t rangeCount;
-    uint32_t bytesUsed;
+    uint16_t bytesUsed;
+    uint16_t largeCount; /* contiguous 2048B blocks from high end */
 };
 
 struct MapFlashExcludedSpan {
@@ -160,6 +164,9 @@ uint32_t mapFlashRuntimeReadMicros = 0U;
 uint32_t ra2bSdRangeMicros = 0U;
 #endif
 MapFlashState mapFlash = {};
+/* Never reuse a memo across deactivation, re-stage or verify failure.
+ * Saturation disables the optimization instead of recycling a generation. */
+uint32_t verifiedFlashEpoch = 1U;
 EspAssetPackMapFlashProgressCallback mapFlashProgressCallback = nullptr;
 
 void notifyMapFlashProgress(uint8_t phase, uint32_t completed, uint32_t total)
@@ -202,6 +209,7 @@ void clearResidentCache()
     }
     residentCache->rangeCount = 0U;
     residentCache->bytesUsed = 0U;
+    residentCache->largeCount = 0U;
     memset(residentCache->entries, 0, sizeof(residentCache->entries));
     residentLargeRangeEnabled = false;
 }
@@ -244,6 +252,7 @@ bool sourceProbeEntryExact(const EspAssetPackEntry& entry)
 
 void clearMapFlashRuntime(bool clearStats)
 {
+    if (verifiedFlashEpoch != UINT32_MAX) ++verifiedFlashEpoch;
     mapFlash.partition = nullptr;
     memset(&mapFlash.header, 0, sizeof(mapFlash.header));
     mapFlash.active = 0U;
@@ -622,16 +631,7 @@ bool isLargeResidentRange(const ResidentRangeRecord& record)
 
 uint32_t residentLargeRangeCount()
 {
-    uint32_t count = 0U;
-    if (residentCache == nullptr) {
-        return 0U;
-    }
-    for (uint32_t i = 0U; i < residentCache->rangeCount; ++i) {
-        if (isLargeResidentRange(residentCache->ranges[i])) {
-            ++count;
-        }
-    }
-    return count;
+    return residentCache != nullptr ? residentCache->largeCount : 0U;
 }
 
 uint32_t residentPayloadBytesUsed()
@@ -659,38 +659,29 @@ void eraseResidentRange(uint32_t index)
 
 uint32_t lowestLargeRangeOffset()
 {
-    uint32_t lowest = kResidentRangeCapacityBytes;
-    if (residentCache == nullptr) {
-        return lowest;
-    }
-    for (uint32_t i = 0U; i < residentCache->rangeCount; ++i) {
-        const ResidentRangeRecord& record = residentCache->ranges[i];
-        if (isLargeResidentRange(record) && record.dataOffset < lowest) {
-            lowest = record.dataOffset;
-        }
-    }
-    return lowest;
+    /* Large blocks are appended downwards and evicted from the low end.
+     * There are no holes; the count is owned by these same mutations. */
+    return kResidentRangeCapacityBytes -
+           residentLargeRangeCount() * kResidentLargeRangeBytes;
 }
 
 bool evictLowestLargeRange()
 {
-    uint32_t victim = UINT32_MAX;
-    uint32_t lowest = UINT32_MAX;
-    if (residentCache == nullptr) {
+    if (residentCache == nullptr || residentCache->largeCount == 0U) {
         return false;
     }
-    for (uint32_t i = 0U; i < residentCache->rangeCount; ++i) {
-        const ResidentRangeRecord& record = residentCache->ranges[i];
-        if (isLargeResidentRange(record) && record.dataOffset < lowest) {
-            lowest = record.dataOffset;
-            victim = i;
+    const uint32_t lowest = lowestLargeRangeOffset();
+    /* Reverse insertion order finds the lowest live large block first.
+     * eraseResidentRange preserves the order of all remaining records. */
+    for (uint32_t i = residentCache->rangeCount; i > 0U;) {
+        const ResidentRangeRecord& record = residentCache->ranges[--i];
+        if (isLargeResidentRange(record) && record.dataOffset == lowest) {
+            eraseResidentRange(i);
+            --residentCache->largeCount;
+            return true;
         }
     }
-    if (victim == UINT32_MAX) {
-        return false;
-    }
-    eraseResidentRange(victim);
-    return true;
+    return false;
 }
 
 void clearLargeResidentRanges()
@@ -707,6 +698,7 @@ void clearLargeResidentRanges()
             ++i;
         }
     }
+    residentCache->largeCount = 0U;
 }
 
 void recycleResidentRangeWorkingSet()
@@ -716,10 +708,10 @@ void recycleResidentRangeWorkingSet()
     }
     residentCache->rangeCount = 0U;
     residentCache->bytesUsed = 0U;
+    residentCache->largeCount = 0U;
 }
 
-ResidentRangeRecord* findResidentRange(uint32_t nameHash,
-                                       uint32_t relativeOffset,
+ResidentRangeRecord* findResidentRange(uint32_t absoluteOffset,
                                        uint32_t length)
 {
     if (!residentEnabled || residentCache == nullptr) {
@@ -727,8 +719,7 @@ ResidentRangeRecord* findResidentRange(uint32_t nameHash,
     }
     for (uint32_t i = 0U; i < residentCache->rangeCount; ++i) {
         ResidentRangeRecord* record = &residentCache->ranges[i];
-        if (record->nameHash == nameHash &&
-            record->relativeOffset == relativeOffset &&
+        if (record->absoluteOffset == absoluteOffset &&
             record->length == length) {
             return record;
         }
@@ -736,8 +727,7 @@ ResidentRangeRecord* findResidentRange(uint32_t nameHash,
     return nullptr;
 }
 
-void storeResidentSmallRange(uint32_t nameHash,
-                             uint32_t relativeOffset,
+void storeResidentSmallRange(uint32_t absoluteOffset,
                              const void* source,
                              uint32_t length)
 {
@@ -773,8 +763,7 @@ void storeResidentSmallRange(uint32_t nameHash,
 
     ResidentRangeRecord* record =
         &residentCache->ranges[residentCache->rangeCount++];
-    record->nameHash = nameHash;
-    record->relativeOffset = relativeOffset;
+    record->absoluteOffset = absoluteOffset;
     record->length = (uint16_t)length;
     record->dataOffset = (uint16_t)residentCache->bytesUsed;
     memcpy(residentCache->bytes + record->dataOffset, source, length);
@@ -782,8 +771,7 @@ void storeResidentSmallRange(uint32_t nameHash,
     ++residentStats.rangeCacheStores;
 }
 
-void storeResidentLargeRange(uint32_t nameHash,
-                             uint32_t relativeOffset,
+void storeResidentLargeRange(uint32_t absoluteOffset,
                              const void* source,
                              uint32_t length)
 {
@@ -811,11 +799,11 @@ void storeResidentLargeRange(uint32_t nameHash,
 
     ResidentRangeRecord* record =
         &residentCache->ranges[residentCache->rangeCount++];
-    record->nameHash = nameHash;
-    record->relativeOffset = relativeOffset;
+    record->absoluteOffset = absoluteOffset;
     record->length = (uint16_t)length;
     record->dataOffset = (uint16_t)targetOffset;
     memcpy(residentCache->bytes + targetOffset, source, length);
+    ++residentCache->largeCount;
     ++residentStats.rangeCacheStores;
 }
 
@@ -1904,6 +1892,14 @@ void EspAssetPack_residentResetStats(void)
     EspAssetPackIoProbe_afterResidentStatsReset();
 }
 
+uint32_t EspAssetPack_verifiedFlashLeaseEpoch(void)
+{
+    return verifiedFlashEpoch != UINT32_MAX && openReady &&
+           physicalUsesMapFlash && mapFlash.active && mapFlash.partition != nullptr &&
+           mapFlash.stats.verified && !EspAssetPack_isSourceProbeActive()
+               ? verifiedFlashEpoch : 0U;
+}
+
 uint32_t EspAssetPack_mapFlashRuntimeReadMicros(void)
 {
     return mapFlashRuntimeReadMicros;
@@ -2091,9 +2087,11 @@ static int readRangeCore(const EspAssetPackEntry* entry,
                      residentCache != nullptr &&
                      length == kResidentLargeRangeBytes;
 
+    /* validateEntry and the relative bounds above prove no uint32 overflow. */
+    const uint32_t absoluteOffset = entry->offset + relativeOffset;
     if (cacheableSmall || cacheableLarge) {
         ResidentRangeRecord* record =
-            findResidentRange(entry->nameHash, relativeOffset, (uint32_t)length);
+            findResidentRange(absoluteOffset, (uint32_t)length);
         if (record != nullptr) {
             memcpy(destination,
                    residentCache->bytes + record->dataOffset,
@@ -2107,7 +2105,6 @@ static int readRangeCore(const EspAssetPackEntry* entry,
         ++residentStats.rangeCacheBypasses;
     }
 
-    const uint32_t absoluteOffset = entry->offset + relativeOffset;
     if (sourceProbeExact) {
         if (!sourceProbeFile.seek(absoluteOffset) ||
             sourceProbeFile.read(static_cast<uint8_t*>(destination), length) !=
@@ -2155,14 +2152,12 @@ static int readRangeCore(const EspAssetPackEntry* entry,
     }
 
     if (cacheableSmall) {
-        storeResidentSmallRange(entry->nameHash,
-                                relativeOffset,
+        storeResidentSmallRange(absoluteOffset,
                                 destination,
                                 (uint32_t)length);
     }
     else if (cacheableLarge) {
-        storeResidentLargeRange(entry->nameHash,
-                                relativeOffset,
+        storeResidentLargeRange(absoluteOffset,
                                 destination,
                                 (uint32_t)length);
     }

@@ -54,6 +54,8 @@ def restore_pre_moving_monster_bsp_leaf(original: bytes) -> bytes:
 def source_gate() -> None:
     for name, old_sha in BEFORE.items():
         current = (SRC / name).read_bytes()
+        from perf_game_p2a_history import restore_pre_perf_game_p2a
+        current = restore_pre_perf_game_p2a(name, current)
         prefix = HOST_GUARD.encode()
         assert current.startswith(prefix), f"{name}: no host/geometry guard"
         assert current.count(b"#include <SDL.h>") == 1, name

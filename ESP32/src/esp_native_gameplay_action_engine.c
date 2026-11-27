@@ -4555,3 +4555,14 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
     memset(&actionState.pending, 0, sizeof(actionState.pending));
     return 1;
 }
+
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+int EspNativeGameplayActionEngine_moveFrameQuiet(void) {
+    return !actionState.feedbackPending && !actionState.feedbackVisible &&
+           !actionState.feedbackFollowupCount &&
+           !actionState.viewportFlashPending && !actionState.viewportFlashVisible &&
+           !actionState.framebufferFresh && !directionCue.pendingValid &&
+           !directionCue.stageNonlethalBorder &&
+           !EspNativeGameplayFacingLabel_isDirty();
+}
+#endif

@@ -15,6 +15,8 @@ uint16_t* PlatformVideo_framebuffer();
 size_t PlatformVideo_framebufferSizeBytes();
 void PlatformVideo_clear(uint16_t color);
 bool PlatformVideo_present();
+/* Main-task service: only a 12x12 physical LCD region on blink/clear. */
+void PlatformVideo_serviceTurnLamp();
 /* Only the specified opaque region is pushed to ILI9341 GRAM (nearest x2).
  * The remaining LCD pixels are retained by the controller, not re-rendered. */
 bool PlatformVideo_presentRegion(int logicalLeft, int logicalTop,

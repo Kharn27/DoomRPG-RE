@@ -21,6 +21,11 @@ extern "C" {
 #define ESP_NATIVE_BSP_VISIBILITY_LINE_BYTES \
     (ESP_NATIVE_BSP_VISIBILITY_MAX_LINES / 8U)
 
+/* P2l: caller-owned one-render memo of successful negative queries only.
+ * Hidden/unqueried and positive sprites are never skipped by automap. */
+#define ESP_NATIVE_BSP_REJECT_MEMO_SPRITES 1024U
+#define ESP_NATIVE_BSP_REJECT_MEMO_BYTES (ESP_NATIVE_BSP_REJECT_MEMO_SPRITES / 8U)
+
 typedef struct EspNativeBspVisibilityState_s {
     uint32_t visibleLeaves[ESP_NATIVE_BSP_VISIBILITY_LEAF_WORDS];
     uint8_t visibleAutomapLines[ESP_NATIVE_BSP_VISIBILITY_LINE_BYTES];
@@ -65,6 +70,11 @@ int EspNativeBspVisibility_mapSpriteVisibleReadOnly(
  * overlay state and gameplay activation remain outside this pure query. */
 /* Raw admission remains pure: no gameplay activation, for the native
  * composition layer only. Preview uses ReadOnly directly. */
+int EspNativeBspVisibility_positionLeaf(uint32_t spriteIndex,
+    uint16_t x, uint16_t y, uint32_t* outLeaf);
+int EspNativeBspVisibility_positionVisible(
+    const EspNativeBspVisibilityState* state, uint32_t spriteIndex,
+    uint16_t x, uint16_t y, uint32_t* outLeaf);
 int EspNativeBspVisibility_mapSpriteVisibleBase(
     const EspNativeBspVisibilityState* state,
     uint32_t mapSpriteIndex,
@@ -84,6 +94,13 @@ int EspNativeBspVisibility_publishAutomap(
     const EspNativeBspVisibilityState* state,
     uint16_t* outLinesMutated,
     uint16_t* outSpritesMutated);
+/* Only for the same serialized sprite render, with no position/geometry
+ * mutations since the negative admission queries. NULL uses the old route. */
+int EspNativeBspVisibility_publishAutomapWithRejected(
+    const EspNativeBspVisibilityState* state,
+    const uint8_t rejected[ESP_NATIVE_BSP_REJECT_MEMO_BYTES],
+    uint16_t* outLinesMutated, uint16_t* outSpritesMutated,
+    uint16_t* outReused);
 
 #ifdef __cplusplus
 }

@@ -528,6 +528,36 @@ int EspNativeBspVisibility_mapSpriteVisibleReadOnly(
     return (state->visibleLeaves[leaf >> 5] & (1U << (leaf & 31U))) != 0U;
 }
 
+
+/* Resolve explicit coordinates through the production BSP, bypassing the spawn cache. */
+int EspNativeBspVisibility_positionLeaf(uint32_t spriteIndex,
+    uint16_t x, uint16_t y, uint32_t* outLeaf) {
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    EspMapSprite sprite;
+    uint32_t leaf;
+    if (outLeaf != NULL) *outLeaf = UINT32_MAX;
+    if (outLeaf == NULL || runtime == NULL ||
+        spriteIndex >= runtime->mapSpriteCount ||
+        !EspMapRuntime_getMapSprite(spriteIndex, &sprite)) return 0;
+    sprite.x = x;
+    sprite.y = y;
+    if (!spriteLeaf(runtime, &sprite, &leaf) ||
+        leaf >= ESP_NATIVE_BSP_VISIBILITY_MAX_NODES) return 0;
+    *outLeaf = leaf;
+    return 1;
+}
+
+int EspNativeBspVisibility_positionVisible(
+    const EspNativeBspVisibilityState* state, uint32_t spriteIndex,
+    uint16_t x, uint16_t y, uint32_t* outLeaf) {
+    uint32_t leaf;
+    if (outLeaf != NULL) *outLeaf = UINT32_MAX;
+    if (state == NULL ||
+        !EspNativeBspVisibility_positionLeaf(spriteIndex, x, y, &leaf)) return 0;
+    if (outLeaf != NULL) *outLeaf = leaf;
+    return (state->visibleLeaves[leaf >> 5] & (1U << (leaf & 31U))) != 0U;
+}
+
 int EspNativeBspVisibility_mapSpriteVisibleBase(
     const EspNativeBspVisibilityState* state,
     uint32_t mapSpriteIndex,
@@ -536,14 +566,17 @@ int EspNativeBspVisibility_mapSpriteVisibleBase(
         state, mapSpriteIndex, outLeafIndex);
 }
 
-int EspNativeBspVisibility_publishAutomap(
+int EspNativeBspVisibility_publishAutomapWithRejected(
     const EspNativeBspVisibilityState* state,
-    uint16_t* outLinesMutated,
-    uint16_t* outSpritesMutated) {
+    const uint8_t rejected[ESP_NATIVE_BSP_REJECT_MEMO_BYTES],
+    uint16_t* outLinesMutated, uint16_t* outSpritesMutated,
+    uint16_t* outReused) {
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
     uint32_t i;
     uint16_t linesMutated = 0U;
     uint16_t spritesMutated = 0U;
+    uint16_t reused = 0U;
+    if (outReused != NULL) *outReused = 0U;
 
     if (outLinesMutated != NULL) *outLinesMutated = 0U;
     if (outSpritesMutated != NULL) *outSpritesMutated = 0U;
@@ -553,22 +586,50 @@ int EspNativeBspVisibility_publishAutomap(
         return 0;
     }
 
-    for (i = 0U; i < runtime->lineCount; ++i) {
-        uint8_t revealed;
-        if ((state->visibleAutomapLines[i >> 3] &
-             (uint8_t)(1U << (i & 7U))) == 0U) {
+    /* P2n: skip bytes with no visible unrevealed lines. The owner
+     * view is read-only; retain checked per-line reads on mismatch. */
+    const EspMapAutomapStateView* automap = EspMapAutomapState_view();
+    const int lineBitsReady = automap != NULL &&
+        automap->lineRevealedBits != NULL &&
+        automap->lineCount == runtime->lineCount &&
+        automap->lineBitsetBytes == (runtime->lineCount + 7U) / 8U;
+    for (i = 0U; i < runtime->lineCount;) {
+        uint8_t visible = state->visibleAutomapLines[i >> 3U];
+        if (lineBitsReady)
+            visible &= (uint8_t)~automap->lineRevealedBits[i >> 3U];
+        if (visible == 0U) {
+            i += 8U;
             continue;
         }
-        if (!EspMapAutomapState_getLineRevealed(i, &revealed)) return 0;
-        if (revealed == 0U) {
-            if (!EspMapAutomapState_setLineRevealed(i, 1U)) return 0;
-            if (linesMutated != UINT16_MAX) ++linesMutated;
+        for (uint32_t bit = 0U; bit < 8U && i < runtime->lineCount; ++bit, ++i) {
+            uint8_t revealed = 0U;
+            if ((visible & (uint8_t)(1U << bit)) == 0U) continue;
+            if (!lineBitsReady &&
+                !EspMapAutomapState_getLineRevealed(i, &revealed)) return 0;
+            if (revealed == 0U) {
+                if (!EspMapAutomapState_setLineRevealed(i, 1U)) return 0;
+                if (linesMutated != UINT16_MAX) ++linesMutated;
+            }
         }
     }
 
+    const int memoReady = rejected != NULL &&
+        runtime->mapSpriteCount <= ESP_NATIVE_BSP_REJECT_MEMO_SPRITES;
     for (i = 0U; i < runtime->mapSpriteCount; ++i) {
         uint32_t leaf = UINT32_MAX;
         uint8_t revealed;
+        /* Skip eight known negatives together, never padding. */
+        if (memoReady && (i & 7U) == 0U &&
+            runtime->mapSpriteCount - i >= 8U && rejected[i >> 3U] == 0xffU) {
+            reused += 8U;
+            i += 7U;
+            continue;
+        }
+        if (memoReady &&
+            (rejected[i >> 3U] & (uint8_t)(1U << (i & 7U))) != 0U) {
+            ++reused;
+            continue;
+        }
         if (!EspNativeBspVisibility_mapSpriteVisible(state, i, &leaf)) {
             if (leaf == UINT32_MAX) return 0;
             continue;
@@ -582,5 +643,14 @@ int EspNativeBspVisibility_publishAutomap(
 
     if (outLinesMutated != NULL) *outLinesMutated = linesMutated;
     if (outSpritesMutated != NULL) *outSpritesMutated = spritesMutated;
+    if (outReused != NULL) *outReused = reused;
     return 1;
+}
+
+int EspNativeBspVisibility_publishAutomap(
+    const EspNativeBspVisibilityState* state,
+    uint16_t* outLinesMutated,
+    uint16_t* outSpritesMutated) {
+    return EspNativeBspVisibility_publishAutomapWithRejected(
+        state, NULL, outLinesMutated, outSpritesMutated, NULL);
 }

@@ -2010,6 +2010,31 @@ int EspNativeResidentGameplay_ownsWorldPresent(void) {
             gameplayState.firstWorldPresentArmed != 0U);
 }
 
+/* Physical busy lamp is a presentation-only consumer of the actual combat
+ * input lock. Never borrow the HUD of a full-screen modal. */
+int EspNativeResidentGameplay_turnLampWorld(void) {
+    return EspNativeResidentGameplay_isActive() &&
+           !gameplayState.exitRequested && !automapActive() &&
+           !EspNativeGameplayPlayerDeath_isActive() &&
+           !EspNativeGameplayLevelUp_isActive() &&
+           !EspNativeGameplayTransition_isWaitingStats() &&
+           !EspNativeTransitionPresentation_isLoadingActive() &&
+           !EspNativeGameplayHub_isActive() &&
+           !EspNativeGameplayDialog_isActive() &&
+           !EspNativeGameplayPassword_isActive() &&
+           !EspNativeGameplayPassword_hasPendingCompletion() &&
+           !EspNativeGameplayStore_isActive() &&
+           !EspNativeGameplayStore_closePending() &&
+           !EspNativeGameplaySave_mainSelectorActive() &&
+           !EspNativeGameplaySave_slotSelectorActive() &&
+           !EspNativeGameplayEventChain_isWaiting();
+}
+
+int EspNativeResidentGameplay_turnLampBusy(void) {
+    return EspNativeGameplayMonsterAttackVisual_isBusy() ||
+           EspNativeGameplayMonsterActiveSequence_isBusy();
+}
+
 int EspNativeResidentGameplay_isAutomapActive(void) {
     return EspNativeResidentGameplay_isActive() && automapActive();
 }

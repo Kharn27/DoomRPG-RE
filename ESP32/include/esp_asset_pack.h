@@ -180,6 +180,8 @@ int EspAssetPack_isResidentLargeRangeEnabled(void);
  * esp_partition_read() only. No extra read/allocation, sample differences
  * around one sprite-render phase; reset with resident counters. */
 uint32_t EspAssetPack_mapFlashRuntimeReadMicros(void);
+/* Nonzero only inside verified internal-flash lease; never recycled. */
+uint32_t EspAssetPack_verifiedFlashLeaseEpoch(void);
 
 #if defined(DOOMRPG_RA2B_CAPTURE) && DOOMRPG_RA2B_CAPTURE
 /* Temporary R-A2b diagnostic: cumulative resident SD seek+read time for

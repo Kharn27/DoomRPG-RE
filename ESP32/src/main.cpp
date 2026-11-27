@@ -802,6 +802,7 @@ void loop()
      * Game-loop producer owns all SD reads/decoding; DAC timer ISR DRAM-only.
      * Automatically stop and close on session or map exit, fail closed. */
     EspEntranceMusic_service(EspNativeGameplaySession_isActive(), sdReady);
+    PlatformVideo_serviceTurnLamp();
     updateTouchDiagnostic();
     printHeartbeat();
     delay(5);

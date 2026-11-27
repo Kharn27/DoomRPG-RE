@@ -39,6 +39,8 @@ def source_gate() -> None:
     guard = HOST_GUARD.encode("ascii")
     for name, sha in BEFORE.items():
         current = (SRC / name).read_bytes()
+        from perf_game_p2a_history import restore_pre_perf_game_p2a
+        current = restore_pre_perf_game_p2a(name, current)
         if name == "esp_native_gameplay_monster_state.c":
             # The original include follows four libc headers and one blank.
             anchor = b"\n#include <SDL.h>\n#include \"DoomRPG.h\""

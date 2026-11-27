@@ -19,6 +19,9 @@
 #include "esp_map_runtime.h"
 #include "esp_map_sprite_topology.h"
 #include "esp_native_bsp_visibility.h"
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+#include "esp_perf_move_visibility.h"
+#endif
 #include "esp_native_sprite_visual_legacy.h"
 #include "esp_native_graphics_catalog.h"
 #include "esp_native_gameplay_monster_drop.h"
@@ -27,6 +30,7 @@
 #include "esp_native_sprite_renderer.h"
 #include "esp_native_fire_visual.h"
 #include "esp_native_ambient_sprite.h"
+#include "esp_native_sprite_mask.h"
 #include "esp_native_first_frame.h"
 #include "esp_player_view_state.h"
 #include "platform_video_config.h"
@@ -60,6 +64,11 @@
 #define ENEMY_TYPE 1U
 #define RENDER_MODE_NORMAL 0U
 #define RENDER_MODE_ADD 7U
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+#ifndef DOOMRPG_PERF_NEAR_LOAD
+#define DOOMRPG_PERF_NEAR_LOAD 1
+#endif
+#endif
 
 /* A single reusable trace profile selects one immutable map sprite index.
  * Observe values already read by production: no extra gameplay getters, state,
@@ -153,6 +162,9 @@ typedef struct SpriteWorkspace_s {
     PersistentDropOrder dropOrder[ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SLOTS];
     uint32_t seenLogical[8];
     EspNativeBspVisibilityState visibility;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    uint8_t rejected[ESP_NATIVE_BSP_REJECT_MEMO_BYTES];
+#endif
 } SpriteWorkspace;
 
 typedef struct TransientWorldBatch_s {
@@ -166,6 +178,35 @@ typedef struct TransientWorldBatch_s {
 
 static TransientWorldBatch transientWorldBatch;
 static uint8_t scratchOwnerLogged;
+
+/* P2j: bounded diagnostic, one in sixteen successful render attempts.
+ * No extra reads or geometry operations. All state is renderer-private;
+ * timing is disabled before publishing stats or returning to gameplay. */
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+#ifndef DOOMRPG_PERF_SPRITE_SAMPLE
+#define DOOMRPG_PERF_SPRITE_SAMPLE 1
+#endif
+#if DOOMRPG_PERF_SPRITE_SAMPLE
+static struct {
+    uint32_t ordinal, readUs, readCalls, loadUs, loadCalls, spanUs, spanCalls;
+    uint32_t nearLoadsAvoided, clipPayloadsAvoided, boundsUs, boundsCalls, wallPayloadsAvoided;
+    uint8_t active;
+} spritePerf;
+#define P2J_START(name) const int64_t name = spritePerf.active ? esp_timer_get_time() : 0LL
+#define P2J_ACCUM(name, field, calls) do { if (spritePerf.active) { \
+    spritePerf.field += (uint32_t)(esp_timer_get_time() - (name)); \
+    ++spritePerf.calls; } } while (0)
+#define P2J_STAMP(name) do { if (spritePerf.active) (name) = esp_timer_get_time(); } while (0)
+#else
+#define P2J_START(name) do { } while (0)
+#define P2J_ACCUM(name, field, calls) do { } while (0)
+#define P2J_STAMP(name) do { } while (0)
+#endif
+#else
+#define P2J_START(name) do { } while (0)
+#define P2J_ACCUM(name, field, calls) do { } while (0)
+#define P2J_STAMP(name) do { } while (0)
+#endif
 
 /* Bounded per-phase and per-object timing belongs to TRACE only.
  * Production INFO must not spend its first gameplay frames on timing/Serial. */
@@ -288,10 +329,16 @@ static int readRange(const EspAssetPackEntry* entry,
                      uint32_t bytes,
                      EspNativeSpriteStats* stats) {
     if (entry == NULL || destination == NULL || stats == NULL ||
-        offset > entry->size || bytes > entry->size - offset ||
-        !EspAssetPack_readRange(entry, offset, destination, bytes)) {
+        offset > entry->size || bytes > entry->size - offset) {
         return 0;
     }
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
+    P2J_START(readStart);
+#endif
+    if (!EspAssetPack_readRange(entry, offset, destination, bytes)) return 0;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
+    P2J_ACCUM(readStart, readUs, readCalls);
+#endif
     ++stats->packReads;
     return 1;
 }
@@ -457,29 +504,23 @@ static int initSources(Sources* sources, EspNativeSpriteStats* stats) {
     return 1;
 }
 
-static int loadFrame(const Sources* sources,
-                     uint16_t logical,
-                     uint32_t animation,
-                     int glow,
-                     Frame* frame,
-                     uint32_t seenLogical[8],
-                     EspNativeSpriteStats* stats) {
+typedef struct FrameLocation_s {
+    uint32_t shapeOffset;
+    uint32_t paletteOffset;
+} FrameLocation;
+
+/* Bounds are sufficient for geometry; payload is needed only to rasterize. */
+static int loadFrameBounds(const Sources* sources, uint16_t logical,
+                           uint32_t animation, Frame* frame,
+                           FrameLocation* location,
+                           EspNativeSpriteStats* stats) {
     uint8_t idBytes[2];
     uint8_t pair[8];
     uint8_t header[12];
-    uint8_t palette[32];
     uint32_t actual;
     uint32_t shapeOffset;
-    uint32_t maskOffset;
     int32_t sourceOffset;
     int32_t paletteOffset;
-    uint32_t x;
-    uint32_t active = 0U;
-    uint32_t base;
-    uint32_t relative;
-    uint32_t spriteTexelOffset;
-    uint32_t p;
-    uint32_t loadedBytes;
 
     if (logical >= sources->spriteIds || logical >= 256U ||
         EspNativeGraphicsCatalog_findSprite(logical) == NULL) {
@@ -511,10 +552,7 @@ static int loadFrame(const Sources* sources,
 
     shapeOffset = TEXEL_HEADER + (uint32_t)sourceOffset;
     if (!readRange(&sources->bitshapes, shapeOffset, header,
-                   sizeof(header), stats) ||
-        !readRange(&sources->palettes,
-                   PALETTE_HEADER + (uint32_t)paletteOffset * 2U,
-                   palette, sizeof(palette), stats)) {
+                   sizeof(header), stats)) {
         return 0;
     }
 
@@ -537,7 +575,24 @@ static int loadFrame(const Sources* sources,
 
     frame->maskBytes = (uint32_t)frame->width * (uint32_t)frame->pitch;
     if (frame->maskBytes == 0U || frame->maskBytes > MAX_MASK) return 0;
-    maskOffset = shapeOffset + SHAPE_HEADER;
+    location->shapeOffset = shapeOffset;
+    location->paletteOffset = (uint32_t)paletteOffset;
+    return 1;
+}
+
+static int loadFramePayload(const Sources* sources, int glow, Frame* frame,
+                            const FrameLocation* location,
+                            uint32_t seenLogical[8],
+                            EspNativeSpriteStats* stats) {
+    uint8_t palette[32];
+    uint32_t maskOffset, x, active = 0U, base, relative;
+    uint32_t spriteTexelOffset, p, loadedBytes;
+    const uint16_t logical = frame->logical;
+
+    if (!readRange(&sources->palettes,
+                   PALETTE_HEADER + location->paletteOffset * 2U,
+                   palette, sizeof(palette), stats)) return 0;
+    maskOffset = location->shapeOffset + SHAPE_HEADER;
     if (!readRange(&sources->bitshapes, maskOffset, frame->mask,
                    frame->maskBytes, stats)) {
         return 0;
@@ -546,10 +601,8 @@ static int loadFrame(const Sources* sources,
     frame->prefix[0] = 0U;
     for (x = 0U; x < (uint32_t)frame->width; ++x) {
         const uint8_t* column = frame->mask + x * (uint32_t)frame->pitch;
-        int y;
-        for (y = 0; y < frame->height; ++y) {
-            if ((column[y / 8] & (1U << (y & 7))) != 0U) ++active;
-        }
+        active += EspNativeSpriteMask_countColumn(
+            column, (unsigned)frame->height);
         frame->prefix[x + 1U] = (uint16_t)active;
     }
 
@@ -595,6 +648,18 @@ static int loadFrame(const Sources* sources,
         }
     }
     return 1;
+}
+
+static int loadFrame(const Sources* sources,
+                     uint16_t logical,
+                     uint32_t animation,
+                     int glow,
+                     Frame* frame,
+                     uint32_t seenLogical[8],
+                     EspNativeSpriteStats* stats) {
+    FrameLocation location;
+    return loadFrameBounds(sources, logical, animation, frame, &location, stats) &&
+           loadFramePayload(sources, glow, frame, &location, seenLogical, stats);
 }
 
 /* Original Combat_updateProjectile() impact: source sprite 180..190
@@ -732,6 +797,9 @@ static int buildOrder(Render_t* render,
                       EspNativeSpriteStats* stats,
                       uint32_t* outCount,
                       int preview,
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+                      uint8_t* rejected,
+#endif
                       SpriteOrderProbe* probe) {
     uint32_t i;
     uint32_t count = 0U;
@@ -822,6 +890,11 @@ static int buildOrder(Render_t* render,
         if (!visible) {
             TRACE_SPRITE(i, "[SPRITETRACE] ADMISSION sprite=%u result=bsp-rejected leaf=%u\n", (unsigned int)i, (unsigned int)leaf);
             if (leaf == UINT32_MAX) return 0;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+            if (rejected != NULL &&
+                runtime->mapSpriteCount <= ESP_NATIVE_BSP_REJECT_MEMO_SPRITES)
+                rejected[i >> 3U] |= (uint8_t)(1U << (i & 7U));
+#endif
             ++stats->bspRejected;
             continue;
         }
@@ -840,6 +913,12 @@ static int buildOrder(Render_t* render,
         (void)link;
         (void)ordinal;
         ++stats->bspCandidates;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+        if (!preview && type == ENEMY_TYPE &&
+            EspNativeGameplayMonsterCombat_damageBlend(
+                (uint16_t)i, DoomRPG_GetUpTimeMS()))
+            EspPerfMoveVisibility_noteUnsafe();
+#endif
         TRACE_SPRITE(i, "[SPRITETRACE] ADMISSION sprite=%u result=candidate leaf=%u\n", (unsigned int)i, (unsigned int)leaf);
 
         recoveredCross = isLegacyCrossLogical((uint16_t)id);
@@ -922,6 +1001,7 @@ static int spans(Render_t* render,
     int x2;
     int tex;
     int depth;
+    int constantScale = 0;
 
     if (renderMode != RENDER_MODE_NORMAL && renderMode != RENDER_MODE_ADD) {
         return 0;
@@ -941,14 +1021,22 @@ static int spans(Render_t* render,
         depth = line->vert1.y + DoomRPG_FixedMul(offset, dSide);
     }
 
+    /* A camera-facing billboard has identical projected depth at
+     * both ends. dSide == 0 is the exact integer recurrence criterion,
+     * also covering oriented spans whose projected delta rounds to zero. */
+    if (dSide == 0 && x < x2 && depth > 0)
+        constantScale = (0x40000000 / depth) << 2;
+
     while (x < x2) {
         int scale;
         int column;
         int texelStep;
 
         if (depth <= 0) return 0;
-        scale = (0x40000000 / depth) << 2;
-        column = (int)(DoomRPG_FixedMul(tex, scale) >> 16);
+        scale = dSide == 0 ? constantScale : (0x40000000 / depth) << 2;
+        /* Occluded columns still advance both original recurrences. */
+        column = render->columnScale[x] >= scale
+            ? (int)(DoomRPG_FixedMul(tex, scale) >> 16) : 0;
         depth += dSide;
         tex += dTex;
 
@@ -974,21 +1062,14 @@ static int spans(Render_t* render,
                 int64_t position;
                 uint16_t* destination;
 
-                while (y < frame->height &&
-                       (bits[y / 8] & (1U << (y & 7))) == 0U) {
-                    ++y;
-                }
+                y = EspNativeSpriteMask_runEnd(bits, y, frame->height, 0);
                 if (y >= frame->height) break;
 
                 start = y;
                 texelBase = cursor;
-                while (y < frame->height &&
-                       (bits[y / 8] & (1U << (y & 7))) != 0U) {
-                    ++cursor;
-                    ++y;
-                }
-
+                y = EspNativeSpriteMask_runEnd(bits, y, frame->height, 1);
                 length = y - start;
+                cursor += (uint32_t)length;
                 worldY = (64 - (frame->yMin + start)) - render->viewZ;
                 pixels = (length * depth) >> 17;
                 screenY = EspNativeRenderGeometry_halfScreenHeight(render->screenHeight) - ((worldY * depth) >> 17);
@@ -1010,6 +1091,59 @@ static int spans(Render_t* render,
                 remaining = pixels;
                 if (glow) ++stats->glowSpanRuns;
                 else ++stats->spanRuns;
+
+                /* P2i: the same bounded cursor proof for mode 7.
+                 * Preserve the original approximate RGB565 carry, and
+                 * distinguish base-mode counters from glow counters. */
+                if (renderMode == RENDER_MODE_ADD &&
+                    frame->packedBytes <= MAX_TEXELS &&
+                    position >= 0 && texelStep >= 0 &&
+                    position + (int64_t)(remaining - 1) * texelStep <
+                        ((int64_t)frame->packedBytes << 13)) {
+                    uint32_t pos = (uint32_t)position;
+                    int left = remaining;
+                    while (left-- > 0) {
+                        const uint8_t packed = frame->texels[pos >> 13];
+                        const uint16_t source = frame->palette[
+                            (packed >> ((pos >> 10) & 4U)) & 15U];
+                        const uint32_t color = (uint32_t)(source & 0xf7deU) +
+                            ((uint32_t)(*destination) & 0xf7deU);
+                        const uint32_t carry = color & 0x10820U;
+                        *destination = (uint16_t)((color & 0xf7deU) |
+                            (carry >> 1) | (carry >> 2) | (carry >> 3));
+                        destination += pitch;
+                        pos += (uint32_t)texelStep;
+                    }
+                    if (glow) stats->glowPixels += (uint32_t)remaining;
+                    else {
+                        stats->pixelsDrawn += (uint32_t)remaining;
+                        stats->mode7Pixels += (uint32_t)remaining;
+                    }
+                    continue;
+                }
+
+                /* P2h: prove the entire normal opaque span in bounds
+                 * once. The 32-bit cursor is safe because packedBytes is
+                 * bounded to 2048 and texelStep is a nonnegative int.
+                 * Keep the original loop for additive/glow and malformed
+                 * ranges, including its exact partial-failure semantics. */
+                if (renderMode == RENDER_MODE_NORMAL && !glow &&
+                    frame->packedBytes <= MAX_TEXELS &&
+                    position >= 0 && texelStep >= 0 &&
+                    position + (int64_t)(remaining - 1) * texelStep <
+                        ((int64_t)frame->packedBytes << 13)) {
+                    uint32_t pos = (uint32_t)position;
+                    int left = remaining;
+                    while (left-- > 0) {
+                        const uint8_t packed = frame->texels[pos >> 13];
+                        *destination = frame->palette[
+                            (packed >> ((pos >> 10) & 4U)) & 15U];
+                        destination += pitch;
+                        pos += (uint32_t)texelStep;
+                    }
+                    stats->pixelsDrawn += (uint32_t)remaining;
+                    continue;
+                }
 
                 while (remaining-- > 0) {
                     uint32_t packedIndex;
@@ -1056,6 +1190,31 @@ static int spans(Render_t* render,
     return 1;
 }
 
+#if defined(DOOMRPG_PERF_NEAR_LOAD) && DOOMRPG_PERF_NEAR_LOAD
+/* P2s: same projected integer column interval and scale as spans().
+ * Only constant-depth billboards qualify. Unknown/degenerate geometry
+ * takes the original checked decoder and raster path. No pixels read. */
+static unsigned fullyOccludedColumns(const Render_t* render,
+                                     const Line_t* line) {
+    int x, x2, scale;
+    if (line->vert2.x <= line->vert1.x ||
+        line->vert1.y <= 0 || line->vert1.y != line->vert2.y ||
+        line->vert1.y < 4) return 0U;
+    x = (line->vert1.x + 65535) >> 16;
+    x2 = (line->vert2.x + 65535) >> 16;
+    if (x < render->screenLeft) x = render->screenLeft;
+    if (x2 > render->screenRight) x2 = render->screenRight;
+    if (x < 0 || x2 > render->screenWidth || x >= x2) return 0U;
+    scale = (0x40000000 / line->vert1.y) << 2;
+    if (scale <= 0) return 0U;
+    for (int c = x; c < x2; ++c) {
+        /* Equality is drawable in spans(), never reject it. */
+        if (render->columnScale[c] >= scale) return 0U;
+    }
+    return (unsigned)(x2 - x);
+}
+
+#endif
 static int drawWorldDropFrame(Render_t* render,
                               Frame* frame,
                               int32_t worldX,
@@ -1399,6 +1558,12 @@ static int drawAt(Render_t* render,
     int maximum;
     int spriteX;
     int spriteY;
+#if defined(DOOMRPG_PERF_NEAR_LOAD) && DOOMRPG_PERF_NEAR_LOAD
+    /* P2r declaration BEGIN */
+    FrameLocation deferredLocation;
+    int deferredPayload = 0;
+    /* P2r declaration END */
+#endif
 #if defined(DOOMRPG_ESP32_TRACE_SPRITE)
     uint32_t tracePixelsBefore = stats->pixelsDrawn;
 #endif
@@ -1425,6 +1590,43 @@ static int drawAt(Render_t* render,
     animation = EspNativeAmbientSprite_frame(parent->info,entityType,
                                               entitySubtype,
                                               parent->index,ambientSampleMs);
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    /* Oriented geometry can depend on frame bounds: retain the full guard. */
+    if ((parent->info & ORIENT_MASK) != 0U)
+        EspPerfMoveVisibility_noteAmbientPhase(parent->info, entityType,
+            entitySubtype, parent->index, ambientSampleMs);
+#endif
+    /* Project the billboard center once; its depth is independent of the
+     * decoded frame bounds. Oriented sprites still require the frame. */
+    if ((parent->info & ORIENT_MASK) == 0U) {
+        memset(&center, 0, sizeof(center));
+        center.x = spriteX;
+        center.y = spriteY;
+        EspNativeRenderGeometry_transformPoint(
+        render->viewCos_, render->viewSin_, render->viewSin,
+        render->viewCos, render->viewTransX, render->viewTransY,
+        &center.x, &center.y);
+        center.x -= 0x100000;
+#if defined(DOOMRPG_PERF_NEAR_LOAD) && DOOMRPG_PERF_NEAR_LOAD
+        /* P2q early decode rejection BEGIN */
+        if (center.x < 0x40000 && crossAnimation == NULL && !glow &&
+            logical < sources->spriteIds && logical < 256U &&
+            EspNativeGraphicsCatalog_findSprite(logical) != NULL &&
+            EspAssetPack_isMapFlashActive() && !EspAssetPack_isSourceProbeActive()) {
+            TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=near-culled depth=%d animation=%u glow=%u\n", (unsigned int)parent->index, (unsigned int)center.x, (unsigned int)animation, (unsigned int)(glow != 0));
+            ++stats->nearCulled;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+            EspPerfMoveVisibility_noteAmbientNearCull(parent->info,
+                entityType, ambientSampleMs);
+#if DOOMRPG_PERF_SPRITE_SAMPLE
+            if (spritePerf.active) ++spritePerf.nearLoadsAvoided;
+#endif
+#endif
+            return 1;
+        }
+        /* P2q early decode rejection END */
+#endif
+    }
     /* All four CROSS billboards use the same immutable logical frame and
      * one presentation clock sample. Reuse the caller-owned Frame only
      * within this four-copy group; never retain pixels or PAK offsets
@@ -1437,11 +1639,35 @@ static int drawAt(Render_t* render,
         }
     }
     else {
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
+        P2J_START(loadStart);
+#endif
+#if defined(DOOMRPG_PERF_NEAR_LOAD) && DOOMRPG_PERF_NEAR_LOAD
+        /* P2r bounds-only BEGIN */
+        if (crossAnimation == NULL && !glow &&
+            (parent->info & ORIENT_MASK) == 0U &&
+            center.x >= 0x40000 &&
+            EspAssetPack_isMapFlashActive() && !EspAssetPack_isSourceProbeActive()) {
+            if (!loadFrameBounds(sources, logical, animation, frame,
+                                 &deferredLocation, stats)) return 0;
+            deferredPayload = 1;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
+            P2J_ACCUM(loadStart, boundsUs, boundsCalls);
+#endif
+        } else
+        /* P2r bounds-only END */
+#endif
         if (!loadFrame(sources, logical, animation, glow,
                        frame, seenLogical, stats)) {
             TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=frame-failed logical=%u animation=%u glow=%u\n", (unsigned int)parent->index, (unsigned int)logical, (unsigned int)animation, (unsigned int)(glow != 0));
             return 0;
         }
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
+#if defined(DOOMRPG_PERF_NEAR_LOAD) && DOOMRPG_PERF_NEAR_LOAD
+        if (!deferredPayload)
+#endif
+            P2J_ACCUM(loadStart, loadUs, loadCalls);
+#endif
         if (crossAnimation != NULL) *crossAnimation = animation;
     }
 
@@ -1452,20 +1678,21 @@ static int drawAt(Render_t* render,
     line.vert2.z = maximum - minimum;
 
     if ((parent->info & ORIENT_MASK) == 0U) {
-        memset(&center, 0, sizeof(center));
-        center.x = spriteX;
-        center.y = spriteY;
-        EspNativeRenderGeometry_transformPoint(
-        render->viewCos_, render->viewSin_, render->viewSin,
-        render->viewCos, render->viewTransX, render->viewTransY,
-        &center.x, &center.y);
-        center.x -= 0x100000;
         if (center.x < 0x40000) {
             TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=near-culled depth=%d animation=%u glow=%u\n", (unsigned int)parent->index, (int)center.x, (unsigned int)animation, (unsigned int)(glow != 0));
             if (glow) ++stats->glowNearCulled;
             else ++stats->nearCulled;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+            EspPerfMoveVisibility_noteAmbientNearCull(parent->info,
+                entityType, ambientSampleMs);
+#endif
             return 1;
         }
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+        /* P2p: center depth cannot depend on frame bounds or animation. */
+        EspPerfMoveVisibility_noteAmbientPhase(parent->info, entityType,
+            entitySubtype, parent->index, ambientSampleMs);
+#endif
 
         line.vert1 = center;
         line.vert2.x = center.x;
@@ -1535,6 +1762,13 @@ static int drawAt(Render_t* render,
     }
 
     if (!EspNativeDynamicLineRender_clipLine(&line)) {
+#if defined(DOOMRPG_PERF_NEAR_LOAD) && DOOMRPG_PERF_NEAR_LOAD
+        /* P2r clip counter BEGIN */
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
+        if (deferredPayload && spritePerf.active) ++spritePerf.clipPayloadsAvoided;
+#endif
+        /* P2r clip counter END */
+#endif
         TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=clip-culled animation=%u glow=%u\n", (unsigned int)parent->index, (unsigned int)animation, (unsigned int)(glow != 0));
         if (glow) ++stats->glowClipCulled;
         else ++stats->clipCulled;
@@ -1546,6 +1780,38 @@ static int drawAt(Render_t* render,
     EspNativeRenderGeometry_projectVertex(
         render->screenWidth, EspNativeRenderGeometry_fracHalfScreenWidth(render->screenWidth),
         &line.vert2.x, &line.vert2.y, &line.vert2.z);
+#if defined(DOOMRPG_PERF_NEAR_LOAD) && DOOMRPG_PERF_NEAR_LOAD
+    /* P2r payload BEGIN */
+    if (deferredPayload) {
+        /* P2s: the existing depth buffer proves all columns invisible.
+         * Preserve the exact wall-occluded count and potential phase
+         * guard, while avoiding palette/mask/texels and span traversal. */
+        const unsigned occluded =
+            (renderMode == RENDER_MODE_NORMAL || renderMode == RENDER_MODE_ADD)
+            ? fullyOccludedColumns(render, &line) : 0U;
+        if (occluded != 0U) {
+            stats->wallOccludedColumns += occluded;
+            /* spans() succeeds even with zero drawable columns. Count
+             * this finished base object exactly as the original path. */
+            ++stats->draws;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
+            if (spritePerf.active) ++spritePerf.wallPayloadsAvoided;
+#endif
+            TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=wall-occluded columns=%u\n",
+                (unsigned int)parent->index, occluded);
+            return 1;
+        }
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
+        P2J_START(payloadStart);
+#endif
+        if (!loadFramePayload(sources, glow, frame, &deferredLocation,
+                              seenLogical, stats)) return 0;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
+        P2J_ACCUM(payloadStart, loadUs, loadCalls);
+#endif
+    }
+    /* P2r payload END */
+#endif
     /* Source Render_renderSpriteObject() sets damageBlend while this monster's
      * 100ms damageBlendTime lives. Render_getSpanMode() then saturates its
      * 16-entry palette once and clears that flag before drawing the span.
@@ -1565,7 +1831,13 @@ static int drawAt(Render_t* render,
         tinted = 1U;
     }
     {
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
+        P2J_START(spanStart);
+#endif
         const int drawn = spans(render, &line, frame, renderMode, glow, stats);
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
+        P2J_ACCUM(spanStart, spanUs, spanCalls);
+#endif
         if (tinted != 0U) {
             memcpy(frame->palette, originalPalette, sizeof(originalPalette));
         }
@@ -1583,6 +1855,10 @@ static int drawAt(Render_t* render,
             parent->info, entityType, rasterPixelsBefore,
             glow ? stats->glowPixels : stats->pixelsDrawn)) {
         ++stats->ambientCandidates;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+        EspPerfMoveVisibility_noteAmbientRasterPhase(parent->info, entityType,
+            entitySubtype, parent->index, ambientSampleMs);
+#endif
         if (!glow && EspNativeAmbientSprite_fireEligible(
                          parent->info, entityType)) {
             /* Only completed masked pixels, never admission/near-cull,
@@ -1736,6 +2012,10 @@ static int renderImpl(struct Render_s* renderBase,
 #endif
     int opened = 0;
     int ok = 0;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
+    int64_t j0=0LL,j1=0LL,j2=0LL,j3=0LL,j4=0LL,j5=0LL;
+    spritePerf.active = 0U;
+#endif
 
     if (outStats != NULL) memset(outStats, 0, sizeof(*outStats));
     if (render == NULL || outStats == NULL || runtime == NULL || view == NULL ||
@@ -1764,6 +2044,18 @@ static int renderImpl(struct Render_s* renderBase,
     memset(&orderProbe, 0, sizeof(orderProbe));
 #endif
     saveScratch(render, saved);
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
+    ++spritePerf.ordinal;
+    spritePerf.active = (uint8_t)((spritePerf.ordinal & 15U) == 0U);
+    if (spritePerf.active) {
+        spritePerf.readUs=spritePerf.readCalls=spritePerf.loadUs=0U;
+        spritePerf.loadCalls=spritePerf.spanUs=spritePerf.spanCalls=0U;
+        spritePerf.nearLoadsAvoided=0U;
+        spritePerf.clipPayloadsAvoided=spritePerf.boundsUs=spritePerf.boundsCalls=0U;
+        spritePerf.wallPayloadsAvoided=0U;
+        j0=esp_timer_get_time();
+    }
+#endif
     if (scratchOwnerLogged == 0U) {
         scratchOwnerLogged = 1U;
         DRPG_LOGD("[SPRITEPROFILE] STACK-OWNER scratchBytes=%u storage=heap stackScratchBytes=0 workspaceBytes=%u reason=loopTask-headroom\n",
@@ -1787,6 +2079,16 @@ static int renderImpl(struct Render_s* renderBase,
     profileT2 = esp_timer_get_time();
 #endif
 
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    if (!preview) {
+        EspPerfMoveVisibility_observe(&workspace->visibility, ambientSampleMs);
+        if (transientWorldBatch.active != 0U)
+            EspPerfMoveVisibility_noteUnsafe();
+    }
+#endif
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
+    P2J_STAMP(j1);
+#endif
     stats.depthNodes = workspace->visibility.nodes;
     stats.depthLeaves = workspace->visibility.leaves;
     stats.depthNodeCulled = workspace->visibility.nodeCull;
@@ -1798,6 +2100,9 @@ static int renderImpl(struct Render_s* renderBase,
 
     if (!buildOrder(render, runtime, &workspace->visibility,
                     workspace->order, &stats, &orderCount, preview,
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+                    preview ? NULL : workspace->rejected,
+#endif
 #if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
                     spritePhaseSampleCount < 16U ? &orderProbe : NULL
 #else
@@ -1817,13 +2122,31 @@ static int renderImpl(struct Render_s* renderBase,
     if (!preview && EspMapAutomapState_isReady()) {
         uint16_t linesMutated = 0U;
         uint16_t spritesMutated = 0U;
-        if (!EspNativeBspVisibility_publishAutomap(
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+        uint16_t reused = 0U;
+        /* No world changes between buildOrder and publication. Restrict
+         * reuse to no-drop frames, excluding the catalog prime path too. */
+        const int automapOk = EspNativeBspVisibility_publishAutomapWithRejected(
+                &workspace->visibility,
+                dropOrderCount == 0U && transientWorldBatch.active == 0U
+                    ? workspace->rejected : NULL,
+                &linesMutated, &spritesMutated, &reused);
+#else
+        const int automapOk = EspNativeBspVisibility_publishAutomap(
                 &workspace->visibility,
                 &linesMutated,
-                &spritesMutated)) {
+                &spritesMutated);
+#endif
+        if (!automapOk) {
             printf("[AUTOMAPVIS] FAILED source=world-render\n");
             goto done;
         }
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
+        if (spritePerf.active)
+            printf("[PERFGAMEP2L] ordinal=%u rejectedReused=%u sprites=%u sample=1/16\n",
+                   (unsigned)spritePerf.ordinal, (unsigned)reused,
+                   (unsigned)runtime->mapSpriteCount);
+#endif
         if (linesMutated != 0U || spritesMutated != 0U) {
             printf("[AUTOMAPVIS] PUBLISH source=world-render lines+=%u sprites+=%u mutation=render-derived\n",
                    (unsigned int)linesMutated,
@@ -1833,9 +2156,15 @@ static int renderImpl(struct Render_s* renderBase,
 #if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     profileT3 = esp_timer_get_time();
 #endif
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
+    P2J_STAMP(j2);
+#endif
     if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) goto done;
     opened = 1;
     if (!initSources(&sources, &stats)) goto done;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
+    P2J_STAMP(j3);
+#endif
 #if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     profileT4 = esp_timer_get_time();
 #endif
@@ -1876,6 +2205,9 @@ static int renderImpl(struct Render_s* renderBase,
     profileT5 = esp_timer_get_time();
 #endif
 
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
+    P2J_STAMP(j4);
+#endif
     /* A complete frame need not contain a visible additive sprite or glow.
      * Those nonzero witnesses happened to hold on Entrance and Junction,
      * but not on every sector/camera pose. Accept only if *every* real map
@@ -1909,6 +2241,31 @@ done:
         ambientRapidCandidates=(uint8_t)(stats.ambientRapidCandidates!=0U);
     } else EspNativeSpriteRenderer_suspendAmbient();
     *outStats = stats;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_PERF_SPRITE_SAMPLE
+    P2J_STAMP(j5);
+    if (spritePerf.active && ok) {
+        /* readUs overlaps sources/load/draw; do not sum those metrics. */
+        printf("[PERFGAMEP2J] ordinal=%u preview=%u candidates=%u drops=%u transient=%u visibilityUs=%u orderUs=%u sourcesUs=%u drawUs=%u tailUs=%u readCalls=%u readUs=%u mapLoadCalls=%u mapLoadUs=%u mapSpanCalls=%u mapSpanUs=%u packReads=%u pixels=%u glowPixels=%u sample=1/16\n",
+            (unsigned)spritePerf.ordinal,(unsigned)preview,(unsigned)orderCount,
+            (unsigned)dropOrderCount,(unsigned)transientWorldBatch.active,
+            (unsigned)(j1-j0),(unsigned)(j2-j1),(unsigned)(j3-j2),
+            (unsigned)(j4-j3),(unsigned)(j5-j4),
+            (unsigned)spritePerf.readCalls,(unsigned)spritePerf.readUs,
+            (unsigned)spritePerf.loadCalls,(unsigned)spritePerf.loadUs,
+            (unsigned)spritePerf.spanCalls,(unsigned)spritePerf.spanUs,
+            (unsigned)stats.packReads,(unsigned)stats.pixelsDrawn,
+            (unsigned)stats.glowPixels);
+        printf("[PERFGAMEP2Q] ordinal=%u preview=%u nearLoadsAvoided=%u mapLoadCalls=%u sample=1/16\n",
+            (unsigned)spritePerf.ordinal, (unsigned)preview,
+            (unsigned)spritePerf.nearLoadsAvoided, (unsigned)spritePerf.loadCalls);
+        printf("[PERFGAMEP2R] ordinal=%u clipPayloadsAvoided=%u boundsCalls=%u boundsUs=%u sample=1/16\n",
+            (unsigned)spritePerf.ordinal, (unsigned)spritePerf.clipPayloadsAvoided,
+            (unsigned)spritePerf.boundsCalls, (unsigned)spritePerf.boundsUs);
+        printf("[PERFGAMEP2S] ordinal=%u wallPayloadsAvoided=%u sample=1/16\n",
+            (unsigned)spritePerf.ordinal, (unsigned)spritePerf.wallPayloadsAvoided);
+    }
+    spritePerf.active = 0U;
+#endif
 #if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     if (ok && spritePhaseSampleCount < 16U && profileT0 != 0LL &&
         profileT1 >= profileT0 && profileT2 >= profileT1 &&

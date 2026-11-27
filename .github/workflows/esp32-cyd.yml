@@ -308,6 +308,12 @@ jobs:
       - name: Test moving-monster BSP leaf versus cached spawn leaf (real C + mutant)
         run: python ESP32/test/native_bsp_moving_sprite_visibility_host.py
 
+      - name: Test P2k sorted monster projection and position lookup (real C)
+        run: python ESP32/test/perf_game_monster_lookup_host.py
+
+      - name: Test P2l automap negative visibility reuse (real C)
+        run: python ESP32/test/perf_game_automap_rejected_host.py
+
       - name: Test Sector 2 BSP visibility capacity and bounded scratch (host C)
         run: |
           cc -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include ESP32/test/native_bsp_visibility_capacity_host.c -o /tmp/doomrpg-native-bsp-visibility-test
@@ -332,6 +338,11 @@ jobs:
 
       - name: GAME-AI-14 all subtypes original weapon and cadence matrix (host Python)
         run: python ESP32/test/game_ai14_matrix_host.py
+
+      - name: Test physical monster-turn lamp clock (host C)
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/turn_lamp_host.c -o /tmp/doomrpg-turn-lamp
+          /tmp/doomrpg-turn-lamp
 
       - name: Test cooperative monster turn service budget (host C)
         run: |
@@ -653,6 +664,24 @@ jobs:
             ESP32/test/perf_game_spatial_line_host.c -o /tmp/doomrpg-perf-line
           /tmp/doomrpg-perf-line
 
+      - name: PERF-GAME-P2b synchronous invisible continuation lease (real C)
+        run: |
+          for shadow in 0 1; do
+            for fast in 0 1; do
+              for coalesce in 0 1; do
+                cc -O2 -std=c11 -Wall -Wextra -Werror -IESP32/include \
+                  -DDOOMRPG_PERF_P2_SHADOW=$shadow -DDOOMRPG_PERF_MOVE_REUSE=$fast \
+                  -DDOOMRPG_PERF_P2_COALESCE=$coalesce \
+                  ESP32/src/esp_perf_move_visibility.c \
+                  ESP32/test/perf_game_move_visibility_host.c -o /tmp/doomrpg-perf-move
+                /tmp/doomrpg-perf-move
+                if [ "$shadow" = 0 ]; then
+                  ! nm /tmp/doomrpg-perf-move | grep -E 'EspPerfMoveVisibility_(semantic|firstShadow|rememberContext)'
+                fi
+              done
+            done
+          done
+
       - name: PERF-GAME-P1 true active-sequence owner deterministic oracle (host C)
         run: |
           cc -O2 -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
@@ -809,6 +838,10 @@ jobs:
 
       - name: Test CROSS billboards share exactly one frame load (host C)
         run: python ESP32/test/native_cross_frame_reuse_host.py
+      - name: PERF-GAME-P2g packed sprite mask parity
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -I ESP32/include ESP32/test/perf_game_sprite_mask_host.c -o /tmp/doomrpg-perf-mask
+          /tmp/doomrpg-perf-mask
 
       - name: Test input dispatch without 120ms touch cooldown (host Python)
         run: python ESP32/test/native_input_latency_host.py
@@ -945,6 +978,10 @@ jobs:
 
       - name: Test bounded native wall texture successor inline (host C)
         run: python ESP32/test/native_wall_boundary_inline_host.py
+      - name: PERF-GAME-P2X exact FNV unrolled framebuffer parity (host C)
+        run: python ESP32/test/perf_game_frame_fnv_host.py
+      - name: PERF-GAME-P2Z compact resident PAK range metadata parity (host C++)
+        run: python ESP32/test/perf_game_pack_range_host.py
 
       - name: Test pack-v2 map-selected compact legacy wall atlas parity (host C)
         run: python ESP32/test/native_wall_pak_provenance_host.py

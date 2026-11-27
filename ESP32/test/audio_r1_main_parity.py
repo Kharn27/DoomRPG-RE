@@ -99,6 +99,10 @@ def restore_pre_res60_p1(main: str) -> str:
 
 
 def restore_pre_audio_r1(text: str) -> str:
+    # P2V physical lamp is presentation-only; preserve all frozen Root-J hashes.
+    lamp = "    PlatformVideo_serviceTurnLamp();\n"
+    assert text.count(lamp) == 1, "P2V main-loop lamp drift"
+    text = text.replace(lamp, "", 1)
     if "#if DOOMRPG_RES60_P1_DIAGNOSTIC" in text:
         text = restore_pre_res60_p1(text)
     # ARCH-RC9: main loop uses the explicit session coordinator. The

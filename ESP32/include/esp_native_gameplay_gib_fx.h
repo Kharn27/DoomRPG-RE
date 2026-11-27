@@ -20,6 +20,9 @@ int EspNativeGameplayGibFx_adoptCheckpointState(void);
 int EspNativeGameplayGibFx_paintCapture(uint32_t operand, uint32_t ageMs,
     uint32_t durationMs, uint32_t seed);
 
+/* Read-only admission for an invisible continuation frame reuse. */
+int EspNativeGameplayGibFx_moveFrameQuiet(void);
+
 #ifdef __cplusplus
 }
 #endif
