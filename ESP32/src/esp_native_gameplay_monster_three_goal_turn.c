@@ -1193,12 +1193,21 @@ int EspNativeGameplayMonsterThreeGoalTurn_postMoveGoal(
 
     ++threeGoalView.observedChains;
     threeGoalView.lastSpriteIndex = spriteIndex;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_LOG_LEVEL < DOOMRPG_LOG_TRACE
+    printf("[MONSTER3GOAL] ARM chain=%u sprite=%u subtype=%u firstTile=%u->%u\n",
+           (unsigned int)threeGoalView.observedChains,
+           (unsigned int)spriteIndex,
+           (unsigned int)monster->subtype,
+           (unsigned int)sourceTile,
+           (unsigned int)destTile);
+#else
     printf("[MONSTER3GOAL] ARM chain=%u sprite=%u subtype=%u firstTile=%u->%u legacyGoalCount=3 frameTime=0 firstGoalAlreadyCommitted=yes continuationGoals=bounded-2 attackLoops=3-native-probe/simultaneous-fail-closed\n",
            (unsigned int)threeGoalView.observedChains,
            (unsigned int)spriteIndex,
            (unsigned int)monster->subtype,
            (unsigned int)sourceTile,
            (unsigned int)destTile);
+#endif
 
     for (;;) {
         uint32_t distance2;
@@ -1276,11 +1285,19 @@ int EspNativeGameplayMonsterThreeGoalTurn_postMoveGoal(
                        (unsigned int)THREEGOAL_MULTI_LOOP_SHOTS);
             }
             else {
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_LOG_LEVEL < DOOMRPG_LOG_TRACE
+                printf("[MONSTER3GOAL] COMPLETE sprite=%u subtype=%u goal=3/3 tile=%u distance2=%u sameTurn=yes additionalRng=0\n",
+                       (unsigned int)spriteIndex,
+                       (unsigned int)monster->subtype,
+                       (unsigned int)currentDest,
+                       (unsigned int)distance2);
+#else
                 printf("[MONSTER3GOAL] COMPLETE sprite=%u subtype=%u frameTime=3 goal=3/3 tile=%u distance2=%u adjacentCardinal=no attack=no movementChain=complete sameTurn=yes mutation=no additionalRng=0\n",
                        (unsigned int)spriteIndex,
                        (unsigned int)monster->subtype,
                        (unsigned int)currentDest,
                        (unsigned int)distance2);
+#endif
             }
             return 1;
         }

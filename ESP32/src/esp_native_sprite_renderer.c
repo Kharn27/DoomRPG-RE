@@ -1943,6 +1943,7 @@ static int drawLegacyCross(Render_t* render,
     else if (subNear != 0U) ++stats->nearCulled;
     else ++stats->clipCulled;
 
+#if !defined(ARDUINO) || !defined(DOOMRPG_ESP32) || DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     printf("[NATIVESPRITE] CROSS index=%u id=%u resource=%u copies=4 draws=%u near=%u clip=%u accounting=1\n",
            (unsigned int)parent->index,
            (unsigned int)parent->logical,
@@ -1950,6 +1951,9 @@ static int drawLegacyCross(Render_t* render,
            (unsigned int)subDraws,
            (unsigned int)subNear,
            (unsigned int)subClip);
+#else
+    (void)subClip; /* Diagnostic only; logical accounting above is unchanged. */
+#endif
     return 1;
 }
 
