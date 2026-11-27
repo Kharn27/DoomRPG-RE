@@ -704,6 +704,30 @@ void recycleResidentRangeWorkingSet()
     residentCache->largeCount = 0U;
 }
 
+/* P3f: small descriptors are sorted by (absolute offset, length).
+ * Payload placement and the insertion-ordered large suffix are independent.
+ * Lower bound returns the oldest equal key; upper bound inserts after equals.
+ * At capacity 256 this takes at most nine binary-search iterations. */
+uint32_t residentSmallRangeBound(uint32_t absoluteOffset,
+                                 uint32_t length, bool afterEqual)
+{
+    uint32_t lo = 0U;
+    uint32_t hi = residentCache->rangeCount - residentCache->largeCount;
+    while (lo < hi) {
+        const uint32_t mid = lo + (hi - lo) / 2U;
+        const ResidentRangeRecord& record = residentCache->ranges[mid];
+        if (record.absoluteOffset < absoluteOffset ||
+            (record.absoluteOffset == absoluteOffset &&
+             (record.length < length ||
+              (afterEqual && record.length == length)))) {
+            lo = mid + 1U;
+        } else {
+            hi = mid;
+        }
+    }
+    return lo;
+}
+
 ResidentRangeRecord* findResidentRange(uint32_t absoluteOffset,
                                        uint32_t length)
 {
@@ -712,10 +736,18 @@ ResidentRangeRecord* findResidentRange(uint32_t absoluteOffset,
     }
     const uint32_t smallCount =
         residentCache->rangeCount - residentCache->largeCount;
-    const bool large = length == kResidentLargeRangeBytes;
-    const uint32_t begin = large ? smallCount : 0U;
-    const uint32_t end = large ? residentCache->rangeCount : smallCount;
-    for (uint32_t i = begin; i < end; ++i) {
+    if (length != kResidentLargeRangeBytes) {
+        const uint32_t i = residentSmallRangeBound(absoluteOffset, length, false);
+        if (i < smallCount) {
+            ResidentRangeRecord* record = &residentCache->ranges[i];
+            if (record->absoluteOffset == absoluteOffset &&
+                record->length == length) {
+                return record;
+            }
+        }
+        return nullptr;
+    }
+    for (uint32_t i = smallCount; i < residentCache->rangeCount; ++i) {
         ResidentRangeRecord* record = &residentCache->ranges[i];
         if (record->absoluteOffset == absoluteOffset &&
             record->length == length) {
@@ -759,14 +791,14 @@ void storeResidentSmallRange(uint32_t absoluteOffset,
         return;
     }
 
-    /* Insert before the large tail, moving at most seven 8-byte records.
-     * Payloads stay put and small insertion/large eviction order is exact. */
-    const uint32_t index =
-        residentCache->rangeCount - residentCache->largeCount;
-    if (residentCache->largeCount != 0U) {
+    /* Insert into the sorted small prefix. At most 255 descriptors move
+     * on a miss, never their payloads. The large suffix keeps its order;
+     * admission, eviction, recycle and sequential payload offsets are unchanged. */
+    const uint32_t index = residentSmallRangeBound(absoluteOffset, length, true);
+    if (index < residentCache->rangeCount) {
         memmove(&residentCache->ranges[index + 1U],
                 &residentCache->ranges[index],
-                residentCache->largeCount * sizeof(residentCache->ranges[0]));
+                (residentCache->rangeCount - index) * sizeof(residentCache->ranges[0]));
     }
     ++residentCache->rangeCount;
     ResidentRangeRecord* record = &residentCache->ranges[index];
