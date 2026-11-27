@@ -14,6 +14,12 @@ int EspRes60MapLease_isReady(void);
 int EspRes60MapLease_acquire(const char* mapName,
                             const EspBspInventory* inventory,
                             uint8_t inventoryHit, uint8_t* leaseHit);
+/* Preview-only synchronous ownership transfer: on success with leaseHit=1
+ * the caller must close the PAK before raycast, reset, or return. On MISS
+ * no PAK is transferred. An already-open foreign PAK is never acquired. */
+int EspRes60MapLease_acquireForPlanes(const char* mapName,
+                            const EspBspInventory* inventory,
+                            uint8_t inventoryHit, uint8_t* leaseHit);
 #ifdef __cplusplus
 }
 #endif

@@ -162,6 +162,28 @@ int main(void) {
     assert(loads==7 && !packOpen);
     EspRes60MapLease_reset();
     assert(!loaded && !packOpen);
+    /* P31: warm validation transfers the exact same reader to planes;
+     * no second open or lookup, no foreign-owner closure on rejection. */
+    assert(EspRes60MapLease_acquireForPlanes("/intro.bsp",&inv,0U,&hit));
+    assert(hit==0U && !packOpen && EspRes60MapLease_isReady());
+    int before=packOpens, beforeLookup=lookups;
+    assert(EspRes60MapLease_acquireForPlanes("/intro.bsp",&inv,1U,&hit));
+    assert(hit==1U && packOpen && packOpens==before+1 &&
+           lookups==beforeLookup+1 && !EspRes60MapLease_isReady());
+    assert(!EspRes60MapLease_acquireForPlanes("/intro.bsp",&inv,1U,&hit));
+    assert(packOpen && loaded && packOpens==before+1);
+    EspAssetPack_close(); /* same caller owns plane close */
+    assert(EspRes60MapLease_isReady());
+    packCrc++;
+    assert(!EspRes60MapLease_acquireForPlanes("/intro.bsp",&inv,1U,&hit));
+    assert(!loaded && !packOpen && hit==0U);
+    packCrc=inv.crc32;
+    assert(EspRes60MapLease_acquireForPlanes("/intro.bsp",&inv,0U,&hit));
+    arena[0]^=1U; before=packOpens;
+    assert(!EspRes60MapLease_acquireForPlanes("/intro.bsp",&inv,1U,&hit));
+    assert(!loaded && !packOpen && packOpens==before);
+    arena[0]^=1U;
+    puts("RES60-P31 shared PAK owner PASS");
     puts("RES60-P13 C owner PASS: one real arena, 12 metadata HIT, mutations, reset");
     return 0;
 }

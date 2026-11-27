@@ -65,6 +65,9 @@ static int renderIntroCore(uint16_t* framebuffer,
     uint8_t cameraAngle;
     int loaded = 0;
     int success = 0;
+#if DOOMRPG_RES60_P31_SHARED_PAK
+    int planePakOwned = 0;
+#endif
 #if DOOMRPG_RES60_P12_INVENTORY_CACHE
     uint8_t inventoryHit = 0U;
 #endif
@@ -177,14 +180,22 @@ static int renderIntroCore(uint16_t* framebuffer,
     /* Keep ONE compact arena across rotations, not a second map copy.
      * A HIT checks the real PAK entry metadata and hashes all resident
      * immutable bytes before any pixel is drawn. */
+#if DOOMRPG_RES60_P31_SHARED_PAK
+    if (!EspRes60MapLease_acquireForPlanes(mapName, &inv, inventoryHit,
+                                          &mapLeaseHit)) {
+#else
     if (!EspRes60MapLease_acquire(mapName, &inv, inventoryHit,
                                   &mapLeaseHit)) {
+#endif
         EspRes60InventoryCache_reset();
         EspRes60MapLease_reset();
         printf("[RES60P13] FAIL CLOSED stage=map-lease map=%s\n", mapName);
         return 0;
     }
     report.mapLeaseHit = mapLeaseHit;
+#if DOOMRPG_RES60_P31_SHARED_PAK
+    planePakOwned = mapLeaseHit != 0U;
+#endif
 #else
     if (!EspMapRuntime_loadPackEntry(mapName, &inv)) {
 #if DOOMRPG_RES60_P12_INVENTORY_CACHE
@@ -256,10 +267,18 @@ static int renderIntroCore(uint16_t* framebuffer,
 #if DOOMRPG_RES60_P26_BATCH_INDEX
     const uint32_t planeOpenAt = EspRes60Profile_nowUs();
 #endif
+#if DOOMRPG_RES60_P31_SHARED_PAK
+    if (planePakOwned ? !EspAssetPack_isOpen() :
+                        !EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
+#else
     if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
+#endif
         printf("[RES60P25] FAIL CLOSED stage=pak-open\n");
         goto done;
     }
+#if DOOMRPG_RES60_P31_SHARED_PAK
+    planePakOwned = 1;
+#endif
 #if DOOMRPG_RES60_P26_BATCH_INDEX
     const uint32_t planeRasterAt = EspRes60Profile_nowUs();
 #endif
@@ -281,12 +300,22 @@ static int renderIntroCore(uint16_t* framebuffer,
     const uint32_t planeCloseAt = EspRes60Profile_nowUs();
 #endif
     EspAssetPack_close();
+#if DOOMRPG_RES60_P31_SHARED_PAK
+    planePakOwned = 0;
+#endif
 #if DOOMRPG_RES60_P26_BATCH_INDEX
     const uint32_t planeDoneAt = EspRes60Profile_nowUs();
-    printf("[RES60P26] TIMING angle=%u openUs=%lu rasterUs=%lu closeUs=%lu batchEntries=16\n",
-           (unsigned)cameraAngle, (unsigned long)(planeRasterAt-planeOpenAt),
+    printf("[RES60P26] TIMING angle=%u openUs=%lu rasterUs=%lu closeUs=%lu batchEntries=16"
+#if DOOMRPG_RES60_P31_SHARED_PAK
+           " sharedPak=%u"
+#endif
+           "\n", (unsigned)cameraAngle, (unsigned long)(planeRasterAt-planeOpenAt),
            (unsigned long)(planeCloseAt-planeRasterAt),
-           (unsigned long)(planeDoneAt-planeCloseAt));
+           (unsigned long)(planeDoneAt-planeCloseAt)
+#if DOOMRPG_RES60_P31_SHARED_PAK
+           , (unsigned)mapLeaseHit
+#endif
+           );
 #endif
     const EspNativePlaneRenderStats* planes = EspNativePlaneRenderer_view();
     if (!success || planes == NULL || planes->rowsRendered != 96U ||
@@ -336,6 +365,9 @@ static int renderIntroCore(uint16_t* framebuffer,
 #endif
 
 done:
+#if DOOMRPG_RES60_P31_SHARED_PAK
+    if (planePakOwned && EspAssetPack_isOpen()) EspAssetPack_close();
+#endif
 #if DOOMRPG_RES60_P11_PROFILE
     phaseAt=EspRes60Profile_nowUs();
 #endif

@@ -38,7 +38,7 @@ static int matches(const EspBspInventory* inventory) {
 }
 
 static int packedEntryMatches(const char* name,
-                              const EspBspInventory* inventory) {
+                              const EspBspInventory* inventory, int keepOpen) {
     EspAssetPackEntry entry;
     int ok;
     if (EspAssetPack_isOpen() ||
@@ -48,6 +48,7 @@ static int packedEntryMatches(const char* name,
          entry.size == inventory->sourceBytes &&
          entry.crc32 == inventory->crc32 &&
          (entry.flags & ESP_ASSET_PACK_FLAG_DIRECTORY) == 0U;
+    if (ok && keepOpen) return EspAssetPack_isOpen();
     EspAssetPack_close();
     return ok && !EspAssetPack_isOpen();
 }
@@ -66,9 +67,10 @@ int EspRes60MapLease_isReady(void) {
     return leaseOwned && EspMapRuntime_isLoaded() && !EspAssetPack_isOpen();
 }
 
-int EspRes60MapLease_acquire(const char* name,
-                            const EspBspInventory* inventory,
-                            uint8_t inventoryHit, uint8_t* leaseHit) {
+static int acquireCore(const char* name,
+                       const EspBspInventory* inventory,
+                       uint8_t inventoryHit, uint8_t* leaseHit,
+                       int keepOpen) {
     if (leaseHit != NULL) *leaseHit = 0U;
     if (name == NULL || strcmp(name, "/intro.bsp") != 0 ||
         inventory == NULL || leaseHit == NULL ||
@@ -85,7 +87,7 @@ int EspRes60MapLease_acquire(const char* name,
             !matches(inventory) ||
             !EspRes60InventoryCache_verify(name, inventory,
                 EspMapRuntime_view()->arenaFNV1a) ||
-            !packedEntryMatches(name, inventory)) {
+            !packedEntryMatches(name, inventory, keepOpen)) {
             EspRes60MapLease_reset();
             return 0;
         }
@@ -103,5 +105,18 @@ int EspRes60MapLease_acquire(const char* name,
     }
     leaseOwned = 1U;
     return 1;
+}
+int EspRes60MapLease_acquire(const char* name,
+                            const EspBspInventory* inventory,
+                            uint8_t inventoryHit, uint8_t* leaseHit) {
+    return acquireCore(name, inventory, inventoryHit, leaseHit, 0);
+}
+
+int EspRes60MapLease_acquireForPlanes(const char* name,
+                            const EspBspInventory* inventory,
+                            uint8_t inventoryHit, uint8_t* leaseHit) {
+    /* Success + HIT transfers one open PAK to the caller. A MISS and
+     * every failure keep the original closed-owner contract. */
+    return acquireCore(name, inventory, inventoryHit, leaseHit, 1);
 }
 #endif /* isolated P13 profile */
