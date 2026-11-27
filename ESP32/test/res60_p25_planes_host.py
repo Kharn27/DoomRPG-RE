@@ -32,7 +32,8 @@ HARNESS = r"""
 #include "esp_map_runtime.h"
 #include "esp_native_plane_renderer.h"
 
-static uint8_t maps[44], palettes[68], wall[4100], cells[2048];
+static uint8_t maps[114], palettes[292], wall[18436], cells[2048];
+static unsigned mapSize,paletteSize,wallSize;
 static EspMapRuntimeView runtime;
 static int openPak = 1;
 static unsigned metadataReads;
@@ -57,31 +58,39 @@ static uint16_t paletteSource(unsigned id,unsigned n) {
 static unsigned texel(unsigned id,unsigned x,unsigned y) {
     return (x+3U*y+5U*id)&15U;
 }
-static void fixture(void) {
-    le32(maps,2); le32(maps+4,1); le32(maps+8,2);
-    le32(maps+24,4096); le32(maps+28,16); le16(maps+42,1);
-    le32(palettes,64); le32(wall,4096);
-    for(unsigned id=0;id<2;id++){
+static void fixture(unsigned count) {
+    assert(count==2||count==9);
+    memset(maps,0,sizeof(maps));memset(palettes,0,sizeof(palettes));
+    memset(wall,0,sizeof(wall));memset(cells,0,sizeof(cells));
+    mapSize=16+count*8+8+count*2;
+    paletteSize=4+count*32;
+    wallSize=4+count*2048;
+    le32(maps,count);le32(maps+4,1);le32(maps+8,count);
+    le32(palettes,count*32);le32(wall,count*2048);
+    for(unsigned id=0;id<count;id++){
+        le32(maps+16+id*8,id*4096);le32(maps+20+id*8,id*16);
+        le16(maps+16+count*8+8+id*2,id);
         for(unsigned p=0;p<16;p++) le16(palettes+4+2*(id*16+p),paletteSource(id,p));
         for(unsigned y=0;y<64;y++) for(unsigned x=0;x<64;x+=2)
             wall[4+id*2048+y*32+x/2]=(uint8_t)(texel(id,x,y)|(texel(id,x+1,y)<<4));
     }
-    memset(cells+1024,1,1024);
-    runtime.planeMap=cells; runtime.planeMapBytes=sizeof(cells);
-    runtime.arenaFNV1a=0x12345678;runtime.sourceCrc32=0x87654321;
+    if(count==2)memset(cells+1024,1,1024);
+    else for(unsigned i=0;i<2048;i++)cells[i]=(uint8_t)(((i&31U)+3U*((i>>5)&31U)+i/1024U)%count);
+    runtime.planeMap=cells;runtime.planeMapBytes=sizeof(cells);
+    runtime.arenaFNV1a=0x12345678+count;runtime.sourceCrc32=0x87654321+count;
 }
 int EspAssetPack_isOpen(void){return openPak;}
 int EspMapRuntime_isLoaded(void){return 1;}
 const EspMapRuntimeView* EspMapRuntime_view(void){return &runtime;}
 int EspAssetPack_findEntry(const char* name,EspAssetPackEntry* e){
     memset(e,0,sizeof(*e));
-    if(!strcmp(name,"mappings.bin")){e->offset=1;e->size=sizeof(maps);}
-    else if(!strcmp(name,"palettes.bin")){e->offset=2;e->size=sizeof(palettes);
+    if(!strcmp(name,"mappings.bin")){e->offset=1;e->size=mapSize;}
+    else if(!strcmp(name,"palettes.bin")){e->offset=2;e->size=paletteSize;
 #if DOOMRPG_RES60_P28_DESCRIPTOR_LEASE
         e->crc32=paletteCRC;
 #endif
     }
-    else if(!strcmp(name,"wtexels.bin")){e->offset=3;e->size=sizeof(wall);}
+    else if(!strcmp(name,"wtexels.bin")){e->offset=3;e->size=wallSize;}
     else return 0;
     return openPak;
 }
@@ -102,7 +111,8 @@ static uint16_t expected(int w,int height,int x,int y,int angle,int col,int row)
     const int64_t lateral=(int64_t)step*128*(2*col+1-w);
     const uint32_t u=(uint32_t)((int64_t)x*65536+c*(int64_t)projected*8192+s*lateral);
     const uint32_t v=(uint32_t)((int64_t)y*65536-s*(int64_t)projected*8192+c*lateral);
-    const uint16_t p=paletteSource((unsigned)ceiling,texel((unsigned)ceiling,(u>>16)&63U,(v>>16)&63U));
+    const unsigned id=cells[(unsigned)ceiling*1024U+((v>>22)&31U)*32U+((u>>22)&31U)];
+    const uint16_t p=paletteSource(id,texel(id,(u>>16)&63U,(v>>16)&63U));
     return (uint16_t)(((p&31U)<<11)|(p&0x7e0U)|(p>>11));
 }
 static void fill(void){for(size_t i=0;i<sizeof(fb)/sizeof(fb[0]);i++)fb[i]=0xdead;}
@@ -149,7 +159,7 @@ static void trial(int w,int h,int hud,int angle){
     assert(fb[0]==0xdead&&fb[1+w*h]==0xdead);
 }
 int main(void){
-    fixture();
+    fixture(2);
     for(int angle=0;angle<256;angle+=64){
         trial(160,120,20,angle);
 #if DOOMRPG_RES60_P25_TEXTURED_PLANES
@@ -168,6 +178,30 @@ int main(void){
     EspNativePlaneRenderer_resetRes60Metadata();
     expectWarm=0;trial(192,144,24,192);
     EspNativePlaneRenderer_resetRes60Metadata();
+#endif
+#if DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH
+    /* Nine actual materials exercise all three borrowed slots, not just
+     * their admission. Exact sampler parity and ownership canaries. */
+    fixture(9);
+    for(int angle=0;angle<256;angle+=64){
+        fill();memset(loan,0xa5,sizeof(loan));
+        assert(EspNativePlaneRenderer_renderRes60WithScratch(fb+1,55296,544,1840,angle,36,loan+1,6144));
+        const EspNativePlaneRenderStats* st=EspNativePlaneRenderer_view();
+        assert(st&&st->uniqueLogicalTextures==9&&st->cacheMisses==9&&st->texelReadBytes==18432);
+        assert(st->cacheEvictions==0&&st->cacheHits+st->cacheMisses==18432);
+        for(unsigned slot=0;slot<3;slot++){
+            unsigned changed=0;
+            for(unsigned i=0;i<2048;i++)changed+=(loan[1+slot*2048+i]!=0xa5);
+            assert(changed>0);
+        }
+        assert(loan[0]==0xa5&&loan[6145]==0xa5&&fb[0]==0xdead&&fb[192*144+1]==0xdead);
+        for(int row=0;row<144;row++)for(int col=0;col<192;col++){
+            uint16_t want=row<24||row>=120?0xdead:expected(192,96,544,1840,angle,col,row-24);
+            assert(fb[1+row*192+col]==want);
+        }
+    }
+    EspNativePlaneRenderer_resetRes60Metadata();
+    fixture(2);
 #endif
 #if DOOMRPG_RES60_P25_TEXTURED_PLANES
     fill();
