@@ -41,6 +41,9 @@ static unsigned paletteCRC=1;
 static int expectWarm;
 #endif
 static uint16_t fb[192*144+2];
+#if DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH
+static uint8_t loan[6144+2];
+#endif
 
 static void le32(uint8_t* p, uint32_t v) {
     for (unsigned i=0;i<4;i++) p[i]=(uint8_t)(v>>(i*8));
@@ -117,7 +120,15 @@ static void trial(int w,int h,int hud,int angle){
         assert(EspNativePlaneRenderer_render(&r));
     }
 #if DOOMRPG_RES60_P25_TEXTURED_PLANES
-    else assert(EspNativePlaneRenderer_renderRes60(fb+1,(size_t)w*h*2,x,y,angle,36));
+    else {
+#if DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH
+        memset(loan,0xa5,sizeof(loan));
+        assert(EspNativePlaneRenderer_renderRes60WithScratch(fb+1,(size_t)w*h*2,x,y,angle,36,loan+1,6144));
+        assert(loan[0]==0xa5&&loan[6145]==0xa5);
+#else
+        assert(EspNativePlaneRenderer_renderRes60(fb+1,(size_t)w*h*2,x,y,angle,36));
+#endif
+    }
 #endif
     const EspNativePlaneRenderStats* st=EspNativePlaneRenderer_view();
     assert(st&&st->rowsRendered==(unsigned)(h-2*hud)&&st->pixelsRendered==(unsigned)(w*(h-2*hud)));
@@ -160,6 +171,10 @@ int main(void){
 #endif
 #if DOOMRPG_RES60_P25_TEXTURED_PLANES
     fill();
+#if DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH
+    assert(!EspNativePlaneRenderer_renderRes60WithScratch(fb+1,55296,544,1840,64,36,loan+1,6143));
+    assert(!EspNativePlaneRenderer_renderRes60WithScratch(fb+1,55296,544,1840,64,36,fb+2,6144));
+#endif
     assert(!EspNativePlaneRenderer_renderRes60(fb+1,55294,544,1840,64,36));
     assert(!EspNativePlaneRenderer_renderRes60(fb+1,55296,544,1840,1,36));
     openPak=0;

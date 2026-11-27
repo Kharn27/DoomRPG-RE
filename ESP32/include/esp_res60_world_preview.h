@@ -65,6 +65,11 @@ typedef int (*EspRes60PreviewReadLine)(uint32_t index,
 int EspRes60Preview_snapshotBegin(void);
 void EspRes60Preview_snapshotEnd(void);
 const void* EspRes60Preview_snapshotAddress(void);
+#if DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH
+/* Exclusive synchronous loan; return before raycast or snapshot teardown. */
+void* EspRes60Preview_borrowPlaneScratch(size_t* bytes);
+void EspRes60Preview_returnPlaneScratch(void);
+#endif
 #endif
 
 /* Full-surface fail-closed inputs; two-pass preflight prevents partial writes

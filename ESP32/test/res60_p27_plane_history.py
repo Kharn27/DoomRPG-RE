@@ -1,6 +1,41 @@
 """Strict inverse of P25/P27 native plane additions; frozen Git SHA stays unchanged."""
 
 def restore_pre_res60_planes(source: bytes) -> bytes:
+    p29 = [
+    [
+        "#define PLANE_TEXTURE_BYTES 2048U\n#define PLANE_PALETTE_COLORS 16U\n#define MAX_PLANE_TEXTURES 24U\n#define PLANE_HEAP_CACHE_SLOTS 6U\n#if DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH\n#define PLANE_CACHE_SLOTS 9U\n#else\n#define PLANE_CACHE_SLOTS 6U\n#endif\n#define EXPECTED_PLANE_MAP_BYTES 2048U\n\ntypedef struct PlaneTextureDesc_s {",
+        "#define PLANE_TEXTURE_BYTES 2048U\n#define PLANE_PALETTE_COLORS 16U\n#define MAX_PLANE_TEXTURES 24U\n#define PLANE_CACHE_SLOTS 6U\n#define EXPECTED_PLANE_MAP_BYTES 2048U\n\ntypedef struct PlaneTextureDesc_s {"
+    ],
+    [
+        "    uint32_t i;\n    if (work == NULL) return;\n    for (i = 0U; i < PLANE_CACHE_SLOTS; ++i) {\n#if DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH\n        /* Slots 6..8 are borrowed, never freed by this owner. */\n        if (i < PLANE_HEAP_CACHE_SLOTS)\n#endif\n        free(work->cache[i].texels);\n        work->cache[i].texels = NULL;\n        work->cache[i].source = NULL;",
+        "    uint32_t i;\n    if (work == NULL) return;\n    for (i = 0U; i < PLANE_CACHE_SLOTS; ++i) {\n        free(work->cache[i].texels);\n        work->cache[i].texels = NULL;\n        work->cache[i].source = NULL;"
+    ],
+    [
+        "    uint32_t i;\n    if (work == NULL) return 0;\n    memset(work->cache, 0, sizeof(work->cache));\n    for (i = 0U; i < PLANE_HEAP_CACHE_SLOTS; ++i) {\n        work->cache[i].texels = (uint8_t*)malloc(PLANE_TEXTURE_BYTES);\n        if (work->cache[i].texels == NULL) {\n            if (i == 0U) {",
+        "    uint32_t i;\n    if (work == NULL) return 0;\n    memset(work->cache, 0, sizeof(work->cache));\n    for (i = 0U; i < PLANE_CACHE_SLOTS; ++i) {\n        work->cache[i].texels = (uint8_t*)malloc(PLANE_TEXTURE_BYTES);\n        if (work->cache[i].texels == NULL) {\n            if (i == 0U) {"
+    ],
+    [
+        "    return planeStats.active == 1U ? &planeStats : NULL;\n}\n\nstatic int renderPlanes(struct Render_s* renderBase, int res60, void* scratch, size_t scratchBytes) {\n#if !DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH\n    (void)scratch;\n    (void)scratchBytes;\n#endif\n    Render_t* render = (Render_t*)renderBase;\n    const EspMapRuntimeView* runtime = EspMapRuntime_view();\n    PlaneWork* work;",
+        "    return planeStats.active == 1U ? &planeStats : NULL;\n}\n\nstatic int renderPlanes(struct Render_s* renderBase, int res60) {\n    Render_t* render = (Render_t*)renderBase;\n    const EspMapRuntimeView* runtime = EspMapRuntime_view();\n    PlaneWork* work;"
+    ],
+    [
+        "        const uint32_t metaAt=EspRes60Profile_nowUs();\n#endif\n        if (!resolveTextures(work)) goto done;\n#if DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH\n        /* P27 metadata used slot zero only; the P17 loan is independent.\n         * Append only to a full six-slot heap cache: preserve contiguous\n         * valid slot scan and existing allocation-pressure fallback. */\n        if (scratch != NULL && scratchBytes == 3U*PLANE_TEXTURE_BYTES &&\n            work->cache[PLANE_HEAP_CACHE_SLOTS-1U].texels != NULL) {\n            for (uint32_t i=PLANE_HEAP_CACHE_SLOTS;i<PLANE_CACHE_SLOTS;++i)\n                work->cache[i].texels=(uint8_t*)scratch+(i-PLANE_HEAP_CACHE_SLOTS)*PLANE_TEXTURE_BYTES;\n            DRPG_LOGI(\"[RES60P29] CACHE heapSlots=6 borrowedSlots=3 bytes=6144\\n\");\n        } else {\n            DRPG_LOGI(\"[RES60P29] CACHE borrowedSlots=0 fallback=1\\n\");\n        }\n#endif\n#if defined(ARDUINO)\n        DRPG_LOGI(\"[RES60P27] RESOLVE us=%lu\\n\",\n                  (unsigned long)(EspRes60Profile_nowUs()-metaAt));",
+        "        const uint32_t metaAt=EspRes60Profile_nowUs();\n#endif\n        if (!resolveTextures(work)) goto done;\n#if defined(ARDUINO)\n        DRPG_LOGI(\"[RES60P27] RESOLVE us=%lu\\n\",\n                  (unsigned long)(EspRes60Profile_nowUs()-metaAt));"
+    ],
+    [
+        "}\n \nint EspNativePlaneRenderer_render(struct Render_s* renderBase) {\n    return renderPlanes(renderBase, 0, NULL, 0U);\n}\n\n#if DOOMRPG_RES60_P25_TEXTURED_PLANES\nstatic int renderRes60Core(uint16_t* framebuffer, size_t bytes,\n                                      int x, int y, int angle, int viewZ,\n                                      void* scratch, size_t scratchBytes) {\n    EspNativeRasterWorldViewport viewport;\n    Render_t render;\n    EspNativePlaneRenderer_reset();",
+        "}\n \nint EspNativePlaneRenderer_render(struct Render_s* renderBase) {\n    return renderPlanes(renderBase, 0);\n}\n\n#if DOOMRPG_RES60_P25_TEXTURED_PLANES\nint EspNativePlaneRenderer_renderRes60(uint16_t* framebuffer, size_t bytes,\n                                      int x, int y, int angle, int viewZ) {\n    EspNativeRasterWorldViewport viewport;\n    Render_t render;\n    EspNativePlaneRenderer_reset();"
+    ],
+    [
+        "    render.viewCos = angle == 0 ? 65536 : angle == 128 ? -65536 : 0;\n    render.viewSin = angle == 64 ? 65536 : angle == 192 ? -65536 : 0;\n#if DOOMRPG_RES60_P28_DESCRIPTOR_LEASE\n    const int ok=renderPlanes(&render, 1, scratch, scratchBytes);\n    if (!ok) EspNativePlaneRenderer_resetRes60Metadata();\n    return ok;\n#else\n    return renderPlanes(&render, 1, scratch, scratchBytes);\n#endif\n}\nint EspNativePlaneRenderer_renderRes60(uint16_t* framebuffer, size_t bytes,\n                                      int x, int y, int angle, int viewZ) {\n    return renderRes60Core(framebuffer,bytes,x,y,angle,viewZ,NULL,0U);\n}\n#if DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH\nint EspNativePlaneRenderer_renderRes60WithScratch(uint16_t* framebuffer, size_t bytes,\n                      int x, int y, int angle, int viewZ, void* scratch, size_t scratchBytes) {\n    /* Reject a bad or overlapping loan without touching either buffer. */\n    const uintptr_t f=(uintptr_t)framebuffer, s=(uintptr_t)scratch;\n    if (framebuffer==NULL || scratch==NULL || scratchBytes!=6144U ||\n        bytes!=55296U || f>UINTPTR_MAX-bytes || s>UINTPTR_MAX-scratchBytes ||\n        (f<s+scratchBytes && s<f+bytes)) {\n        EspNativePlaneRenderer_reset();\n        return 0;\n    }\n    return renderRes60Core(framebuffer,bytes,x,y,angle,viewZ,scratch,scratchBytes);\n}\n#endif\n#endif\n",
+        "    render.viewCos = angle == 0 ? 65536 : angle == 128 ? -65536 : 0;\n    render.viewSin = angle == 64 ? 65536 : angle == 192 ? -65536 : 0;\n#if DOOMRPG_RES60_P28_DESCRIPTOR_LEASE\n    const int ok=renderPlanes(&render, 1);\n    if (!ok) EspNativePlaneRenderer_resetRes60Metadata();\n    return ok;\n#else\n    return renderPlanes(&render, 1);\n#endif\n}\n#endif\n"
+    ]
+]
+    for new, original in p29:
+        new = new.encode("utf-8")
+        original = original.encode("utf-8")
+        assert source.count(new) == 1, "P29 historical inverse drift"
+        source = source.replace(new, original, 1)
     # P28 exact inverse first; then the unchanged P25/P27 inverse below.
     p28 = [
     [

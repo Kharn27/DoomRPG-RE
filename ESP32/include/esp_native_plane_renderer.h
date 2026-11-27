@@ -41,6 +41,11 @@ int EspNativePlaneRenderer_renderRes60(uint16_t* framebuffer, size_t bytes,
                                       int x, int y, int angle, int viewZ);
 #endif
 
+#if DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH
+/* Caller loans exactly 6144 non-overlapping bytes until this call returns. */
+int EspNativePlaneRenderer_renderRes60WithScratch(uint16_t* framebuffer, size_t bytes,
+                      int x, int y, int angle, int viewZ, void* scratch, size_t scratchBytes);
+#endif
 #if DOOMRPG_RES60_P28_DESCRIPTOR_LEASE
 /* Release the exact-sized metadata copy at the preview map lease boundary.
  * No texel pixels or renderer pointers survive a frame. */

@@ -26,7 +26,12 @@
 #define PLANE_TEXTURE_BYTES 2048U
 #define PLANE_PALETTE_COLORS 16U
 #define MAX_PLANE_TEXTURES 24U
+#define PLANE_HEAP_CACHE_SLOTS 6U
+#if DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH
+#define PLANE_CACHE_SLOTS 9U
+#else
 #define PLANE_CACHE_SLOTS 6U
+#endif
 #define EXPECTED_PLANE_MAP_BYTES 2048U
 
 typedef struct PlaneTextureDesc_s {
@@ -367,6 +372,10 @@ static void releaseCache(PlaneWork* work) {
     uint32_t i;
     if (work == NULL) return;
     for (i = 0U; i < PLANE_CACHE_SLOTS; ++i) {
+#if DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH
+        /* Slots 6..8 are borrowed, never freed by this owner. */
+        if (i < PLANE_HEAP_CACHE_SLOTS)
+#endif
         free(work->cache[i].texels);
         work->cache[i].texels = NULL;
         work->cache[i].source = NULL;
@@ -379,7 +388,7 @@ static int initCache(PlaneWork* work) {
     uint32_t i;
     if (work == NULL) return 0;
     memset(work->cache, 0, sizeof(work->cache));
-    for (i = 0U; i < PLANE_CACHE_SLOTS; ++i) {
+    for (i = 0U; i < PLANE_HEAP_CACHE_SLOTS; ++i) {
         work->cache[i].texels = (uint8_t*)malloc(PLANE_TEXTURE_BYTES);
         if (work->cache[i].texels == NULL) {
             if (i == 0U) {
@@ -575,7 +584,11 @@ const EspNativePlaneRenderStats* EspNativePlaneRenderer_view(void) {
     return planeStats.active == 1U ? &planeStats : NULL;
 }
 
-static int renderPlanes(struct Render_s* renderBase, int res60) {
+static int renderPlanes(struct Render_s* renderBase, int res60, void* scratch, size_t scratchBytes) {
+#if !DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH
+    (void)scratch;
+    (void)scratchBytes;
+#endif
     Render_t* render = (Render_t*)renderBase;
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
     PlaneWork* work;
@@ -620,6 +633,19 @@ static int renderPlanes(struct Render_s* renderBase, int res60) {
         const uint32_t metaAt=EspRes60Profile_nowUs();
 #endif
         if (!resolveTextures(work)) goto done;
+#if DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH
+        /* P27 metadata used slot zero only; the P17 loan is independent.
+         * Append only to a full six-slot heap cache: preserve contiguous
+         * valid slot scan and existing allocation-pressure fallback. */
+        if (scratch != NULL && scratchBytes == 3U*PLANE_TEXTURE_BYTES &&
+            work->cache[PLANE_HEAP_CACHE_SLOTS-1U].texels != NULL) {
+            for (uint32_t i=PLANE_HEAP_CACHE_SLOTS;i<PLANE_CACHE_SLOTS;++i)
+                work->cache[i].texels=(uint8_t*)scratch+(i-PLANE_HEAP_CACHE_SLOTS)*PLANE_TEXTURE_BYTES;
+            DRPG_LOGI("[RES60P29] CACHE heapSlots=6 borrowedSlots=3 bytes=6144\n");
+        } else {
+            DRPG_LOGI("[RES60P29] CACHE borrowedSlots=0 fallback=1\n");
+        }
+#endif
 #if defined(ARDUINO)
         DRPG_LOGI("[RES60P27] RESOLVE us=%lu\n",
                   (unsigned long)(EspRes60Profile_nowUs()-metaAt));
@@ -676,12 +702,13 @@ done:
 }
  
 int EspNativePlaneRenderer_render(struct Render_s* renderBase) {
-    return renderPlanes(renderBase, 0);
+    return renderPlanes(renderBase, 0, NULL, 0U);
 }
 
 #if DOOMRPG_RES60_P25_TEXTURED_PLANES
-int EspNativePlaneRenderer_renderRes60(uint16_t* framebuffer, size_t bytes,
-                                      int x, int y, int angle, int viewZ) {
+static int renderRes60Core(uint16_t* framebuffer, size_t bytes,
+                                      int x, int y, int angle, int viewZ,
+                                      void* scratch, size_t scratchBytes) {
     EspNativeRasterWorldViewport viewport;
     Render_t render;
     EspNativePlaneRenderer_reset();
@@ -703,11 +730,29 @@ int EspNativePlaneRenderer_renderRes60(uint16_t* framebuffer, size_t bytes,
     render.viewCos = angle == 0 ? 65536 : angle == 128 ? -65536 : 0;
     render.viewSin = angle == 64 ? 65536 : angle == 192 ? -65536 : 0;
 #if DOOMRPG_RES60_P28_DESCRIPTOR_LEASE
-    const int ok=renderPlanes(&render, 1);
+    const int ok=renderPlanes(&render, 1, scratch, scratchBytes);
     if (!ok) EspNativePlaneRenderer_resetRes60Metadata();
     return ok;
 #else
-    return renderPlanes(&render, 1);
+    return renderPlanes(&render, 1, scratch, scratchBytes);
 #endif
 }
+int EspNativePlaneRenderer_renderRes60(uint16_t* framebuffer, size_t bytes,
+                                      int x, int y, int angle, int viewZ) {
+    return renderRes60Core(framebuffer,bytes,x,y,angle,viewZ,NULL,0U);
+}
+#if DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH
+int EspNativePlaneRenderer_renderRes60WithScratch(uint16_t* framebuffer, size_t bytes,
+                      int x, int y, int angle, int viewZ, void* scratch, size_t scratchBytes) {
+    /* Reject a bad or overlapping loan without touching either buffer. */
+    const uintptr_t f=(uintptr_t)framebuffer, s=(uintptr_t)scratch;
+    if (framebuffer==NULL || scratch==NULL || scratchBytes!=6144U ||
+        bytes!=55296U || f>UINTPTR_MAX-bytes || s>UINTPTR_MAX-scratchBytes ||
+        (f<s+scratchBytes && s<f+bytes)) {
+        EspNativePlaneRenderer_reset();
+        return 0;
+    }
+    return renderRes60Core(framebuffer,bytes,x,y,angle,viewZ,scratch,scratchBytes);
+}
+#endif
 #endif

@@ -57,7 +57,24 @@ int EspRes60Preview_snapshotBegin(void) {
         sizeof(EspRes60P15SnapshotLine)*RES60_P9_MAX_LINES);
     return candidateLines != NULL;
 }
+#if DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH
+static uint8_t planeScratchBorrowed;
+void* EspRes60Preview_borrowPlaneScratch(size_t* bytes) {
+    if (bytes == NULL) return NULL;
+    *bytes=0;
+    if (candidateLines==NULL || planeScratchBorrowed) return NULL;
+    planeScratchBorrowed=1U;
+    *bytes=sizeof(EspRes60P15SnapshotLine)*RES60_P9_MAX_LINES;
+    return candidateLines;
+}
+void EspRes60Preview_returnPlaneScratch(void) {
+    planeScratchBorrowed=0U;
+}
+#endif
 void EspRes60Preview_snapshotEnd(void) {
+#if DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH
+    if (planeScratchBorrowed) return;
+#endif
     if (candidateLines != NULL) {
         free(candidateLines);
         candidateLines=NULL;
@@ -236,6 +253,9 @@ static int renderPreview(uint16_t* framebuffer, size_t framebufferBytes,
     memset(&stats, 0, sizeof(stats));
     stats.centerLineIndex = UINT32_MAX;
     if (outStats != NULL) *outStats = stats;
+#if DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH
+    if (planeScratchBorrowed) return 0;
+#endif
 #if DOOMRPG_RES60_P17_HEAP_SNAPSHOT
     /* P18 pins P17's sole owner pointer for the duration of the synchronous
      * frame. The optional read callback cannot change ownership mid-frame;

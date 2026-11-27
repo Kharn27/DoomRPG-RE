@@ -263,8 +263,20 @@ static int renderIntroCore(uint16_t* framebuffer,
 #if DOOMRPG_RES60_P26_BATCH_INDEX
     const uint32_t planeRasterAt = EspRes60Profile_nowUs();
 #endif
+#if DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH
+    size_t loanBytes=0U;
+    void* loan=EspRes60Preview_borrowPlaneScratch(&loanBytes);
+    if (loan!=NULL) {
+        success=EspNativePlaneRenderer_renderRes60WithScratch(
+            framebuffer,framebufferBytes,viewX,viewY,cameraAngle,camera.viewZ,loan,loanBytes);
+        EspRes60Preview_returnPlaneScratch();
+    } else {
+        success=0;
+    }
+#else
     success = EspNativePlaneRenderer_renderRes60(
         framebuffer, framebufferBytes, viewX, viewY, cameraAngle, camera.viewZ);
+#endif
 #if DOOMRPG_RES60_P26_BATCH_INDEX
     const uint32_t planeCloseAt = EspRes60Profile_nowUs();
 #endif
