@@ -905,6 +905,8 @@ jobs:
         run: python ESP32/test/perf_game_frame_fnv_host.py
       - name: PERF-GAME-P2Z compact resident PAK range metadata parity (host C++)
         run: python ESP32/test/perf_game_pack_range_host.py
+      - name: PERF-GAME-P3g plane row slot reuse and exact LRU parity (host C)
+        run: python ESP32/test/perf_game_plane_row_host.py
 
       - name: Test pack-v2 map-selected compact legacy wall atlas parity (host C)
         run: python ESP32/test/native_wall_pak_provenance_host.py

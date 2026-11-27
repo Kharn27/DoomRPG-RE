@@ -257,14 +257,14 @@ static int initCache(PlaneWork* work) {
 
 static int acquireTexture(PlaneWork* work,
                           const PlaneTextureDesc* source,
-                          const uint8_t** outTexels) {
+                          PlaneCacheSlot** outSlot) {
     PlaneCacheSlot* target = NULL;
     uint32_t oldest = UINT32_MAX;
     uint32_t i;
     uint32_t readOffset;
 
-    if (outTexels != NULL) *outTexels = NULL;
-    if (work == NULL || source == NULL || outTexels == NULL) return 0;
+    if (outSlot != NULL) *outSlot = NULL;
+    if (work == NULL || source == NULL || outSlot == NULL) return 0;
 
     ++work->cacheClock;
     if (work->cacheClock == 0U) work->cacheClock = 1U;
@@ -277,7 +277,7 @@ static int acquireTexture(PlaneWork* work,
             slot->source->sourceTexelOffset == source->sourceTexelOffset) {
             slot->lastUse = work->cacheClock;
             ++work->stats.cacheHits;
-            *outTexels = slot->texels;
+            *outSlot = slot;
             return 1;
         }
     }
@@ -308,7 +308,7 @@ static int acquireTexture(PlaneWork* work,
     target->lastUse = work->cacheClock;
     target->valid = 1U;
     work->stats.texelReadBytes += PLANE_TEXTURE_BYTES;
-    *outTexels = target->texels;
+    *outSlot = target;
     return 1;
 }
 
@@ -320,6 +320,9 @@ static int spanPlane(PlaneWork* work,
                      int count) {
     uint16_t* pixels;
     int pitch;
+    const PlaneTextureDesc* previousDesc = NULL;
+    PlaneCacheSlot* previousSlot = NULL;
+    uint8_t previousLogical = 0U;
 
     if (work == NULL || work->render == NULL || planeCells == NULL ||
         count <= 0) return 0;
@@ -335,18 +338,34 @@ static int spanPlane(PlaneWork* work,
         const uint32_t texelIndex =
             ((u6 >> 10) & 0x0fc0U) + ((u5 << 10) >> 26);
         const uint8_t logicalId = planeCells[cellIndex];
-        const int descIndex = findTextureIndex(work, logicalId);
         const PlaneTextureDesc* desc;
-        const uint8_t* texels;
+        PlaneCacheSlot* slot;
         uint8_t packed;
         uint8_t paletteIndex;
 
-        if (cellIndex >= ESP_MAP_PLANE_CELL_COUNT || texelIndex >= 4096U ||
-            descIndex < 0) return 0;
-        desc = &work->textures[descIndex];
-        if (!acquireTexture(work, desc, &texels)) return 0;
+        if (cellIndex >= ESP_MAP_PLANE_CELL_COUNT || texelIndex >= 4096U)
+            return 0;
+        /* P3g: consecutive pixels with the same logical texture cannot
+         * evict their own slot. Retain the exact per-pixel LRU clock (even
+         * wrap), hit count, and palette; no pointer survives this row. */
+        if (previousSlot != NULL && logicalId == previousLogical) {
+            desc = previousDesc;
+            slot = previousSlot;
+            ++work->cacheClock;
+            if (work->cacheClock == 0U) work->cacheClock = 1U;
+            slot->lastUse = work->cacheClock;
+            ++work->stats.cacheHits;
+        } else {
+            const int descIndex = findTextureIndex(work, logicalId);
+            if (descIndex < 0) return 0;
+            desc = &work->textures[descIndex];
+            if (!acquireTexture(work, desc, &slot)) return 0;
+            previousDesc = desc;
+            previousSlot = slot;
+            previousLogical = logicalId;
+        }
 
-        packed = texels[texelIndex >> 1];
+        packed = slot->texels[texelIndex >> 1];
         paletteIndex = (uint8_t)((texelIndex & 1U)
                                      ? ((packed >> 4) & 0x0fU)
                                      : (packed & 0x0fU));
