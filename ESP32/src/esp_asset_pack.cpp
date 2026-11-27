@@ -31,6 +31,43 @@ constexpr uint8_t kMagic[8] = {'D', 'R', 'P', 'G', 'E', 'S', 'P', '2'};
 constexpr uint32_t kVersion = ESP_ASSET_PACK_FORMAT_VERSION;
 constexpr size_t kHeaderBytes = 24;
 constexpr size_t kEntryBytes = 20;
+#if DOOMRPG_RES60_P32_VALIDATED_INDEX
+/* P32: retain only four records already validated during THIS physical
+ * SD open. Nothing is reused across physical close/reopen. No full index,
+ * heap allocation, or bypass of the sorted-index validation. */
+static EspAssetPackEntry res60IndexEntries[4];
+static uint8_t res60IndexHitMask;
+static constexpr uint32_t res60IndexHash(const char* s,
+                                         uint32_t h=2166136261U) {
+    return *s ? res60IndexHash(s+1,(h ^ static_cast<uint8_t>(*s))*16777619U) : h;
+}
+static void clearRes60Index() {
+    memset(res60IndexEntries,0,sizeof(res60IndexEntries));
+    res60IndexHitMask=0U;
+}
+static void captureRes60Index(const EspAssetPackEntry& e) {
+    switch(e.nameHash) {
+        case res60IndexHash("intro.bsp"):    res60IndexEntries[0]=e; break;
+        case res60IndexHash("mappings.bin"): res60IndexEntries[1]=e; break;
+        case res60IndexHash("palettes.bin"): res60IndexEntries[2]=e; break;
+        case res60IndexHash("wtexels.bin"):  res60IndexEntries[3]=e; break;
+        default: break;
+    }
+}
+static bool findRes60Index(uint32_t hash,EspAssetPackEntry* out) {
+    if (hash==0U || out==nullptr) return false;
+    for (unsigned i=0;i<4U;++i) {
+        if (res60IndexEntries[i].nameHash!=hash) continue;
+        *out=res60IndexEntries[i];
+        const uint8_t old=res60IndexHitMask;
+        res60IndexHitMask|=static_cast<uint8_t>(1U<<i);
+        if (old!=15U && res60IndexHitMask==15U)
+            printf("[RES60P32] INDEX validatedHits=4 bytes=80 scope=physical-open\n");
+        return true;
+    }
+    return false;
+}
+#endif /* P32 validated index */
 /* WALL-SD recovery: keep the 46 KiB post-ring audio reserve on the
  * no-PSRAM CYD. Slightly smaller L1 cache; flash-backed misses stay safe. */
 constexpr uint32_t kResidentRangeCapacityBytes = 15U * 1024U;
@@ -267,6 +304,9 @@ void clearMapFlashRuntime(bool clearStats)
 
 void resetPhysicalState()
 {
+#if DOOMRPG_RES60_P32_VALIDATED_INDEX
+    clearRes60Index();
+#endif
     if (packFile) {
         packFile.close();
     }
@@ -1109,6 +1149,9 @@ int EspAssetPack_open(const char* path)
                 }
                 previousHash = entry.nameHash;
                 havePreviousHash = true;
+#if DOOMRPG_RES60_P32_VALIDATED_INDEX
+                captureRes60Index(entry);
+#endif
             }
             i += count;
         }
@@ -1999,6 +2042,11 @@ int EspAssetPack_findEntry(const char* name, EspAssetPackEntry* outEntry)
     if (!openReady || outEntry == nullptr || wantedHash == 0U) {
         return 0;
     }
+
+#if DOOMRPG_RES60_P32_VALIDATED_INDEX
+    if (!residentEnabled && physicalIsDefault && !physicalUsesMapFlash &&
+        findRes60Index(wantedHash,outEntry)) return 1;
+#endif
 
     if (residentEnabled && residentCache != nullptr) {
         ResidentEntryRecord* slot =
