@@ -1,0 +1,7 @@
+# PERF-GAME-P3e — exact-tile spatial sprite index (pending CYD)
+
+Same branch agent/esp32-perf-game-p3, draft #472. Base P3d 91a8c8909ead74095fdcc3be5def42f31233645b CYD PASS, documentation-only d4c84e102457927622a2a97b527a810929ad5b88. Main 3e5164f9128633d71bd5072e5561ae7943996754.
+
+Apply the P3d packed-link idea to sprite candidates: encode 4-bit local tile and 10-bit next (1023 end, max valid511) into existing uint16_t. Same 4x4 buckets, ascending sprite order, per-goal synchronous projected getter build and invalidation; no changes to owner size, allocation, topology publication, special trace planes, type/mask/order or RNG. Exact tile candidate filtering avoids repeated public projection reads on neighboring sprites; matching sprites still use the original public getter and all original checks. Full scalar reference and fail-closed fallback unchanged. No change to renderer activation/door visibility (separate #473). No gain claimed before hardware.
+
+Host oracle checks all 1024 exact tiles at capacity, dense duplicates/all 16 local tiles, moved/unlinked/new sprites, index511, sentinel, scope expiry and getter failure. Historical P1 inverse removes complete indexed wrapper, no new historical changes needed. CI pending; local firmware not built. Test normal esp32-cyd slot05 and optionally slot04 Entrance around doors and crowded monster turns; compare exact world hashes where matched, order, continuation commits and audio/RAM. Fresh Entrance start still worth checking separately. No merge.

@@ -6,17 +6,24 @@
 /* P1h: short-lived 4x4-tile buckets. A single shared BSS owner serves both
  * plan stages; the index is rebuilt before EVERY synchronous aiGoalPlan and
  * invalidated immediately afterwards. No heap, no persistent topology copy.
- * Bucket membership merely narrows the scan: callers recheck exact tile,
+ * P3e: encode the exact local tile in the existing next word. Skip
+ * off-tile sprites before projected reads; callers still recheck exact tile,
  * type, mask, attacker, link order and special-plane semantics. */
 #define ESP_PERF_SPATIAL_SPRITE_CAPACITY 512U
 #define ESP_PERF_SPATIAL_SPRITE_BUCKETS 64U
 #define ESP_PERF_SPATIAL_SPRITE_NONE UINT16_MAX
+#define ESP_PERF_SPATIAL_SPRITE_LINK_MASK 0x03ffU
+#define ESP_PERF_SPATIAL_SPRITE_LINK_END 0x03ffU
+#define ESP_PERF_SPATIAL_SPRITE_LOCAL_SHIFT 10U
+#if ESP_PERF_SPATIAL_SPRITE_CAPACITY > ESP_PERF_SPATIAL_SPRITE_LINK_END
+#error Spatial sprite links cannot encode this capacity
+#endif
 #ifndef DOOMRPG_PERF_SPATIAL_FAST
 #define DOOMRPG_PERF_SPATIAL_FAST 1
 #endif
 typedef struct EspPerfSpatialSpriteIndex_s {
     uint16_t first[ESP_PERF_SPATIAL_SPRITE_BUCKETS];
-    uint16_t next[ESP_PERF_SPATIAL_SPRITE_CAPACITY];
+    uint16_t next[ESP_PERF_SPATIAL_SPRITE_CAPACITY]; /* packed next + local tile */
     uint16_t spriteCount;
     uint8_t active;
 } EspPerfSpatialSpriteIndex;
@@ -24,6 +31,9 @@ extern EspPerfSpatialSpriteIndex EspPerfGameP1_spatialSpriteIndex;
 static inline uint8_t EspPerfSpatialSprite_bucket(uint16_t tile) {
     return (uint8_t)((((tile >> 5U) >> 2U) * 8U) +
                      ((tile & 31U) >> 2U));
+}
+static inline uint16_t EspPerfSpatialSprite_localTile(uint16_t tile) {
+    return (uint16_t)(((tile >> 5U) & 3U) * 4U + (tile & 3U));
 }
 static inline void EspPerfSpatialSprite_end(EspPerfSpatialSpriteIndex* idx) {
     if(idx != NULL) { idx->active = 0U; idx->spriteCount = 0U; }
@@ -50,9 +60,12 @@ static inline int EspPerfSpatialSprite_begin(EspPerfSpatialSpriteIndex* idx) {
         }
         (void)type; (void)subtype; (void)order;
         if((state & ESP_MAP_SPRITE_TOPOLOGY_LINKED)!=0U) {
-            const uint8_t bucket=EspPerfSpatialSprite_bucket(
-                state & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK);
-            idx->next[spriteIndex]=idx->first[bucket];
+            const uint16_t tile=state & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK;
+            const uint8_t bucket=EspPerfSpatialSprite_bucket(tile);
+            const uint16_t link=idx->first[bucket]==ESP_PERF_SPATIAL_SPRITE_NONE
+                ? ESP_PERF_SPATIAL_SPRITE_LINK_END : idx->first[bucket];
+            idx->next[spriteIndex]=(uint16_t)(link |
+                (EspPerfSpatialSprite_localTile(tile)<<ESP_PERF_SPATIAL_SPRITE_LOCAL_SHIFT));
             idx->first[bucket]=spriteIndex;
         }
     }
@@ -60,10 +73,29 @@ static inline int EspPerfSpatialSprite_begin(EspPerfSpatialSpriteIndex* idx) {
     idx->active=1U;
     return 1;
 }
+/* Valid only inside the existing synchronous, immutable one-plan scope.
+ * Preserve ascending sprite-index order; the packed end is never an index. */
+static inline uint16_t EspPerfSpatialSprite_match(
+    const EspPerfSpatialSpriteIndex* idx,uint16_t i,uint16_t tile) {
+    const uint16_t local=EspPerfSpatialSprite_localTile(tile);
+    while(i<idx->spriteCount) {
+        const uint16_t packed=idx->next[i];
+        if((packed>>ESP_PERF_SPATIAL_SPRITE_LOCAL_SHIFT)==local) return i;
+        i=(uint16_t)(packed & ESP_PERF_SPATIAL_SPRITE_LINK_MASK);
+    }
+    return ESP_PERF_SPATIAL_SPRITE_NONE;
+}
 static inline uint16_t EspPerfSpatialSprite_first(
     const EspPerfSpatialSpriteIndex* idx,uint16_t tile) {
     if(idx==NULL || idx->active==0U || tile>=1024U)
         return ESP_PERF_SPATIAL_SPRITE_NONE;
-    return idx->first[EspPerfSpatialSprite_bucket(tile)];
+    return EspPerfSpatialSprite_match(idx,idx->first[EspPerfSpatialSprite_bucket(tile)],tile);
+}
+static inline uint16_t EspPerfSpatialSprite_next(
+    const EspPerfSpatialSpriteIndex* idx,uint16_t i,uint16_t tile) {
+    if(idx==NULL || idx->active==0U || i>=idx->spriteCount || tile>=1024U)
+        return ESP_PERF_SPATIAL_SPRITE_NONE;
+    return EspPerfSpatialSprite_match(idx,
+        (uint16_t)(idx->next[i] & ESP_PERF_SPATIAL_SPRITE_LINK_MASK),tile);
 }
 #endif

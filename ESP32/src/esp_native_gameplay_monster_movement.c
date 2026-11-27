@@ -555,7 +555,7 @@ static int blockingSpriteOnTileIndexed(uint16_t tile,
     if (topology == NULL) return -1;
     for (i = EspPerfSpatialSprite_first(&EspPerfGameP1_spatialSpriteIndex, tile);
          i != ESP_PERF_SPATIAL_SPRITE_NONE;
-         i = EspPerfGameP1_spatialSpriteIndex.next[i]) {
+         i = EspPerfSpatialSprite_next(&EspPerfGameP1_spatialSpriteIndex, (uint16_t)i, tile)) {
         uint8_t type;
         uint8_t subtype;
         uint16_t linkState;
