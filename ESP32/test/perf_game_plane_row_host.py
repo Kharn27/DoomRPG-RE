@@ -23,8 +23,30 @@ def body(signature):
     raise AssertionError(signature)
 
 layout = src[src.index("typedef struct PlaneTextureDesc_s"):src.index("static EspNativePlaneRenderStats planeStats;")]
-real = "\n".join(body(sig) for sig in ("static int findTextureIndex(", "static int acquireTexture(", "static int spanPlane("))
+real = "\n".join(body(sig) for sig in ("static int findTextureIndex(", "static int acquireTexture(", "static int spanPlane(", "static int collectTextures(", "static int32_t planeRowStep("))
 reference = r"""
+static int refCollectTextures(PlaneWork* work) {
+    uint32_t i;
+    if (work == NULL || work->runtime == NULL ||
+        work->runtime->planeMap == NULL ||
+        work->runtime->planeMapBytes != EXPECTED_PLANE_MAP_BYTES) return 0;
+
+    work->textureCount = 0U;
+    for (i = 0U; i < EXPECTED_PLANE_MAP_BYTES; ++i) {
+        const uint8_t id = work->runtime->planeMap[i];
+        if (findTextureIndex(work, id) >= 0) continue;
+        if (work->textureCount >= MAX_PLANE_TEXTURES) return 0;
+        memset(&work->textures[work->textureCount], 0,
+               sizeof(work->textures[work->textureCount]));
+        work->textures[work->textureCount].logicalId = id;
+        ++work->textureCount;
+    }
+    return work->textureCount > 0U;
+}
+static int32_t refPlaneRowStep(int32_t projected, int width) {
+    return (int32_t)((((int64_t)projected << 19) /
+                      (32 * width)) >> 8);
+}
 static int refAcquireTexture(PlaneWork* work,
                           const PlaneTextureDesc* source,
                           const uint8_t** outTexels) {
@@ -141,7 +163,11 @@ harness = r"""
 #define WALL_TEXEL_HEADER_BYTES 4U
 #define ESP_MAP_PLANE_CELL_COUNT 1024U
 typedef struct Render_s { int pitch; void* pixels; } Render_t;
-typedef struct EspMapRuntimeView_s EspMapRuntimeView;
+#define EXPECTED_PLANE_MAP_BYTES 2048U
+typedef struct EspMapRuntimeView_s {
+    const uint8_t* planeMap;
+    uint32_t planeMapBytes;
+} EspMapRuntimeView;
 typedef struct EspAssetPackEntry_s { uint32_t size; } EspAssetPackEntry;
 static uint32_t reads, failRead;
 static uint32_t offsets[1024];
@@ -188,7 +214,33 @@ static void compare(void) {
         assert(!memcmp(storage[0][i],storage[1][i],2048));
     }
 }
+static void checkCollectionAndStep(void) {
+    uint8_t map[2048];
+    EspMapRuntimeView runtime = {map, sizeof(map)};
+    for (unsigned trial=0; trial<512; ++trial) {
+        memset(&fast, 0xa5, sizeof(fast));
+        memset(&scalar, 0xa5, sizeof(scalar));
+        fast.runtime=scalar.runtime=&runtime;
+        unsigned unique=1U+trial%32U;
+        for (unsigned i=0;i<2048;++i)
+            map[i]=(uint8_t)((next()%unique)*7U + trial);
+        runtime.planeMapBytes=trial%29U==0U?2047U:2048U;
+        assert(collectTextures(&fast)==refCollectTextures(&scalar));
+        assert(fast.textureCount==scalar.textureCount);
+        assert(!memcmp(fast.textures,scalar.textures,sizeof(fast.textures)));
+    }
+    for(int32_t p=0;p<=131072;++p)
+        assert(planeRowStep(p,160)==refPlaneRowStep(p,160));
+    const int32_t edge[]={INT32_MAX/2-1,INT32_MAX/2,INT32_MAX/2+1,INT32_MAX};
+    for(unsigned i=0;i<sizeof(edge)/sizeof(edge[0]);++i)
+        assert(planeRowStep(edge[i],160)==refPlaneRowStep(edge[i],160));
+    for(int width=1;width<=320;++width)
+        for(int32_t p=0;p<3000;p+=17)
+            assert(planeRowStep(p,width)==refPlaneRowStep(p,width));
+    puts("PASS P3h collection order/capacity/failure and exact row step");
+}
 int main(void) {
+    checkCollectionAndStep();
     unsigned cases=0;
     for(unsigned width=1;width<=6;++width) {
         for(unsigned trial=0;trial<240;++trial) {

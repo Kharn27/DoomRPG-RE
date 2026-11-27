@@ -83,6 +83,7 @@ static int findTextureIndex(const PlaneWork* work, uint8_t logicalId) {
 
 static int collectTextures(PlaneWork* work) {
     uint32_t i;
+    uint8_t seen[32] = {0};
     if (work == NULL || work->runtime == NULL ||
         work->runtime->planeMap == NULL ||
         work->runtime->planeMapBytes != EXPECTED_PLANE_MAP_BYTES) return 0;
@@ -90,8 +91,12 @@ static int collectTextures(PlaneWork* work) {
     work->textureCount = 0U;
     for (i = 0U; i < EXPECTED_PLANE_MAP_BYTES; ++i) {
         const uint8_t id = work->runtime->planeMap[i];
-        if (findTextureIndex(work, id) >= 0) continue;
+        const uint8_t bit = (uint8_t)(1U << (id & 7U));
+        /* P3h: one membership bit per possible logical ID. First encounter
+         * order and exact 24-descriptor failure boundary remain unchanged. */
+        if ((seen[id >> 3] & bit) != 0U) continue;
         if (work->textureCount >= MAX_PLANE_TEXTURES) return 0;
+        seen[id >> 3] |= bit;
         memset(&work->textures[work->textureCount], 0,
                sizeof(work->textures[work->textureCount]));
         work->textures[work->textureCount].logicalId = id;
@@ -378,6 +383,17 @@ static int spanPlane(PlaneWork* work,
     return 1;
 }
 
+static int32_t planeRowStep(int32_t projected, int width) {
+    /* P3h: for the native width and nonnegative projected values,
+     * floor(floor(projected * 2^19 / (32 * 160)) / 256)
+     * == floor(projected * 2 / 5). Bound multiplication explicitly.
+     * Preserve the historical expression for other inputs. */
+    if (width == 160 && projected >= 0 && projected <= INT32_MAX / 2)
+        return (projected * 2) / 5;
+    return (int32_t)((((int64_t)projected << 19) /
+                      (32 * width)) >> 8);
+}
+
 static int drawPlaneRow(PlaneWork* work,
                         int y,
                         const uint8_t* planeCells) {
@@ -420,8 +436,7 @@ static int drawPlaneRow(PlaneWork* work,
     distance = height > doubledY ? height - doubledY : doubledY - height;
     projected = (width * zScale) / (distance + 1);
     projectedUnsigned = (uint32_t)projected;
-    step = (int32_t)((((int64_t)projected << 19) /
-                      (32 * width)) >> 8);
+    step = planeRowStep(projected, width);
 
     startX = (int32_t)(
         (int64_t)viewX + (((int64_t)viewCos * projectedUnsigned) >> 3) +
