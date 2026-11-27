@@ -43,24 +43,26 @@ static inline void EspPerfSpatialLine_end(EspPerfSpatialLineIndex* idx) {
 static inline int EspPerfSpatialLine_begin(EspPerfSpatialLineIndex* idx,
                                             EspPerfSpatialLineTileFn tileFn) {
     const EspMapRuntimeView* runtime;
+    uint8_t open;
     uint32_t i;
     if(idx==NULL || tileFn==NULL) return 0;
     EspPerfSpatialLine_end(idx);
     runtime=EspMapRuntime_view();
     if(runtime==NULL || runtime->lineCount==0U ||
        runtime->lineCount>ESP_PERF_SPATIAL_LINE_CAPACITY) return 0;
+    /* P3j: getOpen is a pure canonical owner-readiness + index bound
+     * check followed by a bit read. Validate the greatest index once;
+     * all preceding indices have the same ready owner and smaller index.
+     * The bit value is not used by this geometry index. Queries still
+     * read each candidate's actual openness through the public getter.
+     * No owner mutation is possible in the synchronous build/plan scope. */
+    if(!EspMapLineState_getOpen(runtime->lineCount - 1U,&open)) return 0;
     for(i=0U;i<ESP_PERF_SPATIAL_LINE_BUCKETS;++i)
         idx->first[i]=ESP_PERF_SPATIAL_LINE_NONE;
     for(i=0U;i<runtime->lineCount;++i) {
         EspMapLine line;
         uint16_t tile;
-        uint8_t bucket, open;
-        /* Validate even off-bucket open-state reads before publishing fast scope.
-         * The synchronous planner cannot mutate door owners or render scope. */
-        if(!EspMapLineState_getOpen(i,&open)) {
-            EspPerfSpatialLine_end(idx);
-            return 0;
-        }
+        uint8_t bucket;
         /* Public getter: never circumvent projected native ownership. */
         if(!EspMapRuntime_getLine(i,&line) || !tileFn(&line,&tile) ||
            tile>=1024U) {
