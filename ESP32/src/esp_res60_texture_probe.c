@@ -165,8 +165,16 @@ int EspRes60TextureProbe_render(uint16_t* fb, size_t fbBytes,
 #if DOOMRPG_RES60_P11_PROFILE
     p11At=EspRes60Profile_nowUs();
 #endif
+#if DOOMRPG_RES60_P34_CATALOG_WINDOWS
+    /* Cold miss only: swatch storage is not yet populated. The loan ends
+     * before the real tile read; no cached texel can be overwritten. */
+    if(EspNativeGraphicsCatalog_buildFromRuntimeWithScratch(
+           texelScratch,sizeof(texelScratch))!=
+          ESP_NATIVE_GRAPHICS_CATALOG_OK) goto done;
+#else
     if(EspNativeGraphicsCatalog_buildFromRuntime()!=
           ESP_NATIVE_GRAPHICS_CATALOG_OK) goto done;
+#endif
     catalog=EspNativeGraphicsCatalog_view();
     if(!catalog || catalog->textureCount==0U ||
        catalog->textureCount>256U) goto done;

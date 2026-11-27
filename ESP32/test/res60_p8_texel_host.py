@@ -220,3 +220,97 @@ with tempfile.TemporaryDirectory(prefix="res60-p8-") as d:
        capture_output=True,text=True)
     assert forbid.returncode!=0 and "requires P7 and original P3 world owner" in forbid.stderr
 print("RES60-P8 HOST PASS native wall swatch, PAK provenance and production isolation")
+
+# P34 real catalog oracle: compare the original direct-read path against
+# the scratch-window path, including nonaligned palette boundary and EOF.
+import re
+catalog_harness=r"""
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include "esp_asset_pack.h"
+#include "esp_map_runtime.h"
+#include "esp_native_graphics_catalog.h"
+enum { PAIRS=256, MAPSIZE=16+2*PAIRS*8, PALSIZE=4+4096 };
+static uint8_t mappings[MAPSIZE], palettes[PALSIZE], loan[2050], arena[1];
+static EspMapRuntimeView runtime;
+static unsigned reads, failAt, opened;
+static void le32(uint8_t* p,uint32_t v){
+ for(unsigned i=0;i<4;i++)p[i]=(uint8_t)(v>>(8*i));
+}
+int EspMapRuntime_isLoaded(void){return 1;}
+const EspMapRuntimeView* EspMapRuntime_view(void){return &runtime;}
+int EspMapRuntime_textureRequired(uint32_t id){return id%7==0;}
+int EspMapRuntime_planeTextureUsed(uint32_t id){return id==127;}
+int EspMapRuntime_spriteRequired(uint32_t id){return id%11==0;}
+int EspAssetPack_isOpen(void){return opened;}
+int EspAssetPack_open(const char* p){
+ assert(!opened && !strcmp(p,ESP_ASSET_PACK_DEFAULT_PATH));opened=1;return 1;
+}
+void EspAssetPack_close(void){assert(opened);opened=0;}
+int EspAssetPack_findEntry(const char* name,EspAssetPackEntry* e){
+ assert(opened);memset(e,0,sizeof(*e));
+ if(!strcmp(name,"mappings.bin")){e->offset=1;e->size=MAPSIZE;}
+ else if(!strcmp(name,"palettes.bin")){e->offset=2;e->size=PALSIZE;}
+ else return 0;
+ return 1;
+}
+int EspAssetPack_readRange(const EspAssetPackEntry* e,uint32_t offset,void* dst,size_t n){
+ assert(opened && offset<=e->size && n<=e->size-offset);
+ if(++reads==failAt)return 0;
+ memcpy(dst,(e->offset==1?mappings:palettes)+offset,n);return 1;
+}
+int main(void){
+ runtime.arena=arena;runtime.arenaBytes=sizeof(arena);
+ le32(mappings,PAIRS);le32(mappings+4,PAIRS);
+ le32(palettes,4096);
+ for(unsigned i=0;i<2*PAIRS;i++){
+   le32(mappings+16+i*8,i*4096);
+ }
+ /* Keep all palette offsets valid, and deliberately exercise a crossing. */
+ for(unsigned i=0;i<2*PAIRS;i++){
+   unsigned id=i%PAIRS;
+   le32(mappings+20+i*8,id==255?2032: (id/64)*500+ (id%3==0?5: id%3==1?10:15));
+ }
+ le32(mappings+20+7*8,505);
+ le32(mappings+20+252*8,2032);
+ for(unsigned i=4;i<PALSIZE;i++)palettes[i]=(uint8_t)(i*37U+i/256U);
+ assert(EspNativeGraphicsCatalog_buildFromRuntime()==ESP_NATIVE_GRAPHICS_CATALOG_OK);
+ const EspNativeGraphicsCatalogView* v=EspNativeGraphicsCatalog_view();
+ assert(v && v->storageBytes<=512*40 && !opened);
+ static EspNativeGraphicsCatalogRecord expected[512];
+ const unsigned bytes=v->storageBytes, fnv=v->stateFNV1a, directReads=reads;
+ memcpy(expected,v->textures,bytes);
+ EspNativeGraphicsCatalog_reset();
+ memset(loan,0xa5,sizeof(loan));reads=0;
+ assert(EspNativeGraphicsCatalog_buildFromRuntimeWithScratch(loan+1,2047)==ESP_NATIVE_GRAPHICS_CATALOG_INVALID);
+ assert(!opened && !EspNativeGraphicsCatalog_isReady());
+ assert(EspNativeGraphicsCatalog_buildFromRuntimeWithScratch(loan+1,2048)==ESP_NATIVE_GRAPHICS_CATALOG_OK);
+ v=EspNativeGraphicsCatalog_view();
+ assert(v && v->storageBytes==bytes && v->stateFNV1a==fnv && !memcmp(expected,v->textures,bytes));
+ assert(loan[0]==0xa5 && loan[2049]==0xa5 && !opened && reads<directReads);
+ unsigned windowReads=reads;
+ EspNativeGraphicsCatalog_reset();
+ /* Every failed physical range (including headers and both window types)
+  * must close the pack and publish no partial catalog. */
+ for(unsigned i=1;i<=windowReads;i++){
+   reads=0;failAt=i;
+   assert(EspNativeGraphicsCatalog_buildFromRuntimeWithScratch(loan+1,2048)!=ESP_NATIVE_GRAPHICS_CATALOG_OK);
+   assert(!opened && !EspNativeGraphicsCatalog_isReady());
+ }
+ failAt=0;reads=0;
+ assert(EspNativeGraphicsCatalog_buildFromRuntimeWithScratch(loan+1,2048)==ESP_NATIVE_GRAPHICS_CATALOG_OK);
+ assert(EspNativeGraphicsCatalog_view()->stateFNV1a==fnv);
+ EspNativeGraphicsCatalog_reset();
+ printf("RES60-P34 catalog parity PASS directReads=%u windowReads=%u\n",directReads,windowReads);
+ return 0;
+}
+"""
+with tempfile.TemporaryDirectory(prefix="res60-p34-") as d:
+    tmp=Path(d);src=tmp/"catalog.c";exe=tmp/"catalog";src.write_text(catalog_harness)
+    defs=["-D"+f for f in re.findall(r"-D\s+(DOOMRPG_RES60_[A-Z0-9_]+=1)",flags)]
+    subprocess.run(["cc","-std=c11","-O2","-Wall","-Wextra","-Werror",*defs,
+        "-I",str(ROOT/"ESP32/include"),str(ROOT/"ESP32/src/esp_native_graphics_catalog.c"),
+        str(src),"-o",str(exe)],check=True)
+    subprocess.run([str(exe)],check=True)

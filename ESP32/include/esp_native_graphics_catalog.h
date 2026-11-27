@@ -2,6 +2,7 @@
 #define DOOMRPG_ESP32_NATIVE_GRAPHICS_CATALOG_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -55,6 +56,10 @@ void EspNativeGraphicsCatalog_reset(void);
  * implicit renderer dependencies are expanded explicitly by the API below.
  */
 EspNativeGraphicsCatalogStatus EspNativeGraphicsCatalog_buildFromRuntime(void);
+/* RES60-P34 diagnostic profile only: caller loans exactly 2048 writable
+ * bytes, disjoint from the immutable runtime and catalog, until return. */
+EspNativeGraphicsCatalogStatus EspNativeGraphicsCatalog_buildFromRuntimeWithScratch(
+    void* scratch, size_t scratchBytes);
 
 /*
  * Atomically close renderer-owned sprite dependencies over the already-built
