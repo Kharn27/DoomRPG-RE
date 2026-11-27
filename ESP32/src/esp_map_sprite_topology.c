@@ -38,10 +38,23 @@ static uint32_t hashByte(uint32_t hash, uint8_t value) {
 
 static uint32_t stateHash(void) {
     uint32_t hash = 2166136261U;
-    uint32_t i;
+    uint32_t i = 0U;
+    const uint32_t bytes = topologyView.storageBytes;
 
     if (topologyStorage == NULL) return 0U;
-    for (i = 0U; i < topologyView.storageBytes; ++i) {
+    /* P3l: same byte-serial FNV, eight steps per loop. No alignment
+     * assumptions, padding reads, word-endian dependency or changed seed. */
+    for (; bytes - i >= 8U; i += 8U) {
+        hash = hashByte(hash, topologyStorage[i + 0U]);
+        hash = hashByte(hash, topologyStorage[i + 1U]);
+        hash = hashByte(hash, topologyStorage[i + 2U]);
+        hash = hashByte(hash, topologyStorage[i + 3U]);
+        hash = hashByte(hash, topologyStorage[i + 4U]);
+        hash = hashByte(hash, topologyStorage[i + 5U]);
+        hash = hashByte(hash, topologyStorage[i + 6U]);
+        hash = hashByte(hash, topologyStorage[i + 7U]);
+    }
+    for (; i < bytes; ++i) {
         hash = hashByte(hash, topologyStorage[i]);
     }
     hash = hashByte(hash, (uint8_t)(topologyView.nextLinkOrder & 0xffU));
@@ -69,34 +82,41 @@ static void refreshView(void) {
     uint32_t i;
     uint16_t state;
 
-    topologyView.entityCount = 0U;
-    topologyView.linkedCount = 0U;
-    topologyView.hiddenCount = 0U;
-    topologyView.enemyCount = 0U;
-    topologyView.humanCount = 0U;
-    topologyView.destructibleCount = 0U;
+    uint32_t entityCount = 0U;
+    uint32_t linkedCount = 0U;
+    uint32_t hiddenCount = 0U;
+    uint32_t enemyCount = 0U;
+    uint32_t humanCount = 0U;
+    uint32_t destructibleCount = 0U;
 
     for (i = 0U; i < topologyView.spriteCount; ++i) {
         state = linkStateAt(i);
         if ((state & ESP_MAP_SPRITE_TOPOLOGY_EXISTS) != 0U) {
-            ++topologyView.entityCount;
+            ++entityCount;
             if ((state & ESP_MAP_SPRITE_TOPOLOGY_LINKED) != 0U) {
-                ++topologyView.linkedCount;
+                ++linkedCount;
             }
         }
         if ((visualStates[i] & VISUAL_HIDDEN) != 0U) {
-            ++topologyView.hiddenCount;
+            ++hiddenCount;
         }
         if (entityTypes[i] == ESP_MAP_ENTITY_TYPE_ENEMY) {
-            ++topologyView.enemyCount;
+            ++enemyCount;
         }
         else if (entityTypes[i] == ESP_MAP_ENTITY_TYPE_HUMAN) {
-            ++topologyView.humanCount;
+            ++humanCount;
         }
         else if (entityTypes[i] == ESP_MAP_ENTITY_TYPE_DESTRUCTIBLE) {
-            ++topologyView.destructibleCount;
+            ++destructibleCount;
         }
     }
+    /* P3l: publish counters once after the complete resident scan. */
+    topologyView.entityCount = entityCount;
+    topologyView.linkedCount = linkedCount;
+    topologyView.hiddenCount = hiddenCount;
+    topologyView.enemyCount = enemyCount;
+    topologyView.humanCount = humanCount;
+    topologyView.destructibleCount = destructibleCount;
     topologyView.stateFNV1a = stateHash();
 }
 
