@@ -39,6 +39,9 @@ def source_gate() -> None:
     guard = HOST_GUARD.encode("ascii")
     for name, sha in BEFORE.items():
         current = (SRC / name).read_bytes()
+        if name == "esp_native_gameplay_monster_three_goal_turn.c":
+            from perf_game_p3i_history import restore_pre_p3i
+            current = restore_pre_p3i(current)
         from perf_game_p2a_history import restore_pre_perf_game_p2a
         current = restore_pre_perf_game_p2a(name, current)
         if name == "esp_native_gameplay_monster_state.c":
