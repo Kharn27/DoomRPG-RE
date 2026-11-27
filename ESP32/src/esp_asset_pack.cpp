@@ -59,10 +59,14 @@ static bool findRes60Index(uint32_t hash,EspAssetPackEntry* out) {
     for (unsigned i=0;i<4U;++i) {
         if (res60IndexEntries[i].nameHash!=hash) continue;
         *out=res60IndexEntries[i];
+#if !DOOMRPG_RES60_P33_QUIET_INDEX
         const uint8_t old=res60IndexHitMask;
+#endif
         res60IndexHitMask|=static_cast<uint8_t>(1U<<i);
+#if !DOOMRPG_RES60_P33_QUIET_INDEX
         if (old!=15U && res60IndexHitMask==15U)
             printf("[RES60P32] INDEX validatedHits=4 bytes=80 scope=physical-open\n");
+#endif
         return true;
     }
     return false;
@@ -1201,6 +1205,16 @@ int EspAssetPack_isOpen(void)
 {
     return openReady ? 1 : 0;
 }
+
+#if DOOMRPG_RES60_P33_QUIET_INDEX
+uint8_t EspAssetPack_res60ValidatedIndexMask(void)
+{
+    /* Read-only observation; no I/O, logging, or cross-open persistence. */
+    if (!openReady || residentEnabled || !physicalIsDefault ||
+        physicalUsesMapFlash) return 0U;
+    return res60IndexHitMask;
+}
+#endif
 
 int EspAssetPack_musicSdSafe(void)
 {

@@ -106,6 +106,10 @@ int main(){
 with tempfile.TemporaryDirectory() as d:
     p=Path(d)
     (p/"test.cpp").write_text("#include <initializer_list>\n"+prefix+loops+suffix)
-    for flag,p32 in ((0,0),(1,0),(1,1)):
-        subprocess.run(["c++","-std=c++11","-Wall","-Wextra","-Werror",f"-DDOOMRPG_RES60_P26_BATCH_INDEX={flag}",f"-DDOOMRPG_RES60_P32_VALIDATED_INDEX={p32}",str(p/"test.cpp"),"-o",str(p/"test")],check=True)
-        subprocess.run([str(p/"test")],check=True)
+    for flag,p32,p33 in ((0,0,0),(1,0,0),(1,1,0),(1,1,1)):
+        subprocess.run(["c++","-std=c++11","-Wall","-Wextra","-Werror",f"-DDOOMRPG_RES60_P26_BATCH_INDEX={flag}",f"-DDOOMRPG_RES60_P32_VALIDATED_INDEX={p32}",f"-DDOOMRPG_RES60_P33_QUIET_INDEX={p33}",str(p/"test.cpp"),"-o",str(p/"test")],check=True)
+        result=subprocess.run([str(p/"test")],check=True,text=True,capture_output=True)
+        print(result.stdout,end="")
+        assert result.stdout.count("[RES60P32] INDEX") == int(p32 and not p33)
+        assert "P26 exact index validation PASS" in result.stdout
+        if p32: assert "P32 exact validated entry capture and cleanup PASS" in result.stdout

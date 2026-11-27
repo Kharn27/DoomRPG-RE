@@ -307,6 +307,17 @@
 #if DOOMRPG_RES60_P32_VALIDATED_INDEX && !DOOMRPG_RES60_P31_SHARED_PAK
 #error "RES60-P32 requires isolated P31"
 #endif
+/* P33: no synchronous logging inside P32 lookup; publish its existing
+ * four HIT bits with the already-emitted P26 timing after plane close. */
+#ifndef DOOMRPG_RES60_P33_QUIET_INDEX
+#define DOOMRPG_RES60_P33_QUIET_INDEX DOOMRPG_RES60_P32_VALIDATED_INDEX
+#endif
+#if DOOMRPG_RES60_P33_QUIET_INDEX != 0 && DOOMRPG_RES60_P33_QUIET_INDEX != 1
+#error "RES60-P33 flag must be 0 or 1"
+#endif
+#if DOOMRPG_RES60_P33_QUIET_INDEX && !DOOMRPG_RES60_P32_VALIDATED_INDEX
+#error "RES60-P33 requires isolated P32"
+#endif
 #if DOOMRPG_RES60_P1_DIAGNOSTIC
 #define DOOMRPG_VIDEO_BUFFER_WIDTH 192
 #define DOOMRPG_VIDEO_BUFFER_HEIGHT 144

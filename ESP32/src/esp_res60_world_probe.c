@@ -299,6 +299,9 @@ static int renderIntroCore(uint16_t* framebuffer,
 #if DOOMRPG_RES60_P26_BATCH_INDEX
     const uint32_t planeCloseAt = EspRes60Profile_nowUs();
 #endif
+#if DOOMRPG_RES60_P33_QUIET_INDEX
+    const uint8_t indexMask = EspAssetPack_res60ValidatedIndexMask();
+#endif
     EspAssetPack_close();
 #if DOOMRPG_RES60_P31_SHARED_PAK
     planePakOwned = 0;
@@ -309,11 +312,17 @@ static int renderIntroCore(uint16_t* framebuffer,
 #if DOOMRPG_RES60_P31_SHARED_PAK
            " sharedPak=%u"
 #endif
+#if DOOMRPG_RES60_P33_QUIET_INDEX
+           " p33Mask=%x"
+#endif
            "\n", (unsigned)cameraAngle, (unsigned long)(planeRasterAt-planeOpenAt),
            (unsigned long)(planeCloseAt-planeRasterAt),
            (unsigned long)(planeDoneAt-planeCloseAt)
 #if DOOMRPG_RES60_P31_SHARED_PAK
            , (unsigned)mapLeaseHit
+#endif
+#if DOOMRPG_RES60_P33_QUIET_INDEX
+           , (unsigned)indexMask
 #endif
            );
 #endif
