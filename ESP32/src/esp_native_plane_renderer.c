@@ -33,6 +33,9 @@
 #define PLANE_CACHE_SLOTS 6U
 #endif
 #define EXPECTED_PLANE_MAP_BYTES 2048U
+#ifndef DOOMRPG_RES60_P30_SPAN_REUSE
+#define DOOMRPG_RES60_P30_SPAN_REUSE DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH
+#endif
 
 typedef struct PlaneTextureDesc_s {
     uint8_t logicalId;
@@ -57,6 +60,9 @@ typedef struct PlaneWork_s {
     uint16_t textureCount;
     PlaneCacheSlot cache[PLANE_CACHE_SLOTS];
     uint32_t cacheClock;
+#if DOOMRPG_RES60_P30_SPAN_REUSE
+    uint32_t spanReuseHits;
+#endif
     EspNativePlaneRenderStats stats;
 } PlaneWork;
 
@@ -465,6 +471,61 @@ static int acquireTexture(PlaneWork* work,
     return 1;
 }
 
+/* P30: row-local last material/slot, no extra texel allocation.
+ * No other acquisition happens while reusing the slot. Refresh LRU age
+ * and hit count exactly once per pixel, including across uint32 wrap. */
+#if DOOMRPG_RES60_P30_SPAN_REUSE
+static int spanPlaneRes60(PlaneWork* work, int x, int y,
+                         const uint8_t* planeCells,
+                         int32_t param5, int32_t param6,
+                         int32_t param7, int32_t param8, int count) {
+    uint16_t* pixels = (uint16_t*)work->render->pixels +
+                       (work->render->pitch >> 1)*y+x;
+    const PlaneTextureDesc* desc = NULL;
+    PlaneCacheSlot* slot = NULL;
+    while (--count >= 0) {
+        const uint32_t u5 = (uint32_t)param5;
+        const uint32_t u6 = (uint32_t)param6;
+        const uint32_t cellIndex =
+            ((u6 >> 17) & 0x3e0U) + ((u5 << 5) >> 27);
+        const uint32_t texelIndex =
+            ((u6 >> 10) & 0x0fc0U) + ((u5 << 10) >> 26);
+        if (cellIndex >= ESP_MAP_PLANE_CELL_COUNT || texelIndex >= 4096U)
+            return 0;
+        const uint8_t logicalId = planeCells[cellIndex];
+        if (slot != NULL && desc->logicalId == logicalId) {
+            ++work->cacheClock;
+            if (work->cacheClock == 0U) work->cacheClock = 1U;
+            slot->lastUse = work->cacheClock;
+            ++work->stats.cacheHits;
+            ++work->spanReuseHits;
+        } else {
+            const int descIndex = findTextureIndex(work, logicalId);
+            const uint8_t* texels;
+            if (descIndex < 0) return 0;
+            desc = &work->textures[descIndex];
+            if (!acquireTexture(work, desc, &texels)) return 0;
+            slot = NULL;
+            for (uint32_t i=0U; i<PLANE_CACHE_SLOTS; ++i) {
+                if (work->cache[i].texels == texels) {
+                    slot = &work->cache[i];
+                    break;
+                }
+            }
+            if (slot == NULL || !slot->valid) return 0;
+        }
+        const uint8_t packed = slot->texels[texelIndex >> 1];
+        const uint8_t paletteIndex = (uint8_t)((texelIndex & 1U)
+            ? ((packed >> 4) & 0x0fU) : (packed & 0x0fU));
+        *pixels++ = desc->paletteRgb565[paletteIndex];
+        ++work->stats.pixelsRendered;
+        param5 = (int32_t)((uint32_t)param5 + (uint32_t)param7);
+        param6 = (int32_t)((uint32_t)param6 + (uint32_t)param8);
+    }
+    return 1;
+}
+#endif
+
 static int spanPlane(PlaneWork* work,
                      int x, int y,
                      const uint8_t* planeCells,
@@ -477,6 +538,10 @@ static int spanPlane(PlaneWork* work,
     if (work == NULL || work->render == NULL || planeCells == NULL ||
         count <= 0) return 0;
 
+#if DOOMRPG_RES60_P30_SPAN_REUSE
+    if (work->render->screenWidth == 192)
+        return spanPlaneRes60(work,x,y,planeCells,param5,param6,param7,param8,count);
+#endif
     pitch = work->render->pitch >> 1;
     pixels = (uint16_t*)work->render->pixels + pitch * y + x;
 
@@ -675,6 +740,10 @@ static int renderPlanes(struct Render_s* renderBase, int res60, void* scratch, s
         goto done;
     }
 
+#if DOOMRPG_RES60_P30_SPAN_REUSE
+    if (res60) DRPG_LOGI("[RES60P30] SPAN reuseHits=%lu pixels=%lu\n",
+        (unsigned long)work->spanReuseHits,(unsigned long)work->stats.pixelsRendered);
+#endif
     work->stats.rendered = 1U;
     work->stats.active = 1U;
     ok = 1;

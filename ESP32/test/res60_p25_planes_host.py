@@ -32,7 +32,7 @@ HARNESS = r"""
 #include "esp_map_runtime.h"
 #include "esp_native_plane_renderer.h"
 
-static uint8_t maps[114], palettes[292], wall[18436], cells[2048];
+static uint8_t maps[144], palettes[388], wall[24580], cells[2048];
 static unsigned mapSize,paletteSize,wallSize;
 static EspMapRuntimeView runtime;
 static int openPak = 1;
@@ -59,7 +59,7 @@ static unsigned texel(unsigned id,unsigned x,unsigned y) {
     return (x+3U*y+5U*id)&15U;
 }
 static void fixture(unsigned count) {
-    assert(count==2||count==9);
+    assert(count==2||count==9||count==12);
     memset(maps,0,sizeof(maps));memset(palettes,0,sizeof(palettes));
     memset(wall,0,sizeof(wall));memset(cells,0,sizeof(cells));
     mapSize=16+count*8+8+count*2;
@@ -182,13 +182,20 @@ int main(void){
 #if DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH
     /* Nine actual materials exercise all three borrowed slots, not just
      * their admission. Exact sampler parity and ownership canaries. */
-    fixture(9);
+    for(unsigned materials=9;materials<=12;materials+=3){
+    fixture(materials);
     for(int angle=0;angle<256;angle+=64){
         fill();memset(loan,0xa5,sizeof(loan));
         assert(EspNativePlaneRenderer_renderRes60WithScratch(fb+1,55296,544,1840,angle,36,loan+1,6144));
         const EspNativePlaneRenderStats* st=EspNativePlaneRenderer_view();
-        assert(st&&st->uniqueLogicalTextures==9&&st->cacheMisses==9&&st->texelReadBytes==18432);
-        assert(st->cacheEvictions==0&&st->cacheHits+st->cacheMisses==18432);
+        assert(st&&st->uniqueLogicalTextures==materials&&st->cacheMisses>=materials);
+        assert(st->texelReadBytes==2048U*st->cacheMisses);
+        assert(st->cacheHits+st->cacheMisses==18432);
+        if(materials==9)assert(st->cacheMisses==9&&st->cacheEvictions==0);
+        else assert(st->cacheEvictions>0);
+        printf("P30 oracle %u %d %u %u %u %u\n",materials,angle,
+            (unsigned)st->cacheHits,(unsigned)st->cacheMisses,
+            (unsigned)st->cacheEvictions,(unsigned)st->texelReadBytes);
         for(unsigned slot=0;slot<3;slot++){
             unsigned changed=0;
             for(unsigned i=0;i<2048;i++)changed+=(loan[1+slot*2048+i]!=0xa5);
@@ -201,6 +208,7 @@ int main(void){
         }
     }
     EspNativePlaneRenderer_resetRes60Metadata();
+    }
     fixture(2);
 #endif
 #if DOOMRPG_RES60_P25_TEXTURED_PLANES
@@ -233,11 +241,15 @@ typedef struct Render_s {
 } Render_t;
 """)
     (p/"test.c").write_text(HARNESS)
-    for name,defs in (("classic",[]),("res60",flags)):
+    traces = {}
+    for name,defs in (("classic",[]),("res60",flags),("p29",flags+["-DDOOMRPG_RES60_P30_SPAN_REUSE=0"])):
         exe=p/name
         subprocess.run(["cc","-std=c11","-O2","-Wall","-Wextra","-Werror",
                         "-DDOOMRPG_ESP32=1","-I",tmp,"-I",str(ESP/"include"),
                         *defs,str(p/"test.c"),str(ESP/"src/esp_native_plane_renderer.c"),
                         "-o",str(exe)],check=True)
-        subprocess.run([str(exe)],check=True)
+        result = subprocess.run([str(exe)],check=True,text=True,capture_output=True)
+        print(result.stdout,end='')
+        traces[name] = [line for line in result.stdout.splitlines() if line.startswith('P30 oracle ')]
+    assert len(traces['res60']) == 8 and traces['res60'] == traces['p29'], 'P30 LRU parity'
 print("RES60-P25 HOST PASS: native 4bpp samples, 160/192 cardinal frames, HUD and canaries")

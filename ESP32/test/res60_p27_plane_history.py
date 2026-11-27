@@ -1,6 +1,33 @@
 """Strict inverse of P25/P27 native plane additions; frozen Git SHA stays unchanged."""
 
 def restore_pre_res60_planes(source: bytes) -> bytes:
+    # Undo P30 exactly before the frozen P29/P28/P27 inverses.
+    p30 = [
+        [
+            "#if DOOMRPG_RES60_P30_SPAN_REUSE\n    if (res60) DRPG_LOGI(\"[RES60P30] SPAN reuseHits=%lu pixels=%lu\\n\",\n        (unsigned long)work->spanReuseHits,(unsigned long)work->stats.pixelsRendered);\n#endif\n    work->stats.rendered = 1U;\n    work->stats.active = 1U;",
+            "    work->stats.rendered = 1U;\n    work->stats.active = 1U;"
+        ],
+        [
+            "#if DOOMRPG_RES60_P30_SPAN_REUSE\n    if (work->render->screenWidth == 192)\n        return spanPlaneRes60(work,x,y,planeCells,param5,param6,param7,param8,count);\n#endif\n    pitch = work->render->pitch >> 1;\n    pixels =",
+            "    pitch = work->render->pitch >> 1;\n    pixels ="
+        ],
+        [
+            "/* P30: row-local last material/slot, no extra texel allocation.\n * No other acquisition happens while reusing the slot. Refresh LRU age\n * and hit count exactly once per pixel, including across uint32 wrap. */\n#if DOOMRPG_RES60_P30_SPAN_REUSE\nstatic int spanPlaneRes60(PlaneWork* work, int x, int y,\n                         const uint8_t* planeCells,\n                         int32_t param5, int32_t param6,\n                         int32_t param7, int32_t param8, int count) {\n    uint16_t* pixels = (uint16_t*)work->render->pixels +\n                       (work->render->pitch >> 1)*y+x;\n    const PlaneTextureDesc* desc = NULL;\n    PlaneCacheSlot* slot = NULL;\n    while (--count >= 0) {\n        const uint32_t u5 = (uint32_t)param5;\n        const uint32_t u6 = (uint32_t)param6;\n        const uint32_t cellIndex =\n            ((u6 >> 17) & 0x3e0U) + ((u5 << 5) >> 27);\n        const uint32_t texelIndex =\n            ((u6 >> 10) & 0x0fc0U) + ((u5 << 10) >> 26);\n        if (cellIndex >= ESP_MAP_PLANE_CELL_COUNT || texelIndex >= 4096U)\n            return 0;\n        const uint8_t logicalId = planeCells[cellIndex];\n        if (slot != NULL && desc->logicalId == logicalId) {\n            ++work->cacheClock;\n            if (work->cacheClock == 0U) work->cacheClock = 1U;\n            slot->lastUse = work->cacheClock;\n            ++work->stats.cacheHits;\n            ++work->spanReuseHits;\n        } else {\n            const int descIndex = findTextureIndex(work, logicalId);\n            const uint8_t* texels;\n            if (descIndex < 0) return 0;\n            desc = &work->textures[descIndex];\n            if (!acquireTexture(work, desc, &texels)) return 0;\n            slot = NULL;\n            for (uint32_t i=0U; i<PLANE_CACHE_SLOTS; ++i) {\n                if (work->cache[i].texels == texels) {\n                    slot = &work->cache[i];\n                    break;\n                }\n            }\n            if (slot == NULL || !slot->valid) return 0;\n        }\n        const uint8_t packed = slot->texels[texelIndex >> 1];\n        const uint8_t paletteIndex = (uint8_t)((texelIndex & 1U)\n            ? ((packed >> 4) & 0x0fU) : (packed & 0x0fU));\n        *pixels++ = desc->paletteRgb565[paletteIndex];\n        ++work->stats.pixelsRendered;\n        param5 = (int32_t)((uint32_t)param5 + (uint32_t)param7);\n        param6 = (int32_t)((uint32_t)param6 + (uint32_t)param8);\n    }\n    return 1;\n}\n#endif\n\nstatic int spanPlane(PlaneWork* work,",
+            "static int spanPlane(PlaneWork* work,"
+        ],
+        [
+            "    uint32_t cacheClock;\n#if DOOMRPG_RES60_P30_SPAN_REUSE\n    uint32_t spanReuseHits;\n#endif\n    EspNativePlaneRenderStats stats;",
+            "    uint32_t cacheClock;\n    EspNativePlaneRenderStats stats;"
+        ],
+        [
+            "#define EXPECTED_PLANE_MAP_BYTES 2048U\n#ifndef DOOMRPG_RES60_P30_SPAN_REUSE\n#define DOOMRPG_RES60_P30_SPAN_REUSE DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH\n#endif\n",
+            "#define EXPECTED_PLANE_MAP_BYTES 2048U\n"
+        ]
+    ]
+    for new, original in p30:
+        new, original = new.encode('utf-8'), original.encode('utf-8')
+        assert source.count(new) == 1, 'P30 historical inverse drift'
+        source = source.replace(new, original, 1)
     p29 = [
     [
         "#define PLANE_TEXTURE_BYTES 2048U\n#define PLANE_PALETTE_COLORS 16U\n#define MAX_PLANE_TEXTURES 24U\n#define PLANE_HEAP_CACHE_SLOTS 6U\n#if DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH\n#define PLANE_CACHE_SLOTS 9U\n#else\n#define PLANE_CACHE_SLOTS 6U\n#endif\n#define EXPECTED_PLANE_MAP_BYTES 2048U\n\ntypedef struct PlaneTextureDesc_s {",
