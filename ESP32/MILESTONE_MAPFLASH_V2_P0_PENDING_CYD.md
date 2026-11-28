@@ -1,6 +1,6 @@
-# MAPFLASH-V2 — P0 audit de capacité flash, en attente du CYD
+# MAPFLASH-V2 — P0 audit de capacité flash, PASS CYD
 
-Issue [#476](https://github.com/Kharn27/DoomRPG-RE/issues/476). Branche unique `agent/esp32-mapflash-v2`, basée sur `main=d1f25ba03688364efba753604f59aa75eb2eaadc` au démarrage. **Statut : P0 code read-only, PAS encore de cache V2 ni de PASS matériel.**
+Issue [#476](https://github.com/Kharn27/DoomRPG-RE/issues/476). Branche unique `agent/esp32-mapflash-v2`, basée sur `main=d1f25ba03688364efba753604f59aa75eb2eaadc` au démarrage. **Statut : P0 PASS matériel, log `platformio-device-monitor-261128-121317.log`. P0 était read-only ; P1 est traité séparément.**
 
 ## Source exacte relue
 
@@ -43,3 +43,9 @@ Firmware **normal** `esp32-cyd`, source code du HEAD communiqué après CI. Dém
 `ESP32/test/mapflash_v2_audit_host.py` : fixture synthétique couvrant la géométrie des 13 BSP, les bornes, l'ordre de hash, les chevauchements, le CRC et la troncature. L'exécution est ajoutée à `.github/workflows/esp32-cyd.yml`.
 
 **Suite après les tailles réelles :** décision documentée entre slot BSP et cache multi-BSP, puis seulement écrire V2 et tests de coupure/transactions avant un nouveau firmware.
+
+## Verdict P0 — CYD alternate-panel (2026-11-28)
+
+Log matériel `platformio-device-monitor-261128-121317.log`, PAK index FNV `3a51cc4d`, 241 entrées, 13/13 BSP, pack 2 457 398 B, index 4 820 B, payload 2 452 554 B, commun 2 226 920 B, BSP cumulés 225 634 B, maximum 25 706 B. Tous les BSP tiennent simultanément. Le cache intégral avec header sector 0, index à 4096 et payload à 12288 termine à 2 464 842 B, ou 2 465 792 B aligné secteur (602 secteurs), laissant **286 720 B** non effacés sur 2 752 512 B. Pas besoin de séparation physique common/BSP ni de deuxième header transactionnel.
+
+V1 baseline (ms, transition UI jusqu'à RELEASE) : Load Sector1 16133 ; New Game Entrance 17126 ; Load Entrance HIT 3707 ; Entrance→Junction 14443 ; Junction→Sector1 14307. Build 12743640..12865370 us ; vérification HIT 355729..357899 us. ARM active=verified=1 ; frame backing=flash sdRangeUs=0 ; sauvegardes chargées, SFX flash et musique SD, shapeData/mediaTexels=0. P0 ne changeait pas la logique de staging. P1 : voir `MILESTONE_MAPFLASH_V2_P1_PENDING_CYD.md`.
