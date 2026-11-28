@@ -1317,6 +1317,11 @@ int EspAssetPack_open(const char* path)
     physicalIsDefault = isDefaultPath(path);
     physicalUsesMapFlash = false;
     openReady = true;
+    static bool buildWitnessPrinted = false;
+    if (physicalIsDefault && !buildWitnessPrinted) {
+        buildWitnessPrinted = true;
+        printf("[MAPFLASH-BUILD] milestone=P4b features=handoff+bsp-flash+entry-crc format=DMF2-v2\n");
+    }
     if (residentEnabled) {
         ++residentStats.validationPasses;
     }

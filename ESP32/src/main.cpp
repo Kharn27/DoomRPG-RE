@@ -432,7 +432,6 @@ namespace
     {
         Serial.println();
         Serial.println("=== Doom RPG CYD hardware bring-up ===");
-        Serial.println("[MAPFLASH-BUILD] milestone=P4a-r2 features=handoff+bsp-flash+entry-crc format=DMF2-v2");
 #if defined(DOOMRPG_ESP32_TRACE_SPRITE)
         Serial.printf("[TRACEPROFILE] production-path sprite=%u optimization=release bringup=no timing=instrumented\n",
                       static_cast<unsigned int>(DOOMRPG_ESP32_TRACE_SPRITE));
