@@ -509,6 +509,11 @@ bool PlatformVideo_present() {
     }
 
     platformDisplay->endWrite();
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    /* The classic full RGB565 scanout completed; UAC/failed entry never
+     * reaches this event. Lamp restoration remains separately observed. */
+    EspRedrawAudit_event(ESP_REDRAW_FULL_COMMIT);
+#endif
     /* Record only pixels actually sent in this full frame. Repaint the
      * indicator after every world present without restarting its clock. */
     lampWorldFrame = EspNativeResidentGameplay_turnLampWorld() != 0;

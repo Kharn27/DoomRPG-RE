@@ -36,7 +36,7 @@ void EspPerfMoveVisibility_recordPresented(int continuation, int presented,
     EspRedrawAudit_finish(presented, probe.armed && probe.samples == 1U &&
         probe.quiet && quietAfter && probe.classification != 4U,
         probe.samples == 1U && probe.classification == 0U,
-        beforeFNV != 0U && beforeFNV == afterFNV);
+        beforeFNV != 0U && beforeFNV == afterFNV, frameUs, presentUs);
 #endif
     if (!presented || !probe.armed) return;
     ++cost->presented;
@@ -317,6 +317,9 @@ void EspPerfMoveVisibility_observe(const EspNativeBspVisibilityState* state,
     if (!probe.armed) return;
     if (probe.samples != UINT8_MAX) ++probe.samples;
     if (probe.samples != 1 || state == NULL) return;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    EspRedrawAudit_renderSample(sampleMs);
+#endif
     memcpy(probe.leaves, state->visibleLeaves, sizeof(probe.leaves));
     probe.sampleMs = sampleMs;
     oldVisible = EspNativeBspVisibility_positionVisible(
@@ -432,6 +435,15 @@ void EspPerfMoveVisibility_end(int rendered) {
             (unsigned)a->beforeBusy, (unsigned)a->afterBusy,
             (unsigned)a->unsafeQuiet, (unsigned)a->semanticFrames,
             (unsigned)a->semanticKinds);
+        printf("[PERFGAMEP5C] phaseScheduler=%u phaseAge=%u phaseDeadline=%u crossChecked=%u crossMismatch=%u dueChecked=%u dueMismatch=%u strictLate=%u strictSampleUnknown=%u detailAborted=%u strictConfirmed=%u strictFrameUs=%llu strictPresentUs=%llu authority=no firstSkipped=0 cumulative=yes\n",
+            (unsigned)a->phaseScheduler, (unsigned)a->phaseAge,
+            (unsigned)a->phaseDeadline, (unsigned)a->crossChecked,
+            (unsigned)a->crossMismatch, (unsigned)a->dueChecked,
+            (unsigned)a->dueMismatch, (unsigned)a->strictLate,
+            (unsigned)a->strictSampleUnknown, (unsigned)a->detailAborted,
+            (unsigned)a->strictConfirmed,
+            (unsigned long long)a->strictFrameUs,
+            (unsigned long long)a->strictPresentUs);
 #endif
         for (unsigned int i = 0U; i < 2U; ++i) {
             const EspPerfMoveFrameCost* cost = &frameCosts[i];
@@ -477,15 +489,23 @@ int EspPerfMoveVisibility_tryReuse(int continuation, uint32_t blockers, uint16_t
     if (!continuation) {
         const uint32_t phaseMask = ESP_PERF_MOVE_BLOCK_INDICATOR | ESP_PERF_MOVE_BLOCK_AMBIENT;
         const int hard = (blockers & ~phaseMask) != 0U;
-        const int phase = (blockers & phaseMask) != 0U ||
-            nowMs < probe.sampleMs || nowMs - probe.sampleMs >= 250U ||
-            nowMs - probe.sampleMs >= probe.phaseWindow;
-        const int negative = valid && !hard && (oldX == newX || oldY == newY) &&
+        uint8_t reasons = 0U;
+        if (blockers & phaseMask) reasons |= ESP_REDRAW_PHASE_SCHEDULER;
+        if (nowMs < probe.sampleMs || nowMs - probe.sampleMs >= 250U)
+            reasons |= ESP_REDRAW_PHASE_AGE;
+        if (nowMs < probe.sampleMs || nowMs - probe.sampleMs >= probe.phaseWindow)
+            reasons |= ESP_REDRAW_PHASE_DEADLINE;
+        const int bothNegative = valid && !hard && (oldX == newX || oldY == newY) &&
             EspNativeBspVisibility_positionLeaf(sprite, oldX, oldY, &oldLeaf) &&
             EspNativeBspVisibility_positionLeaf(sprite, newX, newY, &newLeaf) &&
-            oldLeaf == newLeaf && oldLeaf < ESP_NATIVE_BSP_VISIBILITY_MAX_NODES &&
-            !(probe.leaves[oldLeaf >> 5U] & (1U << (oldLeaf & 31U)));
-        EspRedrawAudit_first(valid, negative, hard, phase);
+            oldLeaf < ESP_NATIVE_BSP_VISIBILITY_MAX_NODES &&
+            newLeaf < ESP_NATIVE_BSP_VISIBILITY_MAX_NODES &&
+            !(probe.leaves[oldLeaf >> 5U] & (1U << (oldLeaf & 31U))) &&
+            !(probe.leaves[newLeaf >> 5U] & (1U << (newLeaf & 31U)));
+        const int negative = bothNegative && oldLeaf == newLeaf;
+        EspRedrawAudit_first(valid, negative, hard, reasons != 0U);
+        EspRedrawAudit_firstDetail(valid, negative, bothNegative && !negative,
+            hard, reasons, probe.sampleMs, probe.phaseWindow);
     }
 #endif
     probe.valid = 0;

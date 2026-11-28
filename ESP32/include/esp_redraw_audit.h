@@ -19,7 +19,13 @@ enum {
     ESP_REDRAW_UNKNOWN = 1U << 8,
     ESP_REDRAW_ACTIVATION = 1U << 9,
     ESP_REDRAW_REVEAL = 1U << 10,
-    ESP_REDRAW_VISITED = 1U << 11
+    ESP_REDRAW_VISITED = 1U << 11,
+    ESP_REDRAW_FULL_COMMIT = 1U << 12
+};
+enum {
+    ESP_REDRAW_PHASE_SCHEDULER = 1U,
+    ESP_REDRAW_PHASE_AGE = 2U,
+    ESP_REDRAW_PHASE_DEADLINE = 4U
 };
 typedef struct EspRedrawAuditStats_s {
     uint32_t first, noPrior, gap, hard, leaf, phase, candidate;
@@ -27,14 +33,23 @@ typedef struct EspRedrawAuditStats_s {
     uint32_t physicalRejected, seeded, lampGap, gapKinds;
     uint32_t beforeMask, afterMask, beforeBusy, afterBusy, unsafeQuiet;
     uint32_t semanticFrames, semanticKinds;
+    uint32_t phaseScheduler, phaseAge, phaseDeadline;
+    uint32_t crossChecked, crossMismatch, dueChecked, dueMismatch;
+    uint32_t strictLate, strictSampleUnknown, detailAborted, strictConfirmed;
+    uint64_t strictFrameUs, strictPresentUs;
 } EspRedrawAuditStats;
 void EspRedrawAudit_event(uint16_t kinds);
 void EspRedrawAudit_blockers(uint32_t mask);
 void EspRedrawAudit_first(int bspValid, int negative,
     int hard, int phase);
+/* Additional prediction only; same/cross negatives must come from the
+ * previous BSP witness, never from framebuffer FNV. Reasons may overlap. */
+void EspRedrawAudit_firstDetail(int bspValid, int sameNegative, int crossNegative,
+    int hard, uint8_t reasons, uint32_t sampleMs, uint32_t phaseWindow);
+void EspRedrawAudit_renderSample(uint32_t sampleMs);
 void EspRedrawAudit_begin(void);
 void EspRedrawAudit_finish(int presented, int quiet, int rejected,
-    int equalFNV);
+    int equalFNV, uint32_t frameUs, uint32_t presentUs);
 void EspRedrawAudit_abort(void);
 const EspRedrawAuditStats* EspRedrawAudit_stats(void);
 #ifdef __cplusplus
