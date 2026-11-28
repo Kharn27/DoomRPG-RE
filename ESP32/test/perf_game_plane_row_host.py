@@ -23,7 +23,7 @@ def body(signature):
     raise AssertionError(signature)
 
 layout = src[src.index("typedef struct PlaneTextureDesc_s"):src.index("static EspNativePlaneRenderStats planeStats;")]
-real = "\n".join(body(sig) for sig in ("static int findTextureIndex(", "static int acquireTexture(", "static inline void flushPlaneHits(", "static int spanPlane(", "static int collectTextures(", "static int32_t planeRowStep("))
+real = "\n".join(body(sig) for sig in ("static int findTextureIndex(", "static int acquireTexture(", "static inline void flushPlaneHits(", "static inline __attribute__((always_inline)) int spanPlaneCore(", "static int spanPlane(", "static int collectTextures(", "static int32_t planeRowStep("))
 reference = r"""
 static int refCollectTextures(PlaneWork* work) {
     uint32_t i;
@@ -329,8 +329,8 @@ int main(void) {
             if(trial%13==0)cells[next()%1024]=255; // missing descriptor
             for(unsigned row=0;row<2;++row) {
                 int32_t x=(int32_t)next(),y=(int32_t)next();
-                int32_t dx=trial%5==0?0:(int32_t)next();
-                int32_t dy=trial%5==0?0:(int32_t)next();
+                int32_t dx=trial%5==0 || trial%5==1?0:(int32_t)next();
+                int32_t dy=trial%5==0 || trial%5==2?0:(int32_t)next();
                 int n=trial%11==0?1:160;
                 failRead=trial%17==0?1+trial%5:0;
                 reads=0;

@@ -351,7 +351,10 @@ static inline void flushPlaneHits(PlaneWork* work, PlaneCacheSlot* slot,
     }
 }
 
-static int spanPlane(PlaneWork* work,
+/* P6a: compile the same exact pixel/LRU body for cardinal rows. A zero
+ * axis step lets the compiler hoist that axis's cell/texel components and
+ * remove its per-pixel addition. No retained geometry or new RAM owner. */
+static inline __attribute__((always_inline)) int spanPlaneCore(PlaneWork* work,
                      int x, int y,
                      const uint8_t* planeCells,
                      int32_t param5, int32_t param6,
@@ -416,6 +419,16 @@ static int spanPlane(PlaneWork* work,
     }
     flushPlaneHits(work, previousSlot, pendingHits);
     return 1;
+}
+
+static int spanPlane(PlaneWork* work, int x, int y,
+                     const uint8_t* planeCells, int32_t param5, int32_t param6,
+                     int32_t param7, int32_t param8, int count) {
+    if (param7 == 0)
+        return spanPlaneCore(work, x, y, planeCells, param5, param6, 0, param8, count);
+    if (param8 == 0)
+        return spanPlaneCore(work, x, y, planeCells, param5, param6, param7, 0, count);
+    return spanPlaneCore(work, x, y, planeCells, param5, param6, param7, param8, count);
 }
 
 static int32_t planeRowStep(int32_t projected, int width) {

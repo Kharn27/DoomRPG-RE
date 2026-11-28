@@ -316,10 +316,10 @@ void EspPerfMoveVisibility_observe(const EspNativeBspVisibilityState* state,
     int oldVisible, newVisible;
     if (!probe.armed) return;
     if (probe.samples != UINT8_MAX) ++probe.samples;
-    if (probe.samples != 1 || state == NULL) return;
 #if defined(ARDUINO) && defined(DOOMRPG_ESP32)
-    EspRedrawAudit_renderSample(sampleMs);
+    if (state != NULL) EspRedrawAudit_renderSample(sampleMs);
 #endif
+    if (probe.samples != 1 || state == NULL) return;
     memcpy(probe.leaves, state->visibleLeaves, sizeof(probe.leaves));
     probe.sampleMs = sampleMs;
     oldVisible = EspNativeBspVisibility_positionVisible(

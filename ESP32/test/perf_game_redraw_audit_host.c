@@ -135,5 +135,14 @@ int main(void) {
     EspRedrawAudit_firstDetail(1,1,0,0,ESP_REDRAW_PHASE_AGE | ESP_REDRAW_PHASE_SCHEDULER,100U,20U);
     frame(1,1,1,0);
     assert(s->phaseAge == 1U && s->phaseScheduler == 1U && s->dueChecked == 1U);
+    /* Duplicate render samples must not look like a single valid sample. */
+    EspRedrawAudit_first(1,1,0,0);
+    EspRedrawAudit_firstDetail(1,1,0,0,0,100U,150U);
+    EspRedrawAudit_begin();
+    EspRedrawAudit_renderSample(110U);
+    EspRedrawAudit_renderSample(111U);
+    EspRedrawAudit_event(ESP_REDRAW_FULL | ESP_REDRAW_FULL_COMMIT);
+    EspRedrawAudit_finish(1,0,1,1,0,0);
+    assert(s->strictSampleUnknown == 1U && s->strictConfirmed == 1U);
     return 0;
 }
