@@ -4,6 +4,9 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "esp_res60_world_preview.h"
+#if DOOMRPG_RES60_P37_WALL_COVERAGE
+#include "esp_res60_wall_material.h"
+#endif
 #if DOOMRPG_RES60_P8_TEXEL
 #include "esp_res60_texture_probe.h"
 #endif
@@ -29,6 +32,9 @@ typedef struct EspRes60WorldProbeReport_s {
     uint32_t cameraX;
     uint32_t cameraY;
     EspRes60PreviewStats raster;
+#if DOOMRPG_RES60_P37_WALL_COVERAGE
+    EspRes60WallCoverage wallDemand;
+#endif
 #if DOOMRPG_RES60_P11_PROFILE
     uint32_t inventoryUs, loadUs, p3Us, textureUs, releaseUs;
 #endif

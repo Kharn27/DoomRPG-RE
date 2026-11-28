@@ -69,6 +69,37 @@ uint32_t EspRes60WallMaterial_visibleColumns(uint16_t texture) {
     return matches;
 }
 
+int EspRes60WallMaterial_measure(EspRes60WallCoverage* out) {
+    uint8_t seen[32]={0};
+    EspRes60WallCoverage demand={0};
+    if(out==NULL)return 0;
+    *out=demand;
+    if(!planReady)return 0;
+    for(uint32_t x=0U;x<ESP_RES60_WIDTH;++x) {
+        const EspRes60WallColumn* item=&columns[x];
+        int32_t start=item->top<0?0:item->top;
+        int32_t end=(int32_t)item->top+item->height;
+        if(end>(int32_t)ESP_RES60_WORLD_ROWS)end=ESP_RES60_WORLD_ROWS;
+        if(!item->hit || end<=start)continue;
+        ++demand.columns;
+        demand.pixels+=(uint16_t)(end-start);
+        if(x>=ESP_RES60_TEXTURE_INSET_X && start<(int32_t)ESP_RES60_TEXTURE_INSET_SIZE) {
+            int32_t insetEnd=end<(int32_t)ESP_RES60_TEXTURE_INSET_SIZE?end:ESP_RES60_TEXTURE_INSET_SIZE;
+            demand.insetPixels+=(uint16_t)(insetEnd-start);
+        }
+        if(item->texture>255U) {
+            ++demand.unsupportedColumns;
+        } else {
+            uint8_t mask=(uint8_t)(1U<<(item->texture&7U));
+            if(!(seen[item->texture>>3]&mask)) {
+                seen[item->texture>>3]|=mask;
+                ++demand.materials;
+            }
+        }
+    }
+    *out=demand;
+    return 1;
+}
 static uint16_t framebuffer565(uint16_t c) {
     return (uint16_t)(((c&0x001fU)<<11U)|(c&0x07e0U)|((c&0xf800U)>>11U));
 }

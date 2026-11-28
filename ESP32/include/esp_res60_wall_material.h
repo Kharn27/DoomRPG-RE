@@ -19,6 +19,14 @@ void EspRes60WallMaterial_reset(void);
 int EspRes60WallMaterial_record(uint32_t column, uint16_t logicalTexture,
                                int32_t top, int32_t height, uint8_t sourceU);
 void EspRes60WallMaterial_publish(void);
+/* Full clipped wall demand, including pixels currently covered by the
+ * diagnostic swatch. IDs outside the native 256-ID catalog are explicit,
+ * never silently truncated or treated as texture zero. */
+typedef struct EspRes60WallCoverage_s {
+    uint16_t materials, columns, unsupportedColumns;
+    uint16_t pixels, insetPixels;
+} EspRes60WallCoverage;
+int EspRes60WallMaterial_measure(EspRes60WallCoverage* out);
 /* Select among rays actually visible in the frame; no second raycast, heap
  * or catalog dependency. Excludes material fully hidden by P8's swatch. */
 int EspRes60WallMaterial_visibleTextureAt(uint32_t column,

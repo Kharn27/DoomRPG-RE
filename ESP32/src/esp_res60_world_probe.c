@@ -356,6 +356,14 @@ static int renderIntroCore(uint16_t* framebuffer,
                (unsigned long)report.raster.readerCalls);
         goto done;
     }
+#if DOOMRPG_RES60_P37_WALL_COVERAGE
+    if (!EspRes60WallMaterial_measure(&report.wallDemand) ||
+        report.wallDemand.pixels != report.raster.wallPixels) {
+        printf("[RES60P37] FAIL CLOSED stage=wall-demand-parity\n");
+        success=0;
+        goto done;
+    }
+#endif
 #if DOOMRPG_RES60_P8_TEXEL
     /* P3 raw raster fingerprint was committed BEFORE the P8 inset.
      * Catalog + PAK owners are transient, released before map + LCD present. */

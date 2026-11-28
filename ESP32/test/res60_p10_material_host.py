@@ -63,6 +63,10 @@ int main(void) {
    assert(visible==7);
    assert(EspRes60WallMaterial_visibleColumns(7)>0);
    assert(EspRes60WallMaterial_visibleColumns(8)==0);
+   EspRes60WallCoverage coverage;
+   assert(EspRes60WallMaterial_measure(&coverage));
+   assert(coverage.materials==1 && coverage.columns==stats.visibleColumns &&
+          coverage.pixels==stats.wallPixels && coverage.unsupportedColumns==0);
    /* Pretend P8 already drew the real swatch: P10 must not clobber it. */
    for(unsigned y=24;y<72;++y)for(unsigned x=144;x<192;++x)
      f[y*192+x]=0x1234;
@@ -74,6 +78,7 @@ int main(void) {
                palette,7,&mat));
    assert(mat.columns>0 && mat.pixels>0 && mat.sampledFNV!=0);
    assert(mat.columns==EspRes60WallMaterial_visibleColumns(7));
+   assert(mat.pixels+coverage.insetPixels==coverage.pixels);
    assert(buffer[0]==0xface && buffer[192U*144U+1U]==0xbeef);
    assert(f[0]==original[0] && f[143U*192U]==original[143U*192U]);
    for(unsigned y=24;y<72;++y)for(unsigned x=144;x<192;++x)
@@ -97,6 +102,19 @@ int main(void) {
          palette,7,&mat));
  assert(!memcmp(original,f,sizeof(original)));
  lines[1].x1=1088;
+ EspRes60WallCoverage demand;
+ assert(!EspRes60WallMaterial_measure(&demand));
+ EspRes60WallMaterial_reset();
+ assert(EspRes60WallMaterial_record(0,7,-5,10,0));
+ assert(EspRes60WallMaterial_record(1,7,95,5,0));
+ assert(EspRes60WallMaterial_record(2,8,96,10,0)); /* fully clipped */
+ assert(EspRes60WallMaterial_record(144,8,40,20,0));
+ assert(EspRes60WallMaterial_record(145,256,-10,100,0));
+ EspRes60WallMaterial_publish();
+ assert(EspRes60WallMaterial_measure(&demand));
+ assert(demand.materials==2 && demand.columns==4 &&
+        demand.unsupportedColumns==1 && demand.pixels==116 &&
+        demand.insetPixels==56);
  printf("RES60-P10 PASS: original ray geometry + 4 cardinal material projections, one 2KiB 4bpp tile, HUD/swatch/canaries, rollback/fail-closed\n");
  return 0;
 }

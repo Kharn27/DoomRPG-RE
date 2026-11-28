@@ -929,7 +929,11 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
     if (EspRes60Serial_compactWarm(
             (uint8_t)report.mapLeaseHit,
             (uint8_t)report.texture.cacheHit)) {
-        Serial.printf("[RES60P20] WARM angle=%u turns=%u mapUs=%lu raysUs=%lu preparedUs=%lu tests=%lu rawP3FNV=%08lx fnv=%08lx p10FNV=%08lx swatchFNV=%08lx heap8=%u largest8=%u minHeap8=%u\n",
+        Serial.printf("[RES60P20] WARM angle=%u turns=%u mapUs=%lu raysUs=%lu preparedUs=%lu tests=%lu rawP3FNV=%08lx fnv=%08lx p10FNV=%08lx swatchFNV=%08lx heap8=%u largest8=%u minHeap8=%u"
+#if DOOMRPG_RES60_P37_WALL_COVERAGE
+            " wallIds=%u wallCols=%u wallTotal=%u insetWall=%u unsupportedCols=%u textured=%lu"
+#endif
+            "\n",
             (unsigned)report.spawnAngle, (unsigned)turns,
             (unsigned long)report.loadUs,
             (unsigned long)report.raster.raysUs,
@@ -941,7 +945,16 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
             (unsigned long)report.texture.sampleFNV,
             (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
-            (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT));
+            (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT)
+#if DOOMRPG_RES60_P37_WALL_COVERAGE
+            , (unsigned)report.wallDemand.materials,
+            (unsigned)report.wallDemand.columns,
+            (unsigned)report.wallDemand.pixels,
+            (unsigned)report.wallDemand.insetPixels,
+            (unsigned)report.wallDemand.unsupportedColumns,
+            wallTextureSamples
+#endif
+            );
     } else
 #endif
     {
@@ -990,14 +1003,26 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
         (unsigned long)report.raster.frameFNV);
 #endif
 #if DOOMRPG_RES60_P10_WALL_MATERIAL
-    Serial.printf("[RES60P10] MATERIAL source=PAK logical=%u selected=%s visibleColumns=%u columns=%lu pixels=%lu sampleFNV=%08lx rawP3FNV=%08lx extraPakReads=0\n",
+    Serial.printf("[RES60P10] MATERIAL source=PAK logical=%u selected=%s visibleColumns=%u columns=%lu pixels=%lu sampleFNV=%08lx rawP3FNV=%08lx extraPakReads=0"
+#if DOOMRPG_RES60_P37_WALL_COVERAGE
+        " wallIds=%u wallCols=%u wallTotal=%u insetWall=%u unsupportedCols=%u"
+#endif
+        "\n",
         (unsigned)report.texture.logicalId,
         report.texture.selectedFromVisible ? "VISIBLE-RAY" : "FALLBACK-LINE",
         (unsigned)report.texture.visibleWallColumns,
         (unsigned long)report.texture.wallColumns,
         (unsigned long)report.texture.wallPixels,
         (unsigned long)report.texture.wallFNV,
-        (unsigned long)report.raster.frameFNV);
+        (unsigned long)report.raster.frameFNV
+#if DOOMRPG_RES60_P37_WALL_COVERAGE
+        , (unsigned)report.wallDemand.materials,
+        (unsigned)report.wallDemand.columns,
+        (unsigned)report.wallDemand.pixels,
+        (unsigned)report.wallDemand.insetPixels,
+        (unsigned)report.wallDemand.unsupportedColumns
+#endif
+        );
 #endif
 #if DOOMRPG_RES60_P12_INVENTORY_CACHE
     Serial.printf("[RES60P12] INVENTORY cache=%s crc=%08lx arenaFNV=%08lx invUs=%lu validated=pak-entry+arena\n",
