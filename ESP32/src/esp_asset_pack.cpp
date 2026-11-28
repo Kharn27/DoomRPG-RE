@@ -128,6 +128,12 @@ struct MapFlashPlan {
     uint32_t currentMapHash;
     uint32_t excludedCount;
     MapFlashExcludedSpan excluded[kMapFlashMaxExcludedMaps];
+    /* MAPFLASH-V2/P0: read-only audit, never used by V1 gameplay reads. */
+    uint32_t bspSourceOffset[ESP_MAP_CATALOG_COUNT];
+    uint32_t bspBytes[ESP_MAP_CATALOG_COUNT];
+    uint32_t allBspBytes;
+    uint32_t maxBspBytes;
+    uint32_t commonBytes;
 };
 
 struct MapFlashState {
@@ -467,6 +473,10 @@ bool mapFlashBuildSourcePlan(uint8_t targetMapId,
                 if (outReason != nullptr) *outReason = "target-bsp-invalid";
                 return false;
             }
+            const uint32_t currentSlot =
+                (uint32_t)(targetMapId - ESP_MAP_CATALOG_FIRST_ID);
+            plan.bspSourceOffset[currentSlot] = entry.offset;
+            plan.bspBytes[currentSlot] = entry.size;
             currentFound = true;
             continue;
         }
@@ -484,6 +494,8 @@ bool mapFlashBuildSourcePlan(uint8_t targetMapId,
                 if (outReason != nullptr) *outReason = "excluded-bsp-invalid";
                 return false;
             }
+            plan.bspSourceOffset[slot] = entry.offset;
+            plan.bspBytes[slot] = entry.size;
             MapFlashExcludedSpan& span = plan.excluded[plan.excludedCount++];
             span.nameHash = entry.nameHash;
             span.sourceOffset = entry.offset;
@@ -496,6 +508,29 @@ bool mapFlashBuildSourcePlan(uint8_t targetMapId,
     if (!currentFound) {
         if (outReason != nullptr) *outReason = "target-bsp-missing";
         return false;
+    }
+
+    /* Inventory from the index alone: no extra SD payload reads. */
+    for (uint32_t i = 0U; i < ESP_MAP_CATALOG_COUNT; ++i) {
+        const uint32_t size = plan.bspBytes[i];
+        if (size == 0U) continue; /* Catalog BSP absent from this PAK. */
+        if (plan.allBspBytes > UINT32_MAX - size) {
+            if (outReason != nullptr) *outReason = "all-bsp-overflow";
+            return false;
+        }
+        plan.allBspBytes += size;
+        if (size > plan.maxBspBytes) plan.maxBspBytes = size;
+        const uint64_t begin = plan.bspSourceOffset[i];
+        const uint64_t end = begin + size;
+        for (uint32_t j = 0U; j < i; ++j) {
+            if (plan.bspBytes[j] == 0U) continue;
+            const uint64_t otherBegin = plan.bspSourceOffset[j];
+            const uint64_t otherEnd = otherBegin + plan.bspBytes[j];
+            if (begin < otherEnd && otherBegin < end) {
+                if (outReason != nullptr) *outReason = "bsp-overlap";
+                return false;
+            }
+        }
     }
 
     for (uint32_t i = 0U; i < plan.excludedCount; ++i) {
@@ -523,10 +558,12 @@ bool mapFlashBuildSourcePlan(uint8_t targetMapId,
         previousEnd = span.sourceOffset + span.size;
         plan.excludedBytes += span.size;
     }
-    if (plan.excludedBytes > plan.sourceDataBytes) {
+    if (plan.excludedBytes > plan.sourceDataBytes ||
+        plan.allBspBytes > plan.sourceDataBytes) {
         if (outReason != nullptr) *outReason = "excluded-bytes-invalid";
         return false;
     }
+    plan.commonBytes = plan.sourceDataBytes - plan.allBspBytes;
 
     plan.payloadFlashOffset =
         alignSector(kMapFlashIndexOffset + plan.indexBytes);
@@ -541,6 +578,65 @@ bool mapFlashBuildSourcePlan(uint8_t targetMapId,
     *outPlan = plan;
     if (outReason != nullptr) *outReason = "ok";
     return true;
+}
+
+
+/* MAPFLASH-V2 P0: dry-run capacity, no writes, no extra index scan and no
+ * mutation of V1 state. All-BSP calculation is an optimistic lower bound:
+ * a persistent multi-BSP cache would need a separate manifest. */
+void printMapFlashV2Audit(const MapFlashPlan& plan,
+                          const esp_partition_t* partition)
+{
+    static uint32_t lastPackBytes = 0U;
+    static uint32_t lastIndexFNV = 0U;
+    if (partition == nullptr ||
+        (lastPackBytes == plan.sourcePackBytes &&
+         lastIndexFNV == plan.indexFNV1a)) return;
+    const uint64_t sector = kMapFlashSectorBytes;
+    const uint64_t indexOffset = 2ULL * sector; /* two independent headers */
+    const uint64_t commonOffset =
+        (indexOffset + plan.indexBytes + sector - 1U) & ~(sector - 1U);
+    const uint64_t bspOffset =
+        (commonOffset + plan.commonBytes + sector - 1U) & ~(sector - 1U);
+    const uint64_t bspReserve =
+        ((uint64_t)plan.maxBspBytes + sector - 1U) & ~(sector - 1U);
+    const uint64_t singleEnd = bspOffset + bspReserve;
+    const uint64_t allEnd = bspOffset + plan.allBspBytes;
+    const uint32_t singleFits = singleEnd <= partition->size ? 1U : 0U;
+    const uint32_t allLowerBoundFits = allEnd <= partition->size ? 1U : 0U;
+    const uint32_t headroom = singleFits
+        ? (uint32_t)(partition->size - singleEnd) : 0U;
+    uint32_t present = 0U;
+    for (uint32_t i = 0U; i < ESP_MAP_CATALOG_COUNT; ++i)
+        if (plan.bspBytes[i] != 0U) ++present;
+
+    printf("[MAPFLASHV2] AUDIT scope=plan-only indexFNV=%08x pack=%u index=%u common=%u allBsp=%u maxBsp=%u present=%u/%u partition=%u commonOffset=%llu bspOffset=%llu slotReserve=%llu headroom=%u singleFits=%u allFitsLowerBound=%u\n",
+           (unsigned int)plan.indexFNV1a,
+           (unsigned int)plan.sourcePackBytes,
+           (unsigned int)plan.indexBytes,
+           (unsigned int)plan.commonBytes,
+           (unsigned int)plan.allBspBytes,
+           (unsigned int)plan.maxBspBytes,
+           (unsigned int)present, (unsigned int)ESP_MAP_CATALOG_COUNT,
+           (unsigned int)partition->size,
+           (unsigned long long)commonOffset,
+           (unsigned long long)bspOffset,
+           (unsigned long long)bspReserve,
+           (unsigned int)headroom,
+           (unsigned int)singleFits,
+           (unsigned int)allLowerBoundFits);
+    for (uint8_t mapId = ESP_MAP_CATALOG_FIRST_ID;
+         mapId <= ESP_MAP_CATALOG_LAST_ID; ++mapId) {
+        const uint32_t slot = mapId - ESP_MAP_CATALOG_FIRST_ID;
+        printf("[MAPFLASHV2] BSP id=%u name=%s source=%u bytes=%u present=%u\n",
+               (unsigned int)mapId,
+               EspMapCatalog_nameForId(mapId),
+               (unsigned int)plan.bspSourceOffset[slot],
+               (unsigned int)plan.bspBytes[slot],
+               plan.bspBytes[slot] != 0U ? 1U : 0U);
+    }
+    lastPackBytes = plan.sourcePackBytes;
+    lastIndexFNV = plan.indexFNV1a;
 }
 
 bool mapFlashHeaderMatchesPlan(const MapFlashHeader& header,
@@ -1339,6 +1435,8 @@ int EspAssetPack_mapFlashPrepare(uint8_t targetMapId)
         clearMapFlashRuntime(true);
         return 0;
     }
+
+    printMapFlashV2Audit(plan, partition);
 
     if (esp_partition_read(partition, 0U, &cached, sizeof(cached)) == ESP_OK &&
         mapFlashHeaderLooksValid(cached, partition)) {
