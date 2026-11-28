@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "DoomRPG.h"
+#include "doomrpg_log.h"
 #include "esp_perf_game_p1.h"
 #if DOOMRPG_PERF_GAME_P1
 #include "esp_perf_trace_cache.h"
@@ -232,7 +233,7 @@ static int closedLineBlocksTileIndexed(uint16_t tile, uint16_t mask) {
         int hasDefinition;
 
         uint32_t lineIndex = i;
-        i = EspPerfGameP1_spatialLineIndex.next[i];
+        i = EspPerfSpatialLine_next(&EspPerfGameP1_spatialLineIndex, (uint16_t)i, tile);
         if (!EspMapLineState_getOpen(lineIndex, &open)) return -1;
         if (open != 0U) continue;
         if (!EspMapRuntime_getLine(lineIndex, &line)) return -1;
@@ -372,7 +373,7 @@ static int blockingSpriteOnTileIndexed(uint16_t tile,
     if (topology == NULL) return -1;
     for (i = EspPerfSpatialSprite_first(&EspPerfGameP1_spatialSpriteIndex, tile);
          i != ESP_PERF_SPATIAL_SPRITE_NONE;
-         i = EspPerfGameP1_spatialSpriteIndex.next[i]) {
+         i = EspPerfSpatialSprite_next(&EspPerfGameP1_spatialSpriteIndex, (uint16_t)i, tile)) {
         uint8_t type;
         uint8_t subtype;
         uint16_t linkState;
@@ -503,7 +504,7 @@ static int cardinalTraceClearBody(int32_t sourceX,
             lineBlock = closedLineBlocksTile(sourceTile, mask);
             if (lineBlock < 0) return -1;
             if (lineBlock > 0) {
-                printf("[MONSTER3GOAL] TRACE-BLOCK side=source kind=line tile=%u mask=%04x from=%d,%d to=%d,%d\n",
+                DRPG_LOGT("[MONSTER3GOAL] TRACE-BLOCK side=source kind=line tile=%u mask=%04x from=%d,%d to=%d,%d\n",
                        (unsigned int)sourceTile,
                        (unsigned int)mask,
                        (int)prevX, (int)prevY, (int)x, (int)y);
@@ -515,7 +516,7 @@ static int cardinalTraceClearBody(int32_t sourceX,
                                                strictSpecial);
             if (spriteBlock < 0) return spriteBlock;
             if (spriteBlock > 0) {
-                printf("[MONSTER3GOAL] TRACE-BLOCK side=source kind=entity tile=%u mask=%04x from=%d,%d to=%d,%d\n",
+                DRPG_LOGT("[MONSTER3GOAL] TRACE-BLOCK side=source kind=entity tile=%u mask=%04x from=%d,%d to=%d,%d\n",
                        (unsigned int)sourceTile,
                        (unsigned int)mask,
                        (int)prevX, (int)prevY, (int)x, (int)y);
@@ -991,6 +992,7 @@ static int probeContinuationGoal(DoomRPG_t* doomRpg,
     threeGoalView.lastSpriteIndex = spriteIndex;
     threeGoalView.lastTile = plan.destTile;
     threeGoalView.lastGoalStep = goalStep;
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     printf("[MONSTER3GOAL] PLAN sprite=%u subtype=%u frameTime=%u goal=%u/3 sourceTile=%u source=%u,%u target=%d,%d destTile=%u delta=%d,%d visitCount=%u tieRand=%u choice=%u mask=%04x rngCalls=1 randomLiveUntouched=yes positionFNV=%08x->%08x->%08x positionRollback=yes publish=pending\n",
            (unsigned int)spriteIndex, (unsigned int)monster->subtype,
            (unsigned int)(goalStep - 1U), (unsigned int)goalStep,
@@ -1007,6 +1009,16 @@ static int probeContinuationGoal(DoomRPG_t* doomRpg,
            (unsigned int)positionFNVBefore,
            (unsigned int)positionFNVCommitted,
            (unsigned int)positionFNVAfter);
+#else
+    /* P3i: successful probe audit remains countable at INFO; detailed path
+     * coordinates and tie choice remain available in the TRACE profile. */
+    printf("[MONSTER3GOAL] PLAN sprite=%u goal=%u/3 tile=%u->%u rngCalls=1 positionFNV=%08x->%08x->%08x positionRollback=yes\n",
+           (unsigned int)spriteIndex, (unsigned int)goalStep,
+           (unsigned int)plan.sourceTile, (unsigned int)plan.destTile,
+           (unsigned int)positionFNVBefore,
+           (unsigned int)positionFNVCommitted,
+           (unsigned int)positionFNVAfter);
+#endif
     return 1;
 }
 
@@ -1115,11 +1127,19 @@ static int publishContinuationGoal(DoomRPG_t* doomRpg,
 
     ++threeGoalView.continuationCommits;
     threeGoalView.lastTile = outPublish->destTile;
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     printf("[MONSTER3GOAL] COMMIT sprite=%u goal=%u/3 tile=%u->%u rngCalls=%u sameTurn=yes topologyRelink=committed renderer=snap-destination interpolation=deferred rollback=closed\n",
            (unsigned int)spriteIndex, (unsigned int)goalStep,
            (unsigned int)outPublish->sourceTile,
            (unsigned int)outPublish->destTile,
            (unsigned int)outPublish->rngCalls);
+#else
+    printf("[MONSTER3GOAL] COMMIT sprite=%u goal=%u/3 tile=%u->%u rngCalls=%u rollback=closed\n",
+           (unsigned int)spriteIndex, (unsigned int)goalStep,
+           (unsigned int)outPublish->sourceTile,
+           (unsigned int)outPublish->destTile,
+           (unsigned int)outPublish->rngCalls);
+#endif
     return 1;
 }
 
@@ -1173,12 +1193,21 @@ int EspNativeGameplayMonsterThreeGoalTurn_postMoveGoal(
 
     ++threeGoalView.observedChains;
     threeGoalView.lastSpriteIndex = spriteIndex;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_LOG_LEVEL < DOOMRPG_LOG_TRACE
+    printf("[MONSTER3GOAL] ARM chain=%u sprite=%u subtype=%u firstTile=%u->%u\n",
+           (unsigned int)threeGoalView.observedChains,
+           (unsigned int)spriteIndex,
+           (unsigned int)monster->subtype,
+           (unsigned int)sourceTile,
+           (unsigned int)destTile);
+#else
     printf("[MONSTER3GOAL] ARM chain=%u sprite=%u subtype=%u firstTile=%u->%u legacyGoalCount=3 frameTime=0 firstGoalAlreadyCommitted=yes continuationGoals=bounded-2 attackLoops=3-native-probe/simultaneous-fail-closed\n",
            (unsigned int)threeGoalView.observedChains,
            (unsigned int)spriteIndex,
            (unsigned int)monster->subtype,
            (unsigned int)sourceTile,
            (unsigned int)destTile);
+#endif
 
     for (;;) {
         uint32_t distance2;
@@ -1256,11 +1285,19 @@ int EspNativeGameplayMonsterThreeGoalTurn_postMoveGoal(
                        (unsigned int)THREEGOAL_MULTI_LOOP_SHOTS);
             }
             else {
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32) && DOOMRPG_LOG_LEVEL < DOOMRPG_LOG_TRACE
+                printf("[MONSTER3GOAL] COMPLETE sprite=%u subtype=%u goal=3/3 tile=%u distance2=%u sameTurn=yes additionalRng=0\n",
+                       (unsigned int)spriteIndex,
+                       (unsigned int)monster->subtype,
+                       (unsigned int)currentDest,
+                       (unsigned int)distance2);
+#else
                 printf("[MONSTER3GOAL] COMPLETE sprite=%u subtype=%u frameTime=3 goal=3/3 tile=%u distance2=%u adjacentCardinal=no attack=no movementChain=complete sameTurn=yes mutation=no additionalRng=0\n",
                        (unsigned int)spriteIndex,
                        (unsigned int)monster->subtype,
                        (unsigned int)currentDest,
                        (unsigned int)distance2);
+#endif
             }
             return 1;
         }

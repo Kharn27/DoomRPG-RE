@@ -25,9 +25,10 @@ int main(void) {
  assert(idx.active && idx.spriteCount==278);
  i=EspPerfSpatialSprite_first(&idx,199);
  assert(i==2);
- i=idx.next[i]; assert(i==5); /* same bucket, different exact tile */
- i=idx.next[i]; assert(i==60);
- assert(idx.next[i]==ESP_PERF_SPATIAL_SPRITE_NONE);
+ i=EspPerfSpatialSprite_next(&idx,i,199); assert(i==60);
+ assert(EspPerfSpatialSprite_next(&idx,i,199)==ESP_PERF_SPATIAL_SPRITE_NONE);
+ assert(EspPerfSpatialSprite_first(&idx,198)==5);
+ assert(EspPerfSpatialSprite_next(&idx,5,198)==ESP_PERF_SPATIAL_SPRITE_NONE);
  assert(EspPerfSpatialSprite_first(&idx,900)==260);
  assert(EspPerfSpatialSprite_first(&idx,1024)==ESP_PERF_SPATIAL_SPRITE_NONE);
  EspPerfSpatialSprite_end(&idx);
@@ -44,12 +45,12 @@ int main(void) {
  states[60]=0;
  states[7]=ESP_MAP_SPRITE_TOPOLOGY_LINKED | 199U;
  assert(EspPerfSpatialSprite_begin(&idx));
- assert(EspPerfSpatialSprite_first(&idx,199)==5);
- assert(idx.next[5]==7);
- assert(idx.next[7]==ESP_PERF_SPATIAL_SPRITE_NONE);
+ assert(EspPerfSpatialSprite_first(&idx,199)==7);
+ assert(EspPerfSpatialSprite_next(&idx,7,199)==ESP_PERF_SPATIAL_SPRITE_NONE);
+ assert(EspPerfSpatialSprite_first(&idx,198)==5);
  assert(EspPerfSpatialSprite_first(&idx,900)==2);
- assert(idx.next[2]==260);
- /* Compare every bucket against a full ascending scan, including capacity. */
+ assert(EspPerfSpatialSprite_next(&idx,2,900)==260);
+ /* Compare every exact tile against a full ascending scan, including capacity. */
  EspPerfSpatialSprite_end(&idx);
  view.spriteCount=ESP_PERF_SPATIAL_SPRITE_CAPACITY;
  for(unsigned j=0;j<view.spriteCount;j++)
@@ -59,14 +60,30 @@ int main(void) {
      uint16_t cursor=EspPerfSpatialSprite_first(&idx,(uint16_t)tile);
      for(unsigned j=0;j<view.spriteCount;j++) {
          if(!(states[j]&ESP_MAP_SPRITE_TOPOLOGY_LINKED) ||
-            EspPerfSpatialSprite_bucket(states[j]&ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK)!=
-            EspPerfSpatialSprite_bucket((uint16_t)tile)) continue;
+            (states[j]&ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK)!=tile) continue;
          assert(cursor==j);
-         cursor=idx.next[cursor];
+         cursor=EspPerfSpatialSprite_next(&idx,cursor,(uint16_t)tile);
      }
      assert(cursor==ESP_PERF_SPATIAL_SPRITE_NONE);
  }
+ /* Dense duplicates in all 16 local tiles, including last sprite 511. */
+ for(unsigned j=0;j<view.spriteCount;j++)
+     states[j]=(uint16_t)(ESP_MAP_SPRITE_TOPOLOGY_LINKED | ((j/4U)%4U)*32U | (j%4U));
+ assert(EspPerfSpatialSprite_begin(&idx));
+ for(unsigned tile=0;tile<1024U;tile++) {
+     uint16_t cursor=EspPerfSpatialSprite_first(&idx,(uint16_t)tile);
+     for(unsigned j=0;j<view.spriteCount;j++) {
+         if((states[j]&ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK)!=tile) continue;
+         assert(cursor==j);
+         cursor=EspPerfSpatialSprite_next(&idx,cursor,(uint16_t)tile);
+     }
+     assert(cursor==ESP_PERF_SPATIAL_SPRITE_NONE);
+ }
+ assert(EspPerfSpatialSprite_next(&idx,511U,99U)==ESP_PERF_SPATIAL_SPRITE_NONE);
+ assert(EspPerfSpatialSprite_next(&idx,UINT16_MAX,0U)==ESP_PERF_SPATIAL_SPRITE_NONE);
+ assert(EspPerfSpatialSprite_next(&idx,0U,1024U)==ESP_PERF_SPATIAL_SPRITE_NONE);
  EspPerfSpatialSprite_end(&idx);
- puts("P1i spatial sprite host PASS order/bucket/capacity/getter-fail/scope");
+ assert(EspPerfSpatialSprite_next(&idx,0U,0U)==ESP_PERF_SPATIAL_SPRITE_NONE);
+ puts("P3e spatial sprite host PASS exact tile/order/packed links/capacity/getter-fail/scope");
  return 0;
 }

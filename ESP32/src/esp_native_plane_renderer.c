@@ -163,6 +163,7 @@ static int findTextureIndex(const PlaneWork* work, uint8_t logicalId) {
 
 static int collectTextures(PlaneWork* work) {
     uint32_t i;
+    uint8_t seen[32] = {0};
     if (work == NULL || work->runtime == NULL ||
         work->runtime->planeMap == NULL ||
         work->runtime->planeMapBytes != EXPECTED_PLANE_MAP_BYTES) return 0;
@@ -170,8 +171,12 @@ static int collectTextures(PlaneWork* work) {
     work->textureCount = 0U;
     for (i = 0U; i < EXPECTED_PLANE_MAP_BYTES; ++i) {
         const uint8_t id = work->runtime->planeMap[i];
-        if (findTextureIndex(work, id) >= 0) continue;
+        const uint8_t bit = (uint8_t)(1U << (id & 7U));
+        /* P3h: one membership bit per possible logical ID. First encounter
+         * order and exact 24-descriptor failure boundary remain unchanged. */
+        if ((seen[id >> 3] & bit) != 0U) continue;
         if (work->textureCount >= MAX_PLANE_TEXTURES) return 0;
+        seen[id >> 3] |= bit;
         memset(&work->textures[work->textureCount], 0,
                sizeof(work->textures[work->textureCount]));
         work->textures[work->textureCount].logicalId = id;
@@ -416,14 +421,14 @@ static int initCache(PlaneWork* work) {
 
 static int acquireTexture(PlaneWork* work,
                           const PlaneTextureDesc* source,
-                          const uint8_t** outTexels) {
+                          PlaneCacheSlot** outSlot) {
     PlaneCacheSlot* target = NULL;
     uint32_t oldest = UINT32_MAX;
     uint32_t i;
     uint32_t readOffset;
 
-    if (outTexels != NULL) *outTexels = NULL;
-    if (work == NULL || source == NULL || outTexels == NULL) return 0;
+    if (outSlot != NULL) *outSlot = NULL;
+    if (work == NULL || source == NULL || outSlot == NULL) return 0;
 
     ++work->cacheClock;
     if (work->cacheClock == 0U) work->cacheClock = 1U;
@@ -436,7 +441,7 @@ static int acquireTexture(PlaneWork* work,
             slot->source->sourceTexelOffset == source->sourceTexelOffset) {
             slot->lastUse = work->cacheClock;
             ++work->stats.cacheHits;
-            *outTexels = slot->texels;
+            *outSlot = slot;
             return 1;
         }
     }
@@ -467,7 +472,7 @@ static int acquireTexture(PlaneWork* work,
     target->lastUse = work->cacheClock;
     target->valid = 1U;
     work->stats.texelReadBytes += PLANE_TEXTURE_BYTES;
-    *outTexels = target->texels;
+    *outSlot = target;
     return 1;
 }
 
@@ -501,18 +506,10 @@ static int spanPlaneRes60(PlaneWork* work, int x, int y,
             ++work->spanReuseHits;
         } else {
             const int descIndex = findTextureIndex(work, logicalId);
-            const uint8_t* texels;
             if (descIndex < 0) return 0;
             desc = &work->textures[descIndex];
-            if (!acquireTexture(work, desc, &texels)) return 0;
-            slot = NULL;
-            for (uint32_t i=0U; i<PLANE_CACHE_SLOTS; ++i) {
-                if (work->cache[i].texels == texels) {
-                    slot = &work->cache[i];
-                    break;
-                }
-            }
-            if (slot == NULL || !slot->valid) return 0;
+            if (!acquireTexture(work, desc, &slot) ||
+                slot == NULL || !slot->valid) return 0;
         }
         const uint8_t packed = slot->texels[texelIndex >> 1];
         const uint8_t paletteIndex = (uint8_t)((texelIndex & 1U)
@@ -534,6 +531,9 @@ static int spanPlane(PlaneWork* work,
                      int count) {
     uint16_t* pixels;
     int pitch;
+    const PlaneTextureDesc* previousDesc = NULL;
+    PlaneCacheSlot* previousSlot = NULL;
+    uint8_t previousLogical = 0U;
 
     if (work == NULL || work->render == NULL || planeCells == NULL ||
         count <= 0) return 0;
@@ -553,18 +553,34 @@ static int spanPlane(PlaneWork* work,
         const uint32_t texelIndex =
             ((u6 >> 10) & 0x0fc0U) + ((u5 << 10) >> 26);
         const uint8_t logicalId = planeCells[cellIndex];
-        const int descIndex = findTextureIndex(work, logicalId);
         const PlaneTextureDesc* desc;
-        const uint8_t* texels;
+        PlaneCacheSlot* slot;
         uint8_t packed;
         uint8_t paletteIndex;
 
-        if (cellIndex >= ESP_MAP_PLANE_CELL_COUNT || texelIndex >= 4096U ||
-            descIndex < 0) return 0;
-        desc = &work->textures[descIndex];
-        if (!acquireTexture(work, desc, &texels)) return 0;
+        if (cellIndex >= ESP_MAP_PLANE_CELL_COUNT || texelIndex >= 4096U)
+            return 0;
+        /* P3g: consecutive pixels with the same logical texture cannot
+         * evict their own slot. Retain the exact per-pixel LRU clock (even
+         * wrap), hit count, and palette; no pointer survives this row. */
+        if (previousSlot != NULL && logicalId == previousLogical) {
+            desc = previousDesc;
+            slot = previousSlot;
+            ++work->cacheClock;
+            if (work->cacheClock == 0U) work->cacheClock = 1U;
+            slot->lastUse = work->cacheClock;
+            ++work->stats.cacheHits;
+        } else {
+            const int descIndex = findTextureIndex(work, logicalId);
+            if (descIndex < 0) return 0;
+            desc = &work->textures[descIndex];
+            if (!acquireTexture(work, desc, &slot)) return 0;
+            previousDesc = desc;
+            previousSlot = slot;
+            previousLogical = logicalId;
+        }
 
-        packed = texels[texelIndex >> 1];
+        packed = slot->texels[texelIndex >> 1];
         paletteIndex = (uint8_t)((texelIndex & 1U)
                                      ? ((packed >> 4) & 0x0fU)
                                      : (packed & 0x0fU));
@@ -575,6 +591,17 @@ static int spanPlane(PlaneWork* work,
         param6 = (int32_t)((uint32_t)param6 + (uint32_t)param8);
     }
     return 1;
+}
+
+static int32_t planeRowStep(int32_t projected, int width) {
+    /* P3h: for the native width and nonnegative projected values,
+     * floor(floor(projected * 2^19 / (32 * 160)) / 256)
+     * == floor(projected * 2 / 5). Bound multiplication explicitly.
+     * Preserve the historical expression for other inputs. */
+    if (width == 160 && projected >= 0 && projected <= INT32_MAX / 2)
+        return (projected * 2) / 5;
+    return (int32_t)((((int64_t)projected << 19) /
+                      (32 * width)) >> 8);
 }
 
 static int drawPlaneRow(PlaneWork* work,
@@ -619,8 +646,7 @@ static int drawPlaneRow(PlaneWork* work,
     distance = height > doubledY ? height - doubledY : doubledY - height;
     projected = (width * zScale) / (distance + 1);
     projectedUnsigned = (uint32_t)projected;
-    step = (int32_t)((((int64_t)projected << 19) /
-                      (32 * width)) >> 8);
+    step = planeRowStep(projected, width);
 
     startX = (int32_t)(
         (int64_t)viewX + (((int64_t)viewCos * projectedUnsigned) >> 3) +

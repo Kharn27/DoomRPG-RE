@@ -72,6 +72,7 @@ functions += "\n\n" + reference_span
 host = r'''
 #include <assert.h>
 #include <limits.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
