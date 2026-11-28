@@ -940,8 +940,6 @@ static int probeContinuationGoal(DoomRPG_t* doomRpg,
                (int)randomBefore.nextRand, (int)probeRng.state.nextRand, (unsigned)probeRng.calls, (unsigned)navSampleCount);
     }
 #endif
-
-#endif
     if (originPlaneClear != 0U || originPlaneBlocked != 0U) {
         printf("[AI14PLANE] planner=continuation sprite=%u goal=%u originClear=%u originBlocked=%u planStatus=%d\n",
                (unsigned int)spriteIndex, (unsigned int)goalStep,

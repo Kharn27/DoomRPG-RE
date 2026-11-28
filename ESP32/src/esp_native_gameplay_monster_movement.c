@@ -1406,8 +1406,6 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
                (int)liveRandomBefore.nextRand, (int)probeRng.state.nextRand, (unsigned)probeRng.calls, (unsigned)navSampleCount);
     }
 #endif
-
-#endif
     if (originPlaneClear != 0U || originPlaneBlocked != 0U) {
         printf("[AI14PLANE] planner=first sprite=%u goal=%u originClear=%u originBlocked=%u planStatus=%d\n",
                (unsigned int)candidate.monster->spriteIndex, (unsigned int)1U,
