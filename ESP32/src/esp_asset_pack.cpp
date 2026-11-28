@@ -1038,6 +1038,24 @@ bool mapFlashTranslate(uint32_t sourceOffset,
     return true;
 }
 
+bool readSourceProbePayload(uint32_t absoluteOffset, void* destination,
+                            size_t length)
+{
+    if (sourceProbeFlashEpoch != 0U) {
+        uint32_t flashOffset = 0U;
+        if (sourceProbeFlashEpoch != verifiedFlashEpoch ||
+            !mapFlash.stats.verified ||
+            !mapFlashTranslate(absoluteOffset, (uint32_t)length, &flashOffset) ||
+            !mapFlashRead(flashOffset, destination, length, false)) {
+            printf("[MAPFLASHV3] BSP-PROBE-FAILED reason=lease-or-read fallbackSD=no\n");
+            return false;
+        }
+        return true;
+    }
+    return sourceProbeFile.seek(absoluteOffset) &&
+           sourceProbeFile.read(static_cast<uint8_t*>(destination), length) == length;
+}
+
 void logMapFlashStrictMiss(const EspAssetPackEntry* entry,
                            uint32_t relativeOffset,
                            size_t length)
@@ -2163,21 +2181,7 @@ static int readRangeCore(const EspAssetPackEntry* entry,
     }
 
     if (sourceProbeExact) {
-        if (sourceProbeFlashEpoch != 0U) {
-            uint32_t flashOffset = 0U;
-            if (sourceProbeFlashEpoch != verifiedFlashEpoch ||
-                !mapFlash.stats.verified ||
-                !mapFlashTranslate(absoluteOffset, (uint32_t)length, &flashOffset) ||
-                !mapFlashRead(flashOffset, destination, length, false)) {
-                printf("[MAPFLASHV3] BSP-PROBE-FAILED reason=lease-or-read fallbackSD=no\n");
-                return 0;
-            }
-        }
-        else if (!sourceProbeFile.seek(absoluteOffset) ||
-                 sourceProbeFile.read(static_cast<uint8_t*>(destination), length) !=
-                     length) {
-            return 0;
-        }
+        if (!readSourceProbePayload(absoluteOffset, destination, length)) return 0;
         if (sourceProbeReadLogged == 0U) {
             sourceProbeReadLogged = 1U;
             printf("[PAKSOURCE] PROBE-READ hash=%08x source=%u length=%u backing=%s activeMapFlashUntouched=yes cachePollution=no\n",
