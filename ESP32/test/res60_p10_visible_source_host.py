@@ -154,7 +154,20 @@ int main(void) {
         assert(demand.pixels==56 && demand.columns==5 && demand.insetPixels==0);
         for(unsigned i=1;i<=192U*144U;++i)framebuffer[i]=0x5555;
         unsigned beforeReads=reads,beforeOpens=opens;
+#if DOOMRPG_RES60_P41_SHARED_WALL_PAK
+        if(cycle) {
+            assert(EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH));
+            const unsigned ownOpens=opens,ownCloses=closes;
+            assert(EspRes60TextureProbe_renderFullWallsWithOpenPack(framebuffer+1,55296,loan+1,6144,&result));
+            assert(result.sharedWallPak==1 && pack && opens==ownOpens && closes==ownCloses);
+            EspAssetPack_close();
+        } else {
+            assert(EspRes60TextureProbe_renderFullWalls(framebuffer+1,55296,loan+1,6144,&result));
+            assert(result.sharedWallPak==0);
+        }
+#else
         assert(EspRes60TextureProbe_renderFullWalls(framebuffer+1,55296,loan+1,6144,&result));
+#endif
         assert(result.cacheHit==cycle && result.admittedWallIds==2);
         assert(result.wallPixels==56 && result.wallColumns==5 && result.streamReads==2);
         assert(result.streamBytes==4096 && result.readBytes==4096+(cycle?0:4));
@@ -188,6 +201,28 @@ int main(void) {
     plan(87);
     assert(EspRes60TextureProbe_renderFullWalls(framebuffer+1,55296,loan+1,6144,&result));
     assert(!result.cacheHit && result.wallPixels==192U*80U);
+#if DOOMRPG_RES60_P41_SHARED_WALL_PAK
+    /* Borrowed owner failure leaves its handle with caller; a cold
+     * borrow is forbidden, no hidden reopen or extra close. */
+    plan(87);changedEntry=1;
+    assert(EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH));
+    unsigned ownOpens=opens,ownCloses=closes;
+    assert(!EspRes60TextureProbe_renderFullWallsWithOpenPack(framebuffer+1,55296,loan+1,6144,&result));
+    assert(pack && opens==ownOpens && closes==ownCloses && !result.wallPixels);
+    changedEntry=0;plan(87);
+    assert(!EspRes60TextureProbe_renderFullWallsWithOpenPack(framebuffer+1,55296,loan+1,6144,&result));
+    assert(pack && opens==ownOpens && closes==ownCloses);
+    EspAssetPack_close();
+    plan(87);
+    assert(EspRes60TextureProbe_renderFullWalls(framebuffer+1,55296,loan+1,6144,&result));
+    plan(87);failTile=1;
+    assert(EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH));
+    ownOpens=opens;ownCloses=closes;
+    assert(!EspRes60TextureProbe_renderFullWallsWithOpenPack(framebuffer+1,55296,loan+1,6144,&result));
+    assert(pack && opens==ownOpens && closes==ownCloses && !result.wallPixels);
+    EspAssetPack_close();failTile=0;
+    puts("RES60-P41 borrowed PAK success/failure ownership PASS");
+#endif
     for(size_t i=2050U;i<sizeof(loan);++i)assert(loan[i]==0xa5);
     EspRes60TextureProbe_reset();
     puts("RES60-P40 FULL WALLS C11 PASS");

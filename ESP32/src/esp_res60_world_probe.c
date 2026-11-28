@@ -302,9 +302,19 @@ static int renderIntroCore(uint16_t* framebuffer,
 #if DOOMRPG_RES60_P33_QUIET_INDEX
     const uint8_t indexMask = EspAssetPack_res60ValidatedIndexMask();
 #endif
+#if DOOMRPG_RES60_P41_SHARED_WALL_PAK
+    /* On warm views the same validated P31 index stays owned by this
+     * function across the allocation-free raycast and wall tile batch.
+     * Cold catalog still requires a closed pack. */
+    const int deferPlaneClose = success && mapLeaseHit!=0U;
+    if (!deferPlaneClose) {
+#endif
     EspAssetPack_close();
 #if DOOMRPG_RES60_P31_SHARED_PAK
     planePakOwned = 0;
+#endif
+#if DOOMRPG_RES60_P41_SHARED_WALL_PAK
+    }
 #endif
 #if DOOMRPG_RES60_P26_BATCH_INDEX
     const uint32_t planeDoneAt = EspRes60Profile_nowUs();
@@ -315,6 +325,9 @@ static int renderIntroCore(uint16_t* framebuffer,
 #if DOOMRPG_RES60_P33_QUIET_INDEX
            " p33Mask=%x"
 #endif
+#if DOOMRPG_RES60_P41_SHARED_WALL_PAK
+           " deferredClose=%u"
+#endif
            "\n", (unsigned)cameraAngle, (unsigned long)(planeRasterAt-planeOpenAt),
            (unsigned long)(planeCloseAt-planeRasterAt),
            (unsigned long)(planeDoneAt-planeCloseAt)
@@ -324,20 +337,37 @@ static int renderIntroCore(uint16_t* framebuffer,
 #if DOOMRPG_RES60_P33_QUIET_INDEX
            , (unsigned)indexMask
 #endif
+#if DOOMRPG_RES60_P41_SHARED_WALL_PAK
+           , (unsigned)deferPlaneClose
+#endif
            );
 #endif
     const EspNativePlaneRenderStats* planes = EspNativePlaneRenderer_view();
     if (!success || planes == NULL || planes->rowsRendered != 96U ||
-        planes->pixelsRendered != 18432U || EspAssetPack_isOpen()) {
+        planes->pixelsRendered != 18432U ||
+#if DOOMRPG_RES60_P41_SHARED_WALL_PAK
+        (EspAssetPack_isOpen()!=0)!=deferPlaneClose) {
+#else
+        EspAssetPack_isOpen()) {
+#endif
         printf("[RES60P25] FAIL CLOSED stage=planes\n");
         success = 0;
         goto done;
     }
-    printf("[RES60P25] PLANES angle=%u rows=%lu pixels=%lu textures=%u cache=%luH/%luM/%luE reads=%luB pak=CLOSED\n",
+    printf("[RES60P25] PLANES angle=%u rows=%lu pixels=%lu textures=%u cache=%luH/%luM/%luE reads=%luB"
+#if DOOMRPG_RES60_P41_SHARED_WALL_PAK
+           " pak=%s\n",
+#else
+           " pak=CLOSED\n",
+#endif
            (unsigned)cameraAngle, (unsigned long)planes->rowsRendered,
            (unsigned long)planes->pixelsRendered, (unsigned)planes->uniqueLogicalTextures,
            (unsigned long)planes->cacheHits, (unsigned long)planes->cacheMisses,
-           (unsigned long)planes->cacheEvictions, (unsigned long)planes->texelReadBytes);
+           (unsigned long)planes->cacheEvictions, (unsigned long)planes->texelReadBytes
+#if DOOMRPG_RES60_P41_SHARED_WALL_PAK
+           , deferPlaneClose ? "SHARED-WALLS" : "CLOSED"
+#endif
+           );
     success = EspRes60Preview_renderWithPlanes(framebuffer, framebufferBytes, &camera,
                                      runtime->lineCount, readCompactLine,
                                      (void*)runtime, &report.raster);
@@ -375,10 +405,23 @@ static int renderIntroCore(uint16_t* framebuffer,
         size_t wallLoanBytes=0U;
         void* wallLoan=EspRes60Preview_borrowPlaneScratch(&wallLoanBytes);
         if(wallLoan) {
-            success=EspRes60TextureProbe_renderFullWalls(framebuffer,framebufferBytes,
+#if DOOMRPG_RES60_P41_SHARED_WALL_PAK
+            if(planePakOwned)
+                success=EspRes60TextureProbe_renderFullWallsWithOpenPack(
+                            framebuffer,framebufferBytes,wallLoan,wallLoanBytes,&report.texture);
+            else
+#endif
+                success=EspRes60TextureProbe_renderFullWalls(framebuffer,framebufferBytes,
                             wallLoan,wallLoanBytes,&report.texture);
             EspRes60Preview_returnPlaneScratch();
         } else success=0;
+#if DOOMRPG_RES60_P41_SHARED_WALL_PAK
+        if(planePakOwned) {
+            if(EspAssetPack_isOpen()) EspAssetPack_close();
+            else success=0;
+            planePakOwned=0;
+        }
+#endif
         if(!success)EspRes60TextureProbe_reset();
     }
 #else

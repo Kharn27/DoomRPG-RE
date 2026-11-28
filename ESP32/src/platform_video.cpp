@@ -942,6 +942,9 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
 #if DOOMRPG_RES60_P40_FULL_WALLS
             " fullWalls=1 swatch=OFF"
 #endif
+#if DOOMRPG_RES60_P41_SHARED_WALL_PAK
+            " sharedWallPak=%u"
+#endif
             "\n",
             (unsigned)report.spawnAngle, (unsigned)turns,
             (unsigned long)report.loadUs,
@@ -971,6 +974,9 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
             (unsigned long)report.texture.streamBytes,
             (unsigned)report.texture.streamMetadataBytes,
             (unsigned long)report.texture.streamFNV
+#endif
+#if DOOMRPG_RES60_P41_SHARED_WALL_PAK
+            , (unsigned)report.texture.sharedWallPak
 #endif
             );
     } else

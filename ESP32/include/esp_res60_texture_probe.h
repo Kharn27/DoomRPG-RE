@@ -35,6 +35,9 @@ typedef struct EspRes60TextureProbeReport_s {
     uint16_t streamReads, streamMetadataBytes;
     uint32_t streamBytes, streamFNV;
 #endif
+#if DOOMRPG_RES60_P41_SHARED_WALL_PAK
+    uint8_t sharedWallPak; /* borrowed warm PAK; caller closes */
+#endif
 #if DOOMRPG_RES60_P11_PROFILE
     /* Current-frame only, not a cache cost claim for P8 warm turns. */
     uint32_t profileCatalogUs, profilePackUs, profileSwatchUs;
@@ -62,6 +65,13 @@ void EspRes60TextureProbe_reset(void);
 int EspRes60TextureProbe_renderFullWalls(uint16_t* framebuffer, size_t framebufferBytes,
                                         void* scratch, size_t scratchBytes,
                                         EspRes60TextureProbeReport* report);
+#if DOOMRPG_RES60_P41_SHARED_WALL_PAK
+/* Warm metadata only. Caller already owns the open PAK; this function
+ * neither opens nor closes it on any path, including failure. */
+int EspRes60TextureProbe_renderFullWallsWithOpenPack(
+    uint16_t* framebuffer,size_t framebufferBytes,void* scratch,size_t scratchBytes,
+    EspRes60TextureProbeReport* report);
+#endif
 #else
 /* After successful P8/P10 on the same published plan, stream each remaining
  * visible material exactly once through a disjoint 2048B caller loan.
