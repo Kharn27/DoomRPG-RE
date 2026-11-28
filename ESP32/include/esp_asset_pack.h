@@ -91,7 +91,11 @@ uint32_t EspAssetPack_dataOffset(void);
 /* Prepare the complete immutable PAK cache for the requested world.
  * A V2 slot is reusable across map IDs when the requested BSP exists in the
  * source index, source structural identity/index FNV and full flash index +
- * payload FNV match. A V1 header or any mismatch triggers staging. Oversize
+ * payload FNV match. An immediately preceding full verification of the same
+ * active target may transfer its payload proof once, after rechecking the SD
+ * plan, committed header and flash index. Deactivation/staging/failure clears
+ * the proof; cold boot always verifies the full payload. Requires no open PAK,
+ * resident cache or source-probe lease. A V1 header or mismatch triggers staging. Oversize
  * packs fail closed. Gameplay never falls back to SD.
  */
 int EspAssetPack_mapFlashPrepare(uint8_t targetMapId);
@@ -124,6 +128,11 @@ void EspAssetPack_mapFlashGetStats(EspAssetPackMapFlashStats* outStats);
 uint8_t EspAssetPack_mapFlashCachedMapId(void);
 
 /* Explicit read-only lease on one exact entry in the authoritative SD PAK.
+ * P3: with a verified active cache and identical fresh SD index identity,
+ * catalog BSP payloads are read from flash after exact entry comparison.
+ * The lease retains SD index authority and BSP CRC validation; it never
+ * retries failed flash reads on SD. Inactive or changed-source preflight
+ * keeps the original explicit SD path (not gameplay fallback).
  *
  * This exists for map-load / CHANGEMAP preflight while the current gameplay
  * slot remains staged in raw flash. It never changes the active gameplay

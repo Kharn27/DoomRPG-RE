@@ -76,6 +76,8 @@ void reportIoSample(const char* reason) {
 }
 
 bool openReady = true, sourceProbeReady = false, sourceProbeReadLogged = false;
+uint32_t sourceProbeFlashEpoch = 0U, verifiedFlashEpoch = 1U;
+struct { struct { bool verified; } stats; } mapFlash = {{true}};
 bool residentEnabled = false, residentLargeRangeEnabled = false;
 bool physicalUsesMapFlash = false, haveCache = false, flashOk = true, sdOk = true;
 ResidentCache cache = {};
@@ -189,7 +191,7 @@ int main() {
     check(1, &entry, 0U, bytes, 8U);
     assert(bytes[0] == 0x5c);
 
-    // Exact source-probe reads must use authoritative SD even during flash.
+    // Unselected source-probe reads use authoritative SD; P3 may select flash.
     sourceProbeReady = true;
     sourceProbeEntry = entry;
     sourceProbeEntry.offset = 88U;
@@ -200,6 +202,15 @@ int main() {
     sourceProbeFile.failSeek = false;
     check(1, &entry, 0U, bytes, 1U);
     assert(bytes[0] == 0x5a && sourceProbeFile.reads == 1U);
+
+    sourceProbeFlashEpoch = verifiedFlashEpoch;
+    check(1, &entry, 0U, bytes, 1U);
+    assert(bytes[0] == 0x5c && sourceProbeFile.reads == 1U);
+    flashOk = false;
+    check(0, &entry, 0U, bytes, 1U);
+    assert(sourceProbeFile.reads == 1U);
+    flashOk = true;
+    sourceProbeFlashEpoch = 0U;
 
     // Normal SD failure/success after the source-probe scope is released.
     sourceProbeReady = false;
@@ -242,7 +253,8 @@ def harness(core: str, public: str, before: str, after: str,
     # Actual probe uses the real elapsed helper from perf_probe, not a mock.
     # The two source-defined probe functions need C ABI (header declares it).
     return "\n".join((stub.split('void check(', 1)[0],
-                      elapsed, before, after, core, public,
+                      elapsed, before, after,
+                      extract(OWNER.read_text(), "bool readSourceProbePayload("), core, public,
                       'void check(' + stub.split('void check(', 1)[1]))
 
 
@@ -295,7 +307,7 @@ def main() -> None:
             "public read wrapper must call one core and compile INFO cleanly")
     for token in ("if (!openReady", "if (!validateEntry(", "length == 0U",
                   "sourceProbeEntryExact", "findResidentRange(",
-                  "sourceProbeFile.read(", "mapFlashTranslate(",
+                  "readSourceProbePayload(", "mapFlashTranslate(",
                   "mapFlashRead(", "readSdExact(", "storeResidentSmallRange(",
                   "storeResidentLargeRange("):
         require(token in core, "PAK core contract erased: " + token)

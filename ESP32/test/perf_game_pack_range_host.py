@@ -38,7 +38,7 @@ functions = "\n".join(body(s) for s in (
     "void clearLargeResidentRanges()", "void recycleResidentRangeWorkingSet()", "uint32_t residentSmallRangeBound(",
     "ResidentRangeRecord* findResidentRange(",
     "void storeResidentSmallRange(", "void storeResidentLargeRange(",
-    "static int readRangeCore("))
+    "bool readSourceProbePayload(", "static int readRangeCore("))
 harness = r"""
 #include <cassert>
 #include <cstdint>
@@ -53,9 +53,12 @@ static EspAssetPackResidentStats residentStats{};
 static bool residentEnabled=true, residentLargeRangeEnabled=true;
 static bool openReady=true, physicalUsesMapFlash=true, sourceProbeReady=false;
 static uint8_t sourceProbeReadLogged=0;
+static uint32_t sourceProbeFlashEpoch=0U, verifiedFlashEpoch=1U;
+static struct { struct { bool verified; } stats; } mapFlash={{true}};
 static EspAssetPackEntry sourceProbeEntry{};
 static uint32_t packSize=65536,dataOffset=32;
 static uint32_t reads=0, generation=0, strictMisses=0;
+static bool rejectFlashRead=false;
 static uint8_t byteAt(uint32_t n) { return (uint8_t)((n^(n>>8)^generation)&255); }
 struct File {
     uint32_t pos=0;
@@ -75,6 +78,7 @@ static bool mapFlashTranslate(uint32_t a,uint32_t n,uint32_t* out) {
     *out=a;return true;
 }
 static bool mapFlashRead(uint32_t a,void* d,size_t n,bool) {
+    if(rejectFlashRead)return false;
     packFile.seek(a);return packFile.read((uint8_t*)d,n)==n;
 }
 static bool readSdExact(void* d,size_t n){return packFile.read((uint8_t*)d,n)==n;}
@@ -156,10 +160,19 @@ int main() {
     sourceProbeReady=true;sourceProbeEntry=a;generation=1;
     expect(a,24,32);assert(reads==5);
     assert(!readRangeCore(&b,24,out,32));
-    sourceProbeReady=false;generation=0;
-    expect(a,24,32);assert(reads==5);
-    clearResidentCache();generation=2;residentLargeRangeEnabled=true;
+    // P3 selected flash probe also bypasses L1 and never falls back to SD.
+    sourceProbeFlashEpoch=verifiedFlashEpoch;
     expect(a,24,32);assert(reads==6);
+    rejectFlashRead=true;
+    assert(!readRangeCore(&a,24,out,32) && reads==6);
+    rejectFlashRead=false;
+    ++verifiedFlashEpoch;
+    assert(!readRangeCore(&a,24,out,32) && reads==6);
+    sourceProbeFlashEpoch=0U;
+    sourceProbeReady=false;generation=0;
+    expect(a,24,32);assert(reads==6);
+    clearResidentCache();generation=2;residentLargeRangeEnabled=true;
+    expect(a,24,32);assert(reads==7);
     // Exercise original mixed small/large eviction and record-full recycling.
     EspAssetPackEntry many={44,10000,40000,0,0};
     for(uint32_t i=0;i<7;++i)expect(many,i*2048,2048);

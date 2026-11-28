@@ -72,6 +72,15 @@ jobs:
 
       - name: MAPFLASH-V2 P0 source-layout and corruption audit (host Python)
         run: python ESP32/test/mapflash_v2_audit_host.py
+      - name: MAPFLASH-V2 P2 real prepare one-shot handoff and rejection (host C++)
+        run: python ESP32/test/mapflash_v2_handoff_host.py
+      - name: MAPFLASH-V2 P3 exact BSP probe flash routing (host C++)
+        run: python ESP32/test/mapflash_v2_bsp_probe_host.py
+
+      - name: MAPFLASH-V2 P4a per-entry CRC integrity (host C++)
+        run: python ESP32/test/mapflash_v2_crc_host.py
+      - name: MAPFLASH-V2 P4b real stage recovery fault matrix (host C++)
+        run: python ESP32/test/mapflash_v2_recovery_host.py
 
       - name: Test SFX-P0 original PAK WAV format probe and fail-closed parser (host C)
         run: python ESP32/test/audio_sfx_p0_pak_inventory_host.py
