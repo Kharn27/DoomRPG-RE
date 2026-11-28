@@ -6,6 +6,9 @@
 #include "esp_map_runtime.h"
 #include "esp_native_gameplay_monster_activation.h"
 #include "esp_native_gameplay_monster_turn.h"
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+#include "esp_redraw_audit.h"
+#endif
 
 #define MONSTER_ACTIVATION_MAX_SPRITES \
     ESP_NATIVE_GAMEPLAY_MONSTER_ACTIVATION_MAX_SPRITES
@@ -68,6 +71,9 @@ static int isActivated(uint16_t spriteIndex) {
 }
 
 static void resetForArena(uint32_t arena) {
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    EspRedrawAudit_event(ESP_REDRAW_ACTIVATION);
+#endif
     soundRestoreBaseline = 0U;
     memset(&activationOwner, 0, sizeof(activationOwner));
     activationOwner.sourceArenaFNV1a = arena;
@@ -110,6 +116,9 @@ static int setActivated(uint16_t spriteIndex) {
     activationOwner.activeBits[spriteIndex >> 3] |= mask;
     activationOwner.activeOrder[activationOwner.activeOrderCount++] = spriteIndex;
     ++activationOwner.activatedCount;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    EspRedrawAudit_event(ESP_REDRAW_ACTIVATION);
+#endif
     return 1;
 }
 
@@ -163,6 +172,9 @@ int EspNativeGameplayMonsterActivation_getOrdered(uint32_t ordinal,
 }
 
 void EspNativeGameplayMonsterActivation_reset(void) {
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    EspRedrawAudit_event(ESP_REDRAW_ACTIVATION);
+#endif
     soundRestoreBaseline=0U;
     memset(&activationOwner, 0, sizeof(activationOwner));
     activationOwner.filtered.lastAttackerSpriteIndex =

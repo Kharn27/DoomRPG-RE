@@ -527,10 +527,10 @@ P2_CLEAN_WIRING_EDITS = {
 
 def restore_pre_perf_game_p2a(name, data):
     if name == "esp_native_gameplay_monster_movement_publish.c":
-        # P5a diagnostic additions only; preserve the exact pre-P5 source.
-        for block in ["#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n#include \"esp_redraw_audit.h\"\n#endif\n", "    /* P5a counts only: equality cannot prove owner identity. */\n    const EspMapAutomapStateView* mapAudit = EspMapAutomapState_view();\n    EspRedrawAudit_sampleOwners(mapAudit != NULL,\n        EspNativeGameplayMonsterActivation_count(),\n        mapAudit != NULL ? mapAudit->lineRevealedCount : 0U,\n        mapAudit != NULL ? mapAudit->spriteRevealedCount : 0U);\n"]:
+        # P5b diagnostic additions only; preserve the exact pre-P5 source.
+        for block in ["#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n#include \"esp_redraw_audit.h\"\n#endif\n", "    EspRedrawAudit_blockers(mask);\n"]:
             raw = block.encode("utf-8")
-            assert data.count(raw) == 1, "P5a exact inverse"
+            assert data.count(raw) == 1, "P5b exact inverse"
             data = data.replace(raw, b"", 1)
     if name == "esp_native_sprite_renderer.c":
         # P4l exact inverse; the frozen renderer blob remains the authority.

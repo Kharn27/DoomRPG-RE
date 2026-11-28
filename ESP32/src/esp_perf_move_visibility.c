@@ -420,13 +420,18 @@ void EspPerfMoveVisibility_end(int rendered) {
     if ((total & 15U) == 0U) {
 #if defined(ARDUINO) && defined(DOOMRPG_ESP32)
         const EspRedrawAuditStats* a = EspRedrawAudit_stats();
-        printf("[PERFGAMEP5A] first=%u noPrior=%u gap=%u hard=%u leaf=%u phase=%u candidate=%u checked=%u notRejected=%u changedFNV=%u unsafeAfter=%u semanticAfter=%u physicalRejected=%u seeded=%u lampGap=%u gapKinds=%03x authority=no firstSkipped=0 cumulative=yes\\n",
+        printf("[PERFGAMEP5A] first=%u noPrior=%u gap=%u hard=%u leaf=%u phase=%u candidate=%u checked=%u notRejected=%u changedFNV=%u unsafeAfter=%u semanticAfter=%u physicalRejected=%u seeded=%u lampGap=%u gapKinds=%03x authority=no firstSkipped=0 cumulative=yes\n",
             (unsigned)a->first, (unsigned)a->noPrior, (unsigned)a->gap,
             (unsigned)a->hard, (unsigned)a->leaf, (unsigned)a->phase,
             (unsigned)a->candidate, (unsigned)a->checked, (unsigned)a->notRejected,
             (unsigned)a->changedFNV, (unsigned)a->unsafeAfter, (unsigned)a->semanticAfter,
             (unsigned)a->physicalRejected, (unsigned)a->seeded, (unsigned)a->lampGap,
             (unsigned)a->gapKinds);
+        printf("[PERFGAMEP5B] beforeMask=%04x afterMask=%04x beforeBusy=%u afterBusy=%u unsafeQuiet=%u semanticFrames=%u semanticKinds=%04x authority=no cumulative=yes\n",
+            (unsigned)a->beforeMask, (unsigned)a->afterMask,
+            (unsigned)a->beforeBusy, (unsigned)a->afterBusy,
+            (unsigned)a->unsafeQuiet, (unsigned)a->semanticFrames,
+            (unsigned)a->semanticKinds);
 #endif
         for (unsigned int i = 0U; i < 2U; ++i) {
             const EspPerfMoveFrameCost* cost = &frameCosts[i];
