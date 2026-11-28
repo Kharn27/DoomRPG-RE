@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "doomrpg_log.h"
 #include "esp_map_runtime.h"
 #include "esp_native_gameplay_monster_activation.h"
 #include "esp_native_gameplay_monster_turn.h"
@@ -120,7 +121,13 @@ int EspNativeGameplayMonsterActivation_observeVisible(uint16_t spriteIndex,
     if (isActivated(spriteIndex)) return 1;
     before = activationOwner.activatedCount;
     if (!setActivated(spriteIndex)) return 0;
+    /* P4b: retain one ordered witness per activation, but avoid transmitting
+     * invariant prose for every monster on the renderer's critical path. */
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     printf("[MONSTERACT] ACTIVE sprite=%u subtype=%u tile=%u source=bsp-render-visible activeCount=%u activationOrder=%u persistence=map-session mutation=activation-bit+order-only gameplayRng=untouched\n",
+#else
+    printf("[MONSTERACT] ACTIVE sprite=%u subtype=%u tile=%u activeCount=%u activationOrder=%u\n",
+#endif
            (unsigned int)spriteIndex,
            (unsigned int)subtype,
            (unsigned int)tileIndex,

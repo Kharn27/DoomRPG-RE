@@ -1018,6 +1018,125 @@ bool fnvFlashRangeProgress(uint32_t flashOffset,
     return true;
 }
 
+// P4a: ZIP/PAK CRC32 (reflected IEEE), bounded by the existing copy buffer.
+uint32_t mapFlashCrc32Update(uint32_t crc, const uint8_t* bytes, size_t length)
+{
+    static constexpr uint32_t nibble[16] = {
+        0x00000000U,0x1db71064U,0x3b6e20c8U,0x26d930acU,
+        0x76dc4190U,0x6b6b51f4U,0x4db26158U,0x5005713cU,
+        0xedb88320U,0xf00f9344U,0xd6d6a3e8U,0xcb61b38cU,
+        0x9b64c2b0U,0x86d3d2d4U,0xa00ae278U,0xbdbdf21cU
+    };
+    while (length-- != 0U) {
+        crc ^= *bytes++;
+        crc = (crc >> 4U) ^ nibble[crc & 15U];
+        crc = (crc >> 4U) ^ nibble[crc & 15U];
+    }
+    return crc;
+}
+
+template <typename Read>
+bool mapFlashValidateEntryCrcs(const MapFlashPlan& plan, uint8_t* buffer,
+                               Read read, const char* backing)
+{
+    uint32_t indexFNV = 2166136261U, previousHash = 0U;
+    uint32_t files = 0U, dirs = 0U;
+    uint64_t bytes = 0U;
+    const int64_t start = esp_timer_get_time();
+    if (buffer == nullptr || plan.entryCount == 0U ||
+        plan.entryCount > ESP_ASSET_PACK_MAX_ENTRY_COUNT ||
+        plan.sourceDataOffset > plan.sourcePackBytes ||
+        (uint64_t)plan.sourceIndexOffset +
+            (uint64_t)plan.entryCount * kEntryBytes > plan.sourceDataOffset)
+        return false;
+    for (uint32_t i = 0U; i < plan.entryCount; ++i) {
+        uint8_t raw[kEntryBytes];
+        EspAssetPackEntry entry = {};
+        if (!read(plan.sourceIndexOffset + i * (uint32_t)kEntryBytes,
+                  raw, sizeof(raw))) return false;
+        indexFNV = fnv1aUpdate(indexFNV, raw, sizeof(raw));
+        decodeEntry(raw, &entry);
+        if (entry.nameHash == 0U || (i != 0U && entry.nameHash <= previousHash) ||
+            entry.offset < plan.sourceDataOffset || entry.offset > plan.sourcePackBytes ||
+            entry.size > plan.sourcePackBytes - entry.offset) return false;
+        previousHash = entry.nameHash;
+        if ((entry.flags & ESP_ASSET_PACK_FLAG_DIRECTORY) != 0U) {
+            if (entry.size != 0U || entry.crc32 != 0U) return false;
+            ++dirs;
+            continue;
+        }
+        uint32_t crc = UINT32_MAX;
+        for (uint32_t done = 0U; done < entry.size;) {
+            const uint32_t left = entry.size - done;
+            const uint32_t chunk = left > kMapFlashCopyBufferBytes
+                                     ? kMapFlashCopyBufferBytes : left;
+            if (!read(entry.offset + done, buffer, chunk)) return false;
+            crc = mapFlashCrc32Update(crc, buffer, chunk);
+            done += chunk;
+        }
+        crc ^= UINT32_MAX;
+        if (crc != entry.crc32) {
+            printf("[MAPFLASHV4] CRC-REJECT backing=%s hash=%08x expected=%08x actual=%08x\n",
+                   backing, (unsigned int)entry.nameHash,
+                   (unsigned int)entry.crc32, (unsigned int)crc);
+            return false;
+        }
+        ++files;
+        bytes += entry.size;
+    }
+    if (indexFNV != plan.indexFNV1a) return false;
+    printf("[MAPFLASHV4] CRC-PASS backing=%s entries=%u files=%u dirs=%u bytes=%llu us=%u scratch=%u\n",
+           backing, (unsigned int)plan.entryCount, (unsigned int)files,
+           (unsigned int)dirs, (unsigned long long)bytes,
+           (unsigned int)(esp_timer_get_time() - start),
+           (unsigned int)kMapFlashCopyBufferBytes);
+    return true;
+}
+
+// CRC proof is boot-local and only reusable after the existing full FNV check.
+// No on-flash format change or extra allocation. Never survives a stage writer.
+struct MapFlashCrcProof {
+    const esp_partition_t* partition;
+    uint32_t packBytes, indexOffset, dataOffset, indexFNV, payloadFNV;
+};
+MapFlashCrcProof mapFlashCrcProof = {};
+
+bool mapFlashEnsureEntryCrcs(const MapFlashPlan& plan, uint32_t payloadFNV,
+                             uint8_t* buffer)
+{
+    if (mapFlash.partition != nullptr &&
+        mapFlashCrcProof.partition == mapFlash.partition &&
+        mapFlashCrcProof.packBytes == plan.sourcePackBytes &&
+        mapFlashCrcProof.indexOffset == plan.sourceIndexOffset &&
+        mapFlashCrcProof.dataOffset == plan.sourceDataOffset &&
+        mapFlashCrcProof.indexFNV == plan.indexFNV1a &&
+        mapFlashCrcProof.payloadFNV == payloadFNV) {
+        printf("[MAPFLASHV4] CRC-REUSE scope=boot-identity writes=0\n");
+        return true;
+    }
+    mapFlashCrcProof = {};
+    if (mapFlash.partition == nullptr) return false;
+    auto read = [&](uint32_t offset, void* dst, size_t length) -> bool {
+        uint32_t flashOffset;
+        if (offset >= plan.sourceDataOffset &&
+            offset <= plan.sourcePackBytes && length <= plan.sourcePackBytes - offset) {
+            flashOffset = plan.payloadFlashOffset + offset - plan.sourceDataOffset;
+        } else if (offset >= plan.sourceIndexOffset &&
+                   offset - plan.sourceIndexOffset <= plan.indexBytes &&
+                   length <= plan.indexBytes - (offset - plan.sourceIndexOffset)) {
+            flashOffset = kMapFlashIndexOffset + offset - plan.sourceIndexOffset;
+        } else return false;
+        return flashOffset <= mapFlash.partition->size &&
+               length <= mapFlash.partition->size - flashOffset &&
+               esp_partition_read(mapFlash.partition, flashOffset, dst, length) == ESP_OK;
+    };
+    if (!mapFlashValidateEntryCrcs(plan, buffer, read, "flash")) return false;
+    mapFlashCrcProof = {mapFlash.partition, plan.sourcePackBytes,
+                       plan.sourceIndexOffset, plan.sourceDataOffset,
+                       plan.indexFNV1a, payloadFNV};
+    return true;
+}
+
 bool mapFlashTranslate(uint32_t sourceOffset,
                        uint32_t length,
                        uint32_t* outFlashOffset)
@@ -1492,6 +1611,9 @@ int EspAssetPack_mapFlashPrepare(uint8_t targetMapId)
             else if (!adoptPayload && flashPayloadFNV != cached.payloadFNV1a) {
                 missReason = "flash-payload-fnv";
             }
+            else if (!adoptPayload && !mapFlashEnsureEntryCrcs(plan, flashPayloadFNV, buffer)) {
+                missReason = "flash-entry-crc";
+            }
             else {
                 free(buffer);
                 buffer = nullptr;
@@ -1703,6 +1825,14 @@ int EspAssetPack_mapFlashStage(uint8_t currentMapId)
     if (eraseTotal == 0U || eraseTotal > partition->size) {
         return failStage("erase-bounds");
     }
+    // Reject damaged source resources before destroying an existing cache.
+    auto readSource = [&](uint32_t offset, void* dst, size_t length) -> bool {
+        return packFile.seek(offset) &&
+               packFile.read(static_cast<uint8_t*>(dst), length) == length;
+    };
+    if (!mapFlashValidateEntryCrcs(plan, buffer, readSource, "sd-before-erase"))
+        return failStage("source-entry-crc");
+    mapFlashCrcProof = {};
     /* Invalidate the old commit before touching any index/payload sectors. */
     if (esp_partition_erase_range(partition, 0U, kMapFlashSectorBytes) != ESP_OK) {
         return failStage("header-invalidate");
@@ -1759,6 +1889,9 @@ int EspAssetPack_mapFlashStage(uint8_t currentMapId)
         return failStage("flash-readback-fnv");
     }
 
+    // Validate the actual bytes written, not merely the source preflight.
+    if (!mapFlashEnsureEntryCrcs(plan, verifyPayloadFNV, buffer))
+        return failStage("flash-entry-crc");
     MapFlashHeader committed = {};
     committed.magic = kMapFlashMagic;
     committed.version = kMapFlashVersion;

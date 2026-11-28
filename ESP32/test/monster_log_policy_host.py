@@ -74,6 +74,19 @@ def check():
     assert "[MONSTERACTIVESEQ] BEGIN " in outputs["active_sequence", 2]
     assert "[MONSTERACTIVESEQ] COMPLETE " in outputs["active_sequence", 2]
 
+    # P4c: actual preprocessed INFO retains every ordered turn field;
+    # TRACE preserves the full original diagnostic. Failure literals above
+    # continue to be compared unchanged.
+    begin_fields = "[MONSTERACTIVESEQ] BEGIN turn=%u reason=%u activeCount=%u"
+    complete_fields = "[MONSTERACTIVESEQ] COMPLETE turn=%u reason=%u activeCount=%u delivered=%u sameMonsterTurn=yes ordered=yes"
+    for level in (2, 4):
+        out = outputs["active_sequence", level]
+        assert begin_fields in out and complete_fields in out
+    assert begin_fields + " sameMonsterTurn=yes" in outputs["active_sequence", 2]
+    assert begin_fields + " order=snapshot-prefix perMember=immediate-attack-then-move sameMonsterTurn=yes" in outputs["active_sequence", 4]
+    assert complete_fields + r"\n" in outputs["active_sequence", 2]
+    assert complete_fields + " publication=serialized-per-member multiAttack=one-probe-at-a-time" in outputs["active_sequence", 4]
+
     with tempfile.TemporaryDirectory(prefix="doomrpg-monster-log-test-") as tmp:
         for level in (2, 4):
             binary = str(Path(tmp) / f"activation-{level}")
@@ -84,7 +97,28 @@ def check():
             assert text.count("[MONSTERMOVEACT] DEFER ") == 2
             assert text.count("[MONSTERMOVEACT] ALLOW ") == (1 if level == 4 else 0)
             assert "PASS admission/capture preserved" in text
+    with tempfile.TemporaryDirectory(prefix="doomrpg-p4b-activation-") as tmp:
+        logs = {}
+        for level in (2, 4):
+            binary = str(Path(tmp) / f"gate-{level}")
+            run(CC + FLAGS + [f"-DDOOMRPG_LOG_LEVEL={level}",
+                "ESP32/test/perf_game_activation_gate_host.c",
+                "ESP32/src/esp_native_gameplay_monster_activation_gate.c", "-o", binary])
+            logs[level] = run([binary]).splitlines()
+        fields = r"sprite=(\d+) subtype=(\d+) tile=(\d+).*?activeCount=(\d+) activationOrder=(\d+)"
+        active = {level: [line for line in logs[level] if line.startswith("[MONSTERACT] ACTIVE ")]
+                  for level in logs}
+        assert len(active[2]) == len(active[4]) == 64
+        assert [re.search(fields, line).groups() for line in active[2]] == [
+            re.search(fields, line).groups() for line in active[4]]
+        assert sum(map(len, active[2])) < sum(map(len, active[4])) / 2
+        assert [line for line in logs[2] if line.startswith("P4b state=")] == [
+            line for line in logs[4] if line.startswith("P4b state=")]
+        assert [line for line in logs[2] if "[MONSTERACT] DEFER " in line] == [
+            line for line in logs[4] if "[MONSTERACT] DEFER " in line]
+        assert sum("[MONSTERACT] DEFER " in line for line in logs[2]) == 1
     print("monster_log_policy_host: PASS 16 TRACE-only sites, 3 failure guards, watcher evidence, INFO/TRACE capture")
+    print("P4b: PASS 64 ordered activation witnesses, identical state and failure logs at INFO/TRACE")
 
 
 def measure(path):

@@ -74,6 +74,8 @@ static void resetPhysicalState() { openReady=false; }
     "void clearMapFlashRuntime(", "bool mapFlashHeaderLooksValid(",
     "bool mapFlashHeaderMatchesPlan(", "bool fnvFlashRange("
 )) + r"""
+// P4a CRC resource scanner has its own production-body oracle.
+static bool mapFlashEnsureEntryCrcs(const MapFlashPlan&, uint32_t, uint8_t*) { return true; }
 int EspAssetPack_mapFlashStage(uint8_t) {
     ++stages;
     assert(!mapFlash.active && !mapFlash.handoffEligible);

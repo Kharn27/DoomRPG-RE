@@ -1,4 +1,4 @@
-# MAPFLASH-V2 P3 — exact BSP preflight payload from verified flash (pending CYD)
+# MAPFLASH-V2 P3 — exact BSP preflight payload from verified flash (CYD PASS, CI repair required)
 
 Same branch agent/esp32-mapflash-v2-p2 / PR #479 / issue #476. P2 hardware PASS recorded in MILESTONE_MAPFLASH_V2_P2_PENDING_CYD.md (candidate a52f9cf86fd25e1de86a8eb833c80f5d171764a1, dual CI green). Main observed 62234324ca6d0667fed59704d93f674d799c294b at P3 start; branch stays on P1 base 07e1557050394fe84a7f029eb0ffd69a20d215a4 for isolated attribution; integrate latest main before final merge.
 
@@ -13,3 +13,7 @@ mapflash_v2_bsp_probe_host.py extracts real probe selection, header/translation 
 ## CYD test
 
 Keep existing PAK/cache/saves, no erase_flash. Normal esp32-cyd or esp-cyd-inverted for alternate panel (verify actual platformio env names). Cold LOAD Junction slot01, enter Sector1 by door, play/shoot/open door, return menu and load Entrance or Sector1. Expect three [MAPFLASHV3] BSP-PROBE lines for maps 2/9/2 (bytes=16521/21051/16521 indexFNV=3a51cc4d crc32=f60dfb2b/4a2c5800/f60dfb2b backing=verified-flash sdPayloadBytes=0 scope=exact-entry), corresponding [PAKSOURCE] PROBE-READ backing=verified-flash cachePollution=no, all BSP STREAM verified=yes with unchanged CRC/FNV. P2 full target HIT plus one HANDOFF, zero BUILD/erase/write. Cold menu LOAD full HIT, no stale HANDOFF. READY NULL shapeData/mediaTexels; RA2B flash sdRangeUs=0, audio no underrun, no strict miss or failed handoff. P3 optimization occurs partly before loading UI, compare actual transition preflight if instrumented; no numerical performance claim yet. Test only after normal/inverted CI passes. No deliberate power cut yet.
+
+## CYD verdict — 28 November 2026
+
+Contextual candidate 20ea023b301b41d27672fe2874e538f1942fb52d; log platformio-device-monitor-261128-133626.log, 278726 B, 1956 splitlines, SHA256 3b726d243d1b0d8898c94a64547d49ed687f7f8aa1848593251ab3d7df0b9d79. Three exact probes map 2/9/2, 54093 BSP payload bytes from verified flash, zero SD payload; CRC/FNV unchanged (f60dfb2b/0716155f, 4a2c5800/fefaf5ca). Four full HIT, one HANDOFF 18717 us (target full 387704 us), no BUILD; RELEASE 1660 ms vs P2 1669 ms (nonpaired, excludes early probes). Four READY, 48/48 RA2B flash sdRangeUs=0, NULL invariants, no nonzero underrun/recovery/overflow/rejected SFX, clean EXIT. No injected corruption or interrupted build. Both final CI runs failed at historical RC4 oracle because sourceProbeFile.read moved to helper; P3 oracle passed before failure. P4a updates RC4 to execute actual helper, preserving INFO/TRACE observer contract. Hardware PASS does not imply CI PASS.

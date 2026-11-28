@@ -21,6 +21,25 @@ static uint32_t total, rejectedBoth, sourceOnly, destOnly, bothVisible, unknown;
 static uint32_t continuations, skipped, fallbackQuiet, fallbackWitness,
     fallbackLeaf, fallbackAge, eligible;
 static uint32_t continuationPhaseRejected;
+static EspPerfMoveFrameCost frameCosts[2];
+const EspPerfMoveFrameCost* EspPerfMoveVisibility_frameCost(int continuation) {
+    return &frameCosts[continuation != 0];
+}
+void EspPerfMoveVisibility_recordPresented(int continuation, int presented,
+    uint32_t beforeFNV, uint32_t afterFNV, int quietAfter,
+    uint32_t frameUs, uint32_t presentUs) {
+    EspPerfMoveFrameCost* cost = &frameCosts[continuation != 0];
+    if (!presented || !probe.armed) return;
+    ++cost->presented;
+    if (beforeFNV == 0U || beforeFNV != afterFNV) return;
+    ++cost->equalFNV;
+    cost->equalFrameUs += frameUs;
+    cost->equalPresentUs += presentUs;
+    if (probe.samples == 1U && probe.classification == 0U) {
+        ++cost->rejectedEqual;
+        if (probe.quiet && quietAfter) ++cost->quietRejectedEqual;
+    }
+}
 #if DOOMRPG_PERF_P2_COALESCE
 static uint32_t ambientCoalesced, crossLeafCoalesced;
 #endif
@@ -378,6 +397,16 @@ void EspPerfMoveVisibility_end(int rendered) {
     default: ++unknown; break;
     }
     if ((total & 15U) == 0U) {
+        for (unsigned int i = 0U; i < 2U; ++i) {
+            const EspPerfMoveFrameCost* cost = &frameCosts[i];
+            printf("[PERFGAMEP4G] group=%s presented=%u equalFNV=%u rejectedEqual=%u quietRejectedEqual=%u equalFrameUs=%llu equalPresentUs=%llu cumulative=yes authority=no\n",
+                   i == 0U ? "first" : "continuation",
+                   (unsigned int)cost->presented, (unsigned int)cost->equalFNV,
+                   (unsigned int)cost->rejectedEqual,
+                   (unsigned int)cost->quietRejectedEqual,
+                   (unsigned long long)cost->equalFrameUs,
+                   (unsigned long long)cost->equalPresentUs);
+        }
 #if DOOMRPG_PERF_P2_SHADOW
         printf("[PERFGAMEP2A] renders=%u rejectedBoth=%u sourceOnly=%u destOnly=%u bothVisible=%u unknown=%u mode=shadow skipped=0 cumulative=yes\n",
             (unsigned)total,(unsigned)rejectedBoth,(unsigned)sourceOnly,
