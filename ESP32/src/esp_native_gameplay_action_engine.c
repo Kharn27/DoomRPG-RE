@@ -1480,11 +1480,19 @@ int EspNativeGameplayActionEngine_enemyBarrelImpact(
     EspNativeSpriteTransient items[ACTION_BARREL_CHAIN_MAX];
     if (runtime == NULL || sequence == 0U ||
         EspNativeRootOwners_live()->render == NULL ||
-        !EspNativeGameplayActionEngine_enemyBarrelReady(rootSprite) ||
+        view == NULL || view->active != 1U ||
+        view->viewX != view->destX || view->viewY != view->destY ||
+        view->viewAngle != view->destAngle || !ensureOwner() ||
         !barrelChainPreflight(rootSprite, ACTION_DESTRUCTIBLE_BARREL_SUBTYPE,
                               view, chain, &expected, &monsters, &players,
                               &unsupported) ||
         !EspNativeGameplayPlayerState_snapshot(&playerBefore)) return 0;
+    {
+        EspNativeGraphicsCatalogStatus status =
+            EspNativeGraphicsCatalog_ensureSprite(ACTION_TRAP_EXPLOSION_LOGICAL);
+        if (status != ESP_NATIVE_GRAPHICS_CATALOG_OK &&
+            status != ESP_NATIVE_GRAPHICS_CATALOG_ALREADY_ACTIVE) return 0;
+    }
     rngBefore = *EspNativeProcessRng_live();
     journal.runtime=runtime;
     journal.sequence=sequence;
@@ -1550,7 +1558,7 @@ int EspNativeGameplayActionEngine_enemyBarrelImpact(
             !EspNativeGameplayMonsterCombat_commitTerminalSplashSequence(sequence)) {
             DRPG_LOGE("[AI14BARREL] FAILED seq=%u reason=terminal-splash-commit death=armed\n",
                       (unsigned)sequence);
-            return 0;
+            return -1; /* irreversible terminal admission: never restore AI RNG */
         }
     } else if (journal.monsterSequenceArmed &&
                !EspNativeGameplayMonsterCombat_commitSplashSequence(sequence)) {
@@ -1583,12 +1591,15 @@ int EspNativeGameplayActionEngine_enemyBarrelImpact(
     return 1;
 rollback:
     EspNativeSpriteRenderer_clearTransient();
-    if (!barrelRollbackRemoved(runtime,chain,count) ||
-        !EspNativeGameplayPlayerState_restore(&playerBefore)) {
-        DRPG_LOGE("[AI14BARREL] FAILED seq=%u rollback=NO\n",(unsigned)sequence);
-        return 0;
+    {
+        int worldExact=barrelRollbackRemoved(runtime,chain,count);
+        int playerExact=EspNativeGameplayPlayerState_restore(&playerBefore);
+        *EspNativeProcessRng_live()=rngBefore;
+        if (!worldExact || !playerExact) {
+            DRPG_LOGE("[AI14BARREL] FAILED seq=%u rollback=NO\n",(unsigned)sequence);
+            return -1;
+        }
     }
-    *EspNativeProcessRng_live()=rngBefore;
     (void)EspNativeGameplayFacingLabel_refresh("ENEMY-BARREL-ROLLBACK");
     memset(&frame,0,sizeof(frame));
     (void)EspNativeGameplayFrame_renderTurn(EspNativeRootOwners_live()->render,
