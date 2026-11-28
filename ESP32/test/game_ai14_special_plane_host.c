@@ -47,6 +47,7 @@ int EspMapSpriteTopology_getEntity(uint32_t i,uint8_t* type,uint8_t* sub,
 typedef struct RefDef { byte eType; } RefDef;
 typedef struct RefEntity { RefDef* def; unsigned int info; struct RefEntity* nextOnTile; } RefEntity;
 typedef struct RefSprite { int x,y,info; } RefSprite;
+#include "legacy_plane_nudge.inc"
 typedef struct RefRender { RefSprite mapSprites[1]; } RefRender;
 typedef struct RefCanvas { int destX,destY; } RefCanvas;
 typedef struct RefRoot { RefCanvas* doomCanvas; RefRender* render; } RefRoot;
@@ -74,10 +75,11 @@ int main(void) {
     player.active=1;
     player.viewX=player.destX=2016;
     player.viewY=player.destY=2016;
-    const uint32_t flags[]={0x600000U,0x20000U,0x220000U,0x1a0000U,0x7a0000U};
+    const uint32_t flags[]={0x600000U,0x20000U,0x220000U,0x1a0000U,0x7a0000U,
+        0x920000U,0x8a0000U,0xa20000U,0xc20000U,0xfa0000U};
     const int dirs[4][2]={{1,0},{-1,0},{0,1},{0,-1}};
     const int offsets[]={-8,0,8,32,56,64,72};
-    unsigned cases=0, blocked=0, clear=0, differences=0;
+    unsigned cases=0, blocked=0, clear=0, differences=0, nudgeDifferences=0;
     for(unsigned type=14;type<=15;type++)
     for(unsigned f=0;f<sizeof(flags)/sizeof(flags[0]);f++)
     for(unsigned d=0;d<4;d++)
@@ -98,7 +100,12 @@ int main(void) {
         for(int origin=0;origin<2;origin++) {
             int nudge=origin?32:0;
             RefGame_trace(&g,sx-nudge,sy-nudge,dx-nudge,dy-nudge,&g.entities[3],mask);
+            int rawExpected=g.numTraceEntities==0;
+            RefRender_nudge(&render.mapSprites[0]);
+            RefGame_trace(&g,sx-nudge,sy-nudge,dx-nudge,dy-nudge,&g.entities[3],mask);
             int expected=g.numTraceEntities==0;
+            nudgeDifferences+=(expected!=rawExpected);
+            render.mapSprites[0]=(RefSprite){plane.x,plane.y,(int)plane.info};
             int actual=cardinalTraceClear(sx,sy,dx,dy,0,mask,origin);
             if(actual!=expected) {
                 fprintf(stderr,"plane mismatch type=%u flags=%08x direction=%u cell=%u offset=%d excluded=%u origin=%d expected=%d actual=%d\n",
@@ -110,7 +117,9 @@ int main(void) {
         }
         differences+=(results[0]!=results[1]);
     }
-    assert(cases==2240 && blocked>0 && clear>0 && differences>0);
+    assert(cases==4480 && blocked>0 && clear>0 && differences>0 && nudgeDifferences>0);
+    printf("PASS GAME-AI-14 A4-NAV-P5 original Render nudge + Game_trace continuation=%d changed-vs-raw=%u\n",
+           CONTINUATION,nudgeDifferences);
     planeType=14;planeTile=331;plane=(EspMapSprite){704,672,0x220000U};
     readFail=1;assert(cardinalTraceClear(672,672,736,672,0,0xf387U,1)==-1);
     readFail=0;

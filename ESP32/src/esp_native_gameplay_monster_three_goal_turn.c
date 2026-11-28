@@ -23,6 +23,7 @@
 #include "esp_entity_def_type_catalog.h"
 #include "esp_map_line_state.h"
 #include "esp_map_runtime.h"
+#include "esp_native_special_plane_geometry.h"
 #include "esp_map_sprite_topology.h"
 #include "esp_map_state.h"
 #include "esp_native_gameplay_monster_activation.h"
@@ -289,8 +290,7 @@ static int specialEntityBlocks(uint32_t spriteIndex,
     int32_t sprY;
     if (!EspMapRuntime_getMapSprite(spriteIndex, &sprite)) return -1;
     if ((sprite.info & THREEGOAL_SPECIAL_TRACE_ENTITY_FLAG) == 0U) return 0;
-    sprX = (int32_t)sprite.x;
-    sprY = (int32_t)sprite.y;
+    EspNativeSpecialPlane_legacyPosition(&sprite, &sprX, &sprY);
     /* Entity_calcPath passes tile origins (x << 6), unlike the initial
      * Entity_aiGoal_MOVE center-to-center LOS. Tile membership is unchanged;
      * the special-plane crossing must use the original endpoints. */

@@ -12,6 +12,7 @@
 #include "esp_map_line_state.h"
 #include "esp_map_sprite_topology.h"
 #include "esp_entity_def_type_catalog.h"
+#include "esp_native_special_plane_geometry.h"
 
 static inline int EspAi14NavGeometry_near(uint16_t tile, int x, int y) {
     int dx = (int)(tile & 31U) - x, dy = (int)(tile >> 5) - y;
@@ -31,7 +32,7 @@ static inline void EspAi14NavGeometry_capture(const char* phase, unsigned sample
         printf("[AI14GEO] UNAVAILABLE phase=%s sample=%u sprite=%u\n", phase, sample, (unsigned)attacker);
         return;
     }
-    printf("[AI14GEO] BEGIN phase=%s sample=%u sprite=%u src=%d,%d arena=%08x radius=3\n",
+    printf("[AI14GEO] BEGIN phase=%s sample=%u sprite=%u src=%d,%d arena=%08x radius=3 planeNudge=legacy-render\n",
         phase, sample, (unsigned)attacker, (int)sx, (int)sy, (unsigned)rt->arenaFNV1a);
     for (int yy = y - 3; yy <= y + 3; ++yy) {
         char row[15];
@@ -74,6 +75,13 @@ static inline void EspAi14NavGeometry_capture(const char* phase, unsigned sample
         if (!EspMapRuntime_getMapSprite(i, &sprite)) { ++errors; continue; }
         if (sprites >= 64U) { truncated = 1; continue; }
         ++sprites;
+        if ((type == 14U || type == 15U) && (sprite.info & 0x00820000UL) == 0x00820000UL) {
+            int32_t px, py;
+            EspNativeSpecialPlane_legacyPosition(&sprite, &px, &py);
+            printf("[AI14NUDGE] sprite=%u type=%u raw=%u,%u trace=%d,%d info=%08x\n",
+                (unsigned)i, (unsigned)type, (unsigned)sprite.x, (unsigned)sprite.y,
+                (int)px, (int)py, (unsigned)sprite.info);
+        }
         printf("[AI14GEO] SPRITE id=%u type=%u sub=%u state=%04x order=%u xy=%u,%u info=%08x\n",
             (unsigned)i, (unsigned)type, (unsigned)sub, (unsigned)state, (unsigned)order,
             (unsigned)sprite.x, (unsigned)sprite.y, (unsigned)sprite.info);
