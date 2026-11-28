@@ -1,0 +1,17 @@
+# MAPFLASH-V2 P2 — one-shot same-target payload proof (pending CYD)
+
+Base main verified `07e1557050394fe84a7f029eb0ffd69a20d215a4` (merged P1 #477); branch `agent/esp32-mapflash-v2-p2`; follow-up to #476. P1 already hardware PASS.
+
+## Exact boundary
+
+CHANGEMAP releases the source L1 in EspMapCommittedTransition_commit, prepares the target cache (full verify), resets/loads compact target runtime, then EspAssetPack_residentBegin calls prepare again. The V2 raw cache is immutable within this interval. P2 permits a single adoption of the immediately preceding verified payload, on the same active target. Fresh SD source plan/target existence, committed flash header/geometry, partition identity and flash index FNV are still verified. Prior RAM header must match the new plan and payload FNV from the persisted header. The runtime epoch continues to advance at prepare boundaries. No handoff across boot, deactivation, residentEnd, stage, rejected boundary, failed plan, different map or epoch saturation. Source probe must be closed before prepare/stage. Any mismatch returns to full verification or existing fail-closed rebuild path. A successful handoff consumes eligibility; no chain of skips. All raw partition writers remain inside the existing single-owner stage path; external concurrent flash writers are unsupported. Payload damage *between* two prepares without a header/index change cannot be detected by a handoff: this is a deliberately narrow optimization under the immutable single-writer contract, not general trust across the boot.
+
+No DMF2 format migration, no partition changes, no heap increase (existing 4096-byte verify scratch); one byte of flag in MapFlashState tail padding on Xtensa, local header snapshot 60 B and pointer on stack. No renderer, audio, BSP source probe or save changes. Independent non-BSP CRC and power-loss hardware injection deferred.
+
+## Tests
+
+Existing P1 geometry/model and real L1 oracle retained. New mapflash_v2_handoff_host.py extracts actual prepare/header/FNV/invalidation C++ bodies; mock SD plan and flash memory, count actual index/payload reads; negative cases cover one-shot consumption, wrong map/partition, deactivate, saturation, changed source index, corrupt flash index/header/payload (cold), read errors, rejected active leases, missing source plan. Rebuild mocked fail-closed; not a hardware test.
+
+## Acceptance
+
+Use normal `esp32-cyd` or `esp-cyd-inverted` for the alternate panel. Keep the P1 raw cache and SD PAK unchanged; do not erase_flash. Cold LOAD Junction save: full HIT, verifiedBytes=2457374, no BUILD. Enter Sector 1 through actual CHANGEMAP (not merely LOAD); ideally also Entrance→Junction in same test. Expect first full HIT on target, then one `[MAPFLASHV2] HANDOFF map=2 eraseBytes=0 writeBytes=0 verifiedBytes=4820 priorPayloadBytes=2452554 payloadFNV=4eb90778 once=1 scope=same-target` (map=9 for Junction). ARM active=1 verified=1 reused=1, buildUs=0; no duplicate payload verification. Compare prepareUs and RELEASE time against P1 (Junction→Sector1 1859ms, nonpaired); expected saving roughly one payload scan ~0.4s, not yet measured. Play/open door/shoot; return menu and LOAD again; must see full HIT, not HANDOFF. Optional power cycle then LOAD different save for cold full verification. READY shapeData/mediaTexels NULL, flash render ranges sdRangeUs=0, normal SFX/music. No deliberate power cut/corruption in this round. Hardware PASS pending.
