@@ -219,6 +219,8 @@ static int renderComposed(
     uint8_t painShakeStep = 0U;
     uint8_t painShakePainted = 0U;
     uint32_t painVisualSampleMs = 0U;
+    int8_t blastDx = 0, blastDy = 0;
+    int blastShake;
     int ok = 0;
 
 #if defined(ARDUINO) && defined(DOOMRPG_ESP32)
@@ -252,6 +254,8 @@ static int renderComposed(
     ra2bFlashBefore = EspAssetPack_mapFlashRuntimeReadMicros();
 #endif
     totalStart = esp_timer_get_time();
+    blastShake = EspNativeSpriteRenderer_blastShakeOffsets(
+        (uint32_t)(totalStart / 1000LL), &blastDx, &blastDy);
 
     stats->frameBeforeFNV = frameFNV();
     stats->viewportBeforeFNV = viewportFNV();
@@ -462,7 +466,14 @@ static int renderComposed(
     {
         int8_t dx, dy;
         painVisualSampleMs = DoomRPG_GetUpTimeMS();
-        if (EspNativePlayerPainVisual_shakeOffsets(
+        if (blastShake) {
+            if (!EspNativePlayerPainVisual_shiftViewport(
+                    (uint16_t*)Esp32PlatformVideo_framebuffer(),
+                    DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
+                    blastDx, blastDy)) goto done;
+            printf("[BLASTSHAKE] PAINT durationMs=200 dx=%d dy=%d owner=type1-transient hud=stable rng=visual-only\n",
+                   (int)blastDx, (int)blastDy);
+        } else if (EspNativePlayerPainVisual_shakeOffsets(
                 painVisualSampleMs, &dx, &dy, &painShakeStep)) {
             if (!EspNativePlayerPainVisual_shiftViewport(
                     (uint16_t*)Esp32PlatformVideo_framebuffer(),

@@ -175,6 +175,8 @@ typedef struct TransientWorldBatch_s {
     uint8_t animation;
     uint8_t count;
     uint8_t active;
+    uint8_t blastShakeArmed;
+    uint32_t blastStartedMs;
 } TransientWorldBatch;
 
 static TransientWorldBatch transientWorldBatch;
@@ -302,6 +304,16 @@ int EspNativeSpriteRenderer_armTransientBatch(
         EspNativeGraphicsCatalog_findSprite(logical) == NULL) {
         return 0;
     }
+    /* Every type-1 blast wave starts its own original 200ms shake.
+     * The clock belongs to this transient lease; later phases never restart it. */
+    if (logical == 180U && animation == 0U) {
+        transientWorldBatch.blastStartedMs =
+            (uint32_t)(esp_timer_get_time() / 1000LL);
+        transientWorldBatch.blastShakeArmed = 1U;
+    } else if (logical != 180U || transientWorldBatch.active == 0U ||
+               transientWorldBatch.logical != 180U) {
+        transientWorldBatch.blastShakeArmed = 0U;
+    }
     transientWorldBatch.items = items;
     transientWorldBatch.logical = logical;
     transientWorldBatch.animation = animation;
@@ -312,6 +324,28 @@ int EspNativeSpriteRenderer_armTransientBatch(
 
 void EspNativeSpriteRenderer_clearTransient(void) {
     memset(&transientWorldBatch, 0, sizeof(transientWorldBatch));
+}
+
+/* Legacy startShake(200,2,0): visual-only [-2,+1] per axis.
+ * Sample at composition start; no extra present or gameplay RNG draws. */
+int EspNativeSpriteRenderer_blastShakeOffsets(uint32_t nowMs,
+                                               int8_t* outX, int8_t* outY) {
+    uint32_t age, visual;
+    if (outX == NULL || outY == NULL ||
+        transientWorldBatch.active == 0U ||
+        transientWorldBatch.logical != 180U ||
+        transientWorldBatch.blastShakeArmed == 0U) return 0;
+    age = nowMs - transientWorldBatch.blastStartedMs;
+    if (age >= 200U) return 0;
+    visual = (transientWorldBatch.blastStartedMs * 0x9e3779b9U) ^
+             (age * 0x85ebca6bU) ^
+             ((uint32_t)transientWorldBatch.animation * 0xc2b2ae35U);
+    visual ^= visual >> 16;
+    visual *= 0x7feb352dU;
+    visual ^= visual >> 15;
+    *outX = (int8_t)((int)(visual & 3U) - 2);
+    *outY = (int8_t)((int)((visual >> 8) & 3U) - 2);
+    return 1;
 }
 
 static uint16_t glowFor(uint16_t logical) {

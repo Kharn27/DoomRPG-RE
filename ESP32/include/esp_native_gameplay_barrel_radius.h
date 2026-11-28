@@ -4,19 +4,23 @@
 #include <stdint.h>
 
 /*
- * Game_hurtEntityAt() acts only on entities with info&0x40000.
- * Entity_initspawn() never marks an eType=0 line as hurtable, regardless of
- * eSubType. Game_loadMapEntities() still links these line entities, so the
- * radius lookup can encounter one first and must treat it as an inert no-op.
- *
- * Legacy also explicitly skips eType=12 subtypes 3 (jammed door) and
- * 4 (power coupling). Other line types remain fail-closed until their
- * gameplay consequences have a native owner.
+ * Game_hurtEntityAt() only mutates entities with info&0x40000.
+ * Entity_initspawn() never grants it to types 0, 2, 9 or 14; fire
+ * (10) and destructible subtypes 3/4 are explicitly skipped by the
+ * radius handler. This is a type rule, independent of map or source.
+ * A selected inert entity still occludes the remaining tile list.
+ * Type 7 needs its definition parm; other effects require native owners.
  */
+static inline int EspNativeGameplayBarrelRadius_entityNoop(
+    uint8_t type, uint8_t subtype) {
+    return type == 0U || type == 2U || type == 9U ||
+           type == 10U || type == 14U ||
+           (type == 12U && (subtype == 3U || subtype == 4U));
+}
+
 static inline int EspNativeGameplayBarrelRadius_lineNoop(
     uint8_t type, uint8_t subtype) {
-    return type == 0U ||
-           (type == 12U && (subtype == 3U || subtype == 4U));
+    return EspNativeGameplayBarrelRadius_entityNoop(type, subtype);
 }
 
 /* Consequence RNG draws are interleaved between barrel blast words as soon
@@ -29,14 +33,27 @@ static inline uint8_t EspNativeGameplayBarrelRadius_previewWords(
                ? 1U : barrelCount;
 }
 
-/* Terminal death may be committed after the entire explosion transaction
- * only if exactly one barrel's blast word participates. Adjacent monster
- * splash is supported because the death RNG byte is pre-reserved before its
- * consequence rolls; multi-barrel death remains fail-closed until subsequent
- * blast/death ordering has a dedicated replay milestone. */
+/* A player hit can interleave a death byte just like monster consequences.
+ * Keep the full preview for multi-blast chains with neither victim family. */
+static inline uint8_t EspNativeGameplayBarrelRadius_previewWordsForChain(
+    uint8_t barrelCount, uint8_t monsterCount, uint8_t playerCount) {
+    return EspNativeGameplayBarrelRadius_previewWords(
+        barrelCount, (uint8_t)(monsterCount != 0U || playerCount != 0U));
+}
+
+/* Any planned blast may reserve the first death byte. */
 static inline int EspNativeGameplayBarrelRadius_terminalDeathOwned(
     uint8_t barrelCount) {
-    return barrelCount == 1U;
+    return barrelCount != 0U;
+}
+
+/* blastCursor is zero-based and preflight supplies the expected count.
+ * Invalid cursors must not wrap the unsigned remaining count. */
+static inline int EspNativeGameplayBarrelRadius_terminalDeathOwnedAt(
+    uint8_t barrelCount, uint8_t blastCursor) {
+    return blastCursor < barrelCount &&
+           EspNativeGameplayBarrelRadius_terminalDeathOwned(
+               (uint8_t)(barrelCount - blastCursor));
 }
 
 #endif

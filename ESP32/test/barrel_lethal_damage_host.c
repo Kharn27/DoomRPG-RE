@@ -72,6 +72,20 @@ int main(void) {
     assert(result.healthAfter == 23U && result.armorAfter == 8U);
     assert(EspNativeGameplayPlayerState_health() == 23U);
     assert(EspNativeGameplayPlayerState_armor() == 8U);
-    puts("BARRELLETHAL: PASS nonlethal-fail-closed terminal-hp-zero rollback exact regular-damage");
+    /* Sweep real owner damage across every HP/armor pair and full/half
+     * components; no source, map, ordinal or test-scene dependency. */
+    unsigned checks=0;
+    for (unsigned hp=1;hp<=30;++hp) for (unsigned armor=0;armor<=20;++armor)
+        for (unsigned d=1;d<=24;++d) {
+            before=playerWith((uint8_t)hp,(uint8_t)armor);
+            assert(EspNativeGameplayPlayerState_restore(&before));
+            unsigned loss=d+(d>armor?d-armor:0);
+            unsigned expected=hp>loss?hp-loss:0;
+            assert(EspNativeGameplayPlayerState_applyDamageForDeath(d,d,&result)==
+                (expected?ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_OK:ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_LETHAL_COMMITTED));
+            assert(result.healthAfter==expected && result.armorAfter==(armor>d?armor-d:0));
+            ++checks;
+        }
+    printf("BARRELLETHAL: PASS %u general HP/armor/component combinations\n",checks);
     return 0;
 }

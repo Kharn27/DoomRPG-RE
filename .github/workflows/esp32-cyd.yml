@@ -305,6 +305,9 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -IESP32/test/oracles -IESP32/include ESP32/test/barrel_radius_inert_line_host.c -o /tmp/doomrpg-barrel-radius-inert-line-test
           /tmp/doomrpg-barrel-radius-inert-line-test
 
+      - name: GAME-AI-14 A2 shared coordinate radius leaf (host C)
+        run: python ESP32/test/game_ai14_blast_source_host.py
+
       - name: Test moving-monster BSP leaf versus cached spawn leaf (real C + mutant)
         run: python ESP32/test/native_bsp_moving_sprite_visibility_host.py
 

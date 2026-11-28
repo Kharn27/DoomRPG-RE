@@ -131,7 +131,7 @@ def real_if_after(text, marker, prefix):
 gun_tag="/* BARREL-GUN-VISUAL:"
 blast_tag="/* BARREL-5061-VISUAL:"
 gun_gate=real_if_after(
-    gameplay,gun_tag,"if (isBarrel && frame.finalPresented != 0U &&")
+    gameplay,gun_tag,"if ((isBarrel || barrelExplosionArmed != 0U) && frame.finalPresented != 0U &&")
 blast_gate=real_if_after(
     gameplay,blast_tag,"if (waveOrdinal == 1U &&")
 assert gun_gate.count("EspNativeAudioIntent_publish(")==1
@@ -150,7 +150,17 @@ assert first_wave < gameplay.index(blast_tag) < barrel_commit
 commit_region=gameplay[barrel_commit:gameplay.index("if (isFireMiss) {",barrel_commit)]
 assert "EspNativeAudioIntent_publish(5061U" not in commit_region
 assert "crateWeapon->resourceId, 0U, 5U" not in commit_region
-assert gameplay.count("EspNativeAudioIntent_publish(5061U, 0U, 4U)")==1
+# Two separate origins, each with one first-visible-frame cue. Preserve
+# the exact original barrel gate above and independently prove subtype8.
+death_start=gameplay.index("int EspNativeGameplayActionEngine_runDeathBlast(")
+death_end=gameplay.index("static int traceAction(",death_start)
+death_blast=gameplay[death_start:death_end]
+assert death_blast.count("EspNativeAudioIntent_publish(5061U, 0U, 4U)")==1
+assert death_blast.index("EspNativeDynamicLineRender_renderAmbient(") < death_blast.index(
+    "if (phase == 0U && frame.finalPresented != 0U)") < death_blast.index(
+    "EspNativeAudioIntent_publish(5061U, 0U, 4U)") < death_blast.index(
+    "DoomRPG_randNextInt(")
+assert gameplay.count("EspNativeAudioIntent_publish(5061U, 0U, 4U)")==2
 
 host = r"""
 #include <assert.h>
@@ -195,8 +205,12 @@ static void reset(void) {
 int main(void) {
     /* A failed attack frame cannot publish a speculative gunshot. */
     reset();attack_presented();assert(played==0U && pumped==0U);
-    reset();isBarrel=0;frame.finalPresented=1U;
+    reset();isBarrel=0;barrelExplosionArmed=0U;frame.finalPresented=1U;
     attack_presented();assert(played==0U);
+    /* Trapped crate uses exactly the same visible gun and blast gates. */
+    reset();isBarrel=0;frame.finalPresented=1U;
+    attack_presented();blast_presented();
+    assert(played==2U && ids[0]==5046U && ids[1]==5061U && pumped==2U);
     reset();frame.finalPresented=1U;crateWeapon=&mute;
     attack_presented();assert(played==0U);
     reset();frame.finalPresented=1U;crateWeapon=&shotgun;

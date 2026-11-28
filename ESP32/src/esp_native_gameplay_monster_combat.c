@@ -28,6 +28,8 @@
 #include "esp_native_gameplay_monster_drop.h"
 #include "esp_native_gameplay_monster_trace.h"
 #include "esp_native_gameplay_player_state.h"
+#include "esp_native_gameplay_player_death.h"
+#include "platform_video_c_bridge.h"
 #include "esp_native_gameplay_weapon.h"
 #include "esp_player_view_state.h"
 
@@ -284,13 +286,14 @@ static int syncOwner(void) {
              */
             for (i = 0U; i < monsters->count; ++i) {
                 if (monsters->records[i].alive == 0U) {
-                    setGibbed(monsters->records[i].spriteIndex, 0);
-                    setCorpseReady(monsters->records[i].spriteIndex, 1);
+                    const int hidden = monsters->records[i].subtype == 8U;
+                    setGibbed(monsters->records[i].spriteIndex, hidden);
+                    setCorpseReady(monsters->records[i].spriteIndex, !hidden);
                     ++restoredDead;
                 }
             }
             if (restoredDead != 0U) {
-                printf("[MONSTERCOMBAT] RESUME-DEAD normalized=%u visual=corpse2 linked=masked alive=masked exactGibReplay=deferred\n",
+                printf("[MONSTERCOMBAT] RESUME-DEAD normalized=%u visual=corpse2-or-subtype8-hidden linked=masked alive=masked exactOrdinaryGibReplay=deferred\n",
                        (unsigned int)restoredDead);
             }
         }
@@ -459,7 +462,7 @@ static int prepareDeathAfterXp(
     if (runtime == NULL || before == NULL || ioRngCalls == NULL ||
         outPlan == NULL || outSound == NULL || outDropRoll == NULL ||
         before->subtype >= MONSTER_SUBTYPE_COUNT || gib > 1U ||
-        specialDeath(before->subtype)) return 0;
+        (specialDeath(before->subtype) && before->subtype != 8U)) return 0;
     *outSound = gib != 0U
         ? 5091U : consumeDeathSound(runtime, before->subtype, ioRngCalls);
     *outDropRoll = (uint32_t)DoomRPG_randNextInt(EspNativeProcessRng_live());
@@ -509,6 +512,10 @@ static int serviceVisualRedraw(DoomRPG_t* runtime) {
     return 1;
 }
 
+/* Reuse the splash snapshot for direct subtype8 collateral rollback. */
+static int
+restoreSplashSnapshot(DoomRPG_t* runtime);
+
 static int servicePending(DoomRPG_t* runtime) {
     const EspPlayerViewState* view = EspPlayerView_view();
     const EspNativeGameplayWeaponSpec* weapon;
@@ -543,6 +550,10 @@ static int servicePending(DoomRPG_t* runtime) {
     int32_t armorAfter;
     int lethal = 0;
     int gib = 0;
+    int deathBlast = 0;
+    int blastSnapshot = 0;
+    EspNativeGameplayDeathBlastPlan blastPlan = {0};
+    EspNativeGameplayDeathBlastResult blastResult = {0};
 
     if (runtime == NULL || EspNativeRootOwners_live()->render == NULL || view == NULL ||
         view->active != 1U || view->viewAngle != view->destAngle ||
@@ -616,7 +627,11 @@ static int servicePending(DoomRPG_t* runtime) {
                   &healthAfter, &armorAfter);
         lethal = healthAfter <= 0;
 
-        if (lethal && specialDeath(target->subtype)) {
+        if (lethal && target->subtype == 8U) {
+            deathBlast = EspNativeGameplayActionEngine_prepareDeathBlast(
+                target->spriteIndex, &blastPlan);
+        }
+        if (lethal && specialDeath(target->subtype) && !deathBlast) {
             *target = targetBefore;
             (*EspNativeProcessRng_live()) = randomBefore;
             (void)EspNativeGameplayPlayerState_restore(&playerBefore);
@@ -663,10 +678,19 @@ static int servicePending(DoomRPG_t* runtime) {
                     setCorpseReady(previousDeathSprite, 1);
                 }
             }
-            combatOwner.deathSpriteIndex = target->spriteIndex;
-            combatOwner.deathFinalGib = gib ? 1U : 0U;
-            combatOwner.deathUntilMs = DoomRPG_GetUpTimeMS() +
-                                       MONSTER_DEATH_MS;
+            if (deathBlast) {
+                /* Legacy subtype8 hides immediately, gib or normal death. */
+                setGibbed(target->spriteIndex, 1);
+                setCorpseReady(target->spriteIndex, 0);
+                combatOwner.deathSpriteIndex = MONSTER_NO_SPRITE;
+                combatOwner.deathFinalGib = 0U;
+                combatOwner.deathUntilMs = 0U;
+            } else {
+                combatOwner.deathSpriteIndex = target->spriteIndex;
+                combatOwner.deathFinalGib = gib ? 1U : 0U;
+                combatOwner.deathUntilMs = DoomRPG_GetUpTimeMS() +
+                                           MONSTER_DEATH_MS;
+            }
 
             /* Exact Entity_died() ordering: XP/possible level-up RNG first,
              * then death-sound RNG (unless gibbed), then one drop RNG word. */
@@ -796,7 +820,64 @@ static int servicePending(DoomRPG_t* runtime) {
      * never has to roll back a dynamic slot. No other gameplay service can
      * modify this serialized owner during the synchronous frame render.
      */
-    if (lethal &&
+    if (deathBlast) {
+        /* Root HP/XP/RNG remains provisional in the original direct
+         * journal. Snapshot all collateral owners BEFORE root drop commit. */
+        combatOwner.pending.active = 0U;
+        if (!EspNativeGameplayMonsterCombat_beginSplashSequence(
+                runtime, pending.sequence)) goto death_blast_failed;
+        blastSnapshot = 1;
+        if (dropPlan.outcome == ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SPAWN) {
+            if (!EspNativeGameplayMonsterDrop_commit(&dropPlan))
+                goto death_blast_failed;
+            dropMaterialized = 1;
+        }
+        /* Opening cues describe the already presented attack. Collateral
+         * audio remains provisional until the complete transaction commits. */
+        if (frame.finalPresented != 0U) {
+            const uint16_t shotSound = pending.weapon == 0U
+                ? 5136U : weapon->resourceId;
+            if (shotSound != 0U)
+                (void)EspNativeAudioIntent_publish(shotSound, 0U, 5U);
+            if (consequenceSound != 0U)
+                (void)EspNativeAudioIntent_publish(consequenceSound, 0U,
+                    EspNativeMonsterDeathConsequence_priority(1U, (uint8_t)gib));
+        }
+        if (!EspNativeGameplayActionEngine_runDeathBlast(
+                runtime, pending.sequence, &blastPlan, &blastResult))
+            goto death_blast_failed;
+        if (blastResult.lethal != 0U) {
+            const uint16_t deathTile = (uint16_t)(
+                (view->destY >> 6) * 32 + (view->destX >> 6));
+            if (!EspNativeGameplayPlayerDeath_armWithReservedRand(
+                    runtime, pending.sequence, deathTile, blastResult.deathRand))
+                goto death_blast_failed;
+            if (!EspNativeGameplayMonsterCombat_commitTerminalSplashSequence(
+                    pending.sequence)) return 0; /* death already armed */
+        } else if (!EspNativeGameplayMonsterCombat_commitSplashSequence(
+                       pending.sequence)) goto death_blast_failed;
+        blastSnapshot = 0;
+        if (!EspNativeGameplayMonsterCombat_publishSplashAudioAfterCommit(
+                pending.sequence)) return 0;
+        monsterFNVAfter = currentMonsterFNV();
+        playerFNVAfter = EspNativeGameplayPlayerState_fingerprint();
+        printf("[MONSTERBLAST] COMMIT seq=%u source=%u hidden=yes gib=%u monsters=%u playerDamage=%u lethal=%u rollback=closed\n",
+               (unsigned int)pending.sequence, (unsigned int)pending.spriteIndex,
+               (unsigned int)gib, (unsigned int)blastResult.monsterHits,
+               (unsigned int)blastResult.playerMessageDamage,
+               (unsigned int)blastResult.lethal);
+        if (blastResult.lethal != 0U) {
+            memset(&combatOwner.pending, 0, sizeof(combatOwner.pending));
+            combatOwner.view.pending = 0U;
+            combatOwner.view.pendingSpriteIndex = MONSTER_NO_SPRITE;
+            combatOwner.view.currentMonsterFNV1a = monsterFNVAfter;
+            (void)Esp32PlatformVideo_present();
+            return 1;
+        }
+        if (splashLevelUpSequence != 0U) levelUpPopup = 0;
+    }
+
+    if (lethal && !deathBlast &&
         dropPlan.outcome == ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SPAWN) {
         if (!EspNativeGameplayMonsterDrop_commit(&dropPlan)) {
             printf("[MONSTERDROP] FAILED seq=%u sprite=%u reason=post-render-commit fatal=yes\n",
@@ -812,7 +893,12 @@ static int servicePending(DoomRPG_t* runtime) {
      * blood remains a separate impact-time presentation lease.
      */
     memset(hitMessage, 0, sizeof(hitMessage));
-    if (roll.hitLoops != 0U) {
+    if (deathBlast && blastResult.playerMessageDamage != 0U) {
+        (void)snprintf(hitMessage, sizeof(hitMessage), "%u damage!",
+                       (unsigned int)blastResult.playerMessageDamage);
+        hitMessageQueued = EspNativeGameplayActionEngine_queueTextFeedback(
+            ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DAMAGE, hitMessage, 500U);
+    } else if (roll.hitLoops != 0U) {
         const int32_t visibleDamage =
             roll.totalDamage + roll.totalArmorDamage;
         (void)snprintf(hitMessage, sizeof(hitMessage),
@@ -850,9 +936,9 @@ static int servicePending(DoomRPG_t* runtime) {
            lethal ? "deferred-bounded-topbar" : "n/a");
 
     logFrame(&pending, "attack", &frame);
-    /* Both sounds are committed AFTER attack-frame success, never during
-     * probe/rollback. The audio owner retains both ordered intents. */
-    {
+    /* Ordinary deaths publish here; subtype8 opening cues have already
+     * played at the visible attack/blast frame boundary. */
+    if (!deathBlast) {
         const uint16_t shotSound=pending.weapon==0U ? 5136U : weapon->resourceId;
         if (shotSound!=0U) (void)EspNativeAudioIntent_publish(shotSound,0U,5U);
         if (consequenceSound!=0U) {
@@ -887,6 +973,7 @@ static int servicePending(DoomRPG_t* runtime) {
            (unsigned int)playerFNVAfter,
            (unsigned int)ammoBefore,
            (unsigned int)ammoAfter,
+           deathBlast ? "hidden+type1-blast" :
            lethal ? (gib ? "death4->gib-hidden/250ms+unlink,gibFX-deferred"
                          : "death4->corpse2/250ms+unlink")
                   : (roll.hitLoops != 0U ? "pain6/250ms" : "none"),
@@ -923,6 +1010,9 @@ static int servicePending(DoomRPG_t* runtime) {
                (unsigned int)pending.spriteIndex);
     }
 
+    if (deathBlast && splashLevelUpSequence != 0U &&
+        !EspNativeGameplayMonsterCombat_finishSplashPresentation(
+            pending.sequence)) return 0;
     if (levelUpPopup != 0) {
         const int levelUpOk =
             EspNativeGameplayLevelUp_begin(&xpResult, pending.sequence);
@@ -939,6 +1029,32 @@ static int servicePending(DoomRPG_t* runtime) {
     combatOwner.view.pendingSpriteIndex = MONSTER_NO_SPRITE;
     combatOwner.view.currentMonsterFNV1a = currentMonsterFNV();
     return 1;
+
+death_blast_failed:
+    {
+        int exact = 1;
+        /* A failed cell may have already restored/closed this snapshot.
+         * Re-apply it explicitly to verify every collateral owner. */
+        if (blastSnapshot && !restoreSplashSnapshot(runtime)) exact = 0;
+        target = EspNativeGameplayMonsterState_findMutable(pending.spriteIndex);
+        if (target == NULL) exact = 0;
+        else *target = targetBefore;
+        (*EspNativeProcessRng_live()) = randomBefore;
+        if (!EspNativeGameplayPlayerState_restore(&playerBefore)) exact = 0;
+        combatOwner = combatRollbackOwner;
+        memset(&combatOwner.pending, 0, sizeof(combatOwner.pending));
+        combatOwner.view.pending = 0U;
+        combatOwner.view.pendingSpriteIndex = MONSTER_NO_SPRITE;
+        EspNativeGameplayWeapon_cancelAttack();
+        if (hitFxArmed) (void)EspNativeGameplayHitFeedback_cancel(pending.sequence);
+        memset(&frame, 0, sizeof(frame));
+        if (!EspNativeGameplayFrame_renderTurn(EspNativeRootOwners_live()->render,
+                                               (uint8_t)view->viewAngle, &frame)) exact = 0;
+        printf("[MONSTERBLAST] ROLLBACK seq=%u source=%u exact=%s root+collateral+drop+player+rng=restored\n",
+               (unsigned int)pending.sequence, (unsigned int)pending.spriteIndex,
+               exact ? "yes" : "NO");
+        return exact;
+    }
 }
 
 
@@ -1022,6 +1138,25 @@ int EspNativeGameplayMonsterCombat_commitSplashSequence(
     splashSequenceNumber = 0U;
     printf("[MONSTERRADIUS] SEQUENCE-COMMIT seq=%u order=blast-then-impact-per-wave rng=live-interleaved rollback=closed\n",
            (unsigned int)sequence);
+    return 1;
+}
+
+/* Called only after PlayerDeath accepted the terminal transition. Preserve XP
+ * in the committed player owner but do not open a level-up modal over death.
+ * On failed admission the caller must cancel the still-active sequence. */
+int EspNativeGameplayMonsterCombat_splashSequenceArmed(uint32_t sequence) {
+    return sequence != 0U && splashSequenceActive != 0U &&
+           splashSequenceNumber == sequence;
+}
+
+int EspNativeGameplayMonsterCombat_commitTerminalSplashSequence(
+    uint32_t sequence) {
+    if (sequence == 0U ||
+        (splashLevelUpSequence != 0U &&
+         splashLevelUpSequence != sequence)) return 0;
+    if (!EspNativeGameplayMonsterCombat_commitSplashSequence(sequence)) return 0;
+    splashLevelUpSequence = 0U;
+    memset(&splashLevelUp, 0, sizeof(splashLevelUp));
     return 1;
 }
 

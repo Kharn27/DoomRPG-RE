@@ -22,6 +22,7 @@
 #include "esp_map_state.h"
 #include "esp_native_gameplay_action.h"
 #include "esp_native_gameplay_barrel_radius.h"
+#include "esp_native_gameplay_explosion.h"
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_controls.h"
 #include "esp_native_gameplay_combat_math.h"
@@ -35,6 +36,12 @@
 #include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_gameplay_monster_combat.h"
 #include "esp_native_gameplay_monster_state.h"
+#include "esp_native_gameplay_monster_position.h"
+#include "esp_native_dynamic_line_render.h"
+#if defined(ESP_PLATFORM)
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#endif
 #include "esp_native_graphics_catalog.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_pickup_miniature.h"
@@ -74,7 +81,7 @@
 #define ACTION_TRAP_EXPLOSION_FRAMES 3U
 #define ACTION_TRAP_DAMAGE_FLASH_MS 500U
 #define ACTION_BARREL_CHAIN_MAX 16U
-#define ACTION_BARREL_RADIUS_NEIGHBORS 8U
+#define ACTION_BARREL_RADIUS_NEIGHBORS ESP_NATIVE_EXPLOSION_NEIGHBORS
 
 /* Legacy Player_reset accuracy=16, Combat_calcHit() derives dummy agility=12
  * and the axe adds its range term: 170 + 89 = 259. randHit is one byte, so
@@ -283,36 +290,7 @@ static uint32_t actionNowMs(void) {
     return DoomRPG_GetUpTimeMS();
 }
 
-/*
- * DoomRPG-RE's inherited DoomRPG_randNextInt() advances nextRand as a byte
- * offset, then incorrectly applies that byte offset as an int* array index.
- * Once nextRand reaches 32 this can read beyond the 128-byte random table and
- * into unrelated DoomRPG_t fields, making crate blast damage architecture-
- * dependent.  The original BREW expression only needs the low byte of the
- * next 32-bit RNG word.  On the little-endian target that byte is exactly
- * randTable[nextRand], while the word still consumes four table bytes.
- *
- * Crate traps retain their bounded no-refill preview. Barrel chains preview
- * the exact 4-byte words through the replay guard, which reserves any hidden
- * generator refill until the same words are consumed after animation.
- * Other inherited randNextInt() call sites remain outside this family's audit.
- */
-static int explosionPeekWordLowByte(const Random_t* random,
-                                    uint8_t* outByte) {
-    if (random == NULL || outByte == NULL || random->nextRand < 0 ||
-        random->nextRand + (int)sizeof(int) >= RANDTABLESIZE) {
-        return 0;
-    }
-    *outByte = random->randTable[random->nextRand];
-    return 1;
-}
-
-static int explosionConsumeWordLowByte(Random_t* random,
-                                       uint8_t* outByte) {
-    if (!explosionPeekWordLowByte(random, outByte)) return 0;
-    random->nextRand += (int)sizeof(int);
-    return 1;
-}
+/* Type-1 explosions use the shared guarded word RNG at wave expiry. */
 
 static int centeredCoordinate(int32_t value) {
     return value >= TILE_CENTER && value <= MAP_MAX_CENTER &&
@@ -887,13 +865,6 @@ static int findSpriteOnTile(uint16_t tile,
     return 1;
 }
 
-static const int8_t barrelRadiusDx[ACTION_BARREL_RADIUS_NEIGHBORS] = {
-    -1, 1, 0, 0, -1, 1, 1, -1
-};
-static const int8_t barrelRadiusDy[ACTION_BARREL_RADIUS_NEIGHBORS] = {
-     0, 0,-1, 1,  1, 1,-1, -1
-};
-
 static int barrelChainContains(const uint16_t* chain,
                                uint8_t count,
                                uint16_t spriteIndex) {
@@ -909,7 +880,8 @@ static int barrelChainContains(const uint16_t* chain,
  * type participates in the trace mask. Radius damage does not perform the
  * line-of-sight special-entity test used by SELECT tracing, so keep this lookup
  * independent from findSpriteOnTile(). */
-static int findRadiusSpriteOnTile(uint16_t tile, ActionTarget* outTarget) {
+static int findRadiusSpriteOnTile(uint16_t tile, uint16_t ignoredSprite,
+                                  ActionTarget* outTarget) {
     const EspMapSpriteTopologyView* topology = EspMapSpriteTopology_view();
     uint16_t best = ESP_MAP_SPRITE_TOPOLOGY_NO_SPRITE;
     uint16_t bestOrder = 0U;
@@ -923,6 +895,7 @@ static int findRadiusSpriteOnTile(uint16_t tile, ActionTarget* outTarget) {
         uint8_t subtype;
         uint16_t linkState;
         uint16_t linkOrder;
+        if (i == ignoredSprite) continue;
         if (!actionGetEntity(i, &type, &subtype, &linkState, &linkOrder)) {
             return -1;
         }
@@ -954,8 +927,9 @@ static int findRadiusSpriteOnTile(uint16_t tile, ActionTarget* outTarget) {
     return 1;
 }
 
-static int barrelRadiusCellSupported(uint16_t tile,
+static int barrelRadiusCellSupportedExcept(uint16_t tile,
                                      const EspPlayerViewState* view,
+                                     uint16_t ignoredSprite,
                                      ActionTarget* outTarget,
                                      int* outHasBarrel,
                                      int* outIsPlayer) {
@@ -1005,11 +979,12 @@ static int barrelRadiusCellSupported(uint16_t tile,
         return EspNativeGameplayBarrelRadius_lineNoop(lineType, lineSubtype);
     }
 
-    spriteResult = findRadiusSpriteOnTile(tile, outTarget);
+    spriteResult = findRadiusSpriteOnTile(tile, ignoredSprite, outTarget);
     if (spriteResult < 0) return 0;
     if (spriteResult == 0) return 1;
 
-    if (outTarget->type == ACTION_ENTITY_FIRE) return 1;
+    if (EspNativeGameplayBarrelRadius_entityNoop(outTarget->type,
+                                                outTarget->subtype)) return 1;
     if (outTarget->type == ACTION_ENTITY_ENEMY) {
         const EspNativeGameplayMonsterRecord* victim =
             EspNativeGameplayMonsterState_find(outTarget->spriteIndex);
@@ -1021,11 +996,6 @@ static int barrelRadiusCellSupported(uint16_t tile,
                victim->subtype != 12U && victim->subtype != 13U;
     }
     if (outTarget->type == ACTION_ENTITY_DESTRUCTIBLE &&
-        (outTarget->subtype == ACTION_DESTRUCTIBLE_JAMMED_SUBTYPE ||
-         outTarget->subtype == 4U)) {
-        return 1;
-    }
-    if (outTarget->type == ACTION_ENTITY_DESTRUCTIBLE &&
         outTarget->subtype == ACTION_DESTRUCTIBLE_BARREL_SUBTYPE) {
         *outHasBarrel = 1;
         return 1;
@@ -1033,23 +1003,37 @@ static int barrelRadiusCellSupported(uint16_t tile,
     return 0;
 }
 
+static int barrelRadiusCellSupported(uint16_t tile,
+                                     const EspPlayerViewState* view,
+                                     ActionTarget* outTarget,
+                                     int* outHasBarrel,
+                                     int* outIsPlayer) {
+    return barrelRadiusCellSupportedExcept(tile, view,
+        ESP_MAP_SPRITE_TOPOLOGY_NO_SPRITE, outTarget, outHasBarrel, outIsPlayer);
+}
+
 /* Dry-run the whole barrel-connected component before consuming explosion RNG
  * or mutating world state. Barrel chains, player damage and bounded ordinary
  * monster damage are owned; other radius consequences remain fail-closed. */
 static int barrelChainPreflight(uint16_t primarySprite,
+                                uint8_t rootSubtype,
                                 const EspPlayerViewState* view,
                                 uint16_t* chain,
                                 uint8_t* outCount,
                                 uint8_t* outMonsterCount,
+                                uint8_t* outPlayerCount,
                                 ActionTarget* outUnsupported) {
     uint8_t count = 1U;
     uint8_t cursor;
     uint8_t monsterCount = 0U;
+    uint8_t playerCount = 0U;
  
     if (view == NULL || chain == NULL || outCount == NULL ||
-        outMonsterCount == NULL ||
+        outMonsterCount == NULL || outPlayerCount == NULL ||
         outUnsupported == NULL ||
-        primarySprite == ESP_MAP_SPRITE_TOPOLOGY_NO_SPRITE) {
+        primarySprite == ESP_MAP_SPRITE_TOPOLOGY_NO_SPRITE ||
+        (rootSubtype != ACTION_DESTRUCTIBLE_BARREL_SUBTYPE &&
+         rootSubtype != ACTION_DESTRUCTIBLE_CRATE_SUBTYPE)) {
         return 0;
     }
     chain[0] = primarySprite;
@@ -1067,31 +1051,26 @@ static int barrelChainPreflight(uint16_t primarySprite,
             !actionGetEntity(chain[cursor], &type, &subtype,
                              &linkState, &linkOrder) ||
             type != ACTION_ENTITY_DESTRUCTIBLE ||
-            subtype != ACTION_DESTRUCTIBLE_BARREL_SUBTYPE ||
+            subtype != (cursor == 0U ? rootSubtype : ACTION_DESTRUCTIBLE_BARREL_SUBTYPE) ||
             (linkState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) == 0U) {
             return 0;
         }
         (void)linkOrder;
 
         for (n = 0U; n < ACTION_BARREL_RADIUS_NEIGHBORS; ++n) {
-            int32_t tileX = ((int32_t)source.x >> 6) + barrelRadiusDx[n];
-            int32_t tileY = ((int32_t)source.y >> 6) + barrelRadiusDy[n];
             uint16_t tile;
             ActionTarget target;
             int hasBarrel;
             int isPlayer;
 
-            if (tileX < 0 || tileX >= MAP_WIDTH ||
-                tileY < 0 || tileY >= MAP_WIDTH) {
-                continue;
-            }
-            tile = (uint16_t)(tileY * MAP_WIDTH + tileX);
-            if (!barrelRadiusCellSupported(tile, view, &target,
-                                           &hasBarrel, &isPlayer)) {
+            if (!EspNativeExplosion_neighborTile(source.x, source.y, n,
+                                                 &tile)) continue;
+            if (!barrelRadiusCellSupportedExcept(tile, view, primarySprite,
+                                                 &target, &hasBarrel, &isPlayer)) {
                 *outUnsupported = target;
                 return 0;
             }
-            (void)isPlayer;
+            if (isPlayer) ++playerCount;
             if (target.type == ACTION_ENTITY_ENEMY) {
                  if (monsterCount == UINT8_MAX) return 0;
                 ++monsterCount;
@@ -1111,11 +1090,11 @@ static int barrelChainPreflight(uint16_t primarySprite,
             chain[count++] = target.spriteIndex;
         }
     }
-    /* Multi-barrel/monster paths apply each blast and its consequence RNG
-     * before drawing the next blast word. The full consecutive-word preview
-     * remains valid only when no monster consequences can interleave. */
+    /* A player cell can reserve a death byte before a later blast, just
+     * like monster consequences can interleave RNG. */
      *outCount = count;
     *outMonsterCount = monsterCount;
+    *outPlayerCount = playerCount;
     return 1;
 }
 
@@ -1133,46 +1112,53 @@ static int barrelRollbackRemoved(DoomRPG_t* runtime,
     return exact;
 }
 
-static int barrelTriggerNeighbors(uint16_t sourceSprite,
+/* A type-1 blast is located at its current world coordinates, not its
+ * immutable spawn tile. The existing barrel wrapper still reads its original
+ * immutable center. A moving monster origin will use this same leaf only
+ * after its transaction/preflight owner is implemented. */
+typedef struct ExplosionImpactJournal_s {
+    DoomRPG_t* runtime;
+    uint32_t sequence;
+    Random_t randomBeforeDeathByte;
+    uint16_t monsterHits;
+    uint8_t monsterSequenceArmed;
+    uint8_t deathRand;
+    uint8_t deathRandValid;
+} ExplosionImpactJournal;
+
+static int explosionTriggerNeighborsAt(uint16_t sourceSprite,
+                                  int32_t sourceX, int32_t sourceY,
                                   const EspPlayerViewState* view,
                                   uint8_t blastDamage,
                                   uint16_t* chain,
                                   uint8_t* ioCount,
-                                  EspNativeGameplaySplashHit* monsterHits,
-                                  uint8_t* ioMonsterCount,
+                                  ExplosionImpactJournal* journal,
                                   uint8_t* outTriggered,
                                   uint8_t* outPlayerHits,
                                   uint16_t* outPlayerMessageDamage,
                                   int allowTerminalDeath,
                                   uint8_t* outLethal) {
-    EspMapSprite source;
     uint8_t n;
     uint8_t triggered = 0U;
     uint8_t playerHits = 0U;
     uint16_t playerMessageDamage = 0U;
 
     if (view == NULL || chain == NULL || ioCount == NULL ||
-        monsterHits == NULL || ioMonsterCount == NULL ||
+        journal == NULL || journal->runtime == NULL || journal->sequence == 0U ||
         outTriggered == NULL || outPlayerHits == NULL ||
         outPlayerMessageDamage == NULL || outLethal == NULL ||
-        blastDamage == 0U ||
-        !EspMapRuntime_getMapSpriteBase(sourceSprite, &source)) {
+        blastDamage == 0U) {
         return 0;
     }
 
     for (n = 0U; n < ACTION_BARREL_RADIUS_NEIGHBORS; ++n) {
-        int32_t tileX = ((int32_t)source.x >> 6) + barrelRadiusDx[n];
-        int32_t tileY = ((int32_t)source.y >> 6) + barrelRadiusDy[n];
         uint16_t tile;
         ActionTarget target;
         int hasBarrel;
         int isPlayer;
 
-        if (tileX < 0 || tileX >= MAP_WIDTH ||
-            tileY < 0 || tileY >= MAP_WIDTH) {
-            continue;
-        }
-        tile = (uint16_t)(tileY * MAP_WIDTH + tileX);
+        if (!EspNativeExplosion_neighborTile(sourceX, sourceY, n,
+                                             &tile)) continue;
         if (!barrelRadiusCellSupported(tile, view, &target,
                                        &hasBarrel, &isPlayer)) {
             return 0;
@@ -1180,9 +1166,7 @@ static int barrelTriggerNeighbors(uint16_t sourceSprite,
         if (isPlayer) {
             EspNativeGameplayPlayerDamageResult damageResult;
             EspNativeGameplayPlayerDamageStatus damageStatus;
-            uint8_t component = n < 4U
-                                    ? blastDamage
-                                    : (uint8_t)(blastDamage >> 1U);
+            uint8_t component = EspNativeExplosion_component(blastDamage, n);
             memset(&damageResult, 0, sizeof(damageResult));
             if (component == 0U) continue;
             damageStatus = EspNativeGameplayPlayerState_applyDamageNonlethal(
@@ -1190,15 +1174,33 @@ static int barrelTriggerNeighbors(uint16_t sourceSprite,
             if (damageStatus ==
                     ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_LETHAL_DEFERRED &&
                 allowTerminalDeath) {
-                /* Only the single-blast, monster-free transaction currently
-                 * owns the subsequent PlayerDeath_arm terminal transition.
-                 * All other lethal consequences remain fail-closed. */
+                /* Player_died in the original is idempotent while DYING.
+                 * Later blasts still apply armor/HP damage, but reserve the
+                 * sound byte only on the first lethal cell. */
                 damageStatus =
                     EspNativeGameplayPlayerState_applyDamageForDeath(
                         component, component, &damageResult);
                 if (damageStatus ==
                     ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_LETHAL_COMMITTED) {
+                    if (*outLethal != 0U) {
+                        if (journal->deathRandValid == 0U ||
+                            damageResult.healthBefore != 0U) return 0;
+                        printf("[BARRELRADIUS] POST-DEATH-HIT seq=%u source=%u armor=%u->%u deathRng=unchanged\n",
+                               (unsigned int)journal->sequence, (unsigned int)sourceSprite,
+                               (unsigned int)damageResult.armorBefore,
+                               (unsigned int)damageResult.armorAfter);
+                    } else {
+                    if (journal->deathRandValid != 0U) return 0;
+                    journal->randomBeforeDeathByte = (*EspNativeProcessRng_live());
+                    journal->deathRand = DoomRPG_randNextByte(EspNativeProcessRng_live());
+                    journal->deathRandValid = 1U;
                     *outLethal = 1U;
+                    printf("[BARRELRADIUS] DEATH-RNG-RESERVE seq=%u source=%u nextBefore=%d nextAfter=%d value=%u ordering=radius-cell transaction=pending\n",
+                           (unsigned int)journal->sequence, (unsigned int)sourceSprite,
+                           journal->randomBeforeDeathByte.nextRand,
+                           EspNativeProcessRng_live()->nextRand,
+                           (unsigned int)journal->deathRand);
+                    }
                 }
             }
             if (damageStatus != ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_OK &&
@@ -1237,22 +1239,25 @@ static int barrelTriggerNeighbors(uint16_t sourceSprite,
             continue;
         }
         if (target.type == ACTION_ENTITY_ENEMY) {
-            const uint8_t component = n < 4U
-                                         ? blastDamage
-                                         : (uint8_t)(blastDamage >> 1U);
+            const uint8_t component = EspNativeExplosion_component(blastDamage, n);
             if (component == 0U) continue;
-            if (*ioMonsterCount >= ESP_NATIVE_GAMEPLAY_SPLASH_MAX_HITS) {
-                return 0;
-            }
-            monsterHits[*ioMonsterCount].spriteIndex = target.spriteIndex;
-            monsterHits[*ioMonsterCount].healthComponent = component;
-            monsterHits[*ioMonsterCount].armorComponent = component;
-            ++(*ioMonsterCount);
-            printf("[BARRELRADIUS] MONSTER-STAGE source=%u sprite=%u tile=%u component=%u relation=%s mutation=no rng=untouched\n",
-                   (unsigned int)sourceSprite,
-                   (unsigned int)target.spriteIndex,
-                   (unsigned int)tile,
-                   (unsigned int)component,
+            EspNativeGameplaySplashHit hit;
+            if (journal->monsterSequenceArmed == 0U ||
+                journal->monsterHits >=
+                    ACTION_BARREL_CHAIN_MAX * ESP_NATIVE_GAMEPLAY_SPLASH_MAX_HITS) return 0;
+            hit.spriteIndex = target.spriteIndex;
+            hit.healthComponent = component;
+            hit.armorComponent = component;
+            if (!EspNativeGameplayMonsterCombat_applySplash(
+                    journal->runtime, &hit, 1U, journal->sequence)) return 0;
+            ++journal->monsterHits;
+            /* Legacy level-up restores HP. A level-up after terminal damage
+             * requires a separate death/dialog contract; roll back for now. */
+            if (*outLethal != 0U &&
+                EspNativeGameplayPlayerState_health() != 0U) return 0;
+            printf("[BARRELRADIUS] MONSTER-CELL source=%u sprite=%u tile=%u component=%u relation=%s mutation=provisional\n",
+                   (unsigned int)sourceSprite, (unsigned int)target.spriteIndex,
+                   (unsigned int)tile, (unsigned int)component,
                    n < 4U ? "cardinal" : "diagonal");
             continue;
         }
@@ -1274,6 +1279,168 @@ static int barrelTriggerNeighbors(uint16_t sourceSprite,
     *outTriggered = triggered;
     *outPlayerHits = playerHits;
     *outPlayerMessageDamage = playerMessageDamage;
+    return 1;
+}
+
+static int barrelTriggerNeighbors(uint16_t sourceSprite,
+                                  const EspPlayerViewState* view,
+                                  uint8_t blastDamage,
+                                  uint16_t* chain,
+                                  uint8_t* ioCount,
+                                  ExplosionImpactJournal* journal,
+                                  uint8_t* outTriggered,
+                                  uint8_t* outPlayerHits,
+                                  uint16_t* outPlayerMessageDamage,
+                                  int allowTerminalDeath,
+                                  uint8_t* outLethal) {
+    EspMapSprite source;
+    if (!EspMapRuntime_getMapSpriteBase(sourceSprite, &source)) return 0;
+    return explosionTriggerNeighborsAt(sourceSprite, source.x, source.y,
+        view, blastDamage, chain, ioCount, journal,
+        outTriggered, outPlayerHits, outPlayerMessageDamage,
+        allowTerminalDeath, outLethal);
+}
+
+/* Direct subtype8 origin. All damage goes through the shared radius leaf.
+ * Mixed barrel/special-death origins are deliberately still deferred. */
+int EspNativeGameplayActionEngine_prepareDeathBlast(
+    uint16_t sourceSprite, EspNativeGameplayDeathBlastPlan* outPlan) {
+    const EspPlayerViewState* view = EspPlayerView_view();
+    const EspNativeGameplayMonsterPositionRecord* position;
+    EspNativeGraphicsCatalogStatus graphicsStatus;
+    const EspNativeGameplayMonsterRecord* source;
+    uint8_t n, monsters = 0U, players = 0U;
+    if (outPlan == NULL) return 0;
+    memset(outPlan, 0, sizeof(*outPlan));
+    if (view == NULL || view->active != 1U ||
+        view->viewX != view->destX || view->viewY != view->destY ||
+        view->viewAngle != view->destAngle || !ensureOwner() ||
+        !EspNativeGameplayMonsterPosition_ensure()) return 0;
+    source = EspNativeGameplayMonsterState_find(sourceSprite);
+    if (source == NULL || source->subtype != 8U || source->alive != 1U ||
+        (source->param1 & 0xffU) != 0U) return 0;
+    position = EspNativeGameplayMonsterPosition_find(sourceSprite);
+    if (position == NULL || position->worldX >= 2048U ||
+        position->worldY >= 2048U ||
+        position->tileIndex != (uint16_t)((position->worldY >> 6U) * 32U +
+                                         (position->worldX >> 6U))) return 0;
+    for (n = 0U; n < ESP_NATIVE_EXPLOSION_NEIGHBORS; ++n) {
+        uint16_t tile;
+        ActionTarget target;
+        int hasBarrel, isPlayer;
+        if (!EspNativeExplosion_neighborTile(position->worldX,
+                                             position->worldY, n, &tile)) continue;
+        if (!barrelRadiusCellSupported(tile, view, &target, &hasBarrel,
+                                       &isPlayer) || hasBarrel) {
+            printf("[MONSTERBLAST] DEFER source=%u tile=%u reason=unsupported-mixed-radius mutation=no\n",
+                   (unsigned int)sourceSprite, (unsigned int)tile);
+            return 0;
+        }
+        if (isPlayer) ++players;
+        else if (target.type == ACTION_ENTITY_ENEMY) ++monsters;
+    }
+    graphicsStatus = EspNativeGraphicsCatalog_ensureSprite(ACTION_TRAP_EXPLOSION_LOGICAL);
+    if (graphicsStatus != ESP_NATIVE_GRAPHICS_CATALOG_OK &&
+        graphicsStatus != ESP_NATIVE_GRAPHICS_CATALOG_ALREADY_ACTIVE) return 0;
+    outPlan->sourceSprite = sourceSprite;
+    outPlan->worldX = position->worldX;
+    outPlan->worldY = position->worldY;
+    outPlan->monsterCount = monsters;
+    outPlan->playerCount = players;
+    printf("[MONSTERBLAST] PREFLIGHT source=%u pos=%u,%u monsters=%u player=%u mixed=deferred\n",
+           (unsigned int)sourceSprite, (unsigned int)outPlan->worldX,
+           (unsigned int)outPlan->worldY, (unsigned int)monsters,
+           (unsigned int)players);
+    return 1;
+}
+
+int EspNativeGameplayActionEngine_runDeathBlast(
+    DoomRPG_t* runtime, uint32_t sequence,
+    const EspNativeGameplayDeathBlastPlan* plan,
+    EspNativeGameplayDeathBlastResult* outResult) {
+    const EspPlayerViewState* view = EspPlayerView_view();
+    const EspNativeGameplayMonsterPositionRecord* position;
+    const EspNativeGameplayMonsterRecord* source;
+    ExplosionImpactJournal journal = {0};
+    EspNativeGameplayFrameStats frame;
+    uint16_t chain[ACTION_BARREL_CHAIN_MAX];
+    uint16_t playerMessageDamage = 0U;
+    uint8_t count = 0U, triggered = 0U, playerHits = 0U, lethal = 0U;
+    uint8_t phase, i, damage;
+    uint32_t word;
+    int ok;
+    if (outResult == NULL) return 0;
+    memset(outResult, 0, sizeof(*outResult));
+    if (runtime == NULL || sequence == 0U || plan == NULL || view == NULL ||
+        view->active != 1U || view->viewX != view->destX ||
+        view->viewY != view->destY || view->viewAngle != view->destAngle ||
+        EspNativeRootOwners_live()->render == NULL ||
+        !EspNativeGameplayMonsterCombat_splashSequenceArmed(sequence)) return 0;
+    source = EspNativeGameplayMonsterState_find(plan->sourceSprite);
+    if (source == NULL || source->subtype != 8U || source->alive != 0U ||
+        (source->param1 & 0xffU) != 0U) return 0;
+    position = EspNativeGameplayMonsterPosition_find(plan->sourceSprite);
+    if (position == NULL || position->worldX != plan->worldX ||
+        position->worldY != plan->worldY) return 0;
+    journal.runtime = runtime;
+    journal.sequence = sequence;
+    journal.monsterSequenceArmed = 1U;
+    EspEntranceMusic_pumpGameplay();
+    for (phase = 0U; phase < ACTION_TRAP_EXPLOSION_FRAMES; ++phase) {
+#if defined(ESP_PLATFORM)
+        const uint32_t started = DoomRPG_GetUpTimeMS();
+#endif
+        memset(&frame, 0, sizeof(frame));
+        if (!EspNativeSpriteRenderer_armTransient(
+                ACTION_TRAP_EXPLOSION_LOGICAL, phase,
+                (int16_t)plan->worldX, (int16_t)plan->worldY) ||
+            !EspNativeDynamicLineRender_renderAmbient(
+                EspNativeRootOwners_live()->render, &frame) ||
+            frame.finalPresented == 0U) {
+            EspNativeSpriteRenderer_clearTransient();
+            printf("[MONSTERBLAST] ABORT seq=%u source=%u phase=%u reason=frame-not-presented rollback=required\n",
+                   (unsigned int)sequence, (unsigned int)plan->sourceSprite,
+                   (unsigned int)phase);
+            return 0;
+        }
+        printf("[MONSTERBLAST] FRAME seq=%u source=%u phase=%u/3 presented=1 frame=%08x\n",
+               (unsigned int)sequence, (unsigned int)plan->sourceSprite,
+               (unsigned int)(phase + 1U), (unsigned int)frame.frameAfterFNV);
+        if (phase == 0U && frame.finalPresented != 0U)
+            (void)EspNativeAudioIntent_publish(5061U, 0U, 4U);
+        EspEntranceMusic_pumpGameplay();
+#if defined(ESP_PLATFORM)
+        /* Three original 150ms phases. Yield and feed the existing audio
+         * owner between completed PAK/frame transactions. */
+        while ((uint32_t)(DoomRPG_GetUpTimeMS() - started) < 150U) {
+            vTaskDelay(1);
+            EspEntranceMusic_pumpGameplay();
+        }
+#endif
+    }
+    EspNativeSpriteRenderer_clearTransient();
+    word = (uint32_t)DoomRPG_randNextInt(EspNativeProcessRng_live());
+    damage = EspNativeExplosion_damageFromWord(word);
+    ok = explosionTriggerNeighborsAt(plan->sourceSprite, plan->worldX,
+        plan->worldY, view, damage, chain, &count, &journal, &triggered,
+        &playerHits, &playerMessageDamage, 1, &lethal);
+    /* Unexpected barrel discovery: undo that removal. All other changes
+     * remain provisional in the enclosing combat snapshot. */
+    for (i = 0U; i < count; ++i) setRemoved(chain[i], 0);
+    if (!ok || count != 0U || triggered != 0U ||
+        journal.monsterHits != plan->monsterCount ||
+        playerHits != plan->playerCount ||
+        (lethal != 0U) != (journal.deathRandValid != 0U)) return 0;
+    outResult->monsterHits = journal.monsterHits;
+    outResult->playerMessageDamage = playerMessageDamage;
+    outResult->lethal = lethal;
+    outResult->deathRand = journal.deathRand;
+    printf("[MONSTERBLAST] RADIUS seq=%u source=%u pos=%u,%u word=%08x damage=%u monsters=%u player=%u lethal=%u transaction=pending\n",
+           (unsigned int)sequence, (unsigned int)plan->sourceSprite,
+           (unsigned int)plan->worldX, (unsigned int)plan->worldY,
+           (unsigned int)word, (unsigned int)damage,
+           (unsigned int)journal.monsterHits, (unsigned int)playerHits,
+           (unsigned int)lethal);
     return 1;
 }
 
@@ -2792,19 +2959,14 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
         uint8_t barrelChainCount = 0U;
         uint8_t barrelExpectedChainCount = 0U;
         uint8_t barrelPreflightMonsters = 0U;
-        uint8_t barrelSplashCount = 0U;
+        uint8_t barrelPreflightPlayers = 0U;
         uint8_t barrelInterleaved = 0U;
         uint8_t barrelPreviewWords = 0U;
-        uint16_t barrelSplashTotalHits = 0U;
-        EspNativeGameplaySplashHit
-            barrelSplashHits[ESP_NATIVE_GAMEPLAY_SPLASH_MAX_HITS];
+        ExplosionImpactJournal barrelImpact = {0};
         uint8_t barrelBlastRngCalls = 0U;
         uint8_t barrelBlastPreview[ACTION_BARREL_CHAIN_MAX];
         Random_t barrelRandomAfterCombat;
         Random_t barrelRandomAfterPreview;
-        Random_t barrelRandomBeforeDeathByte;
-        uint8_t barrelReservedDeathRand = 0U;
-        uint8_t barrelReservedDeathRandValid = 0U;
         uint8_t barrelPlayerHits = 0U;
         uint8_t barrelPlayerLethal = 0U;
         uint16_t barrelPlayerHitSources[ACTION_BARREL_CHAIN_MAX];
@@ -2820,16 +2982,10 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
         uint8_t crateTransformed = 0U;
         uint8_t crateRemoved = 0U;
         uint8_t crateTurnRequested = 0U;
-        uint8_t crateTrapArmed = 0U;
-        uint8_t crateTrapPreviewByte = 0U;
-        uint8_t crateTrapDamage = 0U;
-        uint8_t crateTrapFrame = 0U;
-        int16_t crateTrapWorldX = 0;
-        int16_t crateTrapWorldY = 0;
-        EspNativeGameplayPlayerDamageResult crateTrapPlayerDamage;
+        uint8_t blastRootPending = 0U;
+        uint8_t rootBlastDamage = 0U;
 
         memset(&frame, 0, sizeof(frame));
-        memset(&crateTrapPlayerDamage, 0, sizeof(crateTrapPlayerDamage));
         memset(&playerBefore, 0, sizeof(playerBefore));
         memset(&crateRoll, 0, sizeof(crateRoll));
         memset(barrelChain, 0xff, sizeof(barrelChain));
@@ -2928,8 +3084,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
             ActionTarget barrelTarget;
             EspMapSprite barrelSprite;
             const EspNativeGameplayPlayerState* player;
-            EspNativeGraphicsCatalogStatus graphicsStatus;
-
+            
             memset(&barrelTarget, 0, sizeof(barrelTarget));
             memset(&barrelSprite, 0, sizeof(barrelSprite));
             barrelTarget.spriteIndex = pending.spriteIndex;
@@ -3015,199 +3170,8 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                        (unsigned int)ammoAfter);
             }
             else {
-                ActionTarget unsupported;
-                uint8_t preflightCount = 0U;
-                uint8_t previewOrdinal;
-                int previewExact;
-
-                /* Entity_died(type=12/subtype=1) allocates gsprite animation #1
-                 * at the exact sprite coordinate, then Game_remove()s the barrel.
-                 * Native logical sprite 180 / frames 0..2 is the already proven
-                 * equivalent used by the crate-trap path. */
-                memset(&unsupported, 0, sizeof(unsupported));
-                if (!barrelChainPreflight(pending.spriteIndex, view,
-                                          barrelChain, &preflightCount,
-                                          &barrelPreflightMonsters,
-                                          &unsupported)) {
-                    (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                    (*EspNativeProcessRng_live()) = randomBefore;
-                    EspNativeGameplayWeapon_cancelAttack();
-                    memset(&actionState.pending, 0, sizeof(actionState.pending));
-                    printf("[BARRELRADIUS] DEFER seq=%u sprite=%u reason=unsupported-radius-family targetSprite=%u line=%u tile=%u type=%u subtype=%u chainCap=%u playerSentinel=%u playerRollback=yes rngRollback=yes mutation=no\n",
-                           (unsigned int)pending.sequence,
-                           (unsigned int)pending.spriteIndex,
-                           (unsigned int)unsupported.spriteIndex,
-                           (unsigned int)unsupported.lineIndex,
-                           (unsigned int)unsupported.tileIndex,
-                           (unsigned int)unsupported.type,
-                           (unsigned int)unsupported.subtype,
-                           (unsigned int)ACTION_BARREL_CHAIN_MAX,
-                           0xfeU);
-                    return 1;
-                }
-                barrelExpectedChainCount = preflightCount;
-                barrelInterleaved = (uint8_t)(
-                    barrelExpectedChainCount > 1U &&
-                    barrelPreflightMonsters != 0U);
-                barrelPreviewWords =
-                    EspNativeGameplayBarrelRadius_previewWords(
-                        barrelExpectedChainCount, barrelPreflightMonsters);
-                if (barrelExpectedChainCount == 0U ||
-                    barrelExpectedChainCount > ACTION_BARREL_CHAIN_MAX ||
-                    EspNativeProcessRng_live()->nextRand < 0 ||
-                    EspNativeProcessRng_live()->nextRand >= RANDTABLESIZE) {
-                    (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                    (*EspNativeProcessRng_live()) = randomBefore;
-                    EspNativeGameplayWeapon_cancelAttack();
-                    memset(&actionState.pending, 0, sizeof(actionState.pending));
-                    printf("[BARRELRADIUS] DEFER seq=%u sprite=%u reason=invalid-rng-or-chain nextRand=%d explosions=%u mutation=no\n",
-                           (unsigned int)pending.sequence,
-                           (unsigned int)pending.spriteIndex,
-                           EspNativeProcessRng_live()->nextRand,
-                           (unsigned int)barrelExpectedChainCount);
-                    return 1;
-                }
-
-                graphicsStatus = EspNativeGraphicsCatalog_ensureSprite(
-                    ACTION_TRAP_EXPLOSION_LOGICAL);
-                if (graphicsStatus != ESP_NATIVE_GRAPHICS_CATALOG_OK &&
-                    graphicsStatus != ESP_NATIVE_GRAPHICS_CATALOG_ALREADY_ACTIVE) {
-                    (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                    (*EspNativeProcessRng_live()) = randomBefore;
-                    EspNativeGameplayWeapon_cancelAttack();
-                    memset(&actionState.pending, 0, sizeof(actionState.pending));
-                    printf("[BARREL] DEFER seq=%u sprite=%u reason=explosion-resource logical=%u catalogStatus=%u playerRollback=yes rngRollback=yes mutation=no\n",
-                           (unsigned int)pending.sequence,
-                           (unsigned int)pending.spriteIndex,
-                           (unsigned int)ACTION_TRAP_EXPLOSION_LOGICAL,
-                           (unsigned int)graphicsStatus);
-                    return 1;
-                }
-
-                /*
-                 * Preview all consecutive explosion words only when no
-                 * monster consequence can draw RNG between them. Otherwise
-                 * preview JUST the first word, then apply each monster hit
-                 * before drawing subsequent live explosion words. Use the
-                 * actual RNG pointer for exact hidden-refill reservations,
-                 * and restore its Random_t bytes after this probe.
-                 */
-                barrelRandomAfterCombat = (*EspNativeProcessRng_live());
-                if (!EspNativeRngReplayGuard_beginAttackProbe(
-                        EspNativeProcessRng_live())) {
-                    (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                    (*EspNativeProcessRng_live()) = randomBefore;
-                    EspNativeGameplayWeapon_cancelAttack();
-                    memset(&actionState.pending, 0, sizeof(actionState.pending));
-                    printf("[BARRELRADIUS] DEFER seq=%u sprite=%u reason=rng-probe-owner-busy rollback=player+rng mutation=no\n",
-                           (unsigned int)pending.sequence,
-                           (unsigned int)pending.spriteIndex);
-                    return 1;
-                }
-                for (previewOrdinal = 0U;
-                     previewOrdinal < barrelPreviewWords;
-                     ++previewOrdinal) {
-                    barrelBlastPreview[previewOrdinal] = (uint8_t)
-                        DoomRPG_randNextInt(EspNativeProcessRng_live());
-                }
-                barrelRandomAfterPreview = (*EspNativeProcessRng_live());
-                (*EspNativeProcessRng_live()) = barrelRandomAfterCombat;
-                previewExact = EspNativeRngReplayGuard_endAttackProbe(
-                    EspNativeProcessRng_live(), &barrelRandomAfterCombat);
-                if (!previewExact) {
-                    DRPG_LOGE("[RNGGUARD] BARREL-PREVIEW-FAILED seq=%u sprite=%u chain=%u stateExact=NO action=fail-closed\n",
-                              (unsigned int)pending.sequence,
-                              (unsigned int)pending.spriteIndex,
-                              (unsigned int)barrelExpectedChainCount);
-                    (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                    (*EspNativeProcessRng_live()) = randomBefore;
-                    EspNativeGameplayWeapon_cancelAttack();
-                    memset(&actionState.pending, 0, sizeof(actionState.pending));
-                    printf("[BARRELRADIUS] DEFER seq=%u sprite=%u reason=rng-preview-not-exact rollback=player+rng mutation=no\n",
-                           (unsigned int)pending.sequence,
-                           (unsigned int)pending.spriteIndex);
-                    return 1;
-                }
-                printf("[BARRELRADIUS] RNG-PREFLIGHT seq=%u sprite=%u next=%d->%d words=%u plannedBlasts=%u mode=%s refill=%s exact=yes rollback=closed\n",
-                       (unsigned int)pending.sequence,
-                       (unsigned int)pending.spriteIndex,
-                       barrelRandomAfterCombat.nextRand,
-                       barrelRandomAfterPreview.nextRand,
-                       (unsigned int)barrelPreviewWords,
-                       (unsigned int)barrelExpectedChainCount,
-                       barrelInterleaved != 0U
-                           ? "first-word-only/monster-consequence-live"
-                           : "full-consecutive",
-                       barrelRandomAfterCombat.nextRand +
-                           (int)barrelPreviewWords * 4 >= RANDTABLESIZE
-                           ? "reserved" : "none");
-                if (barrelInterleaved != 0U &&
-                    !EspNativeGameplayMonsterCombat_beginSplashSequence(
-                        doomRpg, pending.sequence)) {
-                    (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                    (*EspNativeProcessRng_live()) = randomBefore;
-                    EspNativeGameplayWeapon_cancelAttack();
-                    memset(&actionState.pending, 0, sizeof(actionState.pending));
-                    printf("[BARRELRADIUS] DEFER seq=%u sprite=%u reason=monster-sequence-snapshot-not-ready mutation=no rollback=player+rng\n",
-                           (unsigned int)pending.sequence,
-                           (unsigned int)pending.spriteIndex);
-                    return 1;
-                }
-
-                /* The dry-run array proved capacity/support only. Runtime must
-                 * rediscover neighbors at each 450 ms expiry so removals happen
-                 * in the same causal order as Game_gsprite_update(). */
-                memset(barrelChain, 0xff, sizeof(barrelChain));
-                barrelChain[0] = pending.spriteIndex;
-                barrelChainCount = 1U;
-                setRemoved(pending.spriteIndex, 1);
-                barrelRemoved = 1U;
-                barrelWorldX = barrelSprite.x;
-                barrelWorldY = barrelSprite.y;
-                barrelExplosionArmed = 1U;
-                printf("[BARRELRADIUS] PREFLIGHT seq=%u root=%u chain=%u radius=4-cardinal-full+4-diagonal-half targetFamily=barrel+player+monster unsupported=fail-closed rngWords=%u visual=wave-batch-concurrent gameplayOrder=%s\n",
-                       (unsigned int)pending.sequence,
-                       (unsigned int)pending.spriteIndex,
-                       (unsigned int)barrelExpectedChainCount,
-                       (unsigned int)barrelPreviewWords,
-                       barrelInterleaved != 0U ? "legacy-blast-impact-interleaved"
-                                               : "legacy-causal");
-                printf("[BARREL] HIT seq=%u sprite=%u weapon=%u worldDist=%u loops=%u hits=%u damage=%ld armorDamage=%ld rng=%u ammo=%u->%u removed=0->1 explosion=logical%u/x%u pos=%d,%d persistence=v5-removal-owner\n",
-                       (unsigned int)pending.sequence,
-                       (unsigned int)pending.spriteIndex,
-                       (unsigned int)pending.weapon,
-                       (unsigned int)crateWorldDistance,
-                       (unsigned int)crateRoll.loops,
-                       (unsigned int)crateRoll.hitLoops,
-                       (long)crateRoll.totalDamage,
-                       (long)crateRoll.totalArmorDamage,
-                       (unsigned int)crateRoll.rngCalls,
-                       (unsigned int)ammoBefore,
-                       (unsigned int)ammoAfter,
-                       (unsigned int)ACTION_TRAP_EXPLOSION_LOGICAL,
-                       (unsigned int)ACTION_TRAP_EXPLOSION_FRAMES,
-                       (int)barrelWorldX,
-                       (int)barrelWorldY);
+                blastRootPending = 1U;
             }
-
-            if (!EspNativeGameplayMonsterTurn_requestPlayerAttack(
-                    pending.sequence)) {
-                int rollbackOk = 1;
-                if (barrelRemoved != 0U &&
-                    !barrelRollbackRemoved(doomRpg, barrelChain,
-                                           barrelChainCount)) rollbackOk = 0;
-                if (!EspNativeGameplayPlayerState_restore(&playerBefore))
-                    rollbackOk = 0;
-                (*EspNativeProcessRng_live()) = randomBefore;
-                EspNativeGameplayWeapon_cancelAttack();
-                memset(&actionState.pending, 0, sizeof(actionState.pending));
-                printf("[BARREL] FAILED seq=%u sprite=%u reason=monster-turn-request-busy rollback=%s player=yes rng=yes world=yes\n",
-                       (unsigned int)pending.sequence,
-                       (unsigned int)pending.spriteIndex,
-                       rollbackOk ? "yes" : "NO");
-                return rollbackOk ? 1 : 0;
-            }
-            barrelTurnRequested = 1U;
         }
 
         if (isCrate) {
@@ -3320,95 +3284,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
 
                 if (crateOutcome ==
                     ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_TRAPPED_REMOVE) {
-                    EspNativeGraphicsCatalogStatus graphicsStatus;
-                    const EspNativeGameplayPlayerState* trapPlayer;
-                    int32_t previewHealthDamage;
-                    int32_t previewArmor;
-
-                    graphicsStatus = EspNativeGraphicsCatalog_ensureSprite(
-                        ACTION_TRAP_EXPLOSION_LOGICAL);
-                    if (graphicsStatus != ESP_NATIVE_GRAPHICS_CATALOG_OK &&
-                        graphicsStatus !=
-                            ESP_NATIVE_GRAPHICS_CATALOG_ALREADY_ACTIVE) {
-                        (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                        (*EspNativeProcessRng_live()) = randomBefore;
-                        EspNativeGameplayWeapon_cancelAttack();
-                        memset(&actionState.pending, 0, sizeof(actionState.pending));
-                        printf("[CRATETRAP] DEFER seq=%u sprite=%u reason=explosion-resource logical=%u catalogStatus=%u playerRollback=yes rngRollback=yes mutation=no\n",
-                               (unsigned int)pending.sequence,
-                               (unsigned int)pending.spriteIndex,
-                               (unsigned int)ACTION_TRAP_EXPLOSION_LOGICAL,
-                               (unsigned int)graphicsStatus);
-                        return 1;
-                    }
-
-                    if (!explosionPeekWordLowByte(
-                            EspNativeProcessRng_live(), &crateTrapPreviewByte)) {
-                        int nextRand = EspNativeProcessRng_live()->nextRand;
-                        (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                        (*EspNativeProcessRng_live()) = randomBefore;
-                        EspNativeGameplayWeapon_cancelAttack();
-                        memset(&actionState.pending, 0, sizeof(actionState.pending));
-                        printf("[CRATETRAP] DEFER seq=%u sprite=%u reason=rng-word-refill-boundary nextRand=%d wordBytes=%u playerRollback=yes rngRollback=yes mutation=no\n",
-                               (unsigned int)pending.sequence,
-                               (unsigned int)pending.spriteIndex,
-                               nextRand,
-                               (unsigned int)sizeof(int));
-                        return 1;
-                    }
-                    crateTrapDamage =
-                        (uint8_t)((crateTrapPreviewByte / 11U) + 5U);
-                    trapPlayer = EspNativeGameplayPlayerState_view();
-                    if (trapPlayer == NULL) {
-                        (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                        (*EspNativeProcessRng_live()) = randomBefore;
-                        EspNativeGameplayWeapon_cancelAttack();
-                        memset(&actionState.pending, 0, sizeof(actionState.pending));
-                        printf("[CRATETRAP] DEFER seq=%u sprite=%u reason=player-view playerRollback=yes rngRollback=yes mutation=no\n",
-                               (unsigned int)pending.sequence,
-                               (unsigned int)pending.spriteIndex);
-                        return 1;
-                    }
-                    previewArmor = (int32_t)((trapPlayer->param1 >> 16) & 0xffU);
-                    previewHealthDamage = (int32_t)crateTrapDamage;
-                    if (previewArmor < (int32_t)crateTrapDamage) {
-                        previewHealthDamage +=
-                            (int32_t)crateTrapDamage - previewArmor;
-                    }
-                    if ((int32_t)(trapPlayer->param1 & 0xffU) -
-                            previewHealthDamage <=
-                        0) {
-                        (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                        (*EspNativeProcessRng_live()) = randomBefore;
-                        EspNativeGameplayWeapon_cancelAttack();
-                        memset(&actionState.pending, 0, sizeof(actionState.pending));
-                        printf("[CRATETRAP] LETHAL-DEFER seq=%u sprite=%u previewByte=%u blast=%u hp=%u armor=%u playerDeathState=not-owned playerRollback=yes rngRollback=yes worldMutation=no\n",
-                               (unsigned int)pending.sequence,
-                               (unsigned int)pending.spriteIndex,
-                               (unsigned int)crateTrapPreviewByte,
-                               (unsigned int)crateTrapDamage,
-                               (unsigned int)(trapPlayer->param1 & 0xffU),
-                               (unsigned int)((trapPlayer->param1 >> 16) & 0xffU));
-                        return 1;
-                    }
-
-                    crateTrapWorldX =
-                        (int16_t)(((pending.tileIndex % MAP_WIDTH) * TILE_SIZE) +
-                                  TILE_CENTER);
-                    crateTrapWorldY =
-                        (int16_t)(((pending.tileIndex / MAP_WIDTH) * TILE_SIZE) +
-                                  TILE_CENTER);
-                    crateTrapArmed = 1U;
-                    printf("[CRATETRAP] ARM seq=%u sprite=%u tile=%u logical=%u frames=%u cadence=legacy-150ms/render-bounded pos=%d,%d previewByte=%u blast=%u sound=5061-deferred shake=200ms-deferred otherRadiusEntities=deferred rngWord=byte-offset-low/4B desktopPointerIndexBug=avoided rngCommit=after-animation\n",
-                           (unsigned int)pending.sequence,
-                           (unsigned int)pending.spriteIndex,
-                           (unsigned int)pending.tileIndex,
-                           (unsigned int)ACTION_TRAP_EXPLOSION_LOGICAL,
-                           (unsigned int)ACTION_TRAP_EXPLOSION_FRAMES,
-                           (int)crateTrapWorldX,
-                           (int)crateTrapWorldY,
-                           (unsigned int)crateTrapPreviewByte,
-                           (unsigned int)crateTrapDamage);
+                    blastRootPending = 1U;
                 }
 
                 if (crateOutcome == ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_TRANSFORM) {
@@ -3453,13 +3329,12 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     }
                     crateTransformed = 1U;
                 }
+                else if (blastRootPending != 0U) {
+                    pending.feedback = ACTION_FEEDBACK_TRAPPED;
+                }
                 else {
                     setRemoved(pending.spriteIndex, 1);
                     crateRemoved = 1U;
-                    if (crateOutcome ==
-                        ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_TRAPPED_REMOVE) {
-                        pending.feedback = ACTION_FEEDBACK_TRAPPED;
-                    }
                 }
 
                 printf("[CRATE] CONSEQUENCE seq=%u sprite=%u first=%u second=%u secondValid=%u outcome=%s effectiveDefTile=%u rngCombat=%u rngConsequence=%u attackDamage=%ld attackArmorDamage=%ld mutation=%s explosion=%s message=%s persistence=%s\n",
@@ -3482,7 +3357,8 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                        crateTransformed != 0U ? "deferred-v6" : "v5-removal-owner");
             }
 
-            if (!EspNativeGameplayMonsterTurn_requestPlayerAttack(
+            if (blastRootPending == 0U &&
+                !EspNativeGameplayMonsterTurn_requestPlayerAttack(
                     pending.sequence)) {
                 int rollbackOk = 1;
                 if (crateTransformed != 0U) {
@@ -3502,7 +3378,217 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                        rollbackOk ? "yes" : "NO");
                 return rollbackOk ? 1 : 0;
             }
-            crateTurnRequested = 1U;
+            if (blastRootPending == 0U) crateTurnRequested = 1U;
+        }
+
+        if (blastRootPending != 0U) {
+                ActionTarget unsupported;
+                uint8_t preflightCount = 0U;
+                EspNativeGraphicsCatalogStatus graphicsStatus;
+                EspMapSprite blastRoot;
+                uint8_t previewOrdinal;
+                int previewExact;
+
+                /* Entity_died allocates the SAME type-1 gsprite for a barrel
+                 * and for a trapped crate. No origin-specific radius rules. */
+                memset(&unsupported, 0, sizeof(unsupported));
+                if (!EspMapRuntime_getMapSpriteBase(pending.spriteIndex, &blastRoot) ||
+                    !barrelChainPreflight(pending.spriteIndex, pending.subtype, view,
+                                          barrelChain, &preflightCount,
+                                          &barrelPreflightMonsters,
+                                          &barrelPreflightPlayers,
+                                          &unsupported)) {
+                    (void)EspNativeGameplayPlayerState_restore(&playerBefore);
+                    (*EspNativeProcessRng_live()) = randomBefore;
+                    EspNativeGameplayWeapon_cancelAttack();
+                    memset(&actionState.pending, 0, sizeof(actionState.pending));
+                    printf("[BARRELRADIUS] DEFER seq=%u sprite=%u reason=unsupported-radius-family targetSprite=%u line=%u tile=%u type=%u subtype=%u chainCap=%u playerSentinel=%u playerRollback=yes rngRollback=yes mutation=no\n",
+                           (unsigned int)pending.sequence,
+                           (unsigned int)pending.spriteIndex,
+                           (unsigned int)unsupported.spriteIndex,
+                           (unsigned int)unsupported.lineIndex,
+                           (unsigned int)unsupported.tileIndex,
+                           (unsigned int)unsupported.type,
+                           (unsigned int)unsupported.subtype,
+                           (unsigned int)ACTION_BARREL_CHAIN_MAX,
+                           0xfeU);
+                    return 1;
+                }
+                barrelExpectedChainCount = preflightCount;
+                barrelInterleaved = (uint8_t)(barrelPreflightMonsters != 0U);
+                barrelImpact.runtime = doomRpg;
+                barrelImpact.sequence = pending.sequence;
+                barrelPreviewWords =
+                    EspNativeGameplayBarrelRadius_previewWordsForChain(
+                        barrelExpectedChainCount, barrelPreflightMonsters,
+                        barrelPreflightPlayers);
+                if (barrelExpectedChainCount == 0U ||
+                    barrelExpectedChainCount > ACTION_BARREL_CHAIN_MAX ||
+                    EspNativeProcessRng_live()->nextRand < 0 ||
+                    EspNativeProcessRng_live()->nextRand >= RANDTABLESIZE) {
+                    (void)EspNativeGameplayPlayerState_restore(&playerBefore);
+                    (*EspNativeProcessRng_live()) = randomBefore;
+                    EspNativeGameplayWeapon_cancelAttack();
+                    memset(&actionState.pending, 0, sizeof(actionState.pending));
+                    printf("[BARRELRADIUS] DEFER seq=%u sprite=%u reason=invalid-rng-or-chain nextRand=%d explosions=%u mutation=no\n",
+                           (unsigned int)pending.sequence,
+                           (unsigned int)pending.spriteIndex,
+                           EspNativeProcessRng_live()->nextRand,
+                           (unsigned int)barrelExpectedChainCount);
+                    return 1;
+                }
+
+                graphicsStatus = EspNativeGraphicsCatalog_ensureSprite(
+                    ACTION_TRAP_EXPLOSION_LOGICAL);
+                if (graphicsStatus != ESP_NATIVE_GRAPHICS_CATALOG_OK &&
+                    graphicsStatus != ESP_NATIVE_GRAPHICS_CATALOG_ALREADY_ACTIVE) {
+                    (void)EspNativeGameplayPlayerState_restore(&playerBefore);
+                    (*EspNativeProcessRng_live()) = randomBefore;
+                    EspNativeGameplayWeapon_cancelAttack();
+                    memset(&actionState.pending, 0, sizeof(actionState.pending));
+                    printf("[BARREL] DEFER seq=%u sprite=%u reason=explosion-resource logical=%u catalogStatus=%u playerRollback=yes rngRollback=yes mutation=no\n",
+                           (unsigned int)pending.sequence,
+                           (unsigned int)pending.spriteIndex,
+                           (unsigned int)ACTION_TRAP_EXPLOSION_LOGICAL,
+                           (unsigned int)graphicsStatus);
+                    return 1;
+                }
+
+                /*
+                 * Preview consecutive words only when neither a monster
+                 * consequence nor a player death can interleave draws.
+                 * Otherwise preview only the first word; subsequent words
+                 * are drawn LIVE after preceding radius cells. Use the
+                 * actual RNG pointer for exact hidden-refill reservations,
+                 * and restore its Random_t bytes after this probe.
+                 */
+                barrelRandomAfterCombat = (*EspNativeProcessRng_live());
+                if (!EspNativeRngReplayGuard_beginAttackProbe(
+                        EspNativeProcessRng_live())) {
+                    (void)EspNativeGameplayPlayerState_restore(&playerBefore);
+                    (*EspNativeProcessRng_live()) = randomBefore;
+                    EspNativeGameplayWeapon_cancelAttack();
+                    memset(&actionState.pending, 0, sizeof(actionState.pending));
+                    printf("[BARRELRADIUS] DEFER seq=%u sprite=%u reason=rng-probe-owner-busy rollback=player+rng mutation=no\n",
+                           (unsigned int)pending.sequence,
+                           (unsigned int)pending.spriteIndex);
+                    return 1;
+                }
+                for (previewOrdinal = 0U;
+                     previewOrdinal < barrelPreviewWords;
+                     ++previewOrdinal) {
+                    barrelBlastPreview[previewOrdinal] = (uint8_t)
+                        DoomRPG_randNextInt(EspNativeProcessRng_live());
+                }
+                barrelRandomAfterPreview = (*EspNativeProcessRng_live());
+                (*EspNativeProcessRng_live()) = barrelRandomAfterCombat;
+                previewExact = EspNativeRngReplayGuard_endAttackProbe(
+                    EspNativeProcessRng_live(), &barrelRandomAfterCombat);
+                if (!previewExact) {
+                    DRPG_LOGE("[RNGGUARD] BARREL-PREVIEW-FAILED seq=%u sprite=%u chain=%u stateExact=NO action=fail-closed\n",
+                              (unsigned int)pending.sequence,
+                              (unsigned int)pending.spriteIndex,
+                              (unsigned int)barrelExpectedChainCount);
+                    (void)EspNativeGameplayPlayerState_restore(&playerBefore);
+                    (*EspNativeProcessRng_live()) = randomBefore;
+                    EspNativeGameplayWeapon_cancelAttack();
+                    memset(&actionState.pending, 0, sizeof(actionState.pending));
+                    printf("[BARRELRADIUS] DEFER seq=%u sprite=%u reason=rng-preview-not-exact rollback=player+rng mutation=no\n",
+                           (unsigned int)pending.sequence,
+                           (unsigned int)pending.spriteIndex);
+                    return 1;
+                }
+                printf("[BARRELRADIUS] RNG-PREFLIGHT seq=%u sprite=%u next=%d->%d words=%u plannedBlasts=%u mode=%s refill=%s exact=yes rollback=closed\n",
+                       (unsigned int)pending.sequence,
+                       (unsigned int)pending.spriteIndex,
+                       barrelRandomAfterCombat.nextRand,
+                       barrelRandomAfterPreview.nextRand,
+                       (unsigned int)barrelPreviewWords,
+                       (unsigned int)barrelExpectedChainCount,
+                       barrelInterleaved != 0U
+                           ? "first-word-only/monster-consequence-live"
+                           : barrelPreviewWords < barrelExpectedChainCount
+                               ? "first-word-only/player-death-live"
+                               : "full-consecutive",
+                       barrelRandomAfterCombat.nextRand +
+                           (int)barrelPreviewWords * 4 >= RANDTABLESIZE
+                           ? "reserved" : "none");
+                /* Keep the original snapshot even for one blast with monsters:
+                 * terminal player admission can still fail after splash. */
+                if (barrelPreflightMonsters != 0U &&
+                    !EspNativeGameplayMonsterCombat_beginSplashSequence(
+                        doomRpg, pending.sequence)) {
+                    (void)EspNativeGameplayPlayerState_restore(&playerBefore);
+                    (*EspNativeProcessRng_live()) = randomBefore;
+                    EspNativeGameplayWeapon_cancelAttack();
+                    memset(&actionState.pending, 0, sizeof(actionState.pending));
+                    printf("[BARRELRADIUS] DEFER seq=%u sprite=%u reason=monster-sequence-snapshot-not-ready mutation=no rollback=player+rng\n",
+                           (unsigned int)pending.sequence,
+                           (unsigned int)pending.spriteIndex);
+                    return 1;
+                }
+
+                barrelImpact.monsterSequenceArmed = barrelInterleaved;
+
+                /* The dry-run array proved capacity/support only. Runtime must
+                 * rediscover neighbors at each 450 ms expiry so removals happen
+                 * in the same causal order as Game_gsprite_update(). */
+                memset(barrelChain, 0xff, sizeof(barrelChain));
+                barrelChain[0] = pending.spriteIndex;
+                barrelChainCount = 1U;
+                setRemoved(pending.spriteIndex, 1);
+                barrelRemoved = 1U;
+                if (isCrate) crateRemoved = 1U;
+                barrelWorldX = blastRoot.x;
+                barrelWorldY = blastRoot.y;
+                barrelExplosionArmed = 1U;
+                printf("[BARRELRADIUS] PREFLIGHT seq=%u root=%u chain=%u radius=4-cardinal-full+4-diagonal-half targetFamily=barrel+player+monster unsupported=fail-closed rngWords=%u visual=wave-batch-concurrent gameplayOrder=%s\n",
+                       (unsigned int)pending.sequence,
+                       (unsigned int)pending.spriteIndex,
+                       (unsigned int)barrelExpectedChainCount,
+                       (unsigned int)barrelPreviewWords,
+                       barrelInterleaved != 0U ? "legacy-blast-impact-interleaved"
+                                               : "legacy-causal");
+            if (isBarrel) {
+                printf("[BARREL] HIT seq=%u sprite=%u weapon=%u worldDist=%u loops=%u hits=%u damage=%ld armorDamage=%ld rng=%u ammo=%u->%u removed=0->1 explosion=logical%u/x%u pos=%d,%d persistence=v5-removal-owner\n",
+                       (unsigned int)pending.sequence,
+                       (unsigned int)pending.spriteIndex,
+                       (unsigned int)pending.weapon,
+                       (unsigned int)crateWorldDistance,
+                       (unsigned int)crateRoll.loops,
+                       (unsigned int)crateRoll.hitLoops,
+                       (long)crateRoll.totalDamage,
+                       (long)crateRoll.totalArmorDamage,
+                       (unsigned int)crateRoll.rngCalls,
+                       (unsigned int)ammoBefore,
+                       (unsigned int)ammoAfter,
+                       (unsigned int)ACTION_TRAP_EXPLOSION_LOGICAL,
+                       (unsigned int)ACTION_TRAP_EXPLOSION_FRAMES,
+                       (int)barrelWorldX,
+                       (int)barrelWorldY);
+            } else {
+                printf("[CRATETRAP] SHARED seq=%u root=%u chain=%u owner=type1-blast-chain\n",
+                       (unsigned int)pending.sequence, (unsigned int)pending.spriteIndex,
+                       (unsigned int)barrelExpectedChainCount);
+            }
+        }
+
+        if (isBarrel || barrelExplosionArmed != 0U) {
+            if (!EspNativeGameplayMonsterTurn_requestPlayerAttack(
+                    pending.sequence)) {
+                int rollbackOk = 1;
+                if (barrelRemoved != 0U && !barrelRollbackRemoved(
+                        doomRpg, barrelChain, barrelChainCount)) rollbackOk = 0;
+                if (!EspNativeGameplayPlayerState_restore(&playerBefore)) rollbackOk = 0;
+                (*EspNativeProcessRng_live()) = randomBefore;
+                EspNativeGameplayWeapon_cancelAttack();
+                memset(&actionState.pending, 0, sizeof(actionState.pending));
+                printf("[BARREL] FAILED seq=%u sprite=%u reason=monster-turn-request-busy rollback=%s player=yes rng=yes world=yes\n",
+                       (unsigned int)pending.sequence, (unsigned int)pending.spriteIndex,
+                       rollbackOk ? "yes" : "NO");
+                return rollbackOk ? 1 : 0;
+            }
+            barrelTurnRequested = 1U;
         }
 
         /*
@@ -3565,7 +3651,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 memset(&actionState.destructibleUndo, 0,
                        sizeof(actionState.destructibleUndo));
             }
-            else if (isBarrel) {
+            else if (isBarrel || barrelExplosionArmed != 0U) {
                 if (barrelTurnRequested != 0U &&
                     !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
                         pending.sequence)) {
@@ -3631,7 +3717,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
          * The real attack frame has been presented and PAK is closed. This
          * cue describes that already visible shot even if a later wave
          * needs rollback; a failed/no-present attack never reaches here. */
-        if (isBarrel && frame.finalPresented != 0U &&
+        if ((isBarrel || barrelExplosionArmed != 0U) && frame.finalPresented != 0U &&
             crateWeapon != NULL && crateWeapon->resourceId != 0U) {
             (void)EspNativeAudioIntent_publish(
                 (uint16_t)crateWeapon->resourceId, 0U, 5U);
@@ -3641,7 +3727,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                    (unsigned int)crateWeapon->resourceId);
         }
 
-        if (isBarrel && barrelExplosionArmed != 0U) {
+        if (barrelExplosionArmed != 0U) {
             uint8_t waveStart = 0U;
             uint8_t waveOrdinal = 0U;
 
@@ -3801,8 +3887,11 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
 
                     blastByte = (uint8_t)
                         DoomRPG_randNextInt(EspNativeProcessRng_live());
-                    if (blastCursor < barrelPreviewWords &&
-                        blastByte != barrelBlastPreview[blastCursor]) {
+                    if ((blastCursor < barrelPreviewWords &&
+                         blastByte != barrelBlastPreview[blastCursor]) ||
+                        (blastCursor == 0U && barrelPreviewWords == 1U &&
+                         memcmp(EspNativeProcessRng_live(), &barrelRandomAfterPreview,
+                                sizeof(barrelRandomAfterPreview)) != 0)) {
                         int rollbackOk = 1;
                         if (barrelTurnRequested != 0U &&
                             !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
@@ -3831,20 +3920,20 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     }
                     ++barrelBlastRngCalls;
                     blastDamage =
-                        (uint8_t)((blastByte / 11U) + 5U);
+                        EspNativeExplosion_damageFromWord(blastByte);
+                    if (blastCursor == 0U) rootBlastDamage = blastDamage;
                     if (!barrelTriggerNeighbors(
                             barrelChain[blastCursor],
                             view,
                             blastDamage,
                             barrelChain,
                             &barrelChainCount,
-                            barrelSplashHits,
-                            &barrelSplashCount,
+                            &barrelImpact,
                             &triggered,
                             &playerHitsThisBlast,
                             &playerMessageDamageThisBlast,
-                            EspNativeGameplayBarrelRadius_terminalDeathOwned(
-                                barrelExpectedChainCount),
+                            EspNativeGameplayBarrelRadius_terminalDeathOwnedAt(
+                                barrelExpectedChainCount, blastCursor),
                             &barrelPlayerLethal)) {
                         int rollbackOk = 1;
                         if (barrelTurnRequested != 0U &&
@@ -3870,54 +3959,6 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                                rollbackOk ? "yes" : "NO");
                         return rollbackOk ? 1 : 0;
                     }
-                    /* When this one blast kills the player, legacy death
-                     * consumes one RNG byte before subsequent monster
-                     * splash consequences. Defer death activation until the
-                     * entire world transaction is validated, but reserve the
-                     * exact byte here. A rollback restores randomBefore. */
-                    if (barrelPlayerLethal != 0U &&
-                        barrelReservedDeathRandValid == 0U) {
-                        barrelRandomBeforeDeathByte = (*EspNativeProcessRng_live());
-                        barrelReservedDeathRand =
-                            DoomRPG_randNextByte(EspNativeProcessRng_live());
-                        barrelReservedDeathRandValid = 1U;
-                        printf("[BARRELRADIUS] DEATH-RNG-RESERVE seq=%u source=%u nextBefore=%d nextAfter=%d value=%u ordering=blast-death-before-monster-effects transaction=pending\n",
-                               (unsigned int)pending.sequence,
-                               (unsigned int)barrelChain[blastCursor],
-                               barrelRandomBeforeDeathByte.nextRand,
-                               EspNativeProcessRng_live()->nextRand,
-                               (unsigned int)barrelReservedDeathRand);
-                    }
-                    if (barrelInterleaved != 0U &&
-                        barrelSplashCount != 0U) {
-                        const uint8_t hitCount = barrelSplashCount;
-                        if (!EspNativeGameplayMonsterCombat_applySplash(
-                                doomRpg, barrelSplashHits, hitCount,
-                                pending.sequence)) {
-                            int rollbackOk = 1;
-                            if (barrelTurnRequested != 0U &&
-                                !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
-                                    pending.sequence)) rollbackOk = 0;
-                            if (!barrelRollbackRemoved(doomRpg, barrelChain,
-                                                       barrelChainCount))
-                                rollbackOk = 0;
-                            if (!EspNativeGameplayPlayerState_restore(
-                                    &playerBefore)) rollbackOk = 0;
-                            (*EspNativeProcessRng_live()) = randomBefore;
-                            EspNativeGameplayWeapon_cancelAttack();
-                            memset(&actionState.pending, 0,
-                                   sizeof(actionState.pending));
-                            printf("[BARRELRADIUS] ROLLBACK seq=%u source=%u reason=interleaved-monster-impact hits=%u rollback=%s player=yes rng=yes world=yes monster=sequence-snapshot\n",
-                                   (unsigned int)pending.sequence,
-                                   (unsigned int)barrelChain[blastCursor],
-                                   (unsigned int)hitCount,
-                                   rollbackOk ? "yes" : "NO");
-                            return rollbackOk ? 1 : 0;
-                        }
-                        barrelSplashTotalHits =
-                            (uint16_t)(barrelSplashTotalHits + hitCount);
-                        barrelSplashCount = 0U;
-                    }
                     if (playerHitsThisBlast != 0U &&
                         barrelPlayerHits < ACTION_BARREL_CHAIN_MAX) {
                         barrelPlayerHitSources[barrelPlayerHits] =
@@ -3930,7 +3971,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                         (uint16_t)(
                             barrelTotalPlayerMessageDamage +
                             playerMessageDamageThisBlast);
-                    printf("[BARRELRADIUS] BLAST seq=%u root=%u source=%u wave=%u rngByte=%u damage=%u diagonal=%u triggered=%u playerHits=%u playerMessageDamage=%u totalPlayerMessageDamage=%u chainNow=%u/%u sound=5061-deferred shake=200ms-deferred\n",
+                    printf("[BARRELRADIUS] BLAST seq=%u root=%u source=%u wave=%u rngByte=%u damage=%u diagonal=%u triggered=%u playerHits=%u playerMessageDamage=%u totalPlayerMessageDamage=%u chainNow=%u/%u sound=5061-deferred shake=200ms-native-transient\n",
                            (unsigned int)pending.sequence,
                            (unsigned int)pending.spriteIndex,
                            (unsigned int)barrelChain[blastCursor],
@@ -3949,6 +3990,8 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 waveStart = waveEnd;
             }
 
+            /* Trapped! was already presented at the attack frame. */
+            if (isCrate) pending.feedback = ACTION_FEEDBACK_NONE;
             if (barrelPlayerHits != 0U) {
                 int written = snprintf(
                     actionState.feedbackText,
@@ -4002,22 +4045,24 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                        (unsigned int)ACTION_TRAP_DAMAGE_FLASH_MS);
             }
 
-            /* The reserved death byte is AFTER the blast preview by
-             * contract. Verify the saved pre-death RNG snapshot, never the
-             * RNG that has legitimately moved past that death side effect. */
+            /* A full consecutive preview is valid only without interleaved
+             * consequences (or one blast). First-word-only paths already
+             * checked the complete RNG snapshot before their first impact. */
             if (barrelChainCount != barrelExpectedChainCount ||
                 barrelBlastRngCalls != barrelExpectedChainCount ||
                 (barrelInterleaved == 0U &&
-                 memcmp(barrelReservedDeathRandValid != 0U
-                            ? &barrelRandomBeforeDeathByte : EspNativeProcessRng_live(),
+                 barrelPreviewWords == barrelExpectedChainCount &&
+                 memcmp(barrelImpact.deathRandValid != 0U
+                            ? &barrelImpact.randomBeforeDeathByte : EspNativeProcessRng_live(),
                         &barrelRandomAfterPreview,
                         sizeof(barrelRandomAfterPreview)) != 0)) {
                 int rollbackOk = 1;
                 const int rngExact =
                     barrelBlastRngCalls == barrelExpectedChainCount &&
                     (barrelInterleaved != 0U ||
-                     memcmp(barrelReservedDeathRandValid != 0U
-                                ? &barrelRandomBeforeDeathByte
+                     barrelPreviewWords < barrelExpectedChainCount ||
+                     memcmp(barrelImpact.deathRandValid != 0U
+                                ? &barrelImpact.randomBeforeDeathByte
                                 : EspNativeProcessRng_live(),
                             &barrelRandomAfterPreview,
                             sizeof(barrelRandomAfterPreview)) == 0);
@@ -4054,12 +4099,9 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                        rollbackOk ? "yes" : "NO");
                 return rollbackOk ? 1 : 0;
             }
-            if (barrelInterleaved == 0U &&
-                (barrelSplashCount != barrelPreflightMonsters ||
-                 (barrelSplashCount != 0U &&
-                  !EspNativeGameplayMonsterCombat_applySplash(
-                      doomRpg, barrelSplashHits, barrelSplashCount,
-                      pending.sequence)))) {
+            /* Single-blast preflight predicts its exact victim count. */
+            if (barrelExpectedChainCount == 1U &&
+                barrelImpact.monsterHits != barrelPreflightMonsters) {
                 int rollbackOk = 1;
                 if (barrelTurnRequested != 0U &&
                     !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
@@ -4072,240 +4114,34 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 (*EspNativeProcessRng_live()) = randomBefore;
                 EspNativeGameplayWeapon_cancelAttack();
                 memset(&actionState.pending, 0, sizeof(actionState.pending));
-                printf("[BARRELRADIUS] ROLLBACK seq=%u reason=monster-splash-transaction hitCount=%u expected=%u rollback=%s player=yes rng=yes world=yes monster=helper-exact\n",
+                printf("[BARRELRADIUS] ROLLBACK seq=%u reason=monster-splash-count hitCount=%u expected=%u rollback=%s player=yes rng=yes world=yes monster=helper-exact\n",
                        (unsigned int)pending.sequence,
-                       (unsigned int)barrelSplashCount,
+                       (unsigned int)barrelImpact.monsterHits,
                        (unsigned int)barrelPreflightMonsters,
                        rollbackOk ? "yes" : "NO");
                 return rollbackOk ? 1 : 0;
             }
-            if (barrelInterleaved != 0U) {
+            /* Nonterminal splash closes here as before. Lethal player
+             * admission must retain the monster/drop/RNG snapshot until
+             * PlayerDeath_armWithReservedRand succeeds. */
+            if (barrelPreflightMonsters != 0U && barrelPlayerLethal == 0U) {
                 if (!EspNativeGameplayMonsterCombat_commitSplashSequence(
                         pending.sequence)) {
                     DRPG_LOGE("[BARRELRADIUS] FAILED seq=%u reason=monster-sequence-commit contract=broken\n",
                               (unsigned int)pending.sequence);
                     return 0;
                 }
+            }
+            if (barrelInterleaved != 0U) {
                 printf("[BARRELRADIUS] INTERLEAVED-COMMIT seq=%u blasts=%u monsterHits=%u firstWordPreview=exact laterWords=live-after-monster-consequences rollback=closed\n",
                        (unsigned int)pending.sequence,
                        (unsigned int)barrelBlastRngCalls,
-                       (unsigned int)barrelSplashTotalHits);
+                       (unsigned int)barrelImpact.monsterHits);
             }
         }
 
-        if (isCrate && crateTrapArmed != 0U) {
-            uint8_t blastByte;
-            EspNativeGameplayPlayerDamageStatus damageStatus;
-
-            for (crateTrapFrame = 0U;
-                 crateTrapFrame < ACTION_TRAP_EXPLOSION_FRAMES;
-                 ++crateTrapFrame) {
-                memset(&frame, 0, sizeof(frame));
-                if (!EspNativeSpriteRenderer_armTransient(
-                        ACTION_TRAP_EXPLOSION_LOGICAL,
-                        crateTrapFrame,
-                        crateTrapWorldX,
-                        crateTrapWorldY) ||
-                    !EspNativeGameplayFrame_renderTurn(
-                        EspNativeRootOwners_live()->render, (uint8_t)view->viewAngle, &frame)) {
-                    int rollbackOk = 1;
-                    EspNativeSpriteRenderer_clearTransient();
-                    if (crateTurnRequested != 0U &&
-                        !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
-                            pending.sequence)) {
-                        rollbackOk = 0;
-                    }
-                    if (crateRemoved != 0U) setRemoved(pending.spriteIndex, 0);
-                    if (!EspNativeGameplayPlayerState_restore(&playerBefore)) {
-                        rollbackOk = 0;
-                    }
-                    (*EspNativeProcessRng_live()) = randomBefore;
-                    actionState.feedbackPending = 0U;
-                    actionState.feedbackKind = ACTION_FEEDBACK_NONE;
-                    actionState.viewportFlashPending = 0U;
-                    EspNativeGameplayWeapon_cancelAttack();
-                    memset(&frame, 0, sizeof(frame));
-                    if (rollbackOk &&
-                        EspNativeGameplayFacingLabel_refresh(
-                            "CRATETRAP-ROLLBACK")) {
-                        rollbackOk = EspNativeGameplayFrame_renderTurn(
-                            EspNativeRootOwners_live()->render,
-                            (uint8_t)view->viewAngle,
-                            &frame);
-                    }
-                    printf("[CRATETRAP] ROLLBACK seq=%u sprite=%u reason=animation-frame-%u rollback=%s rng=yes player=yes world=yes stableFrame=%08x\n",
-                           (unsigned int)pending.sequence,
-                           (unsigned int)pending.spriteIndex,
-                           (unsigned int)crateTrapFrame,
-                           rollbackOk ? "yes" : "NO",
-                           rollbackOk
-                               ? (unsigned int)frame.frameAfterFNV : 0U);
-                    memset(&actionState.pending, 0, sizeof(actionState.pending));
-                    return rollbackOk ? 1 : 0;
-                }
-                printf("[CRATETRAP] FRAME seq=%u sprite=%u ordinal=%u/%u anim=%u logical=%u pos=%d,%d frame=%08x presented=%u\n",
-                       (unsigned int)pending.sequence,
-                       (unsigned int)pending.spriteIndex,
-                       (unsigned int)(crateTrapFrame + 1U),
-                       (unsigned int)ACTION_TRAP_EXPLOSION_FRAMES,
-                       (unsigned int)crateTrapFrame,
-                       (unsigned int)ACTION_TRAP_EXPLOSION_LOGICAL,
-                       (int)crateTrapWorldX,
-                       (int)crateTrapWorldY,
-                       (unsigned int)frame.frameAfterFNV,
-                       (unsigned int)frame.finalPresented);
-            }
-            EspNativeSpriteRenderer_clearTransient();
-
-            if (!explosionConsumeWordLowByte(EspNativeProcessRng_live(), &blastByte)) {
-                int rollbackOk = 1;
-                if (crateTurnRequested != 0U &&
-                    !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
-                        pending.sequence)) {
-                    rollbackOk = 0;
-                }
-                if (crateRemoved != 0U) setRemoved(pending.spriteIndex, 0);
-                if (!EspNativeGameplayPlayerState_restore(&playerBefore)) {
-                    rollbackOk = 0;
-                }
-                (*EspNativeProcessRng_live()) = randomBefore;
-                actionState.feedbackPending = 0U;
-                actionState.feedbackKind = ACTION_FEEDBACK_NONE;
-                actionState.viewportFlashPending = 0U;
-                EspNativeGameplayWeapon_cancelAttack();
-                memset(&frame, 0, sizeof(frame));
-                if (rollbackOk &&
-                    EspNativeGameplayFacingLabel_refresh(
-                        "CRATETRAP-RNG-ROLLBACK")) {
-                    rollbackOk = EspNativeGameplayFrame_renderTurn(
-                        EspNativeRootOwners_live()->render,
-                        (uint8_t)view->viewAngle,
-                        &frame);
-                }
-                printf("[CRATETRAP] ROLLBACK seq=%u sprite=%u reason=rng-word-refill-boundary rollback=%s rng=yes player=yes world=yes stableFrame=%08x\n",
-                       (unsigned int)pending.sequence,
-                       (unsigned int)pending.spriteIndex,
-                       rollbackOk ? "yes" : "NO",
-                       rollbackOk ? (unsigned int)frame.frameAfterFNV : 0U);
-                memset(&actionState.pending, 0, sizeof(actionState.pending));
-                return rollbackOk ? 1 : 0;
-            }
-            damageStatus = EspNativeGameplayPlayerState_applyDamageNonlethal(
-                crateTrapDamage,
-                crateTrapDamage,
-                &crateTrapPlayerDamage);
-            if (blastByte != crateTrapPreviewByte ||
-                damageStatus != ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_OK) {
-                int rollbackOk = 1;
-                if (crateTurnRequested != 0U &&
-                    !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
-                        pending.sequence)) {
-                    rollbackOk = 0;
-                }
-                if (crateRemoved != 0U) setRemoved(pending.spriteIndex, 0);
-                if (!EspNativeGameplayPlayerState_restore(&playerBefore)) {
-                    rollbackOk = 0;
-                }
-                (*EspNativeProcessRng_live()) = randomBefore;
-                actionState.feedbackPending = 0U;
-                actionState.feedbackKind = ACTION_FEEDBACK_NONE;
-                actionState.viewportFlashPending = 0U;
-                EspNativeGameplayWeapon_cancelAttack();
-                memset(&frame, 0, sizeof(frame));
-                if (rollbackOk &&
-                    EspNativeGameplayFacingLabel_refresh(
-                        "CRATETRAP-BLAST-ROLLBACK")) {
-                    rollbackOk = EspNativeGameplayFrame_renderTurn(
-                        EspNativeRootOwners_live()->render,
-                        (uint8_t)view->viewAngle,
-                        &frame);
-                }
-                printf("[CRATETRAP] ROLLBACK seq=%u sprite=%u reason=%s previewByte=%u liveByte=%u damageStatus=%u rollback=%s rng=yes player=yes world=yes stableFrame=%08x\n",
-                       (unsigned int)pending.sequence,
-                       (unsigned int)pending.spriteIndex,
-                       blastByte != crateTrapPreviewByte
-                           ? "rng-preview-mismatch" : "player-damage",
-                       (unsigned int)crateTrapPreviewByte,
-                       (unsigned int)blastByte,
-                       (unsigned int)damageStatus,
-                       rollbackOk ? "yes" : "NO",
-                       rollbackOk
-                           ? (unsigned int)frame.frameAfterFNV : 0U);
-                memset(&actionState.pending, 0, sizeof(actionState.pending));
-                return rollbackOk ? 1 : 0;
-            }
-
-            playerFNVAfter = EspNativeGameplayPlayerState_fingerprint();
-
-            /*
-             * Legacy timing is two distinct HUD messages: Entity_died() posts
-             * "Trapped!" when the crate arms gsprite explosion #1, then the
-             * 450 ms gsprite expiry calls Game_radiusHurtEntities() ->
-             * Player_pain(), which posts "<damage+armorDamage> damage!".
-             *
-             * Keep the already-visible TRAPPED lease throughout the three
-             * explosion frames, then stage the shared dynamic DAMAGE feedback
-             * for the settle frame after the player mutation commits. For this
-             * trap both legacy damage components equal crateTrapDamage, so the
-             * displayed amount is their sum even when armor absorbs one half.
-             */
-            if (snprintf(actionState.feedbackText,
-                         sizeof(actionState.feedbackText),
-                         "%u damage!",
-                         (unsigned int)crateTrapDamage * 2U) <= 0) {
-                int rollbackOk = 1;
-                if (crateTurnRequested != 0U &&
-                    !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
-                        pending.sequence)) {
-                    rollbackOk = 0;
-                }
-                if (crateRemoved != 0U) setRemoved(pending.spriteIndex, 0);
-                if (!EspNativeGameplayPlayerState_restore(&playerBefore)) {
-                    rollbackOk = 0;
-                }
-                (*EspNativeProcessRng_live()) = randomBefore;
-                actionState.feedbackPending = 0U;
-                actionState.feedbackKind = ACTION_FEEDBACK_NONE;
-                actionState.feedbackText[0] = '\0';
-                actionState.viewportFlashPending = 0U;
-                EspNativeGameplayWeapon_cancelAttack();
-                memset(&frame, 0, sizeof(frame));
-                if (rollbackOk &&
-                    EspNativeGameplayFacingLabel_refresh(
-                        "CRATETRAP-FEEDBACK-ROLLBACK")) {
-                    rollbackOk = EspNativeGameplayFrame_renderTurn(
-                        EspNativeRootOwners_live()->render,
-                        (uint8_t)view->viewAngle,
-                        &frame);
-                }
-                printf("[CRATETRAP] ROLLBACK seq=%u sprite=%u reason=damage-feedback-format rollback=%s rng=yes player=yes world=yes stableFrame=%08x\n",
-                       (unsigned int)pending.sequence,
-                       (unsigned int)pending.spriteIndex,
-                       rollbackOk ? "yes" : "NO",
-                       rollbackOk ? (unsigned int)frame.frameAfterFNV : 0U);
-                memset(&actionState.pending, 0, sizeof(actionState.pending));
-                return rollbackOk ? 1 : 0;
-            }
-            pending.feedback = ACTION_FEEDBACK_DAMAGE;
-            actionState.viewportFlashPending = 1U;
-            actionState.viewportFlashDurationMs = ACTION_TRAP_DAMAGE_FLASH_MS;
-            actionState.viewportFlashColor565 = FEEDBACK_DAMAGE_RED565;
-            printf("[CRATETRAP] BLAST seq=%u sprite=%u rngByte=%u blast=%u rngCalls=1 hp=%u->%u armor=%u->%u playerFNV=%08x->%08x radius=adjacent-cardinal-player otherRadiusEntities=deferred message=\"%u damage!\" redFlash=%ums sound=5061-deferred shake=200ms-deferred\n",
-                   (unsigned int)pending.sequence,
-                   (unsigned int)pending.spriteIndex,
-                   (unsigned int)blastByte,
-                   (unsigned int)crateTrapDamage,
-                   (unsigned int)crateTrapPlayerDamage.healthBefore,
-                   (unsigned int)crateTrapPlayerDamage.healthAfter,
-                   (unsigned int)crateTrapPlayerDamage.armorBefore,
-                   (unsigned int)crateTrapPlayerDamage.armorAfter,
-                   (unsigned int)crateTrapPlayerDamage.stateFNVBefore,
-                   (unsigned int)crateTrapPlayerDamage.stateFNVAfter,
-                   (unsigned int)crateTrapDamage * 2U,
-                   (unsigned int)ACTION_TRAP_DAMAGE_FLASH_MS);
-        }
-
-        if (isBarrel) {
+        /* Every type-1 origin has already resolved through the shared waves. */
+        if ((isBarrel || barrelExplosionArmed != 0U) && barrelPlayerLethal == 0U) {
             printf("[BARREL] COMMIT seq=%u sprite=%u weapon=%u ammoType=%u ammo=%u->%u playerFNV=%08x->%08x loops=%u hits=%u rngCombat=%u rngBlast=%u damage=%ld armorDamage=%ld removed=%u chainRemoved=%u playerRadiusHits=%u explosion=%s sound=%u-attack-visible barrelExplosionSound=5061-first-wave-visible radius=barrel-chain-wave+player-owned/other-hurtable-families-fail-closed turnAdvance=PLAYER_ATTACK-requested rollback=closed\n",
                    (unsigned int)pending.sequence,
                    (unsigned int)pending.spriteIndex,
@@ -4332,8 +4168,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
              * the exact legacy death/pain sound RNG; publish its bounded
              * sound intents once, never on a rolled-back blast. The visible
              * 5061 explosion remains anchored to wave-1 frame 0 above. */
-            if (barrelSplashCount != 0U ||
-                barrelSplashTotalHits != 0U) {
+            if (barrelImpact.monsterHits != 0U) {
                 if (!EspNativeGameplayMonsterCombat_publishSplashAudioAfterCommit(
                         pending.sequence)) {
                     printf("[BARRELRADIUS] SFX-DEFER seq=%u reason=monster-audio-sequence-invalid worldCommitted=yes\n",
@@ -4383,7 +4218,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
             memset(&actionState.destructibleUndo, 0,
                    sizeof(actionState.destructibleUndo));
         }
-        if (isCrate) {
+        if (isCrate && barrelPlayerLethal == 0U) {
             uint8_t effectiveType = 0U;
             uint8_t effectiveSubtype = 0U;
             int32_t effectiveParm = 0;
@@ -4413,13 +4248,13 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                    (unsigned int)crateRemoved,
                    (unsigned int)crateTransformed,
                    crateWeapon != NULL ? (unsigned int)crateWeapon->resourceId : 0U,
-                   crateTrapArmed != 0U ? "native-180x3" : "none",
-                   (unsigned int)(crateTrapArmed != 0U ? crateTrapDamage : 0U),
-                   crateTrapArmed != 0U ? "deferred" : "n/a");
+                   barrelExplosionArmed != 0U ? "shared-type1-waves" : "none",
+                   (unsigned int)rootBlastDamage,
+                   barrelExplosionArmed != 0U ? "shared-radius" : "n/a");
             (void)effectiveParm;
             /* SFX-P1: publish only a successfully committed pistol/crate
              * hit. No I/O here, and no audio on rollback/invalid outcome. */
-            if (crateWeapon != NULL && crateWeapon->resourceId==5046U &&
+            if (barrelExplosionArmed == 0U && crateWeapon != NULL && crateWeapon->resourceId==5046U &&
                 crateOutcome != ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_INVALID)
                 (void)EspNativeAudioIntent_publish(5046U,0U,3U);
         }
@@ -4452,8 +4287,8 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                        (unsigned int)pending.weapon);
             }
         }
-        if (isBarrel &&
-            (barrelSplashCount != 0U || barrelSplashTotalHits != 0U) &&
+        if (barrelExplosionArmed != 0U && barrelPlayerLethal == 0U &&
+            barrelImpact.monsterHits != 0U &&
             !EspNativeGameplayMonsterCombat_finishSplashPresentation(
                 pending.sequence)) {
             printf("[BARRELRADIUS] PRESENT-FAILED seq=%u reason=level-up-modal-after-settle worldCommitted=yes recovery=required\n",
@@ -4462,13 +4297,10 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
             return 0;
         }
 
-        if (isBarrel && barrelPlayerLethal != 0U) {
-            /* Single-blast/no-monster terminal boundary. The blast, player
-             * pain, weapon/turn reservation and settle frame have completed,
-             * and there can be no later monster consequence to roll back.
-             * Arm the permanent death owner before releasing the transaction.
-             * Multiple blasts + monster interleaving remain fail-closed in
-             * barrelTriggerNeighbors (the death RNG order is not owned yet). */
+        if (barrelExplosionArmed != 0U && barrelPlayerLethal != 0U) {
+            /* Whole-chain terminal boundary, optionally with monster victims.
+             * Their snapshot, deferred SFX and level-up popup stay provisional
+             * until the death owner accepts the one reserved byte. */
             const int validTile =
                 view->destX >= 0 && view->destY >= 0 &&
                 ((uint32_t)view->destX >> 6) < MAP_WIDTH &&
@@ -4477,10 +4309,10 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 ? (uint16_t)((((uint32_t)view->destY >> 6) * MAP_WIDTH) +
                              ((uint32_t)view->destX >> 6))
                 : 0xffffU;
-            if (!validTile || barrelReservedDeathRandValid == 0U ||
+            if (!validTile || barrelImpact.deathRandValid == 0U ||
                 !EspNativeGameplayPlayerDeath_armWithReservedRand(
                     doomRpgBase, pending.sequence, deathTile,
-                    barrelReservedDeathRand)) {
+                    barrelImpact.deathRand)) {
                 int rollbackOk = 1;
                 if (barrelTurnRequested != 0U &&
                     !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
@@ -4506,11 +4338,25 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                        (unsigned int)pending.sequence,
                        (unsigned int)pending.spriteIndex,
                        !validTile ? "invalid-player-tile" :
-                           barrelReservedDeathRandValid == 0U
+                           barrelImpact.deathRandValid == 0U
                                ? "missing-death-rng" : "player-death-arm",
                        rollbackOk ? "yes" : "NO");
                 memset(&actionState.pending, 0, sizeof(actionState.pending));
                 return rollbackOk ? 1 : 0;
+            }
+            if (barrelPreflightMonsters != 0U) {
+                if (!EspNativeGameplayMonsterCombat_commitTerminalSplashSequence(
+                        pending.sequence)) {
+                    DRPG_LOGE("[BARRELRADIUS] FAILED seq=%u reason=terminal-splash-commit death=armed contract=broken\n",
+                              (unsigned int)pending.sequence);
+                    return 0;
+                }
+                if (!EspNativeGameplayMonsterCombat_publishSplashAudioAfterCommit(
+                        pending.sequence)) {
+                    printf("[BARRELRADIUS] SFX-DEFER seq=%u reason=terminal-audio-sequence-invalid worldCommitted=yes\n",
+                           (unsigned int)pending.sequence);
+                }
+                EspEntranceMusic_pumpGameplay();
             }
             /* Death's HUD and presentation have priority over transient cue
              * animations; it is not safe to keep painting on a fading world. */
@@ -4518,13 +4364,13 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 printf("[BARRELRADIUS] LETHAL-PRESENT-DEFER seq=%u death=armed recovery=death-service\n",
                        (unsigned int)pending.sequence);
             }
-            printf("[BARRELRADIUS] LETHAL-COMMIT seq=%u root=%u blastCount=%u playerHP=0 tile=%u deathOwner=armed rollback=closed rng=blast-then-death\n",
+            printf("[BARRELRADIUS] LETHAL-COMMIT seq=%u root=%u blastCount=%u playerHP=0 tile=%u deathOwner=armed rollback=closed rng=radius-cell-death-once\n",
                    (unsigned int)pending.sequence,
                    (unsigned int)pending.spriteIndex,
                    (unsigned int)barrelBlastRngCalls,
                    (unsigned int)deathTile);
         }
-        else if (isBarrel && barrelPlayerHits != 0U) {
+        else if (barrelExplosionArmed != 0U && barrelPlayerHits != 0U) {
             uint8_t i;
             int32_t stepX = 0;
             int32_t stepY = 0;
