@@ -4,6 +4,7 @@
 
 #include "esp_asset_pack.h"
 #include "esp_bsp_reader.h"
+#include "platform_video_config.h"
 
 #define BSP_NODE_RECORD_BYTES 10U
 #define BSP_LINE_RECORD_BYTES 10U
@@ -18,7 +19,12 @@
 
 typedef struct EspBspCursor_s {
     EspAssetPackEntry entry;
+#if DOOMRPG_RES60_P35_BSP_WINDOW
+    uint8_t* buffer;
+    uint32_t capacity;
+#else
     uint8_t buffer[ESP_BSP_READER_BUFFER_BYTES];
+#endif
     uint32_t bufferPos;
     uint32_t bufferLength;
     uint32_t position;
@@ -81,7 +87,11 @@ static int cursorRefill(EspBspCursor* cursor) {
     }
 
     remaining = cursor->entry.size - cursor->position;
+#if DOOMRPG_RES60_P35_BSP_WINDOW
+    length = minU32(remaining, cursor->capacity);
+#else
     length = minU32(remaining, ESP_BSP_READER_BUFFER_BYTES);
+#endif
 
     if (!EspAssetPack_readRange(&cursor->entry,
                                 cursor->position,
@@ -458,8 +468,13 @@ static int parseInventory(EspBspCursor* cursor, EspBspInventory* inventory) {
     return cursor->position == cursor->entry.size;
 }
 
+#if DOOMRPG_RES60_P35_BSP_WINDOW
+static int inventoryCore(const char* resourceName, EspBspInventory* outInventory,
+                         uint8_t* scratch, uint32_t scratchBytes) {
+#else
 int EspBspReader_inventoryPackEntry(const char* resourceName,
                                     EspBspInventory* outInventory) {
+#endif
     EspAssetPackEntry entry;
     EspBspCursor cursor;
     int openedHere = 0;
@@ -473,6 +488,13 @@ int EspBspReader_inventoryPackEntry(const char* resourceName,
 
     memset(outInventory, 0, sizeof(*outInventory));
     memset(&cursor, 0, sizeof(cursor));
+#if DOOMRPG_RES60_P35_BSP_WINDOW
+    cursor.buffer = scratch;
+    cursor.capacity = scratchBytes;
+#define BSP_ACTIVE_WINDOW cursor.capacity
+#else
+#define BSP_ACTIVE_WINDOW ESP_BSP_READER_BUFFER_BYTES
+#endif
 
     if (!EspAssetPack_isOpen()) {
         if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
@@ -498,7 +520,7 @@ int EspBspReader_inventoryPackEntry(const char* resourceName,
            (unsigned int)entry.offset,
            (unsigned int)entry.size,
            (unsigned int)entry.crc32,
-           (unsigned int)ESP_BSP_READER_BUFFER_BYTES);
+           (unsigned int)BSP_ACTIVE_WINDOW);
 
     if (!parseInventory(&cursor, outInventory)) {
         printf("[BSPREAD] FAILED parse position=%u/%u readCalls=%u\n",
@@ -577,7 +599,7 @@ int EspBspReader_inventoryPackEntry(const char* resourceName,
            (unsigned int)outInventory->consumedBytes,
            (unsigned int)outInventory->sourceBytes,
            (unsigned int)outInventory->readCalls,
-           (unsigned int)ESP_BSP_READER_BUFFER_BYTES,
+           (unsigned int)BSP_ACTIVE_WINDOW,
            (unsigned int)outInventory->fnv1a32,
            (unsigned int)outInventory->crc32);
 
@@ -589,3 +611,18 @@ done:
     }
     return ok;
 }
+
+#undef BSP_ACTIVE_WINDOW
+#if DOOMRPG_RES60_P35_BSP_WINDOW
+int EspBspReader_inventoryPackEntry(const char* resourceName,
+                                    EspBspInventory* outInventory) {
+    uint8_t buffer[ESP_BSP_READER_BUFFER_BYTES];
+    return inventoryCore(resourceName,outInventory,buffer,sizeof(buffer));
+}
+int EspBspReader_inventoryPackEntryWithScratch(const char* resourceName,
+                                    EspBspInventory* outInventory,
+                                    void* scratch, uint32_t scratchBytes) {
+    if (scratch==NULL || scratchBytes!=2048U) return 0;
+    return inventoryCore(resourceName,outInventory,(uint8_t*)scratch,scratchBytes);
+}
+#endif

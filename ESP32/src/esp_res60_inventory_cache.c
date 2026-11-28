@@ -4,6 +4,9 @@
 #include <string.h>
 #include "esp_bsp_reader.h"
 #include "esp_res60_inventory_cache.h"
+#if DOOMRPG_RES60_P35_BSP_WINDOW
+#include "esp_res60_world_preview.h"
+#endif
 
 /* Only the original Entrance preview is admitted in P12. The inventory is
  * compact scalar metadata + resource-ID bitsets, never a map/texture buffer,
@@ -44,7 +47,19 @@ int EspRes60InventoryCache_read(const char* mapName,
         *cacheHit = 1U;
         return 1;
     }
+#if DOOMRPG_RES60_P35_BSP_WINDOW
+    /* Cold MISS only; the snapshot will be repopulated before raycast.
+     * Release the same exclusive P29 loan on every acquired path. */
+    size_t bytes=0U;
+    void* scratch=EspRes60Preview_borrowPlaneScratch(&bytes);
+    if (scratch==NULL) return 0;
+    int ok=bytes>=2048U &&
+        EspBspReader_inventoryPackEntryWithScratch(mapName,inventory,scratch,2048U);
+    EspRes60Preview_returnPlaneScratch();
+    return ok;
+#else
     return EspBspReader_inventoryPackEntry(mapName, inventory);
+#endif
 }
 
 int EspRes60InventoryCache_verify(const char* mapName,
