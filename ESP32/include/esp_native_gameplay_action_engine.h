@@ -174,6 +174,12 @@ int EspNativeGameplayActionEngine_runDeathBlast(
     const EspNativeGameplayDeathBlastPlan* plan,
     EspNativeGameplayDeathBlastResult* outResult);
 
+/* Enemy-owned barrel target, after the existing ordered attack animation.
+ * No player ammo or turn request. Preflight is safe before attack admission. */
+int EspNativeGameplayActionEngine_enemyBarrelReady(uint16_t sprite);
+int EspNativeGameplayActionEngine_enemyBarrelImpact(
+    struct DoomRPG_s* runtime, uint32_t sequence, uint16_t rootSprite);
+
 void EspNativeGameplayActionEngine_reset(void);
 int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpg);
 

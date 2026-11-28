@@ -20,9 +20,25 @@ for i in range(src.index("{",start),len(src)):
             break
 assert end is not None
 ref=src[start:end].replace("void Game_trace(","void RefGame_trace(",1)
+# Extract the exact map-load directional sprite nudge from original Render.c.
+render=(ROOT/"src/Render.c").read_text(encoding="latin-1")
+anchor="if ((mapSprite->info & 0x800000) != 0)"
+assert render.count(anchor)==1
+start=render.index(anchor)
+depth=0
+for i in range(render.index("{",start),len(render)):
+    if render[i]=="{": depth+=1
+    elif render[i]=="}":
+        depth-=1
+        if depth==0:
+            nudge=render[start:i+1]
+            break
+else:
+    raise AssertionError(anchor)
 with tempfile.TemporaryDirectory(prefix="gameai14-plane-") as tmp:
     p=Path(tmp)
     (p/"legacy_trace.inc").write_text(ref)
+    (p/"legacy_plane_nudge.inc").write_text("static void RefRender_nudge(RefSprite* mapSprite) {\n"+nudge+"\n}\n")
     for continuation in (0, 1):
         exe=p/f"oracle-{continuation}"
         subprocess.run(["cc","-std=c11","-O2","-Wall","-Wextra","-Werror",

@@ -437,6 +437,24 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
         }
     }
 
+    {
+        uint16_t targetSprite,targetTile;
+        if (EspNativeGameplayMonsterTurn_barrelTarget(
+                turn->attackProbes,&targetSprite,&targetTile)) {
+            const uint32_t sequence=0x40000000U | turn->attackProbes;
+            int ok=EspNativeGameplayActionEngine_enemyBarrelImpact(
+                doomRpg,sequence,targetSprite);
+            if (ok==0) *EspNativeProcessRng_live()=randomBefore;
+            else if (ok>0) ++retaliationView.committedAttacks;
+            /* Resolve even a fail-closed rollback, never strand the ordered
+             * active sequence waiting for a player-damage transaction. */
+            retaliationView.lastResolvedProbe=turn->attackProbes;
+            printf("[AI14TARGET] %s probe=%u targetSprite=%u targetTile=%u combatRng=0 aiRng=%u extraTurn=no\n",
+                   ok>0?"RESOLVED":ok==0?"ROLLBACK":"FAILED",(unsigned)turn->attackProbes,
+                   (unsigned)targetSprite,(unsigned)targetTile,(unsigned)aiRngCalls);
+            return;
+        }
+    }
     memset(&roll, 0, sizeof(roll));
     if (!rollMonsterAttack(doomRpg, monster, &playerBefore,
                            weaponId, loops, &roll)) {

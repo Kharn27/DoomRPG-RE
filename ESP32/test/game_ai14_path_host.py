@@ -1,32 +1,67 @@
 #!/usr/bin/env python3
 """Execute real native planner bodies and original legacy goal/path on discrete fixtures."""
 from pathlib import Path
+import argparse
+import re
 import subprocess
 import tempfile
 
 ROOT=Path(__file__).resolve().parents[2]
 legacy=(ROOT/"src/Entity.c").read_text(encoding="latin-1")
-def extract(signature):
-    assert legacy.count(signature)==1, signature
-    start=legacy.index(signature)
+def extract(signature, corpus=legacy):
+    assert corpus.count(signature)==1, signature
+    start=corpus.index(signature)
     depth=0
-    for i in range(legacy.index("{",start),len(legacy)):
-        if legacy[i]=="{": depth+=1
-        elif legacy[i]=="}":
+    for i in range(corpus.index("{",start),len(corpus)):
+        if corpus[i]=="{": depth+=1
+        elif corpus[i]=="}":
             depth-=1
-            if not depth: return legacy[start:i+1]
+            if not depth: return corpus[start:i+1]
     raise AssertionError(signature)
 
 source=extract("int Entity_calcPath(Entity_t* entity,")+ "\n"+extract("boolean Entity_aiGoal_MOVE(Entity_t* entity,")
+trace=extract("void Game_trace(Game_t* game,", (ROOT/"src/Game.c").read_text(encoding="latin-1"))
+sight=extract("boolean Entity_checkLineOfSight(Entity_t* entity,")
+trace=trace.replace("void Game_trace(", "void RefGame_trace(", 1)
+sight=sight.replace("Entity_checkLineOfSight(", "RefActualSight(", 1).replace("Game_trace(", "RefGame_trace(")
+
 for old,new in (("Entity_calcPath","RefPath"),("Entity_aiGoal_MOVE","RefGoal"),
                 ("Entity_checkLineOfSight","RefSight"),("DoomRPG_randNextByte","RefByte"),
                 ("Game_unlinkEntity","RefUnlink"),("Game_linkEntity","RefLink")):
     source=source.replace(old,new)
 # Legacy n5 is intentionally unused; suppress this specific warning in reference only.
 source="#pragma GCC diagnostic push\n#pragma GCC diagnostic ignored \"-Wunused-parameter\"\n"+source+"\n#pragma GCC diagnostic pop\n"
+parser=argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--serial",type=Path,help="Replay AI14NAV witnesses using original scoring; not geometry proof")
+args=parser.parse_args()
+rows={0:[],1:[]}
+if args.serial:
+    pattern=re.compile(
+        r"\[AI14NAV\] phase=(first|continuation) sprite=(\d+) sub=(\d+) "
+        r"src=(-?\d+),(-?\d+) target=(-?\d+),(-?\d+) dst=(\d+) mask=([0-9a-fA-F]+) "
+        r"score=(-?\d+),(-?\d+),(-?\d+),(-?\d+) "
+        r"bits=([0-9a-fA-F]+),([0-9a-fA-F]+),([0-9a-fA-F]+),([0-9a-fA-F]+) "
+        r"ties=(\d+) byte=(\d+) choice=(\d+)")
+    for line in args.serial.read_text(errors="replace").splitlines():
+        if "[AI14NAV]" not in line: continue
+        match=pattern.search(line)
+        if not match: raise SystemExit(f"Malformed navigation witness: {line}")
+        phase,*values=match.groups()
+        rows[int(phase=="continuation")].append(" ".join(values))
+    if not any(rows.values()): raise SystemExit("No AI14NAV witnesses")
 with tempfile.TemporaryDirectory(prefix="gameai14-path-") as tmp:
     p=Path(tmp)
     (p/"legacy_goal.inc").write_text(source)
+    (p/"legacy_trace.inc").write_text(trace+"\n"+sight)
+    turn=(ROOT/"ESP32/src/esp_native_gameplay_monster_turn.c").read_text()
+    names=("centeredCoordinate","tileIndexFor","typeInTraceMask","lineEntityTile",
+           "closedLineBlocksTile","specialEntityBlocks","blockingSpriteOnTile","cardinalLosTarget")
+    target_source="\n".join(line for line in turn.splitlines() if line.startswith("#define TURN_"))
+    target_source+="\n"+turn[turn.index("typedef struct MonsterTurnTraceTarget_s {"):turn.index("} MonsterTurnTraceTarget;")+len("} MonsterTurnTraceTarget;")]
+    target_source+="\n"+"\n".join(extract("static int "+name+"(",turn) for name in names)
+    for name in names:
+        target_source=re.sub(r"\b"+name+r"\b","TurnOracle_"+name,target_source)
+    (p/"turn_target.inc").write_text(target_source)
     for continuation in (0,1):
         exe=p/f"oracle-{continuation}"
         subprocess.run(["cc","-std=c11","-O2","-Wall","-Wextra","-Werror",
@@ -37,3 +72,11 @@ with tempfile.TemporaryDirectory(prefix="gameai14-path-") as tmp:
                         "ESP32/test/game_ai14_path_host.c","-o",str(exe)],
                        cwd=ROOT,check=True)
         subprocess.run([str(exe)],check=True)
+        if continuation == 0:
+            for fixture in ("ai14_nav_p3_geometry.txt", "ai14_nav_p5a_imp_geometry.txt"):
+                subprocess.run([str(exe),"--geometry"], input=(ROOT/"ESP32/test/fixtures"/fixture).read_text(), text=True, check=True)
+            subprocess.run([str(exe),"--replay"], input=(ROOT/"ESP32/test/fixtures/ai14_nav_p5a_imp_loop.txt").read_text(), text=True, check=True)
+            subprocess.run([str(exe),"--geometry-late"], input=(ROOT/"ESP32/test/fixtures/ai14_nav_p6_imp_late.txt").read_text(), text=True, check=True)
+        if rows[continuation]:
+            subprocess.run([str(exe),"--replay"],input="\n".join(rows[continuation])+"\n",
+                           text=True,check=True)

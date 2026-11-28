@@ -56,6 +56,7 @@ prefix = r"""
 #define TURN_TILE_SIZE 64
 #define TURN_TILE_CENTER 32
 #define TURN_TYPE_ENEMY 1U
+#define TURN_TYPE_DESTRUCTIBLE 12U
 #define TURN_SUBTYPE_SPECIAL_AI 10U
 #define TURN_MONSTER_WEAPON_COUNT 19U
 #define ESP_MAP_SPRITE_TOPOLOGY_LINKED 0x0400U
@@ -104,8 +105,17 @@ static int EspMapSpriteTopology_getEntity(uint32_t spriteIndex,
     *order = 1U;
     return 1;
 }
-static int cardinalLosClear(int32_t sourceX, int32_t sourceY,
-        int32_t destX, int32_t destY, uint16_t spriteIndex) {
+typedef struct MonsterTurnTraceTarget_s {
+    uint16_t sprite,tile; uint8_t type,subtype;
+} MonsterTurnTraceTarget;
+static int fixtureBarrel=0;
+static int EspNativeGameplayActionEngine_enemyBarrelReady(uint16_t sprite) {
+    return fixtureBarrel && sprite==271U;
+}
+static int cardinalLosTarget(int32_t sourceX, int32_t sourceY,
+        int32_t destX, int32_t destY, uint16_t spriteIndex,
+        MonsterTurnTraceTarget* target) {
+    *target=(MonsterTurnTraceTarget){271U,570U,fixtureBarrel?12U:0xffU,1U};
     (void)sourceX; (void)sourceY; (void)destX; (void)destY;
     (void)spriteIndex;
     return fixtureLos;
@@ -235,6 +245,17 @@ int main(void) {
                "attackGate=%s metadata=legacy-matched activeRng=not-consumed\n",
                subtype, "native-candidate");
     }
+    fixtureMonster.subtype=3U;
+    fixtureMonster.alternateAttack=0U;
+    fixtureLos=0; fixtureBarrel=1;
+    settle(&view,288,224);
+    assert(findCandidateForSprite(&view,17U,&candidate)==1);
+    assert(candidate.monster==&fixtureMonster && candidate.barrelTarget==1U &&
+           candidate.weaponId==15U && candidate.targetSprite==271U &&
+           candidate.targetTile==570U);
+    fixtureMonster.alternateAttack=1U;
+    assert(findCandidateForSprite(&view,17U,&candidate)==1);
+    assert(candidate.monster==NULL);
     assert(cases==13U*2U*12U);
     printf("[GAMEAI14-C] PASS cases=%u realBodies=3 "
            "cardinal/diagonal/range/LOS/invalid/link/aiRngCounts/masks "
