@@ -1,3 +1,9 @@
+## PERF-GAME P3b–P3n — consolidation CYD + CI PASS (28 novembre 2026)
+
+PR [#472](https://github.com/Kharn27/DoomRPG-RE/pull/472), candidat `31277b70e4cf29c1149aeef21ba9a6efc4f25e28`, double CI [push](https://github.com/Kharn27/DoomRPG-RE/actions/runs/46124985875) / [PR](https://github.com/Kharn27/DoomRPG-RE/actions/runs/46124991136) SUCCESS. [Rapport P3n](MILESTONE_PERF_GAME_P3N_PENDING_CYD.md). Sector1 slot05 puis Entrance neuve: 34/34 tours non vides, 270 actions, 120/120 continuations Phantom exactes, 26 préfixes vides par contrat, 37 SFX sans rejet/underrun, 12 portes, 10 pickups, deux EXIT propres, NULL invariants. Optimisations cumulées P3b–P3n sans changement volontaire des règles gameplay, validation transactionnelle maintenue. Le renderer reste dominant (75.47% de la phase mouvement échantillonnée), pas de benchmark apparié. Limites #473/#382 et IA historiques ouvertes. Accord utilisateur de consolidation; candidat code gelé après test.
+
+---
+
 ## PERF-GAME P2–P3a — PASS consolidation CYD (27 novembre 2026)
 
 PR #464, candidat intégré `99326ee5f9cb08c1f46562b3a19305840deaecdc` (SHA contextuel, absent du Serial), CI push [45908410747](https://github.com/Kharn27/DoomRPG-RE/actions/runs/45908410747) et PR [45908419098](https://github.com/Kharn27/DoomRPG-RE/actions/runs/45908419098) SUCCESS. Optimisations conservées: reuse borné des continuations invisibles, coalescence cosmétique, sprite/wall/PAK, FNV byte-exact, lampe physique du tour ennemi, cache compact 18088B/15360B/256 entrées (1024B récupérés), frontière large O(1). Aucun changement gameplay volontaire ni relaxation des réserves audio.
