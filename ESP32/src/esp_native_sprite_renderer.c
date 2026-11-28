@@ -1,6 +1,7 @@
 #if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_GEOMETRY_ORACLE)
 #include <SDL.h>
 #endif
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -527,7 +528,11 @@ static int loadFrameBounds(const Sources* sources, uint16_t logical,
         return 0;
     }
 
-    memset(frame, 0, sizeof(*frame));
+    /* P3m: bounds-only admission needs the scalar header, not payload.
+     * A successful payload read overwrites every live mask/texel byte,
+     * prefix[0..width] and all 16 palette entries before any consumer.
+     * Failure is never drawable; unused array tails are not observable. */
+    memset(frame, 0, offsetof(Frame, palette));
     if (!readRange(&sources->mappings,
                    sources->spriteIdBase + (uint32_t)logical * 2U,
                    idBytes, sizeof(idBytes), stats)) {
