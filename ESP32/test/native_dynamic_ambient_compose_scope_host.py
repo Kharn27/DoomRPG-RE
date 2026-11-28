@@ -52,7 +52,8 @@ def scan() -> None:
         RAW_COMPOSE: {"esp_native_dynamic_line_render.c": 1,
                       "esp_native_gameplay_frame.c": 1},
         OWN_AMBIENT: {"esp_native_dynamic_line_render.c": 1,
-                      "esp_native_resident_gameplay.c": 1},
+                      "esp_native_resident_gameplay.c": 1,
+                      "esp_native_gameplay_action_engine.c": 1},
         OWN_COMPOSE: {"esp_native_dynamic_line_render.c": 1,
                       "esp_native_gameplay_event_chain.c": 1},
     }
@@ -72,6 +73,9 @@ def scan() -> None:
             (SRC / "esp_native_gameplay_event_chain.c").read_text(encoding="utf-8"),
             "unpublished script capture missing owner import")
 
+    require('#include "esp_native_dynamic_line_render.h"' in
+            (SRC / "esp_native_gameplay_action_engine.c").read_text(encoding="utf-8"),
+            "direct death blast preview missing scoped owner import")
     dynamic = DYNAMIC.read_text(encoding="utf-8")
     require(dynamic.count("if (!beginDynamicPreview()) return 0;") == 4,
             "shared scope admission changed for rotate/move/ambient/compose")
@@ -80,7 +84,7 @@ def scan() -> None:
     require(dynamic.count('return endDynamicPreview(ok, "compose");') == 1,
             "unpublished script composition dynamic-line scope not closed")
     print(f"PASS ARCH-RC11 source scan: {len(files)} actual C/C++ units, "
-          "two retired wraps, exactly two owner callsites, renderTurn facade retained")
+          "two retired wraps, exactly three scoped owner callsites, renderTurn facade retained")
 
 
 def extract(source: str, name: str) -> str:

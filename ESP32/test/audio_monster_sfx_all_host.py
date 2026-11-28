@@ -114,8 +114,7 @@ barrel_commit=action.index('printf("[BARREL] COMMIT')
 release=action.index("EspNativeGameplayMonsterCombat_publishSplashAudioAfterCommit(",barrel_commit)
 barrel_settle=action.index('printf("[ACTIONENGINE] ATTACK',barrel_commit)
 assert barrel_commit < release < barrel_settle
-assert "if (barrelSplashCount != 0U ||" in action[barrel_commit:release]
-assert "barrelSplashTotalHits != 0U)" in action[barrel_commit:release]
+assert "if (barrelImpact.monsterHits != 0U) {" in action[barrel_commit:release]
 assert "EspEntranceMusic_pumpGameplay();" in action[release:barrel_settle]
 
 start=combat.index("int EspNativeGameplayMonsterCombat_publishSplashAudioAfterCommit(")

@@ -124,6 +124,10 @@ int EspNativeSpriteRenderer_armTransientBatch(
     const EspNativeSpriteTransient* items,
     uint8_t count);
 void EspNativeSpriteRenderer_clearTransient(void);
+/* Sample the active type-1 transient shake in esp_timer milliseconds.
+ * No state mutation; expired, cleared or unrelated leases return zero. */
+int EspNativeSpriteRenderer_blastShakeOffsets(uint32_t nowMs,
+                                               int8_t* outX, int8_t* outY);
 
 #ifdef __cplusplus
 }

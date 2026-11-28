@@ -157,6 +157,23 @@ void EspNativeGameplayActionEngine_markFreshFrame(void);
  * This owner contains only compact map-local action state; it never imports
  * legacy Entity_t/Player_t/Combat_t ownership.
  */
+/* One direct subtype8 origin. Run requires an active caller-owned splash
+ * snapshot and originating attack rollback. No mixed source admission. */
+typedef struct EspNativeGameplayDeathBlastPlan_s {
+    uint16_t sourceSprite, worldX, worldY;
+    uint8_t monsterCount, playerCount;
+} EspNativeGameplayDeathBlastPlan;
+typedef struct EspNativeGameplayDeathBlastResult_s {
+    uint16_t monsterHits, playerMessageDamage;
+    uint8_t lethal, deathRand;
+} EspNativeGameplayDeathBlastResult;
+int EspNativeGameplayActionEngine_prepareDeathBlast(
+    uint16_t sourceSprite, EspNativeGameplayDeathBlastPlan* outPlan);
+int EspNativeGameplayActionEngine_runDeathBlast(
+    struct DoomRPG_s* runtime, uint32_t sequence,
+    const EspNativeGameplayDeathBlastPlan* plan,
+    EspNativeGameplayDeathBlastResult* outResult);
+
 void EspNativeGameplayActionEngine_reset(void);
 int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpg);
 

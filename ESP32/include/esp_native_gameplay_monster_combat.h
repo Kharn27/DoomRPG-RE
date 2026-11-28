@@ -47,6 +47,11 @@ int EspNativeGameplayMonsterCombat_cancelSplashSequence(
     struct DoomRPG_s* runtime);
 int EspNativeGameplayMonsterCombat_commitSplashSequence(
     uint32_t sequence);
+/* Terminal success only, after PlayerDeath arm; suppresses obsolete level-up
+ * presentation but retains committed gameplay XP and staged audio. */
+int EspNativeGameplayMonsterCombat_splashSequenceArmed(uint32_t sequence);
+int EspNativeGameplayMonsterCombat_commitTerminalSplashSequence(
+    uint32_t sequence);
 /* Publish staged original monster pain/death sounds only after the enclosing
  * barrel transaction can no longer roll back. Non-allocating, one shot. */
 int EspNativeGameplayMonsterCombat_publishSplashAudioAfterCommit(

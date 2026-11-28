@@ -172,7 +172,7 @@ int main(void) {
         uint32_t rngCalls = 0, roll = 0;
         uint16_t sound = 0;
         EspNativeGameplayMonsterDropSpawnPlan plan = {0};
-        if (specialDeath(subtype)) {
+        if (specialDeath(subtype) && subtype != 8U) {
             clear(0U);
             assert(!prepareDeathAfterXp(&runtime, &monster, 0U, &rngCalls,
                                         &plan, &sound, &roll));
@@ -184,7 +184,7 @@ int main(void) {
             check(subtype, picks[i], 1U); ++cases;
         }
     }
-    assert(cases == 100U);
+    assert(cases == 110U);
     assert(EspNativeMonsterDeathConsequence_priority(0U, 0U) == 2U);
     assert(EspNativeMonsterDeathConsequence_priority(0U, 1U) == 0U);
     assert(EspNativeMonsterDeathConsequence_priority(1U, 1U) == 3U);
@@ -224,8 +224,8 @@ int main(void) {
         assert(live.cursor == 0U);
         assert(plan.outcome == 0U);
     }
-    puts("MONSTER-DEATH-P1 PASS: 100 real C normal/gib cases, 14 families "
-         "(special fail closed), RNG order, XP boundary, drop rollback, P2/P3/P5");
+    puts("MONSTER-DEATH-P1 PASS: 110 real C normal/gib cases, 14 families "
+         "(other special families fail closed), RNG order, XP boundary, drop rollback, P2/P3/P5");
     return 0;
 }
 """
@@ -248,3 +248,15 @@ print("MONSTER-DEATH-P1 PASS: source gates, rollback/commit frontier and real co
 
 # GAME-AI-14 A2-P0: permanent original special-death contract (host only).
 subprocess.run(["python3", str(ROOT / "ESP32/test/game_ai14_special_death_host.py")], check=True)
+
+# A2-P1d: direct subtype8 is explicitly preflighted, splash-origin special
+# deaths still fail closed. The direct root and collateral journal are separate
+# snapshots, restored in reverse nesting order on late failure.
+assert direct.index("EspNativeGameplayActionEngine_prepareDeathBlast(") < direct.index("specialDeath(target->subtype) && !deathBlast")
+assert "if (specialDeath(before.subtype)) goto splash_failed;" in splash
+blast = direct[direct.index("    if (deathBlast) {\n        /* Root HP"):]
+assert blast.index("EspNativeGameplayMonsterCombat_beginSplashSequence(") < blast.index("EspNativeGameplayMonsterDrop_commit(&dropPlan)") < blast.index("EspNativeGameplayActionEngine_runDeathBlast(")
+assert blast.index("EspNativeGameplayPlayerDeath_armWithReservedRand(") < blast.index("EspNativeGameplayMonsterCombat_commitTerminalSplashSequence(") < blast.index("EspNativeGameplayMonsterCombat_publishSplashAudioAfterCommit(")
+failed = direct[direct.index("death_blast_failed:"):]
+assert failed.index("restoreSplashSnapshot(runtime)") < failed.index("*target = targetBefore;") < failed.index("(*EspNativeProcessRng_live()) = randomBefore;")
+assert "const int hidden = monsters->records[i].subtype == 8U;" in SOURCE
