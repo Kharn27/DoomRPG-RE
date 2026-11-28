@@ -217,7 +217,7 @@ static int geometryInput(void) {
     while((n=scanf("%u %u %d %d %d %d %u %x %d %d %d %d %x %x %x %x %u %u %u %d %d",
         &attacker,&sub,&sx,&sy,&tx,&ty,&dst,&mask,&score[0],&score[1],&score[2],&score[3],
         &b[0],&b[1],&b[2],&b[3],&ties,&value,&choice,&px,&py))!=EOF) {
-        assert(n==21 && sub==4 && mask==0xf387 && ties>0 && ties<=4 && value<256);
+        assert(n==21 && ((sub==4 && mask==0xf387) || (sub==3 && mask==0xff87)) && ties>0 && ties<=4 && value<256);
         RefGame g={0}; RefRender render={0}; RefCanvas canvas={px,py};
         RefRoot root={0}; RefMonster m={0}; RefDef d={(int)sub,1}, defs[128]={0};
         Entity_t e={.def=&d,.monster=&m,.doomRpg=&root};
@@ -294,7 +294,7 @@ static int geometryInput(void) {
         ++rows;
     }
     assert(rows==8);
-    printf("PASS CYD P3 captured geometry original C replay rows=%u viable=%u (native topology input)\n",rows,candidates);
+    printf("PASS CYD captured geometry original C replay rows=%u viable=%u (native topology input)\n",rows,candidates);
     return 0;
 }
 int main(int argc,char** argv) {

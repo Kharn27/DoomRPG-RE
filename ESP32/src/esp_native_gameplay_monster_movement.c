@@ -1409,7 +1409,8 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
          (candidate.monster->subtype == 3U && navImpSampleCount < 32U))) {
         const int isImp = candidate.monster->subtype == 3U;
         const unsigned sample = isImp ? 48U + (++navImpSampleCount) : ++navSampleCount;
-        if ((!isImp && sample <= 4U) || (isImp && navImpSampleCount <= 4U))
+        /* Capture late Imp pursuit (samples 61..64), not the initial approach. */
+        if ((!isImp && sample <= 4U) || (isImp && navImpSampleCount >= 13U && navImpSampleCount <= 16U))
             EspAi14NavGeometry_capture("first", sample, candidate.monster->spriteIndex,
             candidate.position->worldX, candidate.position->worldY, lineEntityTile);
         printf("[AI14NAV] phase=first sprite=%u sub=%u src=%d,%d target=%d,%d dst=%u mask=%04x score=%d,%d,%d,%d bits=%02x,%02x,%02x,%02x ties=%u byte=%u choice=%u goal=%u player=%d,%d angle=%d rngBefore=%d rngAfter=%d calls=%u sample=%u\n",
