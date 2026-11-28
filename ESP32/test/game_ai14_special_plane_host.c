@@ -117,7 +117,6 @@ int main(void) {
     assert(cardinalTraceClear(672,672,800,672,0,0xf387U,1)==-2);
     printf("PASS GAME-AI-14 A4 special-plane original Game_trace continuation=%d cases=%u blocked=%u clear=%u origin-differences=%u\n",
            CONTINUATION,cases,blocked,clear,differences);
-#if CONTINUATION
     /* Original sentinel is checked in source AND destination cell. Test
      * both coordinate conventions, all directions, with/without mask. */
     topo.spriteCount=1;
@@ -147,6 +146,5 @@ int main(void) {
     player.active=1;player.viewX=player.destX-64;
     assert(cardinalTraceClear(672,672,736,672,0,0xf387U,1)==-1);
     printf("PASS GAME-AI-14 A4-P3 player-sentinel original Game_trace cases=%u failClosed=3 maskExcluded=1\n",sentinelCases);
-#endif
     return 0;
 }

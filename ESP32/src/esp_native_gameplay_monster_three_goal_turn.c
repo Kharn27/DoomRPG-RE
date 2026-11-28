@@ -77,11 +77,14 @@ typedef struct ThreeGoalMovePlan_s {
     uint8_t choice;
     uint8_t tieRand;
     uint8_t tieRandUsed;
+    int navScore[4]; /* E,W,S,N; -1 = first step blocked. */
+    uint8_t navTraceBits[4]; /* clear bits for the two greedy rounds. */
 } ThreeGoalMovePlan;
 
 typedef struct ThreeGoalPathResult_s {
     int distance;
     int status;
+    uint8_t navTraceBits;
 } ThreeGoalPathResult;
 
 static EspNativeGameplayMonsterThreeGoalTurnView threeGoalView;
@@ -583,6 +586,7 @@ static ThreeGoalPathResult calcPath(uint16_t attackerSprite,
 
     result.distance = 999999;
     result.status = 1;
+    result.navTraceBits = 0U;
     if (srcX == destX && srcY == destY) {
         result.distance = 0;
         return result;
@@ -611,6 +615,7 @@ static ThreeGoalPathResult calcPath(uint16_t attackerSprite,
             }
             clear = cardinalTraceClear(worldX, worldY, worldDestX, worldDestY,
                                        attackerSprite, mask, 1);
+            if (clear > 0) result.navTraceBits |= (uint8_t)(1U << (4 * i + j));
             if (clear == -2) {
                 result.status = -2;
                 return result;
@@ -690,6 +695,7 @@ static int aiGoalPlan(uint16_t attackerSprite,
     dX = destX >> 6;
     dY = destY >> 6;
     outPlan->traceMask = mask;
+    for (unsigned d = 0; d < 4; ++d) outPlan->navScore[d] = -1;
     if (!tileIndexFor(srcX, srcY, &outPlan->sourceTile)) return -1;
 
     clear = cardinalTraceClear(srcX, srcY, srcX + THREEGOAL_TILE_SIZE, srcY,
@@ -698,6 +704,8 @@ static int aiGoalPlan(uint16_t attackerSprite,
     if (clear > 0) {
         path = calcPath(attackerSprite, mask, sX + 1, sY, dX, dY);
         if (path.status < 0) return path.status;
+        outPlan->navScore[0] = path.distance;
+        outPlan->navTraceBits[0] = path.navTraceBits;
         if (path.distance < 9999) {
             closestPathDist = path.distance;
             visitCount = 1U;
@@ -714,6 +722,8 @@ static int aiGoalPlan(uint16_t attackerSprite,
     if (clear > 0) {
         path = calcPath(attackerSprite, mask, sX - 1, sY, dX, dY);
         if (path.status < 0) return path.status;
+        outPlan->navScore[1] = path.distance;
+        outPlan->navTraceBits[1] = path.navTraceBits;
         if (path.distance < closestPathDist) {
             closestPathDist = path.distance;
             visitCount = 1U;
@@ -730,6 +740,8 @@ static int aiGoalPlan(uint16_t attackerSprite,
     if (clear > 0) {
         path = calcPath(attackerSprite, mask, sX, sY + 1, dX, dY);
         if (path.status < 0) return path.status;
+        outPlan->navScore[2] = path.distance;
+        outPlan->navTraceBits[2] = path.navTraceBits;
         if (path.distance < closestPathDist) {
             closestPathDist = path.distance;
             visitCount = 1U;
@@ -746,6 +758,8 @@ static int aiGoalPlan(uint16_t attackerSprite,
     if (clear > 0) {
         path = calcPath(attackerSprite, mask, sX, sY - 1, dX, dY);
         if (path.status < 0) return path.status;
+        outPlan->navScore[3] = path.distance;
+        outPlan->navTraceBits[3] = path.navTraceBits;
         if (path.distance < closestPathDist) {
             visitCount = 1U;
             visitOrder[0] = 0U;
@@ -769,6 +783,18 @@ static int aiGoalPlan(uint16_t attackerSprite,
     }
     if (!tileIndexFor(srcX + outPlan->deltaX,
                       srcY + outPlan->deltaY, &outPlan->destTile)) return -1;
+#if DOOMRPG_PERF_GAME_P1
+    /* One compact witness, no additional collision checks or RNG calls. */
+    if (subtype == 4U || subtype == 13U) {
+        printf("[AI14NAV] phase=continuation sprite=%u sub=%u src=%d,%d target=%d,%d dst=%u mask=%04x score=%d,%d,%d,%d bits=%02x,%02x,%02x,%02x ties=%u byte=%u choice=%u\n",
+               (unsigned)attackerSprite, (unsigned)subtype, (int)srcX, (int)srcY,
+               (int)destX, (int)destY, (unsigned)outPlan->destTile, (unsigned)mask,
+               outPlan->navScore[0], outPlan->navScore[1], outPlan->navScore[2], outPlan->navScore[3],
+               (unsigned)outPlan->navTraceBits[0], (unsigned)outPlan->navTraceBits[1],
+               (unsigned)outPlan->navTraceBits[2], (unsigned)outPlan->navTraceBits[3],
+               (unsigned)visitCount, (unsigned)outPlan->tieRand, (unsigned)outPlan->choice);
+    }
+#endif
     return 1;
 }
 

@@ -103,11 +103,14 @@ typedef struct MovePlan_s {
     uint8_t choice;
     uint8_t tieRand;
     uint8_t tieRandUsed;
+    int navScore[4]; /* E,W,S,N; -1 = first step blocked. */
+    uint8_t navTraceBits[4]; /* clear bits for the two greedy rounds. */
 } MovePlan;
 
 typedef struct PathResult_s {
     int distance;
     int status;
+    uint8_t navTraceBits;
 } PathResult;
 
 static EspNativeGameplayMonsterMovementView movementView;
@@ -623,6 +626,7 @@ static int cardinalTraceClearBody(int32_t sourceX,
     int32_t stepY = 0;
     uint32_t distance;
     uint32_t i;
+    uint16_t playerTile = UINT16_MAX;
 
     if (!centeredCoordinate(sourceX) || !centeredCoordinate(sourceY) ||
         !centeredCoordinate(destX) || !centeredCoordinate(destY)) return -1;
@@ -641,6 +645,15 @@ static int cardinalTraceClearBody(int32_t sourceX,
     }
     if (distance == 0U || distance > 31U) return 0;
     if (strictSpecial && distance != 1U) return -2;
+
+    /* Game_trace visits the source as well as the destination. This matters
+     * for hypothetical calcPath steps originating on the player tile. */
+    if ((mask & 0x0100U) != 0U) {
+        const EspPlayerViewState* player = EspPlayerView_view();
+        if (player == NULL || player->active != 1U ||
+            player->viewX != player->destX || player->viewY != player->destY ||
+            !tileIndexFor(player->destX, player->destY, &playerTile)) return -1;
+    }
 
     for (i = 1U; i <= distance; ++i) {
         int32_t prevX = sourceX + stepX * (int32_t)(i - 1U);
@@ -669,6 +682,7 @@ static int cardinalTraceClearBody(int32_t sourceX,
                 return 0;
             }
             if ((sourceFlags & ESP_MAP_TILE_WALL) != 0U) return 0;
+            if (sourceTile == playerTile) return 0;
             {
                 uint16_t sourceLine = UINT16_MAX;
                 lineBlock = closedLineSourceStatus(sourceTile, mask,
@@ -708,28 +722,7 @@ static int cardinalTraceClearBody(int32_t sourceX,
         if (!tileIndexFor(x, y, &tile) || !EspMapState_getTileFlags(tile, &flags)) {
             return 0;
         }
-        /* Legacy Game_trace checks the player's destination-cell sentinel
-         * when traceMask includes 0x0100. Native topology stores only map
-         * entities, not the legacy player entity, so the planner used to
-         * allow a monster to step on the player and permanently trap them.
-         * This check applies solely to movement masks: attack LOS masks
-         * exclude 0x0100 and must remain unaffected. */
-        if ((mask & 0x0100U) != 0U) {
-            const EspPlayerViewState* player = EspPlayerView_view();
-            uint16_t playerTile;
-            if (player == NULL || player->active != 1U ||
-                player->viewX != player->destX ||
-                player->viewY != player->destY ||
-                !tileIndexFor(player->destX, player->destY, &playerTile)) {
-                return -1;
-            }
-            if (tile == playerTile) {
-                DRPG_LOGT("[MONSTERMOVE] TRACE-BLOCK side=dest kind=player-sentinel tile=%u mask=%04x from=%d,%d to=%d,%d\n",
-                       (unsigned int)tile, (unsigned int)mask,
-                       (int)prevX, (int)prevY, (int)x, (int)y);
-                return 0;
-            }
-        }
+        if (tile == playerTile) return 0;
         if ((flags & ESP_MAP_TILE_WALL) != 0U) return 0;
         lineBlock = closedLineBlocksTile(tile, mask);
         if (lineBlock < 0) return -1;
@@ -785,6 +778,7 @@ static PathResult calcPath(uint16_t attackerSprite,
 
     result.distance = 999999;
     result.status = 1;
+    result.navTraceBits = 0U;
     if (srcX == destX && srcY == destY) {
         result.distance = 0;
         return result;
@@ -813,6 +807,7 @@ static PathResult calcPath(uint16_t attackerSprite,
             }
             clear = cardinalTraceClear(worldX, worldY, worldDestX, worldDestY,
                                        attackerSprite, mask, 1);
+            if (clear > 0) result.navTraceBits |= (uint8_t)(1U << (4 * i + j));
             if (clear == -2) {
                 result.status = -2;
                 return result;
@@ -890,6 +885,7 @@ static int aiGoalPlan(uint16_t attackerSprite,
     dX = destX >> 6;
     dY = destY >> 6;
     outPlan->traceMask = mask;
+    for (unsigned d = 0; d < 4; ++d) outPlan->navScore[d] = -1;
     if (!tileIndexFor(srcX, srcY, &outPlan->sourceTile)) return -1;
 
     clear = cardinalTraceClear(srcX, srcY, srcX + MOVE_TILE_SIZE, srcY,
@@ -898,6 +894,8 @@ static int aiGoalPlan(uint16_t attackerSprite,
     if (clear > 0) {
         path = calcPath(attackerSprite, mask, sX + 1, sY, dX, dY);
         if (path.status < 0) return path.status;
+        outPlan->navScore[0] = path.distance;
+        outPlan->navTraceBits[0] = path.navTraceBits;
         if (path.distance < 9999) {
             closestPathDist = path.distance;
             visitCount = 1U;
@@ -914,6 +912,8 @@ static int aiGoalPlan(uint16_t attackerSprite,
     if (clear > 0) {
         path = calcPath(attackerSprite, mask, sX - 1, sY, dX, dY);
         if (path.status < 0) return path.status;
+        outPlan->navScore[1] = path.distance;
+        outPlan->navTraceBits[1] = path.navTraceBits;
         if (path.distance < closestPathDist) {
             closestPathDist = path.distance;
             visitCount = 1U;
@@ -930,6 +930,8 @@ static int aiGoalPlan(uint16_t attackerSprite,
     if (clear > 0) {
         path = calcPath(attackerSprite, mask, sX, sY + 1, dX, dY);
         if (path.status < 0) return path.status;
+        outPlan->navScore[2] = path.distance;
+        outPlan->navTraceBits[2] = path.navTraceBits;
         if (path.distance < closestPathDist) {
             closestPathDist = path.distance;
             visitCount = 1U;
@@ -946,6 +948,8 @@ static int aiGoalPlan(uint16_t attackerSprite,
     if (clear > 0) {
         path = calcPath(attackerSprite, mask, sX, sY - 1, dX, dY);
         if (path.status < 0) return path.status;
+        outPlan->navScore[3] = path.distance;
+        outPlan->navTraceBits[3] = path.navTraceBits;
         if (path.distance < closestPathDist) {
             visitCount = 1U;
             visitOrder[0] = 0U;
@@ -969,6 +973,18 @@ static int aiGoalPlan(uint16_t attackerSprite,
     }
     if (!tileIndexFor(srcX + outPlan->deltaX,
                       srcY + outPlan->deltaY, &outPlan->destTile)) return -1;
+#if DOOMRPG_PERF_GAME_P1
+    /* One compact witness, no additional collision checks or RNG calls. */
+    if (subtype == 4U || subtype == 13U) {
+        printf("[AI14NAV] phase=first sprite=%u sub=%u src=%d,%d target=%d,%d dst=%u mask=%04x score=%d,%d,%d,%d bits=%02x,%02x,%02x,%02x ties=%u byte=%u choice=%u\n",
+               (unsigned)attackerSprite, (unsigned)subtype, (int)srcX, (int)srcY,
+               (int)destX, (int)destY, (unsigned)outPlan->destTile, (unsigned)mask,
+               outPlan->navScore[0], outPlan->navScore[1], outPlan->navScore[2], outPlan->navScore[3],
+               (unsigned)outPlan->navTraceBits[0], (unsigned)outPlan->navTraceBits[1],
+               (unsigned)outPlan->navTraceBits[2], (unsigned)outPlan->navTraceBits[3],
+               (unsigned)visitCount, (unsigned)outPlan->tieRand, (unsigned)outPlan->choice);
+    }
+#endif
     return 1;
 }
 

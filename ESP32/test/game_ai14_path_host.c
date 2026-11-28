@@ -66,27 +66,65 @@ static int center(int t) { return 64*t+32; }
 static int trace(int sx,int sy,int dx,int dy,uint16_t mask,int strict) {
     return cardinalTraceClear(center(sx),center(sy),center(dx),center(dy),0,mask,strict);
 }
-/* Legacy bodies are extracted by the Python runner, not reimplemented.
- * This adapter maps both center and tile-origin queries onto the same
- * discrete fixture; special geometry is deliberately excluded here. */
+/* Both original path and original linked-list trace/LOS bodies run.
+ * Map fixtures supply the same tile wall sentinel, linked sprite state,
+ * coordinates and player destination to each engine. Line entities are
+ * intentionally absent in these differential fixtures (separate tests). */
 typedef struct RefMonster { int x,y; } RefMonster;
-typedef struct RefDef { int eSubType; } RefDef;
-typedef struct RefRoot { Random_t random; void* game; } RefRoot;
+typedef struct RefDef { int eSubType; byte eType; } RefDef;
+typedef struct RefSprite { int x,y,info; } RefSprite;
+typedef struct RefLine { struct { int x,y; } vert1,vert2; } RefLine;
+typedef struct RefRender { RefSprite mapSprites[8]; RefLine lines[4]; } RefRender;
+typedef struct RefCanvas { int destX,destY; } RefCanvas;
+typedef struct RefGame RefGame;
+typedef struct RefRoot { Random_t random; RefGame* game; RefCanvas* doomCanvas; RefRender* render; } RefRoot;
 typedef struct Entity_t {
     RefDef* def; RefMonster* monster; RefRoot* doomRpg;
     int visitOrderCount, visitOrder[4], visitDist[4];
+    unsigned int info;
+    struct Entity_t* nextOnTile;
 } Entity_t;
+struct RefGame {
+    RefRoot* doomRpg;
+    Entity_t entities[10];
+    Entity_t* entityDb[1024];
+    Entity_t* traceEntities[8];
+    int numTraceEntities;
+};
+#define Game_t RefGame
+#define Sprite_t RefSprite
+#define Line_t RefLine
+#include "legacy_trace.inc"
+#undef Game_t
+#undef Sprite_t
+#undef Line_t
+static RefGame legacyGame;
+static RefCanvas legacyCanvas;
+static RefRender legacyRender;
+static RefDef legacyDefs[8];
 static int legacyCalls, legacyLinks;
-static boolean RefSight(Entity_t* e,int sx,int sy,int dx,int dy,int mask) {
-    (void)e;
-    int x=sx/64, y=sy/64, a=dx/64, b=dy/64;
-    if(sx<0||sy<0||dx<0||dy<0||x>=32||y>=32||a>=32||b>=32) return false;
-    if(walls[y*32+x]||walls[b*32+a]) return false;
-    for(unsigned i=1;i<topo.spriteCount;i++) {
-        if(linked[i] && (mask & (1U<<types[i])) &&
-           (tiles[i]==y*32+x || tiles[i]==b*32+a)) return false;
+static void setupLegacy(Entity_t* e) {
+    memset(&legacyGame,0,sizeof(legacyGame));
+    legacyGame.doomRpg=e->doomRpg;
+    e->doomRpg->game=&legacyGame;
+    e->doomRpg->doomCanvas=&legacyCanvas;
+    e->doomRpg->render=&legacyRender;
+    legacyCanvas=(RefCanvas){player.destX,player.destY};
+    e->def->eType=1;
+    for(unsigned i=0;i<topo.spriteCount;i++) {
+        if(!linked[i]) continue;
+        Entity_t* ent=i?&legacyGame.entities[i+2]:e;
+        legacyDefs[i]=(RefDef){0,types[i]};
+        if(i) ent->def=&legacyDefs[i];
+        ent->info=i+1;
+        ent->nextOnTile=legacyGame.entityDb[tiles[i]];
+        legacyGame.entityDb[tiles[i]]=ent;
+        legacyRender.mapSprites[i]=(RefSprite){sprites[i].x,sprites[i].y,(int)sprites[i].info};
     }
-    return true;
+    for(unsigned i=0;i<1024;i++) if(walls[i]) legacyGame.entityDb[i]=&legacyGame.entities[0];
+}
+static boolean RefSight(Entity_t* e,int sx,int sy,int dx,int dy,int mask) {
+    return RefActualSight(e,sx,sy,dx,dy,mask);
 }
 static byte RefByte(Random_t* rng) { ++legacyCalls; return rng->randTable[rng->nextRand++]; }
 static void RefUnlink(void* g,Entity_t* e) { (void)g;(void)e; ++legacyLinks; }
@@ -139,11 +177,12 @@ int main(void) {
 #endif
             for(int dx=8;dx<=12;dx++) for(int dy=8;dy<=12;dy++) {
                 for(unsigned tie=0;tie<4;tie++) {
-                    RefMonster m={0}; RefDef d={(int)sub}; RefRoot root={0};
+                    RefMonster m={0}; RefDef d={(int)sub,1}; RefRoot root={0};
                     Entity_t e={.def=&d,.monster=&m,.doomRpg=&root};
                     TestRng rng={0}; TestPlan plan={0};
                     root.random.randTable[0]=(byte)tie; rng.state=root.random;
                     legacyCalls=legacyLinks=0;
+                    setupLegacy(&e);
                     int want=RefGoal(&e,center(10),center(10),center(dx),center(dy));
                     int got=aiGoalPlan(0,(uint8_t)sub,center(10),center(10),center(dx),center(dy),&rng,&plan);
                     assert(got==want);
@@ -159,6 +198,50 @@ int main(void) {
             }
         }
     }
+    /* Same original goal + real trace, now with player sentinel in the
+       local neighborhood and a thin plane in either endpoint cell.
+       Compare every actual candidate score, not just the selected move. */
+    unsigned navCases=0;
+    const int nx[4]={1,-1,0,0}, ny[4]={0,0,1,-1};
+    for(unsigned subIndex=0;subIndex<2;subIndex++)
+    for(unsigned p=0;p<4;p++)
+    for(unsigned obstacle=0;obstacle<5;obstacle++)
+    for(unsigned tie=0;tie<4;tie++) {
+        resetFixture();
+        unsigned sub=subIndex?13U:4U;
+        int px=10+2*nx[p], py=10+2*ny[p];
+        player.destX=player.viewX=center(px);
+        player.destY=player.viewY=center(py);
+        if(obstacle==1) walls[331]=1;
+        if(obstacle==2) { types[1]=1; linked[1]=1; tiles[1]=362; }
+        if(obstacle==3 || obstacle==4) {
+            types[1]=14; linked[1]=1; tiles[1]=obstacle==3?330:331;
+            sprites[1]=(EspMapSprite){704,672,0x220000U};
+        }
+        RefMonster m={0}; RefDef d={(int)sub,1}; RefRoot root={0};
+        Entity_t entity={.def=&d,.monster=&m,.doomRpg=&root};
+        TestRng rng={0}; TestPlan plan={0};
+        root.random.randTable[0]=(byte)(252U+tie); rng.state=root.random;
+        setupLegacy(&entity); legacyCalls=legacyLinks=0;
+        int want=RefGoal(&entity,center(10),center(10),center(px),center(py));
+        int got=aiGoalPlan(0,(uint8_t)sub,center(10),center(10),center(px),center(py),&rng,&plan);
+        assert(got==want && rng.calls==(unsigned)legacyCalls);
+        assert(plan.visitCount==entity.visitOrderCount);
+        if(want) assert(plan.destTile==(m.y/64)*32+m.x/64);
+        for(int k=0;k<4;k++) {
+            int score=-1;
+            if(RefSight(&entity,center(10),center(10),center(10+nx[k]),center(10+ny[k]),plan.traceMask))
+                score=RefPath(&entity,10+nx[k],10+ny[k],px,py,k,plan.traceMask);
+            if(score!=plan.navScore[k]) {
+                fprintf(stderr,"NAV score mismatch continuation=%d subtype=%u p=%u obstacle=%u tie=%u dir=%d legacy=%d native=%d\n",
+                        CONTINUATION,sub,p,obstacle,tie,k,score,plan.navScore[k]);
+                return 1;
+            }
+        }
+        ++navCases;
+    }
+    assert(navCases==160);
+    printf("PASS GAME-AI-14 NAV continuation=%d real-trace candidate-score cases=%u\n",CONTINUATION,navCases);
     resetFixture();
     walls[331]=walls[329]=walls[362]=walls[298]=1;
     TestRng rng={0}; TestPlan plan={0};
