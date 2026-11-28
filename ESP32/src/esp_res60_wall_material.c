@@ -49,9 +49,14 @@ static int paintableColumn(uint32_t x, const EspRes60WallColumn* item) {
     const int32_t unclippedEnd=(int32_t)item->top+item->height;
     const int32_t end=unclippedEnd>(int32_t)ESP_RES60_WORLD_ROWS
         ? (int32_t)ESP_RES60_WORLD_ROWS : unclippedEnd;
+#if DOOMRPG_RES60_P40_FULL_WALLS
+    (void)x;
+    return item->hit && end>start;
+#else
     return item->hit && end>start &&
        (x<ESP_RES60_TEXTURE_INSET_X ||
         end>(int32_t)ESP_RES60_TEXTURE_INSET_SIZE);
+#endif
 }
 int EspRes60WallMaterial_visibleTextureAt(uint32_t x,
                                           uint16_t* outTexture) {
@@ -83,10 +88,12 @@ int EspRes60WallMaterial_measure(EspRes60WallCoverage* out) {
         if(!item->hit || end<=start)continue;
         ++demand.columns;
         demand.pixels+=(uint16_t)(end-start);
+#if !DOOMRPG_RES60_P40_FULL_WALLS
         if(x>=ESP_RES60_TEXTURE_INSET_X && start<(int32_t)ESP_RES60_TEXTURE_INSET_SIZE) {
             int32_t insetEnd=end<(int32_t)ESP_RES60_TEXTURE_INSET_SIZE?end:(int32_t)ESP_RES60_TEXTURE_INSET_SIZE;
             demand.insetPixels+=(uint16_t)(insetEnd-start);
         }
+#endif
         if(item->texture>255U) {
             ++demand.unsupportedColumns;
         } else {
@@ -156,9 +163,11 @@ int EspRes60WallMaterial_overlay(uint16_t* fb, size_t fbBytes,
             uint8_t packedByte,nibble;
             uint16_t color;
             if(local<0 || local>=item->height)continue;
+#if !DOOMRPG_RES60_P40_FULL_WALLS
             /* Keep P8's independently verifiable 48x48 original swatch. */
             if(x>=ESP_RES60_TEXTURE_INSET_X &&
                row<ESP_RES60_TEXTURE_INSET_SIZE)continue;
+#endif
             v=(uint32_t)(((int64_t)local*64)/item->height);
             if(v>=64U)return 0; /* never read outside the one 2KiB tile */
             ix=v*64U+item->sourceU;

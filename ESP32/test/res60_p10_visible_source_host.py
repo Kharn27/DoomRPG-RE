@@ -106,6 +106,74 @@ static void plan(uint16_t texture) {
        assert(EspRes60WallMaterial_record(x,texture,0,80,(uint8_t)(x%64U)));
     EspRes60WallMaterial_publish();
 }
+#if DOOMRPG_RES60_P40_FULL_WALLS
+int main(void) {
+    EspRes60TextureProbeReport result;
+    EspRes60WallCoverage demand;
+    uint8_t loan[2050];
+    runtime.lineCount=2;
+    runtime.sourceCrc32=0x623f34e4U;
+    runtime.arenaFNV1a=0xc3882516U;
+    runtime.sourceBytes=21823U;
+    records[0].resourceId=87;records[1].resourceId=7;
+    records[0].paletteRgb565[1]=0xf800U;
+    records[1].paletteRgb565[0]=0x001fU;
+    twoTiles=1;
+    loan[0]=0x6a;loan[2049]=0xb6;
+    framebuffer[0]=0xface;framebuffer[192U*144U+1U]=0xbeef;
+    uint32_t priorFNV=0U;
+    for(unsigned cycle=0;cycle<2;++cycle) {
+        EspRes60WallMaterial_reset();
+        assert(EspRes60WallMaterial_record(96,7,-5,10,0));
+        assert(EspRes60WallMaterial_record(1,87,90,10,0));
+        assert(EspRes60WallMaterial_record(144,87,40,20,0));
+        assert(EspRes60WallMaterial_record(145,7,0,20,0));
+        assert(EspRes60WallMaterial_record(146,87,0,5,0));
+        assert(EspRes60WallMaterial_record(147,55,-20,10,0));
+        EspRes60WallMaterial_publish();
+        assert(EspRes60WallMaterial_measure(&demand));
+        assert(demand.pixels==56 && demand.columns==5 && demand.insetPixels==0);
+        for(unsigned i=1;i<=192U*144U;++i)framebuffer[i]=0x5555;
+        unsigned beforeReads=reads,beforeOpens=opens;
+        assert(EspRes60TextureProbe_renderFullWalls(framebuffer+1,55296,loan+1,2048,&result));
+        assert(result.cacheHit==cycle && result.admittedWallIds==2);
+        assert(result.wallPixels==56 && result.wallColumns==5 && result.streamReads==2);
+        assert(result.streamBytes==4096 && result.readBytes==4096+(cycle?0:4));
+        assert(reads==beforeReads+2+(cycle?0:1) && opens==beforeOpens+1);
+        assert(result.streamMetadataBytes==2*sizeof(records[0]));
+        assert(result.sampleFNV==0 && result.pixels==0);
+        assert(framebuffer[24U*192U+96U+1U]==0xf800U);
+        assert(framebuffer[114U*192U+1U+1U]==0x001fU);
+        assert(framebuffer[24U*192U+146U+1U]==0x001fU); /* formerly hidden */
+        assert(framebuffer[24U*192U+145U+1U]==0xf800U);
+        assert(framebuffer[24U*192U+147U+1U]==0x5555U);
+        assert(framebuffer[29U*192U+96U+1U]==0x5555U);
+        assert(framebuffer[0]==0xface && framebuffer[192U*144U+1U]==0xbeef);
+        assert(loan[0]==0x6a && loan[2049]==0xb6 && !pack && !catalogReady && opens==closes);
+        if(cycle)assert(result.streamFNV==priorFNV);
+        priorFNV=result.streamFNV;
+    }
+    plan(55);unsigned beforeReads=reads;
+    assert(!EspRes60TextureProbe_renderFullWalls(framebuffer+1,55296,loan+1,2048,&result));
+    assert(reads==beforeReads && !pack && !catalogReady && opens==closes);
+    plan(7);
+    assert(EspRes60TextureProbe_renderFullWalls(framebuffer+1,55296,loan+1,2048,&result));
+    changedEntry=1;plan(87);
+    assert(!EspRes60TextureProbe_renderFullWalls(framebuffer+1,55296,loan+1,2048,&result));
+    assert(!pack && !catalogReady && opens==closes);
+    changedEntry=0;
+    plan(87);failTile=1;
+    assert(!EspRes60TextureProbe_renderFullWalls(framebuffer+1,55296,loan+1,2048,&result));
+    assert(!pack && !catalogReady && opens==closes && result.wallPixels==0);
+    failTile=0;
+    plan(87);
+    assert(EspRes60TextureProbe_renderFullWalls(framebuffer+1,55296,loan+1,2048,&result));
+    assert(!result.cacheHit && result.wallPixels==192U*80U);
+    EspRes60TextureProbe_reset();
+    puts("RES60-P40 FULL WALLS C11 PASS");
+    return 0;
+}
+#else
 int main(void) {
     EspRes60TextureProbeReport result;
     uint16_t chosen=0;
@@ -248,9 +316,10 @@ int main(void) {
     assert(!EspRes60TextureProbe_streamWalls(framebuffer+1,55296,loan+1,2048,&result));
     EspRes60TextureProbe_reset();
 #endif
-    puts("RES60-P10/P38/P39 VISIBLE SOURCE C11 PASS");
+    puts("RES60-P10 VISIBLE SOURCE C11 PASS");
     return 0;
 }
+#endif
 """
 with tempfile.TemporaryDirectory(prefix="res60-p10-visible-") as name:
     root=Path(name)
@@ -265,10 +334,11 @@ with tempfile.TemporaryDirectory(prefix="res60-p10-visible-") as name:
           "-DDOOMRPG_RES60_P8_TEXEL=1",
           "-DDOOMRPG_RES60_P9_WEDGE=1",
           "-DDOOMRPG_RES60_P10_WALL_MATERIAL=1"]
-    for admission,stream in ((0,0),(1,0),(1,1)):
+    for admission,stream,full in ((0,0,0),(1,0,0),(1,1,0),(1,1,1)):
         subprocess.run(["cc","-std=c11","-O2","-Wall","-Wextra","-Werror",
                         *defs,f"-DDOOMRPG_RES60_P38_WALL_ADMISSION={admission}",
                         f"-DDOOMRPG_RES60_P39_WALL_STREAM={stream}",
+                        f"-DDOOMRPG_RES60_P40_FULL_WALLS={full}",
                         "-I",str(ROOT/"ESP32/include"),
                         str(ROOT/"ESP32/src/esp_res60_texture_probe.c"),
                         str(ROOT/"ESP32/src/esp_res60_wall_material.c"),

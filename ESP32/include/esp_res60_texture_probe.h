@@ -56,12 +56,20 @@ int EspRes60TextureProbe_render(uint16_t* framebuffer, size_t framebufferBytes,
  * Explicitly reset on START and successful MENU; no cross-session reuse. */
 void EspRes60TextureProbe_reset(void);
 #if DOOMRPG_RES60_P39_WALL_STREAM
+#if DOOMRPG_RES60_P40_FULL_WALLS
+/* Complete native wall pass. Caller loans a disjoint >=2048B scratch,
+ * released before presentation. No swatch/persistent texel allocation. */
+int EspRes60TextureProbe_renderFullWalls(uint16_t* framebuffer, size_t framebufferBytes,
+                                        void* scratch, size_t scratchBytes,
+                                        EspRes60TextureProbeReport* report);
+#else
 /* After successful P8/P10 on the same published plan, stream each remaining
  * visible material exactly once through a disjoint 2048B caller loan.
  * Failure may leave partial logical pixels; caller MUST NOT present them. */
 int EspRes60TextureProbe_streamWalls(uint16_t* framebuffer, size_t framebufferBytes,
                                      void* scratch, size_t scratchBytes,
                                      EspRes60TextureProbeReport* report);
+#endif
 #endif
 #ifdef __cplusplus
 }

@@ -370,6 +370,18 @@ static int renderIntroCore(uint16_t* framebuffer,
 #if DOOMRPG_RES60_P11_PROFILE
     phaseAt=EspRes60Profile_nowUs();
 #endif
+#if DOOMRPG_RES60_P40_FULL_WALLS
+    {
+        size_t wallLoanBytes=0U;
+        void* wallLoan=EspRes60Preview_borrowPlaneScratch(&wallLoanBytes);
+        if(wallLoan) {
+            success=EspRes60TextureProbe_renderFullWalls(framebuffer,framebufferBytes,
+                            wallLoan,wallLoanBytes,&report.texture);
+            EspRes60Preview_returnPlaneScratch();
+        } else success=0;
+        if(!success)EspRes60TextureProbe_reset();
+    }
+#else
     success=EspRes60TextureProbe_render(framebuffer,framebufferBytes,
                                         &report.texture);
 #if DOOMRPG_RES60_P39_WALL_STREAM
@@ -386,6 +398,7 @@ static int renderIntroCore(uint16_t* framebuffer,
         if(!success)EspRes60TextureProbe_reset();
     }
 #endif
+#endif /* P40 */
 #if DOOMRPG_RES60_P11_PROFILE
     report.textureUs=EspRes60Profile_nowUs()-phaseAt;
 #endif

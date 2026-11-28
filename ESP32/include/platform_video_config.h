@@ -380,6 +380,17 @@
 #if DOOMRPG_RES60_P39_WALL_STREAM && !DOOMRPG_RES60_P38_WALL_ADMISSION
 #error "RES60-P39 requires P38"
 #endif
+/* P40: full viewport, one borrowed packed tile, no retained swatch.
+ * Explicit experimental profile opt-in keeps historical host fixtures intact. */
+#ifndef DOOMRPG_RES60_P40_FULL_WALLS
+#define DOOMRPG_RES60_P40_FULL_WALLS 0
+#endif
+#if DOOMRPG_RES60_P40_FULL_WALLS != 0 && DOOMRPG_RES60_P40_FULL_WALLS != 1
+#error "RES60-P40 flag must be 0 or 1"
+#endif
+#if DOOMRPG_RES60_P40_FULL_WALLS && !DOOMRPG_RES60_P39_WALL_STREAM
+#error "RES60-P40 requires P39"
+#endif
 #if DOOMRPG_RES60_P1_DIAGNOSTIC
 #define DOOMRPG_VIDEO_BUFFER_WIDTH 192
 #define DOOMRPG_VIDEO_BUFFER_HEIGHT 144

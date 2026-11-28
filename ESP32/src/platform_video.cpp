@@ -939,6 +939,9 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
 #if DOOMRPG_RES60_P39_WALL_STREAM
             " stream=%u/%lu meta=%u streamFNV=%08lx"
 #endif
+#if DOOMRPG_RES60_P40_FULL_WALLS
+            " fullWalls=1 swatch=OFF"
+#endif
             "\n",
             (unsigned)report.spawnAngle, (unsigned)turns,
             (unsigned long)report.loadUs,
@@ -973,7 +976,18 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
     } else
 #endif
     {
-#if DOOMRPG_RES60_P8_TEXEL
+#if DOOMRPG_RES60_P40_FULL_WALLS
+    Serial.printf("[RES60P40] FULL-WALLS source=PAK cache=%s catalog=%u catalogFNV=%08lx reads=%u bytes=%lu meta=%u columns=%lu pixels=%lu streamFNV=%08lx swatch=OFF tileBss=0\n",
+        report.texture.cacheHit ? "HIT" : "MISS",
+        (unsigned)report.texture.catalogCount,
+        (unsigned long)report.texture.catalogFNV,
+        (unsigned)report.texture.streamReads,
+        (unsigned long)report.texture.readBytes,
+        (unsigned)report.texture.streamMetadataBytes,
+        (unsigned long)report.texture.wallColumns,
+        wallTextureSamples,
+        (unsigned long)report.texture.streamFNV);
+#elif DOOMRPG_RES60_P8_TEXEL
     Serial.printf("[RES60P8] SWATCH source=PAK map=/intro.bsp file=wtexels.bin cache=%s logical=%u catalog=%u sourceNibble=%lu catalogFNV=%08lx texelFNV=%08lx sampleFNV=%08lx bytes=%lu inset=48x48 pixels=%lu framebuffer=192x144 worldTextureSamples=%lu\n",
         report.texture.cacheHit ? "HIT" : "MISS",
         (unsigned)report.texture.logicalId,
@@ -1017,7 +1031,7 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
         (unsigned long)(report.lineCount*ESP_RES60_WIDTH),
         (unsigned long)report.raster.frameFNV);
 #endif
-#if DOOMRPG_RES60_P10_WALL_MATERIAL
+#if DOOMRPG_RES60_P10_WALL_MATERIAL && !DOOMRPG_RES60_P40_FULL_WALLS
     Serial.printf("[RES60P10] MATERIAL source=PAK logical=%u selected=%s visibleColumns=%u columns=%lu pixels=%lu sampleFNV=%08lx rawP3FNV=%08lx"
 #if DOOMRPG_RES60_P39_WALL_STREAM
         " extraPakReads=%u"
