@@ -91,7 +91,11 @@ uint32_t EspAssetPack_dataOffset(void);
 /* Prepare the complete immutable PAK cache for the requested world.
  * A V2 slot is reusable across map IDs when the requested BSP exists in the
  * source index, source structural identity/index FNV and full flash index +
- * payload FNV match. A V1 header or any mismatch triggers staging. Oversize
+ * payload FNV match. An immediately preceding full verification of the same
+ * active target may transfer its payload proof once, after rechecking the SD
+ * plan, committed header and flash index. Deactivation/staging/failure clears
+ * the proof; cold boot always verifies the full payload. Requires no open PAK,
+ * resident cache or source-probe lease. A V1 header or mismatch triggers staging. Oversize
  * packs fail closed. Gameplay never falls back to SD.
  */
 int EspAssetPack_mapFlashPrepare(uint8_t targetMapId);
