@@ -173,6 +173,10 @@ real=r"""
 #include "fixture.h"
 static unsigned reads, failAt, opened, corrupt;
 static uint8_t loan[2050];
+uint32_t EspRes60Profile_nowUs(void){
+ static uint32_t tick=UINT32_MAX-20U;
+ tick+=7U;return tick;
+}
 int EspAssetPack_isOpen(void){return opened;}
 int EspAssetPack_open(const char* p){assert(!opened && !strcmp(p,ESP_ASSET_PACK_DEFAULT_PATH));opened=1;return 1;}
 void EspAssetPack_close(void){assert(opened);opened=0;}
@@ -219,5 +223,22 @@ with tempfile.TemporaryDirectory(prefix="res60-p35-") as d:
     (d/"fixture.h").write_text("static const uint8_t fixture[]={"+",".join(map(str,fixture))+"};\n#define FIXTURE_CRC "+str(zlib.crc32(fixture))+"U\n")
     fullflags=["-D"+f for f in re.findall(r"-D\s+(DOOMRPG_RES60_[A-Z0-9_]+=1)",INI["env:esp32-cyd-res60"]["build_flags"])]
     exe=d/"test"
-    subprocess.run(cc+fullflags+[str(ROOT/"ESP32/src/esp_bsp_reader.c"),str(src),"-o",str(exe)],check=True)
-    subprocess.run([str(exe)],check=True)
+    for profile in (0,1):
+        subprocess.run(cc+fullflags+[f"-DDOOMRPG_RES60_P36_BSP_PROFILE={profile}",
+            str(ROOT/"ESP32/src/esp_bsp_reader.c"),str(src),"-o",str(exe)],check=True)
+        output=subprocess.check_output([str(exe)],text=True)
+        streams=[line for line in output.splitlines() if "[BSPREAD] STREAM" in line]
+        assert len(streams)==3
+        assert sum("window=2048B" in line for line in streams)==2
+        assert output.count("[BSPREAD] HEADER")== (1 if profile else 3)
+        if profile:
+            for line in streams:
+                phase=re.search(r"parseUs=(\d+) readUs=(\d+) hashUs=(\d+)",line)
+                assert phase, line
+                parse,read,hash_us=map(int,phase.groups())
+                calls=int(re.search(r"readCalls=(\d+)",line)[1])
+                assert read==hash_us==7*calls and parse>=read+hash_us
+        else:
+            assert "parseUs=" not in output
+        print(output.splitlines()[-1], "P36=",profile)
+

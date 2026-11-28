@@ -338,6 +338,16 @@
 #if DOOMRPG_RES60_P35_BSP_WINDOW && !DOOMRPG_RES60_P34_CATALOG_WINDOWS
 #error "RES60-P35 requires isolated P34"
 #endif
+/* P36: hash complete refills and profile the cold BSP scan; quiet wide success logs. */
+#ifndef DOOMRPG_RES60_P36_BSP_PROFILE
+#define DOOMRPG_RES60_P36_BSP_PROFILE DOOMRPG_RES60_P35_BSP_WINDOW
+#endif
+#if DOOMRPG_RES60_P36_BSP_PROFILE != 0 && DOOMRPG_RES60_P36_BSP_PROFILE != 1
+#error "RES60-P36 flag must be 0 or 1"
+#endif
+#if DOOMRPG_RES60_P36_BSP_PROFILE && !DOOMRPG_RES60_P35_BSP_WINDOW
+#error "RES60-P36 requires isolated P35"
+#endif
 #if DOOMRPG_RES60_P1_DIAGNOSTIC
 #define DOOMRPG_VIDEO_BUFFER_WIDTH 192
 #define DOOMRPG_VIDEO_BUFFER_HEIGHT 144

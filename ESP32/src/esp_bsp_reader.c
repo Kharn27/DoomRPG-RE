@@ -5,6 +5,9 @@
 #include "esp_asset_pack.h"
 #include "esp_bsp_reader.h"
 #include "platform_video_config.h"
+#if DOOMRPG_RES60_P36_BSP_PROFILE
+#include "esp_res60_profile.h"
+#endif
 
 #define BSP_NODE_RECORD_BYTES 10U
 #define BSP_LINE_RECORD_BYTES 10U
@@ -31,6 +34,9 @@ typedef struct EspBspCursor_s {
     uint32_t readCalls;
     uint32_t fnv1a32;
     uint32_t crc32;
+#if DOOMRPG_RES60_P36_BSP_PROFILE
+    uint32_t readUs, hashUs;
+#endif
 } EspBspCursor;
 
 static uint32_t minU32(uint32_t a, uint32_t b) {
@@ -93,6 +99,9 @@ static int cursorRefill(EspBspCursor* cursor) {
     length = minU32(remaining, ESP_BSP_READER_BUFFER_BYTES);
 #endif
 
+#if DOOMRPG_RES60_P36_BSP_PROFILE
+    uint32_t at=EspRes60Profile_nowUs();
+#endif
     if (!EspAssetPack_readRange(&cursor->entry,
                                 cursor->position,
                                 cursor->buffer,
@@ -100,6 +109,16 @@ static int cursorRefill(EspBspCursor* cursor) {
         return 0;
     }
 
+#if DOOMRPG_RES60_P36_BSP_PROFILE
+    cursor->readUs+=EspRes60Profile_nowUs()-at;
+    /* On success parseInventory consumes the complete entry (including
+     * trailing bytes). Hash once per refill, in original stream order.
+     * Failed parses never publish or validate these prefetched hashes. */
+    at=EspRes60Profile_nowUs();
+    cursor->fnv1a32=fnv1aUpdate(cursor->fnv1a32,cursor->buffer,length);
+    cursor->crc32=crc32Update(cursor->crc32,cursor->buffer,length);
+    cursor->hashUs+=EspRes60Profile_nowUs()-at;
+#endif
     cursor->bufferPos = 0;
     cursor->bufferLength = length;
     ++cursor->readCalls;
@@ -128,12 +147,14 @@ static int cursorConsume(EspBspCursor* cursor,
         available = cursor->bufferLength - cursor->bufferPos;
         chunk = minU32(available, length);
 
+#if !DOOMRPG_RES60_P36_BSP_PROFILE
         cursor->fnv1a32 = fnv1aUpdate(cursor->fnv1a32,
                                      cursor->buffer + cursor->bufferPos,
                                      chunk);
         cursor->crc32 = crc32Update(cursor->crc32,
                                     cursor->buffer + cursor->bufferPos,
                                     chunk);
+#endif
 
         if (out != NULL) {
             memcpy(out, cursor->buffer + cursor->bufferPos, chunk);
@@ -522,6 +543,9 @@ int EspBspReader_inventoryPackEntry(const char* resourceName,
            (unsigned int)entry.crc32,
            (unsigned int)BSP_ACTIVE_WINDOW);
 
+#if DOOMRPG_RES60_P36_BSP_PROFILE
+    const uint32_t parseAt=EspRes60Profile_nowUs();
+#endif
     if (!parseInventory(&cursor, outInventory)) {
         printf("[BSPREAD] FAILED parse position=%u/%u readCalls=%u\n",
                (unsigned int)cursor.position,
@@ -530,6 +554,9 @@ int EspBspReader_inventoryPackEntry(const char* resourceName,
         goto done;
     }
 
+#if DOOMRPG_RES60_P36_BSP_PROFILE
+    const uint32_t parseUs=EspRes60Profile_nowUs()-parseAt;
+#endif
     outInventory->sourceBytes = entry.size;
     outInventory->readCalls = cursor.readCalls;
     outInventory->fnv1a32 = cursor.fnv1a32;
@@ -543,6 +570,11 @@ int EspBspReader_inventoryPackEntry(const char* resourceName,
         goto done;
     }
 
+#if DOOMRPG_RES60_P36_BSP_PROFILE
+    /* The wide experimental owner already reports the map/runtime identity.
+     * Keep full detailed success diagnostics on the original 256B API. */
+    if (cursor.capacity==ESP_BSP_READER_BUFFER_BYTES) {
+#endif
     printf("[BSPREAD] HEADER name='%.16s' loadMapId=%u spawn=%u dir=%u camera=%u floorTex=%u ceilingTex=%u\n",
            outInventory->mapName,
            (unsigned int)outInventory->loadMapId,
@@ -595,6 +627,19 @@ int EspBspReader_inventoryPackEntry(const char* resourceName,
            (unsigned int)outInventory->plan.planeMapBytes,
            (unsigned int)outInventory->plan.resourceSetsBytes,
            (unsigned int)outInventory->plan.persistentBytes);
+#if DOOMRPG_RES60_P36_BSP_PROFILE
+    }
+    printf("[BSPREAD] STREAM bytes=%u/%u readCalls=%u window=%uB fnv1a=%08x crc32=%08x verified=yes parseUs=%u readUs=%u hashUs=%u\n",
+           (unsigned int)outInventory->consumedBytes,
+           (unsigned int)outInventory->sourceBytes,
+           (unsigned int)outInventory->readCalls,
+           (unsigned int)BSP_ACTIVE_WINDOW,
+           (unsigned int)outInventory->fnv1a32,
+           (unsigned int)outInventory->crc32,
+           (unsigned int)parseUs,
+           (unsigned int)cursor.readUs,
+           (unsigned int)cursor.hashUs);
+#else
     printf("[BSPREAD] STREAM bytes=%u/%u readCalls=%u window=%uB fnv1a=%08x crc32=%08x verified=yes\n",
            (unsigned int)outInventory->consumedBytes,
            (unsigned int)outInventory->sourceBytes,
@@ -602,6 +647,7 @@ int EspBspReader_inventoryPackEntry(const char* resourceName,
            (unsigned int)BSP_ACTIVE_WINDOW,
            (unsigned int)outInventory->fnv1a32,
            (unsigned int)outInventory->crc32);
+#endif
 
     ok = 1;
 
