@@ -1,3 +1,9 @@
+## RES60-P40 — CYD PASS / CI profile inventory mismatch (28 November 2026)
+
+[Report](MILESTONE_RES60_P40_FULL_WALLS_PENDING_CYD.md). Context candidate ac92e6924a216db0b700bee0776f6670b228ef7a; 30/30 frames, 27 warm, 3 START/MENU/RELEASE; full 192-column coverage, 15810/6349/15060/16636 pixels, inset=0, admitted 3/5/5/3, final FNV a64649f5/40201f89/01b399ba/9a7cb9dd. Heap8 108576/min86636/largest57332 (+2160/+2504/0 vs P39). Cold mean686067us; raw P3/catalog unchanged. Push46133538103/PR46133543156 failed late diagnostic_profiles_host exact pilot flag list; actual P40 target-profile host passed. Not double CI PASS. Main d1f25ba03688364efba753604f59aa75eb2eaadc unchanged ancestor. PR #364 DRAFT.
+
+---
+
 ## RES60-P39 — CYD PASS / CI marker regression (28 November 2026)
 
 [Report](MILESTONE_RES60_P39_WALL_STREAM_PENDING_CYD.md). Context firmware f8d07e2fccbef07b5e790372a9f166d574bae908; 34/34 frames, 31 warm, 3 START/MENU/RELEASE; exact full wall coverage outside inset 13506/5359/14265/14353 pixels. Final FNV c4d8d1e5/81a92d8c/c8cdaac1/7dfb06f1, raw P3/P8/P10 witnesses unchanged. Heap8 106416/min84132/largest57332, metadata1320B. Cold mean729507us; warm 238838/278545/235455/248204us. CI push46129722694/PR46129727620 failed P11 historical stdout marker after all P39 C11 variants passed; restore exact marker next, not a double CI PASS. Main d1f25ba03688364efba753604f59aa75eb2eaadc still ancestor; no new upstream changes. PR #364 DRAFT.
