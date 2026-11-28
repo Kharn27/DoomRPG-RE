@@ -203,3 +203,101 @@ with tempfile.TemporaryDirectory(prefix="doom-hud-prime-") as td:
     ], check=True)
     subprocess.run([str(exe)], check=True)
 print("PASS actual production HUB open/capture source, strict unchanged-player close contract")
+
+
+# STORE is a separate full-screen owner. Compile the actual resident close
+# branch with its real canonical HUD adapter, not a rewritten algorithm.
+resident_source = (ROOT / "ESP32/src/esp_native_resident_gameplay.c").read_text(encoding="utf-8")
+begin = resident_source.index("    if (EspNativeGameplayStore_closePending()) {")
+end = resident_source.index("    if (EspNativeGameplayStore_isActive()) return;", begin)
+close_store = resident_source[begin:end]
+begin = resident_source.index("static EspNativeGameplayHudStatus repaintLiveHudAtView(")
+end = resident_source.index("\nstatic int renderAutomapCurrent(", begin)
+hud_adapter = resident_source[begin:end]
+store_preamble = r"""
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+typedef struct { int active, viewAngle, destAngle; } EspPlayerViewState;
+typedef struct { int ammo, credits; } EspNativeGameplayPlayerState;
+typedef struct { unsigned pixelsWritten; } EspNativeGameplayHudStats;
+typedef enum {
+    ESP_NATIVE_GAMEPLAY_HUD_UNSUPPORTED_CONTEXT=0,
+    ESP_NATIVE_GAMEPLAY_HUD_OK=1
+} EspNativeGameplayHudStatus;
+typedef struct { void* render; } RootOwners;
+static RootOwners root;
+static EspPlayerViewState view;
+static EspNativeGameplayPlayerState player;
+static uint16_t fb[160*120];
+static int pending, disabled, repaintOk, renderOk, paints, renders, finishes;
+static const EspPlayerViewState* EspPlayerView_view(void) {return &view;}
+static const void* EspNativeGameplayHud_view(void) {return &root;}
+static const EspNativeGameplayPlayerState* EspNativeGameplayPlayerState_view(void) {return &player;}
+static RootOwners* EspNativeRootOwners_live(void) {return &root;}
+static int EspNativeGameplayStore_closePending(void) {return pending;}
+static void EspNativeGameplayStore_finishClose(void) {
+    assert(pending && paints==1 && renders==1 && renderOk);
+    ++finishes; pending=0;
+}
+static void disableGameplay(const char* reason) {assert(reason); ++disabled;}
+static EspNativeGameplayHudStatus EspNativeGameplayHud_repaintLive(
+    const void* retained, const EspNativeGameplayPlayerState* live,
+    uint8_t angle, EspNativeGameplayHudStats* stats) {
+    assert(retained==&root && live==&player && angle==64);
+    ++paints;
+    if (!repaintOk) return ESP_NATIVE_GAMEPLAY_HUD_UNSUPPORTED_CONTEXT;
+    for(unsigned i=0;i<160*20;++i) {
+        fb[i]=(uint16_t)live->credits;
+        fb[160*100+i]=(uint16_t)live->ammo;
+    }
+    stats->pixelsWritten=6400U;
+    return ESP_NATIVE_GAMEPLAY_HUD_OK;
+}
+static int renderCurrent(void* r,uint8_t angle,const char* reason) {
+    (void)r;
+    assert(angle==64 && strcmp(reason,"STORE-CLOSE")==0);
+    assert(pending && paints==1 && repaintOk);
+    for(unsigned i=0;i<160*20;++i) {
+        assert(fb[i]==player.credits);
+        assert(fb[160*100+i]==player.ammo);
+    }
+    ++renders;
+    return renderOk;
+}
+"""
+store_main = r"""
+static void seed_store(int ammo,int credits) {
+    memset(fb,0,sizeof(fb));
+    view=(EspPlayerViewState){1,64,64};
+    player=(EspNativeGameplayPlayerState){ammo,credits};
+    pending=1; disabled=0; repaintOk=1; renderOk=1;
+    paints=renders=finishes=0;
+}
+int main(void) {
+    seed_store(17,12); closeService(); /* refusal, unchanged player */
+    assert(!pending && !disabled && paints==1 && renders==1 && finishes==1);
+    assert(player.ammo==17 && player.credits==12);
+    seed_store(27,4); closeService(); /* purchase: use current values */
+    assert(!pending && !disabled && paints==1 && renders==1 && finishes==1);
+    assert(player.ammo==27 && player.credits==4);
+    seed_store(17,12); view.destAngle=128; closeService();
+    assert(pending && disabled==1 && !paints && !renders && !finishes);
+    seed_store(17,12); repaintOk=0; closeService();
+    assert(pending && disabled==1 && paints==1 && !renders && !finishes);
+    seed_store(17,12); renderOk=0; closeService();
+    assert(pending && disabled==1 && paints==1 && renders==1 && !finishes);
+    puts("PASS STORE close: live HUD before world present; refusal/purchase and failure order");
+    return 0;
+}
+"""
+with tempfile.TemporaryDirectory(prefix="doom-store-hud-") as td:
+    src = Path(td) / "store_close.c"
+    exe = Path(td) / "store_close"
+    src.write_text(store_preamble + "\n" + hud_adapter +
+                   "\nstatic void closeService(void) {\n" +
+                   close_store + "\n}\n" + store_main, encoding="utf-8")
+    subprocess.run(["cc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
+                    str(src), "-o", str(exe)], check=True)
+    subprocess.run([str(exe)], check=True)

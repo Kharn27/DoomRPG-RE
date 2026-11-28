@@ -526,6 +526,22 @@ P2_CLEAN_WIRING_EDITS = {
 }
 
 def restore_pre_perf_game_p2a(name, data):
+    if name == "esp_native_sprite_renderer.c":
+        # P4l exact inverse; the frozen renderer blob remains the authority.
+        helper = "/* P4l: descending depth, newest index first on exact ties.\n * Common append/near-tail insertions stay on the tiny scalar path.\n * Dense, far-from-tail insertions use a lower bound and overlap-safe move. */\nstatic uint32_t openOrderSlot(Order* order, uint32_t count, int32_t sortZ) {\n    uint32_t position = count;\n    if (count >= 8U && sortZ >= order[count - 8U].sortZ) {\n        uint32_t lo = 0U, hi = count - 8U;\n        while (lo < hi) {\n            const uint32_t mid = lo + ((hi - lo) >> 1);\n            if (order[mid].sortZ > sortZ) lo = mid + 1U;\n            else hi = mid;\n        }\n        memmove(order + lo + 1U, order + lo,\n                (count - lo) * sizeof(*order));\n        return lo;\n    }\n    while (position > 0U && sortZ >= order[position - 1U].sortZ) {\n        order[position] = order[position - 1U];\n        --position;\n    }\n    return position;\n}\n\n".encode("utf-8")
+        new_slot = "        position = openOrderSlot(order, count, sortZ);\n        order[position].index = (uint16_t)i;".encode("utf-8")
+        old_slot = "        position = count;\n        while (position > 0U && sortZ >= order[position - 1U].sortZ) {\n            order[position] = order[position - 1U];\n            --position;\n        }\n        order[position].index = (uint16_t)i;".encode("utf-8")
+        assert data.count(helper) == 1 and data.count(new_slot) == 1, "P4l order inverse"
+        data = data.replace(helper, b"", 1).replace(new_slot, old_slot, 1)
+    if name == "esp_native_gameplay_monster_movement_publish.c":
+        block = "        EspPerfMoveVisibility_recordPresented(continuation, frame.finalPresented,\n            frame.frameBeforeFNV, frame.frameAfterFNV, quietAfter,\n            frame.totalMicros, frame.presentMicros);\n".encode("utf-8")
+        assert data.count(block) == 1, "P4g frame cost diagnostic inverse"
+        data = data.replace(block, b"", 1)
+    if name == "esp_native_sprite_renderer.c":
+        newer = "    /* P4a: Frame is scratch, not retained state. Every draw admits bounds\n     * and loads its complete live payload before consumption (CROSS reuse\n     * starts with a successful first load). Clear all other workspace bytes\n     * exactly as before, including rejected/seen/visibility bookkeeping. */\n    memset((uint8_t*)workspace + offsetof(SpriteWorkspace, order), 0,\n           sizeof(*workspace) - offsetof(SpriteWorkspace, order));".encode("utf-8")
+        older = "    memset(workspace, 0, sizeof(*workspace));".encode("utf-8")
+        assert data.count(newer) == 1, "P4a workspace inverse anchor"
+        data = data.replace(newer, older, 1)
     # P3m modifies the exact P2s decoder anchor: reverse it before P2s.
     if name == "esp_native_sprite_renderer.c":
         from perf_game_p3m_history import restore_pre_p3m_sprite
