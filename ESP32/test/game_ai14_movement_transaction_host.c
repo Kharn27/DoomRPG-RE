@@ -33,7 +33,8 @@ static EspMapSpriteTopologyView topology;
 static EspPlayerViewState player;
 static EspNativeGameplayMonsterMovementView movement;
 static uint16_t tile, order;
-static unsigned renderCalls, postMoveCalls, plannerCalls;
+static unsigned renderCalls, postMoveCalls, plannerCalls, fallbackCalls;
+static int noMoveCaptureCalls=-1;
 
 EspNativeRootOwners_t* EspNativeRootOwners_live(void) { return &roots; }
 const EspPlayerViewState* EspPlayerView_view(void) { return &player; }
@@ -95,7 +96,10 @@ int EspNativeGameplayFrame_renderTurn(struct Render_s* render, uint8_t angle,
 const EspNativeGameplayMonsterMovementView* EspNativeGameplayMonsterMovement_view(void) { return &movement; }
 void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* d) {
     assert(d == &root); ++plannerCalls;
-    if (fault == NO_MOVE) return;
+    if (fault == NO_MOVE) {
+        if (noMoveCaptureCalls>=0) EspNativeGameplayMonsterMovementPublish_captureNoMove(&before,(uint8_t)noMoveCaptureCalls);
+        return;
+    }
     ++movement.plannedMoves;
     movement.lastSpriteIndex = before.spriteIndex;
     movement.lastSourceTile = before.tileIndex; movement.lastDestTile = after.tileIndex;
@@ -106,8 +110,13 @@ int EspNativeGameplayMonsterTurn_postMoveGoal(struct DoomRPG_s* d, uint16_t spri
     assert(d == &root && sprite == before.spriteIndex && source == before.tileIndex && dest == after.tileIndex);
     ++postMoveCalls; return 1;
 }
+int EspNativeGameplayMonsterTurn_fallbackNoMove(struct DoomRPG_s* d,uint16_t sprite,uint16_t tileIndex) {
+    assert(d==&root && sprite==before.spriteIndex && tileIndex==before.tileIndex);
+    ++fallbackCalls; return 1;
+}
 static void fixture(unsigned subtype, enum Fault failure) {
-    fault = failure; renderCalls = postMoveCalls = plannerCalls = 0;
+    fault = failure; renderCalls = postMoveCalls = plannerCalls = fallbackCalls = 0;
+    noMoveCaptureCalls=-1;
     memset(&monster, 0, sizeof(monster)); monster.spriteIndex = 17; monster.subtype = subtype; monster.alive = 1;
     monsters.records = &monster; monsters.count = 1;
     before = (EspNativeGameplayMonsterPositionRecord){17,99,224,224};
@@ -173,6 +182,36 @@ int main(void) {
         }
     }
     assert(cases == 105 && commits == 12 && rollbacks == 93);
+    /* Exact no-path outcome has no tie byte and no world change. It is
+     * different from the earlier no-capture and failed-publication cases. */
+    unsigned noMoveCases=0;
+    for (unsigned mode=0;mode<3;++mode) {
+        const unsigned calls=mode;
+        const char* trigger=mode==2?"RANGED-AI":"NO-IMMEDIATE-ATTACK";
+        for(unsigned o=0;o<sizeof offsets/sizeof offsets[0];++o) {
+            fixture(mode==0?1:0,NO_MOVE);
+            EspNativeRngReplayGuard_reset();
+            DoomRPG_setRand(live); Legacy_DoomRPG_setRand(&ref); exact(live,&ref);
+            live->nextRand=ref.nextRand=offsets[o];
+            noMoveCaptureCalls=(int)calls;
+            uint8_t committed=255;
+            Random_t start=*live;
+            int canReplay=offsets[o]==127 || offsets[o]+(int)calls<RANDTABLESIZE;
+            assert(EspNativeGameplayMonsterMovementProbe_serviceMember(&root,trigger,&committed)==canReplay);
+            if(canReplay) for(unsigned k=0;k<calls;++k) (void)legacyByte(&ref);
+            else exact(live,&start);
+            exact(live,&ref);
+            assert(!committed && !renderCalls && !postMoveCalls &&
+                   fallbackCalls==(unsigned)(canReplay&&mode==2) &&
+                   memcmp(&position,&before,sizeof position)==0 && tile==99 && order==4);
+            tick+=4000;
+            assert(DoomRPG_randNextByte(live)==legacyByte(&ref));
+            exact(live,&ref);
+            assert(Random_Get()==Legacy_Random_Get());
+            ++noMoveCases;
+        }
+    }
+    printf("PASS P11 real no-move prefix publication cases=%u, no tie draw, refill parity, fallback only on proven ranged no-path\n",noMoveCases);
     printf("PASS GAME-AI-14 A1b real publication/probe/RNG: cases=%u commits=%u no-commit=%u\n",
            cases, commits, rollbacks);
     return 0;

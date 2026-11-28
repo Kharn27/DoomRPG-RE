@@ -154,6 +154,19 @@ typedef struct MonsterTurnOwner_s {
     uint32_t barrelProbe;
     uint16_t barrelSprite;
     uint16_t barrelTile;
+    /* One synchronous active-member decision, never persisted. */
+    uint32_t movementGateTurn;
+    uint32_t fallbackProbe;
+    uint16_t movementGateSprite;
+    uint16_t movementGateTile;
+    uint16_t movementGatePlayerTile;
+    uint16_t movementGateTargetSprite;
+    uint16_t movementGateTargetTile;
+    uint8_t movementGateStatus;
+    uint8_t movementGateAngle;
+    uint8_t movementGateWeapon;
+    uint8_t movementGateAiByte;
+    uint8_t movementGateBarrel;
 } MonsterTurnOwner;
 
 static MonsterTurnOwner turnOwner;
@@ -680,6 +693,8 @@ static int findCandidateForSprite(
     weapon = &monsterWeapons[weaponId];
     tile = (uint16_t)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK);
     if (!tileCenter(tile, &monsterX, &monsterY)) return 0;
+    outCandidate->tileIndex = tile;
+    outCandidate->weaponId = weaponId;
 
     dx = (int64_t)monsterX - playerView->destX;
     dy = (int64_t)monsterY - playerView->destY;
@@ -749,10 +764,54 @@ static int findCandidateForSprite(
     return 1;
 }
 
-EspNativeGameplayMonsterMemberProbeStatus
-EspNativeGameplayMonsterTurn_probeActiveMember(
+/* The producer's z and target identity remain authoritative during the
+ * synchronous movement attempt. In particular a type12 target is not the
+ * same as an obstructed direct-player LOS. No second trace or graphics IO. */
+static int retainMovementGate(uint16_t spriteIndex,
+                              const EspPlayerViewState* view,
+                              const MonsterTurnCandidate* candidate,
+                              uint8_t status, uint8_t aiByte) {
+    uint16_t tile;
+    if (!tileIndexFor(view->destX,view->destY,&tile)) return 0;
+    turnOwner.movementGateTurn=turnOwner.view.probes;
+    turnOwner.movementGateSprite=spriteIndex;
+    turnOwner.movementGateTile=candidate->tileIndex;
+    turnOwner.movementGatePlayerTile=tile;
+    turnOwner.movementGateTargetSprite=candidate->targetSprite;
+    turnOwner.movementGateTargetTile=candidate->targetTile;
+    turnOwner.movementGateAngle=(uint8_t)view->destAngle;
+    turnOwner.movementGateWeapon=candidate->weaponId;
+    turnOwner.movementGateAiByte=aiByte;
+    turnOwner.movementGateBarrel=candidate->barrelTarget;
+    turnOwner.movementGateStatus=status;
+    return 1;
+}
+
+int EspNativeGameplayMonsterTurn_movementGate(uint16_t spriteIndex,
+                                              uint16_t sourceTile,
+                                              int* ready, uint8_t* aiByte) {
+    const EspPlayerViewState* view=EspPlayerView_view();
+    uint16_t playerTile;
+    if (ready==NULL || aiByte==NULL || view==NULL || view->active!=1U ||
+        view->viewX!=view->destX || view->viewY!=view->destY ||
+        view->viewAngle!=view->destAngle ||
+        !tileIndexFor(view->destX,view->destY,&playerTile) ||
+        turnOwner.view.active!=1U ||
+        (turnOwner.movementGateStatus!=ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_RANGED_MOVE &&
+         turnOwner.movementGateStatus!=ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_NO_IMMEDIATE_ATTACK) ||
+        turnOwner.movementGateTurn!=turnOwner.view.probes ||
+        turnOwner.movementGateSprite!=spriteIndex ||
+        turnOwner.movementGateTile!=sourceTile ||
+        turnOwner.movementGatePlayerTile!=playerTile ||
+        turnOwner.movementGateAngle!=(uint8_t)view->destAngle) return 0;
+    *ready=turnOwner.movementGateStatus==ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_RANGED_MOVE;
+    *aiByte=turnOwner.movementGateAiByte;
+    return 1;
+}
+
+static EspNativeGameplayMonsterMemberProbeStatus probeMember(
     struct DoomRPG_s* doomRpgBase,
-    uint16_t spriteIndex) {
+    uint16_t spriteIndex, int fallback) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     const EspNativeGameplayMonsterTurnView* delivered;
     const EspPlayerViewState* playerView = EspPlayerView_view();
@@ -779,6 +838,7 @@ EspNativeGameplayMonsterTurn_probeActiveMember(
         return ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_INVALID;
     }
 
+    if (!fallback) turnOwner.movementGateStatus=0U;
     reason = turnOwner.view.lastReason;
     delivered = EspNativeGameplayMonsterActivation_turnView();
     if (delivered == NULL || delivered->active != 1U ||
@@ -799,7 +859,24 @@ EspNativeGameplayMonsterTurn_probeActiveMember(
                reasonName(reason), (unsigned int)spriteIndex);
         return ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_INVALID;
     }
-    if (candidate.monster == NULL) {
+    if (fallback) {
+        int ready=0;
+        uint8_t aiByte=0U;
+        if (candidate.monster==NULL ||
+            !EspNativeGameplayMonsterTurn_movementGate(spriteIndex,
+                candidate.tileIndex,&ready,&aiByte) || !ready || aiByte<217U ||
+            candidate.weaponId!=turnOwner.movementGateWeapon ||
+            candidate.barrelTarget!=turnOwner.movementGateBarrel ||
+            candidate.targetSprite!=turnOwner.movementGateTargetSprite ||
+            candidate.targetTile!=turnOwner.movementGateTargetTile) {
+            turnOwner.movementGateStatus=0U;
+            return ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_INVALID;
+        }
+        turnOwner.movementGateStatus=0U;
+    } else if (candidate.monster == NULL) {
+        if (!retainMovementGate(spriteIndex,playerView,&candidate,
+                ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_NO_IMMEDIATE_ATTACK,0U))
+            return ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_INVALID;
         return ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_NO_IMMEDIATE_ATTACK;
     }
 
@@ -812,7 +889,7 @@ EspNativeGameplayMonsterTurn_probeActiveMember(
         return ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_INVALID;
     }
 
-    if (((1U + (uint32_t)monsterWeapons[candidate.weaponId].rangeMin) / 2U) != 0U) {
+    if (!fallback && ((1U + (uint32_t)monsterWeapons[candidate.weaponId].rangeMin) / 2U) != 0U) {
         aiDecision = DoomRPG_randNextByte(EspNativeProcessRng_live());
         ++aiRngCalls;
         if (aiDecision >= 217U) {
@@ -833,6 +910,9 @@ EspNativeGameplayMonsterTurn_probeActiveMember(
                    (unsigned int)aiDecision,
                    (unsigned int)randomFNVBefore,
                    (unsigned int)randomFNVAfter);
+            if (!retainMovementGate(spriteIndex,playerView,&candidate,
+                    ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_RANGED_MOVE,aiDecision))
+                return ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_INVALID;
             return ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_RANGED_MOVE;
         }
     }
@@ -878,6 +958,13 @@ EspNativeGameplayMonsterTurn_probeActiveMember(
 
     ++turnOwner.view.attackProbes;
     turnOwner.view.lastAttackerSpriteIndex = candidate.monster->spriteIndex;
+    if (fallback) {
+        turnOwner.fallbackProbe=turnOwner.view.attackProbes;
+        printf("[AI14FALLBACK] ARM probe=%u sprite=%u tile=%u target=%s gateRng=already-committed combatRng=%u\n",
+               (unsigned)turnOwner.fallbackProbe,(unsigned)spriteIndex,
+               (unsigned)candidate.tileIndex,candidate.barrelTarget?"barrel":"player",
+               (unsigned)roll.rngCalls);
+    }
     if (candidate.barrelTarget != 0U) {
         turnOwner.barrelProbe=turnOwner.view.attackProbes;
         turnOwner.barrelSprite=candidate.targetSprite;
@@ -920,6 +1007,29 @@ EspNativeGameplayMonsterTurn_probeActiveMember(
            (unsigned int)randomFNVAfter,
            (unsigned int)turnOwner.view.attackProbes);
     return ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_ATTACK_PUBLISHED;
+}
+
+EspNativeGameplayMonsterMemberProbeStatus
+EspNativeGameplayMonsterTurn_probeActiveMember(
+    struct DoomRPG_s* doomRpgBase, uint16_t spriteIndex) {
+    return probeMember(doomRpgBase,spriteIndex,0);
+}
+
+int EspNativeGameplayMonsterTurn_fallbackNoMove(struct DoomRPG_s* doomRpg,
+                                                uint16_t spriteIndex,
+                                                uint16_t sourceTile) {
+    int ready=0;
+    uint8_t aiByte=0U;
+    if (!EspNativeGameplayMonsterTurn_movementGate(spriteIndex,sourceTile,
+                                                  &ready,&aiByte) ||
+        !ready || aiByte<217U) return 0;
+    return probeMember(doomRpg,spriteIndex,1)==
+        ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_ATTACK_PUBLISHED;
+}
+
+int EspNativeGameplayMonsterTurn_isFallbackProbe(uint32_t probe) {
+    return probe!=0U && probe==turnOwner.fallbackProbe &&
+           probe==turnOwner.view.attackProbes;
 }
 
 static void runProbe(DoomRPG_t* doomRpg, uint8_t reason) {

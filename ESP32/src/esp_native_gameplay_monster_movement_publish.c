@@ -58,7 +58,9 @@ typedef struct MovementPublishCapture_s {
     EspNativeGameplayMonsterPositionRecord before;
     EspNativeGameplayMonsterPositionRecord after;
     uint8_t active;
-    uint8_t reserved[3];
+    uint8_t noMove;
+    uint8_t noMoveRngCalls;
+    uint8_t reserved;
 } MovementPublishCapture;
 
 static MovementPublishCapture publishCapture;
@@ -219,6 +221,15 @@ void EspNativeGameplayMonsterMovementPublish_capturePrepared(
     publishCapture.active = 1U;
 }
 
+void EspNativeGameplayMonsterMovementPublish_captureNoMove(
+    const EspNativeGameplayMonsterPositionRecord* before, uint8_t rngCalls) {
+    if (before==NULL || rngCalls>2U || publishCapture.active!=0U ||
+        publishCapture.noMove!=0U) return;
+    publishCapture.before=*before;
+    publishCapture.noMove=1U;
+    publishCapture.noMoveRngCalls=rngCalls;
+}
+
 static int movementRngCalls(const char* trigger,
                             const EspNativeGameplayMonsterRecord* monster,
                             const EspPlayerViewState* player,
@@ -268,6 +279,59 @@ static int movementRngCalls(const char* trigger,
 
     if (calls == 0U || calls > 3U) return 0;
     *outCalls = (uint8_t)calls;
+    return 1;
+}
+
+/* Close the exact no-path prefix without relink, renderer, or tie RNG.
+ * A reserved starting refill is committed only if legacy drew a byte. */
+static int publishNoMove(const char* trigger,
+                         const Random_t* boundarySaved,
+                         uint8_t boundaryPrepared,
+                         EspNativeGameplayMonsterMovementPublishResult* result) {
+    const EspNativeGameplayMonsterPositionRecord* before=&publishCapture.before;
+    const EspNativeGameplayMonsterPositionRecord* current=
+        EspNativeGameplayMonsterPosition_find(before->spriteIndex);
+    const EspNativeGameplayMonsterRecord* monster=
+        EspNativeGameplayMonsterState_find(before->spriteIndex);
+    const EspPlayerViewState* player=EspPlayerView_view();
+    Random_t start;
+    uint8_t calls, type, subtype;
+    uint16_t link, order;
+    uint8_t i;
+    if (current==NULL || monster==NULL || monster->alive!=1U ||
+        player==NULL || player->active!=1U ||
+        player->viewX!=player->destX || player->viewY!=player->destY ||
+        player->viewAngle!=player->destAngle ||
+        memcmp(current,before,sizeof(*before))!=0 ||
+        !EspMapSpriteTopology_getEntity(before->spriteIndex,&type,&subtype,
+                                        &link,&order) ||
+        type!=ESP_MAP_ENTITY_TYPE_ENEMY || subtype!=monster->subtype ||
+        (link&(ESP_MAP_SPRITE_TOPOLOGY_LINKED|ESP_MAP_SPRITE_TOPOLOGY_ALIVE))!=
+          (ESP_MAP_SPRITE_TOPOLOGY_LINKED|ESP_MAP_SPRITE_TOPOLOGY_ALIVE) ||
+        (link&ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK)!=before->tileIndex ||
+        order==0U || !movementRngCalls(trigger,monster,player,before,&calls) ||
+        calls==0U || calls-1U!=publishCapture.noMoveRngCalls) return 0;
+    --calls; /* Entity_aiGoal_MOVE returns false before the visit-choice draw. */
+    start=*EspNativeProcessRng_live();
+    if (start.nextRand<0 || start.nextRand+(int)calls>=RANDTABLESIZE)
+        return 0;
+    for (i=0U;i<calls;++i) (void)DoomRPG_randNextByte(EspNativeProcessRng_live());
+    if (memcmp(EspNativeProcessRng_live()->randTable,start.randTable,RANDTABLESIZE)!=0 ||
+        EspNativeProcessRng_live()->nextRand!=start.nextRand+(int)calls ||
+        (boundaryPrepared!=0U && calls!=0U &&
+         !EspNativeRngReplayGuard_commitProbeBoundary(EspNativeProcessRng_live(),
+                boundarySaved,boundaryPrepared,calls))) {
+        *EspNativeProcessRng_live()=start;
+        return 0;
+    }
+    result->boundaryClosed=(uint8_t)(boundaryPrepared!=0U && calls!=0U);
+    result->noMove=1U;
+    result->spriteIndex=before->spriteIndex;
+    result->sourceTile=result->destTile=before->tileIndex;
+    result->rngCalls=calls;
+    printf("[AI14NOMOVE] COMMIT sprite=%u tile=%u prefixRng=%u tieRng=0 fallback=%s worldMutation=no\n",
+           (unsigned)before->spriteIndex,(unsigned)before->tileIndex,
+           (unsigned)calls,strcmp(trigger,"RANGED-AI")==0?"attack":"none");
     return 1;
 }
 
@@ -350,7 +414,10 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
     if (outResult != NULL) memset(outResult, 0, sizeof(*outResult));
     if (doomRpg == NULL || outResult == NULL) return 0;
 
-    if (movement == NULL || movement->plannedMoves == plannedMovesBefore) {
+    if (movement == NULL) return 1;
+    if (movement->plannedMoves == plannedMovesBefore) {
+        if (publishCapture.noMove!=0U)
+            return publishNoMove(trigger,boundarySaved,boundaryPrepared,outResult);
         return 1;
     }
     if (movement->plannedMoves != plannedMovesBefore + 1U ||

@@ -48,6 +48,15 @@ typedef struct EspNativeGameplayMonsterTurnView_s {
 void EspNativeGameplayMonsterTurn_afterPlayerResourcesService(struct DoomRPG_s* doomRpg);
 int EspNativeGameplayMonsterTurn_barrelTarget(uint32_t probe,
                                               uint16_t* sprite, uint16_t* tile);
+/* Exact ephemeral producer gate for the selected synchronous movement.
+ * The no-move fallback consumes no second AI byte. */
+int EspNativeGameplayMonsterTurn_movementGate(uint16_t spriteIndex,
+                                              uint16_t sourceTile,
+                                              int* ready, uint8_t* aiByte);
+int EspNativeGameplayMonsterTurn_fallbackNoMove(struct DoomRPG_s* doomRpg,
+                                                uint16_t spriteIndex,
+                                                uint16_t sourceTile);
+int EspNativeGameplayMonsterTurn_isFallbackProbe(uint32_t probe);
 void EspNativeGameplayMonsterTurn_reset(void);
 /* Explicit semantic request for non-monster player attacks (for example
  * destructibles) that still call legacy Game_advanceTurn(). The request is
