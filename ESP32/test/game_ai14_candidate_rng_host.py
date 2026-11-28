@@ -20,6 +20,10 @@ MOVE = (SRC / "esp_native_gameplay_monster_movement.c").read_text()
 PUBLISH = (SRC / "esp_native_gameplay_monster_movement_publish.c").read_text()
 LEGACY = (ROOT / "src/Entity.c").read_text()
 TURN_HEADER = (ROOT / "ESP32/include/esp_native_gameplay_monster_turn.h").read_text()
+PROJECTILE = (ROOT / "ESP32/include/esp_native_monster_projectile204_contract.h").read_text()
+LEGACY_COMBAT = (ROOT / "src/Combat.c").read_text(encoding="latin-1")
+assert "combat->damage = 1;" in LEGACY_COMBAT and "Entity_died(combat->curTarget);" in LEGACY_COMBAT
+assert "case 15:" in LEGACY_COMBAT and "? 0 : 204" in LEGACY_COMBAT
 RETALIATION = (SRC / "esp_native_gameplay_monster_retaliation.c").read_text()
 assert "if (!EspNativeGameplayMonsterTurn_isFallbackProbe(turn->attackProbes) &&" in RETALIATION
 assert "else if (z) {" in LEGACY and "Entity_attack(entity);" in LEGACY
@@ -358,7 +362,42 @@ int main(void) {
            candidate.targetTile==570U);
     fixtureMonster.alternateAttack=1U;
     assert(findCandidateForSprite(&view,17U,&candidate)==1);
-    assert(candidate.monster==NULL);
+    assert(candidate.monster==&fixtureMonster && candidate.barrelTarget==1U &&
+           candidate.weaponId==12U && candidate.loops==1U);
+    /* Independent expected family/variant matrix: no-visible-projectile
+       and sprite204 owners only. Verify first type12/sub1 target and no
+       combat roll on every admitted weapon, including three-shot Malwrath. */
+    const uint8_t admitted[14][2]={{1,1},{1,1},{1,1},{1,1},{1,1},{1,1},
+                                 {1,1},{0,1},{0,1},{0,1},{0,0},{0,0},{0,0},{1,1}};
+    DoomRPG_t root={0};
+    for(unsigned sub=0;sub<14;++sub) for(unsigned alt=0;alt<2;++alt) {
+        setupGate(216U,1,0);
+        fixtureMonster.subtype=(uint8_t)sub;
+        fixtureMonster.alternateAttack=(uint8_t)alt;
+        const uint8_t weapon=monsterAttacks[2U*sub+alt];
+        assert(findCandidateForSprite(&fixtureView,17U,&candidate)==1);
+        assert((candidate.monster!=NULL)==admitted[sub][alt]);
+        if(admitted[sub][alt]) {
+            assert(candidate.barrelTarget==1U && candidate.weaponId==weapon &&
+                   candidate.loops==monsterShots[sub] && candidate.targetSprite==271U &&
+                   candidate.targetTile==570U);
+            assert(EspNativeGameplayMonsterTurn_probeActiveMember(&root,17U)==ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_ATTACK_PUBLISHED);
+            uint16_t targetSprite,targetTile;
+            assert(EspNativeGameplayMonsterTurn_barrelTarget(1U,&targetSprite,&targetTile));
+            assert(targetSprite==271U && targetTile==570U && rollCalls==0U &&
+                   fixtureRng.nextRand==0);
+        }
+    }
+    /* Malwrath retains the barrel through the >=217 no-path fallback;
+       all three visual shots use the same target, one eventual death. */
+    setupGate(255U,1,0); fixtureMonster.subtype=6U;
+    assert(EspNativeGameplayMonsterTurn_probeActiveMember(&root,17U)==ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_RANGED_MOVE);
+    assert(DoomRPG_randNextByte(&fixtureRng)==255U);
+    assert(DoomRPG_randNextByte(&fixtureRng)==37U);
+    Random_t prefixRng=fixtureRng;
+    assert(EspNativeGameplayMonsterTurn_fallbackNoMove(&root,17U,99U));
+    assert(rollCalls==0U && memcmp(&prefixRng,&fixtureRng,sizeof prefixRng)==0);
+    puts("PASS P12 barrel weapon matrix 28 variants, 3-shot retained target, zero combat RNG");
     assert(cases==13U*2U*12U);
     fallbackCases();
     printf("[GAMEAI14-C] PASS cases=%u realBodies=3 "
@@ -384,6 +423,8 @@ parts = [
     function(TURN, "static int centeredCoordinate("),
     function(TURN, "static int tileCenter("),
     function(TURN, "static int tileIndexFor("),
+    PROJECTILE,
+    function(TURN, "static int barrelWeaponOwned("),
     function(TURN, "static int findCandidateForSprite("),
     function(TURN, "static int retainMovementGate("),
     function(TURN, "int EspNativeGameplayMonsterTurn_movementGate("),

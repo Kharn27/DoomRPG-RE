@@ -23,6 +23,7 @@
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_monster_three_goal_turn.h"
 #include "esp_native_gameplay_monster_turn.h"
+#include "esp_native_monster_projectile204_contract.h"
 #include "esp_native_rng_replay_guard.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_player_view_state.h"
@@ -632,6 +633,22 @@ static int syncOwner(void) {
     return 1;
 }
 
+/* The same non-player target transaction supports weapons whose native
+ * visual path is already owned. Legacy 2/3/4 have no missile, 12/13/14
+ * use an invisible missile, and owned weapon15 emits sprite204.
+ * Do not silently substitute a missing projectile for 7/16/17 or subtype7. */
+static int barrelWeaponOwned(uint8_t subtype,uint8_t alternate,uint8_t weapon) {
+    switch (weapon) {
+        case 2U: case 3U: case 4U:
+        case 12U: case 13U: case 14U:
+            return 1;
+        case 15U:
+            return EspNativeMonsterProjectile204_attackOwned(subtype,alternate);
+        default:
+            return 0;
+    }
+}
+
 static int findCandidateForSprite(
     const EspPlayerViewState* playerView,
     uint16_t spriteIndex,
@@ -726,7 +743,7 @@ static int findCandidateForSprite(
     if (!cardinalLosTarget(monsterX, monsterY,
                            playerView->destX, playerView->destY,
                            monster->spriteIndex, &target)) {
-        if (monster->subtype == 3U && weaponId == 15U &&
+        if (barrelWeaponOwned(monster->subtype,monster->alternateAttack,weaponId) &&
             target.type == TURN_TYPE_DESTRUCTIBLE && target.subtype == 1U &&
             EspNativeGameplayActionEngine_enemyBarrelReady(target.sprite)) {
             outCandidate->monster=monster;
@@ -969,9 +986,10 @@ static EspNativeGameplayMonsterMemberProbeStatus probeMember(
         turnOwner.barrelProbe=turnOwner.view.attackProbes;
         turnOwner.barrelSprite=candidate.targetSprite;
         turnOwner.barrelTile=candidate.targetTile;
-        printf("[AI14TARGET] ARM probe=%u attacker=%u targetSprite=%u targetTile=%u weapon=15 aiRand=%u combatRng=0 mutation=no\n",
+        printf("[AI14TARGET] ARM probe=%u attacker=%u targetSprite=%u targetTile=%u weapon=%u loops=%u aiRand=%u combatRng=0 mutation=no\n",
                (unsigned)turnOwner.barrelProbe,(unsigned)candidate.monster->spriteIndex,
                (unsigned)candidate.targetSprite,(unsigned)candidate.targetTile,
+               (unsigned)candidate.weaponId,(unsigned)candidate.loops,
                (unsigned)aiDecision);
     }
     printf("[MONSTERTURN] MEMBER-ATTACK-PROBE reason=%s sprite=%u subtype=%u mType=%u tile=%u weapon=%u alt=%u loops=%u hitLoops=%u firstRandHit=%u firstCalcHit=%d firstCritLimit=%d firstRandDamage=%u totalDamage=%d armorDamage=%d crit=%u aiRand=%s%u rngCalls=%u combatRngCalls=%u missProjectileRng=%u playerHP=%u->%u armor=%u->%u lethal=%s playerFNV=%08x->%08x rng=%08x->%08x rngRollback=yes playerExact=yes ordered=yes producerProbe=%u gameplayMutation=no\n",
