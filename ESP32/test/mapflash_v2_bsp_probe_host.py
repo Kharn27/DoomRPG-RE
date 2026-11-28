@@ -69,7 +69,7 @@ static uint32_t sourceProbeFlashEpoch=0;
 static uint8_t sourceProbeReadLogged=0;
 static MapFlashState mapFlash{};
 static void suspendFontSdBeforePackOpen(){}
-static uint32_t EspAssetPack_nameHash(const char* name){return name && *name ? 0x1234U:0U;}
+uint32_t EspAssetPack_nameHash(const char* name){return name && *name ? 0x1234U:0U;}
 static bool EspMapCatalog_idForName(const char* name,uint8_t* id){*id=2;return !strcmp(name,"/level01.bsp");}
 int EspAssetPack_isMapFlashActive(){return mapFlash.active;}
 int EspAssetPack_isResident(){return residentEnabled;}
