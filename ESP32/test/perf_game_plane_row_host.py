@@ -23,7 +23,7 @@ def body(signature):
     raise AssertionError(signature)
 
 layout = src[src.index("typedef struct PlaneTextureDesc_s"):src.index("static EspNativePlaneRenderStats planeStats;")]
-real = "\n".join(body(sig) for sig in ("static int findTextureIndex(", "static int acquireTexture(", "static int spanPlane(", "static int collectTextures(", "static int32_t planeRowStep("))
+real = "\n".join(body(sig) for sig in ("static int findTextureIndex(", "static int acquireTexture(", "static inline void flushPlaneHits(", "static int spanPlane(", "static int collectTextures(", "static int32_t planeRowStep("))
 reference = r"""
 static int refCollectTextures(PlaneWork* work) {
     uint32_t i;
@@ -229,6 +229,40 @@ static void checkCollectionAndStep(void) {
         assert(fast.textureCount==scalar.textureCount);
         assert(!memcmp(fast.textures,scalar.textures,sizeof(fast.textures)));
     }
+    /* P4m: unaligned source, repeated mixed groups, all-byte groups,
+     * changed groups with new IDs in every lane, overflow at every lane. */
+    {
+        uint8_t storageMap[2048+4];
+        for(unsigned offset=0;offset<4U;++offset) {
+            uint8_t* data=storageMap+offset;
+            runtime.planeMap=data;
+            runtime.planeMapBytes=2048U;
+            for(unsigned trial=0;trial<128U;++trial) {
+                for(unsigned i=0;i<2048U;++i) {
+                    unsigned lane=i%4U;
+                    unsigned group=i/4U;
+                    data[i]=(uint8_t)(trial%4U==0U ? trial :
+                        trial%4U==1U ? lane+trial :
+                        trial%4U==2U ? ((group/17U)%27U)+lane :
+                        ((group/32U)%24U)+(lane==trial%4U));
+                }
+                if(trial%8U==7U) {
+                    /* Force exactly 24 admitted IDs, then a 25th at a
+                     * selected lane of a changed group near the end. */
+                    for(unsigned i=0;i<2048U;++i)data[i]=(uint8_t)(i%24U);
+                    data[2044U+((trial/8U)%4U)]=255U;
+                }
+                memset(&fast,0xa5,sizeof(fast));
+                memset(&scalar,0xa5,sizeof(scalar));
+                fast.runtime=scalar.runtime=&runtime;
+                assert(collectTextures(&fast)==refCollectTextures(&scalar));
+                assert(fast.textureCount==scalar.textureCount);
+                assert(!memcmp(fast.textures,scalar.textures,sizeof(fast.textures)));
+            }
+        }
+        runtime.planeMap=map;
+    }
+    puts("PASS P4m 512 grouped/unaligned/overflow texture collection cases");
     for(int32_t p=0;p<=131072;++p)
         assert(planeRowStep(p,160)==refPlaneRowStep(p,160));
     const int32_t edge[]={INT32_MAX/2-1,INT32_MAX/2,INT32_MAX/2+1,INT32_MAX};
@@ -239,8 +273,49 @@ static void checkCollectionAndStep(void) {
             assert(planeRowStep(p,width)==refPlaneRowStep(p,width));
     puts("PASS P3h collection order/capacity/failure and exact row step");
 }
+/* Explicit same-texture run crossing clock wrap before a missing
+ * descriptor or a failing read; compare partial output, LRU and stats. */
+static void checkBatchedHits(void) {
+    for (unsigned tail=0; tail<3; ++tail) {
+        for (unsigned offset=0; offset<32; ++offset) {
+            Render_t f,r;
+            init(&fast,&f,0,2,UINT32_MAX-offset);
+            init(&scalar,&r,1,2,fast.cacheClock);
+            fast.stats.pixelsRendered = scalar.stats.pixelsRendered = UINT32_MAX-offset;
+            fast.stats.cacheHits = scalar.stats.cacheHits = UINT32_MAX-offset;
+            memset(cells,21,sizeof(cells));
+            if(tail==1) cells[16]=255;
+            if(tail==2) cells[16]=28;
+            failRead=tail==2?2:0;
+            reads=0;
+            int a=refSpanPlane(&scalar,4,0,cells,0,0,1<<22,0,32);
+            uint32_t expected=reads;
+            memcpy(expectedOffsets,offsets,reads*sizeof(offsets[0]));
+            reads=0;
+            int b=spanPlane(&fast,4,0,cells,0,0,1<<22,0,32);
+            assert(a==b && a==(tail==0) && reads==expected);
+            assert(!memcmp(expectedOffsets,offsets,reads*sizeof(offsets[0])));
+            compare();
+        }
+    }
+    puts("PASS P4e/P4f 96 batched LRU/stat wrap/partial-failure spans");
+}
 int main(void) {
     checkCollectionAndStep();
+    checkBatchedHits();
+    /* P4f: sweep all texel coordinates in both nibble positions. */
+    for (unsigned row=0; row<64; ++row) {
+        Render_t f,r;
+        init(&fast,&f,0,1,0);
+        init(&scalar,&r,1,1,0);
+        memset(cells,21,sizeof(cells));
+        failRead=0; reads=0;
+        assert(refSpanPlane(&scalar,4,0,cells,0,(int32_t)(row<<16),1<<16,0,64));
+        reads=0;
+        assert(spanPlane(&fast,4,0,cells,0,(int32_t)(row<<16),1<<16,0,64));
+        compare();
+    }
+    puts("PASS P4f all 4096 plane texel positions");
     unsigned cases=0;
     for(unsigned width=1;width<=6;++width) {
         for(unsigned trial=0;trial<240;++trial) {

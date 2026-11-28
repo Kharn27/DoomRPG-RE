@@ -83,24 +83,39 @@ static int findTextureIndex(const PlaneWork* work, uint8_t logicalId) {
 
 static int collectTextures(PlaneWork* work) {
     uint32_t i;
+    uint32_t previousWord = 0U;
     uint8_t seen[32] = {0};
+    const uint8_t* map;
     if (work == NULL || work->runtime == NULL ||
         work->runtime->planeMap == NULL ||
         work->runtime->planeMapBytes != EXPECTED_PLANE_MAP_BYTES) return 0;
 
+    map = work->runtime->planeMap;
     work->textureCount = 0U;
-    for (i = 0U; i < EXPECTED_PLANE_MAP_BYTES; ++i) {
-        const uint8_t id = work->runtime->planeMap[i];
-        const uint8_t bit = (uint8_t)(1U << (id & 7U));
-        /* P3h: one membership bit per possible logical ID. First encounter
-         * order and exact 24-descriptor failure boundary remain unchanged. */
-        if ((seen[id >> 3] & bit) != 0U) continue;
-        if (work->textureCount >= MAX_PLANE_TEXTURES) return 0;
-        seen[id >> 3] |= bit;
-        memset(&work->textures[work->textureCount], 0,
-               sizeof(work->textures[work->textureCount]));
-        work->textures[work->textureCount].logicalId = id;
-        ++work->textureCount;
+    /* P4m: the immutable 2048-byte plane map is exactly divisible by four.
+     * Identical consecutive groups can contain only already-admitted IDs.
+     * Read through memcpy (no alignment/aliasing assumptions); scan changed
+     * groups in original byte order, including the exact overflow boundary. */
+    _Static_assert(EXPECTED_PLANE_MAP_BYTES % 4U == 0U, "plane group size");
+    for (i = 0U; i < EXPECTED_PLANE_MAP_BYTES; i += 4U) {
+        uint32_t word;
+        uint32_t lanes = 4U;
+        uint32_t j;
+        memcpy(&word, map + i, sizeof(word));
+        if (i != 0U && word == previousWord) continue;
+        previousWord = word;
+        if (word == (uint32_t)map[i] * 0x01010101U) lanes = 1U;
+        for (j = 0U; j < lanes; ++j) {
+            const uint8_t id = map[i + j];
+            const uint8_t bit = (uint8_t)(1U << (id & 7U));
+            if ((seen[id >> 3] & bit) != 0U) continue;
+            if (work->textureCount >= MAX_PLANE_TEXTURES) return 0;
+            seen[id >> 3] |= bit;
+            memset(&work->textures[work->textureCount], 0,
+                   sizeof(work->textures[work->textureCount]));
+            work->textures[work->textureCount].logicalId = id;
+            ++work->textureCount;
+        }
     }
     return work->textureCount > 0U;
 }
@@ -317,6 +332,25 @@ static int acquireTexture(PlaneWork* work,
     return 1;
 }
 
+/* P4e: pendingHits is at most the positive int row length minus one.
+ * A valid previous slot implies a nonzero clock. At most one wrap is
+ * possible, and the original per-pixel clock skips zero on wrap.
+ * Flush before any lookup/eviction (including a failed lookup), so
+ * every externally observable cache state and statistic stays exact. */
+static inline void flushPlaneHits(PlaneWork* work, PlaneCacheSlot* slot,
+                                  uint32_t pendingHits) {
+    if (pendingHits != 0U) {
+        const uint32_t before = work->cacheClock;
+        uint32_t after = before + pendingHits;
+        if (after < before) ++after;
+        work->cacheClock = after;
+        slot->lastUse = after;
+        work->stats.cacheHits += pendingHits;
+        /* P4f: every deferred hit also painted exactly one pixel. */
+        work->stats.pixelsRendered += pendingHits;
+    }
+}
+
 static int spanPlane(PlaneWork* work,
                      int x, int y,
                      const uint8_t* planeCells,
@@ -328,6 +362,7 @@ static int spanPlane(PlaneWork* work,
     const PlaneTextureDesc* previousDesc = NULL;
     PlaneCacheSlot* previousSlot = NULL;
     uint8_t previousLogical = 0U;
+    uint32_t pendingHits = 0U;
 
     if (work == NULL || work->render == NULL || planeCells == NULL ||
         count <= 0) return 0;
@@ -348,19 +383,19 @@ static int spanPlane(PlaneWork* work,
         uint8_t packed;
         uint8_t paletteIndex;
 
-        if (cellIndex >= ESP_MAP_PLANE_CELL_COUNT || texelIndex >= 4096U)
+        if (cellIndex >= ESP_MAP_PLANE_CELL_COUNT || texelIndex >= 4096U) {
+            flushPlaneHits(work, previousSlot, pendingHits);
             return 0;
-        /* P3g: consecutive pixels with the same logical texture cannot
-         * evict their own slot. Retain the exact per-pixel LRU clock (even
-         * wrap), hit count, and palette; no pointer survives this row. */
+        }
+        /* P4e: no cache operation occurs inside a same-logical run.
+         * Defer its LRU touches until the next lookup or end of row. */
         if (previousSlot != NULL && logicalId == previousLogical) {
             desc = previousDesc;
             slot = previousSlot;
-            ++work->cacheClock;
-            if (work->cacheClock == 0U) work->cacheClock = 1U;
-            slot->lastUse = work->cacheClock;
-            ++work->stats.cacheHits;
+            ++pendingHits;
         } else {
+            flushPlaneHits(work, previousSlot, pendingHits);
+            pendingHits = 0U;
             const int descIndex = findTextureIndex(work, logicalId);
             if (descIndex < 0) return 0;
             desc = &work->textures[descIndex];
@@ -368,18 +403,18 @@ static int spanPlane(PlaneWork* work,
             previousDesc = desc;
             previousSlot = slot;
             previousLogical = logicalId;
+            /* First pixel of this run: no failure remains before painting. */
+            ++work->stats.pixelsRendered;
         }
 
         packed = slot->texels[texelIndex >> 1];
-        paletteIndex = (uint8_t)((texelIndex & 1U)
-                                     ? ((packed >> 4) & 0x0fU)
-                                     : (packed & 0x0fU));
+        paletteIndex = (uint8_t)((packed >> ((texelIndex & 1U) << 2)) & 0x0fU);
         *pixels++ = desc->paletteRgb565[paletteIndex];
-        ++work->stats.pixelsRendered;
 
         param5 = (int32_t)((uint32_t)param5 + (uint32_t)param7);
         param6 = (int32_t)((uint32_t)param6 + (uint32_t)param8);
     }
+    flushPlaneHits(work, previousSlot, pendingHits);
     return 1;
 }
 

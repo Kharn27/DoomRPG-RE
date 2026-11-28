@@ -2276,15 +2276,25 @@ static void EspNativeResidentGameplay_serviceBody(struct DoomRPG_s* doomRpgBase)
     }
 
     if (EspNativeGameplayStore_closePending()) {
-        const EspPlayerViewState* storeView=EspPlayerView_view();
-        if (storeView==NULL || storeView->active!=1U ||
-            !renderCurrent(EspNativeRootOwners_live()->render,(uint8_t)storeView->viewAngle,
-                           "STORE-CLOSE")) {
+        const EspPlayerViewState* storeView = EspPlayerView_view();
+        EspNativeGameplayHudStats storeHudStats;
+        /* STORE paints the entire framebuffer, not only the 3D viewport.
+         * Restore both bands from the live player (including purchases)
+         * before renderCurrent preserves them and presents the world. */
+        memset(&storeHudStats, 0, sizeof(storeHudStats));
+        if (repaintLiveHudAtView(storeView, &storeHudStats) !=
+                ESP_NATIVE_GAMEPLAY_HUD_OK) {
+            disableGameplay("store-close-hud-repaint");
+            return;
+        }
+        if (!renderCurrent(EspNativeRootOwners_live()->render,
+                           (uint8_t)storeView->viewAngle, "STORE-CLOSE")) {
             disableGameplay("store-close-world-render");
             return;
         }
         EspNativeGameplayStore_finishClose();
-        printf("[RESIDENTGAMEPLAY] STORE-CLOSE worldRedraw=yes turnAdvance=no hud=player-state-synced\n");
+        printf("[RESIDENTGAMEPLAY] STORE-CLOSE hudRepaint=yes hudPixels=%u worldRedraw=yes turnAdvance=no hud=player-state-synced\n",
+               (unsigned int)storeHudStats.pixelsWritten);
         return;
     }
     if (EspNativeGameplayStore_isActive()) return;

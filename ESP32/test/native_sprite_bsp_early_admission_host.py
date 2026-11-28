@@ -13,6 +13,7 @@ source = (root / "ESP32/src/esp_native_sprite_renderer.c").read_text()
 start = source.index("static int buildOrder(")
 end = source.index("\nstatic int spans(", start)
 optimized = source[start:end]
+order_slot = source[source.index("static uint32_t openOrderSlot("):start]
 assert "Normal frames first ask the compact visual owner" in optimized
 assert "The hidden bit (0x10000)" in optimized
 assert "if (!EspMapRuntime_getMapSprite(i, &sprite) ||" in optimized
@@ -191,7 +192,7 @@ int main(void){
 with tempfile.TemporaryDirectory(prefix="doomrpg-sprite-order-") as td:
     source_file=Path(td)/"admission.c"
     binary=Path(td)/"admission"
-    source_file.write_text(support+"\n"+reference+"\n"+optimized+"\n"+main)
+    source_file.write_text(support+"\n"+order_slot+"\n"+reference+"\n"+optimized+"\n"+main)
     for defines in ([], ["-DDOOMRPG_ESP32_TRACE_SPRITE=123"]):
         subprocess.run(["cc","-std=c11","-O2","-Wall","-Wextra",
                         "-Werror","-Wno-unused-parameter","-Wno-unused-function",
