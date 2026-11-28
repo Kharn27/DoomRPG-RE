@@ -84,7 +84,7 @@ int EspRes60WallMaterial_measure(EspRes60WallCoverage* out) {
         ++demand.columns;
         demand.pixels+=(uint16_t)(end-start);
         if(x>=ESP_RES60_TEXTURE_INSET_X && start<(int32_t)ESP_RES60_TEXTURE_INSET_SIZE) {
-            int32_t insetEnd=end<(int32_t)ESP_RES60_TEXTURE_INSET_SIZE?end:ESP_RES60_TEXTURE_INSET_SIZE;
+            int32_t insetEnd=end<(int32_t)ESP_RES60_TEXTURE_INSET_SIZE?end:(int32_t)ESP_RES60_TEXTURE_INSET_SIZE;
             demand.insetPixels+=(uint16_t)(insetEnd-start);
         }
         if(item->texture>255U) {
