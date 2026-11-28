@@ -12,6 +12,7 @@
 #include "esp_perf_trace_cache.h"
 #include "esp_perf_spatial_sprite.h"
 #include "esp_perf_spatial_line.h"
+#include "esp_ai14_nav_geometry_probe.h"
 #endif
 #if DOOMRPG_PERF_GAME_P1
 #include <esp_timer.h>
@@ -22,6 +23,7 @@
 #include "esp_entity_def_type_catalog.h"
 #include "esp_map_line_state.h"
 #include "esp_map_runtime.h"
+#include "esp_native_special_plane_geometry.h"
 #include "esp_map_sprite_topology.h"
 #include "esp_map_state.h"
 #include "esp_native_gameplay_dispatch.h"
@@ -103,16 +105,23 @@ typedef struct MovePlan_s {
     uint8_t choice;
     uint8_t tieRand;
     uint8_t tieRandUsed;
+    int navScore[4]; /* E,W,S,N; -1 = first step blocked. */
+    uint8_t navTraceBits[4]; /* clear bits for the two greedy rounds. */
 } MovePlan;
 
 typedef struct PathResult_s {
     int distance;
     int status;
+    uint8_t navTraceBits;
 } PathResult;
 
 static EspNativeGameplayMonsterMovementView movementView;
 /* Per-plan origin-plane witness; no retained world state. */
 static uint16_t originPlaneClear, originPlaneBlocked;
+#if DOOMRPG_PERF_GAME_P1
+static uint8_t navSampleCount;
+static uint8_t navImpSampleCount; /* independent quota for subtype 3 */
+#endif
 static uint32_t observedNoAttackTurns;
 
 static int centeredCoordinate(int32_t value) {
@@ -235,7 +244,8 @@ static int closedLineBlocksTileReference(uint16_t tile, uint16_t mask) {
         (void)subtype;
         if (!hasDefinition) {
             if ((line.flags & MOVE_LINE_ENTITY_FALLBACK_FLAGS) == 0U) continue;
-            type = 0U;
+            /* Game_loadMapEntities uses entities[0].def (type 9). */
+            type = 9U;
         }
         if (!typeInMask(type, mask)) continue;
         if (!lineEntityTile(&line, &lineTile)) return -1;
@@ -272,7 +282,8 @@ static int closedLineBlocksTileIndexed(uint16_t tile, uint16_t mask) {
         (void)subtype;
         if (!hasDefinition) {
             if ((line.flags & MOVE_LINE_ENTITY_FALLBACK_FLAGS) == 0U) continue;
-            type = 0U;
+            /* Game_loadMapEntities uses entities[0].def (type 9). */
+            type = 9U;
         }
         if (!typeInMask(type, mask)) continue;
         if (!lineEntityTile(&line, &lineTile)) return -1;
@@ -307,7 +318,7 @@ static int closedLineBlocksTile(uint16_t tile, uint16_t mask) {
  * closes after a monster has entered its line tile: the door is allowed to
  * close, but the monster is not trapped inside its newly relinked line entity.
  *
- * Return 2 for that exact source-line escape, 1 for a blocking source line,
+ * Return 2 for a sole axis-aligned type-0 line on the queried tile, 1 for a blocking source line,
  * 0 when no blocking line is linked on the source tile, and -1 when the compact
  * native owners cannot reproduce the legacy query safely.
  */
@@ -348,7 +359,8 @@ static int closedLineSourceStatusReference(uint16_t tile,
         (void)subtype;
         if (!hasDefinition) {
             if ((line.flags & MOVE_LINE_ENTITY_FALLBACK_FLAGS) == 0U) continue;
-            type = 0U;
+            /* Game_loadMapEntities uses entities[0].def (type 9). */
+            type = 9U;
         }
         if (!typeInMask(type, mask)) continue;
         if (!lineEntityTile(&line, &lineTile)) return -1;
@@ -363,11 +375,21 @@ static int closedLineSourceStatusReference(uint16_t tile,
 
     if (matches == 0U) return 0;
     if (outLineIndex != NULL) *outLineIndex = matchedLine;
+    /* Render_loadMap applies these offsets before the original LOS reads
+     * the endpoints. The tile-link nudge is deliberately not included. */
+    int32_t offsetX = 0, offsetY = 0;
+    if ((matched.flags & MOVE_LINE_GEOMETRY_X_NUDGE) != 0U) {
+        if ((matched.flags & MOVE_LINE_GEOMETRY_AXIS_X) != 0U) offsetX = 3;
+        else if ((matched.flags & MOVE_LINE_GEOMETRY_AXIS_NEG) != 0U) offsetX = -3;
+    } else if ((matched.flags & MOVE_LINE_GEOMETRY_Y_NUDGE) != 0U) {
+        if ((matched.flags & MOVE_LINE_GEOMETRY_AXIS_X) != 0U) offsetY = 3;
+        else if ((matched.flags & MOVE_LINE_GEOMETRY_AXIS_NEG) != 0U) offsetY = -3;
+    }
     if (matchedType == 0U &&
-        (sourceX == (int32_t)matched.x1 ||
-         sourceX == (int32_t)matched.x2 ||
-         sourceY == (int32_t)matched.y1 ||
-         sourceY == (int32_t)matched.y2)) {
+        (sourceX == (int32_t)matched.x1 + offsetX ||
+         sourceX == (int32_t)matched.x2 + offsetX ||
+         sourceY == (int32_t)matched.y1 + offsetY ||
+         sourceY == (int32_t)matched.y2 + offsetY)) {
         return 2;
     }
     return 1;
@@ -412,7 +434,8 @@ static int closedLineSourceStatusIndexed(uint16_t tile,
         (void)subtype;
         if (!hasDefinition) {
             if ((line.flags & MOVE_LINE_ENTITY_FALLBACK_FLAGS) == 0U) continue;
-            type = 0U;
+            /* Game_loadMapEntities uses entities[0].def (type 9). */
+            type = 9U;
         }
         if (!typeInMask(type, mask)) continue;
         if (!lineEntityTile(&line, &lineTile)) return -1;
@@ -427,11 +450,21 @@ static int closedLineSourceStatusIndexed(uint16_t tile,
 
     if (matches == 0U) return 0;
     if (outLineIndex != NULL) *outLineIndex = matchedLine;
+    /* Render_loadMap applies these offsets before the original LOS reads
+     * the endpoints. The tile-link nudge is deliberately not included. */
+    int32_t offsetX = 0, offsetY = 0;
+    if ((matched.flags & MOVE_LINE_GEOMETRY_X_NUDGE) != 0U) {
+        if ((matched.flags & MOVE_LINE_GEOMETRY_AXIS_X) != 0U) offsetX = 3;
+        else if ((matched.flags & MOVE_LINE_GEOMETRY_AXIS_NEG) != 0U) offsetX = -3;
+    } else if ((matched.flags & MOVE_LINE_GEOMETRY_Y_NUDGE) != 0U) {
+        if ((matched.flags & MOVE_LINE_GEOMETRY_AXIS_X) != 0U) offsetY = 3;
+        else if ((matched.flags & MOVE_LINE_GEOMETRY_AXIS_NEG) != 0U) offsetY = -3;
+    }
     if (matchedType == 0U &&
-        (sourceX == (int32_t)matched.x1 ||
-         sourceX == (int32_t)matched.x2 ||
-         sourceY == (int32_t)matched.y1 ||
-         sourceY == (int32_t)matched.y2)) {
+        (sourceX == (int32_t)matched.x1 + offsetX ||
+         sourceX == (int32_t)matched.x2 + offsetX ||
+         sourceY == (int32_t)matched.y1 + offsetY ||
+         sourceY == (int32_t)matched.y2 + offsetY)) {
         return 2;
     }
     return 1;
@@ -468,8 +501,7 @@ static int specialEntityBlocks(uint32_t spriteIndex,
     int32_t sprY;
     if (!EspMapRuntime_getMapSprite(spriteIndex, &sprite)) return -1;
     if ((sprite.info & MOVE_SPECIAL_TRACE_ENTITY_FLAG) == 0U) return 0;
-    sprX = (int32_t)sprite.x;
-    sprY = (int32_t)sprite.y;
+    EspNativeSpecialPlane_legacyPosition(&sprite, &sprX, &sprY);
     /* calcPath uses tile origins, not centers, for special-plane crossings. */
     if (tileOrigin) {
         sourceX -= MOVE_TILE_CENTER;
@@ -623,6 +655,11 @@ static int cardinalTraceClearBody(int32_t sourceX,
     int32_t stepY = 0;
     uint32_t distance;
     uint32_t i;
+    uint16_t playerTile = UINT16_MAX;
+    int allowedLine = 0;
+    const int movementLos = (mask & 0x0100U) != 0U;
+    const int32_t traceSourceX = sourceX - (strictSpecial ? 32 : 0);
+    const int32_t traceSourceY = sourceY - (strictSpecial ? 32 : 0);
 
     if (!centeredCoordinate(sourceX) || !centeredCoordinate(sourceY) ||
         !centeredCoordinate(destX) || !centeredCoordinate(destY)) return -1;
@@ -641,6 +678,15 @@ static int cardinalTraceClearBody(int32_t sourceX,
     }
     if (distance == 0U || distance > 31U) return 0;
     if (strictSpecial && distance != 1U) return -2;
+
+    /* Game_trace visits the source as well as the destination. This matters
+     * for hypothetical calcPath steps originating on the player tile. */
+    if ((mask & 0x0100U) != 0U) {
+        const EspPlayerViewState* player = EspPlayerView_view();
+        if (player == NULL || player->active != 1U ||
+            player->viewX != player->destX || player->viewY != player->destY ||
+            !tileIndexFor(player->destX, player->destY, &playerTile)) return -1;
+    }
 
     for (i = 1U; i <= distance; ++i) {
         int32_t prevX = sourceX + stepX * (int32_t)(i - 1U);
@@ -669,10 +715,12 @@ static int cardinalTraceClearBody(int32_t sourceX,
                 return 0;
             }
             if ((sourceFlags & ESP_MAP_TILE_WALL) != 0U) return 0;
+            if (sourceTile == playerTile) return 0;
             {
                 uint16_t sourceLine = UINT16_MAX;
                 lineBlock = closedLineSourceStatus(sourceTile, mask,
-                                                   prevX, prevY,
+                                                   movementLos ? traceSourceX : prevX,
+                                                   movementLos ? traceSourceY : prevY,
                                                    &sourceLine);
                 if (lineBlock < 0) return -1;
                 if (lineBlock == 1) {
@@ -684,7 +732,8 @@ static int cardinalTraceClearBody(int32_t sourceX,
                     return 0;
                 }
                 if (lineBlock == 2) {
-                    printf("[MONSTERMOVE] TRACE-PASS side=source kind=line tile=%u line=%u mask=%04x from=%d,%d to=%d,%d reason=legacy-type0-source-axis\n",
+                    allowedLine = 1;
+                    DRPG_LOGT("[MONSTERMOVE] TRACE-PASS side=source kind=line tile=%u line=%u mask=%04x from=%d,%d to=%d,%d reason=legacy-type0-source-axis\n",
                            (unsigned int)sourceTile,
                            (unsigned int)sourceLine,
                            (unsigned int)mask,
@@ -708,32 +757,19 @@ static int cardinalTraceClearBody(int32_t sourceX,
         if (!tileIndexFor(x, y, &tile) || !EspMapState_getTileFlags(tile, &flags)) {
             return 0;
         }
-        /* Legacy Game_trace checks the player's destination-cell sentinel
-         * when traceMask includes 0x0100. Native topology stores only map
-         * entities, not the legacy player entity, so the planner used to
-         * allow a monster to step on the player and permanently trap them.
-         * This check applies solely to movement masks: attack LOS masks
-         * exclude 0x0100 and must remain unaffected. */
-        if ((mask & 0x0100U) != 0U) {
-            const EspPlayerViewState* player = EspPlayerView_view();
-            uint16_t playerTile;
-            if (player == NULL || player->active != 1U ||
-                player->viewX != player->destX ||
-                player->viewY != player->destY ||
-                !tileIndexFor(player->destX, player->destY, &playerTile)) {
-                return -1;
-            }
-            if (tile == playerTile) {
-                DRPG_LOGT("[MONSTERMOVE] TRACE-BLOCK side=dest kind=player-sentinel tile=%u mask=%04x from=%d,%d to=%d,%d\n",
+        if (tile == playerTile) {
+            DRPG_LOGT("[MONSTERMOVE] TRACE-BLOCK side=dest kind=player-sentinel tile=%u mask=%04x from=%d,%d to=%d,%d\n",
                        (unsigned int)tile, (unsigned int)mask,
                        (int)prevX, (int)prevY, (int)x, (int)y);
-                return 0;
-            }
+            return 0;
         }
         if ((flags & ESP_MAP_TILE_WALL) != 0U) return 0;
-        lineBlock = closedLineBlocksTile(tile, mask);
+        lineBlock = movementLos
+            ? closedLineSourceStatus(tile, mask, traceSourceX, traceSourceY, NULL)
+            : closedLineBlocksTile(tile, mask);
         if (lineBlock < 0) return -1;
-        if (lineBlock > 0) return 0;
+        if (lineBlock == 1 || (lineBlock == 2 && allowedLine)) return 0;
+        if (lineBlock == 2) allowedLine = 1;
         spriteBlock = blockingSpriteOnTile(tile,
                                            prevX, prevY, x, y,
                                            attackerSprite, mask, strictSpecial);
@@ -785,6 +821,7 @@ static PathResult calcPath(uint16_t attackerSprite,
 
     result.distance = 999999;
     result.status = 1;
+    result.navTraceBits = 0U;
     if (srcX == destX && srcY == destY) {
         result.distance = 0;
         return result;
@@ -813,6 +850,7 @@ static PathResult calcPath(uint16_t attackerSprite,
             }
             clear = cardinalTraceClear(worldX, worldY, worldDestX, worldDestY,
                                        attackerSprite, mask, 1);
+            if (clear > 0) result.navTraceBits |= (uint8_t)(1U << (4 * i + j));
             if (clear == -2) {
                 result.status = -2;
                 return result;
@@ -890,6 +928,7 @@ static int aiGoalPlan(uint16_t attackerSprite,
     dX = destX >> 6;
     dY = destY >> 6;
     outPlan->traceMask = mask;
+    for (unsigned d = 0; d < 4; ++d) outPlan->navScore[d] = -1;
     if (!tileIndexFor(srcX, srcY, &outPlan->sourceTile)) return -1;
 
     clear = cardinalTraceClear(srcX, srcY, srcX + MOVE_TILE_SIZE, srcY,
@@ -898,6 +937,8 @@ static int aiGoalPlan(uint16_t attackerSprite,
     if (clear > 0) {
         path = calcPath(attackerSprite, mask, sX + 1, sY, dX, dY);
         if (path.status < 0) return path.status;
+        outPlan->navScore[0] = path.distance;
+        outPlan->navTraceBits[0] = path.navTraceBits;
         if (path.distance < 9999) {
             closestPathDist = path.distance;
             visitCount = 1U;
@@ -914,6 +955,8 @@ static int aiGoalPlan(uint16_t attackerSprite,
     if (clear > 0) {
         path = calcPath(attackerSprite, mask, sX - 1, sY, dX, dY);
         if (path.status < 0) return path.status;
+        outPlan->navScore[1] = path.distance;
+        outPlan->navTraceBits[1] = path.navTraceBits;
         if (path.distance < closestPathDist) {
             closestPathDist = path.distance;
             visitCount = 1U;
@@ -930,6 +973,8 @@ static int aiGoalPlan(uint16_t attackerSprite,
     if (clear > 0) {
         path = calcPath(attackerSprite, mask, sX, sY + 1, dX, dY);
         if (path.status < 0) return path.status;
+        outPlan->navScore[2] = path.distance;
+        outPlan->navTraceBits[2] = path.navTraceBits;
         if (path.distance < closestPathDist) {
             closestPathDist = path.distance;
             visitCount = 1U;
@@ -946,6 +991,8 @@ static int aiGoalPlan(uint16_t attackerSprite,
     if (clear > 0) {
         path = calcPath(attackerSprite, mask, sX, sY - 1, dX, dY);
         if (path.status < 0) return path.status;
+        outPlan->navScore[3] = path.distance;
+        outPlan->navTraceBits[3] = path.navTraceBits;
         if (path.distance < closestPathDist) {
             visitCount = 1U;
             visitOrder[0] = 0U;
@@ -1129,6 +1176,10 @@ static int syncOwner(void) {
     if (movementView.active == 0U ||
         movementView.sourceArenaFNV1a != turn->sourceArenaFNV1a) {
         memset(&movementView, 0, sizeof(movementView));
+#if DOOMRPG_PERF_GAME_P1
+        navSampleCount = 0U;
+        navImpSampleCount = 0U;
+#endif
         movementView.sourceArenaFNV1a = turn->sourceArenaFNV1a;
         movementView.observedMovementDeferredTurns = turn->movementDeferredTurns;
         observedNoAttackTurns = turn->noAttackTurns;
@@ -1148,6 +1199,10 @@ static int syncOwner(void) {
 
 void EspNativeGameplayMonsterMovement_reset(void) {
     memset(&movementView, 0, sizeof(movementView));
+#if DOOMRPG_PERF_GAME_P1
+    navSampleCount = 0U;
+    navImpSampleCount = 0U;
+#endif
     observedNoAttackTurns = 0U;
     movementView.lastSpriteIndex = MOVE_NO_SPRITE;
     movementView.lastSourceTile = MOVE_NO_SPRITE;
@@ -1379,6 +1434,28 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
     EspPerfSpatialLine_end(&EspPerfGameP1_spatialLineIndex);
     EspPerfSpatialSprite_end(&EspPerfGameP1_spatialSpriteIndex);
     EspPerfTraceCache_end(&traceCache);
+    /* Independent bounded Imp quota; existing Phantom witness unchanged.
+     * Imp sample IDs 49..80 avoid collisions with the first-plan quota.
+     * Capture only successful plans here; existing NO-MOVE remains explicit. */
+    if (planStatus == 1 &&
+        (((candidate.monster->subtype == 4U || candidate.monster->subtype == 13U) && navSampleCount < 48U) ||
+         (candidate.monster->subtype == 3U && navImpSampleCount < 32U))) {
+        const int isImp = candidate.monster->subtype == 3U;
+        const unsigned sample = isImp ? 48U + (++navImpSampleCount) : ++navSampleCount;
+        /* Capture late Imp pursuit (samples 61..64), not the initial approach. */
+        if ((!isImp && sample <= 4U) || (isImp && navImpSampleCount >= 13U && navImpSampleCount <= 16U))
+            EspAi14NavGeometry_capture("first", sample, candidate.monster->spriteIndex,
+            candidate.position->worldX, candidate.position->worldY, lineEntityTile);
+        printf("[AI14NAV] phase=first sprite=%u sub=%u src=%d,%d target=%d,%d dst=%u mask=%04x score=%d,%d,%d,%d bits=%02x,%02x,%02x,%02x ties=%u byte=%u choice=%u goal=%u player=%d,%d angle=%d rngBefore=%d rngAfter=%d calls=%u sample=%u\n",
+               (unsigned)candidate.monster->spriteIndex, (unsigned)candidate.monster->subtype, (int)candidate.position->worldX, (int)candidate.position->worldY,
+               (int)targetX, (int)targetY, (unsigned)plan.destTile, (unsigned)plan.traceMask,
+               plan.navScore[0], plan.navScore[1], plan.navScore[2], plan.navScore[3],
+               (unsigned)plan.navTraceBits[0], (unsigned)plan.navTraceBits[1],
+               (unsigned)plan.navTraceBits[2], (unsigned)plan.navTraceBits[3],
+               (unsigned)plan.visitCount, (unsigned)plan.tieRand, (unsigned)plan.choice,
+               (unsigned)1U, (int)playerView->destX, (int)playerView->destY, (int)playerView->destAngle,
+               (int)liveRandomBefore.nextRand, (int)probeRng.state.nextRand, (unsigned)probeRng.calls, sample);
+    }
 #endif
     if (originPlaneClear != 0U || originPlaneBlocked != 0U) {
         printf("[AI14PLANE] planner=first sprite=%u goal=%u originClear=%u originBlocked=%u planStatus=%d\n",

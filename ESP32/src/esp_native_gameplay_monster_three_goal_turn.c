@@ -13,6 +13,7 @@
 #include "esp_perf_trace_cache.h"
 #include "esp_perf_spatial_sprite.h"
 #include "esp_perf_spatial_line.h"
+#include "esp_ai14_nav_geometry_probe.h"
 #endif
 #if DOOMRPG_PERF_GAME_P1
 #include <esp_timer.h>
@@ -22,6 +23,7 @@
 #include "esp_entity_def_type_catalog.h"
 #include "esp_map_line_state.h"
 #include "esp_map_runtime.h"
+#include "esp_native_special_plane_geometry.h"
 #include "esp_map_sprite_topology.h"
 #include "esp_map_state.h"
 #include "esp_native_gameplay_monster_activation.h"
@@ -77,16 +79,22 @@ typedef struct ThreeGoalMovePlan_s {
     uint8_t choice;
     uint8_t tieRand;
     uint8_t tieRandUsed;
+    int navScore[4]; /* E,W,S,N; -1 = first step blocked. */
+    uint8_t navTraceBits[4]; /* clear bits for the two greedy rounds. */
 } ThreeGoalMovePlan;
 
 typedef struct ThreeGoalPathResult_s {
     int distance;
     int status;
+    uint8_t navTraceBits;
 } ThreeGoalPathResult;
 
 static EspNativeGameplayMonsterThreeGoalTurnView threeGoalView;
 /* Per-plan origin-plane witness; no retained world state. */
 static uint16_t originPlaneClear, originPlaneBlocked;
+#if DOOMRPG_PERF_GAME_P1
+static uint8_t navSampleCount;
+#endif
 static EspNativeGameplayMonsterMovementView syntheticMovementView;
 
 static int centeredCoordinate(int32_t value) {
@@ -207,7 +215,8 @@ static int closedLineBlocksTileReference(uint16_t tile, uint16_t mask) {
         (void)subtype;
         if (!hasDefinition) {
             if ((line.flags & THREEGOAL_LINE_ENTITY_FALLBACK_FLAGS) == 0U) continue;
-            type = 0U;
+            /* Game_loadMapEntities uses entities[0].def (type 9). */
+            type = 9U;
         }
         if (!typeInMask(type, mask)) continue;
         if (!lineEntityTile(&line, &lineTile)) return -1;
@@ -244,7 +253,8 @@ static int closedLineBlocksTileIndexed(uint16_t tile, uint16_t mask) {
         (void)subtype;
         if (!hasDefinition) {
             if ((line.flags & THREEGOAL_LINE_ENTITY_FALLBACK_FLAGS) == 0U) continue;
-            type = 0U;
+            /* Game_loadMapEntities uses entities[0].def (type 9). */
+            type = 9U;
         }
         if (!typeInMask(type, mask)) continue;
         if (!lineEntityTile(&line, &lineTile)) return -1;
@@ -271,6 +281,186 @@ static int closedLineBlocksTile(uint16_t tile, uint16_t mask) {
 #endif
 
 
+/*
+ * Legacy Entity_checkLineOfSight() has one deliberate exception after
+ * Game_trace(): when the trace contains exactly one entity, that entity is a
+ * type-0 map line, and the source coordinate lies on either endpoint axis of
+ * the line, the step is considered clear. This matters when a regular door
+ * closes after a monster has entered its line tile: the door is allowed to
+ * close, but the monster is not trapped inside its newly relinked line entity.
+ *
+ * Return 2 for a sole axis-aligned type-0 line on the queried tile, 1 for a blocking source line,
+ * 0 when no blocking line is linked on the source tile, and -1 when the compact
+ * native owners cannot reproduce the legacy query safely.
+ */
+static int closedLineSourceStatusReference(uint16_t tile,
+                                  uint16_t mask,
+                                  int32_t sourceX,
+                                  int32_t sourceY,
+                                  uint16_t* outLineIndex) {
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    uint32_t i;
+    uint16_t matchedLine = UINT16_MAX;
+    uint8_t matchedType = 0xffU;
+    EspMapLine matched;
+    uint32_t matches = 0U;
+
+    if (outLineIndex != NULL) *outLineIndex = UINT16_MAX;
+    if (runtime == NULL || !EspEntityDefTypeCatalog_isReady()) return -1;
+    memset(&matched, 0, sizeof(matched));
+
+    i = runtime->lineCount;
+    while (i > 0U) {
+        EspMapLine line;
+        uint32_t lookup;
+        uint16_t lineTile;
+        uint8_t open;
+        uint8_t type;
+        uint8_t subtype;
+        int hasDefinition;
+
+        --i;
+        if (!EspMapLineState_getOpen(i, &open)) return -1;
+        if (open != 0U) continue;
+        if (!EspMapRuntime_getLine(i, &line)) return -1;
+        lookup = THREEGOAL_LINE_ENTITY_DEF_BASE + (uint32_t)line.texture;
+        hasDefinition = lookup < ESP_ENTITY_DEF_TYPE_CATALOG_LIMIT &&
+                        EspEntityDefTypeCatalog_getTypeAndSubtype(
+                            (uint16_t)lookup, &type, &subtype);
+        (void)subtype;
+        if (!hasDefinition) {
+            if ((line.flags & THREEGOAL_LINE_ENTITY_FALLBACK_FLAGS) == 0U) continue;
+            /* Game_loadMapEntities uses entities[0].def (type 9). */
+            type = 9U;
+        }
+        if (!typeInMask(type, mask)) continue;
+        if (!lineEntityTile(&line, &lineTile)) return -1;
+        if (lineTile != tile) continue;
+
+        ++matches;
+        if (matches > 1U) return 1;
+        matchedLine = (uint16_t)i;
+        matchedType = type;
+        matched = line;
+    }
+
+    if (matches == 0U) return 0;
+    if (outLineIndex != NULL) *outLineIndex = matchedLine;
+    /* Render_loadMap applies these offsets before the original LOS reads
+     * the endpoints. The tile-link nudge is deliberately not included. */
+    int32_t offsetX = 0, offsetY = 0;
+    if ((matched.flags & THREEGOAL_LINE_GEOMETRY_X_NUDGE) != 0U) {
+        if ((matched.flags & THREEGOAL_LINE_GEOMETRY_AXIS_X) != 0U) offsetX = 3;
+        else if ((matched.flags & THREEGOAL_LINE_GEOMETRY_AXIS_NEG) != 0U) offsetX = -3;
+    } else if ((matched.flags & THREEGOAL_LINE_GEOMETRY_Y_NUDGE) != 0U) {
+        if ((matched.flags & THREEGOAL_LINE_GEOMETRY_AXIS_X) != 0U) offsetY = 3;
+        else if ((matched.flags & THREEGOAL_LINE_GEOMETRY_AXIS_NEG) != 0U) offsetY = -3;
+    }
+    if (matchedType == 0U &&
+        (sourceX == (int32_t)matched.x1 + offsetX ||
+         sourceX == (int32_t)matched.x2 + offsetX ||
+         sourceY == (int32_t)matched.y1 + offsetY ||
+         sourceY == (int32_t)matched.y2 + offsetY)) {
+        return 2;
+    }
+    return 1;
+}
+#if DOOMRPG_PERF_GAME_P1
+/* P1j independent full reference remains authoritative in shadow mode. */
+static int closedLineSourceStatusIndexed(uint16_t tile,
+                                  uint16_t mask,
+                                  int32_t sourceX,
+                                  int32_t sourceY,
+                                  uint16_t* outLineIndex) {
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    uint32_t i;
+    uint16_t matchedLine = UINT16_MAX;
+    uint8_t matchedType = 0xffU;
+    EspMapLine matched;
+    uint32_t matches = 0U;
+
+    if (outLineIndex != NULL) *outLineIndex = UINT16_MAX;
+    if (runtime == NULL || !EspEntityDefTypeCatalog_isReady()) return -1;
+    memset(&matched, 0, sizeof(matched));
+
+    i = EspPerfSpatialLine_first(&EspPerfGameP1_spatialLineIndex, tile);
+    while (i != ESP_PERF_SPATIAL_LINE_NONE) {
+        EspMapLine line;
+        uint32_t lookup;
+        uint16_t lineTile;
+        uint8_t open;
+        uint8_t type;
+        uint8_t subtype;
+        int hasDefinition;
+
+        uint32_t lineIndex = i;
+        i = EspPerfSpatialLine_next(&EspPerfGameP1_spatialLineIndex, (uint16_t)i, tile);
+        if (!EspMapLineState_getOpen(lineIndex, &open)) return -1;
+        if (open != 0U) continue;
+        if (!EspMapRuntime_getLine(lineIndex, &line)) return -1;
+        lookup = THREEGOAL_LINE_ENTITY_DEF_BASE + (uint32_t)line.texture;
+        hasDefinition = lookup < ESP_ENTITY_DEF_TYPE_CATALOG_LIMIT &&
+                        EspEntityDefTypeCatalog_getTypeAndSubtype(
+                            (uint16_t)lookup, &type, &subtype);
+        (void)subtype;
+        if (!hasDefinition) {
+            if ((line.flags & THREEGOAL_LINE_ENTITY_FALLBACK_FLAGS) == 0U) continue;
+            /* Game_loadMapEntities uses entities[0].def (type 9). */
+            type = 9U;
+        }
+        if (!typeInMask(type, mask)) continue;
+        if (!lineEntityTile(&line, &lineTile)) return -1;
+        if (lineTile != tile) continue;
+
+        ++matches;
+        if (matches > 1U) return 1;
+        matchedLine = (uint16_t)lineIndex;
+        matchedType = type;
+        matched = line;
+    }
+
+    if (matches == 0U) return 0;
+    if (outLineIndex != NULL) *outLineIndex = matchedLine;
+    /* Render_loadMap applies these offsets before the original LOS reads
+     * the endpoints. The tile-link nudge is deliberately not included. */
+    int32_t offsetX = 0, offsetY = 0;
+    if ((matched.flags & THREEGOAL_LINE_GEOMETRY_X_NUDGE) != 0U) {
+        if ((matched.flags & THREEGOAL_LINE_GEOMETRY_AXIS_X) != 0U) offsetX = 3;
+        else if ((matched.flags & THREEGOAL_LINE_GEOMETRY_AXIS_NEG) != 0U) offsetX = -3;
+    } else if ((matched.flags & THREEGOAL_LINE_GEOMETRY_Y_NUDGE) != 0U) {
+        if ((matched.flags & THREEGOAL_LINE_GEOMETRY_AXIS_X) != 0U) offsetY = 3;
+        else if ((matched.flags & THREEGOAL_LINE_GEOMETRY_AXIS_NEG) != 0U) offsetY = -3;
+    }
+    if (matchedType == 0U &&
+        (sourceX == (int32_t)matched.x1 + offsetX ||
+         sourceX == (int32_t)matched.x2 + offsetX ||
+         sourceY == (int32_t)matched.y1 + offsetY ||
+         sourceY == (int32_t)matched.y2 + offsetY)) {
+        return 2;
+    }
+    return 1;
+}
+static int closedLineSourceStatus(uint16_t tile, uint16_t mask, int32_t sourceX, int32_t sourceY, uint16_t* outLineIndex) {
+    if(EspPerfGameP1_spatialLineIndex.active) {
+        const int indexed=closedLineSourceStatusIndexed(tile,mask,sourceX,sourceY,outLineIndex);
+#if DOOMRPG_PERF_LINE_FAST
+        EspPerfGameP1_lineShadow(2,0);
+        return indexed;
+#else
+        uint16_t referenceLine=UINT16_MAX;
+        const int reference=closedLineSourceStatusReference(tile,mask,sourceX,sourceY,&referenceLine);
+        EspPerfGameP1_lineShadow(2, indexed!=reference || (reference > 0 && referenceLine != (outLineIndex!=NULL ? *outLineIndex : referenceLine)));
+        if(outLineIndex!=NULL) *outLineIndex=referenceLine;
+        return reference;
+#endif
+    }
+    return closedLineSourceStatusReference(tile,mask,sourceX,sourceY,outLineIndex);
+}
+#else
+#define closedLineSourceStatus closedLineSourceStatusReference
+#endif
+
+
 static int specialEntityBlocks(uint32_t spriteIndex,
                                int32_t sourceX,
                                int32_t sourceY,
@@ -282,8 +472,7 @@ static int specialEntityBlocks(uint32_t spriteIndex,
     int32_t sprY;
     if (!EspMapRuntime_getMapSprite(spriteIndex, &sprite)) return -1;
     if ((sprite.info & THREEGOAL_SPECIAL_TRACE_ENTITY_FLAG) == 0U) return 0;
-    sprX = (int32_t)sprite.x;
-    sprY = (int32_t)sprite.y;
+    EspNativeSpecialPlane_legacyPosition(&sprite, &sprX, &sprY);
     /* Entity_calcPath passes tile origins (x << 6), unlike the initial
      * Entity_aiGoal_MOVE center-to-center LOS. Tile membership is unchanged;
      * the special-plane crossing must use the original endpoints. */
@@ -443,6 +632,10 @@ static int cardinalTraceClearBody(int32_t sourceX,
     uint32_t distance;
     uint32_t i;
     uint16_t playerTile = UINT16_MAX;
+    int allowedLine = 0;
+    const int movementLos = (mask & 0x0100U) != 0U;
+    const int32_t traceSourceX = sourceX - (strictSpecial ? 32 : 0);
+    const int32_t traceSourceY = sourceY - (strictSpecial ? 32 : 0);
 
     if (!centeredCoordinate(sourceX) || !centeredCoordinate(sourceY) ||
         !centeredCoordinate(destX) || !centeredCoordinate(destY)) return -1;
@@ -501,9 +694,12 @@ static int cardinalTraceClearBody(int32_t sourceX,
             }
             if ((sourceFlags & ESP_MAP_TILE_WALL) != 0U) return 0;
             if (sourceTile == playerTile) return 0;
-            lineBlock = closedLineBlocksTile(sourceTile, mask);
+            lineBlock = movementLos
+                ? closedLineSourceStatus(sourceTile, mask, traceSourceX, traceSourceY, NULL)
+                : closedLineBlocksTile(sourceTile, mask);
             if (lineBlock < 0) return -1;
-            if (lineBlock > 0) {
+            if (lineBlock == 2) allowedLine = 1;
+            if (lineBlock == 1) {
                 DRPG_LOGT("[MONSTER3GOAL] TRACE-BLOCK side=source kind=line tile=%u mask=%04x from=%d,%d to=%d,%d\n",
                        (unsigned int)sourceTile,
                        (unsigned int)mask,
@@ -529,9 +725,12 @@ static int cardinalTraceClearBody(int32_t sourceX,
         }
         if ((flags & ESP_MAP_TILE_WALL) != 0U) return 0;
         if (tile == playerTile) return 0;
-        lineBlock = closedLineBlocksTile(tile, mask);
+        lineBlock = movementLos
+            ? closedLineSourceStatus(tile, mask, traceSourceX, traceSourceY, NULL)
+            : closedLineBlocksTile(tile, mask);
         if (lineBlock < 0) return -1;
-        if (lineBlock > 0) return 0;
+        if (lineBlock == 1 || (lineBlock == 2 && allowedLine)) return 0;
+        if (lineBlock == 2) allowedLine = 1;
         spriteBlock = blockingSpriteOnTile(tile,
                                            prevX, prevY, x, y,
                                            attackerSprite, mask, strictSpecial);
@@ -583,6 +782,7 @@ static ThreeGoalPathResult calcPath(uint16_t attackerSprite,
 
     result.distance = 999999;
     result.status = 1;
+    result.navTraceBits = 0U;
     if (srcX == destX && srcY == destY) {
         result.distance = 0;
         return result;
@@ -611,6 +811,7 @@ static ThreeGoalPathResult calcPath(uint16_t attackerSprite,
             }
             clear = cardinalTraceClear(worldX, worldY, worldDestX, worldDestY,
                                        attackerSprite, mask, 1);
+            if (clear > 0) result.navTraceBits |= (uint8_t)(1U << (4 * i + j));
             if (clear == -2) {
                 result.status = -2;
                 return result;
@@ -690,6 +891,7 @@ static int aiGoalPlan(uint16_t attackerSprite,
     dX = destX >> 6;
     dY = destY >> 6;
     outPlan->traceMask = mask;
+    for (unsigned d = 0; d < 4; ++d) outPlan->navScore[d] = -1;
     if (!tileIndexFor(srcX, srcY, &outPlan->sourceTile)) return -1;
 
     clear = cardinalTraceClear(srcX, srcY, srcX + THREEGOAL_TILE_SIZE, srcY,
@@ -698,6 +900,8 @@ static int aiGoalPlan(uint16_t attackerSprite,
     if (clear > 0) {
         path = calcPath(attackerSprite, mask, sX + 1, sY, dX, dY);
         if (path.status < 0) return path.status;
+        outPlan->navScore[0] = path.distance;
+        outPlan->navTraceBits[0] = path.navTraceBits;
         if (path.distance < 9999) {
             closestPathDist = path.distance;
             visitCount = 1U;
@@ -714,6 +918,8 @@ static int aiGoalPlan(uint16_t attackerSprite,
     if (clear > 0) {
         path = calcPath(attackerSprite, mask, sX - 1, sY, dX, dY);
         if (path.status < 0) return path.status;
+        outPlan->navScore[1] = path.distance;
+        outPlan->navTraceBits[1] = path.navTraceBits;
         if (path.distance < closestPathDist) {
             closestPathDist = path.distance;
             visitCount = 1U;
@@ -730,6 +936,8 @@ static int aiGoalPlan(uint16_t attackerSprite,
     if (clear > 0) {
         path = calcPath(attackerSprite, mask, sX, sY + 1, dX, dY);
         if (path.status < 0) return path.status;
+        outPlan->navScore[2] = path.distance;
+        outPlan->navTraceBits[2] = path.navTraceBits;
         if (path.distance < closestPathDist) {
             closestPathDist = path.distance;
             visitCount = 1U;
@@ -746,6 +954,8 @@ static int aiGoalPlan(uint16_t attackerSprite,
     if (clear > 0) {
         path = calcPath(attackerSprite, mask, sX, sY - 1, dX, dY);
         if (path.status < 0) return path.status;
+        outPlan->navScore[3] = path.distance;
+        outPlan->navTraceBits[3] = path.navTraceBits;
         if (path.distance < closestPathDist) {
             visitCount = 1U;
             visitOrder[0] = 0U;
@@ -781,6 +991,9 @@ static int syncOwner(void) {
     if (threeGoalView.active == 0U ||
         threeGoalView.sourceArenaFNV1a != monsters->sourceArenaFNV1a) {
         memset(&threeGoalView, 0, sizeof(threeGoalView));
+#if DOOMRPG_PERF_GAME_P1
+        navSampleCount = 0U;
+#endif
         threeGoalView.sourceArenaFNV1a = monsters->sourceArenaFNV1a;
         threeGoalView.lastSpriteIndex = 0xffffU;
         threeGoalView.lastTile = 0xffffU;
@@ -794,6 +1007,9 @@ static int syncOwner(void) {
 
 void EspNativeGameplayMonsterThreeGoalTurn_reset(void) {
     memset(&threeGoalView, 0, sizeof(threeGoalView));
+#if DOOMRPG_PERF_GAME_P1
+    navSampleCount = 0U;
+#endif
     memset(&syntheticMovementView, 0, sizeof(syntheticMovementView));
 }
 
@@ -903,6 +1119,21 @@ static int probeContinuationGoal(DoomRPG_t* doomRpg,
     EspPerfSpatialLine_end(&EspPerfGameP1_spatialLineIndex);
     EspPerfSpatialSprite_end(&EspPerfGameP1_spatialSpriteIndex);
     EspPerfTraceCache_end(&traceCache);
+    /* Print outside navigation phase timing; bounded successful-plan witness. */
+    if (planStatus == 1 && (monster->subtype == 4U || monster->subtype == 13U) && navSampleCount < 48U) {
+        ++navSampleCount;
+        if (navSampleCount <= 4U) EspAi14NavGeometry_capture("continuation", navSampleCount, spriteIndex,
+            position->worldX, position->worldY, lineEntityTile);
+        printf("[AI14NAV] phase=continuation sprite=%u sub=%u src=%d,%d target=%d,%d dst=%u mask=%04x score=%d,%d,%d,%d bits=%02x,%02x,%02x,%02x ties=%u byte=%u choice=%u goal=%u player=%d,%d angle=%d rngBefore=%d rngAfter=%d calls=%u sample=%u\n",
+               (unsigned)spriteIndex, (unsigned)monster->subtype, (int)position->worldX, (int)position->worldY,
+               (int)player->destX, (int)player->destY, (unsigned)plan.destTile, (unsigned)plan.traceMask,
+               plan.navScore[0], plan.navScore[1], plan.navScore[2], plan.navScore[3],
+               (unsigned)plan.navTraceBits[0], (unsigned)plan.navTraceBits[1],
+               (unsigned)plan.navTraceBits[2], (unsigned)plan.navTraceBits[3],
+               (unsigned)plan.visitCount, (unsigned)plan.tieRand, (unsigned)plan.choice,
+               (unsigned)goalStep, (int)player->destX, (int)player->destY, (int)player->destAngle,
+               (int)randomBefore.nextRand, (int)probeRng.state.nextRand, (unsigned)probeRng.calls, (unsigned)navSampleCount);
+    }
 #endif
     if (originPlaneClear != 0U || originPlaneBlocked != 0U) {
         printf("[AI14PLANE] planner=continuation sprite=%u goal=%u originClear=%u originBlocked=%u planStatus=%d\n",

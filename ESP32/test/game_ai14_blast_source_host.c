@@ -25,7 +25,7 @@ static int playerHp;
 static unsigned hitsCount;
 static EspNativeGameplaySplashHit hitsSeen[128];
 static char order[32]; static unsigned orderCount;
-static int failMonster, reviveMonster;
+static int failMonster, reviveMonster, enemyMode;
 static void mark(char ch){assert(orderCount<sizeof order-1);order[orderCount++]=ch;order[orderCount]=0;}
 static Random_t* EspNativeProcessRng_live(void){return &rng;}
 static uint8_t DoomRPG_randNextByte(Random_t* r){mark('D');return (uint8_t)r->nextRand++;}
@@ -35,18 +35,19 @@ static EspPlayerViewState player;
 static EspMapSprite immutable;
 static unsigned mapReads, lookupCount, damageCalls, terminalCalls, removals;
 static int mapReady, failLookup, lethal;
-static uint16_t visited[16];
+static uint16_t visited[64];
 static unsigned kind[1024];
 #define ESP_MAP_SPRITE_TOPOLOGY_NO_SPRITE 65535U
 #define ESP_MAP_SPRITE_TOPOLOGY_LINKED 0x4000U
 static int preflightFixture;
 static uint8_t rootSubtype;
+static int removed(uint32_t sprite);
 static int actionGetEntity(uint32_t sprite,uint8_t* type,uint8_t* subtype,
                            uint16_t* link,uint16_t* order) {
     if (!preflightFixture || (sprite!=50 && sprite!=90)) return 0;
     *type=ACTION_ENTITY_DESTRUCTIBLE;
     *subtype=sprite==50?rootSubtype:ACTION_DESTRUCTIBLE_BARREL_SUBTYPE;
-    *link=ESP_MAP_SPRITE_TOPOLOGY_LINKED; *order=0; return 1;
+    *link=(enemyMode && removed(sprite))?0:ESP_MAP_SPRITE_TOPOLOGY_LINKED; *order=0; return 1;
 }
 static uint16_t entityId[1024];
 static uint8_t removedBits[1024];
@@ -66,18 +67,20 @@ static void setRemoved(uint32_t sprite,int value) {
 }
 static int barrelRadiusCellSupported(uint16_t tile,const EspPlayerViewState *v,
     ActionTarget *out,int *barrel,int *isPlayer) {
-    assert(v==&player && tile<1024 && lookupCount<16);
+    assert(v==&player && tile<1024 && lookupCount<(enemyMode?64U:16U));
     visited[lookupCount++]=tile;
     if(failLookup>=0 && (int)lookupCount-1==failLookup) return 0;
     memset(out,0,sizeof(*out));
     out->spriteIndex=entityId[tile]; out->tileIndex=tile;
     *barrel=kind[tile]==3; *isPlayer=kind[tile]==2;
+    if(enemyMode && *barrel && removed(entityId[tile])) *barrel=0;
     if(kind[tile]==1) out->type=ACTION_ENTITY_ENEMY;
     return 1;
 }
 EspNativeGameplayPlayerDamageStatus EspNativeGameplayPlayerState_applyDamageNonlethal(
     uint16_t a,uint16_t b,EspNativeGameplayPlayerDamageResult *out) {
     assert(a==b && out); ++damageCalls; playerDamage=a; mark('P');
+    if(enemyMode && !lethal) playerHp-=a;
     return lethal?ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_LETHAL_DEFERRED:
                   ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_OK;
 }
@@ -127,7 +130,7 @@ int EspNativeSpriteRenderer_armTransient(uint16_t logical,uint8_t phase,int16_t 
 }
 void EspNativeSpriteRenderer_clearTransient(void){++clears;}
 int EspNativeDynamicLineRender_renderAmbient(struct Render_s* render,EspNativeGameplayFrameStats* out){
-    assert(render==roots.render && out && words==0);
+    assert(render==roots.render && out && (enemyMode || words==0));
     out->finalPresented=(int)frames!=suppressFrame; return (int)frames++!=failFrame;
 }
 static int EspNativeAudioIntent_publish(uint16_t resource,uint8_t flags,uint8_t priority){
@@ -135,12 +138,66 @@ static int EspNativeAudioIntent_publish(uint16_t resource,uint8_t flags,uint8_t 
     ++sounds; return 1;
 }
 static int DoomRPG_randNextInt(Random_t* r){
-    assert(frames==3 && clears==1 && r==&rng && words==0);
+    assert(r==&rng && (enemyMode ? (frames%3==0 && clears>0) : (frames==3 && clears==1 && words==0)));
     mark('W');++words; ++r->nextRand; return 132;
 }
 __PREPARE_DEATH__
 __RUN_DEATH__
+/* Enemy origin uses actual preflight, wave and radius code; mock only native
+ * owners and rendering. The old direct-origin assertions remain unchanged. */
+#define MAP_WIDTH 32U
+#define ACTION_FEEDBACK_DAMAGE 6U
+#define ACTION_TRAP_DAMAGE_FLASH_MS 500U
+#define FEEDBACK_DAMAGE_RED565 0xb800U
+#define DRPG_LOGE(...) printf(__VA_ARGS__)
+static struct { char feedbackText[64]; uint8_t feedbackPending,feedbackKind,viewportFlashPending;
+    uint16_t viewportFlashDurationMs,viewportFlashColor565; } actionState;
+static int sequenceActive, savedHp, savedRand, failDeath, deathArms, commits, settles;
+int EspNativeGameplayPlayerState_snapshot(EspNativeGameplayPlayerState* p) {
+    memset(p,0,sizeof *p);p->param1=(uint32_t)playerHp;p->ammo[0]=17;return 1;
+}
+int EspNativeGameplayPlayerState_restore(const EspNativeGameplayPlayerState* p) {
+    assert(p->ammo[0]==17);playerHp=(int)p->param1;return 1;
+}
+int EspNativeGameplayMonsterCombat_beginSplashSequence(DoomRPG_t* d,uint32_t seq) {
+    assert(d && seq==7 && !sequenceActive);sequenceActive=1;savedHp=playerHp;savedRand=rng.nextRand;return 1;
+}
+int EspNativeGameplayMonsterCombat_cancelSplashSequence(DoomRPG_t* d) {
+    assert(d);if(sequenceActive){playerHp=savedHp;rng.nextRand=savedRand;hitsCount=0;sequenceActive=0;}return 1;
+}
+int EspNativeGameplayMonsterCombat_commitSplashSequence(uint32_t seq) {
+    assert(seq==7 && sequenceActive);sequenceActive=0;++commits;return 1;
+}
+int EspNativeGameplayMonsterCombat_commitTerminalSplashSequence(uint32_t seq) {
+    return EspNativeGameplayMonsterCombat_commitSplashSequence(seq);
+}
+int EspNativeGameplayMonsterCombat_publishSplashAudioAfterCommit(uint32_t seq) {
+    assert(seq==7 && !sequenceActive);return 1;
+}
+int EspNativeGameplayMonsterCombat_finishSplashPresentation(uint32_t seq) {
+    assert(seq==7 && !sequenceActive);return 1;
+}
+int EspNativeGameplayPlayerDeath_armWithReservedRand(DoomRPG_t* d,uint32_t seq,uint16_t tile,uint8_t byte) {
+    assert(d && seq==7 && tile==331 && byte<=rng.nextRand && playerHp==0);
+    if(failDeath)return 0;
+    ++deathArms;return 1;
+}
+int EspNativeSpriteRenderer_armTransientBatch(uint16_t logical,uint8_t phase,
+    const EspNativeSpriteTransient* items,uint8_t count) {
+    assert(logical==180 && phase==arms%3 && items && count==1);
+    ++arms;return (int)(arms-1)!=failArm;
+}
+int EspNativeGameplayFrame_renderTurn(struct Render_s* render,uint8_t angle,EspNativeGameplayFrameStats* out) {
+    assert(render==roots.render && angle==0 && out);++settles;out->finalPresented=1;return 1;
+}
+static int EspNativeGameplayFacingLabel_refresh(const char* reason){assert(reason);return 1;}
+static int Esp32PlatformVideo_present(void){return 1;}
+__ROLLBACK_BARRELS__
+__ENEMY_READY__
+__ENEMY_IMPACT__
 static void init(void) {
+    enemyMode=0; sequenceActive=failDeath=deathArms=commits=settles=0;
+    memset(&actionState,0,sizeof actionState);
     memset(&player,0,sizeof player); memset(kind,0,sizeof kind);
     memset(entityId,0,sizeof entityId); memset(removedBits,0,sizeof removedBits);
     immutable.x=32; immutable.y=32; preflightFixture=0; rootSubtype=1;
@@ -172,7 +229,49 @@ static int runDeath(const EspNativeGameplayDeathBlastPlan *plan, EspNativeGamepl
     origin.alive=0;
     return EspNativeGameplayActionEngine_runDeathBlast((DoomRPG_t*)&player,7,plan,result);
 }
+static void initEnemy(void) {
+    init(); enemyMode=1; preflightFixture=1; immutable.x=672; immutable.y=672;
+    player.viewX=player.destX=736; player.viewY=player.destY=672;
+    kind[330]=3; entityId[330]=50;
+    kind[331]=2;
+}
+static int runEnemy(void) {
+    return EspNativeGameplayActionEngine_enemyBarrelImpact((DoomRPG_t*)&player,7,50);
+}
+static void enemyTransactions(void) {
+    initEnemy();
+    assert(EspNativeGameplayActionEngine_enemyBarrelReady(50));
+    lookupCount=0;
+    assert(runEnemy()==1 && removed(50) && words==1 && damageCalls==1);
+    assert(frames==3 && settles==1 && sounds==1 && rng.nextRand==11 &&
+           playerHp<30 && actionState.feedbackPending==1);
+    initEnemy();kind[329]=1;entityId[329]=70;
+    assert(runEnemy()==1 && removed(50) && commits==1 && hitsCount==1 &&
+           !sequenceActive && strcmp(order,"WMP")==0 && rng.nextRand==15);
+    initEnemy();kind[331]=3;entityId[331]=90;kind[332]=2;
+    assert(runEnemy()==1 && removed(50) && removed(90) && frames==6 && words==2 &&
+           damageCalls==1 && rng.nextRand==12 && settles==1);
+    initEnemy();lethal=1;
+    assert(runEnemy()==1 && removed(50) && playerHp==0 && deathArms==1 &&
+           rng.nextRand==12 && strcmp(order,"WPD")==0);
+    initEnemy();lethal=1;failDeath=1;
+    assert(runEnemy()==0 && !removed(50) && playerHp==30 && !deathArms && rng.nextRand==10);
+    for(int f=0;f<3;++f){
+        initEnemy();failFrame=f;
+        assert(runEnemy()==0 && !removed(50) && playerHp==30 && rng.nextRand==10 && !words);
+    }
+    initEnemy();kind[331]=3;entityId[331]=90;kind[332]=2;failFrame=4;
+    assert(runEnemy()==0 && !removed(50) && !removed(90) && playerHp==30 && rng.nextRand==10);
+    initEnemy();kind[329]=1;entityId[329]=70;failMonster=1;
+    assert(runEnemy()==0 && !removed(50) && !sequenceActive && playerHp==30 && rng.nextRand==10);
+    initEnemy();failGraphics=1;
+    assert(runEnemy()==0 && !removed(50) && !frames && !words);
+    initEnemy();removedBits[50]=1;
+    assert(runEnemy()==0 && removed(50) && !frames && !words);
+    puts("GAMEAI14 P10 enemy barrel transaction PASS: single, splash, chain, lethal, rejected death, render/monster rollback, removed/resource rejection");
+}
 int main(void) {
+    enemyTransactions();
     const uint16_t center=330;
     const uint16_t ordered[]={329,331,298,362,361,363,299,297};
     /* Real preflight for both root types with adjacent barrel, player and
