@@ -90,6 +90,9 @@ typedef struct ThreeGoalPathResult_s {
 static EspNativeGameplayMonsterThreeGoalTurnView threeGoalView;
 /* Per-plan origin-plane witness; no retained world state. */
 static uint16_t originPlaneClear, originPlaneBlocked;
+#if DOOMRPG_PERF_GAME_P1
+static uint8_t navSampleCount;
+#endif
 static EspNativeGameplayMonsterMovementView syntheticMovementView;
 
 static int centeredCoordinate(int32_t value) {
@@ -785,7 +788,8 @@ static int aiGoalPlan(uint16_t attackerSprite,
                       srcY + outPlan->deltaY, &outPlan->destTile)) return -1;
 #if DOOMRPG_PERF_GAME_P1
     /* One compact witness, no additional collision checks or RNG calls. */
-    if (subtype == 4U || subtype == 13U) {
+    if ((subtype == 4U || subtype == 13U) && navSampleCount < 48U) {
+        ++navSampleCount;
         printf("[AI14NAV] phase=continuation sprite=%u sub=%u src=%d,%d target=%d,%d dst=%u mask=%04x score=%d,%d,%d,%d bits=%02x,%02x,%02x,%02x ties=%u byte=%u choice=%u\n",
                (unsigned)attackerSprite, (unsigned)subtype, (int)srcX, (int)srcY,
                (int)destX, (int)destY, (unsigned)outPlan->destTile, (unsigned)mask,
@@ -807,6 +811,9 @@ static int syncOwner(void) {
     if (threeGoalView.active == 0U ||
         threeGoalView.sourceArenaFNV1a != monsters->sourceArenaFNV1a) {
         memset(&threeGoalView, 0, sizeof(threeGoalView));
+#if DOOMRPG_PERF_GAME_P1
+        navSampleCount = 0U;
+#endif
         threeGoalView.sourceArenaFNV1a = monsters->sourceArenaFNV1a;
         threeGoalView.lastSpriteIndex = 0xffffU;
         threeGoalView.lastTile = 0xffffU;
@@ -820,6 +827,9 @@ static int syncOwner(void) {
 
 void EspNativeGameplayMonsterThreeGoalTurn_reset(void) {
     memset(&threeGoalView, 0, sizeof(threeGoalView));
+#if DOOMRPG_PERF_GAME_P1
+    navSampleCount = 0U;
+#endif
     memset(&syntheticMovementView, 0, sizeof(syntheticMovementView));
 }
 

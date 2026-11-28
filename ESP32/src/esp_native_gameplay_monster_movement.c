@@ -116,6 +116,9 @@ typedef struct PathResult_s {
 static EspNativeGameplayMonsterMovementView movementView;
 /* Per-plan origin-plane witness; no retained world state. */
 static uint16_t originPlaneClear, originPlaneBlocked;
+#if DOOMRPG_PERF_GAME_P1
+static uint8_t navSampleCount;
+#endif
 static uint32_t observedNoAttackTurns;
 
 static int centeredCoordinate(int32_t value) {
@@ -975,7 +978,8 @@ static int aiGoalPlan(uint16_t attackerSprite,
                       srcY + outPlan->deltaY, &outPlan->destTile)) return -1;
 #if DOOMRPG_PERF_GAME_P1
     /* One compact witness, no additional collision checks or RNG calls. */
-    if (subtype == 4U || subtype == 13U) {
+    if ((subtype == 4U || subtype == 13U) && navSampleCount < 48U) {
+        ++navSampleCount;
         printf("[AI14NAV] phase=first sprite=%u sub=%u src=%d,%d target=%d,%d dst=%u mask=%04x score=%d,%d,%d,%d bits=%02x,%02x,%02x,%02x ties=%u byte=%u choice=%u\n",
                (unsigned)attackerSprite, (unsigned)subtype, (int)srcX, (int)srcY,
                (int)destX, (int)destY, (unsigned)outPlan->destTile, (unsigned)mask,
@@ -1145,6 +1149,9 @@ static int syncOwner(void) {
     if (movementView.active == 0U ||
         movementView.sourceArenaFNV1a != turn->sourceArenaFNV1a) {
         memset(&movementView, 0, sizeof(movementView));
+#if DOOMRPG_PERF_GAME_P1
+        navSampleCount = 0U;
+#endif
         movementView.sourceArenaFNV1a = turn->sourceArenaFNV1a;
         movementView.observedMovementDeferredTurns = turn->movementDeferredTurns;
         observedNoAttackTurns = turn->noAttackTurns;
@@ -1164,6 +1171,9 @@ static int syncOwner(void) {
 
 void EspNativeGameplayMonsterMovement_reset(void) {
     memset(&movementView, 0, sizeof(movementView));
+#if DOOMRPG_PERF_GAME_P1
+    navSampleCount = 0U;
+#endif
     observedNoAttackTurns = 0U;
     movementView.lastSpriteIndex = MOVE_NO_SPRITE;
     movementView.lastSourceTile = MOVE_NO_SPRITE;

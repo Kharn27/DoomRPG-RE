@@ -105,6 +105,12 @@ static RefDef legacyDefs[8];
 static RefDef wallDef={0,9}, playerDef={0,8}; /* Game_initMapEntities order */
 static int recordPath, recordedCalls;
 static unsigned recordedBits;
+/* Conditional replay: feed the original goal exactly the observed trace
+ * decisions. This proves scoring/selection only, never geometry parity. */
+static int replayMode, replayDirection, replayStep;
+static int replayScore[4];
+static unsigned replayBits[4];
+
 static int legacyCalls, legacyLinks;
 static void setupLegacy(Entity_t* e) {
     memset(&legacyGame,0,sizeof(legacyGame));
@@ -129,6 +135,15 @@ static void setupLegacy(Entity_t* e) {
     for(unsigned i=0;i<1024;i++) if(walls[i]) legacyGame.entityDb[i]=&legacyGame.entities[0];
 }
 static boolean RefSight(Entity_t* e,int sx,int sy,int dx,int dy,int mask) {
+    if(replayMode) {
+        if((sx&63)==32 && (sy&63)==32) {
+            replayDirection=dx>sx?0:dx<sx?1:dy>sy?2:3;
+            replayStep=0;
+            return replayScore[replayDirection]>=0;
+        }
+        assert(replayDirection>=0 && replayDirection<4 && replayStep<8);
+        return (replayBits[replayDirection]>>(replayStep++))&1U;
+    }
     boolean clear=RefActualSight(e,sx,sy,dx,dy,mask);
     if(recordPath) {
         assert(recordedCalls<8);
@@ -142,7 +157,56 @@ static void RefUnlink(void* g,Entity_t* e) { (void)g;(void)e; ++legacyLinks; }
 static void RefLink(void* g,Entity_t* e,int x,int y) { (void)g;assert(e->monster->x/64==x&&e->monster->y/64==y);++legacyLinks; }
 #include "legacy_goal.inc"
 
-int main(void) {
+static int verifyReplay(int sx,int sy,int tx,int ty,unsigned sub,unsigned dst,
+                        unsigned mask,const int score[4],const uint8_t bits[4],
+                        unsigned ties,unsigned byteValue,unsigned choice) {
+    RefMonster m={0}; RefDef d={(int)sub,1}; RefRoot root={0};
+    Entity_t e={.def=&d,.monster=&m,.doomRpg=&root};
+    const int dx[4]={1,-1,0,0},dy[4]={0,0,1,-1};
+    if(sub>13 || byteValue>255 || ties<1 || ties>4 || choice>3 ||
+       sx<32 || sx>2016 || sy<32 || sy>2016 ||
+       (sx&63)!=32 || (sy&63)!=32 || mask!=movementMaskForSubtype((uint8_t)sub))
+        return 0;
+    root.random.randTable[0]=(byte)byteValue;
+    for(int k=0;k<4;k++) { replayScore[k]=score[k]; replayBits[k]=bits[k]; }
+    replayMode=1;
+    legacyCalls=legacyLinks=0;
+    int want=RefGoal(&e,sx,sy,tx,ty);
+    int ok=want && legacyCalls==1 && legacyLinks==2 &&
+        e.visitOrderCount==(int)ties &&
+        e.visitOrder[(byteValue&3U)%ties]==(int)choice &&
+        (unsigned)((m.y>>6)*32+(m.x>>6))==dst;
+    for(int k=0;k<4;k++) {
+        if(score[k]<0) continue;
+        replayDirection=k; replayStep=0;
+        int actual=RefPath(&e,(sx>>6)+dx[k],(sy>>6)+dy[k],tx>>6,ty>>6,k,(int)mask);
+        if(actual!=score[k]) ok=0;
+        if((replayBits[k]>>replayStep)!=0U) ok=0;
+    }
+    replayMode=0;
+    return ok;
+}
+static int replayInput(void) {
+    unsigned rows=0, sprite, sub, dst, mask, b[4], ties, byteValue, choice;
+    int sx,sy,tx,ty,score[4],n;
+    while((n=scanf("%u %u %d %d %d %d %u %x %d %d %d %d %x %x %x %x %u %u %u",
+        &sprite,&sub,&sx,&sy,&tx,&ty,&dst,&mask,&score[0],&score[1],&score[2],&score[3],
+        &b[0],&b[1],&b[2],&b[3],&ties,&byteValue,&choice))!=EOF) {
+        if(n!=19) { fprintf(stderr,"malformed NAV row %u\n",rows+1);return 1; }
+        uint8_t bits[4];
+        for(int k=0;k<4;k++) { if(b[k]>255U)return 1; bits[k]=(uint8_t)b[k]; }
+        if(!verifyReplay(sx,sy,tx,ty,sub,dst,mask,score,bits,ties,byteValue,choice)) {
+            fprintf(stderr,"NAV replay mismatch row=%u sprite=%u source=%d,%d\n",rows+1,sprite,sx,sy);
+            return 1;
+        }
+        ++rows;
+    }
+    printf("PASS conditional NAV replay continuation=%d rows=%u (not geometry proof)\n",CONTINUATION,rows);
+    return rows?0:1;
+}
+int main(int argc,char** argv) {
+    if(argc==2 && strcmp(argv[1],"--replay")==0)return replayInput();
+    assert(argc==1);
     resetFixture();
     uint16_t mask=0xff87U;
     assert(trace(10,10,11,10,mask,0)==1);
@@ -253,6 +317,9 @@ int main(void) {
                 return 1;
             }
         }
+        if(want) assert(verifyReplay(center(10),center(10),center(px),center(py),sub,
+            plan.destTile,plan.traceMask,plan.navScore,plan.navTraceBits,
+            plan.visitCount,plan.tieRand,plan.choice));
         ++navCases;
     }
     assert(navCases==160);

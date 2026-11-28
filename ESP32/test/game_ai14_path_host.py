@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Execute real native planner bodies and original legacy goal/path on discrete fixtures."""
 from pathlib import Path
+import argparse
+import re
 import subprocess
 import tempfile
 
@@ -29,6 +31,24 @@ for old,new in (("Entity_calcPath","RefPath"),("Entity_aiGoal_MOVE","RefGoal"),
     source=source.replace(old,new)
 # Legacy n5 is intentionally unused; suppress this specific warning in reference only.
 source="#pragma GCC diagnostic push\n#pragma GCC diagnostic ignored \"-Wunused-parameter\"\n"+source+"\n#pragma GCC diagnostic pop\n"
+parser=argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--serial",type=Path,help="Replay AI14NAV witnesses using original scoring; not geometry proof")
+args=parser.parse_args()
+rows={0:[],1:[]}
+if args.serial:
+    pattern=re.compile(
+        r"\[AI14NAV\] phase=(first|continuation) sprite=(\d+) sub=(\d+) "
+        r"src=(-?\d+),(-?\d+) target=(-?\d+),(-?\d+) dst=(\d+) mask=([0-9a-fA-F]+) "
+        r"score=(-?\d+),(-?\d+),(-?\d+),(-?\d+) "
+        r"bits=([0-9a-fA-F]+),([0-9a-fA-F]+),([0-9a-fA-F]+),([0-9a-fA-F]+) "
+        r"ties=(\d+) byte=(\d+) choice=(\d+)")
+    for line in args.serial.read_text(errors="replace").splitlines():
+        if "[AI14NAV]" not in line: continue
+        match=pattern.search(line)
+        if not match: raise SystemExit(f"Malformed navigation witness: {line}")
+        phase,*values=match.groups()
+        rows[int(phase=="continuation")].append(" ".join(values))
+    if not any(rows.values()): raise SystemExit("No AI14NAV witnesses")
 with tempfile.TemporaryDirectory(prefix="gameai14-path-") as tmp:
     p=Path(tmp)
     (p/"legacy_goal.inc").write_text(source)
@@ -43,3 +63,6 @@ with tempfile.TemporaryDirectory(prefix="gameai14-path-") as tmp:
                         "ESP32/test/game_ai14_path_host.c","-o",str(exe)],
                        cwd=ROOT,check=True)
         subprocess.run([str(exe)],check=True)
+        if rows[continuation]:
+            subprocess.run([str(exe),"--replay"],input="\n".join(rows[continuation])+"\n",
+                           text=True,check=True)
