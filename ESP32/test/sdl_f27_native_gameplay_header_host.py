@@ -73,6 +73,8 @@ def original_body_parity() -> None:
     marker = GUARD.encode("ascii")
     for filename, blob in BEFORE.items():
         current = (SOURCES / filename).read_bytes()
+        from game_ai14_enemy_barrel_history import restore_pre_enemy_barrel
+        current = restore_pre_enemy_barrel(filename, current)
         from game_ai14_a2_blast_shake_history import restore_pre_ai14_blast_shake
         current = restore_pre_ai14_blast_shake(filename, current)
         from perf_game_p2a_history import restore_pre_perf_game_p2a

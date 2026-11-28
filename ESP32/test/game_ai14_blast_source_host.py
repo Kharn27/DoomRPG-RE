@@ -55,7 +55,10 @@ host = (host.replace("__DEFINES__", "\n".join(defines))
             .replace("__PREFLIGHT__", extract("static int barrelChainPreflight("))
             .replace("__LEAF__", leaf).replace("__WRAPPER__", wrapper)
             .replace("__PREPARE_DEATH__", extract("int EspNativeGameplayActionEngine_prepareDeathBlast("))
-            .replace("__RUN_DEATH__", extract("int EspNativeGameplayActionEngine_runDeathBlast(")))
+            .replace("__RUN_DEATH__", extract("int EspNativeGameplayActionEngine_runDeathBlast("))
+            .replace("__ROLLBACK_BARRELS__", extract("static int barrelRollbackRemoved("))
+            .replace("__ENEMY_READY__", extract("int EspNativeGameplayActionEngine_enemyBarrelReady("))
+            .replace("__ENEMY_IMPACT__", extract("int EspNativeGameplayActionEngine_enemyBarrelImpact(")))
 with tempfile.TemporaryDirectory(prefix="doom-ai14-blast-source-") as d:
     src = Path(d) / "native.c"
     exe = Path(d) / "native"

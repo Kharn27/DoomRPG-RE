@@ -16,6 +16,7 @@
 #include "esp_map_sprite_topology.h"
 #include "esp_map_state.h"
 #include "esp_native_gameplay_dialog.h"
+#include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_level_up.h"
 #include "esp_native_gameplay_monster_activation.h"
 #include "esp_native_gameplay_monster_combat.h"
@@ -124,7 +125,19 @@ typedef struct MonsterTurnCandidate_s {
     uint16_t tileIndex;
     uint8_t weaponId;
     uint8_t loops;
+    uint8_t barrelTarget;
+    uint16_t targetSprite;
+    uint16_t targetTile;
 } MonsterTurnCandidate;
+
+/* Read-only identity of the first sprite blocker found by the existing
+ * direct-player attack trace. Not an attack transaction or a world handle. */
+typedef struct MonsterTurnTraceTarget_s {
+    uint16_t sprite;
+    uint16_t tile;
+    uint8_t type;
+    uint8_t subtype;
+} MonsterTurnTraceTarget;
 
 typedef struct MonsterTurnOwner_s {
     EspNativeGameplayMonsterTurnView view;
@@ -138,6 +151,9 @@ typedef struct MonsterTurnOwner_s {
     uint8_t combatBaseline;
     uint8_t passPending;
     uint8_t attackPending;
+    uint32_t barrelProbe;
+    uint16_t barrelSprite;
+    uint16_t barrelTile;
 } MonsterTurnOwner;
 
 static MonsterTurnOwner turnOwner;
@@ -331,10 +347,13 @@ static int blockingSpriteOnTile(uint16_t tile,
                                 int32_t sourceY,
                                 int32_t destX,
                                 int32_t destY,
-                                uint16_t attackerSprite) {
+                                uint16_t attackerSprite,
+                                MonsterTurnTraceTarget* outTarget) {
     const EspMapSpriteTopologyView* topology = EspMapSpriteTopology_view();
     uint16_t bestOrder = 0U;
     uint8_t bestType = 0xffU;
+    uint8_t bestSubtype = 0U;
+    uint16_t bestSprite = TURN_NO_SPRITE;
     int found = 0;
     uint32_t i;
 
@@ -349,7 +368,6 @@ static int blockingSpriteOnTile(uint16_t tile,
         if (i == attackerSprite) continue;
         if (!EspMapSpriteTopology_getEntity(i, &type, &subtype,
                                             &linkState, &linkOrder)) return -1;
-        (void)subtype;
         if ((linkState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) == 0U ||
             (linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK) != tile ||
             !typeInTraceMask(type)) {
@@ -364,6 +382,8 @@ static int blockingSpriteOnTile(uint16_t tile,
             found = 1;
             bestOrder = linkOrder;
             bestType = type;
+            bestSubtype = subtype;
+            bestSprite = (uint16_t)i;
         }
     }
 
@@ -371,20 +391,29 @@ static int blockingSpriteOnTile(uint16_t tile,
     /* Legacy Entity_aiThink targets a traced destructible instead of the player.
      * This first retaliation family owns only direct player attacks, so any
      * trace-mask blocker (including type12) fails closed here. */
-    (void)bestType;
+    if (outTarget != NULL) {
+        outTarget->sprite = bestSprite;
+        outTarget->tile = tile;
+        outTarget->type = bestType;
+        outTarget->subtype = bestSubtype;
+    }
     return 1;
 }
 
-static int cardinalLosClear(int32_t sourceX,
-                            int32_t sourceY,
-                            int32_t destX,
-                            int32_t destY,
-                            uint16_t attackerSprite) {
+static int cardinalLosTarget(int32_t sourceX,
+                             int32_t sourceY,
+                             int32_t destX,
+                             int32_t destY,
+                             uint16_t attackerSprite,
+                             MonsterTurnTraceTarget* outTarget) {
     int32_t stepX = 0;
     int32_t stepY = 0;
     uint32_t distance;
     uint32_t i;
 
+    if (outTarget != NULL) {
+        *outTarget = (MonsterTurnTraceTarget){TURN_NO_SPRITE, UINT16_MAX, 0xffU, 0U};
+    }
     if (!centeredCoordinate(sourceX) || !centeredCoordinate(sourceY) ||
         !centeredCoordinate(destX) || !centeredCoordinate(destY)) return 0;
     if (sourceX == destX && sourceY != destY) {
@@ -418,10 +447,16 @@ static int cardinalLosClear(int32_t sourceX,
         if (lineBlock != 0) return 0;
         spriteBlock = blockingSpriteOnTile(tile,
                                            x - stepX, y - stepY, x, y,
-                                           attackerSprite);
+                                           attackerSprite, outTarget);
         if (spriteBlock != 0) return 0;
     }
     return 1;
+}
+
+static int cardinalLosClear(int32_t sourceX, int32_t sourceY,
+                            int32_t destX, int32_t destY,
+                            uint16_t attackerSprite) {
+    return cardinalLosTarget(sourceX, sourceY, destX, destY, attackerSprite, NULL);
 }
 
 static int projectileMissConsumesRng(uint8_t weaponId) {
@@ -672,9 +707,23 @@ static int findCandidateForSprite(
         }
         return 1;
     }
-    if (!cardinalLosClear(monsterX, monsterY,
-                          playerView->destX, playerView->destY,
-                          monster->spriteIndex)) {
+    MonsterTurnTraceTarget target;
+    if (!cardinalLosTarget(monsterX, monsterY,
+                           playerView->destX, playerView->destY,
+                           monster->spriteIndex, &target)) {
+        if (monster->subtype == 3U && weaponId == 15U &&
+            target.type == TURN_TYPE_DESTRUCTIBLE && target.subtype == 1U &&
+            EspNativeGameplayActionEngine_enemyBarrelReady(target.sprite)) {
+            outCandidate->monster=monster;
+            outCandidate->worldDistance=worldDistance;
+            outCandidate->tileIndex=tile;
+            outCandidate->weaponId=weaponId;
+            outCandidate->loops=monsterShots[monster->subtype];
+            outCandidate->barrelTarget=1U;
+            outCandidate->targetSprite=target.sprite;
+            outCandidate->targetTile=target.tile;
+            return 1;
+        }
         if (monster->subtype == 3U) {
             DRPG_LOGT("[IMPAI] TARGET sprite=%u tile=%u distance2=%u weapon=%u decision=move reason=trace-blocked mutation=no rngConsumed=0\n",
                    (unsigned int)monster->spriteIndex,
@@ -789,7 +838,11 @@ EspNativeGameplayMonsterTurn_probeActiveMember(
     }
 
     memset(&roll, 0, sizeof(roll));
-    if (!rollMonsterAttack(doomRpg, candidate.monster, player,
+    if (candidate.barrelTarget != 0U) {
+        /* Legacy Combat_monsterSeq non-player target: guaranteed hit,
+         * damage=1, no combat RNG. Do not apply this damage to the player. */
+        roll.loops=candidate.loops;
+    } else if (!rollMonsterAttack(doomRpg, candidate.monster, player,
                            candidate.weaponId, candidate.loops, &roll)) {
         (*EspNativeProcessRng_live()) = randomBefore;
         (void)EspNativeRngReplayGuard_endAttackProbe(
@@ -825,6 +878,15 @@ EspNativeGameplayMonsterTurn_probeActiveMember(
 
     ++turnOwner.view.attackProbes;
     turnOwner.view.lastAttackerSpriteIndex = candidate.monster->spriteIndex;
+    if (candidate.barrelTarget != 0U) {
+        turnOwner.barrelProbe=turnOwner.view.attackProbes;
+        turnOwner.barrelSprite=candidate.targetSprite;
+        turnOwner.barrelTile=candidate.targetTile;
+        printf("[AI14TARGET] ARM probe=%u attacker=%u targetSprite=%u targetTile=%u weapon=15 aiRand=%u combatRng=0 mutation=no\n",
+               (unsigned)turnOwner.barrelProbe,(unsigned)candidate.monster->spriteIndex,
+               (unsigned)candidate.targetSprite,(unsigned)candidate.targetTile,
+               (unsigned)aiDecision);
+    }
     printf("[MONSTERTURN] MEMBER-ATTACK-PROBE reason=%s sprite=%u subtype=%u mType=%u tile=%u weapon=%u alt=%u loops=%u hitLoops=%u firstRandHit=%u firstCalcHit=%d firstCritLimit=%d firstRandDamage=%u totalDamage=%d armorDamage=%d crit=%u aiRand=%s%u rngCalls=%u combatRngCalls=%u missProjectileRng=%u playerHP=%u->%u armor=%u->%u lethal=%s playerFNV=%08x->%08x rng=%08x->%08x rngRollback=yes playerExact=yes ordered=yes producerProbe=%u gameplayMutation=no\n",
            reasonName(reason),
            (unsigned int)candidate.monster->spriteIndex,
@@ -1576,6 +1638,16 @@ int EspNativeGameplayMonsterTurn_requestBlockedAutomapMove(
     turnOwner.passPending = TURN_PENDING_AUTOMAP_BLOCKED_MOVE;
     printf("[MONSTERTURN] AUTOMAP-BLOCKED-REQUEST seq=%u legacyAdvance=yes viewMutation=no ownerBytes=unchanged\n",
            (unsigned int)inputSequence);
+    return 1;
+}
+
+int EspNativeGameplayMonsterTurn_barrelTarget(uint32_t probe,
+                                                uint16_t* sprite, uint16_t* tile) {
+    if (probe==0U || probe!=turnOwner.barrelProbe ||
+        probe!=turnOwner.view.attackProbes || sprite==NULL || tile==NULL)
+        return 0;
+    *sprite=turnOwner.barrelSprite;
+    *tile=turnOwner.barrelTile;
     return 1;
 }
 
