@@ -29,7 +29,7 @@ assert "resetPhysicalState();" in body("int EspAssetPack_open(")
 assert "resetPhysicalState();" in body("int EspAssetPack_mapFlashPrepare(")
 assert "resetPhysicalState();" in body("int EspAssetPack_residentEnd(")
 layout = src[src.index("constexpr uint32_t kResidentRangeCapacityBytes"):src.index("constexpr uint32_t kMapFlashMagic")]
-layout += src[src.index("struct ResidentRangeRecord {"):src.index("struct MapFlashExcludedSpan {")]
+layout += src[src.index("struct ResidentRangeRecord {"):src.index("struct MapFlashHeader {")]
 functions = "\n".join(body(s) for s in (
     "void clearResidentCache()", "bool validateEntry(",
     "bool isLargeResidentRange(", "uint32_t residentLargeRangeCount()",
