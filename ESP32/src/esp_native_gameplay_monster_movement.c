@@ -12,6 +12,7 @@
 #include "esp_perf_trace_cache.h"
 #include "esp_perf_spatial_sprite.h"
 #include "esp_perf_spatial_line.h"
+#include "esp_ai14_nav_geometry_probe.h"
 #endif
 #if DOOMRPG_PERF_GAME_P1
 #include <esp_timer.h>
@@ -1400,6 +1401,8 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
     /* Print outside navigation phase timing; bounded successful-plan witness. */
     if (planStatus == 1 && (candidate.monster->subtype == 4U || candidate.monster->subtype == 13U) && navSampleCount < 48U) {
         ++navSampleCount;
+        if (navSampleCount <= 4U) EspAi14NavGeometry_capture("first", navSampleCount, candidate.monster->spriteIndex,
+            candidate.position->worldX, candidate.position->worldY, lineEntityTile);
         printf("[AI14NAV] phase=first sprite=%u sub=%u src=%d,%d target=%d,%d dst=%u mask=%04x score=%d,%d,%d,%d bits=%02x,%02x,%02x,%02x ties=%u byte=%u choice=%u goal=%u player=%d,%d angle=%d rngBefore=%d rngAfter=%d calls=%u sample=%u\n",
                (unsigned)candidate.monster->spriteIndex, (unsigned)candidate.monster->subtype, (int)candidate.position->worldX, (int)candidate.position->worldY,
                (int)targetX, (int)targetY, (unsigned)plan.destTile, (unsigned)plan.traceMask,

@@ -13,6 +13,7 @@
 #include "esp_perf_trace_cache.h"
 #include "esp_perf_spatial_sprite.h"
 #include "esp_perf_spatial_line.h"
+#include "esp_ai14_nav_geometry_probe.h"
 #endif
 #if DOOMRPG_PERF_GAME_P1
 #include <esp_timer.h>
@@ -929,6 +930,8 @@ static int probeContinuationGoal(DoomRPG_t* doomRpg,
     /* Print outside navigation phase timing; bounded successful-plan witness. */
     if (planStatus == 1 && (monster->subtype == 4U || monster->subtype == 13U) && navSampleCount < 48U) {
         ++navSampleCount;
+        if (navSampleCount <= 4U) EspAi14NavGeometry_capture("continuation", navSampleCount, spriteIndex,
+            position->worldX, position->worldY, lineEntityTile);
         printf("[AI14NAV] phase=continuation sprite=%u sub=%u src=%d,%d target=%d,%d dst=%u mask=%04x score=%d,%d,%d,%d bits=%02x,%02x,%02x,%02x ties=%u byte=%u choice=%u goal=%u player=%d,%d angle=%d rngBefore=%d rngAfter=%d calls=%u sample=%u\n",
                (unsigned)spriteIndex, (unsigned)monster->subtype, (int)position->worldX, (int)position->worldY,
                (int)player->destX, (int)player->destY, (unsigned)plan.destTile, (unsigned)plan.traceMask,
