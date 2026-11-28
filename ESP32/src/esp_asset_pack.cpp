@@ -1191,6 +1191,71 @@ void logMapFlashStrictMiss(const EspAssetPackEntry* entry,
     }
 }
 
+// P5a: the first default SD index has already been validated by open().
+ // This read-only attempt never stages or writes; rejection leaves SD startup
+ // ownership intact. A later gameplay prepare still enforces its own boundary.
+bool mapFlashTryBootVerified(const MapFlashPlan& plan)
+{
+    const int64_t start = esp_timer_get_time();
+    const esp_partition_t* partition = esp_partition_find_first(
+        ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, "spiffs");
+    MapFlashHeader cached = {};
+    const char* reason = "header-invalid";
+    uint8_t* scratch = nullptr;
+    uint32_t indexFNV = 0U, payloadFNV = 0U;
+    bool accepted = false;
+    clearMapFlashRuntime(true);
+    if (partition != nullptr &&
+        esp_partition_read(partition, 0U, &cached, sizeof(cached)) == ESP_OK &&
+        mapFlashHeaderLooksValid(cached, partition)) {
+        if (!mapFlashHeaderMatchesPlan(cached, plan, &reason)) {
+            // reason is supplied by the exact source/layout validator.
+        } else if (!EspMapCatalog_isValidId(cached.currentMapId) ||
+                   cached.currentMapHash != EspAssetPack_nameHash(
+                       EspMapCatalog_nameForId(cached.currentMapId))) {
+            reason = "map-hint";
+        } else if ((scratch = (uint8_t*)malloc(kMapFlashCopyBufferBytes)) == nullptr) {
+            reason = "scratch";
+        } else {
+            mapFlash.partition = partition;
+            if (!fnvFlashRange(cached.indexFlashOffset, cached.indexBytes, scratch, &indexFNV) ||
+                indexFNV != cached.indexFNV1a || indexFNV != plan.indexFNV1a)
+                reason = "index-fnv";
+            else if (!fnvFlashRange(cached.payloadFlashOffset, cached.stagedBytes, scratch, &payloadFNV) ||
+                     payloadFNV != cached.payloadFNV1a)
+                reason = "payload-fnv";
+            else if (!mapFlashEnsureEntryCrcs(plan, payloadFNV, scratch))
+                reason = "entry-crc";
+            else
+                accepted = true;
+        }
+    }
+    free(scratch);
+    if (!accepted) {
+        clearMapFlashRuntime(true);
+        printf("[MAPFLASHV5] BOOT-MISS reason=%s backing=sd-startup eraseBytes=0 writeBytes=0\n", reason);
+        return false;
+    }
+    mapFlash.header = cached;
+    mapFlash.active = 1U;
+    mapFlash.handoffEligible = 0U; // not a target-map transition proof
+    mapFlash.stats.partitionBytes = partition->size;
+    mapFlash.stats.sourcePackBytes = plan.sourcePackBytes;
+    mapFlash.stats.sourceDataBytes = plan.sourceDataBytes;
+    mapFlash.stats.indexBytes = plan.indexBytes;
+    mapFlash.stats.metadataBytes = plan.payloadFlashOffset;
+    mapFlash.stats.stagedBytes = plan.stagedBytes;
+    mapFlash.stats.entryCount = (uint16_t)plan.entryCount;
+    mapFlash.stats.currentMapId = cached.currentMapId;
+    mapFlash.stats.active = 1U;
+    mapFlash.stats.verified = 1U;
+    mapFlash.stats.reused = 1U;
+    printf("[MAPFLASHV5] BOOT-HIT entries=%u indexFNV=%08x payloadFNV=%08x us=%u backing=flash eraseBytes=0 writeBytes=0 handoff=0\n",
+           (unsigned int)plan.entryCount, (unsigned int)indexFNV,
+           (unsigned int)payloadFNV, (unsigned int)(esp_timer_get_time()-start));
+    return true;
+}
+
 } // namespace
 
 int EspAssetPack_open(const char* path)
@@ -1250,6 +1315,10 @@ int EspAssetPack_open(const char* path)
         return 1;
     }
 
+    static bool bootAttempted = false;
+    const bool bootCandidate = !bootAttempted && !residentEnabled &&
+                               !sourceProbeReady && isDefaultPath(path);
+    uint32_t bootIndexFNV = 2166136261U;
     suspendFontSdBeforePackOpen();
     packFile = SD.open(path, FILE_READ);
     if (!packFile) {
@@ -1301,6 +1370,7 @@ int EspAssetPack_open(const char* path)
             resetPhysicalState();
             return 0;
         }
+        if (bootCandidate) bootIndexFNV = fnv1aUpdate(bootIndexFNV, raw, sizeof(raw));
         decodeEntry(raw, &entry);
 
         if (!validateEntry(entry) ||
@@ -1317,10 +1387,23 @@ int EspAssetPack_open(const char* path)
     physicalIsDefault = isDefaultPath(path);
     physicalUsesMapFlash = false;
     openReady = true;
-    static bool buildWitnessPrinted = false;
-    if (physicalIsDefault && !buildWitnessPrinted) {
-        buildWitnessPrinted = true;
-        printf("[MAPFLASH-BUILD] milestone=P4b features=handoff+bsp-flash+entry-crc format=DMF2-v2\n");
+    if (bootCandidate) {
+        bootAttempted = true;
+        printf("[MAPFLASH-BUILD] milestone=P5a features=handoff+bsp-flash+entry-crc+boot-hit format=DMF2-v2\n");
+        MapFlashPlan plan = {};
+        plan.sourcePackBytes = packSize;
+        plan.sourceIndexOffset = indexOffset;
+        plan.sourceDataOffset = dataOffset;
+        plan.sourceDataBytes = packSize - dataOffset;
+        plan.entryCount = entryCount;
+        plan.indexBytes = entryCount * (uint32_t)kEntryBytes;
+        plan.indexFNV1a = bootIndexFNV;
+        plan.payloadFlashOffset = alignSector(kMapFlashIndexOffset + plan.indexBytes);
+        plan.stagedBytes = plan.sourceDataBytes;
+        if (mapFlashTryBootVerified(plan)) {
+            packFile.close();
+            physicalUsesMapFlash = true;
+        }
     }
     if (residentEnabled) {
         ++residentStats.validationPasses;

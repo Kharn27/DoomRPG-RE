@@ -16,6 +16,10 @@ def body(sig):
             if depth == 0: return src[start:i+1]
     raise AssertionError(sig)
 
+open_body = body("int EspAssetPack_open(")
+assert open_body.index("if (!validateEntry(entry)") < open_body.index("mapFlashTryBootVerified(plan)") < open_body.index("physicalUsesMapFlash = true;", open_body.index("mapFlashTryBootVerified(plan)"))
+assert "EspAssetPack_mapFlashStage(" not in body("bool mapFlashTryBootVerified(")
+
 constants = src[src.index("constexpr uint32_t kMapFlashMagic"):src.index("constexpr uint8_t kMapFlashMaxMissLogs")]
 layout = src[src.index("struct MapFlashHeader {"):src.index("File packFile;")]
 harness = r"""
@@ -89,7 +93,7 @@ static void printMapFlashV2Audit(const MapFlashPlan&,const esp_partition_t*){}
     "uint32_t mapFlashCrc32Update(", "template <typename Read>\nbool mapFlashValidateEntryCrcs("
 )) + "\n" + src[src.index("struct MapFlashCrcProof {"):src.index("bool mapFlashTranslate(")] + r"""
 int EspAssetPack_findEntry(const char*,EspAssetPackEntry* e){decodeEntry(sd+24,e);return 1;}
-""" + body("int EspAssetPack_mapFlashStage(") + "\n" + body("int EspAssetPack_mapFlashPrepare(") + r"""
+""" + body("bool mapFlashTryBootVerified(") + "\n" + body("int EspAssetPack_mapFlashStage(") + "\n" + body("int EspAssetPack_mapFlashPrepare(") + r"""
 static void put(uint32_t off,uint32_t x){for(unsigned i=0;i<4;++i)sd[off+i]=(uint8_t)(x>>(8*i));}
 static void makeSource(){
     memset(sd,0,sizeof(sd));
@@ -118,6 +122,13 @@ int main(){
     assert(total>=8 && reads>0);
     memcpy(baseline,flash,sizeof(flash));
     reboot();assert(EspAssetPack_mapFlashPrepare(1));exact();assert(mutations==0);
+    // P5a first-open read-only proof: never writes or grants target handoff.
+    reboot();assert(mapFlashTryBootVerified(source));exact();assert(!mapFlash.handoffEligible && mutations==0);
+    reboot();source.indexFNV1a^=1;assert(!mapFlashTryBootVerified(source));assert(!mapFlash.active && mutations==0);source.indexFNV1a^=1;
+    reboot();flash[8192]^=1;assert(!mapFlashTryBootVerified(source));assert(!mapFlash.active && mutations==0);flash[8192]^=1;
+    reboot();readFailAt=1;assert(!mapFlashTryBootVerified(source));assert(!mapFlash.active && mutations==0);
+    reboot();memset(flash,0xff,sizeof(flash));assert(!mapFlashTryBootVerified(source));assert(!mapFlash.active && mutations==0);
+    memcpy(flash,baseline,sizeof(flash));
     // Bad authoritative source must not erase a known good committed image.
     reboot();sd[100]^=1;assert(!EspAssetPack_mapFlashStage(1));
     assert(mutations==0 && !mapFlash.active && !openReady && !memcmp(flash,baseline,sizeof(flash)));
