@@ -12,6 +12,9 @@
 #include "doomrpg_log.h"
 #include "esp_native_resident_gameplay.h"
 #include "esp_turn_lamp.h"
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+#include "esp_redraw_audit.h"
+#endif
 
 namespace {
 
@@ -30,6 +33,9 @@ EspTurnLampState lampState = {};
 bool lampWorldFrame = false;
 
 void turnLampWrite(bool on) {
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    EspRedrawAudit_event(ESP_REDRAW_LAMP);
+#endif
     if (platformDisplay == nullptr) return;
     const int width = kLampSize * DOOMRPG_INTEGER_SCALE;
     uint16_t row[kLampSize * DOOMRPG_INTEGER_SCALE];
@@ -213,6 +219,9 @@ void drawLine(int x0, int y0, int x1, int y1, uint16_t color) {
 
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
 void drawDebugOverlay() {
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    EspRedrawAudit_event(ESP_REDRAW_DEBUG);
+#endif
     if (platformDisplay == nullptr) {
         return;
     }
@@ -257,6 +266,9 @@ void drawDebugOverlay() {
 }  // namespace
 
 bool PlatformVideo_begin(TFT_eSPI* display) {
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    EspRedrawAudit_event(ESP_REDRAW_DISPLAY);
+#endif
     platformDisplay = display;
     if (platformDisplay == nullptr) {
         Serial.println("[VIDEO] No TFT attached");
@@ -315,6 +327,9 @@ extern "C" uint8_t Esp32Orientation_get(void) {
 }
 
 extern "C" int Esp32Orientation_set(uint8_t orientation) {
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    EspRedrawAudit_event(ESP_REDRAW_DISPLAY);
+#endif
     if (!Esp32Orientation_valid(orientation) || !Esp32Orientation_isReady()) {
         Serial.printf("[ORIENTATION] REJECT requested=%u current=%u ready=%d\n",
                       (unsigned)orientation, (unsigned)currentOrientation,
@@ -373,6 +388,9 @@ size_t PlatformVideo_framebufferSizeBytes() {
 }
 
 void PlatformVideo_clear(uint16_t color) {
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    EspRedrawAudit_event(ESP_REDRAW_CLEAR);
+#endif
     if (framebuffer == nullptr) {
         return;
     }
@@ -386,6 +404,9 @@ void PlatformVideo_clear(uint16_t color) {
  * No SD/PAK access, heap allocation, framebuffer copy or hidden full redraw. */
 bool PlatformVideo_presentRegion(int logicalLeft, int logicalTop,
                                  int logicalWidth, int logicalHeight) {
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    EspRedrawAudit_event(ESP_REDRAW_REGION);
+#endif
     if (platformDisplay == nullptr || framebuffer == nullptr ||
         logicalLeft < 0 || logicalTop < 0 ||
         logicalWidth <= 0 || logicalHeight <= 0 ||
@@ -439,6 +460,9 @@ void PlatformVideo_serviceTurnLamp() {
 }
 
 bool PlatformVideo_present() {
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    EspRedrawAudit_event(ESP_REDRAW_FULL);
+#endif
     if (platformDisplay == nullptr || framebuffer == nullptr) {
         return false;
     }

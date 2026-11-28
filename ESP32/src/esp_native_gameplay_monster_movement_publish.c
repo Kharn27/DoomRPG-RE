@@ -15,6 +15,9 @@
 #include "esp_native_gameplay_frame.h"
 #if defined(ARDUINO) && defined(DOOMRPG_ESP32)
 #include "esp_perf_move_visibility.h"
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+#include "esp_redraw_audit.h"
+#endif
 #endif
 #if defined(ARDUINO) && defined(DOOMRPG_ESP32)
 #include "esp_asset_pack.h"
@@ -289,6 +292,12 @@ static int restorePublishedOwners(
 /* Evaluate every read-only owner instead of hiding later blockers behind
  * short-circuit evaluation. The bit mask preserves the P2b admission rule. */
 static uint32_t moveFrameBlockers(void) {
+    /* P5a counts only: equality cannot prove owner identity. */
+    const EspMapAutomapStateView* mapAudit = EspMapAutomapState_view();
+    EspRedrawAudit_sampleOwners(mapAudit != NULL,
+        EspNativeGameplayMonsterActivation_count(),
+        mapAudit != NULL ? mapAudit->lineRevealedCount : 0U,
+        mapAudit != NULL ? mapAudit->spriteRevealedCount : 0U);
     const uint32_t now = DoomRPG_GetUpTimeMS();
     uint32_t mask = 0U;
     if (!EspNativeResidentGameplay_isActive() || !EspNativeResidentGameplay_ownsWorldPresent()) mask |= ESP_PERF_MOVE_BLOCK_WORLD;

@@ -593,6 +593,10 @@ jobs:
             ESP32/test/perf_game_spatial_line_host.c -o /tmp/doomrpg-perf-line
           /tmp/doomrpg-perf-line
 
+      - name: PERF-GAME-P5a redraw invalidation shadow (real C)
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/src/esp_redraw_audit.c ESP32/test/perf_game_redraw_audit_host.c -o /tmp/doomrpg-perf-redraw
+          /tmp/doomrpg-perf-redraw
       - name: PERF-GAME-P2b synchronous invisible continuation lease (real C)
         run: |
           for shadow in 0 1; do

@@ -1,4 +1,7 @@
 #include "esp_perf_move_visibility.h"
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+#include "esp_redraw_audit.h"
+#endif
 #include "esp_native_bsp_visibility.h"
 #include "esp_native_ambient_sprite.h"
 #include <stdio.h>
@@ -29,6 +32,12 @@ void EspPerfMoveVisibility_recordPresented(int continuation, int presented,
     uint32_t beforeFNV, uint32_t afterFNV, int quietAfter,
     uint32_t frameUs, uint32_t presentUs) {
     EspPerfMoveFrameCost* cost = &frameCosts[continuation != 0];
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    EspRedrawAudit_finish(presented, probe.armed && probe.samples == 1U &&
+        probe.quiet && quietAfter && probe.classification != 4U,
+        probe.samples == 1U && probe.classification == 0U,
+        beforeFNV != 0U && beforeFNV == afterFNV);
+#endif
     if (!presented || !probe.armed) return;
     ++cost->presented;
     if (beforeFNV == 0U || beforeFNV != afterFNV) return;
@@ -256,6 +265,9 @@ void EspPerfMoveVisibility_firstShadowEnd(int rendered, uint32_t beforeFNV,
 #endif /* DOOMRPG_PERF_P2_SHADOW */
 
 void EspPerfMoveVisibility_invalidate(void) {
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    EspRedrawAudit_abort();
+#endif
     probe.armed = 0U;
     probe.valid = 0U;
     probe.pending = 0U;
@@ -278,6 +290,9 @@ void EspPerfMoveVisibility_commitReuse(int quiet) {
 
 void EspPerfMoveVisibility_begin(uint16_t sprite, uint16_t x, uint16_t y,
     uint16_t destX, uint16_t destY, int quiet) {
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    EspRedrawAudit_begin();
+#endif
     probe.sprite = sprite;
     probe.x = x;
     probe.y = y;
@@ -312,6 +327,9 @@ void EspPerfMoveVisibility_observe(const EspNativeBspVisibilityState* state,
     probe.classification = (uint8_t)((oldVisible ? 1 : 0) | (newVisible ? 2 : 0));
 }
 void EspPerfMoveVisibility_frameStarted(int preview) {
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    if (!probe.armed || preview) EspRedrawAudit_event(ESP_REDRAW_COMPOSE);
+#endif
     if (probe.armed) {
         if (preview) EspPerfMoveVisibility_noteUnsafe();
         return;
@@ -383,6 +401,9 @@ void EspPerfMoveVisibility_noteUnsafe(void) {
     if (probe.armed) probe.quiet = 0;
 }
 void EspPerfMoveVisibility_end(int rendered) {
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    if (!rendered) EspRedrawAudit_abort();
+#endif
     if (!probe.armed) return;
     probe.armed = 0;
     probe.valid = (uint8_t)(rendered == 1 && probe.samples == 1 &&
@@ -397,6 +418,16 @@ void EspPerfMoveVisibility_end(int rendered) {
     default: ++unknown; break;
     }
     if ((total & 15U) == 0U) {
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+        const EspRedrawAuditStats* a = EspRedrawAudit_stats();
+        printf("[PERFGAMEP5A] first=%u noPrior=%u gap=%u hard=%u leaf=%u phase=%u candidate=%u checked=%u notRejected=%u changedFNV=%u unsafeAfter=%u semanticAfter=%u physicalRejected=%u seeded=%u lampGap=%u gapKinds=%03x authority=no firstSkipped=0 cumulative=yes\\n",
+            (unsigned)a->first, (unsigned)a->noPrior, (unsigned)a->gap,
+            (unsigned)a->hard, (unsigned)a->leaf, (unsigned)a->phase,
+            (unsigned)a->candidate, (unsigned)a->checked, (unsigned)a->notRejected,
+            (unsigned)a->changedFNV, (unsigned)a->unsafeAfter, (unsigned)a->semanticAfter,
+            (unsigned)a->physicalRejected, (unsigned)a->seeded, (unsigned)a->lampGap,
+            (unsigned)a->gapKinds);
+#endif
         for (unsigned int i = 0U; i < 2U; ++i) {
             const EspPerfMoveFrameCost* cost = &frameCosts[i];
             printf("[PERFGAMEP4G] group=%s presented=%u equalFNV=%u rejectedEqual=%u quietRejectedEqual=%u equalFrameUs=%llu equalPresentUs=%llu cumulative=yes authority=no\n",
@@ -437,6 +468,21 @@ int EspPerfMoveVisibility_tryReuse(int continuation, uint32_t blockers, uint16_t
     uint16_t oldX, uint16_t oldY, uint16_t newX, uint16_t newY, uint32_t nowMs) {
     const int valid = probe.valid;
     uint32_t oldLeaf = UINT32_MAX, newLeaf = UINT32_MAX;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    if (!continuation) {
+        const uint32_t phaseMask = ESP_PERF_MOVE_BLOCK_INDICATOR | ESP_PERF_MOVE_BLOCK_AMBIENT;
+        const int hard = (blockers & ~phaseMask) != 0U;
+        const int phase = (blockers & phaseMask) != 0U ||
+            nowMs < probe.sampleMs || nowMs - probe.sampleMs >= 250U ||
+            nowMs - probe.sampleMs >= probe.phaseWindow;
+        const int negative = valid && !hard && (oldX == newX || oldY == newY) &&
+            EspNativeBspVisibility_positionLeaf(sprite, oldX, oldY, &oldLeaf) &&
+            EspNativeBspVisibility_positionLeaf(sprite, newX, newY, &newLeaf) &&
+            oldLeaf == newLeaf && oldLeaf < ESP_NATIVE_BSP_VISIBILITY_MAX_NODES &&
+            !(probe.leaves[oldLeaf >> 5U] & (1U << (oldLeaf & 31U)));
+        EspRedrawAudit_first(valid, negative, hard, phase);
+    }
+#endif
     probe.valid = 0;
     probe.pending = 0U;
     if (!continuation) return 0;
