@@ -130,6 +130,7 @@ struct MapFlashState {
     EspAssetPackMapFlashStats stats;
     uint8_t active;
     uint8_t missLogs;
+    uint8_t handoffEligible; /* one same-map prepare may reuse payload proof */
 };
 
 File packFile;
@@ -252,6 +253,7 @@ void clearMapFlashRuntime(bool clearStats)
     memset(&mapFlash.header, 0, sizeof(mapFlash.header));
     mapFlash.active = 0U;
     mapFlash.missLogs = 0U;
+    mapFlash.handoffEligible = 0U;
     if (clearStats) {
         memset(&mapFlash.stats, 0, sizeof(mapFlash.stats));
     }
@@ -1345,6 +1347,17 @@ int EspAssetPack_mapFlashPrepare(uint8_t targetMapId)
         return 0;
     }
 
+    /* P2: retain only the immediately preceding verified target's proof.
+     * The active owner is the sole writer of this partition; every stage,
+     * deactivation and failed prepare clears eligibility before any write.
+     * Never carry a proof across a resident teardown or a boot. */
+    const bool handoffCandidate =
+        mapFlash.handoffEligible && mapFlash.active && mapFlash.stats.verified &&
+        mapFlash.stats.currentMapId == targetMapId &&
+        mapFlash.header.currentMapId == targetMapId &&
+        !sourceProbeReady && verifiedFlashEpoch != UINT32_MAX;
+    const esp_partition_t* priorPartition = mapFlash.partition;
+    const MapFlashHeader priorHeader = mapFlash.header;
     resetPhysicalState();
     clearMapFlashRuntime(true);
     partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
@@ -1380,6 +1393,17 @@ int EspAssetPack_mapFlashPrepare(uint8_t targetMapId)
             /* Exact reason is reported below before rebuilding. */
         }
         else {
+            /* Fresh authoritative SD index plan + committed flash header.
+             * The previous RAM header differs only in its map hint; the
+             * immutable payload identity must agree exactly. Still hash the
+             * flash index below, even when adopting the payload proof. */
+            const bool adoptPayload =
+                handoffCandidate && verifiedFlashEpoch != UINT32_MAX &&
+                priorPartition == partition &&
+                mapFlashHeaderLooksValid(priorHeader, partition) &&
+                mapFlashHeaderMatchesPlan(priorHeader, plan, nullptr) &&
+                priorHeader.currentMapHash == plan.currentMapHash &&
+                priorHeader.payloadFNV1a == cached.payloadFNV1a;
             buffer = (uint8_t*)malloc(kMapFlashCopyBufferBytes);
             if (buffer == nullptr) {
                 printf("[MAPFLASH] PREPARE FAILED reason=verify-buffer-allocation map=%u\n",
@@ -1397,13 +1421,13 @@ int EspAssetPack_mapFlashPrepare(uint8_t targetMapId)
                      flashIndexFNV != plan.indexFNV1a) {
                 missReason = "flash-index-fnv";
             }
-            else if (!fnvFlashRange(cached.payloadFlashOffset,
+            else if (!adoptPayload && !fnvFlashRange(cached.payloadFlashOffset,
                                     cached.stagedBytes,
                                     buffer,
                                     &flashPayloadFNV)) {
                 missReason = "flash-payload-readback";
             }
-            else if (flashPayloadFNV != cached.payloadFNV1a) {
+            else if (!adoptPayload && flashPayloadFNV != cached.payloadFNV1a) {
                 missReason = "flash-payload-fnv";
             }
             else {
@@ -1416,6 +1440,8 @@ int EspAssetPack_mapFlashPrepare(uint8_t targetMapId)
                 mapFlash.header.currentMapHash = plan.currentMapHash;
                 mapFlash.active = 1U;
                 mapFlash.missLogs = 0U;
+                mapFlash.handoffEligible = adoptPayload ? 0U : 1U;
+                if (adoptPayload) flashPayloadFNV = cached.payloadFNV1a;
                 memset(&mapFlash.stats, 0, sizeof(mapFlash.stats));
                 mapFlash.stats.partitionBytes = partition->size;
                 mapFlash.stats.sourcePackBytes = plan.sourcePackBytes;
@@ -1440,9 +1466,18 @@ int EspAssetPack_mapFlashPrepare(uint8_t targetMapId)
                        (unsigned int)plan.indexFNV1a,
                        (unsigned int)flashPayloadFNV,
                        (unsigned int)verifyUs);
-                printf("[MAPFLASHV2] HIT map=%u eraseBytes=0 writeBytes=0 verifiedBytes=%u scope=all-maps\n",
-                       (unsigned int)targetMapId,
-                       (unsigned int)(plan.indexBytes + plan.stagedBytes));
+                if (adoptPayload) {
+                    printf("[MAPFLASHV2] HANDOFF map=%u eraseBytes=0 writeBytes=0 verifiedBytes=%u priorPayloadBytes=%u payloadFNV=%08x once=1 scope=same-target\n",
+                           (unsigned int)targetMapId,
+                           (unsigned int)plan.indexBytes,
+                           (unsigned int)plan.stagedBytes,
+                           (unsigned int)flashPayloadFNV);
+                }
+                else {
+                    printf("[MAPFLASHV2] HIT map=%u eraseBytes=0 writeBytes=0 verifiedBytes=%u scope=all-maps\n",
+                           (unsigned int)targetMapId,
+                           (unsigned int)(plan.indexBytes + plan.stagedBytes));
+                }
                 return 1;
             }
             free(buffer);
@@ -1700,6 +1735,7 @@ int EspAssetPack_mapFlashStage(uint8_t currentMapId)
     mapFlash.header = readback;
     mapFlash.active = 1U;
     mapFlash.missLogs = 0U;
+    mapFlash.handoffEligible = 1U;
     memset(&mapFlash.stats, 0, sizeof(mapFlash.stats));
     mapFlash.stats.partitionBytes = partition->size;
     mapFlash.stats.sourcePackBytes = sourcePackBytes;
