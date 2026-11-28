@@ -53,6 +53,15 @@ with tempfile.TemporaryDirectory(prefix="gameai14-path-") as tmp:
     p=Path(tmp)
     (p/"legacy_goal.inc").write_text(source)
     (p/"legacy_trace.inc").write_text(trace+"\n"+sight)
+    turn=(ROOT/"ESP32/src/esp_native_gameplay_monster_turn.c").read_text()
+    names=("centeredCoordinate","tileIndexFor","typeInTraceMask","lineEntityTile",
+           "closedLineBlocksTile","specialEntityBlocks","blockingSpriteOnTile","cardinalLosTarget")
+    target_source="\n".join(line for line in turn.splitlines() if line.startswith("#define TURN_"))
+    target_source+="\n"+turn[turn.index("typedef struct MonsterTurnTraceTarget_s {"):turn.index("} MonsterTurnTraceTarget;")+len("} MonsterTurnTraceTarget;")]
+    target_source+="\n"+"\n".join(extract("static int "+name+"(",turn) for name in names)
+    for name in names:
+        target_source=re.sub(r"\b"+name+r"\b","TurnOracle_"+name,target_source)
+    (p/"turn_target.inc").write_text(target_source)
     for continuation in (0,1):
         exe=p/f"oracle-{continuation}"
         subprocess.run(["cc","-std=c11","-O2","-Wall","-Wextra","-Werror",

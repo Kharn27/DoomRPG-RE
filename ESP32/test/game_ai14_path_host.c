@@ -344,12 +344,47 @@ static void lineLosDifferential(void) {
     }
     printf("PASS original line LOS continuation=%d cases=%u\n",CONTINUATION,cases);
 }
+#include "turn_target.inc"
+/* Target identity on the existing direct attack trace, compared with real
+ * original Game_trace on cardinal destination-cell sprite fixtures. */
+static void destructibleTargetDifferential(void) {
+    unsigned cases=0;
+    for(unsigned scenario=0;scenario<7;scenario++) {
+        resetFixture();
+        player.destX=player.viewX=center(13);
+        player.destY=player.viewY=center(10);
+        types[1]=12; linked[1]=1; tiles[1]=331;
+        if(scenario==1) { types[2]=12; linked[2]=1; tiles[2]=332; }
+        if(scenario==2) { types[2]=1; linked[2]=1; tiles[2]=331; }
+        if(scenario==3) { types[2]=1; linked[2]=1; tiles[2]=332; }
+        if(scenario==4) { linked[1]=0; }
+        if(scenario==5) { walls[331]=1; }
+        if(scenario==6) { types[2]=12; linked[2]=1; tiles[2]=331; }
+        RefMonster m={0}; RefDef d={3,1}; RefRoot root={0};
+        Entity_t e={.def=&d,.monster=&m,.doomRpg=&root};
+        setupLegacy(&e);
+        RefGame_trace(&legacyGame,center(10),center(10),center(13),center(10),&e,0x5687);
+        MonsterTurnTraceTarget target;
+        int clear=TurnOracle_cardinalLosTarget(center(10),center(10),center(13),center(10),0,&target);
+        assert(clear==(legacyGame.numTraceEntities==0));
+        if(scenario==4 || scenario==5) assert(target.sprite==UINT16_MAX);
+        else {
+            Entity_t* first=legacyGame.traceEntities[0];
+            assert(first->def->eType==target.type);
+            assert((first->info&65535U)==(unsigned)target.sprite+1U);
+            assert(target.tile==331 && target.subtype==0);
+        }
+        ++cases;
+    }
+    printf("PASS original destructible target identity cases=%u\n",cases);
+}
 int main(int argc,char** argv) {
     if(argc==2 && strcmp(argv[1],"--geometry")==0)return geometryInput(8U);
     if(argc==2 && strcmp(argv[1],"--geometry-late")==0)return geometryInput(4U);
     if(argc==2 && strcmp(argv[1],"--replay")==0)return replayInput();
     assert(argc==1);
     lineLosDifferential();
+    destructibleTargetDifferential();
     resetFixture();
     uint16_t mask=0xff87U;
     assert(trace(10,10,11,10,mask,0)==1);

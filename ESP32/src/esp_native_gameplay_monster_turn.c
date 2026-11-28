@@ -126,6 +126,15 @@ typedef struct MonsterTurnCandidate_s {
     uint8_t loops;
 } MonsterTurnCandidate;
 
+/* Read-only identity of the first sprite blocker found by the existing
+ * direct-player attack trace. Not an attack transaction or a world handle. */
+typedef struct MonsterTurnTraceTarget_s {
+    uint16_t sprite;
+    uint16_t tile;
+    uint8_t type;
+    uint8_t subtype;
+} MonsterTurnTraceTarget;
+
 typedef struct MonsterTurnOwner_s {
     EspNativeGameplayMonsterTurnView view;
     int32_t lastViewX;
@@ -138,6 +147,7 @@ typedef struct MonsterTurnOwner_s {
     uint8_t combatBaseline;
     uint8_t passPending;
     uint8_t attackPending;
+    uint8_t destructibleWitnesses;
 } MonsterTurnOwner;
 
 static MonsterTurnOwner turnOwner;
@@ -331,10 +341,13 @@ static int blockingSpriteOnTile(uint16_t tile,
                                 int32_t sourceY,
                                 int32_t destX,
                                 int32_t destY,
-                                uint16_t attackerSprite) {
+                                uint16_t attackerSprite,
+                                MonsterTurnTraceTarget* outTarget) {
     const EspMapSpriteTopologyView* topology = EspMapSpriteTopology_view();
     uint16_t bestOrder = 0U;
     uint8_t bestType = 0xffU;
+    uint8_t bestSubtype = 0U;
+    uint16_t bestSprite = TURN_NO_SPRITE;
     int found = 0;
     uint32_t i;
 
@@ -349,7 +362,6 @@ static int blockingSpriteOnTile(uint16_t tile,
         if (i == attackerSprite) continue;
         if (!EspMapSpriteTopology_getEntity(i, &type, &subtype,
                                             &linkState, &linkOrder)) return -1;
-        (void)subtype;
         if ((linkState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) == 0U ||
             (linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK) != tile ||
             !typeInTraceMask(type)) {
@@ -364,6 +376,8 @@ static int blockingSpriteOnTile(uint16_t tile,
             found = 1;
             bestOrder = linkOrder;
             bestType = type;
+            bestSubtype = subtype;
+            bestSprite = (uint16_t)i;
         }
     }
 
@@ -371,20 +385,29 @@ static int blockingSpriteOnTile(uint16_t tile,
     /* Legacy Entity_aiThink targets a traced destructible instead of the player.
      * This first retaliation family owns only direct player attacks, so any
      * trace-mask blocker (including type12) fails closed here. */
-    (void)bestType;
+    if (outTarget != NULL) {
+        outTarget->sprite = bestSprite;
+        outTarget->tile = tile;
+        outTarget->type = bestType;
+        outTarget->subtype = bestSubtype;
+    }
     return 1;
 }
 
-static int cardinalLosClear(int32_t sourceX,
-                            int32_t sourceY,
-                            int32_t destX,
-                            int32_t destY,
-                            uint16_t attackerSprite) {
+static int cardinalLosTarget(int32_t sourceX,
+                             int32_t sourceY,
+                             int32_t destX,
+                             int32_t destY,
+                             uint16_t attackerSprite,
+                             MonsterTurnTraceTarget* outTarget) {
     int32_t stepX = 0;
     int32_t stepY = 0;
     uint32_t distance;
     uint32_t i;
 
+    if (outTarget != NULL) {
+        *outTarget = (MonsterTurnTraceTarget){TURN_NO_SPRITE, UINT16_MAX, 0xffU, 0U};
+    }
     if (!centeredCoordinate(sourceX) || !centeredCoordinate(sourceY) ||
         !centeredCoordinate(destX) || !centeredCoordinate(destY)) return 0;
     if (sourceX == destX && sourceY != destY) {
@@ -418,10 +441,16 @@ static int cardinalLosClear(int32_t sourceX,
         if (lineBlock != 0) return 0;
         spriteBlock = blockingSpriteOnTile(tile,
                                            x - stepX, y - stepY, x, y,
-                                           attackerSprite);
+                                           attackerSprite, outTarget);
         if (spriteBlock != 0) return 0;
     }
     return 1;
+}
+
+static int cardinalLosClear(int32_t sourceX, int32_t sourceY,
+                            int32_t destX, int32_t destY,
+                            uint16_t attackerSprite) {
+    return cardinalLosTarget(sourceX, sourceY, destX, destY, attackerSprite, NULL);
 }
 
 static int projectileMissConsumesRng(uint8_t weaponId) {
@@ -672,9 +701,21 @@ static int findCandidateForSprite(
         }
         return 1;
     }
-    if (!cardinalLosClear(monsterX, monsterY,
-                          playerView->destX, playerView->destY,
-                          monster->spriteIndex)) {
+    MonsterTurnTraceTarget target;
+    if (!cardinalLosTarget(monsterX, monsterY,
+                           playerView->destX, playerView->destY,
+                           monster->spriteIndex, &target)) {
+        /* Preserve the current fail-closed behavior until the target-specific
+         * combat transaction exists. At most eight witnesses per session. */
+        if (target.type == TURN_TYPE_DESTRUCTIBLE &&
+            turnOwner.destructibleWitnesses < 8U) {
+            ++turnOwner.destructibleWitnesses;
+            printf("[AI14TARGET] attacker=%u sub=%u from=%u player=%d,%d weapon=%u targetSprite=%u targetTile=%u targetType=%u targetSub=%u route=destructible-not-owned rngConsumed=0 mutation=no\n",
+                   (unsigned)monster->spriteIndex, (unsigned)monster->subtype,
+                   (unsigned)tile, (int)playerView->destX, (int)playerView->destY,
+                   (unsigned)weaponId, (unsigned)target.sprite, (unsigned)target.tile,
+                   (unsigned)target.type, (unsigned)target.subtype);
+        }
         if (monster->subtype == 3U) {
             DRPG_LOGT("[IMPAI] TARGET sprite=%u tile=%u distance2=%u weapon=%u decision=move reason=trace-blocked mutation=no rngConsumed=0\n",
                    (unsigned int)monster->spriteIndex,
