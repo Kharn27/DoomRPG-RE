@@ -526,6 +526,10 @@ P2_CLEAN_WIRING_EDITS = {
 }
 
 def restore_pre_perf_game_p2a(name, data):
+    # P3m modifies the exact P2s decoder anchor: reverse it before P2s.
+    if name == "esp_native_sprite_renderer.c":
+        from perf_game_p3m_history import restore_pre_p3m_sprite
+        data = restore_pre_p3m_sprite(data)
     if name == "esp_native_first_frame.c":
         block = "    /* P3b: prove the entire forward span stays inside this packed\n     * texture. The affine recurrence is monotonic, so the endpoints\n     * suffice. Keep short, reverse and boundary spans on the original\n     * path, including legacy successor I/O and partial failure stats. */\n    if (pixelCount >= 4 && texelPosition >= 0 && texelStep >= 0 &&\n        (int64_t)texelPosition + (int64_t)(pixelCount - 1) * texelStep <\n            ((int64_t)WALL_PACKED_BYTES << 13)) {\n        uint32_t pos = (uint32_t)texelPosition;\n        int left = pixelCount;\n        while (left-- > 0) {\n            const uint8_t packed = texels[pos >> 13];\n            *pixels = source->paletteRgb565[\n                (packed >> ((pos >> 10) & 4U)) & 15U];\n            pixels += pitch;\n            pos += (uint32_t)texelStep;\n        }\n        work->pixelsDrawn += (uint32_t)pixelCount;\n        return 1;\n    }\n\n".encode("utf-8")
         assert data.count(block) == 1, (name, "P3b wall span inverse")
