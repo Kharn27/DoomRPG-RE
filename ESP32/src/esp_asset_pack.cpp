@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <SD.h>
 #include <stdlib.h>
+#include <stddef.h>
 #include <string.h>
 
 #include <esp_partition.h>
@@ -39,13 +40,12 @@ constexpr uint32_t kResidentMaxCachedRangeBytes = 1024U;
 constexpr uint32_t kResidentLargeRangeBytes = 2048U;
 
 constexpr uint32_t kMapFlashMagic = 0x32464d44U; /* DMF2 */
-constexpr uint16_t kMapFlashVersion = 1U;
+constexpr uint16_t kMapFlashVersion = 2U; /* complete PAK, incompatible with compact V1 */
 constexpr uint32_t kMapFlashCommitted = 0xa55a3cc3U;
 constexpr uint32_t kMapFlashSectorBytes = 4096U;
 constexpr uint32_t kMapFlashIndexOffset = kMapFlashSectorBytes;
 constexpr uint32_t kMapFlashCopyBufferBytes = 4096U;
 constexpr uint32_t kMapFlashEraseChunkBytes = 64U * 1024U;
-constexpr uint32_t kMapFlashMaxExcludedMaps = ESP_MAP_CATALOG_COUNT - 1U;
 constexpr uint8_t kMapFlashMaxMissLogs = 8U;
 
 /* The physical backing is immutable for the lifetime of this cache.
@@ -82,12 +82,6 @@ struct ResidentCache {
     uint16_t largeCount; /* contiguous 2048B blocks from high end */
 };
 
-struct MapFlashExcludedSpan {
-    uint32_t nameHash;
-    uint32_t sourceOffset;
-    uint32_t size;
-};
-
 struct MapFlashHeader {
     uint32_t magic;
     uint16_t version;
@@ -101,14 +95,11 @@ struct MapFlashHeader {
     uint32_t indexBytes;
     uint32_t payloadFlashOffset;
     uint32_t stagedBytes;
-    uint32_t excludedBytes;
     uint32_t indexFNV1a;
     uint32_t payloadFNV1a;
     uint32_t currentMapHash;
     uint8_t currentMapId;
-    uint8_t excludedCount;
-    uint16_t reserved;
-    MapFlashExcludedSpan excluded[kMapFlashMaxExcludedMaps];
+    uint8_t reserved[3];
 };
 
 static_assert(sizeof(MapFlashHeader) <= kMapFlashSectorBytes,
@@ -123,11 +114,14 @@ struct MapFlashPlan {
     uint32_t indexBytes;
     uint32_t payloadFlashOffset;
     uint32_t stagedBytes;
-    uint32_t excludedBytes;
     uint32_t indexFNV1a;
     uint32_t currentMapHash;
-    uint32_t excludedCount;
-    MapFlashExcludedSpan excluded[kMapFlashMaxExcludedMaps];
+    /* Catalog inventory for the capacity audit. */
+    uint32_t bspSourceOffset[ESP_MAP_CATALOG_COUNT];
+    uint32_t bspBytes[ESP_MAP_CATALOG_COUNT];
+    uint32_t allBspBytes;
+    uint32_t maxBspBytes;
+    uint32_t commonBytes;
 };
 
 struct MapFlashState {
@@ -347,10 +341,12 @@ bool mapFlashHeaderLooksValid(const MapFlashHeader& header,
         header.entryCount == 0U ||
         header.entryCount > ESP_ASSET_PACK_MAX_ENTRY_COUNT ||
         header.indexFlashOffset != kMapFlashIndexOffset ||
-        header.excludedCount > kMapFlashMaxExcludedMaps ||
+        header.sourceIndexOffset < kHeaderBytes ||
+        (uint64_t)header.sourceIndexOffset + header.indexBytes > header.sourceDataOffset ||
         header.sourceDataOffset > header.sourcePackBytes ||
         header.indexBytes != header.entryCount * (uint32_t)kEntryBytes ||
-        header.payloadFlashOffset < header.indexFlashOffset + header.indexBytes ||
+        header.payloadFlashOffset != alignSector(header.indexFlashOffset + header.indexBytes) ||
+        header.stagedBytes != header.sourcePackBytes - header.sourceDataOffset ||
         header.payloadFlashOffset > partition->size ||
         header.stagedBytes > partition->size - header.payloadFlashOffset) {
         return false;
@@ -467,6 +463,10 @@ bool mapFlashBuildSourcePlan(uint8_t targetMapId,
                 if (outReason != nullptr) *outReason = "target-bsp-invalid";
                 return false;
             }
+            const uint32_t currentSlot =
+                (uint32_t)(targetMapId - ESP_MAP_CATALOG_FIRST_ID);
+            plan.bspSourceOffset[currentSlot] = entry.offset;
+            plan.bspBytes[currentSlot] = entry.size;
             currentFound = true;
             continue;
         }
@@ -478,16 +478,13 @@ bool mapFlashBuildSourcePlan(uint8_t targetMapId,
                 (uint32_t)(mapId - ESP_MAP_CATALOG_FIRST_ID);
             if (entry.nameHash != catalogHashes[slot]) continue;
             if ((entry.flags & ESP_ASSET_PACK_FLAG_DIRECTORY) != 0U ||
-                entry.size == 0U ||
-                plan.excludedCount >= kMapFlashMaxExcludedMaps) {
+                entry.size == 0U) {
                 sourceFile.close();
-                if (outReason != nullptr) *outReason = "excluded-bsp-invalid";
+                if (outReason != nullptr) *outReason = "catalog-bsp-invalid";
                 return false;
             }
-            MapFlashExcludedSpan& span = plan.excluded[plan.excludedCount++];
-            span.nameHash = entry.nameHash;
-            span.sourceOffset = entry.offset;
-            span.size = entry.size;
+            plan.bspSourceOffset[slot] = entry.offset;
+            plan.bspBytes[slot] = entry.size;
             break;
         }
     }
@@ -498,43 +495,43 @@ bool mapFlashBuildSourcePlan(uint8_t targetMapId,
         return false;
     }
 
-    for (uint32_t i = 0U; i < plan.excludedCount; ++i) {
-        for (uint32_t j = i + 1U; j < plan.excludedCount; ++j) {
-            if (plan.excluded[j].sourceOffset < plan.excluded[i].sourceOffset) {
-                const MapFlashExcludedSpan temp = plan.excluded[i];
-                plan.excluded[i] = plan.excluded[j];
-                plan.excluded[j] = temp;
+    /* Inventory from the index alone: no extra SD payload reads. */
+    for (uint32_t i = 0U; i < ESP_MAP_CATALOG_COUNT; ++i) {
+        const uint32_t size = plan.bspBytes[i];
+        if (size == 0U) continue; /* Catalog BSP absent from this PAK. */
+        if (plan.allBspBytes > UINT32_MAX - size) {
+            if (outReason != nullptr) *outReason = "all-bsp-overflow";
+            return false;
+        }
+        plan.allBspBytes += size;
+        if (size > plan.maxBspBytes) plan.maxBspBytes = size;
+        const uint64_t begin = plan.bspSourceOffset[i];
+        const uint64_t end = begin + size;
+        for (uint32_t j = 0U; j < i; ++j) {
+            if (plan.bspBytes[j] == 0U) continue;
+            const uint64_t otherBegin = plan.bspSourceOffset[j];
+            const uint64_t otherEnd = otherBegin + plan.bspBytes[j];
+            if (begin < otherEnd && otherBegin < end) {
+                if (outReason != nullptr) *outReason = "bsp-overlap";
+                return false;
             }
         }
     }
 
     plan.sourceDataBytes = plan.sourcePackBytes - plan.sourceDataOffset;
-    uint32_t previousEnd = plan.sourceDataOffset;
-    for (uint32_t i = 0U; i < plan.excludedCount; ++i) {
-        const MapFlashExcludedSpan& span = plan.excluded[i];
-        if (span.sourceOffset < plan.sourceDataOffset ||
-            span.sourceOffset < previousEnd ||
-            span.sourceOffset > plan.sourcePackBytes ||
-            span.size > plan.sourcePackBytes - span.sourceOffset ||
-            plan.excludedBytes > UINT32_MAX - span.size) {
-            if (outReason != nullptr) *outReason = "excluded-span-invalid";
-            return false;
-        }
-        previousEnd = span.sourceOffset + span.size;
-        plan.excludedBytes += span.size;
-    }
-    if (plan.excludedBytes > plan.sourceDataBytes) {
-        if (outReason != nullptr) *outReason = "excluded-bytes-invalid";
+    if (plan.allBspBytes > plan.sourceDataBytes) {
+        if (outReason != nullptr) *outReason = "bsp-bytes-invalid";
         return false;
     }
+    plan.commonBytes = plan.sourceDataBytes - plan.allBspBytes;
 
     plan.payloadFlashOffset =
         alignSector(kMapFlashIndexOffset + plan.indexBytes);
-    plan.stagedBytes = plan.sourceDataBytes - plan.excludedBytes;
+    plan.stagedBytes = plan.sourceDataBytes;
     if (plan.payloadFlashOffset == 0U ||
         plan.payloadFlashOffset > partition->size ||
         plan.stagedBytes > partition->size - plan.payloadFlashOffset) {
-        if (outReason != nullptr) *outReason = "working-set-does-not-fit";
+        if (outReason != nullptr) *outReason = "complete-pak-does-not-fit";
         return false;
     }
 
@@ -543,17 +540,70 @@ bool mapFlashBuildSourcePlan(uint8_t targetMapId,
     return true;
 }
 
+
+/* MAPFLASH-V2 P0: dry-run capacity, no writes, no extra index scan and no
+ * mutation of V1 state. All-BSP calculation is an optimistic lower bound:
+ * a persistent multi-BSP cache would need a separate manifest. */
+void printMapFlashV2Audit(const MapFlashPlan& plan,
+                          const esp_partition_t* partition)
+{
+    static uint32_t lastPackBytes = 0U;
+    static uint32_t lastIndexFNV = 0U;
+    if (partition == nullptr ||
+        (lastPackBytes == plan.sourcePackBytes &&
+         lastIndexFNV == plan.indexFNV1a)) return;
+    const uint64_t sector = kMapFlashSectorBytes;
+    const uint64_t indexOffset = 2ULL * sector; /* two independent headers */
+    const uint64_t commonOffset =
+        (indexOffset + plan.indexBytes + sector - 1U) & ~(sector - 1U);
+    const uint64_t bspOffset =
+        (commonOffset + plan.commonBytes + sector - 1U) & ~(sector - 1U);
+    const uint64_t bspReserve =
+        ((uint64_t)plan.maxBspBytes + sector - 1U) & ~(sector - 1U);
+    const uint64_t singleEnd = bspOffset + bspReserve;
+    const uint64_t allEnd = bspOffset + plan.allBspBytes;
+    const uint32_t singleFits = singleEnd <= partition->size ? 1U : 0U;
+    const uint32_t allLowerBoundFits = allEnd <= partition->size ? 1U : 0U;
+    const uint32_t headroom = singleFits
+        ? (uint32_t)(partition->size - singleEnd) : 0U;
+    uint32_t present = 0U;
+    for (uint32_t i = 0U; i < ESP_MAP_CATALOG_COUNT; ++i)
+        if (plan.bspBytes[i] != 0U) ++present;
+
+    printf("[MAPFLASHV2] AUDIT scope=plan-only indexFNV=%08x pack=%u index=%u common=%u allBsp=%u maxBsp=%u present=%u/%u partition=%u commonOffset=%llu bspOffset=%llu slotReserve=%llu headroom=%u singleFits=%u allFitsLowerBound=%u\n",
+           (unsigned int)plan.indexFNV1a,
+           (unsigned int)plan.sourcePackBytes,
+           (unsigned int)plan.indexBytes,
+           (unsigned int)plan.commonBytes,
+           (unsigned int)plan.allBspBytes,
+           (unsigned int)plan.maxBspBytes,
+           (unsigned int)present, (unsigned int)ESP_MAP_CATALOG_COUNT,
+           (unsigned int)partition->size,
+           (unsigned long long)commonOffset,
+           (unsigned long long)bspOffset,
+           (unsigned long long)bspReserve,
+           (unsigned int)headroom,
+           (unsigned int)singleFits,
+           (unsigned int)allLowerBoundFits);
+    for (uint8_t mapId = ESP_MAP_CATALOG_FIRST_ID;
+         mapId <= ESP_MAP_CATALOG_LAST_ID; ++mapId) {
+        const uint32_t slot = mapId - ESP_MAP_CATALOG_FIRST_ID;
+        printf("[MAPFLASHV2] BSP id=%u name=%s source=%u bytes=%u present=%u\n",
+               (unsigned int)mapId,
+               EspMapCatalog_nameForId(mapId),
+               (unsigned int)plan.bspSourceOffset[slot],
+               (unsigned int)plan.bspBytes[slot],
+               plan.bspBytes[slot] != 0U ? 1U : 0U);
+    }
+    lastPackBytes = plan.sourcePackBytes;
+    lastIndexFNV = plan.indexFNV1a;
+}
+
 bool mapFlashHeaderMatchesPlan(const MapFlashHeader& header,
-                               uint8_t targetMapId,
                                const MapFlashPlan& plan,
                                const char** outReason)
 {
     if (outReason != nullptr) *outReason = "header-invalid";
-    if (header.currentMapId != targetMapId ||
-        header.currentMapHash != plan.currentMapHash) {
-        if (outReason != nullptr) *outReason = "world-identity";
-        return false;
-    }
     if (header.sourcePackBytes != plan.sourcePackBytes ||
         header.sourceIndexOffset != plan.sourceIndexOffset ||
         header.sourceDataOffset != plan.sourceDataOffset ||
@@ -564,13 +614,8 @@ bool mapFlashHeaderMatchesPlan(const MapFlashHeader& header,
         return false;
     }
     if (header.payloadFlashOffset != plan.payloadFlashOffset ||
-        header.stagedBytes != plan.stagedBytes ||
-        header.excludedBytes != plan.excludedBytes ||
-        header.excludedCount != plan.excludedCount ||
-        memcmp(header.excluded,
-               plan.excluded,
-               plan.excludedCount * sizeof(plan.excluded[0])) != 0) {
-        if (outReason != nullptr) *outReason = "world-layout";
+        header.stagedBytes != plan.stagedBytes) {
+        if (outReason != nullptr) *outReason = "pack-layout";
         return false;
     }
     if (outReason != nullptr) *outReason = "match";
@@ -980,24 +1025,7 @@ bool mapFlashTranslate(uint32_t sourceOffset,
         return false;
     }
 
-    const uint64_t sourceEnd = (uint64_t)sourceOffset + (uint64_t)length;
-    uint32_t removed = 0U;
-    for (uint32_t i = 0U; i < mapFlash.header.excludedCount; ++i) {
-        const MapFlashExcludedSpan& span = mapFlash.header.excluded[i];
-        const uint64_t spanEnd =
-            (uint64_t)span.sourceOffset + (uint64_t)span.size;
-        if (sourceEnd <= span.sourceOffset) {
-            break;
-        }
-        if (sourceOffset >= spanEnd) {
-            removed += span.size;
-            continue;
-        }
-        return false;
-    }
-
-    const uint32_t compactOffset =
-        (sourceOffset - mapFlash.header.sourceDataOffset) - removed;
+    const uint32_t compactOffset = sourceOffset - mapFlash.header.sourceDataOffset;
     if (compactOffset > mapFlash.header.stagedBytes ||
         length > mapFlash.header.stagedBytes - compactOffset) {
         return false;
@@ -1340,12 +1368,13 @@ int EspAssetPack_mapFlashPrepare(uint8_t targetMapId)
         return 0;
     }
 
+    printMapFlashV2Audit(plan, partition);
+
     if (esp_partition_read(partition, 0U, &cached, sizeof(cached)) == ESP_OK &&
         mapFlashHeaderLooksValid(cached, partition)) {
         cachedValid = 1U;
         cachedMapId = cached.currentMapId;
         if (!mapFlashHeaderMatchesPlan(cached,
-                                       targetMapId,
                                        plan,
                                        &missReason)) {
             /* Exact reason is reported below before rebuilding. */
@@ -1382,6 +1411,9 @@ int EspAssetPack_mapFlashPrepare(uint8_t targetMapId)
                 buffer = nullptr;
                 mapFlash.partition = partition;
                 mapFlash.header = cached;
+                /* Runtime map identity is not persisted on a cache hit. */
+                mapFlash.header.currentMapId = targetMapId;
+                mapFlash.header.currentMapHash = plan.currentMapHash;
                 mapFlash.active = 1U;
                 mapFlash.missLogs = 0U;
                 memset(&mapFlash.stats, 0, sizeof(mapFlash.stats));
@@ -1391,16 +1423,11 @@ int EspAssetPack_mapFlashPrepare(uint8_t targetMapId)
                 mapFlash.stats.indexBytes = plan.indexBytes;
                 mapFlash.stats.metadataBytes = plan.payloadFlashOffset;
                 mapFlash.stats.stagedBytes = plan.stagedBytes;
-                mapFlash.stats.excludedBytes = plan.excludedBytes;
                 mapFlash.stats.entryCount =
                     plan.entryCount <= UINT16_MAX
                         ? (uint16_t)plan.entryCount
                         : UINT16_MAX;
                 mapFlash.stats.currentMapId = targetMapId;
-                mapFlash.stats.excludedMaps =
-                    plan.excludedCount <= UINT8_MAX
-                        ? (uint8_t)plan.excludedCount
-                        : UINT8_MAX;
                 mapFlash.stats.active = 1U;
                 mapFlash.stats.verified = 1U;
                 mapFlash.stats.reused = 1U;
@@ -1413,6 +1440,9 @@ int EspAssetPack_mapFlashPrepare(uint8_t targetMapId)
                        (unsigned int)plan.indexFNV1a,
                        (unsigned int)flashPayloadFNV,
                        (unsigned int)verifyUs);
+                printf("[MAPFLASHV2] HIT map=%u eraseBytes=0 writeBytes=0 verifiedBytes=%u scope=all-maps\n",
+                       (unsigned int)targetMapId,
+                       (unsigned int)(plan.indexBytes + plan.stagedBytes));
                 return 1;
             }
             free(buffer);
@@ -1433,12 +1463,11 @@ int EspAssetPack_mapFlashPrepare(uint8_t targetMapId)
 int EspAssetPack_mapFlashStage(uint8_t currentMapId)
 {
     uint8_t* buffer = nullptr;
-    MapFlashExcludedSpan spans[kMapFlashMaxExcludedMaps] = {};
+    MapFlashPlan plan = {};
+    const char* planReason = nullptr;
     EspAssetPackEntry currentEntry = {};
     const esp_partition_t* partition = nullptr;
     const char* currentMapName = nullptr;
-    uint32_t excludedCount = 0U;
-    uint32_t excludedBytes = 0U;
     uint32_t indexBytes = 0U;
     uint32_t payloadFlashOffset = 0U;
     uint32_t stagedBytes = 0U;
@@ -1479,6 +1508,13 @@ int EspAssetPack_mapFlashStage(uint8_t currentMapId)
     }
     mapFlash.partition = partition;
 
+    if (!mapFlashBuildSourcePlan(currentMapId, partition, &plan, &planReason)) {
+        printf("[MAPFLASH] FAILED reason=%s map=%u\n",
+               planReason != nullptr ? planReason : "source-plan",
+               (unsigned int)currentMapId);
+        clearMapFlashRuntime(true);
+        return 0;
+    }
     currentMapName = EspMapCatalog_nameForId(currentMapId);
     if (currentMapName == nullptr || !EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
         printf("[MAPFLASH] FAILED reason=source-pack-open map=%u\n",
@@ -1514,55 +1550,16 @@ int EspAssetPack_mapFlashStage(uint8_t currentMapId)
         return failStage("current-bsp-missing");
     }
 
-    for (uint8_t mapId = ESP_MAP_CATALOG_FIRST_ID;
-         mapId <= ESP_MAP_CATALOG_LAST_ID; ++mapId) {
-        if (mapId == currentMapId) continue;
-        const char* mapName = EspMapCatalog_nameForId(mapId);
-        EspAssetPackEntry mapEntry = {};
-        if (mapName == nullptr ||
-            !EspAssetPack_findEntry(mapName, &mapEntry)) {
-            continue;
-        }
-        if ((mapEntry.flags & ESP_ASSET_PACK_FLAG_DIRECTORY) != 0U ||
-            mapEntry.size == 0U || excludedCount >= kMapFlashMaxExcludedMaps) {
-            return failStage("invalid-excluded-bsp");
-        }
-        spans[excludedCount].nameHash = mapEntry.nameHash;
-        spans[excludedCount].sourceOffset = mapEntry.offset;
-        spans[excludedCount].size = mapEntry.size;
-        ++excludedCount;
-    }
-
-    for (uint32_t i = 0U; i < excludedCount; ++i) {
-        for (uint32_t j = i + 1U; j < excludedCount; ++j) {
-            if (spans[j].sourceOffset < spans[i].sourceOffset) {
-                const MapFlashExcludedSpan temp = spans[i];
-                spans[i] = spans[j];
-                spans[j] = temp;
-            }
-        }
-    }
-
-    uint32_t previousEnd = sourceDataOffset;
-    for (uint32_t i = 0U; i < excludedCount; ++i) {
-        const MapFlashExcludedSpan& span = spans[i];
-        if (span.sourceOffset < sourceDataOffset ||
-            span.sourceOffset < previousEnd ||
-            span.sourceOffset > sourcePackBytes ||
-            span.size > sourcePackBytes - span.sourceOffset ||
-            excludedBytes > UINT32_MAX - span.size) {
-            return failStage("excluded-span-invalid");
-        }
-        previousEnd = span.sourceOffset + span.size;
-        excludedBytes += span.size;
-    }
-    if (excludedBytes > sourceDataBytes) {
-        return failStage("excluded-bytes-invalid");
+    if (sourcePackBytes != plan.sourcePackBytes ||
+        sourceIndexOffset != plan.sourceIndexOffset ||
+        sourceDataOffset != plan.sourceDataOffset ||
+        sourceEntryCount != plan.entryCount) {
+        return failStage("source-plan-changed");
     }
 
     indexBytes = sourceEntryCount * (uint32_t)kEntryBytes;
     payloadFlashOffset = alignSector(kMapFlashIndexOffset + indexBytes);
-    stagedBytes = sourceDataBytes - excludedBytes;
+    stagedBytes = sourceDataBytes;
     if (payloadFlashOffset == 0U || payloadFlashOffset > partition->size ||
         stagedBytes > partition->size - payloadFlashOffset) {
         printf("[MAPFLASH] PLAN map=%u current=%s pack=%u entries=%u index=%u metadata=%u data=%u excludeMaps=%u excludeBytes=%u stage=%u partition=%u fits=no\n",
@@ -1573,11 +1570,11 @@ int EspAssetPack_mapFlashStage(uint8_t currentMapId)
                (unsigned int)indexBytes,
                (unsigned int)payloadFlashOffset,
                (unsigned int)sourceDataBytes,
-               (unsigned int)excludedCount,
-               (unsigned int)excludedBytes,
+               0U,
+               0U,
                (unsigned int)stagedBytes,
                (unsigned int)partition->size);
-        return failStage("working-set-does-not-fit");
+        return failStage("complete-pak-does-not-fit");
     }
 
     printf("[MAPFLASH] PLAN map=%u current=%s pack=%u entries=%u index=%u metadata=%u data=%u excludeMaps=%u excludeBytes=%u stage=%u partition=%u headroom=%u fits=yes\n",
@@ -1588,12 +1585,12 @@ int EspAssetPack_mapFlashStage(uint8_t currentMapId)
            (unsigned int)indexBytes,
            (unsigned int)payloadFlashOffset,
            (unsigned int)sourceDataBytes,
-           (unsigned int)excludedCount,
-           (unsigned int)excludedBytes,
+           0U,
+           0U,
            (unsigned int)stagedBytes,
            (unsigned int)partition->size,
            (unsigned int)(partition->size - payloadFlashOffset - stagedBytes));
-    printf("[MAPFLASH] CONTRACT raw-partition single-slot; copy complete current-map gameplay working set before resident gameplay; original index+offset semantics retained; 15KiB RAM cache stays L1; header committed last after flash readback; excluded BSP access fails closed; SD fallback during active gameplay=no\n");
+    printf("[MAPFLASH] CONTRACT raw-partition V2 full PAK index+payload; all BSPs present when supplied; direct source offsets; 15KiB RAM cache stays L1; commit marker last after flash readback; SD fallback during active gameplay=no\n");
 
     buffer = (uint8_t*)malloc(kMapFlashCopyBufferBytes);
     if (buffer == nullptr) {
@@ -1603,34 +1600,29 @@ int EspAssetPack_mapFlashStage(uint8_t currentMapId)
     if ((partition->size % kMapFlashSectorBytes) != 0U) {
         return failStage("partition-erase-alignment");
     }
-    if (mapFlashProgressCallback == nullptr) {
-        /* Preserve the hardware-validated cold-load path byte-for-byte when no
-         * presentation heartbeat is requested (notably MENU_MAIN -> Load). */
-        if (esp_partition_erase_range(partition, 0U, partition->size) != ESP_OK) {
+    const uint32_t eraseTotal = alignSector(payloadFlashOffset + stagedBytes);
+    if (eraseTotal == 0U || eraseTotal > partition->size) {
+        return failStage("erase-bounds");
+    }
+    /* Invalidate the old commit before touching any index/payload sectors. */
+    if (esp_partition_erase_range(partition, 0U, kMapFlashSectorBytes) != ESP_OK) {
+        return failStage("header-invalidate");
+    }
+    notifyMapFlashProgress(ESP_ASSET_PACK_MAP_FLASH_PROGRESS_ERASE,
+                           kMapFlashSectorBytes, eraseTotal);
+    for (uint32_t eraseOffset = kMapFlashSectorBytes; eraseOffset < eraseTotal;) {
+        uint32_t eraseBytes = eraseTotal - eraseOffset;
+        if (eraseBytes > kMapFlashEraseChunkBytes) eraseBytes = kMapFlashEraseChunkBytes;
+        if (esp_partition_erase_range(partition, eraseOffset, eraseBytes) != ESP_OK) {
             return failStage("partition-erase");
         }
-        printf("[MAPFLASH] ERASE bytes=%u chunk=all buffer=%u owner=transient progress=off\n",
-               (unsigned int)partition->size,
-               (unsigned int)kMapFlashCopyBufferBytes);
+        eraseOffset += eraseBytes;
+        notifyMapFlashProgress(ESP_ASSET_PACK_MAP_FLASH_PROGRESS_ERASE,
+                               eraseOffset, eraseTotal);
     }
-    else {
-        for (uint32_t eraseOffset = 0U; eraseOffset < partition->size;) {
-            uint32_t eraseBytes = partition->size - eraseOffset;
-            if (eraseBytes > kMapFlashEraseChunkBytes) {
-                eraseBytes = kMapFlashEraseChunkBytes;
-            }
-            if (esp_partition_erase_range(partition, eraseOffset, eraseBytes) != ESP_OK) {
-                return failStage("partition-erase");
-            }
-            eraseOffset += eraseBytes;
-            notifyMapFlashProgress(ESP_ASSET_PACK_MAP_FLASH_PROGRESS_ERASE,
-                                   eraseOffset, partition->size);
-        }
-        printf("[MAPFLASH] ERASE bytes=%u chunk=%u buffer=%u owner=transient progress=chunked\n",
-               (unsigned int)partition->size,
-               (unsigned int)kMapFlashEraseChunkBytes,
-               (unsigned int)kMapFlashCopyBufferBytes);
-    }
+    printf("[MAPFLASH] ERASE bytes=%u chunk=%u buffer=%u owner=transient progress=chunked\n",
+           (unsigned int)eraseTotal, (unsigned int)kMapFlashEraseChunkBytes,
+           (unsigned int)kMapFlashCopyBufferBytes);
 
     copyProgressTotal = indexBytes + stagedBytes;
     if (!copySdRangeToFlash(sourceIndexOffset,
@@ -1643,40 +1635,12 @@ int EspAssetPack_mapFlashStage(uint8_t currentMapId)
         return failStage("index-copy");
     }
 
-    uint32_t sourceCursor = sourceDataOffset;
-    uint32_t flashCursor = payloadFlashOffset;
-    for (uint32_t i = 0U; i < excludedCount; ++i) {
-        const MapFlashExcludedSpan& span = spans[i];
-        if (span.sourceOffset > sourceCursor) {
-            const uint32_t copyBytes = span.sourceOffset - sourceCursor;
-            if (!copySdRangeToFlash(sourceCursor,
-                                    copyBytes,
-                                    flashCursor,
-                                    buffer,
-                                    &payloadFNV,
-                                    &copyProgress,
-                                    copyProgressTotal)) {
-                return failStage("payload-copy-before-bsp");
-            }
-            flashCursor += copyBytes;
-        }
-        sourceCursor = span.sourceOffset + span.size;
+    if (indexFNV != plan.indexFNV1a) {
+        return failStage("source-index-changed");
     }
-    if (sourceCursor < sourcePackBytes) {
-        const uint32_t copyBytes = sourcePackBytes - sourceCursor;
-        if (!copySdRangeToFlash(sourceCursor,
-                                copyBytes,
-                                flashCursor,
-                                buffer,
-                                &payloadFNV,
-                                &copyProgress,
-                                copyProgressTotal)) {
-            return failStage("payload-copy-tail");
-        }
-        flashCursor += copyBytes;
-    }
-    if (flashCursor != payloadFlashOffset + stagedBytes) {
-        return failStage("payload-size-mismatch");
+    if (!copySdRangeToFlash(sourceDataOffset, stagedBytes, payloadFlashOffset,
+                            buffer, &payloadFNV, &copyProgress, copyProgressTotal)) {
+        return failStage("payload-copy");
     }
 
     verifyProgressTotal = indexBytes + stagedBytes;
@@ -1700,7 +1664,7 @@ int EspAssetPack_mapFlashStage(uint8_t currentMapId)
     committed.magic = kMapFlashMagic;
     committed.version = kMapFlashVersion;
     committed.headerBytes = (uint16_t)sizeof(MapFlashHeader);
-    committed.committed = kMapFlashCommitted;
+    committed.committed = UINT32_MAX; /* erased until the final marker write */
     committed.sourcePackBytes = sourcePackBytes;
     committed.sourceIndexOffset = sourceIndexOffset;
     committed.sourceDataOffset = sourceDataOffset;
@@ -1709,18 +1673,17 @@ int EspAssetPack_mapFlashStage(uint8_t currentMapId)
     committed.indexBytes = indexBytes;
     committed.payloadFlashOffset = payloadFlashOffset;
     committed.stagedBytes = stagedBytes;
-    committed.excludedBytes = excludedBytes;
     committed.indexFNV1a = indexFNV;
     committed.payloadFNV1a = payloadFNV;
     committed.currentMapHash = currentMapHash;
     committed.currentMapId = currentMapId;
-    committed.excludedCount = (uint8_t)excludedCount;
-    for (uint32_t i = 0U; i < excludedCount; ++i) {
-        committed.excluded[i] = spans[i];
-    }
-
     if (esp_partition_write(partition, 0U, &committed, sizeof(committed)) != ESP_OK) {
         return failStage("header-commit");
+    }
+    committed.committed = kMapFlashCommitted;
+    if (esp_partition_write(partition, offsetof(MapFlashHeader, committed),
+                            &committed.committed, sizeof(committed.committed)) != ESP_OK) {
+        return failStage("commit-marker");
     }
     MapFlashHeader readback = {};
     if (esp_partition_read(partition, 0U, &readback, sizeof(readback)) != ESP_OK ||
@@ -1744,12 +1707,10 @@ int EspAssetPack_mapFlashStage(uint8_t currentMapId)
     mapFlash.stats.indexBytes = indexBytes;
     mapFlash.stats.metadataBytes = payloadFlashOffset;
     mapFlash.stats.stagedBytes = stagedBytes;
-    mapFlash.stats.excludedBytes = excludedBytes;
     mapFlash.stats.buildMicros =
         (uint32_t)(esp_timer_get_time() - buildStart);
     mapFlash.stats.entryCount = (uint16_t)sourceEntryCount;
     mapFlash.stats.currentMapId = currentMapId;
-    mapFlash.stats.excludedMaps = (uint8_t)excludedCount;
     mapFlash.stats.active = 1U;
     mapFlash.stats.verified = 1U;
 
@@ -1760,9 +1721,14 @@ int EspAssetPack_mapFlashStage(uint8_t currentMapId)
            (unsigned int)currentMapId,
            (unsigned int)stagedBytes,
            (unsigned int)payloadFlashOffset,
-           (unsigned int)excludedCount,
-           (unsigned int)excludedBytes,
+           0U,
+           0U,
            (unsigned int)mapFlash.stats.buildMicros);
+    printf("[MAPFLASHV2] BUILD map=%u eraseBytes=%u writeBytes=%u verifiedBytes=%u headroom=%u scope=all-maps\n",
+           (unsigned int)currentMapId, (unsigned int)eraseTotal,
+           (unsigned int)(indexBytes + stagedBytes + sizeof(MapFlashHeader) + sizeof(committed.committed)),
+           (unsigned int)(indexBytes + stagedBytes),
+           (unsigned int)(partition->size - eraseTotal));
     return 1;
 }
 

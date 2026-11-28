@@ -88,32 +88,19 @@ uint32_t EspAssetPack_fileSize(void);
 int EspAssetPack_entryCount(void);
 uint32_t EspAssetPack_dataOffset(void);
 
-/* Prepare raw-flash backing for the map/world the caller is actually loading.
- * This is the normal map-load entry point and is deliberately generic: the
- * requested targetMapId may come from New Game, CHANGEMAP, Save/Load or any
- * future native transition path.
- *
- * A committed slot is reused only when all of these still match the requested
- * world: map id/hash, authoritative source PAK structural identity/index FNV,
- * current derived exclusion/layout plan, and flash index+payload FNV readback.
- * Any mismatch is a cache miss and falls through to the proven full staging
- * path below. There is never a gameplay-time SD fallback.
+/* Prepare the complete immutable PAK cache for the requested world.
+ * A V2 slot is reusable across map IDs when the requested BSP exists in the
+ * source index, source structural identity/index FNV and full flash index +
+ * payload FNV match. A V1 header or any mismatch triggers staging. Oversize
+ * packs fail closed. Gameplay never falls back to SD.
  */
 int EspAssetPack_mapFlashPrepare(uint8_t targetMapId);
 
-/* Force-stage one complete gameplay working set into the raw data partition
- * currently labelled "spiffs". The filesystem is never mounted: the partition
- * is used as a single transactional cache slot addressed with esp_partition_*.
- *
- * The staged set is deliberately conservative and dependency-complete: the
- * original PAK index plus every data byte except the other known BSP maps.
- * The current BSP remains staged because dialog/string consumers read it by
- * original entry-relative offsets during gameplay. The header is committed
- * only after copy + flash readback verification. Once active, an attempt to
- * read an excluded range fails closed; it never falls back to SD.
- *
- * Stage requires no logical PAK lease and no resident RAM cache. It erases and
- * rewrites the raw slot and is therefore a map-loading operation only.
+/* Force-stage the complete PAK index and payload into raw "spiffs" (not a
+ * filesystem). No BSP exclusions. The original entry-relative coordinates
+ * are preserved by a constant translation. The old header is invalidated
+ * first; the commit marker is written last after flash readback.
+ * Requires no logical PAK lease and no resident RAM cache.
  */
 int EspAssetPack_mapFlashStage(uint8_t currentMapId);
 
@@ -128,8 +115,8 @@ void EspAssetPack_mapFlashDeactivate(void);
 int EspAssetPack_isMapFlashActive(void);
 void EspAssetPack_mapFlashGetStats(EspAssetPackMapFlashStats* outStats);
 
-/* Read-only discovery of the last committed raw-flash map slot, including
- * after a gameplay session has deactivated its active PAK lease. This only
+/* Read-only discovery of the active map or the map that built the full PAK
+ * cache (a hint, not the last visited map after deactivation). This only
  * peeks at the committed header and map-name identity (NOT a full payload
  * verification). Returns zero if unavailable. Does not reactivate flash,
  * change leases, stage a map, or allocate any RAM. For HELP illustration
@@ -207,7 +194,7 @@ int EspAssetPack_findEntry(const char* name, EspAssetPackEntry* outEntry);
 
 /* Read exactly `length` bytes from an entry-relative offset. No allocation and
  * no decompression occurs in this function. In staged gameplay mode an
- * excluded/non-staged range is a strict failure, never an SD fallback.
+ * out-of-bounds/non-staged range is a strict failure, never an SD fallback.
  */
 int EspAssetPack_readRange(const EspAssetPackEntry* entry,
                            uint32_t relativeOffset,
