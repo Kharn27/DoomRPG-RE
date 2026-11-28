@@ -1,4 +1,4 @@
-# MAPFLASH-V2 P2 — one-shot same-target payload proof (pending CYD)
+# MAPFLASH-V2 P2 — one-shot same-target payload proof (CYD PASS)
 
 Base main verified `07e1557050394fe84a7f029eb0ffd69a20d215a4` (merged P1 #477); branch `agent/esp32-mapflash-v2-p2`; follow-up to #476. P1 already hardware PASS.
 
@@ -15,3 +15,7 @@ Existing P1 geometry/model and real L1 oracle retained. New mapflash_v2_handoff_
 ## Acceptance
 
 Use normal `esp32-cyd` or `esp-cyd-inverted` for the alternate panel. Keep the P1 raw cache and SD PAK unchanged; do not erase_flash. Cold LOAD Junction save: full HIT, verifiedBytes=2457374, no BUILD. Enter Sector 1 through actual CHANGEMAP (not merely LOAD); ideally also Entrance→Junction in same test. Expect first full HIT on target, then one `[MAPFLASHV2] HANDOFF map=2 eraseBytes=0 writeBytes=0 verifiedBytes=4820 priorPayloadBytes=2452554 payloadFNV=4eb90778 once=1 scope=same-target` (map=9 for Junction). ARM active=1 verified=1 reused=1, buildUs=0; no duplicate payload verification. Compare prepareUs and RELEASE time against P1 (Junction→Sector1 1859ms, nonpaired); expected saving roughly one payload scan ~0.4s, not yet measured. Play/open door/shoot; return menu and LOAD again; must see full HIT, not HANDOFF. Optional power cycle then LOAD different save for cold full verification. READY shapeData/mediaTexels NULL, flash render ranges sdRangeUs=0, normal SFX/music. No deliberate power cut/corruption in this round. Hardware PASS pending.
+
+## CYD verdict — 28 November 2026
+
+Candidate a52f9cf86fd25e1de86a8eb833c80f5d171764a1 (contextual SHA), CI push 46142964412 / PR 46142969761 SUCCESS. Log platformio-device-monitor-261128-132240.log: 4049 split lines, SHA256 5c0afc193ef36d1df5ccd4d8641ab692bc64d4ae66647cb160f1189c2a0f804d. POWERON_RESET, alternate-panel, 160x120, no PSRAM. Four full HIT, one same-map HANDOFF, zero BUILD/MISS; index 3a51cc4d payload 4eb90778. Junction cold verify 487874 us; target full 387642 us then HANDOFF 18897 us (4820 bytes vs 2457374, 368745 us saved on scan), ARM prepare 32961 us. RELEASE 1669 ms vs P1 1859 ms / V1 14307 ms (nonpaired). Subsequent menu LOAD map2/1 full verify 387539/387586 us. Four sessions READY NULL shapeData/mediaTexels, 48/48 RA2B flash sdRangeUs=0, three V11 LOADs, no nonzero underrun/underflow/recovery/queueOverflow/sfxRejectedTrack in log. One true CHANGEMAP tested; no second power cycle or corruption injection. P2 PASS, retain same branch for P3.
