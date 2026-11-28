@@ -295,10 +295,17 @@ static void EspNativeGameplayMonsterActiveSequence_serviceBody(struct DoomRPG_s*
         activeSeq.pauseProbe = 0U;
         activeSeq.turnInProgress = 1U;
 
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
         printf("[MONSTERACTIVESEQ] BEGIN turn=%u reason=%u activeCount=%u order=snapshot-prefix perMember=immediate-attack-then-move sameMonsterTurn=yes\n",
                (unsigned int)activeSeq.expandedTurns,
                (unsigned int)actual->lastReason,
                (unsigned int)activeSeq.turnActivationCount);
+#else
+        printf("[MONSTERACTIVESEQ] BEGIN turn=%u reason=%u activeCount=%u sameMonsterTurn=yes\n",
+               (unsigned int)activeSeq.expandedTurns,
+               (unsigned int)actual->lastReason,
+               (unsigned int)activeSeq.turnActivationCount);
+#endif
     }
 
     activationCount = activeSeq.turnActivationCount;
@@ -498,11 +505,19 @@ static void EspNativeGameplayMonsterActiveSequence_serviceBody(struct DoomRPG_s*
                   (unsigned int)activeSeq.turnDelivered);
     }
     else {
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
         DRPG_LOGI("[MONSTERACTIVESEQ] COMPLETE turn=%u reason=%u activeCount=%u delivered=%u sameMonsterTurn=yes ordered=yes publication=serialized-per-member multiAttack=one-probe-at-a-time\n",
                   (unsigned int)activeSeq.expandedTurns,
                   (unsigned int)actual->lastReason,
                   (unsigned int)activationCount,
                   (unsigned int)activeSeq.turnDelivered);
+#else
+        DRPG_LOGI("[MONSTERACTIVESEQ] COMPLETE turn=%u reason=%u activeCount=%u delivered=%u sameMonsterTurn=yes ordered=yes\n",
+                  (unsigned int)activeSeq.expandedTurns,
+                  (unsigned int)actual->lastReason,
+                  (unsigned int)activationCount,
+                  (unsigned int)activeSeq.turnDelivered);
+#endif
     }
     releaseDeferredDoorVisual(doomRpg, "monster-turn-complete");
 }

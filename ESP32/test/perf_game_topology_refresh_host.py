@@ -33,6 +33,8 @@ PREFIX = r'''
 static uint8_t storage[7U*1024U+9U];
 static uint8_t *topologyStorage, *entityTypes, *visualStates, *linkStatesLE;
 static EspMapSpriteTopologyView topologyView;
+static uint32_t typePrefixHash;
+static uint8_t typePrefixValid;
 static uint32_t rng=0x19abce43U;
 static uint32_t next(void) {
     rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5; return rng;
@@ -126,14 +128,71 @@ int main(void) {
             assert(memcmp(&expected,&topologyView,sizeof(expected))==0);
         }
     }
-    puts("PASS P3l topology exact FNV all lengths and refresh counters 0..1024 sprites");
+    /* P4j: mutate only the actual tile/order bytes, or adversarial flags.
+     * Compare entire public view with the independent scalar recount. */
+    for (n=1U; n<=1024U; ++n) {
+        topologyStorage=storage+(n&1U);
+        entityTypes=topologyStorage;
+        visualStates=topologyStorage+2U*n;
+        linkStatesLE=topologyStorage+3U*n;
+        memset(&topologyView,0,sizeof(topologyView));
+        topologyView.spriteCount=n;
+        topologyView.storageBytes=7U*n;
+        for(i=0;i<7U*n;++i) topologyStorage[i]=(uint8_t)next();
+        scalarRefresh();
+        for(trial=0;trial<8U;++trial) {
+            const unsigned k=next()%n;
+            const uint16_t before=linkStateAt(k);
+            const uint16_t after=(uint16_t)(before ^
+                (trial&1U ? ESP_MAP_SPRITE_TOPOLOGY_EXISTS :
+                (next() & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK)));
+            EspMapSpriteTopologyView actual;
+            linkStatesLE[2U*k]=(uint8_t)after;
+            linkStatesLE[2U*k+1U]=(uint8_t)(after>>8);
+            topologyStorage[5U*n+2U*k]=(uint8_t)next();
+            topologyStorage[5U*n+2U*k+1U]=(uint8_t)next();
+            ++topologyView.nextLinkOrder;
+            refreshRelinkView(before,after); actual=topologyView;
+            scalarRefresh();
+            assert(memcmp(&actual,&topologyView,sizeof(actual))==0);
+            linkStatesLE[2U*k]=(uint8_t)before;
+            linkStatesLE[2U*k+1U]=(uint8_t)(before>>8);
+            --topologyView.nextLinkOrder;
+            refreshRelinkView(after,before); actual=topologyView;
+            scalarRefresh();
+            assert(memcmp(&actual,&topologyView,sizeof(actual))==0);
+        }
+    }
+    /* P4k: map build seeds immutable type tables, then visual/link/order
+     * writes and resetMutable keep exactly the same byte-stream digest.
+     * Rebuild at the same address and same count must reseed as well. */
+    for (n=1U; n<=1024U; ++n) {
+        topologyStorage=storage+(n&1U);
+        topologyView.spriteCount=n;
+        topologyView.storageBytes=7U*n;
+        for (trial=0;trial<2U;++trial) {
+            typePrefixValid=0U;
+            for(i=0;i<7U*n;++i) topologyStorage[i]=(uint8_t)next();
+            assert(stateHash()==scalarHash());
+            seedTypePrefix();
+            assert(typePrefixValid && stateHash()==scalarHash());
+            for(i=0;i<16U;++i) {
+                topologyStorage[2U*n+next()%(5U*n)]^=(uint8_t)next();
+                topologyView.nextLinkOrder=(uint16_t)next();
+                assert(stateHash()==scalarHash());
+            }
+        }
+        typePrefixValid=0U;
+    }
+    puts("PASS P3l/P4j/P4k exact topology FNV and immutable prefix parity 0..1024 sprites");
     return 0;
 }
 '''
 body = PREFIX + "\n".join(extract(s) for s in (
     "static uint16_t readLe16(", "static uint32_t hashByte(",
+    "static uint32_t hashStorageRange(", "static void seedTypePrefix(",
     "static uint32_t stateHash(", "static uint16_t linkStateAt(",
-    "static void refreshView(")) + REFERENCE + CHECKS
+    "static void refreshView(", "static void refreshRelinkView(")) + REFERENCE + CHECKS
 with tempfile.TemporaryDirectory(prefix="p3l-topology-") as tmp:
     path=Path(tmp)/"test.c"
     exe=Path(tmp)/"test"

@@ -222,6 +222,41 @@ int main(void) {
         EspPerfMoveVisibility_end(1);
     }
 #endif
+    /* P4g: diagnostics cannot grant reuse. Count only armed, presented
+     * moves; keep distinct groups, nonzero FNV and exact time sums. */
+    state.visibleLeaves[0]=0U;
+    EspPerfMoveVisibility_invalidate();
+    const EspPerfMoveFrameCost firstBefore = *EspPerfMoveVisibility_frameCost(0);
+    const EspPerfMoveFrameCost contBefore = *EspPerfMoveVisibility_frameCost(1);
+    start(1,100);
+    EspPerfMoveVisibility_recordPresented(0,1,44U,44U,1,90000U,40000U);
+    EspPerfMoveVisibility_end(1);
+    assert(!reuse(0,1,160,224,120));
+    start(1,100);
+    EspPerfMoveVisibility_recordPresented(1,1,44U,45U,1,80000U,39000U);
+    EspPerfMoveVisibility_end(1);
+    start(1,100);
+    EspPerfMoveVisibility_recordPresented(1,1,0U,0U,1,80000U,39000U);
+    EspPerfMoveVisibility_end(1);
+    start(1,100);
+    EspPerfMoveVisibility_recordPresented(1,0,44U,44U,1,80000U,39000U);
+    EspPerfMoveVisibility_end(0);
+    start(0,100);
+    EspPerfMoveVisibility_recordPresented(1,1,44U,44U,0,80000U,39000U);
+    EspPerfMoveVisibility_end(2);
+    const EspPerfMoveFrameCost* firstCost = EspPerfMoveVisibility_frameCost(0);
+    const EspPerfMoveFrameCost* contCost = EspPerfMoveVisibility_frameCost(1);
+    assert(firstCost->presented == firstBefore.presented+1U);
+    assert(firstCost->equalFNV == firstBefore.equalFNV+1U);
+    assert(firstCost->rejectedEqual == firstBefore.rejectedEqual+1U);
+    assert(firstCost->quietRejectedEqual == firstBefore.quietRejectedEqual+1U);
+    assert(firstCost->equalFrameUs == firstBefore.equalFrameUs+90000U);
+    assert(firstCost->equalPresentUs == firstBefore.equalPresentUs+40000U);
+    assert(contCost->presented == contBefore.presented+3U);
+    assert(contCost->equalFNV == contBefore.equalFNV+1U);
+    assert(contCost->quietRejectedEqual == contBefore.quietRejectedEqual);
+    assert(contCost->equalFrameUs == contBefore.equalFrameUs+80000U);
+    assert(contCost->equalPresentUs == contBefore.equalPresentUs+39000U);
     state.visibleLeaves[0]=3U;
     start(1,100); EspPerfMoveVisibility_end(1);
     assert(!reuse(1,1,160,224,120)); /* visible leaf */

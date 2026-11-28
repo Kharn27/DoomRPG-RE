@@ -829,6 +829,29 @@ done:
     return ok;
 }
 
+/* P4l: descending depth, newest index first on exact ties.
+ * Common append/near-tail insertions stay on the tiny scalar path.
+ * Dense, far-from-tail insertions use a lower bound and overlap-safe move. */
+static uint32_t openOrderSlot(Order* order, uint32_t count, int32_t sortZ) {
+    uint32_t position = count;
+    if (count >= 8U && sortZ >= order[count - 8U].sortZ) {
+        uint32_t lo = 0U, hi = count - 8U;
+        while (lo < hi) {
+            const uint32_t mid = lo + ((hi - lo) >> 1);
+            if (order[mid].sortZ > sortZ) lo = mid + 1U;
+            else hi = mid;
+        }
+        memmove(order + lo + 1U, order + lo,
+                (count - lo) * sizeof(*order));
+        return lo;
+    }
+    while (position > 0U && sortZ >= order[position - 1U].sortZ) {
+        order[position] = order[position - 1U];
+        --position;
+    }
+    return position;
+}
+
 static int buildOrder(Render_t* render,
                       const EspMapRuntimeView* runtime,
                       const EspNativeBspVisibilityState* visibility,
@@ -1005,11 +1028,7 @@ static int buildOrder(Render_t* render,
             visualX, visualY, info, type,
             render->viewCos_, render->viewSin_, render->viewTransX);
 
-        position = count;
-        while (position > 0U && sortZ >= order[position - 1U].sortZ) {
-            order[position] = order[position - 1U];
-            --position;
-        }
+        position = openOrderSlot(order, count, sortZ);
         order[position].index = (uint16_t)i;
         order[position].logical = (uint16_t)id;
         order[position].info = info;
@@ -2080,7 +2099,12 @@ static int renderImpl(struct Render_s* renderBase,
         free(workspace);
         return 0;
     }
-    memset(workspace, 0, sizeof(*workspace));
+    /* P4a: Frame is scratch, not retained state. Every draw admits bounds
+     * and loads its complete live payload before consumption (CROSS reuse
+     * starts with a successful first load). Clear all other workspace bytes
+     * exactly as before, including rejected/seen/visibility bookkeeping. */
+    memset((uint8_t*)workspace + offsetof(SpriteWorkspace, order), 0,
+           sizeof(*workspace) - offsetof(SpriteWorkspace, order));
     memset(saved, 0, sizeof(*saved));
     memset(&stats, 0, sizeof(stats));
 #if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE

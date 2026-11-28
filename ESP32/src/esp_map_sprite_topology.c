@@ -21,6 +21,9 @@ static uint8_t* visualStates;
 static uint8_t* linkStatesLE;
 static uint8_t* linkOrdersLE;
 static EspMapSpriteTopologyView topologyView;
+/* Immutable type/subtype prefix, owned by the resident topology build. */
+static uint32_t typePrefixHash;
+static uint8_t typePrefixValid;
 
 static uint16_t readLe16(const uint8_t* p) {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
@@ -36,14 +39,8 @@ static uint32_t hashByte(uint32_t hash, uint8_t value) {
     return hash * 16777619U;
 }
 
-static uint32_t stateHash(void) {
-    uint32_t hash = 2166136261U;
-    uint32_t i = 0U;
-    const uint32_t bytes = topologyView.storageBytes;
-
-    if (topologyStorage == NULL) return 0U;
-    /* P3l: same byte-serial FNV, eight steps per loop. No alignment
-     * assumptions, padding reads, word-endian dependency or changed seed. */
+/* Same byte-serial FNV, eight steps per loop, with arbitrary tails. */
+static uint32_t hashStorageRange(uint32_t hash, uint32_t i, uint32_t bytes) {
     for (; bytes - i >= 8U; i += 8U) {
         hash = hashByte(hash, topologyStorage[i + 0U]);
         hash = hashByte(hash, topologyStorage[i + 1U]);
@@ -54,9 +51,32 @@ static uint32_t stateHash(void) {
         hash = hashByte(hash, topologyStorage[i + 6U]);
         hash = hashByte(hash, topologyStorage[i + 7U]);
     }
-    for (; i < bytes; ++i) {
-        hash = hashByte(hash, topologyStorage[i]);
+    for (; i < bytes; ++i) hash = hashByte(hash, topologyStorage[i]);
+    return hash;
+}
+
+static void seedTypePrefix(void) {
+    typePrefixValid = 0U;
+    if (topologyStorage == NULL ||
+        topologyView.spriteCount > topologyView.storageBytes / 7U) return;
+    typePrefixHash = hashStorageRange(2166136261U, 0U,
+                                      topologyView.spriteCount * 2U);
+    typePrefixValid = 1U;
+}
+
+static uint32_t stateHash(void) {
+    uint32_t hash = 2166136261U;
+    uint32_t i = 0U;
+    const uint32_t bytes = topologyView.storageBytes;
+    if (topologyStorage == NULL) return 0U;
+    /* P4k: entityTypes and entitySubTypes are written only during build.
+     * Resume exact FNV at visualStates; mutable visual/link/order bytes
+     * and nextLinkOrder are still hashed on every refresh. */
+    if (typePrefixValid && topologyView.spriteCount <= bytes / 7U) {
+        i = topologyView.spriteCount * 2U;
+        hash = typePrefixHash;
     }
+    hash = hashStorageRange(hash, i, bytes);
     hash = hashByte(hash, (uint8_t)(topologyView.nextLinkOrder & 0xffU));
     return hashByte(hash,
                     (uint8_t)((topologyView.nextLinkOrder >> 8) & 0xffU));
@@ -118,6 +138,16 @@ static void refreshView(void) {
     topologyView.humanCount = humanCount;
     topologyView.destructibleCount = destructibleCount;
     topologyView.stateFNV1a = stateHash();
+}
+
+/* P4j: a tile-only relink cannot change any population counter.
+ * Keep the complete byte-serial state fingerprint, including link order.
+ * Public prepared records with different flags retain the general path. */
+static void refreshRelinkView(uint16_t before, uint16_t after) {
+    if (((before ^ after) & ~ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK) == 0U)
+        topologyView.stateFNV1a = stateHash();
+    else
+        refreshView();
 }
 
 static int sameDescriptor(const EspMapEventDescriptor* a,
@@ -282,6 +312,7 @@ static int removeBlocker(uint16_t spriteIndex,
 }
 
 void EspMapSpriteTopology_reset(void) {
+    typePrefixValid = 0U;
     if (topologyStorage != NULL) heap_caps_free(topologyStorage);
     topologyStorage = NULL;
     entityTypes = NULL;
@@ -335,6 +366,7 @@ int EspMapSpriteTopology_buildFromRuntime(
         }
     }
 
+    typePrefixValid = 0U;
     storageBytes = runtime->mapSpriteCount * 7U;
     if (topologyStorage == NULL || topologyView.storageBytes != storageBytes) {
         if (topologyStorage != NULL) heap_caps_free(topologyStorage);
@@ -392,6 +424,7 @@ int EspMapSpriteTopology_buildFromRuntime(
         }
     }
 
+    seedTypePrefix();
     if (!EspMapSpriteTopology_resetMutableFromRuntime()) {
         EspMapSpriteTopology_reset();
         return 0;
@@ -771,7 +804,7 @@ int EspMapSpriteTopology_commitPreparedRelink(
     setLinkState(relink->spriteIndex, relink->linkStateAfter);
     setLinkOrder(relink->spriteIndex, relink->linkOrderAfter);
     topologyView.nextLinkOrder = relink->nextLinkOrderAfter;
-    refreshView();
+    refreshRelinkView(relink->linkStateBefore, relink->linkStateAfter);
     return 1;
 }
 
@@ -788,7 +821,7 @@ int EspMapSpriteTopology_rollbackPreparedRelink(
     setLinkState(relink->spriteIndex, relink->linkStateBefore);
     setLinkOrder(relink->spriteIndex, relink->linkOrderBefore);
     topologyView.nextLinkOrder = relink->nextLinkOrderBefore;
-    refreshView();
+    refreshRelinkView(relink->linkStateBefore, relink->linkStateAfter);
     return 1;
 }
 

@@ -55,6 +55,39 @@ int main(void) {
         for (int height = 1; height <= 64; ++height)
             check(bits, height);
     }
-    puts("sprite mask count and run parity PASS");
+    /* Exercise the four-byte SWAR path at every alignment and tail.
+     * Independent per-bit reference; no production helper in expected count. */
+    for (unsigned sample = 0U; sample < 4096U; ++sample) {
+        uint8_t raw[12];
+        for (unsigned i = 0U; i < sizeof raw; ++i) {
+            rng = rng * 1664525U + 1013904223U;
+            raw[i] = (uint8_t)(rng >> 24U);
+        }
+        for (unsigned align = 0U; align < 4U; ++align) {
+            for (unsigned height = 1U; height <= 64U; ++height) {
+                unsigned reference = 0U;
+                for (unsigned row = 0U; row < height; ++row)
+                    reference += (raw[align + row / 8U] >> (row & 7U)) & 1U;
+                assert(EspNativeSpriteMask_countColumn(raw + align, height) ==
+                       reference);
+            }
+        }
+    }
+    /* P4d: long homogeneous runs, a single differing bit at each
+     * possible position, every partial height, both polarities and
+     * byte alignments. Each check compares ALL starting rows. */
+    for (unsigned align = 0U; align < 4U; ++align) {
+        for (unsigned polarity = 0U; polarity < 2U; ++polarity) {
+            for (unsigned bit = 0U; bit < 64U; ++bit) {
+                uint8_t raw[12];
+                for (unsigned i = 0U; i < sizeof raw; ++i)
+                    raw[i] = polarity ? 255U : 0U;
+                raw[align + bit / 8U] ^= (uint8_t)(1U << (bit & 7U));
+                for (int height = 1; height <= 64; ++height)
+                    check(raw + align, height);
+            }
+        }
+    }
+    puts("sprite mask count and run parity PASS (including 1048576 unaligned/tail counts and 32768 single-transition columns)");
     return 0;
 }

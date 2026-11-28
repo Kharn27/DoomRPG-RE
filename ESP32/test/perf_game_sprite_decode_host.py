@@ -144,3 +144,48 @@ with tempfile.TemporaryDirectory(prefix="p3m-decode-") as tmp:
         ["-std=c11","-O2","-Wall","-Wextra","-Werror","-I",str(ROOT/"include"),
          str(path),"-o",str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
+
+
+# Exercise the actual P4l slot opener against the old scalar insertion.
+ORDER_CHECK = r'''
+static uint32_t rng=0x859a2f31U;
+static uint32_t next(void) {
+    rng ^= rng<<13; rng ^= rng>>17; rng ^= rng<<5; return rng;
+}
+int main(void) {
+    Order a[256], b[256];
+    for (unsigned trial=0; trial<4096U; ++trial) {
+        memset(a,0xa5,sizeof(a)); memset(b,0xa5,sizeof(b));
+        unsigned count=trial%256U;
+        for (unsigned i=0;i<count;++i) {
+            int32_t z;
+            switch(trial%6U) {
+                case 0: z=(int32_t)i; break;
+                case 1: z=-(int32_t)i; break;
+                case 2: z=0; break;
+                case 3: z=(int32_t)(next()%9U)-4; break;
+                case 4: z=(i&1U)?INT32_MIN:INT32_MAX; break;
+                default: z=(int32_t)(next()&0x7fffffffU); break;
+            }
+            Order incoming={(uint16_t)i,(uint16_t)next(),next(),z};
+            uint32_t ref=i;
+            while(ref>0U && z>=b[ref-1U].sortZ) {
+                b[ref]=b[ref-1U]; --ref;
+            }
+            uint32_t got=openOrderSlot(a,i,z);
+            assert(got==ref);
+            a[got]=incoming; b[ref]=incoming;
+            assert(memcmp(a,b,sizeof(a))==0);
+        }
+    }
+    puts("PASS P4l order exact bytes, newest-first ties, dense/ascending/descending/extreme depths");
+    return 0;
+}
+'''
+with tempfile.TemporaryDirectory(prefix="p4l-order-") as tmp:
+    path=Path(tmp)/"order.c"; exe=Path(tmp)/"order"
+    path.write_text("#include <stdint.h>\n#include <string.h>\n#include <assert.h>\n#include <stdio.h>\n"+
+                    struct("Order")+"\n"+extract("static uint32_t openOrderSlot(")+"\n"+ORDER_CHECK)
+    subprocess.run(shlex.split(os.environ.get("CC","cc"))+
+        ["-std=c11","-O2","-Wall","-Wextra","-Werror",str(path),"-o",str(exe)],check=True)
+    subprocess.run([str(exe)],check=True)

@@ -77,6 +77,15 @@ void EspPerfMoveVisibility_noteAmbientRasterPhase(uint32_t info, uint8_t type,
 void EspPerfMoveVisibility_noteUnsafe(void);
 /* 0 failed, 1 successful and reusable, 2 successful but not reusable. */
 void EspPerfMoveVisibility_end(int rendered);
+/* P4g: measurements only, never a presentation or reuse authority. */
+typedef struct EspPerfMoveFrameCost_s {
+    uint32_t presented, equalFNV, rejectedEqual, quietRejectedEqual;
+    uint64_t equalFrameUs, equalPresentUs;
+} EspPerfMoveFrameCost;
+void EspPerfMoveVisibility_recordPresented(int continuation, int presented,
+    uint32_t beforeFNV, uint32_t afterFNV, int quietAfter,
+    uint32_t frameUs, uint32_t presentUs);
+const EspPerfMoveFrameCost* EspPerfMoveVisibility_frameCost(int continuation);
 int EspPerfMoveVisibility_tryReuse(int continuation, uint32_t blockers, uint16_t sprite,
     uint16_t oldX, uint16_t oldY, uint16_t newX, uint16_t newY, uint32_t nowMs);
 #endif

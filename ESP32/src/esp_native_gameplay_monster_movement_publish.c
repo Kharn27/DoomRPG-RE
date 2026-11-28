@@ -616,6 +616,9 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
                 frame.frameBeforeFNV, frame.frameAfterFNV, sideEffects, quietAfter);
         }
 #endif
+        EspPerfMoveVisibility_recordPresented(continuation, frame.finalPresented,
+            frame.frameBeforeFNV, frame.frameAfterFNV, quietAfter,
+            frame.totalMicros, frame.presentMicros);
         EspPerfMoveVisibility_end(frame.finalPresented && quietAfter ? 1 : 2);
 #if DOOMRPG_PERF_P2_SHADOW
         EspPerfMoveVisibility_rememberContext(
