@@ -14,6 +14,7 @@
 #include "esp_asset_pack.h"
 #include "doomrpg_log.h"
 #include "esp_native_first_frame.h"
+#include "esp_native_raster_contract.h"
 #include "esp_native_gameplay_frame.h"
 #if defined(ARDUINO) && defined(DOOMRPG_ESP32)
 #include "esp_audio_entrance_music.h"
@@ -34,7 +35,7 @@
 #include "platform_video_c_bridge.h"
 #include "platform_video_config.h"
 
-#define HUD_ROWS 20U
+#define HUD_ROWS ESP_NATIVE_RASTER_CLASSIC_HUD_ROWS
 #define HUD_BAND_PIXELS (DOOMRPG_LOGICAL_WIDTH * HUD_ROWS)
 #define BOTTOM_HUD_Y (DOOMRPG_LOGICAL_HEIGHT - HUD_ROWS)
 #define WORLD_Y HUD_ROWS

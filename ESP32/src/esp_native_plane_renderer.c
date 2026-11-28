@@ -14,6 +14,10 @@
 #include "esp_map_runtime.h"
 #include "esp_native_plane_renderer.h"
 #include "esp_render_geometry_primitives.h"
+#include "esp_native_raster_contract.h"
+#if DOOMRPG_RES60_P27_METADATA_WINDOWS && defined(ARDUINO)
+#include "esp_res60_profile.h"
+#endif
 
 #define MAPPINGS_HEADER_BYTES 16U
 #define MAPPING_PAIR_BYTES 8U
@@ -22,8 +26,16 @@
 #define PLANE_TEXTURE_BYTES 2048U
 #define PLANE_PALETTE_COLORS 16U
 #define MAX_PLANE_TEXTURES 24U
+#define PLANE_HEAP_CACHE_SLOTS 6U
+#if DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH
+#define PLANE_CACHE_SLOTS 9U
+#else
 #define PLANE_CACHE_SLOTS 6U
+#endif
 #define EXPECTED_PLANE_MAP_BYTES 2048U
+#ifndef DOOMRPG_RES60_P30_SPAN_REUSE
+#define DOOMRPG_RES60_P30_SPAN_REUSE DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH
+#endif
 
 typedef struct PlaneTextureDesc_s {
     uint8_t logicalId;
@@ -48,10 +60,78 @@ typedef struct PlaneWork_s {
     uint16_t textureCount;
     PlaneCacheSlot cache[PLANE_CACHE_SLOTS];
     uint32_t cacheClock;
+#if DOOMRPG_RES60_P30_SPAN_REUSE
+    uint32_t spanReuseHits;
+#endif
     EspNativePlaneRenderStats stats;
 } PlaneWork;
 
 static EspNativePlaneRenderStats planeStats;
+
+#if DOOMRPG_RES60_P28_DESCRIPTOR_LEASE
+/* Compact metadata only. All texel bytes remain transient. The exact-size
+ * allocation is owned by the preview map lease, never Classic gameplay. */
+typedef struct PlaneDescriptorLease_s {
+    const uint8_t* planeMap;
+    uint32_t arenaFNV, sourceCRC;
+    EspAssetPackEntry mappings, palettes, wall;
+    uint16_t count;
+    PlaneTextureDesc desc[];
+} PlaneDescriptorLease;
+static PlaneDescriptorLease* descriptorLease;
+static size_t descriptorBytes(uint16_t count) {
+    return sizeof(PlaneDescriptorLease)+(size_t)count*sizeof(PlaneTextureDesc);
+}
+void EspNativePlaneRenderer_resetRes60Metadata(void) {
+    if (descriptorLease != NULL) {
+        DRPG_LOGI("[RES60P28] RELEASE bytes=%u\n",
+                  (unsigned)descriptorBytes(descriptorLease->count));
+        free(descriptorLease);
+        descriptorLease=NULL;
+    }
+}
+static int sameEntry(const EspAssetPackEntry* a,const EspAssetPackEntry* b) {
+    return a->nameHash==b->nameHash && a->offset==b->offset &&
+           a->size==b->size && a->crc32==b->crc32 && a->flags==b->flags;
+}
+static int restoreDescriptors(PlaneWork* work,const EspAssetPackEntry* mappings,
+                              const EspAssetPackEntry* palettes) {
+    const PlaneDescriptorLease* c=descriptorLease;
+    if (c==NULL || c->planeMap!=work->runtime->planeMap ||
+        c->arenaFNV!=work->runtime->arenaFNV1a || c->sourceCRC!=work->runtime->sourceCrc32 ||
+        c->count!=work->textureCount || c->count>MAX_PLANE_TEXTURES ||
+        !sameEntry(&c->mappings,mappings) || !sameEntry(&c->palettes,palettes) ||
+        !sameEntry(&c->wall,&work->wallTexels)) return 0;
+    for (uint16_t i=0;i<c->count;++i)
+        if (c->desc[i].logicalId!=work->textures[i].logicalId) return 0;
+    memcpy(work->textures,c->desc,(size_t)c->count*sizeof(PlaneTextureDesc));
+    DRPG_LOGI("[RES60P28] META cache=HIT bytes=%u textures=%u\n",
+              (unsigned)descriptorBytes(c->count),(unsigned)c->count);
+    return 1;
+}
+static void retainDescriptors(const PlaneWork* work,const EspAssetPackEntry* mappings,
+                              const EspAssetPackEntry* palettes) {
+    PlaneDescriptorLease* c;
+    const size_t bytes=descriptorBytes(work->textureCount);
+    if (descriptorLease!=NULL) return;
+    c=(PlaneDescriptorLease*)malloc(bytes);
+    if (c==NULL) {
+        DRPG_LOGI("[RES60P28] META cache=FALLBACK bytes=%u\n",(unsigned)bytes);
+        return;
+    }
+    c->planeMap=work->runtime->planeMap;
+    c->arenaFNV=work->runtime->arenaFNV1a;
+    c->sourceCRC=work->runtime->sourceCrc32;
+    c->mappings=*mappings;
+    c->palettes=*palettes;
+    c->wall=work->wallTexels;
+    c->count=work->textureCount;
+    memcpy(c->desc,work->textures,(size_t)c->count*sizeof(PlaneTextureDesc));
+    descriptorLease=c;
+    DRPG_LOGI("[RES60P28] META cache=MISS bytes=%u textures=%u\n",
+              (unsigned)bytes,(unsigned)c->count);
+}
+#endif
 
 static uint16_t readLe16(const uint8_t* p) {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
@@ -105,6 +185,40 @@ static int collectTextures(PlaneWork* work) {
     return work->textureCount > 0U;
 }
 
+#if DOOMRPG_RES60_P27_METADATA_WINDOWS
+/* Three independent 512-byte entry-relative windows occupy 1536 bytes of
+ * the FIRST EXISTING 2048-byte texel lease before it holds any texel.
+ * No additional payload allocation; the LRU is still invalid at this point. */
+typedef struct PlaneMetadataWindow_s {
+    uint32_t base, length, reads, hits;
+} PlaneMetadataWindow;
+static int readMetadata(const EspAssetPackEntry* entry, uint32_t offset,
+                        void* dst, size_t length, PlaneMetadataWindow* w,
+                        uint8_t* scratch) {
+    uint32_t base, available;
+    if (offset > entry->size || length > entry->size - offset) return 0;
+    if (scratch == NULL) return EspAssetPack_readRange(entry, offset, dst, length);
+    if (w->length && offset >= w->base &&
+        offset-w->base <= w->length && length <= w->length-(offset-w->base)) {
+        memcpy(dst, scratch+offset-w->base, length);
+        ++w->hits;
+        return 1;
+    }
+    base = offset & ~511U;
+    if (length > 512U-(offset-base)) base=offset;
+    available=entry->size-base;
+    if (available>512U) available=512U;
+    w->length=0U;
+    if (length>available-(offset-base) ||
+        !EspAssetPack_readRange(entry,base,scratch,available)) return 0;
+    ++w->reads;
+    w->base=base;
+    w->length=available;
+    memcpy(dst,scratch+offset-base,length);
+    return 1;
+}
+#endif
+
 static int resolveTextures(PlaneWork* work) {
     EspAssetPackEntry mappings;
     EspAssetPackEntry palettes;
@@ -121,6 +235,10 @@ static int resolveTextures(PlaneWork* work) {
     uint8_t wallHeader[WALL_TEXEL_HEADER_BYTES];
     uint32_t wallDataBytes;
     uint16_t i;
+#if DOOMRPG_RES60_P27_METADATA_WINDOWS
+    PlaneMetadataWindow idWindow={0}, pairWindow={0}, paletteWindow={0};
+    uint8_t* scratch = work != NULL ? work->cache[0].texels : NULL;
+#endif
 
     if (work == NULL || !EspAssetPack_isOpen() ||
         !EspAssetPack_findEntry("mappings.bin", &mappings) ||
@@ -128,8 +246,19 @@ static int resolveTextures(PlaneWork* work) {
         !EspAssetPack_findEntry("wtexels.bin", &work->wallTexels) ||
         mappings.size < MAPPINGS_HEADER_BYTES ||
         palettes.size < PALETTES_HEADER_BYTES ||
-        work->wallTexels.size < WALL_TEXEL_HEADER_BYTES ||
-        !EspAssetPack_readRange(&mappings, 0U, mappingHeader,
+        work->wallTexels.size < WALL_TEXEL_HEADER_BYTES) return 0;
+#if DOOMRPG_RES60_P28_DESCRIPTOR_LEASE
+    if (scratch != NULL && descriptorLease != NULL) {
+        /* P13 has already checked the immutable arena on warm frames.
+         * Recheck all three PAK entry identities before using cached metadata. */
+        if (!restoreDescriptors(work,&mappings,&palettes)) {
+            DRPG_LOGE("[RES60P28] FAIL CLOSED stage=descriptor-identity\n");
+            return 0;
+        }
+        return 1;
+    }
+#endif
+    if (!EspAssetPack_readRange(&mappings, 0U, mappingHeader,
                                 sizeof(mappingHeader)) ||
         !EspAssetPack_readRange(&palettes, 0U, paletteHeader,
                                 sizeof(paletteHeader)) ||
@@ -176,17 +305,27 @@ static int resolveTextures(PlaneWork* work) {
         uint32_t p;
 
         if ((uint32_t)out->logicalId >= textureIdCount ||
+#if DOOMRPG_RES60_P27_METADATA_WINDOWS
+            !readMetadata(&mappings, textureIdBase + (uint32_t)out->logicalId*2U,
+                          idBytes,sizeof(idBytes),&idWindow,scratch)) return 0;
+#else
             !EspAssetPack_readRange(&mappings,
                                     textureIdBase +
                                         (uint32_t)out->logicalId * 2U,
                                     idBytes, sizeof(idBytes))) return 0;
+#endif
 
         actual = readLe16(idBytes);
         if (actual >= texelPairs || actual > UINT16_MAX ||
+#if DOOMRPG_RES60_P27_METADATA_WINDOWS
+            !readMetadata(&mappings,MAPPINGS_HEADER_BYTES+actual*MAPPING_PAIR_BYTES,
+                          pair,sizeof(pair),&pairWindow,scratch ? scratch+512U : NULL)) return 0;
+#else
             !EspAssetPack_readRange(&mappings,
                                     MAPPINGS_HEADER_BYTES +
                                         actual * MAPPING_PAIR_BYTES,
                                     pair, sizeof(pair))) return 0;
+#endif
 
         sourceOffset = (int32_t)readLe32(pair);
         paletteOffset = (int32_t)readLe32(pair + 4U);
@@ -202,10 +341,16 @@ static int resolveTextures(PlaneWork* work) {
                     (WALL_TEXEL_HEADER_BYTES +
                      ((uint32_t)sourceOffset >> 1))) return 0;
 
+#if DOOMRPG_RES60_P27_METADATA_WINDOWS
+        if (!readMetadata(&palettes,PALETTES_HEADER_BYTES+(uint32_t)paletteOffset*2U,
+                          paletteRaw,sizeof(paletteRaw),&paletteWindow,
+                          scratch ? scratch+1024U : NULL)) return 0;
+#else
         if (!EspAssetPack_readRange(
                 &palettes,
                 PALETTES_HEADER_BYTES + (uint32_t)paletteOffset * 2U,
                 paletteRaw, sizeof(paletteRaw))) return 0;
+#endif
 
         out->actualId = (uint16_t)actual;
         out->sourceTexelOffset = (uint32_t)sourceOffset;
@@ -214,6 +359,16 @@ static int resolveTextures(PlaneWork* work) {
                 sourceToFramebuffer565(readLe16(&paletteRaw[p * 2U]));
         }
     }
+#if DOOMRPG_RES60_P27_METADATA_WINDOWS
+    if (scratch != NULL) {
+        DRPG_LOGI("[RES60P27] META reads=%u/%u/%u hits=%u/%u/%u scratch=existing-lease\n",
+                  (unsigned)idWindow.reads,(unsigned)pairWindow.reads,(unsigned)paletteWindow.reads,
+                  (unsigned)idWindow.hits,(unsigned)pairWindow.hits,(unsigned)paletteWindow.hits);
+    }
+#endif
+#if DOOMRPG_RES60_P28_DESCRIPTOR_LEASE
+    if (scratch != NULL) retainDescriptors(work,&mappings,&palettes);
+#endif
     return 1;
 }
 
@@ -228,6 +383,10 @@ static void releaseCache(PlaneWork* work) {
     uint32_t i;
     if (work == NULL) return;
     for (i = 0U; i < PLANE_CACHE_SLOTS; ++i) {
+#if DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH
+        /* Slots 6..8 are borrowed, never freed by this owner. */
+        if (i < PLANE_HEAP_CACHE_SLOTS)
+#endif
         free(work->cache[i].texels);
         work->cache[i].texels = NULL;
         work->cache[i].source = NULL;
@@ -240,7 +399,7 @@ static int initCache(PlaneWork* work) {
     uint32_t i;
     if (work == NULL) return 0;
     memset(work->cache, 0, sizeof(work->cache));
-    for (i = 0U; i < PLANE_CACHE_SLOTS; ++i) {
+    for (i = 0U; i < PLANE_HEAP_CACHE_SLOTS; ++i) {
         work->cache[i].texels = (uint8_t*)malloc(PLANE_TEXTURE_BYTES);
         if (work->cache[i].texels == NULL) {
             if (i == 0U) {
@@ -317,6 +476,53 @@ static int acquireTexture(PlaneWork* work,
     return 1;
 }
 
+/* P30: row-local last material/slot, no extra texel allocation.
+ * No other acquisition happens while reusing the slot. Refresh LRU age
+ * and hit count exactly once per pixel, including across uint32 wrap. */
+#if DOOMRPG_RES60_P30_SPAN_REUSE
+static int spanPlaneRes60(PlaneWork* work, int x, int y,
+                         const uint8_t* planeCells,
+                         int32_t param5, int32_t param6,
+                         int32_t param7, int32_t param8, int count) {
+    uint16_t* pixels = (uint16_t*)work->render->pixels +
+                       (work->render->pitch >> 1)*y+x;
+    const PlaneTextureDesc* desc = NULL;
+    PlaneCacheSlot* slot = NULL;
+    while (--count >= 0) {
+        const uint32_t u5 = (uint32_t)param5;
+        const uint32_t u6 = (uint32_t)param6;
+        const uint32_t cellIndex =
+            ((u6 >> 17) & 0x3e0U) + ((u5 << 5) >> 27);
+        const uint32_t texelIndex =
+            ((u6 >> 10) & 0x0fc0U) + ((u5 << 10) >> 26);
+        if (cellIndex >= ESP_MAP_PLANE_CELL_COUNT || texelIndex >= 4096U)
+            return 0;
+        const uint8_t logicalId = planeCells[cellIndex];
+        if (slot != NULL && desc->logicalId == logicalId) {
+            ++work->cacheClock;
+            if (work->cacheClock == 0U) work->cacheClock = 1U;
+            slot->lastUse = work->cacheClock;
+            ++work->stats.cacheHits;
+            ++work->spanReuseHits;
+        } else {
+            const int descIndex = findTextureIndex(work, logicalId);
+            if (descIndex < 0) return 0;
+            desc = &work->textures[descIndex];
+            if (!acquireTexture(work, desc, &slot) ||
+                slot == NULL || !slot->valid) return 0;
+        }
+        const uint8_t packed = slot->texels[texelIndex >> 1];
+        const uint8_t paletteIndex = (uint8_t)((texelIndex & 1U)
+            ? ((packed >> 4) & 0x0fU) : (packed & 0x0fU));
+        *pixels++ = desc->paletteRgb565[paletteIndex];
+        ++work->stats.pixelsRendered;
+        param5 = (int32_t)((uint32_t)param5 + (uint32_t)param7);
+        param6 = (int32_t)((uint32_t)param6 + (uint32_t)param8);
+    }
+    return 1;
+}
+#endif
+
 static int spanPlane(PlaneWork* work,
                      int x, int y,
                      const uint8_t* planeCells,
@@ -332,6 +538,10 @@ static int spanPlane(PlaneWork* work,
     if (work == NULL || work->render == NULL || planeCells == NULL ||
         count <= 0) return 0;
 
+#if DOOMRPG_RES60_P30_SPAN_REUSE
+    if (work->render->screenWidth == 192)
+        return spanPlaneRes60(work,x,y,planeCells,param5,param6,param7,param8,count);
+#endif
     pitch = work->render->pitch >> 1;
     pixels = (uint16_t*)work->render->pixels + pitch * y + x;
 
@@ -465,7 +675,11 @@ const EspNativePlaneRenderStats* EspNativePlaneRenderer_view(void) {
     return planeStats.active == 1U ? &planeStats : NULL;
 }
 
-int EspNativePlaneRenderer_render(struct Render_s* renderBase) {
+static int renderPlanes(struct Render_s* renderBase, int res60, void* scratch, size_t scratchBytes) {
+#if !DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH
+    (void)scratch;
+    (void)scratchBytes;
+#endif
     Render_t* render = (Render_t*)renderBase;
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
     PlaneWork* work;
@@ -476,7 +690,9 @@ int EspNativePlaneRenderer_render(struct Render_s* renderBase) {
     if (render == NULL || runtime == NULL ||
         !EspMapRuntime_isLoaded() || !EspAssetPack_isOpen() ||
         render->pixels == NULL || render->framebuffer == NULL ||
-        render->screenWidth != 160 || render->screenHeight != 80 ||
+        (!res60 && (render->screenWidth != 160 || render->screenHeight != 80)) ||
+        (res60 && (!DOOMRPG_RES60_P25_TEXTURED_PLANES ||
+                   render->screenWidth != 192 || render->screenHeight != 96)) ||
         render->screenLeft != 0 || render->screenTop != 0 ||
         render->screenRight != render->screenWidth ||
         render->screenBottom != render->screenHeight ||
@@ -501,6 +717,32 @@ int EspNativePlaneRenderer_render(struct Render_s* renderBase) {
     work->render = render;
     work->runtime = runtime;
 
+#if DOOMRPG_RES60_P27_METADATA_WINDOWS
+    if (res60) {
+        if (!collectTextures(work) || !initCache(work)) goto done;
+#if defined(ARDUINO)
+        const uint32_t metaAt=EspRes60Profile_nowUs();
+#endif
+        if (!resolveTextures(work)) goto done;
+#if DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH
+        /* P27 metadata used slot zero only; the P17 loan is independent.
+         * Append only to a full six-slot heap cache: preserve contiguous
+         * valid slot scan and existing allocation-pressure fallback. */
+        if (scratch != NULL && scratchBytes == 3U*PLANE_TEXTURE_BYTES &&
+            work->cache[PLANE_HEAP_CACHE_SLOTS-1U].texels != NULL) {
+            for (uint32_t i=PLANE_HEAP_CACHE_SLOTS;i<PLANE_CACHE_SLOTS;++i)
+                work->cache[i].texels=(uint8_t*)scratch+(i-PLANE_HEAP_CACHE_SLOTS)*PLANE_TEXTURE_BYTES;
+            DRPG_LOGI("[RES60P29] CACHE heapSlots=6 borrowedSlots=3 bytes=6144\n");
+        } else {
+            DRPG_LOGI("[RES60P29] CACHE borrowedSlots=0 fallback=1\n");
+        }
+#endif
+#if defined(ARDUINO)
+        DRPG_LOGI("[RES60P27] RESOLVE us=%lu\n",
+                  (unsigned long)(EspRes60Profile_nowUs()-metaAt));
+#endif
+    } else
+#endif
     if (!collectTextures(work) || !resolveTextures(work) || !initCache(work)) {
         goto done;
     }
@@ -524,6 +766,10 @@ int EspNativePlaneRenderer_render(struct Render_s* renderBase) {
         goto done;
     }
 
+#if DOOMRPG_RES60_P30_SPAN_REUSE
+    if (res60) DRPG_LOGI("[RES60P30] SPAN reuseHits=%lu pixels=%lu\n",
+        (unsigned long)work->spanReuseHits,(unsigned long)work->stats.pixelsRendered);
+#endif
     work->stats.rendered = 1U;
     work->stats.active = 1U;
     ok = 1;
@@ -549,3 +795,59 @@ done:
     }
     return ok;
 }
+ 
+int EspNativePlaneRenderer_render(struct Render_s* renderBase) {
+    return renderPlanes(renderBase, 0, NULL, 0U);
+}
+
+#if DOOMRPG_RES60_P25_TEXTURED_PLANES
+static int renderRes60Core(uint16_t* framebuffer, size_t bytes,
+                                      int x, int y, int angle, int viewZ,
+                                      void* scratch, size_t scratchBytes) {
+    EspNativeRasterWorldViewport viewport;
+    Render_t render;
+    EspNativePlaneRenderer_reset();
+    if (framebuffer == NULL || x < 0 || x >= 2048 ||
+        y < 0 || y >= 2048 || viewZ < 0 || viewZ > 64 ||
+        (angle != 0 && angle != 64 && angle != 128 && angle != 192) ||
+        !EspNativeRasterContract_prepareWorld(
+            ESP_NATIVE_RASTER_RES60, bytes, 384, 192, 96,
+            ESP_NATIVE_RASTER_COLUMN_CAPACITY, &viewport)) return 0;
+    memset(&render, 0, sizeof(render));
+    render.framebuffer = (uint8_t*)framebuffer;
+    render.pixels = (short*)(framebuffer + viewport.worldFirstPixel);
+    render.pitch = (int)viewport.raster.pitchPixels * 2;
+    render.screenWidth = render.screenRight = viewport.raster.worldWidth;
+    render.screenHeight = render.screenBottom = viewport.raster.worldHeight;
+    render.viewX = x;
+    render.viewY = y;
+    render.viewZ = viewZ;
+    render.viewCos = angle == 0 ? 65536 : angle == 128 ? -65536 : 0;
+    render.viewSin = angle == 64 ? 65536 : angle == 192 ? -65536 : 0;
+#if DOOMRPG_RES60_P28_DESCRIPTOR_LEASE
+    const int ok=renderPlanes(&render, 1, scratch, scratchBytes);
+    if (!ok) EspNativePlaneRenderer_resetRes60Metadata();
+    return ok;
+#else
+    return renderPlanes(&render, 1, scratch, scratchBytes);
+#endif
+}
+int EspNativePlaneRenderer_renderRes60(uint16_t* framebuffer, size_t bytes,
+                                      int x, int y, int angle, int viewZ) {
+    return renderRes60Core(framebuffer,bytes,x,y,angle,viewZ,NULL,0U);
+}
+#if DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH
+int EspNativePlaneRenderer_renderRes60WithScratch(uint16_t* framebuffer, size_t bytes,
+                      int x, int y, int angle, int viewZ, void* scratch, size_t scratchBytes) {
+    /* Reject a bad or overlapping loan without touching either buffer. */
+    const uintptr_t f=(uintptr_t)framebuffer, s=(uintptr_t)scratch;
+    if (framebuffer==NULL || scratch==NULL || scratchBytes!=6144U ||
+        bytes!=55296U || f>UINTPTR_MAX-bytes || s>UINTPTR_MAX-scratchBytes ||
+        (f<s+scratchBytes && s<f+bytes)) {
+        EspNativePlaneRenderer_reset();
+        return 0;
+    }
+    return renderRes60Core(framebuffer,bytes,x,y,angle,viewZ,scratch,scratchBytes);
+}
+#endif
+#endif

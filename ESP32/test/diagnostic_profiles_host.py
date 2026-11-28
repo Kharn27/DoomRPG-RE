@@ -25,7 +25,50 @@ def main():
     config.read(ROOT / "ESP32/platformio.ini")
     assert {s for s in config if s.startswith("env:")} == {
         "env:esp32-cyd", "env:esp32-cyd-trace", "env:esp32-cyd-bringup",
-        "env:esp-cyd-inverted"}
+        "env:esp-cyd-inverted", "env:esp32-cyd-res60",
+        "env:esp32-cyd-res60-inverted"}
+    # RES60-P1 adds an isolated LCD diagnostic only. It inherits the exact
+    # production engine and must never enable TRACE/bringup/gameplay flags.
+    pilot = config["env:esp32-cyd-res60"]
+    assert pilot["extends"] == "env:esp32-cyd"
+    assert pilot["build_flags"].split() == [
+        "${env:esp32-cyd.build_flags}", "-D",
+        "DOOMRPG_RES60_P1_DIAGNOSTIC=1",
+        "-D", "DOOMRPG_RES60_P2_LAYOUT=1",
+        "-D", "DOOMRPG_RES60_P3_WORLD=1",
+    "-D", "DOOMRPG_RES60_P5_TITLE=1",
+    "-D", "DOOMRPG_RES60_P6_MENU=1",
+    "-D", "DOOMRPG_RES60_P7_NAV=1",
+    "-D", "DOOMRPG_RES60_P8_TEXEL=1",
+    "-D", "DOOMRPG_RES60_P9_WEDGE=1",
+    "-D", "DOOMRPG_RES60_P10_WALL_MATERIAL=1",
+    "-D", "DOOMRPG_RES60_P11_PROFILE=1",
+    "-D", "DOOMRPG_RES60_P12_INVENTORY_CACHE=1",
+    "-D", "DOOMRPG_RES60_P13_MAP_LEASE=1",
+    "-D", "DOOMRPG_RES60_P14_LINE_SNAPSHOT=1",
+    "-D", "DOOMRPG_RES60_P15_COMPACT_SNAPSHOT=1",
+    "-D", "DOOMRPG_RES60_P16_HEAP_TOPOLOGY=1",
+    "-D", "DOOMRPG_RES60_P17_HEAP_SNAPSHOT=1",
+    "-D", "DOOMRPG_RES60_P18_LOCAL_SNAPSHOT=1",
+    "-D", "DOOMRPG_RES60_P20_COMPACT_SERIAL=1",
+    "-D", "DOOMRPG_RES60_P21_INTERSECTION32=1",
+    "-D", "DOOMRPG_RES60_P23_NATIVE_RASTER_GEOMETRY=1",
+    "-D", "DOOMRPG_RES60_P25_TEXTURED_PLANES=1",
+    "-D", "DOOMRPG_RES60_P26_BATCH_INDEX=1",
+    "-D", "DOOMRPG_RES60_P27_METADATA_WINDOWS=1",
+    "-D", "DOOMRPG_RES60_P28_DESCRIPTOR_LEASE=1",
+    "-D", "DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH=1",
+    "-D", "DOOMRPG_RES60_P31_SHARED_PAK=1",
+    "-D", "DOOMRPG_RES60_P40_FULL_WALLS=1",
+        "-I.pio/libdeps/esp32-cyd-res60/TFT_eSPI"]
+    # Inverted P4 must NOT fork/redefine 192x96 geometry or gameplay.
+    # Exactly one extra panel flag and a standalone TFT_eSPI include.
+    p4 = config["env:esp32-cyd-res60-inverted"]
+    assert p4["extends"] == "env:esp32-cyd-res60"
+    assert p4["build_flags"].split() == [
+        "${env:esp32-cyd-res60.build_flags}",
+        "-D", "DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION=1",
+        "-I.pio/libdeps/esp32-cyd-res60-inverted/TFT_eSPI"]
     assert config["platformio"]["default_envs"] == "esp32-cyd"
     base = config["env:esp32-cyd"]
     assert base["build_type"] == "release"

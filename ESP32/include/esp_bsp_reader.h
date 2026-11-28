@@ -117,6 +117,11 @@ typedef struct EspBspInventory_s {
  */
 int EspBspReader_inventoryPackEntry(const char* resourceName,
                                     EspBspInventory* outInventory);
+/* RES60-P35 isolated build: synchronous loan of exactly 2048 writable
+ * bytes, disjoint from outInventory. No scratch pointer survives return. */
+int EspBspReader_inventoryPackEntryWithScratch(const char* resourceName,
+                                    EspBspInventory* outInventory,
+                                    void* scratch, uint32_t scratchBytes);
 
 #ifdef __cplusplus
 }

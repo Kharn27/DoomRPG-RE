@@ -1,0 +1,9 @@
+# RES60-P25 — native textured planes, CI/CYD pending
+
+P24 Classic smoke test and prior preview were received 24 Nov; firmware SHA not printed. P25 enables the actual native PAK plane renderer in the isolated 192x96 preview, borrowing its one RGB565 framebuffer. The flat preview API stays available for historic oracles. Only wall spans overwrite textured background. Existing six adaptive 2048-byte leases are released before preview raycast; no second framebuffer or permanent plane cache. Cardinal camera only. PAK closes before presentation. Classic gameplay remains 160x120. New main synchronized at 4bc36f2577082ffea3ef60d32c93a2bac8f821ed. Older RES60 summaries remain in their individual milestones and earlier branch history.
+
+Test `esp32-cyd-res60-inverted`: START, four rotations, MENU, START again. Require [RES60P25] PLANES rows=96 pixels=18432, no FAIL CLOSED/WDT, stable FNV by direction and RAM after release. New final/raw FNV expected; no performance claim until hardware. No sprites/audio/192 gameplay. PR #364 DRAFT.
+
+## Physical CYD verdict — 27 November 2026
+
+Capture platformio-device-monitor-261127-002455.log, 29043 bytes, SHA256 155332f5b396e212d3f78db45f1b15b5c9702830d5e50e367e1953a72e48c0ec. Contextual P25 attribution (no SHA embedded). 23 plane passes, 21 warm turns, 2 START/MENU, no FAIL CLOSED or watchdog. Every pass 96 rows / 18432 pixels / 12 textures, 10–14 misses, 20480–28672 B texel reads. Warm frame mean angle 0=519.711ms,64=560.786ms,128=507.055ms,192=553.733ms; rays 7.907/22.402/2.855/0.721ms. Raw/final FNV respectively 0=f3844a83/5b483ad8,64=a32091a9/8d2311e0,128=32f2116a/36c54eb9,192=b3327f5e/651ad693. heap8=108620 largest8=57332 minHeap8=89524; logical PAK closed. PASS bounded to preview runtime, not visual inspection or complete gameplay. CI runs 45902371091 and 45902376324 failed at P4 exact flag list (P25 flag missing); correction P26, full CI still required. No CPU gain claimed.

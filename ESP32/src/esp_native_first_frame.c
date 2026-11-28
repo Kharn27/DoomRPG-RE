@@ -19,6 +19,7 @@
 #include "esp_native_first_frame.h"
 #include "esp_native_plane_renderer.h"
 #include "esp_render_geometry_primitives.h"
+#include "esp_native_raster_contract.h"
 #include "esp_native_dynamic_clip.h"
 #include "esp_native_wall_indicator_animation.h"
 #include "esp_native_graphics_catalog.h"
@@ -51,7 +52,7 @@
 #define MAX_RESOLVED_TEXTURES 64U
 #define WALL_CACHE_SLOTS 3U
 #define MAX_BSP_DEPTH 64U
-#define MAX_SCREEN_WIDTH 160U
+#define MAX_SCREEN_WIDTH ESP_NATIVE_RASTER_COLUMN_CAPACITY
 #define FIRST_FRAME_ANIMATION_TIME 0U
 
 #define LINE_FLAG_TWO_SIDED 0x00000001UL
@@ -1333,6 +1334,7 @@ static int walkNodes(FirstFrameWork* work) {
 static void fillBackground(Render_t* render,
                            uint16_t ceiling,
                            uint16_t floor,
+                           const EspNativeRasterWorldViewport* viewport,
                            int clearWholeFramebuffer) {
     uint16_t* fb;
     int y;
@@ -1350,8 +1352,7 @@ static void fillBackground(Render_t* render,
     half = render->screenHeight >> 1;
     for (y = 0; y < render->screenHeight; ++y) {
         uint16_t color = y < half ? ceiling : floor;
-        uint16_t* row = fb + (DOOMRPG_VIEWPORT_Y + y) * pitchPixels +
-                        DOOMRPG_VIEWPORT_X;
+        uint16_t* row = fb + viewport->worldFirstPixel + y * pitchPixels;
         for (x = 0; x < render->screenWidth; ++x) row[x] = color;
     }
 }
@@ -1362,6 +1363,7 @@ static int renderFrame(Render_t* render,
                        int clearWholeFramebuffer) {
     FirstFrameWork* work = NULL;
     RenderScratch scratch;
+    EspNativeRasterWorldViewport worldViewport;
     const EspMapRuntimeView* runtime;
     EspAssetPackEntry palettes;
     EspAssetPackEntry mapEntry;
@@ -1389,6 +1391,16 @@ static int renderFrame(Render_t* render,
         !EspNativeGraphicsCatalog_isReady() || EspAssetPack_isOpen()) {
         return 0;
     }
+
+    /* P24: admit the real permanent renderer's world offsets before any
+     * heap or PAK lease. RES60 prepares the same geometry in the host oracle;
+     * this runtime path remains explicitly CLASSIC until the planes, sprites,
+     * HUD and gameplay coordinator have their own complete milestones. */
+    if (!EspNativeRasterContract_prepareWorld(
+            ESP_NATIVE_RASTER_CLASSIC,
+            Esp32PlatformVideo_framebufferSizeBytes(), render->pitch,
+            render->screenWidth, render->screenHeight,
+            MAX_SCREEN_WIDTH, &worldViewport)) return 0;
 
     lineState = EspMapLineState_view();
     if (lineState == NULL || lineState->openCount != 0U) return 0;
@@ -1438,7 +1450,7 @@ static int renderFrame(Render_t* render,
     outState->floorRgb565 = rgb565(bspHeader[16], bspHeader[17], bspHeader[18]);
 
     fillBackground(render, outState->ceilingRgb565, outState->floorRgb565,
-                   clearWholeFramebuffer);
+                   &worldViewport, clearWholeFramebuffer);
 
     {
         const int32_t* const trig = EspNativeTrig_view();
@@ -1459,8 +1471,7 @@ static int renderFrame(Render_t* render,
     render->viewCos = cos_;
     render->viewTransY = -((vx * render->viewSin) + (vy * render->viewCos));
     render->pixels = (short*)&render->framebuffer[
-        render->pitch * DOOMRPG_VIEWPORT_Y +
-        DOOMRPG_VIEWPORT_X * (int)sizeof(short)];
+        worldViewport.worldFirstPixel * sizeof(uint16_t)];
     render->screenLeft = 0;
     render->screenTop = 0;
     render->screenRight = render->screenWidth;

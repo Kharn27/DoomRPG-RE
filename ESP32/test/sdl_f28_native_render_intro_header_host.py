@@ -164,9 +164,10 @@ def original_body_parity() -> None:
             historical = restore_rc10_dynamic(restore_rc11_dynamic(
                 restore_pre_audio_door_dynamic(restore_pre_rc19_dynamic(current))))
         elif filename == "esp_native_plane_renderer.c":
+            from res60_p27_plane_history import restore_pre_res60_planes
             from perf_game_p3g_history import restore_pre_p3g_plane
             from perf_game_p3h_history import restore_pre_p3h_plane
-            historical = restore_pre_p3g_plane(restore_pre_p3h_plane(current))
+            historical = restore_pre_p3g_plane(restore_pre_p3h_plane(restore_pre_res60_planes(current)))
         elif filename == "esp_native_sprite_renderer.c":
             from perf_game_p3k_history import restore_pre_p3k_sprite
             historical = restore_pre_fire_vis_sprite(restore_pre_fire_vis_p2_sprite(restore_pre_p3k_sprite(current)))

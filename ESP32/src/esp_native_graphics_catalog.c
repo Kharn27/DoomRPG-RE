@@ -5,6 +5,7 @@
 #include "esp_asset_pack.h"
 #include "esp_map_runtime.h"
 #include "esp_native_graphics_catalog.h"
+#include "platform_video_config.h"
 
 #define MAPPINGS_HEADER_BYTES 16U
 #define MAPPING_PAIR_BYTES 8U
@@ -60,14 +61,56 @@ static uint16_t countResources(int sprites) {
     return count;
 }
 
+#if DOOMRPG_RES60_P34_CATALOG_WINDOWS
+/* Two independently positioned windows in the caller's existing 2KiB
+ * swatch storage. Never retained beyond this synchronous catalog build. */
+#define CATALOG_WINDOW_BYTES 1024U
+typedef struct CatalogWindow_s {
+    uint8_t* bytes;
+    uint32_t base, length;
+} CatalogWindow;
+typedef struct CatalogWindows_s {
+    CatalogWindow mappings, palettes;
+} CatalogWindows;
+static int catalogReadRange(const EspAssetPackEntry* entry, uint32_t offset,
+                            void* dst, size_t n, CatalogWindow* window) {
+    if (offset > entry->size || n > entry->size-offset) return 0;
+    if (window == NULL || n > CATALOG_WINDOW_BYTES)
+        return EspAssetPack_readRange(entry,offset,dst,n);
+    if (!window->length || offset < window->base ||
+        offset-window->base > window->length ||
+        n > window->length-(offset-window->base)) {
+        uint32_t base=offset & ~(CATALOG_WINDOW_BYTES-1U);
+        if (n > CATALOG_WINDOW_BYTES-(offset-base)) base=offset;
+        uint32_t available=entry->size-base;
+        if (available>CATALOG_WINDOW_BYTES) available=CATALOG_WINDOW_BYTES;
+        window->length=0U;
+        if (!EspAssetPack_readRange(entry,base,window->bytes,available)) return 0;
+        window->base=base;
+        window->length=available;
+    }
+    memcpy(dst,window->bytes+offset-window->base,n);
+    return 1;
+}
+#define CATALOG_READ(entry,offset,dst,n,member) \
+    catalogReadRange(entry,offset,dst,n,windows?&windows->member:NULL)
+static EspNativeGraphicsCatalogStatus readRecordWindowed(
+#else
+#define CATALOG_READ(entry,offset,dst,n,member) \
+    EspAssetPack_readRange(entry,offset,dst,n)
 static EspNativeGraphicsCatalogStatus readRecord(
+#endif
     const EspAssetPackEntry* mappings,
     const EspAssetPackEntry* palettes,
     uint32_t pairBase,
     uint32_t pairCount,
     uint32_t paletteEntries,
     uint16_t resourceId,
-    EspNativeGraphicsCatalogRecord* outRecord) {
+    EspNativeGraphicsCatalogRecord* outRecord
+#if DOOMRPG_RES60_P34_CATALOG_WINDOWS
+    , CatalogWindows* windows
+#endif
+    ) {
     uint8_t pair[MAPPING_PAIR_BYTES];
     uint8_t paletteBytes[PALETTE_BYTES];
     uint32_t pairOffset;
@@ -83,7 +126,7 @@ static EspNativeGraphicsCatalogStatus readRecord(
     pairOffset = pairBase + ((uint32_t)resourceId * MAPPING_PAIR_BYTES);
     if (pairOffset > mappings->size ||
         MAPPING_PAIR_BYTES > mappings->size - pairOffset ||
-        !EspAssetPack_readRange(mappings, pairOffset, pair, sizeof(pair))) {
+        !CATALOG_READ(mappings, pairOffset, pair, sizeof(pair), mappings)) {
         return ESP_NATIVE_GRAPHICS_CATALOG_READ_FAILED;
     }
 
@@ -97,11 +140,11 @@ static EspNativeGraphicsCatalogStatus readRecord(
         return ESP_NATIVE_GRAPHICS_CATALOG_SOURCE_INVALID;
     }
 
-    if (!EspAssetPack_readRange(
+    if (!CATALOG_READ(
             palettes,
             PALETTES_HEADER_BYTES + ((uint32_t)paletteOffset * 2U),
             paletteBytes,
-            sizeof(paletteBytes))) {
+            sizeof(paletteBytes), palettes)) {
         return ESP_NATIVE_GRAPHICS_CATALOG_READ_FAILED;
     }
 
@@ -117,6 +160,22 @@ static EspNativeGraphicsCatalogStatus readRecord(
 
     return ESP_NATIVE_GRAPHICS_CATALOG_OK;
 }
+
+#undef CATALOG_READ
+#if DOOMRPG_RES60_P34_CATALOG_WINDOWS
+/* Existing dynamic expansion callers retain exact direct-read semantics. */
+static EspNativeGraphicsCatalogStatus readRecord(
+    const EspAssetPackEntry* mappings, const EspAssetPackEntry* palettes,
+    uint32_t pairBase, uint32_t pairCount, uint32_t paletteEntries,
+    uint16_t resourceId, EspNativeGraphicsCatalogRecord* outRecord) {
+    return readRecordWindowed(mappings,palettes,pairBase,pairCount,
+                              paletteEntries,resourceId,outRecord,NULL);
+}
+#define CATALOG_BUILD_RECORD(...) readRecordWindowed(__VA_ARGS__,windows)
+static EspNativeGraphicsCatalogStatus buildFromRuntimeCore(CatalogWindows* windows);
+#else
+#define CATALOG_BUILD_RECORD(...) readRecord(__VA_ARGS__)
+#endif
 
 void EspNativeGraphicsCatalog_reset(void) {
     if (textureEpoch != UINT32_MAX) ++textureEpoch;
@@ -139,7 +198,11 @@ const EspNativeGraphicsCatalogView* EspNativeGraphicsCatalog_view(void) {
     return EspNativeGraphicsCatalog_isReady() ? &catalogView : NULL;
 }
 
+#if DOOMRPG_RES60_P34_CATALOG_WINDOWS
+static EspNativeGraphicsCatalogStatus buildFromRuntimeCore(CatalogWindows* windows) {
+#else
 EspNativeGraphicsCatalogStatus EspNativeGraphicsCatalog_buildFromRuntime(void) {
+#endif
     EspAssetPackEntry mappings;
     EspAssetPackEntry palettes;
     const EspMapRuntimeView* runtime;
@@ -243,7 +306,7 @@ EspNativeGraphicsCatalogStatus EspNativeGraphicsCatalog_buildFromRuntime(void) {
 
     for (id = 0U; id < RESOURCE_ID_COUNT; ++id) {
         if (textureRequired(id)) {
-            status = readRecord(&mappings, &palettes,
+            status = CATALOG_BUILD_RECORD(&mappings, &palettes,
                                 MAPPINGS_HEADER_BYTES, texelPairs,
                                 paletteEntries, (uint16_t)id,
                                 &catalogArena[textureIndex]);
@@ -253,7 +316,7 @@ EspNativeGraphicsCatalogStatus EspNativeGraphicsCatalog_buildFromRuntime(void) {
     }
     for (id = 0U; id < RESOURCE_ID_COUNT; ++id) {
         if (EspMapRuntime_spriteRequired(id)) {
-            status = readRecord(&mappings, &palettes,
+            status = CATALOG_BUILD_RECORD(&mappings, &palettes,
                                 spritePairBase, bitShapePairs,
                                 paletteEntries, (uint16_t)id,
                                 &catalogArena[(uint32_t)textureCount + spriteIndex]);
@@ -289,6 +352,21 @@ fail:
     EspNativeGraphicsCatalog_reset();
     return status;
 }
+
+#undef CATALOG_BUILD_RECORD
+#if DOOMRPG_RES60_P34_CATALOG_WINDOWS
+EspNativeGraphicsCatalogStatus EspNativeGraphicsCatalog_buildFromRuntime(void) {
+    return buildFromRuntimeCore(NULL);
+}
+EspNativeGraphicsCatalogStatus EspNativeGraphicsCatalog_buildFromRuntimeWithScratch(
+    void* scratch, size_t scratchBytes) {
+    if (scratch==NULL || scratchBytes!=2U*CATALOG_WINDOW_BYTES)
+        return ESP_NATIVE_GRAPHICS_CATALOG_INVALID;
+    CatalogWindows windows={{(uint8_t*)scratch,0U,0U},
+        {(uint8_t*)scratch+CATALOG_WINDOW_BYTES,0U,0U}};
+    return buildFromRuntimeCore(&windows);
+}
+#endif
 
 static int spriteRecordPresent(uint16_t resourceId) {
     uint16_t i;

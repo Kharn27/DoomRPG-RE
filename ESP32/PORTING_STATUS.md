@@ -1,3 +1,27 @@
+## RES60-P40 — CYD PASS / CI profile inventory mismatch (28 November 2026)
+
+[Report](MILESTONE_RES60_P40_FULL_WALLS_PENDING_CYD.md). Context candidate ac92e6924a216db0b700bee0776f6670b228ef7a; 30/30 frames, 27 warm, 3 START/MENU/RELEASE; full 192-column coverage, 15810/6349/15060/16636 pixels, inset=0, admitted 3/5/5/3, final FNV a64649f5/40201f89/01b399ba/9a7cb9dd. Heap8 108576/min86636/largest57332 (+2160/+2504/0 vs P39). Cold mean686067us; raw P3/catalog unchanged. Push46133538103/PR46133543156 failed late diagnostic_profiles_host exact pilot flag list; actual P40 target-profile host passed. Not double CI PASS. Main d1f25ba03688364efba753604f59aa75eb2eaadc unchanged ancestor. PR #364 DRAFT.
+
+---
+
+## RES60-P39 — CYD PASS / CI marker regression (28 November 2026)
+
+[Report](MILESTONE_RES60_P39_WALL_STREAM_PENDING_CYD.md). Context firmware f8d07e2fccbef07b5e790372a9f166d574bae908; 34/34 frames, 31 warm, 3 START/MENU/RELEASE; exact full wall coverage outside inset 13506/5359/14265/14353 pixels. Final FNV c4d8d1e5/81a92d8c/c8cdaac1/7dfb06f1, raw P3/P8/P10 witnesses unchanged. Heap8 106416/min84132/largest57332, metadata1320B. Cold mean729507us; warm 238838/278545/235455/248204us. CI push46129722694/PR46129727620 failed P11 historical stdout marker after all P39 C11 variants passed; restore exact marker next, not a double CI PASS. Main d1f25ba03688364efba753604f59aa75eb2eaadc still ancestor; no new upstream changes. PR #364 DRAFT.
+
+---
+
+## RES60-P38 — CYD + double CI PASS (28 November 2026)
+
+[Report](MILESTONE_RES60_P38_WALL_ADMISSION_PENDING_CYD.md). Context candidate 200b62bc4e87da0f6fe2363835746e4b5fc61c85; push 46127868030 and PR 46127872249 SUCCESS. 26/26 frames, 23 warm, 3 START/MENU/RELEASE, admitted=wallIds 3/5/5/3, unsupportedCols=0, exact P37 FNV. Heap8 107800/min86588/largest57332; exactly 32B less free, no fragmentation regression. Cold mean 693489.67us, warm means 192476.57/231333.20/180138.40/209497.67us (0/64/128/192); SD/plane timings also increased, no isolated attribution. No failures. Main d1f25ba03688364efba753604f59aa75eb2eaadc integrated after test by two-parent sync 273a87cf3a8c484605ee1772bc33311a012c7f2e; combined firmware not physically tested. PR #364 DRAFT.
+
+---
+
+## RES60-P37 — CYD functional PASS / original CI failed (28 November 2026)
+
+[Detailed report](MILESTONE_RES60_P37_WALL_COVERAGE_PENDING_CYD.md). Context candidate cfd6084208d062799e8484543b5aca888d547b10; 31/31 frames, 28 warm, 3 START/MENU/RELEASE, all P36 fingerprints unchanged, heap8 107832 largest57332 min86620. All 192 columns per view, 3/5/5/3 wall IDs, 15810/6349/15060/16636 pixels, unsupportedCols=0. Cold mean 672791us; warm median 189766/227842/177697.5/205985us, ~10ms above P36 with both upstream and telemetry changed. Original push 46127162477 and PR 46127166568 failed strict C11 signedness in P37 clipping ternary; correction 74939992ac342e975f384a67d8439f5be61e8802, CI pending. Not double CI PASS. Main 061669e1fd04558d108da9c773ab8c829f8152cd verified ancestor. PR #364 DRAFT.
+
+---
+
 ## PERF-GAME P3b–P3n — consolidation CYD + CI PASS (28 novembre 2026)
 
 PR [#472](https://github.com/Kharn27/DoomRPG-RE/pull/472), candidat `31277b70e4cf29c1149aeef21ba9a6efc4f25e28`, double CI [push](https://github.com/Kharn27/DoomRPG-RE/actions/runs/46124985875) / [PR](https://github.com/Kharn27/DoomRPG-RE/actions/runs/46124991136) SUCCESS. [Rapport P3n](MILESTONE_PERF_GAME_P3N_PENDING_CYD.md). Sector1 slot05 puis Entrance neuve: 34/34 tours non vides, 270 actions, 120/120 continuations Phantom exactes, 26 préfixes vides par contrat, 37 SFX sans rejet/underrun, 12 portes, 10 pickups, deux EXIT propres, NULL invariants. Optimisations cumulées P3b–P3n sans changement volontaire des règles gameplay, validation transactionnelle maintenue. Le renderer reste dominant (75.47% de la phase mouvement échantillonnée), pas de benchmark apparié. Limites #473/#382 et IA historiques ouvertes. Accord utilisateur de consolidation; candidat code gelé après test.

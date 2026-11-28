@@ -51,9 +51,27 @@ filters = block.group("body").splitlines()
 assert [s.strip() for s in filters] == [
     "+<*>", "-<esp32_sdl.cpp>", "-<esp32_bmp.cpp>"
 ], filters
-# Production + TRACE/bringup + the display-only alternate CYD release profile.
-# Never permit an unaccounted environment or an SDL source registration.
-assert ini.count("extends = env:esp32-cyd") == 3
+# Five explicit children across two inheritance levels: alternate-panel,
+# trace, bringup, RES60-P1/P3, and its panel-inverted P4 variant.
+# accidentally reintroduce SDL sources for any future environment.
+all_envs = set(re.findall(r"(?m)^\[env:([A-Za-z0-9_-]+)\]\s*$", ini))
+expected_children = {
+    "esp-cyd-inverted",
+    "esp32-cyd-bringup",
+    "esp32-cyd-trace",
+    "esp32-cyd-res60",
+    "esp32-cyd-res60-inverted",
+}
+assert all_envs == (expected_children | {"esp32-cyd"}), all_envs
+child_sections = re.split(r"(?m)^\[env:([A-Za-z0-9_-]+)\]\s*$", ini)
+assert len(child_sections) == 1 + 2 * len(all_envs)
+for index in range(1, len(child_sections), 2):
+    name, body = child_sections[index:index + 2]
+    if name in expected_children:
+        parent = ("esp32-cyd-res60" if name == "esp32-cyd-res60-inverted"
+                  else "esp32-cyd")
+        assert re.search(r"(?m)^extends = env:" + re.escape(parent) + r"$", body), name
+        assert "build_src_filter" not in body, name
 assert "[env:esp-cyd-inverted]" in ini
 assert "Esp32Sdl_attachDisplay" not in main
 assert '#include "esp32_sdl_platform.h"' not in main

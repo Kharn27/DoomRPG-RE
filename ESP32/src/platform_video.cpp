@@ -6,6 +6,41 @@
 #include <algorithm>
 
 #include "platform_video_config.h"
+#include "esp_video_nearest.h"
+#include "esp_res60_layout.h"
+#include "esp_res60_world_probe.h"
+#if DOOMRPG_RES60_P17_HEAP_SNAPSHOT
+#include "esp_res60_world_preview.h"
+#endif
+#if DOOMRPG_RES60_P20_COMPACT_SERIAL
+#include "esp_res60_serial_policy.h"
+#endif
+#if DOOMRPG_RES60_P12_INVENTORY_CACHE
+#include "esp_res60_inventory_cache.h"
+#endif
+#if DOOMRPG_RES60_P13_MAP_LEASE
+#include "esp_res60_map_lease.h"
+#endif
+#if DOOMRPG_RES60_P11_PROFILE
+#include "esp_res60_profile.h"
+extern "C" uint32_t EspRes60Profile_nowUs(void) {
+    return micros();
+}
+#endif
+#if DOOMRPG_RES60_P7_NAV
+#include "esp_res60_nav.h"
+#include "esp_map_runtime.h"
+#include "esp_asset_pack.h"
+#endif
+#if DOOMRPG_RES60_P5_TITLE
+#include "esp_res60_title_preview.h"
+#endif
+#if DOOMRPG_RES60_P6_MENU
+#include "esp_res60_menu.h"
+#endif
+#if DOOMRPG_RES60_P3_WORLD
+#include <esp_heap_caps.h>
+#endif
 #include "esp_native_backlight.h"
 #include "esp_native_orientation.h"
 #include "esp_uac_menu_preview.h"
@@ -17,6 +52,34 @@ namespace {
 
 TFT_eSPI* platformDisplay = nullptr;
 uint16_t* framebuffer = nullptr;
+#if DOOMRPG_RES60_P16_HEAP_TOPOLOGY
+/* One extra byte of BSS (plus compiler alignment), no large arrays or
+ * malloc. The profiler is used only AFTER the P11 time capture. */
+static uint8_t res60P16WarmDumped=0U;
+static void res60P16_printHeapTopology(const char* phase) {
+    multi_heap_info_t before{};
+    heap_caps_get_info(&before,MALLOC_CAP_8BIT);
+    Serial.printf("[RES60P16] REGIONS phase=%s beforeFree=%u beforeLargest=%u beforeMin=%u freeBlocks=%u allocatedBlocks=%u totalBlocks=%u\n",
+                  phase,(unsigned)before.total_free_bytes,
+                  (unsigned)before.largest_free_block,
+                  (unsigned)before.minimum_free_bytes,
+                  (unsigned)before.free_blocks,
+                  (unsigned)before.allocated_blocks,
+                  (unsigned)before.total_blocks);
+    /* Per-capability internal heap-region addresses, NOT a new allocator.
+     * Published once after framebuffer allocation and once after first HIT. */
+    heap_caps_print_heap_info(MALLOC_CAP_8BIT);
+    multi_heap_info_t after{};
+    heap_caps_get_info(&after,MALLOC_CAP_8BIT);
+    Serial.printf("[RES60P16] OBSERVER phase=%s freeAfter=%u largestAfter=%u freeDelta=%ld largestDelta=%ld neutral=%u\n",
+                  phase,(unsigned)after.total_free_bytes,
+                  (unsigned)after.largest_free_block,
+                  (long)after.total_free_bytes-(long)before.total_free_bytes,
+                  (long)after.largest_free_block-(long)before.largest_free_block,
+                  (unsigned)(after.total_free_bytes==before.total_free_bytes &&
+                             after.largest_free_block==before.largest_free_block));
+}
+#endif
 
 /* Physical-only overlay: snapshot the exact last presented HUD patch, not
  * the potentially newer shared framebuffer. No owner edits, heap, PAK or
@@ -77,7 +140,7 @@ uint8_t currentOrientation = ESP32_ORIENTATION_NORMAL;
 
 
 constexpr size_t kPixelCount =
-    static_cast<size_t>(DOOMRPG_LOGICAL_WIDTH) * DOOMRPG_LOGICAL_HEIGHT;
+    static_cast<size_t>(DOOMRPG_VIDEO_BUFFER_WIDTH) * DOOMRPG_VIDEO_BUFFER_HEIGHT;
 constexpr size_t kFramebufferBytes = kPixelCount * sizeof(uint16_t);
 
 /* LCD-C1 on classic CYD FAIL (photo, 15 Nov 2026): copying both gamma
@@ -165,10 +228,10 @@ void applyCydInvertedGammaProfile() {
 
 void setPixel(int x, int y, uint16_t color) {
     if (framebuffer == nullptr || x < 0 || y < 0 ||
-        x >= DOOMRPG_LOGICAL_WIDTH || y >= DOOMRPG_LOGICAL_HEIGHT) {
+        x >= DOOMRPG_VIDEO_BUFFER_WIDTH || y >= DOOMRPG_VIDEO_BUFFER_HEIGHT) {
         return;
     }
-    framebuffer[y * DOOMRPG_LOGICAL_WIDTH + x] = color;
+    framebuffer[y * DOOMRPG_VIDEO_BUFFER_WIDTH + x] = color;
 }
 
 void fillRect(int x, int y, int width, int height, uint16_t color) {
@@ -178,12 +241,12 @@ void fillRect(int x, int y, int width, int height, uint16_t color) {
 
     const int x0 = std::max(0, x);
     const int y0 = std::max(0, y);
-    const int x1 = std::min(DOOMRPG_LOGICAL_WIDTH, x + width);
-    const int y1 = std::min(DOOMRPG_LOGICAL_HEIGHT, y + height);
+    const int x1 = std::min(DOOMRPG_VIDEO_BUFFER_WIDTH, x + width);
+    const int y1 = std::min(DOOMRPG_VIDEO_BUFFER_HEIGHT, y + height);
 
     for (int row = y0; row < y1; ++row) {
-        std::fill(framebuffer + row * DOOMRPG_LOGICAL_WIDTH + x0,
-                  framebuffer + row * DOOMRPG_LOGICAL_WIDTH + x1, color);
+        std::fill(framebuffer + row * DOOMRPG_VIDEO_BUFFER_WIDTH + x0,
+                  framebuffer + row * DOOMRPG_VIDEO_BUFFER_WIDTH + x1, color);
     }
 }
 
@@ -263,6 +326,13 @@ bool PlatformVideo_begin(TFT_eSPI* display) {
         return false;
     }
 
+#if DOOMRPG_RES60_P16_HEAP_TOPOLOGY
+    /* Capture BEFORE calloc, do not print here: lazy UART/log initialization
+     * could otherwise alter the very allocation topology under inspection. */
+    multi_heap_info_t p16BeforeFramebuffer{};
+    heap_caps_get_info(&p16BeforeFramebuffer,MALLOC_CAP_8BIT);
+    const bool p16WasAllocated=framebuffer!=nullptr;
+#endif
     if (framebuffer == nullptr) {
         framebuffer = static_cast<uint16_t*>(calloc(kPixelCount, sizeof(uint16_t)));
         if (framebuffer == nullptr) {
@@ -272,6 +342,22 @@ bool PlatformVideo_begin(TFT_eSPI* display) {
         }
     }
 
+#if DOOMRPG_RES60_P16_HEAP_TOPOLOGY
+    multi_heap_info_t p16AfterFramebuffer{};
+    heap_caps_get_info(&p16AfterFramebuffer,MALLOC_CAP_8BIT);
+    Serial.printf("[RES60P16] FRAMEBUFFER wasAllocated=%u bytes=%u addr=%p freeBefore=%u freeAfter=%u largestBefore=%u largestAfter=%u minBefore=%u minAfter=%u freeBlocksBefore=%u freeBlocksAfter=%u\n",
+                  (unsigned)p16WasAllocated,(unsigned)kFramebufferBytes,
+                  static_cast<void*>(framebuffer),
+                  (unsigned)p16BeforeFramebuffer.total_free_bytes,
+                  (unsigned)p16AfterFramebuffer.total_free_bytes,
+                  (unsigned)p16BeforeFramebuffer.largest_free_block,
+                  (unsigned)p16AfterFramebuffer.largest_free_block,
+                  (unsigned)p16BeforeFramebuffer.minimum_free_bytes,
+                  (unsigned)p16AfterFramebuffer.minimum_free_bytes,
+                  (unsigned)p16BeforeFramebuffer.free_blocks,
+                  (unsigned)p16AfterFramebuffer.free_blocks);
+    res60P16_printHeapTopology("framebuffer-ready");
+#endif
     applyCydInvertedGammaProfile();
 
     if (!backlightReady) {
@@ -287,12 +373,20 @@ bool PlatformVideo_begin(TFT_eSPI* display) {
         }
     }
 
+#if DOOMRPG_RES60_P1_DIAGNOSTIC
+    Serial.printf("[VIDEO] RES60-P1 VIDEO-ONLY framebuffer %dx%d RGB565, %u bytes\n",
+                  DOOMRPG_VIDEO_BUFFER_WIDTH, DOOMRPG_VIDEO_BUFFER_HEIGHT,
+                  static_cast<unsigned int>(kFramebufferBytes));
+    Serial.printf("[VIDEO] Physical output %dx%d fractional nearest 5/3; gameplay=NOT_STARTED\n",
+                  DOOMRPG_PHYSICAL_WIDTH, DOOMRPG_PHYSICAL_HEIGHT);
+#else
     Serial.printf("[VIDEO] Logical framebuffer %dx%d RGB565, %u bytes\n",
                   DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
                   static_cast<unsigned int>(kFramebufferBytes));
     Serial.printf("[VIDEO] Physical output %dx%d, integer scale %dx\n",
                   DOOMRPG_PHYSICAL_WIDTH, DOOMRPG_PHYSICAL_HEIGHT,
                   DOOMRPG_INTEGER_SCALE);
+#endif
 #if DOOMRPG_CYD_ALTERNATE_PANEL_INVERSION
     Serial.println("[VIDEO] CYD display profile alternate-panel inversion=off gamma=ILI9341-driver-E0E1-trial BGR=unchanged resampling=nearest framebuffer=untouched");
 #else
@@ -300,6 +394,29 @@ bool PlatformVideo_begin(TFT_eSPI* display) {
 #endif
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
     Serial.println("[HITBOX] Physical overlay enabled; framebuffer hashes remain untouched");
+#endif
+#if DOOMRPG_RES60_P17_HEAP_SNAPSHOT
+    /* P17 acquisition happens once only AFTER framebuffer allocation and
+     * P16 framebuffer-ready probes. This is an A/B of allocator topology.
+     * Fail before showing any geometry and rollback the owned framebuffer. */
+    const size_t p17LargestBefore=heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    const size_t p17FreeBefore=heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    if (!EspRes60Preview_snapshotBegin()) {
+        free(framebuffer);
+        framebuffer=nullptr;
+        Serial.println("[RES60P17] FAIL CLOSED stage=one-shot-6144B-owner");
+        return false;
+    }
+    Serial.printf("[RES60P17] SNAPSHOT owner=HEAP bytes=6144 addr=%p framebuffer=%p heap8Before=%u heap8After=%u largest8Before=%u largest8After=%u minHeap8=%u lifecycle=once-after-framebuffer\n",
+                  EspRes60Preview_snapshotAddress(),(void*)framebuffer,
+                  (unsigned)p17FreeBefore,
+                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+                  (unsigned)p17LargestBefore,
+                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+                  (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT));
+#if DOOMRPG_RES60_P18_LOCAL_SNAPSHOT
+    Serial.println("[RES60P18] ALIAS source=P17-heap localPerFrame=1 allocationsPerRay=0 framebuffers=1");
+#endif
 #endif
     return true;
 }
@@ -445,6 +562,7 @@ bool PlatformVideo_present() {
     lampWorldFrame = false;
     EspTurnLamp_replaced(&lampState);
 
+#if !DOOMRPG_RES60_P1_DIAGNOSTIC
     /* Activated by the native MENU_MAIN touch owner without allocation.
      * The first present after root composition/heap/FNV validation consumes
      * this marker and chooses UAC-120 or the fail-closed classic fallback. */
@@ -461,8 +579,10 @@ bool PlatformVideo_present() {
         EspUacMenuPreview_reset(); /* on any SD error, full classic repaint */
     }
 
+#endif /* UAC physical scanout is production 160x120 only */
+
     uint16_t outputRow[DOOMRPG_PHYSICAL_WIDTH];
-#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE || DOOMRPG_RES60_P1_DIAGNOSTIC
     const uint32_t started = micros();
 #endif
 
@@ -470,6 +590,23 @@ bool PlatformVideo_present() {
     platformDisplay->setAddrWindow(0, 0, DOOMRPG_PHYSICAL_WIDTH,
                                    DOOMRPG_PHYSICAL_HEIGHT);
 
+#if DOOMRPG_RES60_P1_DIAGNOSTIC
+    /* One 640-byte stack scanline, no full-size LCD staging framebuffer.
+     * Both physical coordinates map to a native 192x144 source, not a
+     * previously rendered 160x120 game world. */
+    for (uint16_t py = 0; py < DOOMRPG_PHYSICAL_HEIGHT; ++py) {
+        const uint16_t sy = EspVideoNearest_source(
+            py, DOOMRPG_VIDEO_BUFFER_HEIGHT, DOOMRPG_PHYSICAL_HEIGHT);
+        const uint16_t* source = framebuffer +
+            (size_t)sy * DOOMRPG_VIDEO_BUFFER_WIDTH;
+        for (uint16_t px = 0; px < DOOMRPG_PHYSICAL_WIDTH; ++px) {
+            const uint16_t sx = EspVideoNearest_source(
+                px, DOOMRPG_VIDEO_BUFFER_WIDTH, DOOMRPG_PHYSICAL_WIDTH);
+            outputRow[px] = source[sx];
+        }
+        platformDisplay->pushPixels(outputRow, DOOMRPG_PHYSICAL_WIDTH);
+    }
+#else
     for (int sourceY = 0; sourceY < DOOMRPG_LOGICAL_HEIGHT; ++sourceY) {
         const uint16_t* source = framebuffer + sourceY * DOOMRPG_LOGICAL_WIDTH;
         for (int sourceX = 0; sourceX < DOOMRPG_LOGICAL_WIDTH; ++sourceX) {
@@ -483,6 +620,8 @@ bool PlatformVideo_present() {
             platformDisplay->pushPixels(outputRow, DOOMRPG_PHYSICAL_WIDTH);
         }
     }
+
+#endif
 
     platformDisplay->endWrite();
     /* Record only pixels actually sent in this full frame. Repaint the
@@ -499,8 +638,14 @@ bool PlatformVideo_present() {
     drawDebugOverlay();
 #endif
 
+#if DOOMRPG_RES60_P1_DIAGNOSTIC
+    Serial.printf("[RES60P1] PRESENT src=192x144 dst=320x240 method=floor-nearest lineBytes=%u us=%lu\n",
+                  (unsigned int)sizeof(outputRow),
+                  (unsigned long)(micros() - started));
+#else
     DRPG_LOGT("[VIDEO] Present 160x120 -> 320x240 exact 2x raw RGB565: %lu us\n",
               micros() - started);
+#endif
     return true;
 }
 
@@ -560,6 +705,53 @@ void PlatformVideo_debugOverlayMarkTouch(int16_t physicalX,
 #endif
 
 void PlatformVideo_showTestPattern() {
+#if DOOMRPG_RES60_P1_DIAGNOSTIC
+    if (framebuffer == nullptr || kFramebufferBytes != 55296U) {
+        Serial.println("[RES60P1] FAIL framebuffer missing or wrong footprint");
+        return;
+    }
+    /* Genuine 192x144 pixels: quadrants, 1px checker, 1px border, diagonals.
+     * No SD/PAK, gameplay raster or secondary full-screen scratch. */
+    const uint32_t started = micros();
+    const uint16_t red = rgb565(255, 0, 0);
+    const uint16_t green = rgb565(0, 255, 0);
+    const uint16_t blue = rgb565(0, 0, 255);
+    const uint16_t yellow = rgb565(255, 255, 0);
+    const uint16_t white = rgb565(255, 255, 255);
+    const uint16_t black = rgb565(0, 0, 0);
+    for (int y = 0; y < DOOMRPG_VIDEO_BUFFER_HEIGHT; ++y) {
+        for (int x = 0; x < DOOMRPG_VIDEO_BUFFER_WIDTH; ++x) {
+            const bool upper = y < DOOMRPG_VIDEO_BUFFER_HEIGHT / 2;
+            const bool left = x < DOOMRPG_VIDEO_BUFFER_WIDTH / 2;
+            uint16_t color = upper ? (left ? red : green)
+                                   : (left ? blue : yellow);
+            if (x >= 48 && x < 144 && y >= 48 && y < 96) {
+                color = ((x + y) & 1) ? white : black;
+            }
+            framebuffer[(size_t)y * DOOMRPG_VIDEO_BUFFER_WIDTH + x] = color;
+        }
+    }
+    for (int x = 0; x < DOOMRPG_VIDEO_BUFFER_WIDTH; ++x) {
+        setPixel(x, 0, white);
+        setPixel(x, DOOMRPG_VIDEO_BUFFER_HEIGHT - 1, white);
+    }
+    for (int y = 0; y < DOOMRPG_VIDEO_BUFFER_HEIGHT; ++y) {
+        setPixel(0, y, white);
+        setPixel(DOOMRPG_VIDEO_BUFFER_WIDTH - 1, y, white);
+    }
+    drawLine(0, 0, DOOMRPG_VIDEO_BUFFER_WIDTH - 1,
+             DOOMRPG_VIDEO_BUFFER_HEIGHT - 1, black);
+    drawLine(DOOMRPG_VIDEO_BUFFER_WIDTH - 1, 0, 0,
+             DOOMRPG_VIDEO_BUFFER_HEIGHT - 1, white);
+    Serial.printf("[RES60P1] RASTER src=192x144 us=%lu\n",
+                  (unsigned long)(micros() - started));
+    if (!PlatformVideo_present()) {
+        Serial.println("[RES60P1] FAIL present");
+    } else {
+        Serial.printf("[RES60P1] FRAME totalUs=%lu\n",
+                      (unsigned long)(micros() - started));
+    }
+#else
     if (framebuffer == nullptr) {
         return;
     }
@@ -606,4 +798,441 @@ void PlatformVideo_showTestPattern() {
     }
 
     PlatformVideo_present();
+#endif
 }
+
+#if DOOMRPG_RES60_P2_LAYOUT
+void PlatformVideo_showRes60LayoutPattern() {
+    if (framebuffer == nullptr ||
+        kFramebufferBytes != ESP_RES60_FRAMEBUFFER_BYTES) {
+        Serial.println("[RES60P2] FAIL CLOSED framebuffer missing or wrong footprint");
+        return;
+    }
+    /* Pure native 192x144 output: top 24px HUD, 96px 3D viewport REGION,
+     * bottom 24px HUD. Diagnostic pixels only, NO BSP/PAK/world renderer. */
+    const uint32_t started = micros();
+    if (!EspRes60Layout_paintDiagnostic(framebuffer, kFramebufferBytes)) {
+        Serial.println("[RES60P2] FAIL CLOSED layout raster rejected");
+        return;
+    }
+    const uint32_t rasterUs = micros() - started;
+    const uint32_t frameFNV = EspRes60Layout_fnv(framebuffer, kFramebufferBytes);
+    Serial.printf("[RES60P2] RASTER src=192x144 top=24 world=192x96@y24 bottom=24 framebufferBytes=%u fnv=%08lx rasterUs=%lu\n",
+                  (unsigned int)kFramebufferBytes, (unsigned long)frameFNV,
+                  (unsigned long)rasterUs);
+    if (!PlatformVideo_present()) {
+        Serial.println("[RES60P2] FAIL CLOSED present");
+        return;
+    }
+    Serial.printf("[RES60P2] FRAME complete totalUs=%lu world3d=NOT_STARTED hudArt=NOT_STARTED map=NOT_LOADED audio=NOT_STARTED\n",
+                  (unsigned long)(micros() - started));
+}
+#endif
+
+#if DOOMRPG_RES60_P3_WORLD
+void PlatformVideo_showRes60WorldPreview() {
+    if (framebuffer == nullptr ||
+        kFramebufferBytes != ESP_RES60_FRAMEBUFFER_BYTES) {
+        Serial.println("[RES60P3] FAIL CLOSED stage=framebuffer");
+        return;
+    }
+    EspRes60WorldProbeReport report{};
+    const uint32_t started = micros();
+    if (!EspRes60WorldProbe_renderIntro(framebuffer, kFramebufferBytes,
+                                        &report)) {
+        Serial.printf("[RES60P3] FAIL CLOSED stage=compact-map-projection heap8=%u largest8=%u\n",
+                      (unsigned int)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+                      (unsigned int)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        return;
+    }
+    const uint32_t rasterUs = micros() - started;
+    Serial.printf("[RES60P3] RASTER source=MAP_INTRO width=192 world=96 hudTop=24 hudBottom=24 lines=%lu rayTests=%lu intersections=%lu hitColumns=%lu minDepth=%lu maxDepth=%lu centerDepth=%lu centerLine=%lu fullHeightColumns=%lu wallPixels=%lu fnv=%08lx us=%lu render=FLAT_WALLS textureSamples=0 sprites=0 engine=NOT_STARTED\n",
+                  (unsigned long)report.lineCount,
+                  (unsigned long)report.raster.rayTests,
+                  (unsigned long)report.raster.intersections,
+                  (unsigned long)report.raster.visibleColumns,
+                  (unsigned long)report.raster.minDepth,
+                  (unsigned long)report.raster.maxDepth,
+                  (unsigned long)report.raster.centerDepth,
+                  (unsigned long)report.raster.centerLineIndex,
+                  (unsigned long)report.raster.fullHeightColumns,
+                  (unsigned long)report.raster.wallPixels,
+                  (unsigned long)report.raster.frameFNV,
+                  (unsigned long)rasterUs);
+    if (!PlatformVideo_present()) {
+        Serial.println("[RES60P3] FAIL CLOSED stage=LCD_PRESENT");
+        return;
+    }
+    Serial.printf("[RES60P3] FRAME totalUs=%lu heap8=%u largest8=%u minHeap8=%u source=PAK mapRuntime=RELEASED audio=NOT_STARTED legacyWorld=NOT_STARTED\n",
+                  (unsigned long)(micros() - started),
+                  (unsigned int)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+                  (unsigned int)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+                  (unsigned int)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT));
+}
+#endif
+
+#if DOOMRPG_RES60_P7_NAV
+bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
+    if (framebuffer == nullptr ||
+        kFramebufferBytes != ESP_RES60_FRAMEBUFFER_BYTES || turns > 3U) {
+        Serial.println("[RES60P7] FAIL CLOSED stage=framebuffer-or-angle");
+        return false;
+    }
+    EspRes60WorldProbeReport report{};
+    const uint32_t started=micros();
+    if (!EspRes60WorldProbe_renderIntroQuarterTurns(framebuffer,
+            kFramebufferBytes, turns, &report)) {
+#if DOOMRPG_RES60_P12_INVENTORY_CACHE
+        EspRes60InventoryCache_reset();
+#endif
+#if DOOMRPG_RES60_P13_MAP_LEASE
+        EspRes60MapLease_reset();
+#endif
+        Serial.println("[RES60P7] FAIL CLOSED stage=compact-map-projection");
+        return false;
+    }
+    /* P3 raw FNV is captured BEFORE P8's texture inset and P7 navigation.
+     * It remains exact ed9b68c4 at spawn on the unchanged PAK. */
+    if (!EspRes60Nav_paint(framebuffer, kFramebufferBytes,
+                           (uint8_t)(report.spawnAngle - turns * 64U),
+                           turns) || EspAssetPack_isOpen() ||
+#if DOOMRPG_RES60_P13_MAP_LEASE
+        !EspRes60MapLease_isReady()) {
+#else
+        EspMapRuntime_isLoaded()) {
+#endif
+#if DOOMRPG_RES60_P12_INVENTORY_CACHE
+        EspRes60InventoryCache_reset();
+#endif
+#if DOOMRPG_RES60_P13_MAP_LEASE
+        EspRes60MapLease_reset();
+#endif
+        Serial.println("[RES60P7] FAIL CLOSED stage=navigation-or-leases");
+        return false;
+    }
+    const uint32_t fnv=EspRes60Layout_fnv(framebuffer,kFramebufferBytes);
+#if DOOMRPG_RES60_P11_PROFILE
+    /* Capture before any Serial logger; P11 is observational, and itself
+     * adds micros() overhead. Do NOT compare absolute P10/P11 blindly. */
+    const uint32_t preparedUs=micros()-started;
+#endif
+#if DOOMRPG_RES60_P10_WALL_MATERIAL
+    const unsigned long wallTextureSamples=(unsigned long)report.texture.wallPixels;
+#else
+    const unsigned long wallTextureSamples=0UL;
+#endif
+#if DOOMRPG_RES60_P20_COMPACT_SERIAL
+    /* P20: keep all cold evidence and all failure logs unchanged. A fully
+     * cached rotation gets ONE short witness instead of seven P8-P18
+     * paragraphs + RASTER. Serial at 115200 can block the input loop.
+     * P11 preparedUs was captured before logging in both paths. */
+    if (EspRes60Serial_compactWarm(
+            (uint8_t)report.mapLeaseHit,
+            (uint8_t)report.texture.cacheHit)) {
+        Serial.printf("[RES60P20] WARM angle=%u turns=%u mapUs=%lu raysUs=%lu preparedUs=%lu tests=%lu rawP3FNV=%08lx fnv=%08lx p10FNV=%08lx swatchFNV=%08lx heap8=%u largest8=%u minHeap8=%u"
+#if DOOMRPG_RES60_P37_WALL_COVERAGE
+            " wallIds=%u wallCols=%u wallTotal=%u insetWall=%u unsupportedCols=%u textured=%lu"
+#endif
+#if DOOMRPG_RES60_P38_WALL_ADMISSION
+            " admitted=%u"
+#endif
+#if DOOMRPG_RES60_P39_WALL_STREAM
+            " stream=%u/%lu meta=%u streamFNV=%08lx"
+#endif
+#if DOOMRPG_RES60_P40_FULL_WALLS
+            " fullWalls=1 swatch=OFF"
+#endif
+#if DOOMRPG_RES60_P41_SHARED_WALL_PAK
+            " sharedWallPak=%u"
+#endif
+            "\n",
+            (unsigned)report.spawnAngle, (unsigned)turns,
+            (unsigned long)report.loadUs,
+            (unsigned long)report.raster.raysUs,
+            (unsigned long)preparedUs,
+            (unsigned long)report.raster.rayTests,
+            (unsigned long)report.raster.frameFNV,
+            (unsigned long)fnv,
+            (unsigned long)report.texture.wallFNV,
+            (unsigned long)report.texture.sampleFNV,
+            (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+            (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+            (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT)
+#if DOOMRPG_RES60_P37_WALL_COVERAGE
+            , (unsigned)report.wallDemand.materials,
+            (unsigned)report.wallDemand.columns,
+            (unsigned)report.wallDemand.pixels,
+            (unsigned)report.wallDemand.insetPixels,
+            (unsigned)report.wallDemand.unsupportedColumns,
+            wallTextureSamples
+#endif
+#if DOOMRPG_RES60_P38_WALL_ADMISSION
+            , (unsigned)report.texture.admittedWallIds
+#endif
+#if DOOMRPG_RES60_P39_WALL_STREAM
+            , (unsigned)report.texture.streamReads,
+            (unsigned long)report.texture.streamBytes,
+            (unsigned)report.texture.streamMetadataBytes,
+            (unsigned long)report.texture.streamFNV
+#endif
+#if DOOMRPG_RES60_P41_SHARED_WALL_PAK
+            , (unsigned)report.texture.sharedWallPak
+#endif
+            );
+    } else
+#endif
+    {
+#if DOOMRPG_RES60_P40_FULL_WALLS
+    Serial.printf("[RES60P40] FULL-WALLS source=PAK cache=%s catalog=%u catalogFNV=%08lx reads=%u bytes=%lu meta=%u columns=%lu pixels=%lu streamFNV=%08lx swatch=OFF tileBss=0\n",
+        report.texture.cacheHit ? "HIT" : "MISS",
+        (unsigned)report.texture.catalogCount,
+        (unsigned long)report.texture.catalogFNV,
+        (unsigned)report.texture.streamReads,
+        (unsigned long)report.texture.readBytes,
+        (unsigned)report.texture.streamMetadataBytes,
+        (unsigned long)report.texture.wallColumns,
+        wallTextureSamples,
+        (unsigned long)report.texture.streamFNV);
+#elif DOOMRPG_RES60_P8_TEXEL
+    Serial.printf("[RES60P8] SWATCH source=PAK map=/intro.bsp file=wtexels.bin cache=%s logical=%u catalog=%u sourceNibble=%lu catalogFNV=%08lx texelFNV=%08lx sampleFNV=%08lx bytes=%lu inset=48x48 pixels=%lu framebuffer=192x144 worldTextureSamples=%lu\n",
+        report.texture.cacheHit ? "HIT" : "MISS",
+        (unsigned)report.texture.logicalId,
+        (unsigned)report.texture.catalogCount,
+        (unsigned long)report.texture.sourceOffsetNibbles,
+        (unsigned long)report.texture.catalogFNV,
+        (unsigned long)report.texture.texelFNV,
+        (unsigned long)report.texture.sampleFNV,
+        (unsigned long)report.texture.readBytes,
+        (unsigned long)report.texture.pixels,
+        wallTextureSamples);
+#endif
+#if DOOMRPG_RES60_P15_COMPACT_SNAPSHOT
+#if DOOMRPG_RES60_P17_HEAP_SNAPSHOT
+    Serial.printf("[RES60P17] COMPACT lines=%lu candidates=%lu snapshotBss=0 snapshotHeap=6144 indexBss=0 P14CombinedBss=9216 savedBss=9216 readerCalls=%lu raysUs=%lu heap8=%u largest8=%u minHeap8=%u owner=P13-immutable\n",
+#else
+    Serial.printf("[RES60P15] COMPACT lines=%lu candidates=%lu snapshotBss=6144 indexBss=0 P14CombinedBss=9216 savedBss=3072 readerCalls=%lu raysUs=%lu heap8=%u largest8=%u minHeap8=%u owner=P13-immutable\n",
+#endif
+        (unsigned long)report.lineCount,
+        (unsigned long)report.raster.wedgeCandidates,
+        (unsigned long)report.raster.readerCalls,
+        (unsigned long)report.raster.raysUs,
+        (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT));
+#elif DOOMRPG_RES60_P14_LINE_SNAPSHOT
+    Serial.printf("[RES60P14] SNAPSHOT lines=%lu candidates=%lu bytesBss=%lu readerCalls=%lu avoidedDecodes=%lu raysUs=%lu owner=P13-immutable\n",
+        (unsigned long)report.lineCount,
+        (unsigned long)report.raster.wedgeCandidates,
+        (unsigned long)(512U*sizeof(EspRes60PreviewLine)),
+        (unsigned long)report.raster.readerCalls,
+        (unsigned long)report.raster.rayTests,
+        (unsigned long)report.raster.raysUs);
+#endif
+#if DOOMRPG_RES60_P9_WEDGE
+    Serial.printf("[RES60P9] WEDGE lines=%lu candidates=%lu culled=%lu rayTests=%lu legacyRayTests=%lu rawP3FNV=%08lx\n",
+        (unsigned long)report.lineCount,
+        (unsigned long)report.raster.wedgeCandidates,
+        (unsigned long)report.raster.wedgeRejected,
+        (unsigned long)report.raster.rayTests,
+        (unsigned long)(report.lineCount*ESP_RES60_WIDTH),
+        (unsigned long)report.raster.frameFNV);
+#endif
+#if DOOMRPG_RES60_P10_WALL_MATERIAL && !DOOMRPG_RES60_P40_FULL_WALLS
+    Serial.printf("[RES60P10] MATERIAL source=PAK logical=%u selected=%s visibleColumns=%u columns=%lu pixels=%lu sampleFNV=%08lx rawP3FNV=%08lx"
+#if DOOMRPG_RES60_P39_WALL_STREAM
+        " extraPakReads=%u"
+#else
+        " extraPakReads=0"
+#endif
+#if DOOMRPG_RES60_P37_WALL_COVERAGE
+        " wallIds=%u wallCols=%u wallTotal=%u insetWall=%u unsupportedCols=%u"
+#endif
+#if DOOMRPG_RES60_P38_WALL_ADMISSION
+        " admitted=%u"
+#endif
+#if DOOMRPG_RES60_P39_WALL_STREAM
+        " streamBytes=%lu meta=%u streamFNV=%08lx"
+#endif
+        "\n",
+        (unsigned)report.texture.logicalId,
+        report.texture.selectedFromVisible ? "VISIBLE-RAY" : "FALLBACK-LINE",
+        (unsigned)report.texture.visibleWallColumns,
+        (unsigned long)report.texture.wallColumns,
+        (unsigned long)report.texture.wallPixels,
+        (unsigned long)report.texture.wallFNV,
+        (unsigned long)report.raster.frameFNV
+#if DOOMRPG_RES60_P39_WALL_STREAM
+        , (unsigned)report.texture.streamReads
+#endif
+#if DOOMRPG_RES60_P37_WALL_COVERAGE
+        , (unsigned)report.wallDemand.materials,
+        (unsigned)report.wallDemand.columns,
+        (unsigned)report.wallDemand.pixels,
+        (unsigned)report.wallDemand.insetPixels,
+        (unsigned)report.wallDemand.unsupportedColumns
+#endif
+#if DOOMRPG_RES60_P38_WALL_ADMISSION
+        , (unsigned)report.texture.admittedWallIds
+#endif
+#if DOOMRPG_RES60_P39_WALL_STREAM
+        , (unsigned long)report.texture.streamBytes,
+        (unsigned)report.texture.streamMetadataBytes,
+        (unsigned long)report.texture.streamFNV
+#endif
+        );
+#endif
+#if DOOMRPG_RES60_P12_INVENTORY_CACHE
+    Serial.printf("[RES60P12] INVENTORY cache=%s crc=%08lx arenaFNV=%08lx invUs=%lu validated=pak-entry+arena\n",
+        report.inventoryCacheHit ? "HIT" : "MISS",
+        (unsigned long)report.mapCrc32,
+        (unsigned long)report.arenaFNV,
+        (unsigned long)report.inventoryUs);
+#endif
+#if DOOMRPG_RES60_P13_MAP_LEASE
+    Serial.printf("[RES60P13] MAP lease=%s crc=%08lx arenaFNV=%08lx mapUs=%lu bytesResident=%lu validated=pak-metadata+resident-arena\n",
+        report.mapLeaseHit ? "HIT" : "MISS",
+        (unsigned long)report.mapCrc32,
+        (unsigned long)report.arenaFNV,
+        (unsigned long)report.loadUs,
+        (unsigned long)report.arenaBytes);
+#endif
+#if DOOMRPG_RES60_P11_PROFILE
+    Serial.printf("[RES60P11] PROFILE angle=%u cache=%s invUs=%lu loadUs=%lu preflightUs=%lu bandUs=%lu raysUs=%lu geometryUs=%lu fillUs=%lu hashUs=%lu p3Us=%lu catalogUs=%lu texPakUs=%lu swatchUs=%lu overlayUs=%lu texUs=%lu releaseUs=%lu preparedUs=%lu rayTests=%lu overlayPixels=%lu heap8=%u instrumentation=ON\n",
+        (unsigned)report.spawnAngle,
+        report.texture.cacheHit ? "HIT" : "MISS",
+        (unsigned long)report.inventoryUs,
+        (unsigned long)report.loadUs,
+        (unsigned long)report.raster.preflightUs,
+        (unsigned long)report.raster.bandUs,
+        (unsigned long)report.raster.raysUs,
+        (unsigned long)report.raster.geometryUs,
+        (unsigned long)report.raster.fillUs,
+        (unsigned long)report.raster.hashUs,
+        (unsigned long)report.p3Us,
+        (unsigned long)report.texture.profileCatalogUs,
+        (unsigned long)report.texture.profilePackUs,
+        (unsigned long)report.texture.profileSwatchUs,
+        (unsigned long)report.texture.profileOverlayUs,
+        (unsigned long)report.textureUs,
+        (unsigned long)report.releaseUs,
+        (unsigned long)preparedUs,
+        (unsigned long)report.raster.rayTests,
+        (unsigned long)report.texture.wallPixels,
+        (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT));
+#endif
+    Serial.printf("[RES60P7] RASTER source=MAP_INTRO angle=%u turns=%u width=192 world=96 rayTests=%lu hitColumns=%lu wallPixels=%lu rawP3FNV=%08lx fnv=%08lx us=%lu textureSamples=%lu sprites=0 gameplay=NOT_STARTED\n",
+        (unsigned)report.spawnAngle,(unsigned)turns,
+        (unsigned long)report.raster.rayTests,
+        (unsigned long)report.raster.visibleColumns,
+        (unsigned long)report.raster.wallPixels,
+        (unsigned long)report.raster.frameFNV,(unsigned long)fnv,
+        (unsigned long)(micros()-started),
+        wallTextureSamples);
+    }
+    if (!PlatformVideo_present()) {
+#if DOOMRPG_RES60_P12_INVENTORY_CACHE
+        EspRes60InventoryCache_reset();
+#endif
+#if DOOMRPG_RES60_P13_MAP_LEASE
+        EspRes60MapLease_reset();
+#endif
+        Serial.println("[RES60P7] FAIL CLOSED stage=LCD_PRESENT");
+        return false;
+    }
+#if DOOMRPG_RES60_P13_MAP_LEASE
+    Serial.printf("[RES60P7] FRAME totalUs=%lu heap8=%u largest8=%u minHeap8=%u mapRuntime=RETAINED pak=closed audio=NOT_STARTED\n",
+#else
+    Serial.printf("[RES60P7] FRAME totalUs=%lu heap8=%u largest8=%u minHeap8=%u mapRuntime=RELEASED pak=closed audio=NOT_STARTED\n",
+#endif
+         (unsigned long)(micros()-started),
+         (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+         (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+         (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT));
+#if DOOMRPG_RES60_P16_HEAP_TOPOLOGY
+    /* Only once, after successful LCD presentation + full profile logging.
+     * Any Serial perturbation cannot contaminate raysUs/preparedUs values. */
+    if (!res60P16WarmDumped && report.mapLeaseHit) {
+        res60P16WarmDumped=1U;
+        res60P16_printHeapTopology("first-map-hit");
+    }
+#endif
+    return true;
+}
+#endif
+
+#if DOOMRPG_RES60_P6_MENU
+bool PlatformVideo_showRes60MainMenu(int8_t selected) {
+    if (framebuffer == nullptr || kFramebufferBytes != ESP_RES60_FRAMEBUFFER_BYTES) {
+        Serial.println("[RES60P6] FAIL CLOSED stage=framebuffer");
+        return false;
+    }
+    EspRes60MenuReport report{};
+    const uint32_t started = micros();
+    if (!EspRes60Menu_render(framebuffer, kFramebufferBytes, selected, &report)) {
+        Serial.println("[RES60P6] FAIL CLOSED stage=menu-PAK-or-skin");
+        return false;
+    }
+    Serial.printf("[RES60P6] MENU source=PAK bg=c.bmp/%ux%u logo=j.bmp/%ux%u cards=4 selected=%d native=192x144 titleFNV=%08lx fnv=%08lx reads=%lu rasterUs=%lu gameplay=NOT_STARTED\n",
+       (unsigned)report.title.backgroundWidth, (unsigned)report.title.backgroundHeight,
+       (unsigned)report.title.logoWidth, (unsigned)report.title.logoHeight,
+       (int)selected, (unsigned long)report.title.frameFNV,
+       (unsigned long)report.finalFNV, (unsigned long)report.title.packReads,
+       (unsigned long)(micros()-started));
+    if (!PlatformVideo_present()) {
+        Serial.println("[RES60P6] FAIL CLOSED stage=LCD_PRESENT");
+        return false;
+    }
+    Serial.printf("[RES60P6] FRAME totalUs=%lu heap8=%u largest8=%u minHeap8=%u pak=closed audio=NOT_STARTED\n",
+       (unsigned long)(micros()-started),
+       (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+       (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+       (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT));
+    return true;
+}
+bool PlatformVideo_updateRes60MenuArmed(int8_t previous, int8_t selected) {
+    if (framebuffer == nullptr || kFramebufferBytes != ESP_RES60_FRAMEBUFFER_BYTES ||
+        !EspRes60Menu_repaintSelection(framebuffer, kFramebufferBytes,
+                                      previous, selected))
+        return false;
+    const uint32_t fnv = EspRes60Layout_fnv(framebuffer, kFramebufferBytes);
+    if (!PlatformVideo_present()) {
+        (void)EspRes60Menu_repaintSelection(framebuffer, kFramebufferBytes,
+                                            selected, previous);
+        return false;
+    }
+    Serial.printf("[RES60P6] SELECT before=%d after=%d fnv=%08lx pak=closed\n",
+       (int)previous, (int)selected, (unsigned long)fnv);
+    return true;
+}
+#endif
+
+#if DOOMRPG_RES60_P5_TITLE
+bool PlatformVideo_showRes60TitlePreview() {
+    if (framebuffer == nullptr || kFramebufferBytes != ESP_RES60_FRAMEBUFFER_BYTES) {
+        Serial.println("[RES60P5] FAIL CLOSED stage=framebuffer");
+        return false;
+    }
+    EspRes60TitlePreviewReport report{};
+    const uint32_t started = micros();
+    if (!EspRes60TitlePreview_render(framebuffer, kFramebufferBytes, &report)) {
+        Serial.println("[RES60P5] FAIL CLOSED stage=original-PAK-title");
+        return false;
+    }
+    Serial.printf("[RES60P5] TITLE source=PAK bg=c.bmp/%ux%u logo=j.bmp/%ux%u native=192x144 fnv=%08lx reads=%lu bytes=%lu pixels=%lu rasterUs=%lu gameplay=NOT_STARTED\n",
+        (unsigned)report.backgroundWidth, (unsigned)report.backgroundHeight,
+        (unsigned)report.logoWidth, (unsigned)report.logoHeight,
+        (unsigned long)report.frameFNV, (unsigned long)report.packReads,
+        (unsigned long)report.bytesRead, (unsigned long)report.pixelsWritten,
+        (unsigned long)(micros()-started));
+    if (!PlatformVideo_present()) {
+        Serial.println("[RES60P5] FAIL CLOSED stage=present");
+        return false;
+    }
+    Serial.printf("[RES60P5] FRAME totalUs=%lu heap8=%u largest8=%u minHeap8=%u pak=closed audio=NOT_STARTED\n",
+        (unsigned long)(micros()-started),
+        (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT));
+    return true;
+}
+#endif
