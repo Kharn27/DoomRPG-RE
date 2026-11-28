@@ -699,6 +699,12 @@ void EspNativeGameplayMonsterAttackVisual_service(struct DoomRPG_s* doomRpgBase)
             projectileTargetTile =
                 (uint16_t)((((uint32_t)view->destY >> 6U) * 32U) +
                            ((uint32_t)view->destX >> 6U));
+            {
+                uint16_t targetSprite,targetTile;
+                if (EspNativeGameplayMonsterTurn_barrelTarget(
+                        turn->attackProbes,&targetSprite,&targetTile))
+                    projectileTargetTile=targetTile;
+            }
             projectileStep = 0U;
             projectileEnabled = 1U;
             projectileSubtype = monster->subtype;
