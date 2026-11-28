@@ -8,6 +8,9 @@
 #include "esp_map_automap_state.h"
 #include "esp_map_runtime.h"
 #include "esp_map_state.h"
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+#include "esp_redraw_audit.h"
+#endif
 
 static uint8_t* automapStorage;
 static EspMapAutomapStateView automapView;
@@ -139,6 +142,9 @@ static EspMapGiveMapStatus planGiveMapDirect(
 }
 
 void EspMapAutomapState_reset(void) {
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    EspRedrawAudit_event(ESP_REDRAW_REVEAL);
+#endif
     if (automapStorage != NULL) {
         heap_caps_free(automapStorage);
         automapStorage = NULL;
@@ -268,6 +274,9 @@ int EspMapAutomapState_setLineRevealed(uint32_t lineIndex,
     before = bitGet(lineBits, lineIndex);
     if (before == revealed) return 1;
     bitSet(lineBits, lineIndex, revealed);
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    EspRedrawAudit_event(ESP_REDRAW_REVEAL);
+#endif
     if (revealed != 0U) ++automapView.lineRevealedCount;
     else --automapView.lineRevealedCount;
     refreshFNV();
@@ -293,6 +302,9 @@ int EspMapAutomapState_setSpriteRevealed(uint32_t spriteIndex,
     before = bitGet(spriteBits, spriteIndex);
     if (before == revealed) return 1;
     bitSet(spriteBits, spriteIndex, revealed);
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    EspRedrawAudit_event(ESP_REDRAW_REVEAL);
+#endif
     if (revealed != 0U) ++automapView.spriteRevealedCount;
     else --automapView.spriteRevealedCount;
     refreshFNV();
@@ -358,6 +370,9 @@ int EspMapAutomapState_restore(const EspMapAutomapSnapshot* snapshot) {
 
     memcpy(automapStorage, snapshot->lineBits,
            automapView.lineBitsetBytes);
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    EspRedrawAudit_event(ESP_REDRAW_REVEAL);
+#endif
     memcpy(automapStorage + automapView.lineBitsetBytes,
            snapshot->spriteBits, automapView.spriteBitsetBytes);
     automapView.lineRevealedCount = snapshot->lineRevealedCount;

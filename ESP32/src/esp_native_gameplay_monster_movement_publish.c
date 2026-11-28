@@ -15,6 +15,9 @@
 #include "esp_native_gameplay_frame.h"
 #if defined(ARDUINO) && defined(DOOMRPG_ESP32)
 #include "esp_perf_move_visibility.h"
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+#include "esp_redraw_audit.h"
+#endif
 #endif
 #if defined(ARDUINO) && defined(DOOMRPG_ESP32)
 #include "esp_asset_pack.h"
@@ -307,6 +310,7 @@ static uint32_t moveFrameBlockers(void) {
     if (!EspNativeGameplayActionEngine_moveFrameQuiet()) mask |= ESP_PERF_MOVE_BLOCK_FEEDBACK;
     if (!EspNativeGameplayGibFx_moveFrameQuiet()) mask |= ESP_PERF_MOVE_BLOCK_FX;
     if (!EspPickupMini_moveFrameQuiet()) mask |= ESP_PERF_MOVE_BLOCK_PICKUP;
+    EspRedrawAudit_blockers(mask);
     return mask;
 }
 #endif

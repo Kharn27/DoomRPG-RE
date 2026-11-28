@@ -526,6 +526,12 @@ P2_CLEAN_WIRING_EDITS = {
 }
 
 def restore_pre_perf_game_p2a(name, data):
+    if name == "esp_native_gameplay_monster_movement_publish.c":
+        # P5b diagnostic additions only; preserve the exact pre-P5 source.
+        for block in ["#if defined(ARDUINO) && defined(DOOMRPG_ESP32)\n#include \"esp_redraw_audit.h\"\n#endif\n", "    EspRedrawAudit_blockers(mask);\n"]:
+            raw = block.encode("utf-8")
+            assert data.count(raw) == 1, "P5b exact inverse"
+            data = data.replace(raw, b"", 1)
     if name == "esp_native_sprite_renderer.c":
         # P4l exact inverse; the frozen renderer blob remains the authority.
         helper = "/* P4l: descending depth, newest index first on exact ties.\n * Common append/near-tail insertions stay on the tiny scalar path.\n * Dense, far-from-tail insertions use a lower bound and overlap-safe move. */\nstatic uint32_t openOrderSlot(Order* order, uint32_t count, int32_t sortZ) {\n    uint32_t position = count;\n    if (count >= 8U && sortZ >= order[count - 8U].sortZ) {\n        uint32_t lo = 0U, hi = count - 8U;\n        while (lo < hi) {\n            const uint32_t mid = lo + ((hi - lo) >> 1);\n            if (order[mid].sortZ > sortZ) lo = mid + 1U;\n            else hi = mid;\n        }\n        memmove(order + lo + 1U, order + lo,\n                (count - lo) * sizeof(*order));\n        return lo;\n    }\n    while (position > 0U && sortZ >= order[position - 1U].sortZ) {\n        order[position] = order[position - 1U];\n        --position;\n    }\n    return position;\n}\n\n".encode("utf-8")

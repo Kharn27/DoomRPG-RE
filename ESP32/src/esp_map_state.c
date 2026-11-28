@@ -7,6 +7,9 @@
 
 #include "esp_map_runtime.h"
 #include "esp_map_state.h"
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+#include "esp_redraw_audit.h"
+#endif
 
 #define ENTRANCE_TEXTURE_ID 7U
 #define EVENT_TRIGGER_MASK 0x01f80000U
@@ -94,6 +97,9 @@ static int entranceTileForLine(const EspMapLine* line, uint32_t* outTileIndex) {
 }
 
 void EspMapState_reset(void) {
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    EspRedrawAudit_event(ESP_REDRAW_VISITED);
+#endif
     if (stateTiles != NULL) {
         heap_caps_free(stateTiles);
         stateTiles = NULL;
@@ -259,6 +265,9 @@ int EspMapState_setVisited(uint32_t tileIndex, uint8_t visited) {
     if (after == before) return 1;
 
     stateTiles[tileIndex] = after;
+#if defined(ARDUINO) && defined(DOOMRPG_ESP32)
+    EspRedrawAudit_event(ESP_REDRAW_VISITED);
+#endif
     stateView.stateFNV1a = fnv1a32(stateTiles, ESP_MAP_STATE_BYTES);
     return 1;
 }
