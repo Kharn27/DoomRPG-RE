@@ -63,6 +63,8 @@ with tempfile.TemporaryDirectory(prefix="gameai14-path-") as tmp:
                         "ESP32/test/game_ai14_path_host.c","-o",str(exe)],
                        cwd=ROOT,check=True)
         subprocess.run([str(exe)],check=True)
+        if continuation == 0:
+            subprocess.run([str(exe),"--geometry"], input=(ROOT/"ESP32/test/fixtures/ai14_nav_p3_geometry.txt").read_text(), text=True, check=True)
         if rows[continuation]:
             subprocess.run([str(exe),"--replay"],input="\n".join(rows[continuation])+"\n",
                            text=True,check=True)

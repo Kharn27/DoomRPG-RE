@@ -74,7 +74,7 @@ typedef struct RefMonster { int x,y; } RefMonster;
 typedef struct RefDef { int eSubType; byte eType; } RefDef;
 typedef struct RefSprite { int x,y,info; } RefSprite;
 typedef struct RefLine { struct { int x,y; } vert1,vert2; } RefLine;
-typedef struct RefRender { RefSprite mapSprites[8]; RefLine lines[4]; } RefRender;
+typedef struct RefRender { RefSprite mapSprites[64]; RefLine lines[64]; } RefRender;
 typedef struct RefCanvas { int destX,destY; } RefCanvas;
 typedef struct RefGame RefGame;
 typedef struct RefRoot { Random_t random; RefGame* game; RefCanvas* doomCanvas; RefRender* render; } RefRoot;
@@ -86,7 +86,7 @@ typedef struct Entity_t {
 } Entity_t;
 struct RefGame {
     RefRoot* doomRpg;
-    Entity_t entities[10];
+    Entity_t entities[130];
     Entity_t* entityDb[1024];
     Entity_t* traceEntities[8];
     int numTraceEntities;
@@ -204,7 +204,101 @@ static int replayInput(void) {
     printf("PASS conditional NAV replay continuation=%d rows=%u (not geometry proof)\n",CONTINUATION,rows);
     return rows?0:1;
 }
+/* CYD P3 captured local geometry. Unlike --replay, collision results
+ * are NOT injected: RefActualSight executes original Game_trace/LOS.
+ * Fixture tiles/link order come from native capture, not a desktop SAVE.
+ * Closed line entities are linked after sprites, then wall sentinels
+ * installed as in Game_loadMapEntities. Captured fallback is native type0;
+ * the original source explicitly uses the type9 sentinel definition. */
+static int geometryInput(void) {
+    unsigned rows=0, candidates=0, attacker, sub, dst, mask, b[4], ties, value, choice;
+    int sx,sy,tx,ty,px,py,score[4],n;
+    const int dx[4]={1,-1,0,0}, dy[4]={0,0,1,-1};
+    while((n=scanf("%u %u %d %d %d %d %u %x %d %d %d %d %x %x %x %x %u %u %u %d %d",
+        &attacker,&sub,&sx,&sy,&tx,&ty,&dst,&mask,&score[0],&score[1],&score[2],&score[3],
+        &b[0],&b[1],&b[2],&b[3],&ties,&value,&choice,&px,&py))!=EOF) {
+        assert(n==21 && sub==4 && mask==0xf387 && ties>0 && ties<=4 && value<256);
+        RefGame g={0}; RefRender render={0}; RefCanvas canvas={px,py};
+        RefRoot root={0}; RefMonster m={0}; RefDef d={(int)sub,1}, defs[128]={0};
+        Entity_t e={.def=&d,.monster=&m,.doomRpg=&root};
+        uint16_t wallTiles[25], lineTiles[64];
+        uint8_t lineTypes[64];
+        unsigned nw,nl,ns,previousOrder=0,found=0;
+        root.game=&g;root.render=&render;root.doomCanvas=&canvas;g.doomRpg=&root;
+        g.entities[0].def=&wallDef;g.entities[1].def=&playerDef;
+        assert(scanf("%u",&nw)==1 && nw<=25);
+        for(unsigned i=0;i<nw;i++) {
+            unsigned tile;assert(scanf("%u",&tile)==1 && tile<1024);
+            wallTiles[i]=(uint16_t)tile;
+        }
+        assert(scanf("%u",&nl)==1 && nl<=64);
+        for(unsigned i=0;i<nl;i++) {
+            unsigned id,tile,type,has,flags;int x1,y1,x2,y2;
+            assert(scanf("%u %u %u %u %x %d %d %d %d",&id,&tile,&type,&has,&flags,&x1,&y1,&x2,&y2)==9);
+            assert(tile<1024 && type<16 && has<=1);
+            if(flags&0x200) { int v=flags&8?3:flags&16?-3:0;x1+=v;x2+=v; }
+            else if(flags&0x100) { int v=flags&8?3:flags&16?-3:0;y1+=v;y2+=v; }
+            int x=x1+(x2-x1)/2,y=y1+(y2-y1)/2;
+            if(flags&0x800)--y;else if(flags&0x2000)++x;
+            else if(flags&0x1000)++y;else if(flags&0x4000)--x;
+            assert((unsigned)((y>>6)*32+(x>>6))==tile);
+            render.lines[i]=(RefLine){{x1,y1},{x2,y2}};
+            lineTiles[i]=(uint16_t)tile;lineTypes[i]=(uint8_t)(has?type:9);
+        }
+        assert(scanf("%u",&ns)==1 && ns<=64);
+        for(unsigned i=0;i<ns;i++) {
+            unsigned id,type,state,order,info;int x,y;
+            assert(scanf("%u %u %x %u %d %d %x",&id,&type,&state,&order,&x,&y,&info)==7);
+            assert(type<16 && (state&0x400) && order>previousOrder);
+            previousOrder=order;
+            if(info&0x800000) {
+                if(info&0x100000)++y;else if(info&0x80000)--y;
+                else if(info&0x200000)++x;else if(info&0x400000)--x;
+            }
+            render.mapSprites[i]=(RefSprite){x,y,(int)info};
+            Entity_t* ent=id==attacker?&e:&g.entities[2+i];
+            if(id==attacker)++found;
+            else { defs[i]=(RefDef){0,(byte)type};ent->def=&defs[i]; }
+            ent->info=i+1;
+            unsigned tile=state&1023U;
+            ent->nextOnTile=g.entityDb[tile];g.entityDb[tile]=ent;
+        }
+        assert(found==1);
+        for(unsigned i=0;i<nl;i++) {
+            Entity_t* ent=&g.entities[66+i];
+            defs[64+i]=(RefDef){0,lineTypes[i]};ent->def=&defs[64+i];
+            ent->info=(i+1)|0x200000U;
+            ent->nextOnTile=g.entityDb[lineTiles[i]];g.entityDb[lineTiles[i]]=ent;
+        }
+        for(unsigned i=0;i<nw;i++) {
+            unsigned tile=wallTiles[i];Entity_t* head=g.entityDb[tile];
+            if(!head || !(head->info&0x200000U))g.entityDb[tile]=&g.entities[0];
+        }
+        root.random.randTable[0]=(byte)value;
+        legacyCalls=legacyLinks=0;
+        assert(RefGoal(&e,sx,sy,tx,ty)==1 && legacyCalls==1 && legacyLinks==2);
+        assert(e.visitOrderCount==(int)ties && e.visitOrder[(value&3U)%ties]==(int)choice);
+        assert((unsigned)((m.y>>6)*32+(m.x>>6))==dst);
+        for(int k=0;k<4;k++) {
+            int actual=-1;recordedCalls=0;recordedBits=0;
+            if(RefActualSight(&e,sx,sy,sx+64*dx[k],sy+64*dy[k],(int)mask)) {
+                recordPath=1;
+                actual=RefPath(&e,(sx>>6)+dx[k],(sy>>6)+dy[k],tx>>6,ty>>6,k,(int)mask);
+                recordPath=0;++candidates;
+            }
+            if(actual!=score[k] || recordedBits!=b[k]) {
+                fprintf(stderr,"geometry mismatch row=%u sprite=%u direction=%d score=%d/%d bits=%02x/%02x\n",
+                        rows+1,attacker,k,actual,score[k],recordedBits,b[k]);return 1;
+            }
+        }
+        ++rows;
+    }
+    assert(rows==8);
+    printf("PASS CYD P3 captured geometry original C replay rows=%u viable=%u (native topology input)\n",rows,candidates);
+    return 0;
+}
 int main(int argc,char** argv) {
+    if(argc==2 && strcmp(argv[1],"--geometry")==0)return geometryInput();
     if(argc==2 && strcmp(argv[1],"--replay")==0)return replayInput();
     assert(argc==1);
     resetFixture();
