@@ -1,3 +1,9 @@
+## RES60-P37 — CYD functional PASS / original CI failed (28 November 2026)
+
+[Detailed report](MILESTONE_RES60_P37_WALL_COVERAGE_PENDING_CYD.md). Context candidate cfd6084208d062799e8484543b5aca888d547b10; 31/31 frames, 28 warm, 3 START/MENU/RELEASE, all P36 fingerprints unchanged, heap8 107832 largest57332 min86620. All 192 columns per view, 3/5/5/3 wall IDs, 15810/6349/15060/16636 pixels, unsupportedCols=0. Cold mean 672791us; warm median 189766/227842/177697.5/205985us, ~10ms above P36 with both upstream and telemetry changed. Original push 46127162477 and PR 46127166568 failed strict C11 signedness in P37 clipping ternary; correction 74939992ac342e975f384a67d8439f5be61e8802, CI pending. Not double CI PASS. Main 061669e1fd04558d108da9c773ab8c829f8152cd verified ancestor. PR #364 DRAFT.
+
+---
+
 ## PERF-GAME P3b–P3n — consolidation CYD + CI PASS (28 novembre 2026)
 
 PR [#472](https://github.com/Kharn27/DoomRPG-RE/pull/472), candidat `31277b70e4cf29c1149aeef21ba9a6efc4f25e28`, double CI [push](https://github.com/Kharn27/DoomRPG-RE/actions/runs/46124985875) / [PR](https://github.com/Kharn27/DoomRPG-RE/actions/runs/46124991136) SUCCESS. [Rapport P3n](MILESTONE_PERF_GAME_P3N_PENDING_CYD.md). Sector1 slot05 puis Entrance neuve: 34/34 tours non vides, 270 actions, 120/120 continuations Phantom exactes, 26 préfixes vides par contrat, 37 SFX sans rejet/underrun, 12 portes, 10 pickups, deux EXIT propres, NULL invariants. Optimisations cumulées P3b–P3n sans changement volontaire des règles gameplay, validation transactionnelle maintenue. Le renderer reste dominant (75.47% de la phase mouvement échantillonnée), pas de benchmark apparié. Limites #473/#382 et IA historiques ouvertes. Accord utilisateur de consolidation; candidat code gelé après test.
