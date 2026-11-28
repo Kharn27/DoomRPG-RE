@@ -318,7 +318,7 @@ static int closedLineBlocksTile(uint16_t tile, uint16_t mask) {
  * closes after a monster has entered its line tile: the door is allowed to
  * close, but the monster is not trapped inside its newly relinked line entity.
  *
- * Return 2 for that exact source-line escape, 1 for a blocking source line,
+ * Return 2 for a sole axis-aligned type-0 line on the queried tile, 1 for a blocking source line,
  * 0 when no blocking line is linked on the source tile, and -1 when the compact
  * native owners cannot reproduce the legacy query safely.
  */
@@ -375,11 +375,21 @@ static int closedLineSourceStatusReference(uint16_t tile,
 
     if (matches == 0U) return 0;
     if (outLineIndex != NULL) *outLineIndex = matchedLine;
+    /* Render_loadMap applies these offsets before the original LOS reads
+     * the endpoints. The tile-link nudge is deliberately not included. */
+    int32_t offsetX = 0, offsetY = 0;
+    if ((matched.flags & MOVE_LINE_GEOMETRY_X_NUDGE) != 0U) {
+        if ((matched.flags & MOVE_LINE_GEOMETRY_AXIS_X) != 0U) offsetX = 3;
+        else if ((matched.flags & MOVE_LINE_GEOMETRY_AXIS_NEG) != 0U) offsetX = -3;
+    } else if ((matched.flags & MOVE_LINE_GEOMETRY_Y_NUDGE) != 0U) {
+        if ((matched.flags & MOVE_LINE_GEOMETRY_AXIS_X) != 0U) offsetY = 3;
+        else if ((matched.flags & MOVE_LINE_GEOMETRY_AXIS_NEG) != 0U) offsetY = -3;
+    }
     if (matchedType == 0U &&
-        (sourceX == (int32_t)matched.x1 ||
-         sourceX == (int32_t)matched.x2 ||
-         sourceY == (int32_t)matched.y1 ||
-         sourceY == (int32_t)matched.y2)) {
+        (sourceX == (int32_t)matched.x1 + offsetX ||
+         sourceX == (int32_t)matched.x2 + offsetX ||
+         sourceY == (int32_t)matched.y1 + offsetY ||
+         sourceY == (int32_t)matched.y2 + offsetY)) {
         return 2;
     }
     return 1;
@@ -440,11 +450,21 @@ static int closedLineSourceStatusIndexed(uint16_t tile,
 
     if (matches == 0U) return 0;
     if (outLineIndex != NULL) *outLineIndex = matchedLine;
+    /* Render_loadMap applies these offsets before the original LOS reads
+     * the endpoints. The tile-link nudge is deliberately not included. */
+    int32_t offsetX = 0, offsetY = 0;
+    if ((matched.flags & MOVE_LINE_GEOMETRY_X_NUDGE) != 0U) {
+        if ((matched.flags & MOVE_LINE_GEOMETRY_AXIS_X) != 0U) offsetX = 3;
+        else if ((matched.flags & MOVE_LINE_GEOMETRY_AXIS_NEG) != 0U) offsetX = -3;
+    } else if ((matched.flags & MOVE_LINE_GEOMETRY_Y_NUDGE) != 0U) {
+        if ((matched.flags & MOVE_LINE_GEOMETRY_AXIS_X) != 0U) offsetY = 3;
+        else if ((matched.flags & MOVE_LINE_GEOMETRY_AXIS_NEG) != 0U) offsetY = -3;
+    }
     if (matchedType == 0U &&
-        (sourceX == (int32_t)matched.x1 ||
-         sourceX == (int32_t)matched.x2 ||
-         sourceY == (int32_t)matched.y1 ||
-         sourceY == (int32_t)matched.y2)) {
+        (sourceX == (int32_t)matched.x1 + offsetX ||
+         sourceX == (int32_t)matched.x2 + offsetX ||
+         sourceY == (int32_t)matched.y1 + offsetY ||
+         sourceY == (int32_t)matched.y2 + offsetY)) {
         return 2;
     }
     return 1;
@@ -636,6 +656,10 @@ static int cardinalTraceClearBody(int32_t sourceX,
     uint32_t distance;
     uint32_t i;
     uint16_t playerTile = UINT16_MAX;
+    int allowedLine = 0;
+    const int movementLos = (mask & 0x0100U) != 0U;
+    const int32_t traceSourceX = sourceX - (strictSpecial ? 32 : 0);
+    const int32_t traceSourceY = sourceY - (strictSpecial ? 32 : 0);
 
     if (!centeredCoordinate(sourceX) || !centeredCoordinate(sourceY) ||
         !centeredCoordinate(destX) || !centeredCoordinate(destY)) return -1;
@@ -695,7 +719,8 @@ static int cardinalTraceClearBody(int32_t sourceX,
             {
                 uint16_t sourceLine = UINT16_MAX;
                 lineBlock = closedLineSourceStatus(sourceTile, mask,
-                                                   prevX, prevY,
+                                                   movementLos ? traceSourceX : prevX,
+                                                   movementLos ? traceSourceY : prevY,
                                                    &sourceLine);
                 if (lineBlock < 0) return -1;
                 if (lineBlock == 1) {
@@ -707,7 +732,8 @@ static int cardinalTraceClearBody(int32_t sourceX,
                     return 0;
                 }
                 if (lineBlock == 2) {
-                    printf("[MONSTERMOVE] TRACE-PASS side=source kind=line tile=%u line=%u mask=%04x from=%d,%d to=%d,%d reason=legacy-type0-source-axis\n",
+                    allowedLine = 1;
+                    DRPG_LOGT("[MONSTERMOVE] TRACE-PASS side=source kind=line tile=%u line=%u mask=%04x from=%d,%d to=%d,%d reason=legacy-type0-source-axis\n",
                            (unsigned int)sourceTile,
                            (unsigned int)sourceLine,
                            (unsigned int)mask,
@@ -738,9 +764,12 @@ static int cardinalTraceClearBody(int32_t sourceX,
             return 0;
         }
         if ((flags & ESP_MAP_TILE_WALL) != 0U) return 0;
-        lineBlock = closedLineBlocksTile(tile, mask);
+        lineBlock = movementLos
+            ? closedLineSourceStatus(tile, mask, traceSourceX, traceSourceY, NULL)
+            : closedLineBlocksTile(tile, mask);
         if (lineBlock < 0) return -1;
-        if (lineBlock > 0) return 0;
+        if (lineBlock == 1 || (lineBlock == 2 && allowedLine)) return 0;
+        if (lineBlock == 2) allowedLine = 1;
         spriteBlock = blockingSpriteOnTile(tile,
                                            prevX, prevY, x, y,
                                            attackerSprite, mask, strictSpecial);

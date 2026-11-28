@@ -297,11 +297,59 @@ static int geometryInput(unsigned expectedRows) {
     printf("PASS CYD captured geometry original C replay rows=%u viable=%u (native topology input)\n",rows,candidates);
     return 0;
 }
+/* Original Game_trace + Entity_checkLineOfSight: actual line entities
+ * linked on source/destination, with original Render endpoint adjustments.
+ * Compare center and tile-origin calls against both real native planners. */
+static void lineLosDifferential(void) {
+    unsigned cases=0;
+    for(unsigned scenario=0;scenario<7;scenario++)
+    for(int strict=0;strict<2;strict++) {
+        resetFixture();
+        rt.lineCount=(scenario==3 || scenario==4)?2:1;
+        lines[0]=(EspMapLine){672,660,672,684,0,0}; /* source center aligned */
+        if(scenario==1 || scenario==4)
+            lines[0]=(EspMapLine){736,672,736,704,0,0}; /* destination, source Y aligned */
+        if(scenario==2)
+            lines[0]=(EspMapLine){672,660,672,684,0,0x208}; /* +3 x removes alignment */
+        if(scenario==3)
+            lines[1]=(EspMapLine){672,660,672,684,0,0}; /* two source lines */
+        if(scenario==4)
+            lines[1]=(EspMapLine){672,660,672,684,0,0}; /* source + destination */
+        if(scenario==5) { types[1]=1; linked[1]=1; tiles[1]=331; }
+        if(scenario==6) opened[0]=1;
+        RefMonster m={0}; RefDef d={4,1}, lineDef={0,0}; RefRoot root={0};
+        Entity_t e={.def=&d,.monster=&m,.doomRpg=&root};
+        setupLegacy(&e);
+        for(unsigned k=0;k<rt.lineCount;k++) {
+            if(opened[k]) continue;
+            uint16_t tile;
+            assert(lineEntityTile(&lines[k],&tile));
+            int ox=(scenario==2)?3:0;
+            legacyRender.lines[k]=(RefLine){{lines[k].x1+ox,lines[k].y1},
+                                           {lines[k].x2+ox,lines[k].y2}};
+            Entity_t* ent=&legacyGame.entities[66+k];
+            ent->def=&lineDef; ent->info=0x200000U|(k+1U);
+            ent->nextOnTile=legacyGame.entityDb[tile]; legacyGame.entityDb[tile]=ent;
+        }
+        int offset=strict?32:0;
+        int want=RefActualSight(&e,672-offset,672-offset,736-offset,672-offset,0xf387U);
+        int got=trace(10,10,11,10,0xf387U,strict);
+        int expected=(scenario==6 || (!strict && scenario<=1));
+        assert(want==expected);
+        if(got!=want) {
+            fprintf(stderr,"LINE LOS mismatch continuation=%d scenario=%u strict=%d native=%d original=%d\n",CONTINUATION,scenario,strict,got,want);
+            assert(got==want);
+        }
+        ++cases;
+    }
+    printf("PASS original line LOS continuation=%d cases=%u\n",CONTINUATION,cases);
+}
 int main(int argc,char** argv) {
     if(argc==2 && strcmp(argv[1],"--geometry")==0)return geometryInput(8U);
     if(argc==2 && strcmp(argv[1],"--geometry-late")==0)return geometryInput(4U);
     if(argc==2 && strcmp(argv[1],"--replay")==0)return replayInput();
     assert(argc==1);
+    lineLosDifferential();
     resetFixture();
     uint16_t mask=0xff87U;
     assert(trace(10,10,11,10,mask,0)==1);
