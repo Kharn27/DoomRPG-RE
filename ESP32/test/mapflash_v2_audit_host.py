@@ -85,7 +85,13 @@ def inspect(blob: bytes, partition_bytes: int = PARTITION, verify_crc: bool = Fa
     reserved = align_sector(maximum)
     single_end = bsp_offset + reserved
     all_end = bsp_offset + all_bsp
+    full_payload_offset = align_sector(SECTOR + index_bytes)
+    full_erase_end = align_sector(full_payload_offset + data_bytes)
     return dict(
+        full_payload_offset=full_payload_offset,
+        full_erase_end=full_erase_end,
+        full_fits=full_erase_end <= partition_bytes,
+        full_headroom=max(0, partition_bytes - full_erase_end),
         pak_bytes=len(blob), entries=count, data_bytes=data_bytes,
         index_bytes=index_bytes, common_bytes=common, all_bsp_bytes=all_bsp,
         max_bsp_bytes=maximum, common_flash_offset=common_offset,
@@ -116,8 +122,75 @@ def synthetic_pack() -> bytes:
     return header + index + b"".join(payloads[name] for name in ordered)
 
 
+def fnv(data: bytes) -> int:
+    h = 2166136261
+    for value in data:
+        h = ((h ^ value) * 16777619) & 0xFFFFFFFF
+    return h
+
+
+def full_slot_test(blob: bytes) -> None:
+    # Reference model of DMF2 v2, not an execution of ESP32 flash primitives.
+    _, _, count, index_offset, data_offset = HEADER.unpack_from(blob)
+    index = blob[index_offset:index_offset + count * ENTRY.size]
+    data = blob[data_offset:]
+    payload_offset = align_sector(SECTOR + len(index))
+    erase_end = align_sector(payload_offset + len(data))
+    assert inspect(blob)["full_fits"]
+    assert not inspect(blob, partition_bytes=erase_end - SECTOR)["full_fits"]
+    flash = bytearray(b"\xff" * erase_end)
+    header = struct.Struct("<IHH12IB3x")
+    assert header.size == 60
+    marker = 0xa55a3cc3
+    seed = 1
+    identity = (len(blob), index_offset, data_offset, count, SECTOR,
+                len(index), payload_offset, len(data), fnv(index))
+    def accepted(image: bytearray, target: str) -> bool:
+        magic, version, size, commit, *tail = header.unpack_from(image)
+        if (magic, version, size, commit) != (0x32464d44, 2, header.size, marker):
+            return False
+        if tuple(tail[:9]) != identity:
+            return False
+        if fnv(image[SECTOR:SECTOR + len(index)]) != tail[8]:
+            return False
+        if fnv(image[payload_offset:payload_offset + len(data)]) != tail[9]:
+            return False
+        return any(ENTRY.unpack_from(index, i * ENTRY.size)[0] == name_hash(target)
+                   for i in range(count))
+    # A header written before its marker must not activate.
+    flash[SECTOR:SECTOR + len(index)] = index
+    flash[payload_offset:payload_offset + len(data)] = data
+    flash[:header.size] = header.pack(0x32464d44, 2, header.size, 0xffffffff,
+                                     *identity, fnv(data), name_hash(catalog()[0]), seed)
+    assert not accepted(flash, catalog()[0])
+    struct.pack_into("<I", flash, 8, marker)
+    before = bytes(flash)
+    for target in catalog():
+        assert accepted(flash, target)
+    for i in range(count):
+        _, off, size, crc, _ = ENTRY.unpack_from(index, i * ENTRY.size)
+        start = payload_offset + off - data_offset
+        assert bytes(flash[start:start + size]) == blob[off:off + size]
+        assert zlib.crc32(flash[start:start + size]) == crc
+    assert bytes(flash) == before  # all-map activation is read-only
+    assert not accepted(flash, "/missing.bsp")
+    for offset in (SECTOR, payload_offset, erase_end - 1):
+        broken = bytearray(flash)
+        broken[offset] ^= 1
+        if offset < payload_offset + len(data):
+            assert not accepted(broken, catalog()[0])
+    legacy = bytearray(flash)
+    struct.pack_into("<H", legacy, 4, 1)
+    assert not accepted(legacy, catalog()[0])
+    interrupted = bytearray(flash)
+    interrupted[:SECTOR] = b"\xff" * SECTOR
+    assert not accepted(interrupted, catalog()[0])
+    print("[MAPFLASHV2-HOST] PASS full-slot model all 13 maps / direct offsets / commit / corruption")
+
+
 def self_test() -> None:
     blob = synthetic_pack()
+    full_slot_test(blob)
     expected = inspect(blob, verify_crc=True)
     assert expected["entries"] == 15
     assert sum(b["present"] for b in expected["bsp"]) == 13
