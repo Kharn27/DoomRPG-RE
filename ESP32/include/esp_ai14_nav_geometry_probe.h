@@ -24,6 +24,10 @@ static inline int EspAi14NavGeometry_near(uint16_t tile, int x, int y) {
 static inline void EspAi14NavGeometry_capture(const char* phase, unsigned sample,
     uint16_t attacker, int32_t sx, int32_t sy,
     int (*lineTileFor)(const EspMapLine*, uint16_t*)) {
+#ifndef DOOMRPG_AI14_GEOMETRY_CAPTURE
+#define DOOMRPG_AI14_GEOMETRY_CAPTURE 0
+#endif
+#if DOOMRPG_AI14_GEOMETRY_CAPTURE
     const EspMapRuntimeView* rt = EspMapRuntime_view();
     const EspMapSpriteTopologyView* topo = EspMapSpriteTopology_view();
     unsigned lines = 0, sprites = 0, errors = 0, truncated = 0;
@@ -59,7 +63,7 @@ static inline void EspAi14NavGeometry_capture(const char* phase, unsigned sample
         uint32_t id = 305U + line.texture;
         int has = id < ESP_ENTITY_DEF_TYPE_CATALOG_LIMIT &&
             EspEntityDefTypeCatalog_getTypeAndSubtype((uint16_t)id, &type, &sub);
-        if (!has) { type = (line.flags & 0x18U) ? 0U : 255U; sub = 255U; }
+        if (!has) { type = (line.flags & 0x18U) ? 9U : 255U; sub = 255U; }
         if (lines >= 64U) { truncated = 1; continue; }
         ++lines;
         printf("[AI14GEO] LINE id=%u tile=%u open=%u type=%u sub=%u def=%d tex=%u flags=%08x xy=%u,%u,%u,%u\n",
@@ -88,5 +92,8 @@ static inline void EspAi14NavGeometry_capture(const char* phase, unsigned sample
     }
     printf("[AI14GEO] END phase=%s sample=%u sprite=%u lines=%u sprites=%u errors=%u truncated=%u\n",
         phase, sample, (unsigned)attacker, lines, sprites, errors, truncated);
+#else
+    (void)phase; (void)sample; (void)attacker; (void)sx; (void)sy; (void)lineTileFor;
+#endif
 }
 #endif

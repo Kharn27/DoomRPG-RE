@@ -67,6 +67,7 @@ with tempfile.TemporaryDirectory(prefix="gameai14-path-") as tmp:
             for fixture in ("ai14_nav_p3_geometry.txt", "ai14_nav_p5a_imp_geometry.txt"):
                 subprocess.run([str(exe),"--geometry"], input=(ROOT/"ESP32/test/fixtures"/fixture).read_text(), text=True, check=True)
             subprocess.run([str(exe),"--replay"], input=(ROOT/"ESP32/test/fixtures/ai14_nav_p5a_imp_loop.txt").read_text(), text=True, check=True)
+            subprocess.run([str(exe),"--geometry-late"], input=(ROOT/"ESP32/test/fixtures/ai14_nav_p6_imp_late.txt").read_text(), text=True, check=True)
         if rows[continuation]:
             subprocess.run([str(exe),"--replay"],input="\n".join(rows[continuation])+"\n",
                            text=True,check=True)

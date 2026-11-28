@@ -210,7 +210,7 @@ static int replayInput(void) {
  * Closed line entities are linked after sprites, then wall sentinels
  * installed as in Game_loadMapEntities. Captured fallback is native type0;
  * the original source explicitly uses the type9 sentinel definition. */
-static int geometryInput(void) {
+static int geometryInput(unsigned expectedRows) {
     unsigned rows=0, candidates=0, attacker, sub, dst, mask, b[4], ties, value, choice;
     int sx,sy,tx,ty,px,py,score[4],n;
     const int dx[4]={1,-1,0,0}, dy[4]={0,0,1,-1};
@@ -293,12 +293,13 @@ static int geometryInput(void) {
         }
         ++rows;
     }
-    assert(rows==8);
+    assert(rows==expectedRows);
     printf("PASS CYD captured geometry original C replay rows=%u viable=%u (native topology input)\n",rows,candidates);
     return 0;
 }
 int main(int argc,char** argv) {
-    if(argc==2 && strcmp(argv[1],"--geometry")==0)return geometryInput();
+    if(argc==2 && strcmp(argv[1],"--geometry")==0)return geometryInput(8U);
+    if(argc==2 && strcmp(argv[1],"--geometry-late")==0)return geometryInput(4U);
     if(argc==2 && strcmp(argv[1],"--replay")==0)return replayInput();
     assert(argc==1);
     resetFixture();
@@ -320,6 +321,14 @@ int main(int argc,char** argv) {
     lines[0]=(EspMapLine){704,640,704,704,7,0};
     assert(trace(10,10,11,10,mask,0)==0);
     opened[0]=1; assert(trace(10,10,11,10,mask,0)==1); rt.lineCount=0;
+    /* Missing line definition with legacy fallback flag: type9, not type0.
+       A source-aligned fallback line must not acquire the type0 escape. */
+    rt.lineCount=1; opened[0]=0;
+    lines[0]=(EspMapLine){672,640,672,704,62,8};
+    assert(trace(10,10,11,10,0x0200U,0)==0);
+    assert(trace(10,10,11,10,0x0001U,0)==1);
+    assert(trace(10,10,11,10,0xff87U,0)==0);
+    rt.lineCount=0;
     types[1]=14; linked[1]=1; tiles[1]=331;
     sprites[1]=(EspMapSprite){704,672,0x00220000U};
     assert(trace(10,10,11,10,mask,0)==0);

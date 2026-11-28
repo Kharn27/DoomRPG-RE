@@ -244,7 +244,8 @@ static int closedLineBlocksTileReference(uint16_t tile, uint16_t mask) {
         (void)subtype;
         if (!hasDefinition) {
             if ((line.flags & MOVE_LINE_ENTITY_FALLBACK_FLAGS) == 0U) continue;
-            type = 0U;
+            /* Game_loadMapEntities uses entities[0].def (type 9). */
+            type = 9U;
         }
         if (!typeInMask(type, mask)) continue;
         if (!lineEntityTile(&line, &lineTile)) return -1;
@@ -281,7 +282,8 @@ static int closedLineBlocksTileIndexed(uint16_t tile, uint16_t mask) {
         (void)subtype;
         if (!hasDefinition) {
             if ((line.flags & MOVE_LINE_ENTITY_FALLBACK_FLAGS) == 0U) continue;
-            type = 0U;
+            /* Game_loadMapEntities uses entities[0].def (type 9). */
+            type = 9U;
         }
         if (!typeInMask(type, mask)) continue;
         if (!lineEntityTile(&line, &lineTile)) return -1;
@@ -357,7 +359,8 @@ static int closedLineSourceStatusReference(uint16_t tile,
         (void)subtype;
         if (!hasDefinition) {
             if ((line.flags & MOVE_LINE_ENTITY_FALLBACK_FLAGS) == 0U) continue;
-            type = 0U;
+            /* Game_loadMapEntities uses entities[0].def (type 9). */
+            type = 9U;
         }
         if (!typeInMask(type, mask)) continue;
         if (!lineEntityTile(&line, &lineTile)) return -1;
@@ -421,7 +424,8 @@ static int closedLineSourceStatusIndexed(uint16_t tile,
         (void)subtype;
         if (!hasDefinition) {
             if ((line.flags & MOVE_LINE_ENTITY_FALLBACK_FLAGS) == 0U) continue;
-            type = 0U;
+            /* Game_loadMapEntities uses entities[0].def (type 9). */
+            type = 9U;
         }
         if (!typeInMask(type, mask)) continue;
         if (!lineEntityTile(&line, &lineTile)) return -1;
