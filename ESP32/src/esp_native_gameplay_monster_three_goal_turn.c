@@ -786,19 +786,6 @@ static int aiGoalPlan(uint16_t attackerSprite,
     }
     if (!tileIndexFor(srcX + outPlan->deltaX,
                       srcY + outPlan->deltaY, &outPlan->destTile)) return -1;
-#if DOOMRPG_PERF_GAME_P1
-    /* One compact witness, no additional collision checks or RNG calls. */
-    if ((subtype == 4U || subtype == 13U) && navSampleCount < 48U) {
-        ++navSampleCount;
-        printf("[AI14NAV] phase=continuation sprite=%u sub=%u src=%d,%d target=%d,%d dst=%u mask=%04x score=%d,%d,%d,%d bits=%02x,%02x,%02x,%02x ties=%u byte=%u choice=%u\n",
-               (unsigned)attackerSprite, (unsigned)subtype, (int)srcX, (int)srcY,
-               (int)destX, (int)destY, (unsigned)outPlan->destTile, (unsigned)mask,
-               outPlan->navScore[0], outPlan->navScore[1], outPlan->navScore[2], outPlan->navScore[3],
-               (unsigned)outPlan->navTraceBits[0], (unsigned)outPlan->navTraceBits[1],
-               (unsigned)outPlan->navTraceBits[2], (unsigned)outPlan->navTraceBits[3],
-               (unsigned)visitCount, (unsigned)outPlan->tieRand, (unsigned)outPlan->choice);
-    }
-#endif
     return 1;
 }
 
@@ -939,6 +926,21 @@ static int probeContinuationGoal(DoomRPG_t* doomRpg,
     EspPerfSpatialLine_end(&EspPerfGameP1_spatialLineIndex);
     EspPerfSpatialSprite_end(&EspPerfGameP1_spatialSpriteIndex);
     EspPerfTraceCache_end(&traceCache);
+    /* Print outside navigation phase timing; bounded successful-plan witness. */
+    if (planStatus == 1 && (monster->subtype == 4U || monster->subtype == 13U) && navSampleCount < 48U) {
+        ++navSampleCount;
+        printf("[AI14NAV] phase=continuation sprite=%u sub=%u src=%d,%d target=%d,%d dst=%u mask=%04x score=%d,%d,%d,%d bits=%02x,%02x,%02x,%02x ties=%u byte=%u choice=%u goal=%u player=%d,%d angle=%d rngBefore=%d rngAfter=%d calls=%u sample=%u\n",
+               (unsigned)spriteIndex, (unsigned)monster->subtype, (int)position->worldX, (int)position->worldY,
+               (int)player->destX, (int)player->destY, (unsigned)plan.destTile, (unsigned)plan.traceMask,
+               plan.navScore[0], plan.navScore[1], plan.navScore[2], plan.navScore[3],
+               (unsigned)plan.navTraceBits[0], (unsigned)plan.navTraceBits[1],
+               (unsigned)plan.navTraceBits[2], (unsigned)plan.navTraceBits[3],
+               (unsigned)plan.visitCount, (unsigned)plan.tieRand, (unsigned)plan.choice,
+               (unsigned)goalStep, (int)player->destX, (int)player->destY, (int)player->destAngle,
+               (int)randomBefore.nextRand, (int)probeRng.state.nextRand, (unsigned)probeRng.calls, (unsigned)navSampleCount);
+    }
+#endif
+
 #endif
     if (originPlaneClear != 0U || originPlaneBlocked != 0U) {
         printf("[AI14PLANE] planner=continuation sprite=%u goal=%u originClear=%u originBlocked=%u planStatus=%d\n",
