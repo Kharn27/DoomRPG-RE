@@ -495,6 +495,7 @@ int EspRes60TextureProbe_renderFullWalls(uint16_t* fb,size_t fbBytes,
     uint16_t missing,admitted;
     uint32_t hash=2166136261U;
     int opened=0,catalogOwned=0,ok=0;
+    const char* stage="map-or-plan";
     if(out)memset(out,0,sizeof(*out));
     if(!out || !fb || fbBytes!=ESP_RES60_FRAMEBUFFER_BYTES ||
        !scratch || scratchBytes<ESP_RES60_TEXTURE_BYTES ||
@@ -510,6 +511,7 @@ int EspRes60TextureProbe_renderFullWalls(uint16_t* fb,size_t fbBytes,
     const uint32_t start=EspRes60Profile_nowUs();
     uint32_t phase=start;
 #endif
+    stage="map-identity";
     if(fullRecords) {
         /* Do not reset the just-published ray plan on an identity mismatch.
          * Reject this frame and invalidate the lease through the failure path. */
@@ -517,13 +519,15 @@ int EspRes60TextureProbe_renderFullWalls(uint16_t* fb,size_t fbBytes,
            fullBytes!=map->sourceBytes)goto done;
         report.cacheHit=1U;
     } else {
+        stage="catalog-build";
         catalogOwned=1;
 #if DOOMRPG_RES60_P34_CATALOG_WINDOWS
-        if(EspNativeGraphicsCatalog_buildFromRuntimeWithScratch(scratch,scratchBytes)
+        if(EspNativeGraphicsCatalog_buildFromRuntimeWithScratch(scratch,ESP_RES60_TEXTURE_BYTES)
            !=ESP_NATIVE_GRAPHICS_CATALOG_OK)goto done;
 #else
         if(EspNativeGraphicsCatalog_buildFromRuntime()!=ESP_NATIVE_GRAPHICS_CATALOG_OK)goto done;
 #endif
+        stage="catalog-view-or-copy";
         catalog=EspNativeGraphicsCatalog_view();
         if(!catalog || !catalog->textures || !catalog->textureCount ||
            catalog->textureCount>256U)goto done;
@@ -544,9 +548,12 @@ int EspRes60TextureProbe_renderFullWalls(uint16_t* fb,size_t fbBytes,
 #if DOOMRPG_RES60_P11_PROFILE
     phase=EspRes60Profile_nowUs();
 #endif
+    stage="pak-open";
     if(!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH))goto done;
     opened=1;
+    stage="entry-find";
     if(!EspAssetPack_findEntry("wtexels.bin",&entry) || entry.size<4U)goto done;
+    stage="entry-identity-or-header";
     if(report.cacheHit) {
         if(!sameWallEntry(&entry,&fullEntry))goto done;
     } else {
@@ -566,6 +573,7 @@ int EspRes60TextureProbe_renderFullWalls(uint16_t* fb,size_t fbBytes,
             fullAdmission[id>>3U]|=bit;
         }
     }
+    stage="wall-admission";
     if(!EspRes60WallMaterial_admit(fullAdmission,sizeof(fullAdmission),&admitted,&missing) ||
        admitted!=demand.materials)goto done;
     report.admittedWallIds=admitted;
@@ -581,18 +589,21 @@ int EspRes60TextureProbe_renderFullWalls(uint16_t* fb,size_t fbBytes,
         const uint32_t columns=EspRes60WallMaterial_visibleColumns(id);
         EspRes60WallMaterialStats material;
         if(!columns)continue;
+        stage="tile-range";
         if(id>255U || !(fullAdmission[id>>3U]&(uint8_t)(1U<<(id&7U))) ||
            (rec->sourceOffset&1U) ||
            (uint64_t)rec->sourceOffset/2U+4U+ESP_RES60_TEXTURE_BYTES>entry.size)goto done;
 #if DOOMRPG_RES60_P11_PROFILE
         phase=EspRes60Profile_nowUs();
 #endif
+        stage="tile-read";
         if(!EspAssetPack_readRange(&entry,4U+rec->sourceOffset/2U,scratch,
                                    ESP_RES60_TEXTURE_BYTES))goto done;
 #if DOOMRPG_RES60_P11_PROFILE
         report.profilePackUs+=EspRes60Profile_nowUs()-phase;
         phase=EspRes60Profile_nowUs();
 #endif
+        stage="tile-overlay";
         if(!EspRes60WallMaterial_overlay(fb,fbBytes,(const uint8_t*)scratch,
                     ESP_RES60_TEXTURE_BYTES,rec->paletteRgb565,id,&material) ||
            material.columns!=columns || !material.pixels)goto done;
@@ -606,6 +617,7 @@ int EspRes60TextureProbe_renderFullWalls(uint16_t* fb,size_t fbBytes,
         for(unsigned shift=0U;shift<32U;shift+=8U)
             hash=fullHashByte(hash,(uint8_t)(material.sampledFNV>>shift));
     }
+    stage="coverage";
     if(report.streamReads!=admitted || report.wallColumns!=demand.columns ||
        report.wallPixels!=demand.pixels)goto done;
     report.streamBytes=(uint32_t)report.streamReads*ESP_RES60_TEXTURE_BYTES;
@@ -613,12 +625,13 @@ int EspRes60TextureProbe_renderFullWalls(uint16_t* fb,size_t fbBytes,
     report.streamFNV=hash;
     report.wallFNV=hash;
     ok=1;
+    stage="cleanup";
 done:
     if(opened)EspAssetPack_close();
     if(catalogOwned)EspNativeGraphicsCatalog_reset();
     if(!ok || EspAssetPack_isOpen() || EspNativeGraphicsCatalog_isReady()) {
         EspRes60TextureProbe_reset();
-        printf("[RES60P40] FAIL CLOSED stage=full-wall-stream\n");
+        printf("[RES60P40] FAIL CLOSED stage=full-wall-stream detail=%s\n",stage);
         return 0;
     }
 #if DOOMRPG_RES60_P11_PROFILE

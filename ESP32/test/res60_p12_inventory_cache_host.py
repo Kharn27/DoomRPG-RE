@@ -222,6 +222,9 @@ with tempfile.TemporaryDirectory(prefix="res60-p35-") as d:
     d=Path(d);src=d/"test.c";src.write_text(real)
     (d/"fixture.h").write_text("static const uint8_t fixture[]={"+",".join(map(str,fixture))+"};\n#define FIXTURE_CRC "+str(zlib.crc32(fixture))+"U\n")
     fullflags=["-D"+f for f in re.findall(r"-D\s+(DOOMRPG_RES60_[A-Z0-9_]+=1)",INI["env:esp32-cyd-res60"]["build_flags"])]
+    # P36 on/off is a historical BSP-reader comparison, not the P40 owner.
+    # Disable only the downstream feature explicitly pinned in platformio.ini.
+    fullflags=[f for f in fullflags if f!="-DDOOMRPG_RES60_P40_FULL_WALLS=1"]
     exe=d/"test"
     for profile in (0,1):
         subprocess.run(cc+fullflags+[f"-DDOOMRPG_RES60_P36_BSP_PROFILE={profile}",

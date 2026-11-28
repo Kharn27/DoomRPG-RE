@@ -3,6 +3,8 @@
 from pathlib import Path
 import subprocess
 import tempfile
+import configparser
+import re
 
 ROOT = Path(__file__).resolve().parents[2]
 t = (ROOT / "ESP32/src/esp_res60_texture_probe.c").read_text()
@@ -56,6 +58,22 @@ EspNativeGraphicsCatalogStatus EspNativeGraphicsCatalog_buildFromRuntime(void) {
     catalog.stateFNV1a=0x11223344U;
     return ESP_NATIVE_GRAPHICS_CATALOG_OK;
 }
+#if DOOMRPG_RES60_P40_FULL_WALLS && DOOMRPG_RES60_P34_CATALOG_WINDOWS
+EspNativeGraphicsCatalogStatus EspNativeGraphicsCatalog_buildFromRuntimeWithScratch(
+    void* scratch,size_t bytes) {
+    /* Mirror the real catalog ABI: exactly two 1024B windows, not the
+     * entire 6144B owner loan. Reject rather than silently truncate. */
+    if(!scratch || bytes!=2048U)return ESP_NATIVE_GRAPHICS_CATALOG_INVALID;
+    memset(scratch,0x71,bytes);
+    return EspNativeGraphicsCatalog_buildFromRuntime();
+}
+#endif
+#if DOOMRPG_RES60_P40_FULL_WALLS && DOOMRPG_RES60_P11_PROFILE
+uint32_t EspRes60Profile_nowUs(void) {
+    static uint32_t tick=UINT32_MAX-25U;
+    tick+=7U;return tick;
+}
+#endif
 const EspNativeGraphicsCatalogView* EspNativeGraphicsCatalog_view(void) {
     return catalogReady?&catalog:NULL;
 }
@@ -110,7 +128,8 @@ static void plan(uint16_t texture) {
 int main(void) {
     EspRes60TextureProbeReport result;
     EspRes60WallCoverage demand;
-    uint8_t loan[2050];
+    uint8_t loan[6146];
+    memset(loan,0xa5,sizeof(loan));
     runtime.lineCount=2;
     runtime.sourceCrc32=0x623f34e4U;
     runtime.arenaFNV1a=0xc3882516U;
@@ -135,7 +154,7 @@ int main(void) {
         assert(demand.pixels==56 && demand.columns==5 && demand.insetPixels==0);
         for(unsigned i=1;i<=192U*144U;++i)framebuffer[i]=0x5555;
         unsigned beforeReads=reads,beforeOpens=opens;
-        assert(EspRes60TextureProbe_renderFullWalls(framebuffer+1,55296,loan+1,2048,&result));
+        assert(EspRes60TextureProbe_renderFullWalls(framebuffer+1,55296,loan+1,6144,&result));
         assert(result.cacheHit==cycle && result.admittedWallIds==2);
         assert(result.wallPixels==56 && result.wallColumns==5 && result.streamReads==2);
         assert(result.streamBytes==4096 && result.readBytes==4096+(cycle?0:4));
@@ -149,26 +168,27 @@ int main(void) {
         assert(framebuffer[24U*192U+147U+1U]==0x5555U);
         assert(framebuffer[29U*192U+96U+1U]==0x5555U);
         assert(framebuffer[0]==0xface && framebuffer[192U*144U+1U]==0xbeef);
-        assert(loan[0]==0x6a && loan[2049]==0xb6 && !pack && !catalogReady && opens==closes);
+        assert(loan[0]==0x6a && loan[2049]==0xb6 && loan[6145]==0xa5 && !pack && !catalogReady && opens==closes);
         if(cycle)assert(result.streamFNV==priorFNV);
         priorFNV=result.streamFNV;
     }
     plan(55);unsigned beforeReads=reads;
-    assert(!EspRes60TextureProbe_renderFullWalls(framebuffer+1,55296,loan+1,2048,&result));
+    assert(!EspRes60TextureProbe_renderFullWalls(framebuffer+1,55296,loan+1,6144,&result));
     assert(reads==beforeReads && !pack && !catalogReady && opens==closes);
     plan(7);
-    assert(EspRes60TextureProbe_renderFullWalls(framebuffer+1,55296,loan+1,2048,&result));
+    assert(EspRes60TextureProbe_renderFullWalls(framebuffer+1,55296,loan+1,6144,&result));
     changedEntry=1;plan(87);
-    assert(!EspRes60TextureProbe_renderFullWalls(framebuffer+1,55296,loan+1,2048,&result));
+    assert(!EspRes60TextureProbe_renderFullWalls(framebuffer+1,55296,loan+1,6144,&result));
     assert(!pack && !catalogReady && opens==closes);
     changedEntry=0;
     plan(87);failTile=1;
-    assert(!EspRes60TextureProbe_renderFullWalls(framebuffer+1,55296,loan+1,2048,&result));
+    assert(!EspRes60TextureProbe_renderFullWalls(framebuffer+1,55296,loan+1,6144,&result));
     assert(!pack && !catalogReady && opens==closes && result.wallPixels==0);
     failTile=0;
     plan(87);
-    assert(EspRes60TextureProbe_renderFullWalls(framebuffer+1,55296,loan+1,2048,&result));
+    assert(EspRes60TextureProbe_renderFullWalls(framebuffer+1,55296,loan+1,6144,&result));
     assert(!result.cacheHit && result.wallPixels==192U*80U);
+    for(size_t i=2050U;i<sizeof(loan);++i)assert(loan[i]==0xa5);
     EspRes60TextureProbe_reset();
     puts("RES60-P40 FULL WALLS C11 PASS");
     return 0;
@@ -344,4 +364,17 @@ with tempfile.TemporaryDirectory(prefix="res60-p10-visible-") as name:
                         str(ROOT/"ESP32/src/esp_res60_wall_material.c"),
                         str(src),"-o",str(exe)],check=True)
         subprocess.run([str(exe)],check=True)
+    # Exercise the exact target profile too: P34 two-window catalog stub,
+    # P11 timing, P40 full walls, real 6144B scratch loan and tail canaries.
+    cfg=configparser.ConfigParser(interpolation=None,inline_comment_prefixes=(";",))
+    assert cfg.read(ROOT/"ESP32/platformio.ini")
+    profile=["-D"+f for f in re.findall(r"-D\s+(DOOMRPG_RES60_[A-Z0-9_]+=1)",
+                cfg["env:esp32-cyd-res60"]["build_flags"])]
+    assert "-DDOOMRPG_RES60_P40_FULL_WALLS=1" in profile
+    subprocess.run(["cc","-std=c11","-O2","-Wall","-Wextra","-Werror",
+                    *profile,"-I",str(ROOT/"ESP32/include"),
+                    str(ROOT/"ESP32/src/esp_res60_texture_probe.c"),
+                    str(ROOT/"ESP32/src/esp_res60_wall_material.c"),
+                    str(src),"-o",str(exe)],check=True)
+    subprocess.run([str(exe)],check=True)
 print("RES60-P10 HOST PASS: real C11 P8/P10 chosen visible material and strict safety")
