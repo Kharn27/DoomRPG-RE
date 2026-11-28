@@ -74,6 +74,8 @@ jobs:
         run: python ESP32/test/mapflash_v2_audit_host.py
       - name: MAPFLASH-V2 P2 real prepare one-shot handoff and rejection (host C++)
         run: python ESP32/test/mapflash_v2_handoff_host.py
+      - name: MAPFLASH-V2 P3 exact BSP probe flash routing (host C++)
+        run: python ESP32/test/mapflash_v2_bsp_probe_host.py
 
       - name: Test SFX-P0 original PAK WAV format probe and fail-closed parser (host C)
         run: python ESP32/test/audio_sfx_p0_pak_inventory_host.py
