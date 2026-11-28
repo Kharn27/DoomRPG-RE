@@ -1,3 +1,9 @@
+## RES60-P39 — CYD PASS / CI marker regression (28 November 2026)
+
+[Report](MILESTONE_RES60_P39_WALL_STREAM_PENDING_CYD.md). Context firmware f8d07e2fccbef07b5e790372a9f166d574bae908; 34/34 frames, 31 warm, 3 START/MENU/RELEASE; exact full wall coverage outside inset 13506/5359/14265/14353 pixels. Final FNV c4d8d1e5/81a92d8c/c8cdaac1/7dfb06f1, raw P3/P8/P10 witnesses unchanged. Heap8 106416/min84132/largest57332, metadata1320B. Cold mean729507us; warm 238838/278545/235455/248204us. CI push46129722694/PR46129727620 failed P11 historical stdout marker after all P39 C11 variants passed; restore exact marker next, not a double CI PASS. Main d1f25ba03688364efba753604f59aa75eb2eaadc still ancestor; no new upstream changes. PR #364 DRAFT.
+
+---
+
 ## RES60-P38 — CYD + double CI PASS (28 November 2026)
 
 [Report](MILESTONE_RES60_P38_WALL_ADMISSION_PENDING_CYD.md). Context candidate 200b62bc4e87da0f6fe2363835746e4b5fc61c85; push 46127868030 and PR 46127872249 SUCCESS. 26/26 frames, 23 warm, 3 START/MENU/RELEASE, admitted=wallIds 3/5/5/3, unsupportedCols=0, exact P37 FNV. Heap8 107800/min86588/largest57332; exactly 32B less free, no fragmentation regression. Cold mean 693489.67us, warm means 192476.57/231333.20/180138.40/209497.67us (0/64/128/192); SD/plane timings also increased, no isolated attribution. No failures. Main d1f25ba03688364efba753604f59aa75eb2eaadc integrated after test by two-parent sync 273a87cf3a8c484605ee1772bc33311a012c7f2e; combined firmware not physically tested. PR #364 DRAFT.
