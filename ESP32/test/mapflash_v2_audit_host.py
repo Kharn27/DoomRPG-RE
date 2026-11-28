@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 import re
 import struct
-import tempfile
 import zlib
 from pathlib import Path
 
