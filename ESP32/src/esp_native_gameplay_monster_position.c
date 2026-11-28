@@ -110,6 +110,26 @@ void EspNativeGameplayMonsterPosition_reset(void) {
     pendingRestore = NULL;
 }
 
+/* Bounded load-only witness, including saved dead or initially hidden targets. */
+static void logBlastTargets(const EspNativeGameplayMonsterView* monsters) {
+    uint32_t i, total = 0U, alive = 0U;
+    for (i = 0U; i < positionView.count; ++i) {
+        const EspNativeGameplayMonsterRecord* m = &monsters->records[i];
+        const EspNativeGameplayMonsterPositionRecord* p = &positionRecords[i];
+        if (m->subtype != 8U) continue;
+        ++total;
+        if (m->alive != 0U) ++alive;
+        printf("[MONSTERBLAST] TARGET sprite=%u mType=%u tile=%u pos=%u,%u alive=%u hp=%u\n",
+               (unsigned int)m->spriteIndex, (unsigned int)m->mType,
+               (unsigned int)p->tileIndex, (unsigned int)p->worldX,
+               (unsigned int)p->worldY, (unsigned int)m->alive,
+               (unsigned int)(m->param1 & 0xffU));
+    }
+    printf("[MONSTERBLAST] TARGETS arena=%08x total=%u alive=%u allocation=no rng=untouched\n",
+           (unsigned int)positionView.sourceArenaFNV1a,
+           (unsigned int)total, (unsigned int)alive);
+}
+
 int EspNativeGameplayMonsterPosition_ensure(void) {
     const EspNativeGameplayMonsterView* monsters = EspNativeGameplayMonsterState_view();
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
@@ -203,6 +223,7 @@ int EspNativeGameplayMonsterPosition_ensure(void) {
                (unsigned int)positionView.count,
                (unsigned int)positionView.ownerBytes,
                (unsigned int)positionView.stateFNV1a);
+        logBlastTargets(monsters);
         return 1;
     }
 
@@ -296,6 +317,7 @@ int EspNativeGameplayMonsterPosition_ensure(void) {
            (unsigned int)sizeof(EspNativeGameplayMonsterPositionRecord),
            (unsigned int)positionView.ownerBytes,
            (unsigned int)positionView.stateFNV1a);
+    logBlastTargets(monsters);
     return 1;
 }
 

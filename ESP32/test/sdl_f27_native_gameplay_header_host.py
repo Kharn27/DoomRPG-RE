@@ -73,6 +73,8 @@ def original_body_parity() -> None:
     marker = GUARD.encode("ascii")
     for filename, blob in BEFORE.items():
         current = (SOURCES / filename).read_bytes()
+        from game_ai14_a2_blast_shake_history import restore_pre_ai14_blast_shake
+        current = restore_pre_ai14_blast_shake(filename, current)
         from perf_game_p2a_history import restore_pre_perf_game_p2a
         current = restore_pre_perf_game_p2a(filename, current)
         # Remove ONLY P1 timing additions before historical Git identity.
@@ -89,6 +91,14 @@ def original_body_parity() -> None:
         if filename == "esp_native_gameplay_action_engine.c":
             # Strict inverse: committed monster splash sounds are additive.
             # No relaxation of the 10 immutable historical Git blobs.
+            from game_ai14_a2_direct_death_action_history import restore_pre_direct_death_action
+            current = restore_pre_direct_death_action(current)
+            from game_ai14_a2_ordered_radius_history import restore_pre_ai14_ordered_radius
+            current = restore_pre_ai14_ordered_radius(current)
+            from game_ai14_a2_terminal_splash_history import restore_pre_ai14_terminal_splash, ACTION
+            current = restore_pre_ai14_terminal_splash(current, ACTION)
+            from game_ai14_a2_blast_source_history import restore_pre_ai14_blast_source
+            current = restore_pre_ai14_blast_source(current)
             from audio_barrel_splash_history import restore_pre_barrel_splash_audio
             current = restore_pre_barrel_splash_audio(filename, current)
         if filename in ("esp_native_gameplay_action_engine.c",

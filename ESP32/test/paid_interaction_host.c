@@ -274,6 +274,13 @@ int EspNativeGameplayWeapon_render(struct Render_s* render, uint8_t weapon,
 int EspNativeGameplayHudDirection_render(uint8_t angle, EspNativeGameplayHudDirectionStats* out) {
     memset(out, 0, sizeof(*out)); out->angle = angle; out->rendered = 1; return 1;
 }
+/* Credit/WAIT fixture has no active type-1 transient sprite lease.
+ * The production clock/viewport implementation is exercised in A2-P1f. */
+int EspNativeSpriteRenderer_blastShakeOffsets(uint32_t nowMs,
+                                               int8_t* outX, int8_t* outY) {
+    (void)nowMs; (void)outX; (void)outY;
+    return 0;
+}
 int EspNativeSpriteRenderer_render(struct Render_s* render, EspNativeSpriteStats* out) {
     (void)render; ++spritePublications;
     memset(out, 0, sizeof(*out)); out->objects = out->hidden = 1U; return 0;

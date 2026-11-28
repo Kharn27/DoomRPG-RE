@@ -55,6 +55,10 @@ def source_gate() -> None:
         original = restore_pre_rc13(name, original)
         if name == "esp_native_gameplay_monster_combat.c":
             # Restore the exact bounded P1 changes before older audio inverses.
+            from game_ai14_a2_direct_death_combat_history import restore_pre_direct_death_combat
+            original = restore_pre_direct_death_combat(original)
+            from game_ai14_a2_terminal_splash_history import restore_pre_ai14_terminal_splash, COMBAT
+            original = restore_pre_ai14_terminal_splash(original, COMBAT)
             from monster_death_p1_history import restore_pre_monster_death_p1
             original = restore_pre_monster_death_p1(
                 original.decode("utf-8")).encode("utf-8")
