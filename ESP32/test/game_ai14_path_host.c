@@ -102,10 +102,15 @@ static RefGame legacyGame;
 static RefCanvas legacyCanvas;
 static RefRender legacyRender;
 static RefDef legacyDefs[8];
+static RefDef wallDef={0,9}, playerDef={0,8}; /* Game_initMapEntities order */
+static int recordPath, recordedCalls;
+static unsigned recordedBits;
 static int legacyCalls, legacyLinks;
 static void setupLegacy(Entity_t* e) {
     memset(&legacyGame,0,sizeof(legacyGame));
     legacyGame.doomRpg=e->doomRpg;
+    legacyGame.entities[0].def=&wallDef;
+    legacyGame.entities[1].def=&playerDef;
     e->doomRpg->game=&legacyGame;
     e->doomRpg->doomCanvas=&legacyCanvas;
     e->doomRpg->render=&legacyRender;
@@ -124,7 +129,13 @@ static void setupLegacy(Entity_t* e) {
     for(unsigned i=0;i<1024;i++) if(walls[i]) legacyGame.entityDb[i]=&legacyGame.entities[0];
 }
 static boolean RefSight(Entity_t* e,int sx,int sy,int dx,int dy,int mask) {
-    return RefActualSight(e,sx,sy,dx,dy,mask);
+    boolean clear=RefActualSight(e,sx,sy,dx,dy,mask);
+    if(recordPath) {
+        assert(recordedCalls<8);
+        if(clear) recordedBits|=1U<<recordedCalls;
+        ++recordedCalls;
+    }
+    return clear;
 }
 static byte RefByte(Random_t* rng) { ++legacyCalls; return rng->randTable[rng->nextRand++]; }
 static void RefUnlink(void* g,Entity_t* e) { (void)g;(void)e; ++legacyLinks; }
@@ -230,11 +241,15 @@ int main(void) {
         if(want) assert(plan.destTile==(m.y/64)*32+m.x/64);
         for(int k=0;k<4;k++) {
             int score=-1;
-            if(RefSight(&entity,center(10),center(10),center(10+nx[k]),center(10+ny[k]),plan.traceMask))
+            recordedCalls=0; recordedBits=0;
+            if(RefSight(&entity,center(10),center(10),center(10+nx[k]),center(10+ny[k]),plan.traceMask)) {
+                recordPath=1;
                 score=RefPath(&entity,10+nx[k],10+ny[k],px,py,k,plan.traceMask);
-            if(score!=plan.navScore[k]) {
-                fprintf(stderr,"NAV score mismatch continuation=%d subtype=%u p=%u obstacle=%u tie=%u dir=%d legacy=%d native=%d\n",
-                        CONTINUATION,sub,p,obstacle,tie,k,score,plan.navScore[k]);
+                recordPath=0;
+            }
+            if(score!=plan.navScore[k] || recordedBits!=plan.navTraceBits[k]) {
+                fprintf(stderr,"NAV score mismatch continuation=%d subtype=%u p=%u obstacle=%u tie=%u dir=%d legacy=%d native=%d legacyBits=%02x nativeBits=%02x\n",
+                        CONTINUATION,sub,p,obstacle,tie,k,score,plan.navScore[k],recordedBits,(unsigned)plan.navTraceBits[k]);
                 return 1;
             }
         }
