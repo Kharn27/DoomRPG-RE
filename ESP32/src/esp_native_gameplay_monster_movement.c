@@ -725,7 +725,12 @@ static int cardinalTraceClearBody(int32_t sourceX,
         if (!tileIndexFor(x, y, &tile) || !EspMapState_getTileFlags(tile, &flags)) {
             return 0;
         }
-        if (tile == playerTile) return 0;
+        if (tile == playerTile) {
+            DRPG_LOGT("[MONSTERMOVE] TRACE-BLOCK side=dest kind=player-sentinel tile=%u mask=%04x from=%d,%d to=%d,%d\n",
+                       (unsigned int)tile, (unsigned int)mask,
+                       (int)prevX, (int)prevY, (int)x, (int)y);
+            return 0;
+        }
         if ((flags & ESP_MAP_TILE_WALL) != 0U) return 0;
         lineBlock = closedLineBlocksTile(tile, mask);
         if (lineBlock < 0) return -1;
