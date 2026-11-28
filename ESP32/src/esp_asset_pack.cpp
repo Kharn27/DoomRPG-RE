@@ -137,6 +137,7 @@ File packFile;
 File sourceProbeFile;
 EspAssetPackEntry sourceProbeEntry = {};
 bool sourceProbeReady = false;
+uint32_t sourceProbeFlashEpoch = 0U; /* nonzero only for a verified BSP probe */
 uint8_t sourceProbeReadLogged = 0U;
 uint32_t entryCount = 0;
 uint32_t packSize = 0;
@@ -233,6 +234,7 @@ void clearSourceProbe()
     }
     memset(&sourceProbeEntry, 0, sizeof(sourceProbeEntry));
     sourceProbeReady = false;
+    sourceProbeFlashEpoch = 0U;
     sourceProbeReadLogged = 0U;
 }
 
@@ -1227,6 +1229,8 @@ int EspAssetPack_sourceProbeBegin(const char* resourceName)
     uint32_t sourceEntryCount;
     uint32_t sourceIndexOffset;
     uint32_t sourceDataOffset;
+    uint32_t sourceIndexFNV = 2166136261U;
+    uint32_t foundIndex = 0U;
     uint32_t previousHash = 0U;
     const uint32_t wantedHash = EspAssetPack_nameHash(resourceName);
     bool havePreviousHash = false;
@@ -1277,6 +1281,7 @@ int EspAssetPack_sourceProbeBegin(const char* resourceName)
             clearSourceProbe();
             return 0;
         }
+        sourceIndexFNV = fnv1aUpdate(sourceIndexFNV, raw, sizeof(raw));
         decodeEntry(raw, &entry);
         if (entry.nameHash == 0U ||
             entry.offset < sourceDataOffset ||
@@ -1290,6 +1295,7 @@ int EspAssetPack_sourceProbeBegin(const char* resourceName)
         havePreviousHash = true;
         if (entry.nameHash == wantedHash) {
             found = entry;
+            foundIndex = i;
             foundEntry = true;
         }
     }
@@ -1299,6 +1305,42 @@ int EspAssetPack_sourceProbeBegin(const char* resourceName)
         return 0;
     }
 
+    /* P3: the SD index remains authoritative. Only catalog BSPs in the
+     * already verified immutable V2 lease can read their payload in flash.
+     * Keep the exact-entry probe and bypass L1; BSP stream CRC still runs.
+     * An inactive cache or a changed SD identity uses the original explicit
+     * SD preflight path, never a fallback after a flash read failure. */
+    uint8_t bspMapId = 0U;
+    if (mapFlash.active && mapFlash.stats.verified &&
+        verifiedFlashEpoch != UINT32_MAX &&
+        EspMapCatalog_idForName(resourceName, &bspMapId) &&
+        mapFlashHeaderLooksValid(mapFlash.header, mapFlash.partition) &&
+        mapFlash.header.sourcePackBytes == sourcePackBytes &&
+        mapFlash.header.sourceIndexOffset == sourceIndexOffset &&
+        mapFlash.header.sourceDataOffset == sourceDataOffset &&
+        mapFlash.header.entryCount == sourceEntryCount &&
+        mapFlash.header.indexFNV1a == sourceIndexFNV) {
+        EspAssetPackEntry flashEntry = {};
+        if (!mapFlashRead(mapFlash.header.indexFlashOffset +
+                              foundIndex * (uint32_t)kEntryBytes,
+                          raw, sizeof(raw), false)) {
+            clearSourceProbe();
+            return 0;
+        }
+        decodeEntry(raw, &flashEntry);
+        if (flashEntry.nameHash != found.nameHash ||
+            flashEntry.offset != found.offset || flashEntry.size != found.size ||
+            flashEntry.crc32 != found.crc32 || flashEntry.flags != found.flags ||
+            (found.flags & ESP_ASSET_PACK_FLAG_DIRECTORY) != 0U ||
+            found.size == 0U) {
+            clearSourceProbe();
+            return 0;
+        }
+        sourceProbeFlashEpoch = verifiedFlashEpoch;
+        printf("[MAPFLASHV3] BSP-PROBE map=%u bytes=%u indexFNV=%08x crc32=%08x backing=verified-flash sdPayloadBytes=0 scope=exact-entry\n",
+               (unsigned int)bspMapId, (unsigned int)found.size,
+               (unsigned int)sourceIndexFNV, (unsigned int)found.crc32);
+    }
     sourceProbeEntry = found;
     sourceProbeReady = true;
     sourceProbeReadLogged = 0U;
@@ -2121,17 +2163,28 @@ static int readRangeCore(const EspAssetPackEntry* entry,
     }
 
     if (sourceProbeExact) {
-        if (!sourceProbeFile.seek(absoluteOffset) ||
-            sourceProbeFile.read(static_cast<uint8_t*>(destination), length) !=
-                length) {
+        if (sourceProbeFlashEpoch != 0U) {
+            uint32_t flashOffset = 0U;
+            if (sourceProbeFlashEpoch != verifiedFlashEpoch ||
+                !mapFlash.stats.verified ||
+                !mapFlashTranslate(absoluteOffset, (uint32_t)length, &flashOffset) ||
+                !mapFlashRead(flashOffset, destination, length, false)) {
+                printf("[MAPFLASHV3] BSP-PROBE-FAILED reason=lease-or-read fallbackSD=no\n");
+                return 0;
+            }
+        }
+        else if (!sourceProbeFile.seek(absoluteOffset) ||
+                 sourceProbeFile.read(static_cast<uint8_t*>(destination), length) !=
+                     length) {
             return 0;
         }
         if (sourceProbeReadLogged == 0U) {
             sourceProbeReadLogged = 1U;
-            printf("[PAKSOURCE] PROBE-READ hash=%08x source=%u length=%u backing=sd-authoritative activeMapFlashUntouched=yes cachePollution=no\n",
+            printf("[PAKSOURCE] PROBE-READ hash=%08x source=%u length=%u backing=%s activeMapFlashUntouched=yes cachePollution=no\n",
                    (unsigned int)entry->nameHash,
                    (unsigned int)absoluteOffset,
-                   (unsigned int)length);
+                   (unsigned int)length,
+                   sourceProbeFlashEpoch != 0U ? "verified-flash" : "sd-authoritative");
         }
     }
     else if (physicalUsesMapFlash) {
