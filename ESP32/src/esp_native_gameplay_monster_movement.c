@@ -120,6 +120,7 @@ static EspNativeGameplayMonsterMovementView movementView;
 static uint16_t originPlaneClear, originPlaneBlocked;
 #if DOOMRPG_PERF_GAME_P1
 static uint8_t navSampleCount;
+static uint8_t navImpSampleCount; /* independent quota for subtype 3 */
 #endif
 static uint32_t observedNoAttackTurns;
 
@@ -1144,6 +1145,7 @@ static int syncOwner(void) {
         memset(&movementView, 0, sizeof(movementView));
 #if DOOMRPG_PERF_GAME_P1
         navSampleCount = 0U;
+        navImpSampleCount = 0U;
 #endif
         movementView.sourceArenaFNV1a = turn->sourceArenaFNV1a;
         movementView.observedMovementDeferredTurns = turn->movementDeferredTurns;
@@ -1166,6 +1168,7 @@ void EspNativeGameplayMonsterMovement_reset(void) {
     memset(&movementView, 0, sizeof(movementView));
 #if DOOMRPG_PERF_GAME_P1
     navSampleCount = 0U;
+    navImpSampleCount = 0U;
 #endif
     observedNoAttackTurns = 0U;
     movementView.lastSpriteIndex = MOVE_NO_SPRITE;
@@ -1398,10 +1401,16 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
     EspPerfSpatialLine_end(&EspPerfGameP1_spatialLineIndex);
     EspPerfSpatialSprite_end(&EspPerfGameP1_spatialSpriteIndex);
     EspPerfTraceCache_end(&traceCache);
-    /* Print outside navigation phase timing; bounded successful-plan witness. */
-    if (planStatus == 1 && (candidate.monster->subtype == 4U || candidate.monster->subtype == 13U) && navSampleCount < 48U) {
-        ++navSampleCount;
-        if (navSampleCount <= 4U) EspAi14NavGeometry_capture("first", navSampleCount, candidate.monster->spriteIndex,
+    /* Independent bounded Imp quota; existing Phantom witness unchanged.
+     * Imp sample IDs 49..80 avoid collisions with the first-plan quota.
+     * Capture only successful plans here; existing NO-MOVE remains explicit. */
+    if (planStatus == 1 &&
+        (((candidate.monster->subtype == 4U || candidate.monster->subtype == 13U) && navSampleCount < 48U) ||
+         (candidate.monster->subtype == 3U && navImpSampleCount < 32U))) {
+        const int isImp = candidate.monster->subtype == 3U;
+        const unsigned sample = isImp ? 48U + (++navImpSampleCount) : ++navSampleCount;
+        if ((!isImp && sample <= 4U) || (isImp && navImpSampleCount <= 4U))
+            EspAi14NavGeometry_capture("first", sample, candidate.monster->spriteIndex,
             candidate.position->worldX, candidate.position->worldY, lineEntityTile);
         printf("[AI14NAV] phase=first sprite=%u sub=%u src=%d,%d target=%d,%d dst=%u mask=%04x score=%d,%d,%d,%d bits=%02x,%02x,%02x,%02x ties=%u byte=%u choice=%u goal=%u player=%d,%d angle=%d rngBefore=%d rngAfter=%d calls=%u sample=%u\n",
                (unsigned)candidate.monster->spriteIndex, (unsigned)candidate.monster->subtype, (int)candidate.position->worldX, (int)candidate.position->worldY,
@@ -1411,7 +1420,7 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
                (unsigned)plan.navTraceBits[2], (unsigned)plan.navTraceBits[3],
                (unsigned)plan.visitCount, (unsigned)plan.tieRand, (unsigned)plan.choice,
                (unsigned)1U, (int)playerView->destX, (int)playerView->destY, (int)playerView->destAngle,
-               (int)liveRandomBefore.nextRand, (int)probeRng.state.nextRand, (unsigned)probeRng.calls, (unsigned)navSampleCount);
+               (int)liveRandomBefore.nextRand, (int)probeRng.state.nextRand, (unsigned)probeRng.calls, sample);
     }
 #endif
     if (originPlaneClear != 0U || originPlaneBlocked != 0U) {
