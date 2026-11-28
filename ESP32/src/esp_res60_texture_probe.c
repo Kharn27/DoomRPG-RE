@@ -3,6 +3,9 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
+#if DOOMRPG_RES60_P39_WALL_STREAM
+#include <stdlib.h>
+#endif
 #if DOOMRPG_RES60_P38_WALL_ADMISSION
 #include <stdio.h>
 #endif
@@ -28,6 +31,19 @@ static uint16_t cachedPalette[16];
 static EspRes60TextureProbeReport cachedReport;
 static uint32_t cachedSourceCrc, cachedArenaFNV, cachedSourceBytes;
 static uint8_t cacheValid;
+#if DOOMRPG_RES60_P39_WALL_STREAM
+/* Exact-size texture-only immutable lease, never sprite records or payload.
+ * Native catalog count is capped at 256, so at most 10240B; Entrance 1320B. */
+static EspNativeGraphicsCatalogRecord* streamRecords;
+static uint16_t streamCount;
+static EspAssetPackEntry streamEntry;
+static void releaseWallStream(void) {
+    free(streamRecords);
+    streamRecords=NULL;
+    streamCount=0U;
+    memset(&streamEntry,0,sizeof(streamEntry));
+}
+#endif
 #if DOOMRPG_RES60_P38_WALL_ADMISSION
 /* Session-owned provenance only, not retained palettes or texel payload. */
 static uint8_t cachedWallAdmission[ESP_RES60_WALL_ADMISSION_BYTES];
@@ -47,6 +63,9 @@ void EspRes60TextureProbe_reset(void) {
     EspRes60WallMaterial_reset();
 #endif
     cacheValid=0U;
+#if DOOMRPG_RES60_P39_WALL_STREAM
+    releaseWallStream();
+#endif
 #if DOOMRPG_RES60_P38_WALL_ADMISSION
     memset(cachedWallAdmission,0,sizeof(cachedWallAdmission));
 #endif
@@ -274,6 +293,15 @@ int EspRes60TextureProbe_render(uint16_t* fb, size_t fbBytes,
     if(!admitWallPlan(admission,&admittedIds))goto done;
     out->admittedWallIds=admittedIds;
 #endif
+#if DOOMRPG_RES60_P39_WALL_STREAM
+    releaseWallStream();
+    streamRecords=(EspNativeGraphicsCatalogRecord*)malloc(
+        (size_t)catalog->textureCount*sizeof(*streamRecords));
+    if(!streamRecords)goto done;
+    streamCount=catalog->textureCount;
+    memcpy(streamRecords,catalog->textures,(size_t)streamCount*sizeof(*streamRecords));
+    streamEntry=texels;
+#endif
     if((uint64_t)selection.sourceOffset/2U + 4U +
        ESP_RES60_TEXTURE_BYTES>texels.size)goto done;
     relative=4U+selection.sourceOffset/2U;
@@ -330,6 +358,9 @@ int EspRes60TextureProbe_render(uint16_t* fb, size_t fbBytes,
 done:
     if(open)EspAssetPack_close();
     EspNativeGraphicsCatalog_reset();
+#if DOOMRPG_RES60_P39_WALL_STREAM
+    if(!success)releaseWallStream();
+#endif
     if(EspAssetPack_isOpen() || EspNativeGraphicsCatalog_isReady()) {
         EspRes60TextureProbe_reset();
         return 0;
@@ -346,4 +377,86 @@ done:
 #endif
     return success;
 }
+
+#if DOOMRPG_RES60_P39_WALL_STREAM
+/* Preserve the independently verified P8 tile and P10 sample FNV. The
+ * existing 6KiB projection snapshot is dead after raycast; its caller loans
+ * 2KiB here. Only one additional packed tile is live at any instant. */
+int EspRes60TextureProbe_streamWalls(uint16_t* fb, size_t fbBytes,
+                                     void* scratch, size_t scratchBytes,
+                                     EspRes60TextureProbeReport* out) {
+    EspRes60WallCoverage demand;
+    EspAssetPackEntry entry;
+    uint32_t cols,pixels,hash=2166136261U;
+    uint16_t reads=0U,admitted=0U;
+    int opened=0,ok=0;
+    const EspMapRuntimeView* map=EspMapRuntime_view();
+    if(!out || !fb || fbBytes!=ESP_RES60_FRAMEBUFFER_BYTES ||
+       !scratch || scratchBytes<ESP_RES60_TEXTURE_BYTES ||
+       !cacheValid || !streamRecords || !streamCount ||
+       !map || map->sourceCrc32!=cachedSourceCrc ||
+       map->arenaFNV1a!=cachedArenaFNV || map->sourceBytes!=cachedSourceBytes ||
+       EspAssetPack_isOpen() || EspNativeGraphicsCatalog_isReady())
+        return 0;
+    /* Protect the sole framebuffer and session-owned swatch/metadata. */
+    const uintptr_t a=(uintptr_t)scratch,b=(uintptr_t)fb;
+    if((a>=b && a-b<fbBytes) || (b>=a && b-a<ESP_RES60_TEXTURE_BYTES))return 0;
+    if(!admitWallPlan(cachedWallAdmission,&admitted) ||
+       !EspRes60WallMaterial_measure(&demand) ||
+       admitted!=demand.materials || demand.unsupportedColumns ||
+       out->admittedWallIds!=admitted || out->logicalId!=cachedReport.logicalId ||
+       out->streamReads || out->streamMetadataBytes)goto done;
+    cols=out->wallColumns;
+    pixels=out->wallPixels;
+    /* Stream only other paintable materials, in immutable catalog order.
+     * Fully inset-hidden winners are admitted by P38 but need no tile IO. */
+    for(uint16_t i=0U;i<streamCount;++i) {
+        const EspNativeGraphicsCatalogRecord* rec=&streamRecords[i];
+        const uint16_t id=rec->resourceId;
+        EspRes60WallMaterialStats material;
+        if(id==out->logicalId || !EspRes60WallMaterial_visibleColumns(id))continue;
+        if(id>255U || !(cachedWallAdmission[id>>3U]&(uint8_t)(1U<<(id&7U))) ||
+           (rec->sourceOffset&1U) ||
+           (uint64_t)rec->sourceOffset/2U+4U+ESP_RES60_TEXTURE_BYTES>streamEntry.size)
+            goto done;
+        if(!opened) {
+            if(!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH))goto done;
+            opened=1;
+            if(!EspAssetPack_findEntry("wtexels.bin",&entry) ||
+               entry.nameHash!=streamEntry.nameHash || entry.offset!=streamEntry.offset ||
+               entry.size!=streamEntry.size || entry.crc32!=streamEntry.crc32 ||
+               entry.flags!=streamEntry.flags)goto done;
+        }
+        if(!EspAssetPack_readRange(&entry,4U+rec->sourceOffset/2U,
+                                   scratch,ESP_RES60_TEXTURE_BYTES))goto done;
+        ++reads;
+        if(!EspRes60WallMaterial_overlay(fb,fbBytes,(const uint8_t*)scratch,
+                   ESP_RES60_TEXTURE_BYTES,rec->paletteRgb565,id,&material) ||
+           !material.pixels || material.columns!=EspRes60WallMaterial_visibleColumns(id))
+            goto done;
+        cols+=material.columns;
+        pixels+=material.pixels;
+        hash=fnvAppend(hash,(uint8_t)id);
+        for(unsigned shift=0U;shift<32U;shift+=8U)
+            hash=fnvAppend(hash,(uint8_t)(material.sampledFNV>>shift));
+    }
+    if(pixels!=(uint32_t)demand.pixels-demand.insetPixels ||
+       cols>demand.columns || reads>admitted)goto done;
+    ok=1;
+done:
+    if(opened)EspAssetPack_close();
+    if(!ok || EspAssetPack_isOpen()) {
+        EspRes60TextureProbe_reset();
+        printf("[RES60P39] FAIL CLOSED stage=wall-stream-or-coverage\n");
+        return 0;
+    }
+    out->wallColumns=cols;
+    out->wallPixels=pixels;
+    out->streamReads=reads;
+    out->streamBytes=(uint32_t)reads*ESP_RES60_TEXTURE_BYTES;
+    out->streamMetadataBytes=(uint16_t)((size_t)streamCount*sizeof(*streamRecords));
+    out->streamFNV=hash;
+    return 1;
+}
+#endif
 #endif

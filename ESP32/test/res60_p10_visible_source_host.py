@@ -30,6 +30,9 @@ static EspNativeGraphicsCatalogRecord records[2];
 static int active=1, pack=0, catalogReady=0;
 static unsigned opens=0, closes=0, reads=0;
 static int visibleOddNibble=0, badHeader=0, outsideRange=0;
+#if DOOMRPG_RES60_P39_WALL_STREAM
+static int twoTiles=0, failTile=0, changedEntry=0;
+#endif
 
 int EspMapRuntime_isLoaded(void) {return active;}
 const EspMapRuntimeView* EspMapRuntime_view(void) {return active?&runtime:NULL;}
@@ -45,6 +48,9 @@ EspNativeGraphicsCatalogStatus EspNativeGraphicsCatalog_buildFromRuntime(void) {
     assert(active && !catalogReady && !pack);
     catalogReady=1;
     records[1].sourceOffset=visibleOddNibble?1U:(outsideRange?4096U:0U);
+#if DOOMRPG_RES60_P39_WALL_STREAM
+    records[0].sourceOffset=twoTiles?4096U:0U;
+#endif
     catalog.textures=records;
     catalog.textureCount=2;
     catalog.stateFNV1a=0x11223344U;
@@ -67,16 +73,30 @@ int EspAssetPack_open(const char* path) {
 void EspAssetPack_close(void) {assert(pack);pack=0;++closes;}
 int EspAssetPack_findEntry(const char* name, EspAssetPackEntry* entry) {
     assert(pack && !strcmp(name,"wtexels.bin") && entry);
-    memset(entry,0,sizeof(*entry));entry->size=2052;return 1;
+    memset(entry,0,sizeof(*entry));entry->size=2052;
+#if DOOMRPG_RES60_P39_WALL_STREAM
+    if(twoTiles)entry->size=4100;
+    if(changedEntry)entry->crc32=1;
+#endif
+    return 1;
 }
 int EspAssetPack_readRange(const EspAssetPackEntry* entry, uint32_t off,
                            void* dest, size_t size) {
     assert(pack && entry && dest);
     ++reads;
     if(off==0U && size==4U) {
-        const uint8_t header[4]={0U,badHeader?7U:8U,0U,0U};
+        uint8_t header[4]={0U,badHeader?7U:8U,0U,0U};
+#if DOOMRPG_RES60_P39_WALL_STREAM
+        if(twoTiles)header[1]=16U;
+#endif
         memcpy(dest,header,sizeof(header));return 1;
     }
+#if DOOMRPG_RES60_P39_WALL_STREAM
+    if(twoTiles && off==2052U && size==2048U) {
+        if(failTile)return 0;
+        memset(dest,0x11,size);return 1;
+    }
+#endif
     assert(off==4U && size==2048U);
     memset(dest,0x10,size);return 1;
 }
@@ -177,7 +197,58 @@ int main(void) {
     assert(framebuffer[24U*192U+144U+1U]==before);
     assert(!pack && !catalogReady && opens==closes);
     assert(framebuffer[0]==0xface && framebuffer[192U*144U+1U]==0xbeef);
-    puts("RES60-P10 VISIBLE SOURCE C11 PASS: visible-over-first BSP, cached turns, fallback, odd-offset rejection, corrupt PAK rollback, canaries");
+#if DOOMRPG_RES60_P39_WALL_STREAM
+    EspRes60TextureProbe_reset();
+    badHeader=0;twoTiles=1;
+    /* Two genuinely distinct offsets, patterns and palettes; test clipped
+     * and inset-hidden columns, cold and warm, independent expected pixels. */
+    uint8_t loan[2050];
+    loan[0]=0x6a;loan[2049]=0xb6;
+    for(unsigned cycle=0;cycle<2;++cycle) {
+        EspRes60WallMaterial_reset();
+        assert(EspRes60WallMaterial_record(96,7,-5,10,0));
+        assert(EspRes60WallMaterial_record(1,87,90,10,0));
+        assert(EspRes60WallMaterial_record(144,87,40,20,0));
+        assert(EspRes60WallMaterial_record(145,7,0,20,0));
+        EspRes60WallMaterial_publish();
+        for(unsigned i=1;i<=192U*144U;++i)framebuffer[i]=0x5555;
+        assert(EspRes60TextureProbe_render(framebuffer+1,55296,&result));
+        assert(result.admittedWallIds==2 && result.cacheHit==cycle);
+        const uint16_t swatchBefore=framebuffer[24U*192U+144U+1U];
+        unsigned beforeReads=reads;
+        assert(EspRes60TextureProbe_streamWalls(framebuffer+1,55296,loan+1,2048,&result));
+        assert(result.wallPixels==23 && result.wallColumns==3);
+        assert(result.streamReads==1 && result.streamBytes==2048 && reads==beforeReads+1);
+        assert(result.streamMetadataBytes==2*sizeof(records[0]));
+        assert(result.streamFNV!=2166136261U);
+        assert(framebuffer[24U*192U+144U+1U]==swatchBefore);
+        assert(framebuffer[24U*192U+96U+1U]==0xf800U); /* ID7, even nibble */
+        assert(framebuffer[114U*192U+1U+1U]==0x001fU); /* ID87 */
+        assert(framebuffer[72U*192U+144U+1U]==0x001fU);
+        assert(framebuffer[29U*192U+96U+1U]==0x5555U);
+        assert(framebuffer[0]==0xface && framebuffer[192U*144U+1U]==0xbeef);
+        assert(loan[0]==0x6a && loan[2049]==0xb6 && !pack && !catalogReady && opens==closes);
+    }
+    /* Same published plan but the backing entry changes; reject and close. */
+    plan(87);
+    assert(EspRes60TextureProbe_render(framebuffer+1,55296,&result));
+    changedEntry=1;
+    assert(!EspRes60TextureProbe_streamWalls(framebuffer+1,55296,loan+1,2048,&result));
+    assert(!pack && !catalogReady && opens==closes);
+    changedEntry=0;
+    /* Cold selected ID7 plus ID87, then inject remaining tile IO failure. */
+    EspRes60WallMaterial_reset();
+    assert(EspRes60WallMaterial_record(96,7,0,20,0));
+    assert(EspRes60WallMaterial_record(0,87,0,20,0));
+    EspRes60WallMaterial_publish();
+    assert(EspRes60TextureProbe_render(framebuffer+1,55296,&result));
+    failTile=1;
+    assert(!EspRes60TextureProbe_streamWalls(framebuffer+1,55296,loan+1,2048,&result));
+    assert(!pack && !catalogReady && opens==closes);
+    assert(!EspRes60TextureProbe_streamWalls(framebuffer+1,55296,loan+1,2048,&result));
+    EspRes60TextureProbe_reset();
+#endif
+    puts("RES60-P10/P38/P39 VISIBLE SOURCE C11 PASS");
     return 0;
 }
 """
@@ -194,9 +265,10 @@ with tempfile.TemporaryDirectory(prefix="res60-p10-visible-") as name:
           "-DDOOMRPG_RES60_P8_TEXEL=1",
           "-DDOOMRPG_RES60_P9_WEDGE=1",
           "-DDOOMRPG_RES60_P10_WALL_MATERIAL=1"]
-    for admission in (0,1):
+    for admission,stream in ((0,0),(1,0),(1,1)):
         subprocess.run(["cc","-std=c11","-O2","-Wall","-Wextra","-Werror",
                         *defs,f"-DDOOMRPG_RES60_P38_WALL_ADMISSION={admission}",
+                        f"-DDOOMRPG_RES60_P39_WALL_STREAM={stream}",
                         "-I",str(ROOT/"ESP32/include"),
                         str(ROOT/"ESP32/src/esp_res60_texture_probe.c"),
                         str(ROOT/"ESP32/src/esp_res60_wall_material.c"),

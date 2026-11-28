@@ -936,6 +936,9 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
 #if DOOMRPG_RES60_P38_WALL_ADMISSION
             " admitted=%u"
 #endif
+#if DOOMRPG_RES60_P39_WALL_STREAM
+            " stream=%u/%lu meta=%u streamFNV=%08lx"
+#endif
             "\n",
             (unsigned)report.spawnAngle, (unsigned)turns,
             (unsigned long)report.loadUs,
@@ -959,6 +962,12 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
 #endif
 #if DOOMRPG_RES60_P38_WALL_ADMISSION
             , (unsigned)report.texture.admittedWallIds
+#endif
+#if DOOMRPG_RES60_P39_WALL_STREAM
+            , (unsigned)report.texture.streamReads,
+            (unsigned long)report.texture.streamBytes,
+            (unsigned)report.texture.streamMetadataBytes,
+            (unsigned long)report.texture.streamFNV
 #endif
             );
     } else
@@ -1009,12 +1018,20 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
         (unsigned long)report.raster.frameFNV);
 #endif
 #if DOOMRPG_RES60_P10_WALL_MATERIAL
-    Serial.printf("[RES60P10] MATERIAL source=PAK logical=%u selected=%s visibleColumns=%u columns=%lu pixels=%lu sampleFNV=%08lx rawP3FNV=%08lx extraPakReads=0"
+    Serial.printf("[RES60P10] MATERIAL source=PAK logical=%u selected=%s visibleColumns=%u columns=%lu pixels=%lu sampleFNV=%08lx rawP3FNV=%08lx"
+#if DOOMRPG_RES60_P39_WALL_STREAM
+        " extraPakReads=%u"
+#else
+        " extraPakReads=0"
+#endif
 #if DOOMRPG_RES60_P37_WALL_COVERAGE
         " wallIds=%u wallCols=%u wallTotal=%u insetWall=%u unsupportedCols=%u"
 #endif
 #if DOOMRPG_RES60_P38_WALL_ADMISSION
         " admitted=%u"
+#endif
+#if DOOMRPG_RES60_P39_WALL_STREAM
+        " streamBytes=%lu meta=%u streamFNV=%08lx"
 #endif
         "\n",
         (unsigned)report.texture.logicalId,
@@ -1024,6 +1041,9 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
         (unsigned long)report.texture.wallPixels,
         (unsigned long)report.texture.wallFNV,
         (unsigned long)report.raster.frameFNV
+#if DOOMRPG_RES60_P39_WALL_STREAM
+        , (unsigned)report.texture.streamReads
+#endif
 #if DOOMRPG_RES60_P37_WALL_COVERAGE
         , (unsigned)report.wallDemand.materials,
         (unsigned)report.wallDemand.columns,
@@ -1033,6 +1053,11 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
 #endif
 #if DOOMRPG_RES60_P38_WALL_ADMISSION
         , (unsigned)report.texture.admittedWallIds
+#endif
+#if DOOMRPG_RES60_P39_WALL_STREAM
+        , (unsigned long)report.texture.streamBytes,
+        (unsigned)report.texture.streamMetadataBytes,
+        (unsigned long)report.texture.streamFNV
 #endif
         );
 #endif

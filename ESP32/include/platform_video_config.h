@@ -369,6 +369,17 @@
 #if DOOMRPG_RES60_P38_WALL_ADMISSION && !DOOMRPG_RES60_P10_WALL_MATERIAL
 #error "RES60-P38 requires isolated P10"
 #endif
+/* P39: stream remaining visible wall materials through a caller-owned tile
+ * loan after raycast; retain only the exact texture metadata lease. */
+#ifndef DOOMRPG_RES60_P39_WALL_STREAM
+#define DOOMRPG_RES60_P39_WALL_STREAM (DOOMRPG_RES60_P38_WALL_ADMISSION && DOOMRPG_RES60_P29_BORROW_PLANE_SCRATCH)
+#endif
+#if DOOMRPG_RES60_P39_WALL_STREAM != 0 && DOOMRPG_RES60_P39_WALL_STREAM != 1
+#error "RES60-P39 flag must be 0 or 1"
+#endif
+#if DOOMRPG_RES60_P39_WALL_STREAM && !DOOMRPG_RES60_P38_WALL_ADMISSION
+#error "RES60-P39 requires P38"
+#endif
 #if DOOMRPG_RES60_P1_DIAGNOSTIC
 #define DOOMRPG_VIDEO_BUFFER_WIDTH 192
 #define DOOMRPG_VIDEO_BUFFER_HEIGHT 144

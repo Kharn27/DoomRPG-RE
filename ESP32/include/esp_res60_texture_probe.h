@@ -31,6 +31,10 @@ typedef struct EspRes60TextureProbeReport_s {
 #if DOOMRPG_RES60_P38_WALL_ADMISSION
     uint16_t admittedWallIds; /* current full clipped view, not swatch selection */
 #endif
+#if DOOMRPG_RES60_P39_WALL_STREAM
+    uint16_t streamReads, streamMetadataBytes;
+    uint32_t streamBytes, streamFNV;
+#endif
 #if DOOMRPG_RES60_P11_PROFILE
     /* Current-frame only, not a cache cost claim for P8 warm turns. */
     uint32_t profileCatalogUs, profilePackUs, profileSwatchUs;
@@ -51,6 +55,14 @@ int EspRes60TextureProbe_render(uint16_t* framebuffer, size_t framebufferBytes,
 /* One-swatch session cache: original 2048B packed BSS + 32B palette.
  * Explicitly reset on START and successful MENU; no cross-session reuse. */
 void EspRes60TextureProbe_reset(void);
+#if DOOMRPG_RES60_P39_WALL_STREAM
+/* After successful P8/P10 on the same published plan, stream each remaining
+ * visible material exactly once through a disjoint 2048B caller loan.
+ * Failure may leave partial logical pixels; caller MUST NOT present them. */
+int EspRes60TextureProbe_streamWalls(uint16_t* framebuffer, size_t framebufferBytes,
+                                     void* scratch, size_t scratchBytes,
+                                     EspRes60TextureProbeReport* report);
+#endif
 #ifdef __cplusplus
 }
 #endif
