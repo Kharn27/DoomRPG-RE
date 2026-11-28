@@ -20,7 +20,7 @@ PARTITION = 0x2A0000
 
 def catalog() -> list[str]:
     source = Path(__file__).resolve().parents[1] / "src" / "esp_map_catalog.c"
-    names = re.findall(r'"/[^"]+\\.bsp"', source.read_text(encoding="utf-8"))
+    names = re.findall(r'"/[^"]+\.bsp"', source.read_text(encoding="utf-8"))
     if len(names) != 13 or len(set(names)) != 13:
         raise ValueError("native map catalog changed: audit contract needs updating")
     return [name.strip('"') for name in names]
