@@ -1339,7 +1339,9 @@ int EspAssetPack_mapFlashPrepare(uint8_t targetMapId)
     uint32_t flashPayloadFNV = 0U;
     const int64_t prepareStart = esp_timer_get_time();
 
-    if (openReady || residentEnabled || !EspMapCatalog_isValidId(targetMapId)) {
+    if (openReady || residentEnabled || sourceProbeReady ||
+        !EspMapCatalog_isValidId(targetMapId)) {
+        mapFlash.handoffEligible = 0U;
         printf("[MAPFLASH] PREPARE FAILED reason=bad-boundary map=%u open=%u resident=%u\n",
                (unsigned int)targetMapId,
                (unsigned int)openReady,
@@ -1522,7 +1524,9 @@ int EspAssetPack_mapFlashStage(uint8_t currentMapId)
     uint32_t verifyProgressTotal = 0U;
     const int64_t buildStart = esp_timer_get_time();
 
-    if (openReady || residentEnabled || !EspMapCatalog_isValidId(currentMapId)) {
+    if (openReady || residentEnabled || sourceProbeReady ||
+        !EspMapCatalog_isValidId(currentMapId)) {
+        mapFlash.handoffEligible = 0U;
         printf("[MAPFLASH] FAILED reason=bad-stage-boundary map=%u open=%u resident=%u\n",
                (unsigned int)currentMapId,
                (unsigned int)openReady,
