@@ -593,6 +593,10 @@ jobs:
             ESP32/test/perf_game_spatial_line_host.c -o /tmp/doomrpg-perf-line
           /tmp/doomrpg-perf-line
 
+      - name: PERF-GAME-P5b real activation/reveal/visited mutation hooks
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -DARDUINO=1 -DDOOMRPG_ESP32=1 -IESP32/test/host_include -IESP32/test/oracles -IESP32/include ESP32/src/esp_map_state.c ESP32/src/esp_map_automap_state.c ESP32/src/esp_native_gameplay_monster_activation_gate.c ESP32/test/perf_game_redraw_owner_host.c -Wl,--gc-sections -o /tmp/doomrpg-redraw-owners
+          /tmp/doomrpg-redraw-owners
       - name: PERF-GAME-P5a redraw invalidation shadow (real C)
         run: |
           cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/src/esp_redraw_audit.c ESP32/test/perf_game_redraw_audit_host.c -o /tmp/doomrpg-perf-redraw
