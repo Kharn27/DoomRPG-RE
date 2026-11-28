@@ -202,7 +202,7 @@ static void exerciseCapacity(void) {
     topologyView.linkStatesLE = linkStatesLE;
     topologyView.linkOrdersLE = linkOrdersLE;
     topologyView.spriteCount = 101U;
-    topologyView.storageBytes = sizeof(large);
+    topologyView.storageBytes = 101U * 7U;
     topologyView.nextLinkOrder = 101U;
     for (i = 0U; i < 101U; ++i) {
         entityTypes[i] = (i < 65U ? ESP_MAP_ENTITY_TYPE_ENEMY :
@@ -226,6 +226,7 @@ static void exerciseCapacity(void) {
     /* The true representational ceiling (133) remains fail-closed. */
     witnessRuntime.mapSpriteCount = 134U;
     topologyView.spriteCount = 134U;
+    topologyView.storageBytes = sizeof(large);
     topologyView.nextLinkOrder = 134U;
     for (i = 101U; i < 134U; ++i) {
         entityTypes[i] = ESP_MAP_ENTITY_TYPE_HUMAN;
