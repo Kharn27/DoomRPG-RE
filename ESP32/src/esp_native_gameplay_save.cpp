@@ -389,7 +389,7 @@ bool reconcileMonsterSnapshotWithTopology(
     if (outReconciled != nullptr) *outReconciled = 0U;
     if (monsters == nullptr ||
         topology.count < monsters->count ||
-        topology.count > ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_MAX) {
+        topology.count > ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_COMPACT_MAX) {
         return false;
     }
 
@@ -397,14 +397,15 @@ bool reconcileMonsterSnapshotWithTopology(
         EspNativeGameplayMonsterRecord& monster =
             monsters->records[monsterIndex];
 
-        while (topologyIndex < topology.count &&
-               topology.records[topologyIndex].spriteIndex <
-                   monster.spriteIndex) {
+        EspMapSpriteTopologyMonsterRecord topologyRecord = {};
+        while (topologyIndex < topology.count) {
+            if (!EspMapSpriteTopology_monsterSnapshotRecordAt(
+                    &topology, topologyIndex, &topologyRecord)) return false;
+            if (topologyRecord.spriteIndex >= monster.spriteIndex) break;
             ++topologyIndex;
         }
         if (topologyIndex >= topology.count ||
-            topology.records[topologyIndex].spriteIndex !=
-                monster.spriteIndex) {
+            topologyRecord.spriteIndex != monster.spriteIndex) {
             return false;
         }
 
@@ -416,8 +417,7 @@ bool reconcileMonsterSnapshotWithTopology(
          * LOAD. Reconcile only the snapshot copy: no XP/drop/sound/RNG is
          * synthesized and the live gameplay owner remains untouched.
          */
-        if ((topology.records[topologyIndex].linkState &
-             ESP_MAP_SPRITE_TOPOLOGY_ALIVE) == 0U &&
+        if ((topologyRecord.linkState & ESP_MAP_SPRITE_TOPOLOGY_ALIVE) == 0U &&
             monster.alive != 0U) {
             monster.alive = 0U;
             ++reconciled;
@@ -1107,14 +1107,16 @@ bool monsterSpatialShapeValid(
         const EspNativeGameplayMonsterPositionRecord& position =
             tail.monsterPositions.records[i];
 
-        while (topologyCursor < tail.monsterTopology.count &&
-               tail.monsterTopology.records[topologyCursor].spriteIndex <
-                   monster.spriteIndex) {
+        EspMapSpriteTopologyMonsterRecord topology = {};
+        while (topologyCursor < tail.monsterTopology.count) {
+            if (!EspMapSpriteTopology_monsterSnapshotRecordAt(
+                    &tail.monsterTopology, topologyCursor, &topology))
+                return false;
+            if (topology.spriteIndex >= monster.spriteIndex) break;
             ++topologyCursor;
         }
         if (topologyCursor >= tail.monsterTopology.count ||
-            tail.monsterTopology.records[topologyCursor].spriteIndex !=
-                monster.spriteIndex) {
+            topology.spriteIndex != monster.spriteIndex) {
             printf("[NATIVESAVE] V9-SPATIAL-MISMATCH ordinal=%u sprite=%u reason=monster-topology-record-missing topologyCount=%u\n",
                    (unsigned int)i,
                    (unsigned int)monster.spriteIndex,
@@ -1122,8 +1124,6 @@ bool monsterSpatialShapeValid(
             return false;
         }
 
-        const EspMapSpriteTopologyMonsterRecord& topology =
-            tail.monsterTopology.records[topologyCursor];
         const bool topologyAlive =
             (topology.linkState & ESP_MAP_SPRITE_TOPOLOGY_ALIVE) != 0U;
         const bool topologyLinked =
