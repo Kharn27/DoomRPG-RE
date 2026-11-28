@@ -1444,6 +1444,171 @@ int EspNativeGameplayActionEngine_runDeathBlast(
     return 1;
 }
 
+/* Enemy-owned barrel attack. The shot is already animated; Combat_monsterSeq
+ * forces a hit on non-player targets without hit/damage RNG. Use the same
+ * removal, ordered radius, splash journal and terminal player death owners
+ * as a player-origin barrel, but never charge ammo or request another turn. */
+int EspNativeGameplayActionEngine_enemyBarrelReady(uint16_t sprite) {
+    const EspPlayerViewState* view = EspPlayerView_view();
+    uint16_t chain[ACTION_BARREL_CHAIN_MAX];
+    uint8_t count, monsters, players;
+    ActionTarget unsupported;
+    EspNativeGraphicsCatalogStatus status;
+    if (view == NULL || view->active != 1U ||
+        view->viewX != view->destX || view->viewY != view->destY ||
+        view->viewAngle != view->destAngle || !ensureOwner() ||
+        !barrelChainPreflight(sprite, ACTION_DESTRUCTIBLE_BARREL_SUBTYPE,
+                              view, chain, &count, &monsters, &players,
+                              &unsupported)) return 0;
+    status = EspNativeGraphicsCatalog_ensureSprite(ACTION_TRAP_EXPLOSION_LOGICAL);
+    return status == ESP_NATIVE_GRAPHICS_CATALOG_OK ||
+           status == ESP_NATIVE_GRAPHICS_CATALOG_ALREADY_ACTIVE;
+}
+
+int EspNativeGameplayActionEngine_enemyBarrelImpact(
+    DoomRPG_t* runtime, uint32_t sequence, uint16_t rootSprite) {
+    const EspPlayerViewState* view = EspPlayerView_view();
+    uint16_t chain[ACTION_BARREL_CHAIN_MAX];
+    uint8_t expected, monsters, players, count=0U, start=0U, lethal=0U;
+    uint16_t messageDamage=0U;
+    ActionTarget unsupported;
+    ExplosionImpactJournal journal = {0};
+    EspNativeGameplayPlayerState playerBefore;
+    Random_t rngBefore;
+    EspNativeGameplayFrameStats frame;
+    /* Match the player barrel's bounded simultaneous wave storage. */
+    EspNativeSpriteTransient items[ACTION_BARREL_CHAIN_MAX];
+    if (runtime == NULL || sequence == 0U ||
+        EspNativeRootOwners_live()->render == NULL ||
+        view == NULL || view->active != 1U ||
+        view->viewX != view->destX || view->viewY != view->destY ||
+        view->viewAngle != view->destAngle || !ensureOwner() ||
+        !barrelChainPreflight(rootSprite, ACTION_DESTRUCTIBLE_BARREL_SUBTYPE,
+                              view, chain, &expected, &monsters, &players,
+                              &unsupported) ||
+        !EspNativeGameplayPlayerState_snapshot(&playerBefore)) return 0;
+    {
+        EspNativeGraphicsCatalogStatus status =
+            EspNativeGraphicsCatalog_ensureSprite(ACTION_TRAP_EXPLOSION_LOGICAL);
+        if (status != ESP_NATIVE_GRAPHICS_CATALOG_OK &&
+            status != ESP_NATIVE_GRAPHICS_CATALOG_ALREADY_ACTIVE) return 0;
+    }
+    rngBefore = *EspNativeProcessRng_live();
+    journal.runtime=runtime;
+    journal.sequence=sequence;
+    if (monsters != 0U) {
+        if (!EspNativeGameplayMonsterCombat_beginSplashSequence(runtime,sequence))
+            return 0;
+        journal.monsterSequenceArmed=1U;
+    }
+    chain[0]=rootSprite;
+    count=1U;
+    setRemoved(rootSprite,1);
+    while (start<count) {
+        uint8_t end=count, n, phase;
+        for (n=start;n<end;++n) {
+            EspMapSprite spr;
+            if (!EspMapRuntime_getMapSpriteBase(chain[n],&spr)) goto rollback;
+            items[n-start].worldX=spr.x;
+            items[n-start].worldY=spr.y;
+        }
+        for (phase=0U;phase<ACTION_TRAP_EXPLOSION_FRAMES;++phase) {
+#if defined(ESP_PLATFORM)
+            uint32_t started=DoomRPG_GetUpTimeMS();
+#endif
+            EspEntranceMusic_pumpGameplay();
+            memset(&frame,0,sizeof(frame));
+            if (!EspNativeSpriteRenderer_armTransientBatch(
+                    ACTION_TRAP_EXPLOSION_LOGICAL,phase,items,(uint8_t)(end-start)) ||
+                !EspNativeDynamicLineRender_renderAmbient(
+                    EspNativeRootOwners_live()->render,&frame) ||
+                frame.finalPresented==0U) goto rollback;
+            if (start==0U && phase==0U)
+                (void)EspNativeAudioIntent_publish(5061U,0U,4U);
+            EspEntranceMusic_pumpGameplay();
+#if defined(ESP_PLATFORM)
+            while ((uint32_t)(DoomRPG_GetUpTimeMS()-started)<150U) {
+                vTaskDelay(1);
+                EspEntranceMusic_pumpGameplay();
+            }
+#endif
+        }
+        EspNativeSpriteRenderer_clearTransient();
+        for (n=start;n<end;++n) {
+            uint8_t triggered=0U, playerHits=0U;
+            uint16_t damageText=0U;
+            uint32_t word=(uint32_t)DoomRPG_randNextInt(EspNativeProcessRng_live());
+            if (!barrelTriggerNeighbors(chain[n],view,
+                    EspNativeExplosion_damageFromWord(word),chain,&count,&journal,
+                    &triggered,&playerHits,&damageText,
+                    EspNativeGameplayBarrelRadius_terminalDeathOwnedAt(expected,n),
+                    &lethal)) goto rollback;
+            messageDamage=(uint16_t)(messageDamage+damageText);
+        }
+        start=end;
+    }
+    if (count!=expected || (expected==1U && journal.monsterHits!=monsters) ||
+        (lethal!=0U)!=(journal.deathRandValid!=0U)) goto rollback;
+    if (lethal!=0U) {
+        uint16_t tile=(uint16_t)(((uint32_t)view->destY>>6U)*MAP_WIDTH+
+                                  ((uint32_t)view->destX>>6U));
+        if (!EspNativeGameplayPlayerDeath_armWithReservedRand(
+                runtime,sequence,tile,journal.deathRand)) goto rollback;
+        if (journal.monsterSequenceArmed &&
+            !EspNativeGameplayMonsterCombat_commitTerminalSplashSequence(sequence)) {
+            DRPG_LOGE("[AI14BARREL] FAILED seq=%u reason=terminal-splash-commit death=armed\n",
+                      (unsigned)sequence);
+            return -1; /* irreversible terminal admission: never restore AI RNG */
+        }
+    } else if (journal.monsterSequenceArmed &&
+               !EspNativeGameplayMonsterCombat_commitSplashSequence(sequence)) {
+        goto rollback;
+    }
+    if (journal.monsterSequenceArmed && journal.monsterHits!=0U)
+        (void)EspNativeGameplayMonsterCombat_publishSplashAudioAfterCommit(sequence);
+    if (lethal!=0U) {
+        (void)Esp32PlatformVideo_present();
+    } else {
+        if (messageDamage!=0U) {
+            (void)snprintf(actionState.feedbackText,sizeof(actionState.feedbackText),
+                           "%u damage!",(unsigned)messageDamage);
+            actionState.feedbackPending=1U;
+            actionState.feedbackKind=ACTION_FEEDBACK_DAMAGE;
+            actionState.viewportFlashPending=1U;
+            actionState.viewportFlashDurationMs=ACTION_TRAP_DAMAGE_FLASH_MS;
+            actionState.viewportFlashColor565=FEEDBACK_DAMAGE_RED565;
+        }
+        (void)EspNativeGameplayFacingLabel_refresh("ENEMY-BARREL");
+        memset(&frame,0,sizeof(frame));
+        (void)EspNativeGameplayFrame_renderTurn(EspNativeRootOwners_live()->render,
+                                               (uint8_t)view->viewAngle,&frame);
+        if (journal.monsterHits!=0U)
+            (void)EspNativeGameplayMonsterCombat_finishSplashPresentation(sequence);
+    }
+    printf("[AI14BARREL] COMMIT seq=%u root=%u chain=%u monsterHits=%u playerDamage=%u lethal=%u ammo=unchanged extraTurn=no rollback=closed\n",
+           (unsigned)sequence,(unsigned)rootSprite,(unsigned)count,
+           (unsigned)journal.monsterHits,(unsigned)messageDamage,(unsigned)lethal);
+    return 1;
+rollback:
+    EspNativeSpriteRenderer_clearTransient();
+    {
+        int worldExact=barrelRollbackRemoved(runtime,chain,count);
+        int playerExact=EspNativeGameplayPlayerState_restore(&playerBefore);
+        *EspNativeProcessRng_live()=rngBefore;
+        if (!worldExact || !playerExact) {
+            DRPG_LOGE("[AI14BARREL] FAILED seq=%u rollback=NO\n",(unsigned)sequence);
+            return -1;
+        }
+    }
+    (void)EspNativeGameplayFacingLabel_refresh("ENEMY-BARREL-ROLLBACK");
+    memset(&frame,0,sizeof(frame));
+    (void)EspNativeGameplayFrame_renderTurn(EspNativeRootOwners_live()->render,
+                                           (uint8_t)view->viewAngle,&frame);
+    printf("[AI14BARREL] ROLLBACK seq=%u root=%u world=yes player=yes rng=yes\n",
+           (unsigned)sequence,(unsigned)rootSprite);
+    return 0;
+}
+
 static int traceAction(ActionTarget* outTarget) {
     const EspPlayerViewState* view = EspPlayerView_view();
     const EspNativeGameplayTurnState* turn = EspNativeGameplayDispatch_view();

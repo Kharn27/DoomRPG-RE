@@ -39,6 +39,8 @@ def git_blob(data: bytes) -> str:
 def source_gate() -> None:
     for name, sha in BEFORE.items():
         data = (SRC / name).read_bytes()
+        from game_ai14_enemy_barrel_history import restore_pre_enemy_barrel
+        data = restore_pre_enemy_barrel(name, data)
         prefix = HOST_GUARD.encode("ascii")
         assert data.startswith(prefix), f"{name}: lost host/geometry include"
         assert data.count(b"#include <SDL.h>") == 1, name

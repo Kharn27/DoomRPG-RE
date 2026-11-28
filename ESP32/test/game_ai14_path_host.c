@@ -66,34 +66,325 @@ static int center(int t) { return 64*t+32; }
 static int trace(int sx,int sy,int dx,int dy,uint16_t mask,int strict) {
     return cardinalTraceClear(center(sx),center(sy),center(dx),center(dy),0,mask,strict);
 }
-/* Legacy bodies are extracted by the Python runner, not reimplemented.
- * This adapter maps both center and tile-origin queries onto the same
- * discrete fixture; special geometry is deliberately excluded here. */
+/* Both original path and original linked-list trace/LOS bodies run.
+ * Map fixtures supply the same tile wall sentinel, linked sprite state,
+ * coordinates and player destination to each engine. Line entities are
+ * intentionally absent in these differential fixtures (separate tests). */
 typedef struct RefMonster { int x,y; } RefMonster;
-typedef struct RefDef { int eSubType; } RefDef;
-typedef struct RefRoot { Random_t random; void* game; } RefRoot;
+typedef struct RefDef { int eSubType; byte eType; } RefDef;
+typedef struct RefSprite { int x,y,info; } RefSprite;
+typedef struct RefLine { struct { int x,y; } vert1,vert2; } RefLine;
+typedef struct RefRender { RefSprite mapSprites[64]; RefLine lines[64]; } RefRender;
+typedef struct RefCanvas { int destX,destY; } RefCanvas;
+typedef struct RefGame RefGame;
+typedef struct RefRoot { Random_t random; RefGame* game; RefCanvas* doomCanvas; RefRender* render; } RefRoot;
 typedef struct Entity_t {
     RefDef* def; RefMonster* monster; RefRoot* doomRpg;
     int visitOrderCount, visitOrder[4], visitDist[4];
+    unsigned int info;
+    struct Entity_t* nextOnTile;
 } Entity_t;
+struct RefGame {
+    RefRoot* doomRpg;
+    Entity_t entities[130];
+    Entity_t* entityDb[1024];
+    Entity_t* traceEntities[8];
+    int numTraceEntities;
+};
+#define Game_t RefGame
+#define Sprite_t RefSprite
+#define Line_t RefLine
+#include "legacy_trace.inc"
+#undef Game_t
+#undef Sprite_t
+#undef Line_t
+static RefGame legacyGame;
+static RefCanvas legacyCanvas;
+static RefRender legacyRender;
+static RefDef legacyDefs[8];
+static RefDef wallDef={0,9}, playerDef={0,8}; /* Game_initMapEntities order */
+static int recordPath, recordedCalls;
+static unsigned recordedBits;
+/* Conditional replay: feed the original goal exactly the observed trace
+ * decisions. This proves scoring/selection only, never geometry parity. */
+static int replayMode, replayDirection, replayStep;
+static int replayScore[4];
+static unsigned replayBits[4];
+
 static int legacyCalls, legacyLinks;
-static boolean RefSight(Entity_t* e,int sx,int sy,int dx,int dy,int mask) {
-    (void)e;
-    int x=sx/64, y=sy/64, a=dx/64, b=dy/64;
-    if(sx<0||sy<0||dx<0||dy<0||x>=32||y>=32||a>=32||b>=32) return false;
-    if(walls[y*32+x]||walls[b*32+a]) return false;
-    for(unsigned i=1;i<topo.spriteCount;i++) {
-        if(linked[i] && (mask & (1U<<types[i])) &&
-           (tiles[i]==y*32+x || tiles[i]==b*32+a)) return false;
+static void setupLegacy(Entity_t* e) {
+    memset(&legacyGame,0,sizeof(legacyGame));
+    legacyGame.doomRpg=e->doomRpg;
+    legacyGame.entities[0].def=&wallDef;
+    legacyGame.entities[1].def=&playerDef;
+    e->doomRpg->game=&legacyGame;
+    e->doomRpg->doomCanvas=&legacyCanvas;
+    e->doomRpg->render=&legacyRender;
+    legacyCanvas=(RefCanvas){player.destX,player.destY};
+    e->def->eType=1;
+    for(unsigned i=0;i<topo.spriteCount;i++) {
+        if(!linked[i]) continue;
+        Entity_t* ent=i?&legacyGame.entities[i+2]:e;
+        legacyDefs[i]=(RefDef){0,types[i]};
+        if(i) ent->def=&legacyDefs[i];
+        ent->info=i+1;
+        ent->nextOnTile=legacyGame.entityDb[tiles[i]];
+        legacyGame.entityDb[tiles[i]]=ent;
+        legacyRender.mapSprites[i]=(RefSprite){sprites[i].x,sprites[i].y,(int)sprites[i].info};
     }
-    return true;
+    for(unsigned i=0;i<1024;i++) if(walls[i]) legacyGame.entityDb[i]=&legacyGame.entities[0];
+}
+static boolean RefSight(Entity_t* e,int sx,int sy,int dx,int dy,int mask) {
+    if(replayMode) {
+        if((sx&63)==32 && (sy&63)==32) {
+            replayDirection=dx>sx?0:dx<sx?1:dy>sy?2:3;
+            replayStep=0;
+            return replayScore[replayDirection]>=0;
+        }
+        assert(replayDirection>=0 && replayDirection<4 && replayStep<8);
+        return (replayBits[replayDirection]>>(replayStep++))&1U;
+    }
+    boolean clear=RefActualSight(e,sx,sy,dx,dy,mask);
+    if(recordPath) {
+        assert(recordedCalls<8);
+        if(clear) recordedBits|=1U<<recordedCalls;
+        ++recordedCalls;
+    }
+    return clear;
 }
 static byte RefByte(Random_t* rng) { ++legacyCalls; return rng->randTable[rng->nextRand++]; }
 static void RefUnlink(void* g,Entity_t* e) { (void)g;(void)e; ++legacyLinks; }
 static void RefLink(void* g,Entity_t* e,int x,int y) { (void)g;assert(e->monster->x/64==x&&e->monster->y/64==y);++legacyLinks; }
 #include "legacy_goal.inc"
 
-int main(void) {
+static int verifyReplay(int sx,int sy,int tx,int ty,unsigned sub,unsigned dst,
+                        unsigned mask,const int score[4],const uint8_t bits[4],
+                        unsigned ties,unsigned byteValue,unsigned choice) {
+    RefMonster m={0}; RefDef d={(int)sub,1}; RefRoot root={0};
+    Entity_t e={.def=&d,.monster=&m,.doomRpg=&root};
+    const int dx[4]={1,-1,0,0},dy[4]={0,0,1,-1};
+    if(sub>13 || byteValue>255 || ties<1 || ties>4 || choice>3 ||
+       sx<32 || sx>2016 || sy<32 || sy>2016 ||
+       (sx&63)!=32 || (sy&63)!=32 || mask!=movementMaskForSubtype((uint8_t)sub))
+        return 0;
+    root.random.randTable[0]=(byte)byteValue;
+    for(int k=0;k<4;k++) { replayScore[k]=score[k]; replayBits[k]=bits[k]; }
+    replayMode=1;
+    legacyCalls=legacyLinks=0;
+    int want=RefGoal(&e,sx,sy,tx,ty);
+    int ok=want && legacyCalls==1 && legacyLinks==2 &&
+        e.visitOrderCount==(int)ties &&
+        e.visitOrder[(byteValue&3U)%ties]==(int)choice &&
+        (unsigned)((m.y>>6)*32+(m.x>>6))==dst;
+    for(int k=0;k<4;k++) {
+        if(score[k]<0) continue;
+        replayDirection=k; replayStep=0;
+        int actual=RefPath(&e,(sx>>6)+dx[k],(sy>>6)+dy[k],tx>>6,ty>>6,k,(int)mask);
+        if(actual!=score[k]) ok=0;
+        if((replayBits[k]>>replayStep)!=0U) ok=0;
+    }
+    replayMode=0;
+    return ok;
+}
+static int replayInput(void) {
+    unsigned rows=0, sprite, sub, dst, mask, b[4], ties, byteValue, choice;
+    int sx,sy,tx,ty,score[4],n;
+    while((n=scanf("%u %u %d %d %d %d %u %x %d %d %d %d %x %x %x %x %u %u %u",
+        &sprite,&sub,&sx,&sy,&tx,&ty,&dst,&mask,&score[0],&score[1],&score[2],&score[3],
+        &b[0],&b[1],&b[2],&b[3],&ties,&byteValue,&choice))!=EOF) {
+        if(n!=19) { fprintf(stderr,"malformed NAV row %u\n",rows+1);return 1; }
+        uint8_t bits[4];
+        for(int k=0;k<4;k++) { if(b[k]>255U)return 1; bits[k]=(uint8_t)b[k]; }
+        if(!verifyReplay(sx,sy,tx,ty,sub,dst,mask,score,bits,ties,byteValue,choice)) {
+            fprintf(stderr,"NAV replay mismatch row=%u sprite=%u source=%d,%d\n",rows+1,sprite,sx,sy);
+            return 1;
+        }
+        ++rows;
+    }
+    printf("PASS conditional NAV replay continuation=%d rows=%u (not geometry proof)\n",CONTINUATION,rows);
+    return rows?0:1;
+}
+/* CYD P3 captured local geometry. Unlike --replay, collision results
+ * are NOT injected: RefActualSight executes original Game_trace/LOS.
+ * Fixture tiles/link order come from native capture, not a desktop SAVE.
+ * Closed line entities are linked after sprites, then wall sentinels
+ * installed as in Game_loadMapEntities. Captured fallback is native type0;
+ * the original source explicitly uses the type9 sentinel definition. */
+static int geometryInput(unsigned expectedRows) {
+    unsigned rows=0, candidates=0, attacker, sub, dst, mask, b[4], ties, value, choice;
+    int sx,sy,tx,ty,px,py,score[4],n;
+    const int dx[4]={1,-1,0,0}, dy[4]={0,0,1,-1};
+    while((n=scanf("%u %u %d %d %d %d %u %x %d %d %d %d %x %x %x %x %u %u %u %d %d",
+        &attacker,&sub,&sx,&sy,&tx,&ty,&dst,&mask,&score[0],&score[1],&score[2],&score[3],
+        &b[0],&b[1],&b[2],&b[3],&ties,&value,&choice,&px,&py))!=EOF) {
+        assert(n==21 && ((sub==4 && mask==0xf387) || (sub==3 && mask==0xff87)) && ties>0 && ties<=4 && value<256);
+        RefGame g={0}; RefRender render={0}; RefCanvas canvas={px,py};
+        RefRoot root={0}; RefMonster m={0}; RefDef d={(int)sub,1}, defs[128]={0};
+        Entity_t e={.def=&d,.monster=&m,.doomRpg=&root};
+        uint16_t wallTiles[25], lineTiles[64];
+        uint8_t lineTypes[64];
+        unsigned nw,nl,ns,previousOrder=0,found=0;
+        root.game=&g;root.render=&render;root.doomCanvas=&canvas;g.doomRpg=&root;
+        g.entities[0].def=&wallDef;g.entities[1].def=&playerDef;
+        assert(scanf("%u",&nw)==1 && nw<=25);
+        for(unsigned i=0;i<nw;i++) {
+            unsigned tile;assert(scanf("%u",&tile)==1 && tile<1024);
+            wallTiles[i]=(uint16_t)tile;
+        }
+        assert(scanf("%u",&nl)==1 && nl<=64);
+        for(unsigned i=0;i<nl;i++) {
+            unsigned id,tile,type,has,flags;int x1,y1,x2,y2;
+            assert(scanf("%u %u %u %u %x %d %d %d %d",&id,&tile,&type,&has,&flags,&x1,&y1,&x2,&y2)==9);
+            assert(tile<1024 && type<16 && has<=1);
+            if(flags&0x200) { int v=flags&8?3:flags&16?-3:0;x1+=v;x2+=v; }
+            else if(flags&0x100) { int v=flags&8?3:flags&16?-3:0;y1+=v;y2+=v; }
+            int x=x1+(x2-x1)/2,y=y1+(y2-y1)/2;
+            if(flags&0x800)--y;else if(flags&0x2000)++x;
+            else if(flags&0x1000)++y;else if(flags&0x4000)--x;
+            assert((unsigned)((y>>6)*32+(x>>6))==tile);
+            render.lines[i]=(RefLine){{x1,y1},{x2,y2}};
+            lineTiles[i]=(uint16_t)tile;lineTypes[i]=(uint8_t)(has?type:9);
+        }
+        assert(scanf("%u",&ns)==1 && ns<=64);
+        for(unsigned i=0;i<ns;i++) {
+            unsigned id,type,state,order,info;int x,y;
+            assert(scanf("%u %u %x %u %d %d %x",&id,&type,&state,&order,&x,&y,&info)==7);
+            assert(type<16 && (state&0x400) && order>previousOrder);
+            previousOrder=order;
+            if(info&0x800000) {
+                if(info&0x100000)++y;else if(info&0x80000)--y;
+                else if(info&0x200000)++x;else if(info&0x400000)--x;
+            }
+            render.mapSprites[i]=(RefSprite){x,y,(int)info};
+            Entity_t* ent=id==attacker?&e:&g.entities[2+i];
+            if(id==attacker)++found;
+            else { defs[i]=(RefDef){0,(byte)type};ent->def=&defs[i]; }
+            ent->info=i+1;
+            unsigned tile=state&1023U;
+            ent->nextOnTile=g.entityDb[tile];g.entityDb[tile]=ent;
+        }
+        assert(found==1);
+        for(unsigned i=0;i<nl;i++) {
+            Entity_t* ent=&g.entities[66+i];
+            defs[64+i]=(RefDef){0,lineTypes[i]};ent->def=&defs[64+i];
+            ent->info=(i+1)|0x200000U;
+            ent->nextOnTile=g.entityDb[lineTiles[i]];g.entityDb[lineTiles[i]]=ent;
+        }
+        for(unsigned i=0;i<nw;i++) {
+            unsigned tile=wallTiles[i];Entity_t* head=g.entityDb[tile];
+            if(!head || !(head->info&0x200000U))g.entityDb[tile]=&g.entities[0];
+        }
+        root.random.randTable[0]=(byte)value;
+        legacyCalls=legacyLinks=0;
+        assert(RefGoal(&e,sx,sy,tx,ty)==1 && legacyCalls==1 && legacyLinks==2);
+        assert(e.visitOrderCount==(int)ties && e.visitOrder[(value&3U)%ties]==(int)choice);
+        assert((unsigned)((m.y>>6)*32+(m.x>>6))==dst);
+        for(int k=0;k<4;k++) {
+            int actual=-1;recordedCalls=0;recordedBits=0;
+            if(RefActualSight(&e,sx,sy,sx+64*dx[k],sy+64*dy[k],(int)mask)) {
+                recordPath=1;
+                actual=RefPath(&e,(sx>>6)+dx[k],(sy>>6)+dy[k],tx>>6,ty>>6,k,(int)mask);
+                recordPath=0;++candidates;
+            }
+            if(actual!=score[k] || recordedBits!=b[k]) {
+                fprintf(stderr,"geometry mismatch row=%u sprite=%u direction=%d score=%d/%d bits=%02x/%02x\n",
+                        rows+1,attacker,k,actual,score[k],recordedBits,b[k]);return 1;
+            }
+        }
+        ++rows;
+    }
+    assert(rows==expectedRows);
+    printf("PASS CYD captured geometry original C replay rows=%u viable=%u (native topology input)\n",rows,candidates);
+    return 0;
+}
+/* Original Game_trace + Entity_checkLineOfSight: actual line entities
+ * linked on source/destination, with original Render endpoint adjustments.
+ * Compare center and tile-origin calls against both real native planners. */
+static void lineLosDifferential(void) {
+    unsigned cases=0;
+    for(unsigned scenario=0;scenario<7;scenario++)
+    for(int strict=0;strict<2;strict++) {
+        resetFixture();
+        rt.lineCount=(scenario==3 || scenario==4)?2:1;
+        lines[0]=(EspMapLine){672,660,672,684,0,0}; /* source center aligned */
+        if(scenario==1 || scenario==4)
+            lines[0]=(EspMapLine){736,672,736,704,0,0}; /* destination, source Y aligned */
+        if(scenario==2)
+            lines[0]=(EspMapLine){672,660,672,684,0,0x208}; /* +3 x removes alignment */
+        if(scenario==3)
+            lines[1]=(EspMapLine){672,660,672,684,0,0}; /* two source lines */
+        if(scenario==4)
+            lines[1]=(EspMapLine){672,660,672,684,0,0}; /* source + destination */
+        if(scenario==5) { types[1]=1; linked[1]=1; tiles[1]=331; }
+        if(scenario==6) opened[0]=1;
+        RefMonster m={0}; RefDef d={4,1}, lineDef={0,0}; RefRoot root={0};
+        Entity_t e={.def=&d,.monster=&m,.doomRpg=&root};
+        setupLegacy(&e);
+        for(unsigned k=0;k<rt.lineCount;k++) {
+            if(opened[k]) continue;
+            uint16_t tile;
+            assert(lineEntityTile(&lines[k],&tile));
+            int ox=(scenario==2)?3:0;
+            legacyRender.lines[k]=(RefLine){{lines[k].x1+ox,lines[k].y1},
+                                           {lines[k].x2+ox,lines[k].y2}};
+            Entity_t* ent=&legacyGame.entities[66+k];
+            ent->def=&lineDef; ent->info=0x200000U|(k+1U);
+            ent->nextOnTile=legacyGame.entityDb[tile]; legacyGame.entityDb[tile]=ent;
+        }
+        int offset=strict?32:0;
+        int want=RefActualSight(&e,672-offset,672-offset,736-offset,672-offset,0xf387U);
+        int got=trace(10,10,11,10,0xf387U,strict);
+        int expected=(scenario==6 || (!strict && scenario<=1));
+        assert(want==expected);
+        if(got!=want) {
+            fprintf(stderr,"LINE LOS mismatch continuation=%d scenario=%u strict=%d native=%d original=%d\n",CONTINUATION,scenario,strict,got,want);
+            assert(got==want);
+        }
+        ++cases;
+    }
+    printf("PASS original line LOS continuation=%d cases=%u\n",CONTINUATION,cases);
+}
+#include "turn_target.inc"
+/* Target identity on the existing direct attack trace, compared with real
+ * original Game_trace on cardinal destination-cell sprite fixtures. */
+static void destructibleTargetDifferential(void) {
+    unsigned cases=0;
+    for(unsigned scenario=0;scenario<7;scenario++) {
+        resetFixture();
+        player.destX=player.viewX=center(13);
+        player.destY=player.viewY=center(10);
+        types[1]=12; linked[1]=1; tiles[1]=331;
+        if(scenario==1) { types[2]=12; linked[2]=1; tiles[2]=332; }
+        if(scenario==2) { types[2]=1; linked[2]=1; tiles[2]=331; }
+        if(scenario==3) { types[2]=1; linked[2]=1; tiles[2]=332; }
+        if(scenario==4) { linked[1]=0; }
+        if(scenario==5) { walls[331]=1; }
+        if(scenario==6) { types[2]=12; linked[2]=1; tiles[2]=331; }
+        RefMonster m={0}; RefDef d={3,1}; RefRoot root={0};
+        Entity_t e={.def=&d,.monster=&m,.doomRpg=&root};
+        setupLegacy(&e);
+        RefGame_trace(&legacyGame,center(10),center(10),center(13),center(10),&e,0x5687);
+        MonsterTurnTraceTarget target;
+        int clear=TurnOracle_cardinalLosTarget(center(10),center(10),center(13),center(10),0,&target);
+        assert(clear==(legacyGame.numTraceEntities==0));
+        if(scenario==4 || scenario==5) assert(target.sprite==UINT16_MAX);
+        else {
+            Entity_t* first=legacyGame.traceEntities[0];
+            assert(first->def->eType==target.type);
+            assert((first->info&65535U)==(unsigned)target.sprite+1U);
+            assert(target.tile==331 && target.subtype==0);
+        }
+        ++cases;
+    }
+    printf("PASS original destructible target identity cases=%u\n",cases);
+}
+int main(int argc,char** argv) {
+    if(argc==2 && strcmp(argv[1],"--geometry")==0)return geometryInput(8U);
+    if(argc==2 && strcmp(argv[1],"--geometry-late")==0)return geometryInput(4U);
+    if(argc==2 && strcmp(argv[1],"--replay")==0)return replayInput();
+    assert(argc==1);
+    lineLosDifferential();
+    destructibleTargetDifferential();
     resetFixture();
     uint16_t mask=0xff87U;
     assert(trace(10,10,11,10,mask,0)==1);
@@ -113,6 +404,14 @@ int main(void) {
     lines[0]=(EspMapLine){704,640,704,704,7,0};
     assert(trace(10,10,11,10,mask,0)==0);
     opened[0]=1; assert(trace(10,10,11,10,mask,0)==1); rt.lineCount=0;
+    /* Missing line definition with legacy fallback flag: type9, not type0.
+       A source-aligned fallback line must not acquire the type0 escape. */
+    rt.lineCount=1; opened[0]=0;
+    lines[0]=(EspMapLine){672,640,672,704,62,8};
+    assert(trace(10,10,11,10,0x0200U,0)==0);
+    assert(trace(10,10,11,10,0x0001U,0)==1);
+    assert(trace(10,10,11,10,0xff87U,0)==0);
+    rt.lineCount=0;
     types[1]=14; linked[1]=1; tiles[1]=331;
     sprites[1]=(EspMapSprite){704,672,0x00220000U};
     assert(trace(10,10,11,10,mask,0)==0);
@@ -139,11 +438,12 @@ int main(void) {
 #endif
             for(int dx=8;dx<=12;dx++) for(int dy=8;dy<=12;dy++) {
                 for(unsigned tie=0;tie<4;tie++) {
-                    RefMonster m={0}; RefDef d={(int)sub}; RefRoot root={0};
+                    RefMonster m={0}; RefDef d={(int)sub,1}; RefRoot root={0};
                     Entity_t e={.def=&d,.monster=&m,.doomRpg=&root};
                     TestRng rng={0}; TestPlan plan={0};
                     root.random.randTable[0]=(byte)tie; rng.state=root.random;
                     legacyCalls=legacyLinks=0;
+                    setupLegacy(&e);
                     int want=RefGoal(&e,center(10),center(10),center(dx),center(dy));
                     int got=aiGoalPlan(0,(uint8_t)sub,center(10),center(10),center(dx),center(dy),&rng,&plan);
                     assert(got==want);
@@ -159,6 +459,57 @@ int main(void) {
             }
         }
     }
+    /* Same original goal + real trace, now with player sentinel in the
+       local neighborhood and a thin plane in either endpoint cell.
+       Compare every actual candidate score, not just the selected move. */
+    unsigned navCases=0;
+    const int nx[4]={1,-1,0,0}, ny[4]={0,0,1,-1};
+    for(unsigned subIndex=0;subIndex<2;subIndex++)
+    for(unsigned p=0;p<4;p++)
+    for(unsigned obstacle=0;obstacle<5;obstacle++)
+    for(unsigned tie=0;tie<4;tie++) {
+        resetFixture();
+        unsigned sub=subIndex?13U:4U;
+        int px=10+2*nx[p], py=10+2*ny[p];
+        player.destX=player.viewX=center(px);
+        player.destY=player.viewY=center(py);
+        if(obstacle==1) walls[331]=1;
+        if(obstacle==2) { types[1]=1; linked[1]=1; tiles[1]=362; }
+        if(obstacle==3 || obstacle==4) {
+            types[1]=14; linked[1]=1; tiles[1]=obstacle==3?330:331;
+            sprites[1]=(EspMapSprite){704,672,0x220000U};
+        }
+        RefMonster m={0}; RefDef d={(int)sub,1}; RefRoot root={0};
+        Entity_t entity={.def=&d,.monster=&m,.doomRpg=&root};
+        TestRng rng={0}; TestPlan plan={0};
+        root.random.randTable[0]=(byte)(252U+tie); rng.state=root.random;
+        setupLegacy(&entity); legacyCalls=legacyLinks=0;
+        int want=RefGoal(&entity,center(10),center(10),center(px),center(py));
+        int got=aiGoalPlan(0,(uint8_t)sub,center(10),center(10),center(px),center(py),&rng,&plan);
+        assert(got==want && rng.calls==(unsigned)legacyCalls);
+        assert(plan.visitCount==entity.visitOrderCount);
+        if(want) assert(plan.destTile==(m.y/64)*32+m.x/64);
+        for(int k=0;k<4;k++) {
+            int score=-1;
+            recordedCalls=0; recordedBits=0;
+            if(RefSight(&entity,center(10),center(10),center(10+nx[k]),center(10+ny[k]),plan.traceMask)) {
+                recordPath=1;
+                score=RefPath(&entity,10+nx[k],10+ny[k],px,py,k,plan.traceMask);
+                recordPath=0;
+            }
+            if(score!=plan.navScore[k] || recordedBits!=plan.navTraceBits[k]) {
+                fprintf(stderr,"NAV score mismatch continuation=%d subtype=%u p=%u obstacle=%u tie=%u dir=%d legacy=%d native=%d legacyBits=%02x nativeBits=%02x\n",
+                        CONTINUATION,sub,p,obstacle,tie,k,score,plan.navScore[k],recordedBits,(unsigned)plan.navTraceBits[k]);
+                return 1;
+            }
+        }
+        if(want) assert(verifyReplay(center(10),center(10),center(px),center(py),sub,
+            plan.destTile,plan.traceMask,plan.navScore,plan.navTraceBits,
+            plan.visitCount,plan.tieRand,plan.choice));
+        ++navCases;
+    }
+    assert(navCases==160);
+    printf("PASS GAME-AI-14 NAV continuation=%d real-trace candidate-score cases=%u\n",CONTINUATION,navCases);
     resetFixture();
     walls[331]=walls[329]=walls[362]=walls[298]=1;
     TestRng rng={0}; TestPlan plan={0};
