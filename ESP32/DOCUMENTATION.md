@@ -1,3 +1,9 @@
+## RES60-P38 — CYD + double CI PASS (28 November 2026)
+
+[Report](MILESTONE_RES60_P38_WALL_ADMISSION_PENDING_CYD.md). Context candidate 200b62bc4e87da0f6fe2363835746e4b5fc61c85; push 46127868030 and PR 46127872249 SUCCESS. 26/26 frames, 23 warm, 3 START/MENU/RELEASE, admitted=wallIds 3/5/5/3, unsupportedCols=0, exact P37 FNV. Heap8 107800/min86588/largest57332; exactly 32B less free, no fragmentation regression. Cold mean 693489.67us, warm means 192476.57/231333.20/180138.40/209497.67us (0/64/128/192); SD/plane timings also increased, no isolated attribution. No failures. Main d1f25ba03688364efba753604f59aa75eb2eaadc integrated after test by two-parent sync 273a87cf3a8c484605ee1772bc33311a012c7f2e; combined firmware not physically tested. PR #364 DRAFT.
+
+---
+
 ## RES60-P37 — CYD functional PASS / original CI failed (28 November 2026)
 
 [Detailed report](MILESTONE_RES60_P37_WALL_COVERAGE_PENDING_CYD.md). Context candidate cfd6084208d062799e8484543b5aca888d547b10; 31/31 frames, 28 warm, 3 START/MENU/RELEASE, all P36 fingerprints unchanged, heap8 107832 largest57332 min86620. All 192 columns per view, 3/5/5/3 wall IDs, 15810/6349/15060/16636 pixels, unsupportedCols=0. Cold mean 672791us; warm median 189766/227842/177697.5/205985us, ~10ms above P36 with both upstream and telemetry changed. Original push 46127162477 and PR 46127166568 failed strict C11 signedness in P37 clipping ternary; correction 74939992ac342e975f384a67d8439f5be61e8802, CI pending. Not double CI PASS. Main 061669e1fd04558d108da9c773ab8c829f8152cd verified ancestor. PR #364 DRAFT.
