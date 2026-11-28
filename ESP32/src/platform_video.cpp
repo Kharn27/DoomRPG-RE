@@ -933,6 +933,9 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
 #if DOOMRPG_RES60_P37_WALL_COVERAGE
             " wallIds=%u wallCols=%u wallTotal=%u insetWall=%u unsupportedCols=%u textured=%lu"
 #endif
+#if DOOMRPG_RES60_P38_WALL_ADMISSION
+            " admitted=%u"
+#endif
             "\n",
             (unsigned)report.spawnAngle, (unsigned)turns,
             (unsigned long)report.loadUs,
@@ -953,6 +956,9 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
             (unsigned)report.wallDemand.insetPixels,
             (unsigned)report.wallDemand.unsupportedColumns,
             wallTextureSamples
+#endif
+#if DOOMRPG_RES60_P38_WALL_ADMISSION
+            , (unsigned)report.texture.admittedWallIds
 #endif
             );
     } else
@@ -1007,6 +1013,9 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
 #if DOOMRPG_RES60_P37_WALL_COVERAGE
         " wallIds=%u wallCols=%u wallTotal=%u insetWall=%u unsupportedCols=%u"
 #endif
+#if DOOMRPG_RES60_P38_WALL_ADMISSION
+        " admitted=%u"
+#endif
         "\n",
         (unsigned)report.texture.logicalId,
         report.texture.selectedFromVisible ? "VISIBLE-RAY" : "FALLBACK-LINE",
@@ -1021,6 +1030,9 @@ bool PlatformVideo_showRes60WorldPreviewQuarterTurns(uint8_t turns) {
         (unsigned)report.wallDemand.pixels,
         (unsigned)report.wallDemand.insetPixels,
         (unsigned)report.wallDemand.unsupportedColumns
+#endif
+#if DOOMRPG_RES60_P38_WALL_ADMISSION
+        , (unsigned)report.texture.admittedWallIds
 #endif
         );
 #endif

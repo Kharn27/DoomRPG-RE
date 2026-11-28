@@ -27,6 +27,11 @@ typedef struct EspRes60WallCoverage_s {
     uint16_t pixels, insetPixels;
 } EspRes60WallCoverage;
 int EspRes60WallMaterial_measure(EspRes60WallCoverage* out);
+/* Check full clipped demand, including swatch-hidden columns. The caller
+ * owns a 256-ID immutable-source admission mask. No pixel writes. */
+#define ESP_RES60_WALL_ADMISSION_BYTES 32U
+int EspRes60WallMaterial_admit(const uint8_t* allowed, size_t allowedBytes,
+                               uint16_t* outIds, uint16_t* firstMissing);
 /* Select among rays actually visible in the frame; no second raycast, heap
  * or catalog dependency. Excludes material fully hidden by P8's swatch. */
 int EspRes60WallMaterial_visibleTextureAt(uint32_t column,

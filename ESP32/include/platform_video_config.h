@@ -358,6 +358,17 @@
 #if DOOMRPG_RES60_P37_WALL_COVERAGE && !DOOMRPG_RES60_P36_BSP_PROFILE
 #error "RES60-P37 requires isolated P36"
 #endif
+/* P38: validate every clipped wall winner against the native catalog and
+ * wtexels bounds. P10-only host fixtures may opt in independently. */
+#ifndef DOOMRPG_RES60_P38_WALL_ADMISSION
+#define DOOMRPG_RES60_P38_WALL_ADMISSION DOOMRPG_RES60_P37_WALL_COVERAGE
+#endif
+#if DOOMRPG_RES60_P38_WALL_ADMISSION != 0 && DOOMRPG_RES60_P38_WALL_ADMISSION != 1
+#error "RES60-P38 flag must be 0 or 1"
+#endif
+#if DOOMRPG_RES60_P38_WALL_ADMISSION && !DOOMRPG_RES60_P10_WALL_MATERIAL
+#error "RES60-P38 requires isolated P10"
+#endif
 #if DOOMRPG_RES60_P1_DIAGNOSTIC
 #define DOOMRPG_VIDEO_BUFFER_WIDTH 192
 #define DOOMRPG_VIDEO_BUFFER_HEIGHT 144

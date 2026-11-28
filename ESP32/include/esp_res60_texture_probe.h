@@ -2,6 +2,7 @@
 #define DOOMRPG_ESP32_RES60_TEXTURE_PROBE_H
 #include <stddef.h>
 #include <stdint.h>
+#include "platform_video_config.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -27,6 +28,9 @@ typedef struct EspRes60TextureProbeReport_s {
     uint32_t wallColumns; /* P10: projected columns of selected one-tile source */
     uint32_t wallPixels;  /* P10: original wall texel samples written */
     uint32_t wallFNV;     /* P10: witness independent of P8 swatch fingerprint */
+#if DOOMRPG_RES60_P38_WALL_ADMISSION
+    uint16_t admittedWallIds; /* current full clipped view, not swatch selection */
+#endif
 #if DOOMRPG_RES60_P11_PROFILE
     /* Current-frame only, not a cache cost claim for P8 warm turns. */
     uint32_t profileCatalogUs, profilePackUs, profileSwatchUs;

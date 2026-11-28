@@ -100,6 +100,36 @@ int EspRes60WallMaterial_measure(EspRes60WallCoverage* out) {
     *out=demand;
     return 1;
 }
+#if DOOMRPG_RES60_P38_WALL_ADMISSION
+int EspRes60WallMaterial_admit(const uint8_t* allowed, size_t allowedBytes,
+                               uint16_t* outIds, uint16_t* firstMissing) {
+    uint8_t seen[ESP_RES60_WALL_ADMISSION_BYTES]={0};
+    uint16_t count=0U;
+    if(outIds)*outIds=0U;
+    if(firstMissing)*firstMissing=UINT16_MAX;
+    if(!planReady || !allowed || allowedBytes!=sizeof(seen) ||
+       !outIds || !firstMissing)return 0;
+    for(uint32_t x=0U;x<ESP_RES60_WIDTH;++x) {
+        const EspRes60WallColumn* item=&columns[x];
+        const int32_t start=item->top<0?0:item->top;
+        int32_t end=(int32_t)item->top+item->height;
+        if(end>(int32_t)ESP_RES60_WORLD_ROWS)end=(int32_t)ESP_RES60_WORLD_ROWS;
+        if(!item->hit || end<=start)continue;
+        const uint16_t id=item->texture;
+        if(id>255U || !(allowed[id>>3U]&(uint8_t)(1U<<(id&7U)))) {
+            *firstMissing=id;
+            return 0;
+        }
+        const uint8_t bit=(uint8_t)(1U<<(id&7U));
+        if(!(seen[id>>3U]&bit)) {
+            seen[id>>3U]|=bit;
+            ++count;
+        }
+    }
+    *outIds=count;
+    return 1;
+}
+#endif
 static uint16_t framebuffer565(uint16_t c) {
     return (uint16_t)(((c&0x001fU)<<11U)|(c&0x07e0U)|((c&0xf800U)>>11U));
 }

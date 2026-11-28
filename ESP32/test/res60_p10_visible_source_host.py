@@ -29,7 +29,7 @@ static EspNativeGraphicsCatalogView catalog;
 static EspNativeGraphicsCatalogRecord records[2];
 static int active=1, pack=0, catalogReady=0;
 static unsigned opens=0, closes=0, reads=0;
-static int visibleOddNibble=0, badHeader=0;
+static int visibleOddNibble=0, badHeader=0, outsideRange=0;
 
 int EspMapRuntime_isLoaded(void) {return active;}
 const EspMapRuntimeView* EspMapRuntime_view(void) {return active?&runtime:NULL;}
@@ -44,7 +44,7 @@ int EspNativeGraphicsCatalog_isReady(void) {return catalogReady;}
 EspNativeGraphicsCatalogStatus EspNativeGraphicsCatalog_buildFromRuntime(void) {
     assert(active && !catalogReady && !pack);
     catalogReady=1;
-    records[1].sourceOffset=visibleOddNibble?1U:0U;
+    records[1].sourceOffset=visibleOddNibble?1U:(outsideRange?4096U:0U);
     catalog.textures=records;
     catalog.textureCount=2;
     catalog.stateFNV1a=0x11223344U;
@@ -116,6 +116,44 @@ int main(void) {
     assert(result.selectedFromVisible==1 && result.visibleWallColumns==0);
     assert(result.wallColumns==0 && result.wallPixels==0 && reads==2);
     assert(!pack && !catalogReady && opens==closes);
+#if DOOMRPG_RES60_P38_WALL_ADMISSION
+    assert(result.admittedWallIds==1U);
+    /* A new uncatalogued warm winner is rejected before any swatch write. */
+    plan(55);
+    uint16_t beforeWarm=framebuffer[24U*192U+144U+1U];
+    assert(!EspRes60TextureProbe_render(framebuffer+1,55296,&result));
+    assert(framebuffer[24U*192U+144U+1U]==beforeWarm && reads==2);
+    assert(!pack && !catalogReady && opens==closes);
+    /* Cold missing, odd-offset, and out-of-range winners must not fallback. */
+    plan(55);
+    assert(!EspRes60TextureProbe_render(framebuffer+1,55296,&result));
+    assert(reads==3 && !pack && !catalogReady && opens==closes);
+    EspRes60TextureProbe_reset();
+    visibleOddNibble=1;
+    plan(7);
+    assert(!EspRes60TextureProbe_render(framebuffer+1,55296,&result));
+    assert(reads==4 && !pack && !catalogReady && opens==closes);
+    EspRes60TextureProbe_reset();
+    visibleOddNibble=0;outsideRange=1;
+    plan(7);
+    assert(!EspRes60TextureProbe_render(framebuffer+1,55296,&result));
+    assert(reads==5 && !pack && !catalogReady && opens==closes);
+    outsideRange=0;
+    /* Include a winner entirely behind the swatch and ignore clipped-out rays. */
+    EspRes60TextureProbe_reset();
+    assert(EspRes60WallMaterial_record(0,7,0,80,0));
+    assert(EspRes60WallMaterial_record(144,87,0,30,0));
+    assert(EspRes60WallMaterial_record(145,55,-20,10,0));
+    EspRes60WallMaterial_publish();
+    assert(EspRes60TextureProbe_render(framebuffer+1,55296,&result));
+    assert(result.admittedWallIds==2U && reads==7);
+    EspRes60TextureProbe_reset();
+    assert(EspRes60WallMaterial_record(0,7,0,80,0));
+    assert(EspRes60WallMaterial_record(144,256,0,30,0));
+    EspRes60WallMaterial_publish();
+    assert(!EspRes60TextureProbe_render(framebuffer+1,55296,&result));
+    assert(reads==8 && !pack && !catalogReady && opens==closes);
+#else
     /* Uncatalogued visible wall must fallback to original P8 first line. */
     EspRes60TextureProbe_reset();
     plan(55);
@@ -129,6 +167,7 @@ int main(void) {
     assert(EspRes60TextureProbe_render(framebuffer+1,55296,&result));
     assert(result.logicalId==87 && result.selectedFromVisible==0);
     assert(result.wallColumns==0 && reads==6);
+#endif
     /* Corrupted PAK size fails closed before the P8 swatch is drawn. */
     EspRes60TextureProbe_reset();
     visibleOddNibble=0;badHeader=1;
@@ -155,10 +194,12 @@ with tempfile.TemporaryDirectory(prefix="res60-p10-visible-") as name:
           "-DDOOMRPG_RES60_P8_TEXEL=1",
           "-DDOOMRPG_RES60_P9_WEDGE=1",
           "-DDOOMRPG_RES60_P10_WALL_MATERIAL=1"]
-    subprocess.run(["cc","-std=c11","-O2","-Wall","-Wextra","-Werror",
-                    *defs,"-I",str(ROOT/"ESP32/include"),
-                    str(ROOT/"ESP32/src/esp_res60_texture_probe.c"),
-                    str(ROOT/"ESP32/src/esp_res60_wall_material.c"),
-                    str(src),"-o",str(exe)],check=True)
-    subprocess.run([str(exe)],check=True)
+    for admission in (0,1):
+        subprocess.run(["cc","-std=c11","-O2","-Wall","-Wextra","-Werror",
+                        *defs,f"-DDOOMRPG_RES60_P38_WALL_ADMISSION={admission}",
+                        "-I",str(ROOT/"ESP32/include"),
+                        str(ROOT/"ESP32/src/esp_res60_texture_probe.c"),
+                        str(ROOT/"ESP32/src/esp_res60_wall_material.c"),
+                        str(src),"-o",str(exe)],check=True)
+        subprocess.run([str(exe)],check=True)
 print("RES60-P10 HOST PASS: real C11 P8/P10 chosen visible material and strict safety")

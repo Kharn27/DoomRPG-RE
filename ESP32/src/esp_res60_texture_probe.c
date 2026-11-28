@@ -3,6 +3,9 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
+#if DOOMRPG_RES60_P38_WALL_ADMISSION
+#include <stdio.h>
+#endif
 #include "esp_res60_texture_probe.h"
 #if DOOMRPG_RES60_P11_PROFILE
 #include "esp_res60_profile.h"
@@ -25,12 +28,28 @@ static uint16_t cachedPalette[16];
 static EspRes60TextureProbeReport cachedReport;
 static uint32_t cachedSourceCrc, cachedArenaFNV, cachedSourceBytes;
 static uint8_t cacheValid;
+#if DOOMRPG_RES60_P38_WALL_ADMISSION
+/* Session-owned provenance only, not retained palettes or texel payload. */
+static uint8_t cachedWallAdmission[ESP_RES60_WALL_ADMISSION_BYTES];
+static int admitWallPlan(const uint8_t* mask, uint16_t* count) {
+    uint16_t missing;
+    if(!EspRes60WallMaterial_admit(mask,ESP_RES60_WALL_ADMISSION_BYTES,
+                                  count,&missing)) {
+        printf("[RES60P38] FAIL CLOSED wall source id=%u\n",(unsigned)missing);
+        return 0;
+    }
+    return 1;
+}
+#endif
 
 void EspRes60TextureProbe_reset(void) {
 #if DOOMRPG_RES60_P10_WALL_MATERIAL
     EspRes60WallMaterial_reset();
 #endif
     cacheValid=0U;
+#if DOOMRPG_RES60_P38_WALL_ADMISSION
+    memset(cachedWallAdmission,0,sizeof(cachedWallAdmission));
+#endif
     memset(texelScratch,0,sizeof(texelScratch));
     memset(cachedPalette,0,sizeof(cachedPalette));
     memset(&cachedReport,0,sizeof(cachedReport));
@@ -91,6 +110,10 @@ int EspRes60TextureProbe_render(uint16_t* fb, size_t fbBytes,
     uint8_t header[4];
     uint32_t expectedBytes, relative, id;
     uint32_t swatchHash=0U;
+#if DOOMRPG_RES60_P38_WALL_ADMISSION
+    uint8_t admission[ESP_RES60_WALL_ADMISSION_BYTES]={0};
+    uint16_t admittedIds=0U;
+#endif
 #if DOOMRPG_RES60_P10_WALL_MATERIAL
     uint8_t selectedFromVisible=0U;
 #endif
@@ -112,6 +135,12 @@ int EspRes60TextureProbe_render(uint16_t* fb, size_t fbBytes,
        cachedSourceBytes==activeMap->sourceBytes) {
         /* The map owner is fresh each turn, but the bounded immutable swatch
          * source is not: no catalog rebuild and zero PAK reads on HIT. */
+#if DOOMRPG_RES60_P38_WALL_ADMISSION
+        if(!admitWallPlan(cachedWallAdmission,&admittedIds)) {
+            EspRes60TextureProbe_reset();
+            return 0;
+        }
+#endif
 #if DOOMRPG_RES60_P11_PROFILE
         p11At=EspRes60Profile_nowUs();
 #endif
@@ -125,6 +154,9 @@ int EspRes60TextureProbe_render(uint16_t* fb, size_t fbBytes,
         const uint32_t swatchUs=EspRes60Profile_nowUs()-p11At;
 #endif
         *out=cachedReport;
+#if DOOMRPG_RES60_P38_WALL_ADMISSION
+        out->admittedWallIds=admittedIds;
+#endif
         out->cacheHit=1U;
         out->readBytes=0U;
 #if DOOMRPG_RES60_P11_PROFILE
@@ -226,6 +258,22 @@ int EspRes60TextureProbe_render(uint16_t* fb, size_t fbBytes,
                   ((uint32_t)header[2]<<16) |
                   ((uint32_t)header[3]<<24);
     if((uint64_t)expectedBytes+4U!=(uint64_t)texels.size)goto done;
+#if DOOMRPG_RES60_P38_WALL_ADMISSION
+    if(!catalog->textures)goto done;
+    /* The existing catalog build already validated palette provenance.
+     * Admit only logical IDs with an aligned complete 64x64 packed range.
+     * No reads of the other tile payloads and no hardcoded map material IDs. */
+    for(id=0U;id<catalog->textureCount;++id) {
+        const EspNativeGraphicsCatalogRecord* rec=&catalog->textures[id];
+        const uint16_t logical=rec->resourceId;
+        if(logical>255U || (rec->sourceOffset&1U) ||
+           (uint64_t)rec->sourceOffset/2U+ESP_RES60_TEXTURE_BYTES>expectedBytes)
+            continue;
+        admission[logical>>3U]|=(uint8_t)(1U<<(logical&7U));
+    }
+    if(!admitWallPlan(admission,&admittedIds))goto done;
+    out->admittedWallIds=admittedIds;
+#endif
     if((uint64_t)selection.sourceOffset/2U + 4U +
        ESP_RES60_TEXTURE_BYTES>texels.size)goto done;
     relative=4U+selection.sourceOffset/2U;
@@ -287,7 +335,12 @@ done:
         return 0;
     }
     /* Publish only AFTER successful source IO, swatch decode and cleanup. */
-    if(success) cacheValid=1U;
+    if(success) {
+#if DOOMRPG_RES60_P38_WALL_ADMISSION
+        memcpy(cachedWallAdmission,admission,sizeof(cachedWallAdmission));
+#endif
+        cacheValid=1U;
+    }
 #if DOOMRPG_RES60_P11_PROFILE
     if(success) out->profileTotalUs=EspRes60Profile_nowUs()-p11Start;
 #endif
