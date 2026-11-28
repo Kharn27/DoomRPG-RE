@@ -33,11 +33,17 @@ static uint32_t plannedMovesNow(void) {
     return movement != NULL ? movement->plannedMoves : 0U;
 }
 
-static void servicePostMoveGoal(
+static int servicePostMoveGoal(
     struct DoomRPG_s* doomRpg,
     const char* trigger,
     const EspNativeGameplayMonsterMovementPublishResult* publish) {
-    if (trigger == NULL || publish == NULL || publish->committed == 0U) return;
+    if (trigger == NULL || publish == NULL) return 0;
+    if (publish->noMove!=0U) {
+        if (strcmp(trigger,"RANGED-AI")!=0) return 1;
+        return EspNativeGameplayMonsterTurn_fallbackNoMove(
+            doomRpg,publish->spriteIndex,publish->sourceTile);
+    }
+    if (publish->committed == 0U) return 1;
 
     /* The legacy >=217 ranged branch intentionally ends after its successful
      * move. The same-turn post-move attack gate belongs to aiMoveToGoal's melee
@@ -48,11 +54,12 @@ static void servicePostMoveGoal(
                (unsigned int)publish->spriteIndex,
                (unsigned int)publish->sourceTile,
                (unsigned int)publish->destTile);
-        return;
+        return 1;
     }
 
     (void)EspNativeGameplayMonsterTurn_postMoveGoal(
         doomRpg, publish->spriteIndex, publish->sourceTile, publish->destTile);
+    return 1;
 }
 
 void EspNativeGameplayMonsterMovementProbe_reset(void) {
@@ -119,7 +126,7 @@ int EspNativeGameplayMonsterMovementProbe_serviceMember(
                 printf("[MONSTERMOVERNG] RESTORE trigger=%s randomLiveExact=%s reservation=pending-until-real-byte-draw\n",
                        trigger, restoredExact ? "yes" : "NO");
             }
-            else if (publish.committed != 0U) {
+            else if (publish.committed != 0U || publish.noMove != 0U) {
                 printf("[MONSTERMOVERNG] COMMIT trigger=%s rngCalls=%u reservation=consumed-by-live-move randomLive=advanced-exactly\n",
                        trigger, (unsigned int)publish.rngCalls);
             }
@@ -127,7 +134,8 @@ int EspNativeGameplayMonsterMovementProbe_serviceMember(
                 printf("[MONSTERMOVERNG] ROLLBACK trigger=%s reservation=downgraded-to-replay-lease randomLive=restored-pre-refill\n",
                        trigger);
             }
-            servicePostMoveGoal(doomRpgBase, trigger, &publish);
+            if (publishStatus && !servicePostMoveGoal(doomRpgBase, trigger, &publish))
+                publishStatus=0;
             if (outCommitted != NULL) *outCommitted = publish.committed;
             return publishStatus;
         }
@@ -159,7 +167,8 @@ int EspNativeGameplayMonsterMovementProbe_serviceMember(
 #if DOOMRPG_PERF_GAME_P1
     EspPerfGameP1_phaseEnd(3, (uint64_t)esp_timer_get_time());
 #endif
-    servicePostMoveGoal(doomRpgBase, trigger, &publish);
+    if (publishStatus && !servicePostMoveGoal(doomRpgBase, trigger, &publish))
+        publishStatus=0;
     if (outCommitted != NULL) *outCommitted = publish.committed;
     return publishStatus;
 }

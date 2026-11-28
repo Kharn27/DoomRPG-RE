@@ -1129,34 +1129,12 @@ static int findCandidate(const EspPlayerViewState* playerView,
 
 static int attackReady(const MovementCandidate* candidate,
                        const EspPlayerViewState* playerView,
-                       int* outReady) {
-    int64_t dx;
-    int64_t dy;
-    int attackRange;
-    int los;
-
-    if (candidate == NULL || candidate->monster == NULL ||
-        candidate->position == NULL || playerView == NULL || outReady == NULL ||
-        candidate->weaponId >= MOVE_WEAPON_COUNT ||
-        movementWeapons[candidate->weaponId].valid == 0U) {
-        return 0;
-    }
-    *outReady = 0;
-    dx = (int64_t)candidate->position->worldX - playerView->destX;
-    dy = (int64_t)candidate->position->worldY - playerView->destY;
-    if (dx != 0 && dy != 0) return 1;
-    if (dx == 0 && dy == 0) return 1;
-    attackRange = (1 + (int)movementWeapons[candidate->weaponId].rangeMin) *
-                  MOVE_TILE_SIZE;
-    if (candidate->worldDistance > (uint32_t)(attackRange * attackRange)) return 1;
-    los = cardinalTraceClear((int32_t)candidate->position->worldX,
-                             (int32_t)candidate->position->worldY,
-                             playerView->destX, playerView->destY,
-                             candidate->monster->spriteIndex,
-                             MOVE_TRACE_ATTACK_MASK, 0);
-    if (los < 0) return 0;
-    *outReady = los > 0;
-    return 1;
+                       int* outReady, uint8_t* aiByte) {
+    if (candidate==NULL || candidate->monster==NULL ||
+        candidate->position==NULL || playerView==NULL) return 0;
+    return EspNativeGameplayMonsterTurn_movementGate(
+        candidate->monster->spriteIndex,candidate->position->tileIndex,
+        outReady,aiByte);
 }
 
 static int syncOwner(void) {
@@ -1226,6 +1204,7 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
     const char* trigger;
     ProbeRng probeRng;
     uint8_t aiDecision = 0U;
+    uint8_t expectedAiByte = 0U;
     uint8_t aiDecisionUsed = 0U;
     uint8_t closeDecision = 0U;
     uint8_t closeDecisionUsed = 0U;
@@ -1342,7 +1321,7 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
         return;
     }
 
-    if (!attackReady(&candidate, playerView, &immediateAttack)) {
+    if (!attackReady(&candidate, playerView, &immediateAttack, &expectedAiByte)) {
         ++movementView.collisionDeferred;
         printf("[MONSTERMOVE] DEFER trigger=%s n=%u sprite=%u cause=attack-readiness-not-ready mutation=no rngConsumed=0\n",
                trigger, (unsigned int)triggerCount,
@@ -1382,7 +1361,7 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
             return;
         }
         aiDecisionUsed = 1U;
-        if (aiDecision < 217U) {
+        if (aiDecision < 217U || aiDecision != expectedAiByte) {
             ++movementView.collisionDeferred;
             printf("[MONSTERMOVE] REPLAY-MISMATCH trigger=%s n=%u sprite=%u aiRand=%u expected=>=217 randomLive=untouched mutation=no\n",
                    trigger, (unsigned int)triggerCount,
@@ -1488,8 +1467,12 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
         return;
     }
     if (planStatus == 0) {
+        /* No legal direction is a real legacy outcome, not a failed render
+         * or ambiguous trace. Capture only the AI prefix (no tie draw). */
+        EspNativeGameplayMonsterMovementPublish_captureNoMove(
+            candidate.position,(uint8_t)probeRng.calls);
         ++movementView.collisionDeferred;
-        printf("[MONSTERMOVE] NO-MOVE trigger=%s n=%u sprite=%u sourceTile=%u target=%d,%d mask=%04x visitCount=0 rngCalls=%u legacyFallbackAttack=deferred randomLive=untouched mutation=no\n",
+        printf("[MONSTERMOVE] NO-MOVE trigger=%s n=%u sprite=%u sourceTile=%u target=%d,%d mask=%04x visitCount=0 rngCalls=%u legacyFallbackAttack=publication-pending randomLive=untouched mutation=no\n",
                trigger, (unsigned int)triggerCount,
                (unsigned int)candidate.monster->spriteIndex,
                (unsigned int)candidate.position->tileIndex,

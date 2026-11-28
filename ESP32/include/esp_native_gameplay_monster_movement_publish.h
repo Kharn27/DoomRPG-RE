@@ -25,6 +25,7 @@ typedef struct EspNativeGameplayMonsterMovementPublishResult_s {
     uint8_t committed;
     uint8_t boundaryClosed;
     uint8_t recoveryRendered;
+    uint8_t noMove;
 } EspNativeGameplayMonsterMovementPublishResult;
 
 /* Clear the one-service capture before invoking the proven movement planner. */
@@ -34,6 +35,10 @@ void EspNativeGameplayMonsterMovementPublish_beginCycle(void);
 void EspNativeGameplayMonsterMovementPublish_capturePrepared(
     const EspNativeGameplayMonsterPositionRecord* before,
     const EspNativeGameplayMonsterPositionRecord* after);
+
+/* Capture a proven no-legal-direction planner outcome, never a failure. */
+void EspNativeGameplayMonsterMovementPublish_captureNoMove(
+    const EspNativeGameplayMonsterPositionRecord* before, uint8_t rngCalls);
 
 /* True only after a monster position has entered the live renderer projection. */
 int EspNativeGameplayMonsterMovementPublish_isProjected(uint16_t spriteIndex);

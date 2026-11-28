@@ -422,7 +422,8 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
     /* Replay the exact AI byte consumed by the proven probe. The probe restored
      * Random_t before returning, so the live replay must obtain the same value.
      * A >=217 value here would mean the replay diverged and therefore rolls back. */
-    if (((1U + (uint32_t)monsterWeapons[weaponId].rangeMin) / 2U) != 0U) {
+    if (!EspNativeGameplayMonsterTurn_isFallbackProbe(turn->attackProbes) &&
+        ((1U + (uint32_t)monsterWeapons[weaponId].rangeMin) / 2U) != 0U) {
         aiDecision = DoomRPG_randNextByte(EspNativeProcessRng_live());
         ++aiRngCalls;
         if (aiDecision >= 217U) {

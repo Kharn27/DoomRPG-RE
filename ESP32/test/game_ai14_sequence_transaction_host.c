@@ -133,6 +133,10 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* d) {
     movement.lastSourceTile=b.tileIndex; movement.lastDestTile=a.tileIndex;
     EspNativeGameplayMonsterMovementPublish_capturePrepared(&b,&a);
 }
+int EspNativeGameplayMonsterTurn_fallbackNoMove(struct DoomRPG_s* d,uint16_t sprite,uint16_t tile) {
+    (void)d; (void)sprite; (void)tile;
+    assert(0 && "no fallback expected in this existing fixture"); return 0;
+}
 int EspNativeGameplayMonsterTurn_postMoveGoal(struct DoomRPG_s* d,uint16_t sprite,
                                               uint16_t source,uint16_t dest) {
     assert(d==&root && selected==sprite);

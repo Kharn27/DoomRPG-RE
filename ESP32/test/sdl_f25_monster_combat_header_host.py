@@ -39,6 +39,10 @@ def git_blob(data: bytes) -> str:
 def source_gate() -> None:
     for name, sha in BEFORE.items():
         data = (SRC / name).read_bytes()
+        from game_ai14_barrel_weapon_history import restore_pre_barrel_weapon
+        data = restore_pre_barrel_weapon(name, data)
+        from game_ai14_no_move_turn_history import restore_pre_no_move_turn
+        data = restore_pre_no_move_turn(name, data)
         from game_ai14_enemy_barrel_history import restore_pre_enemy_barrel
         data = restore_pre_enemy_barrel(name, data)
         prefix = HOST_GUARD.encode("ascii")

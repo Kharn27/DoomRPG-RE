@@ -47,6 +47,8 @@ for name, old_sha in BASELINE.items():
     # targets or apply a permissive source comparison.
     from arch_rc17_history import restore_pre_rc17
     if name == "esp_native_gameplay_monster_movement_probe.c":
+        from game_ai14_no_move_publish_history import restore_pre_no_move_publish
+        current = restore_pre_no_move_publish(name, current.encode("utf-8")).decode("utf-8")
         from perf_game_p1_history import restore_pre_perf_game_p1_movement_probe
         current = restore_pre_perf_game_p1_movement_probe(current)
     historical = restore_pre_rc17(name, current)
