@@ -83,24 +83,39 @@ static int findTextureIndex(const PlaneWork* work, uint8_t logicalId) {
 
 static int collectTextures(PlaneWork* work) {
     uint32_t i;
+    uint32_t previousWord = 0U;
     uint8_t seen[32] = {0};
+    const uint8_t* map;
     if (work == NULL || work->runtime == NULL ||
         work->runtime->planeMap == NULL ||
         work->runtime->planeMapBytes != EXPECTED_PLANE_MAP_BYTES) return 0;
 
+    map = work->runtime->planeMap;
     work->textureCount = 0U;
-    for (i = 0U; i < EXPECTED_PLANE_MAP_BYTES; ++i) {
-        const uint8_t id = work->runtime->planeMap[i];
-        const uint8_t bit = (uint8_t)(1U << (id & 7U));
-        /* P3h: one membership bit per possible logical ID. First encounter
-         * order and exact 24-descriptor failure boundary remain unchanged. */
-        if ((seen[id >> 3] & bit) != 0U) continue;
-        if (work->textureCount >= MAX_PLANE_TEXTURES) return 0;
-        seen[id >> 3] |= bit;
-        memset(&work->textures[work->textureCount], 0,
-               sizeof(work->textures[work->textureCount]));
-        work->textures[work->textureCount].logicalId = id;
-        ++work->textureCount;
+    /* P4m: the immutable 2048-byte plane map is exactly divisible by four.
+     * Identical consecutive groups can contain only already-admitted IDs.
+     * Read through memcpy (no alignment/aliasing assumptions); scan changed
+     * groups in original byte order, including the exact overflow boundary. */
+    _Static_assert(EXPECTED_PLANE_MAP_BYTES % 4U == 0U, "plane group size");
+    for (i = 0U; i < EXPECTED_PLANE_MAP_BYTES; i += 4U) {
+        uint32_t word;
+        uint32_t lanes = 4U;
+        uint32_t j;
+        memcpy(&word, map + i, sizeof(word));
+        if (i != 0U && word == previousWord) continue;
+        previousWord = word;
+        if (word == (uint32_t)map[i] * 0x01010101U) lanes = 1U;
+        for (j = 0U; j < lanes; ++j) {
+            const uint8_t id = map[i + j];
+            const uint8_t bit = (uint8_t)(1U << (id & 7U));
+            if ((seen[id >> 3] & bit) != 0U) continue;
+            if (work->textureCount >= MAX_PLANE_TEXTURES) return 0;
+            seen[id >> 3] |= bit;
+            memset(&work->textures[work->textureCount], 0,
+                   sizeof(work->textures[work->textureCount]));
+            work->textures[work->textureCount].logicalId = id;
+            ++work->textureCount;
+        }
     }
     return work->textureCount > 0U;
 }

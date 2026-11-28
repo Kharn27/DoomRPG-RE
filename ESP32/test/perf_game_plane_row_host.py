@@ -229,6 +229,40 @@ static void checkCollectionAndStep(void) {
         assert(fast.textureCount==scalar.textureCount);
         assert(!memcmp(fast.textures,scalar.textures,sizeof(fast.textures)));
     }
+    /* P4m: unaligned source, repeated mixed groups, all-byte groups,
+     * changed groups with new IDs in every lane, overflow at every lane. */
+    {
+        uint8_t storageMap[2048+4];
+        for(unsigned offset=0;offset<4U;++offset) {
+            uint8_t* data=storageMap+offset;
+            runtime.planeMap=data;
+            runtime.planeMapBytes=2048U;
+            for(unsigned trial=0;trial<128U;++trial) {
+                for(unsigned i=0;i<2048U;++i) {
+                    unsigned lane=i%4U;
+                    unsigned group=i/4U;
+                    data[i]=(uint8_t)(trial%4U==0U ? trial :
+                        trial%4U==1U ? lane+trial :
+                        trial%4U==2U ? ((group/17U)%27U)+lane :
+                        ((group/32U)%24U)+(lane==trial%4U));
+                }
+                if(trial%8U==7U) {
+                    /* Force exactly 24 admitted IDs, then a 25th at a
+                     * selected lane of a changed group near the end. */
+                    for(unsigned i=0;i<2048U;++i)data[i]=(uint8_t)(i%24U);
+                    data[2044U+((trial/8U)%4U)]=255U;
+                }
+                memset(&fast,0xa5,sizeof(fast));
+                memset(&scalar,0xa5,sizeof(scalar));
+                fast.runtime=scalar.runtime=&runtime;
+                assert(collectTextures(&fast)==refCollectTextures(&scalar));
+                assert(fast.textureCount==scalar.textureCount);
+                assert(!memcmp(fast.textures,scalar.textures,sizeof(fast.textures)));
+            }
+        }
+        runtime.planeMap=map;
+    }
+    puts("PASS P4m 512 grouped/unaligned/overflow texture collection cases");
     for(int32_t p=0;p<=131072;++p)
         assert(planeRowStep(p,160)==refPlaneRowStep(p,160));
     const int32_t edge[]={INT32_MAX/2-1,INT32_MAX/2,INT32_MAX/2+1,INT32_MAX};
