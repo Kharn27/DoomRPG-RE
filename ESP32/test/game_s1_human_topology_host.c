@@ -183,7 +183,7 @@ static void exerciseNewAndOld(void) {
 }
 
 static void exerciseCapacity(void) {
-    static uint8_t large[101U * 7U];
+    static uint8_t large[134U * 7U];
     EspMapSpriteTopologyMonsterSnapshot snap;
     uint32_t i;
     memset(large, 0, sizeof(large));
@@ -191,10 +191,10 @@ static void exerciseCapacity(void) {
     witnessRuntime.mapSpriteCount = 101U;
     topologyStorage = large;
     entityTypes = large;
-    entitySubTypes = large + 101U;
-    visualStates = entitySubTypes + 101U;
-    linkStatesLE = visualStates + 101U;
-    linkOrdersLE = linkStatesLE + 202U;
+    entitySubTypes = large + 134U;
+    visualStates = entitySubTypes + 134U;
+    linkStatesLE = visualStates + 134U;
+    linkOrdersLE = linkStatesLE + 268U;
     topologyView.storage = large;
     topologyView.entityTypes = entityTypes;
     topologyView.entitySubTypes = entitySubTypes;
@@ -217,6 +217,27 @@ static void exerciseCapacity(void) {
     assert(topologyView.enemyCount == 65U &&
            topologyView.destructibleCount == 33U &&
            topologyView.humanCount == 3U);
+    /* GC380 now supports 101 in the same 816-byte section, preserving the
+     * human owner and all earlier V11 behavior. */
+    assert(EspMapSpriteTopology_snapshotMonsters(&snap));
+    assert(snap.count == 101U && snap.recordBytes == 6U);
+    assert(EspMapSpriteTopology_restoreMonsterSnapshot(&snap));
+
+    /* The true representational ceiling (133) remains fail-closed. */
+    witnessRuntime.mapSpriteCount = 134U;
+    topologyView.spriteCount = 134U;
+    topologyView.nextLinkOrder = 134U;
+    for (i = 101U; i < 134U; ++i) {
+        entityTypes[i] = ESP_MAP_ENTITY_TYPE_HUMAN;
+        setLinkState(i, ESP_MAP_SPRITE_TOPOLOGY_EXISTS |
+                        ESP_MAP_SPRITE_TOPOLOGY_LINKED |
+                        (uint16_t)i);
+        setLinkOrder(i, (uint16_t)(i + 1U));
+    }
+    refreshView();
+    assert(topologyView.enemyCount == 65U &&
+           topologyView.destructibleCount == 33U &&
+           topologyView.humanCount == 36U);
     assert(!EspMapSpriteTopology_snapshotMonsters(&snap));
 }
 
