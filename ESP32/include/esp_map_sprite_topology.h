@@ -39,9 +39,12 @@ extern "C" {
  * header (816 bytes on disk). New V11 writes also include entity type 2
  * (humans): EV_HIDE/SHOW must survive SAVE/LOAD without reviving old NPCs.
  * Older V9/V10/V11 records without humans remain readable but are lossy for
- * this family. Over-capacity maps fail closed; Sector 5 (#380) is separate.
+ * this family. GC380 keeps the 816-byte section, using 6-byte records for
+ * 101..133 tracked enemy + destructible + human sprites; beyond 133 fails closed.
  */
 #define ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_MAX 100U
+#define ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_COMPACT_MAX 133U
+#define ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_COMPACT_BYTES 6U
 
 typedef enum EspMapSpriteTopologyStatus_e {
     ESP_MAP_SPRITE_TOPOLOGY_INVALID = 0,
@@ -174,6 +177,12 @@ const EspMapSpriteTopologyView* EspMapSpriteTopology_view(void);
  * human family, but report their irreversible coverage gap on LOAD. Other
  * non-monster entity families are not represented here. No layout/ABI growth.
  */
+/* GC380: decode legacy8 or packed6 records, preserving full sprite IDs.
+ * Call monsterSnapshotShapeValid before trusting untrusted checkpoint data. */
+int EspMapSpriteTopology_monsterSnapshotRecordAt(
+    const EspMapSpriteTopologyMonsterSnapshot* snapshot,
+    uint32_t recordIndex,
+    EspMapSpriteTopologyMonsterRecord* outRecord);
 int EspMapSpriteTopology_snapshotMonsters(
     EspMapSpriteTopologyMonsterSnapshot* outSnapshot);
 int EspMapSpriteTopology_monsterSnapshotShapeValid(

@@ -460,24 +460,67 @@ const EspMapSpriteTopologyView* EspMapSpriteTopology_view(void) {
     return EspMapSpriteTopology_isReady() ? &topologyView : NULL;
 }
 
+int EspMapSpriteTopology_monsterSnapshotRecordAt(
+    const EspMapSpriteTopologyMonsterSnapshot* snapshot,
+    uint32_t recordIndex,
+    EspMapSpriteTopologyMonsterRecord* outRecord) {
+    EspMapSpriteTopologyMonsterRecord record;
+    const uint8_t* packed;
+    uint32_t offset;
+
+    if (snapshot == NULL || outRecord == NULL ||
+        recordIndex >= snapshot->count) return 0;
+
+    if (snapshot->recordBytes ==
+            sizeof(EspMapSpriteTopologyMonsterRecord)) {
+        if (snapshot->count > ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_MAX)
+            return 0;
+        *outRecord = snapshot->records[recordIndex];
+        return 1;
+    }
+    if (snapshot->recordBytes !=
+            ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_COMPACT_BYTES ||
+        snapshot->count <= ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_MAX ||
+        snapshot->count >
+            ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_COMPACT_MAX)
+        return 0;
+
+    offset = recordIndex *
+        ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_COMPACT_BYTES;
+    if (offset +
+            ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_COMPACT_BYTES >
+        sizeof(snapshot->records)) return 0;
+    packed = (const uint8_t*)snapshot->records + offset;
+    record.spriteIndex = (uint16_t)((uint16_t)packed[0] |
+                                   ((uint16_t)(packed[2] & 0xc0U) << 2U));
+    record.linkState = (uint16_t)((uint16_t)packed[1] |
+                                 ((uint16_t)(packed[2] & 0x3fU) << 8U));
+    record.linkOrder = readLe16(packed + 3U);
+    record.visualState = packed[5];
+    record.reserved0 = 0U;
+    *outRecord = record;
+    return 1;
+}
+
 static uint32_t monsterSnapshotFNV(
     const EspMapSpriteTopologyMonsterSnapshot* snapshot) {
     uint32_t hash = 2166136261U;
     uint32_t i;
     if (snapshot == NULL) return 0U;
     for (i = 0U; i < snapshot->count; ++i) {
-        const EspMapSpriteTopologyMonsterRecord* record =
-            &snapshot->records[i];
-        hash = hashByte(hash, (uint8_t)(record->spriteIndex & 0xffU));
+        EspMapSpriteTopologyMonsterRecord record;
+        if (!EspMapSpriteTopology_monsterSnapshotRecordAt(
+                snapshot, i, &record)) return 0U;
+        hash = hashByte(hash, (uint8_t)(record.spriteIndex & 0xffU));
         hash = hashByte(hash,
-                        (uint8_t)((record->spriteIndex >> 8) & 0xffU));
-        hash = hashByte(hash, (uint8_t)(record->linkState & 0xffU));
+                        (uint8_t)((record.spriteIndex >> 8) & 0xffU));
+        hash = hashByte(hash, (uint8_t)(record.linkState & 0xffU));
         hash = hashByte(hash,
-                        (uint8_t)((record->linkState >> 8) & 0xffU));
-        hash = hashByte(hash, (uint8_t)(record->linkOrder & 0xffU));
+                        (uint8_t)((record.linkState >> 8) & 0xffU));
+        hash = hashByte(hash, (uint8_t)(record.linkOrder & 0xffU));
         hash = hashByte(hash,
-                        (uint8_t)((record->linkOrder >> 8) & 0xffU));
-        hash = hashByte(hash, record->visualState);
+                        (uint8_t)((record.linkOrder >> 8) & 0xffU));
+        hash = hashByte(hash, record.visualState);
     }
     hash = hashByte(hash, (uint8_t)(snapshot->nextLinkOrder & 0xffU));
     return hashByte(
@@ -488,6 +531,8 @@ int EspMapSpriteTopology_monsterSnapshotShapeValid(
     const EspMapSpriteTopologyMonsterSnapshot* snapshot,
     uint32_t expectedArenaFNV1a) {
     uint32_t i;
+    uint32_t usedBytes;
+    uint16_t previousIndex = 0U;
     const uint16_t allowed =
         ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK |
         ESP_MAP_SPRITE_TOPOLOGY_LINKED |
@@ -497,41 +542,54 @@ int EspMapSpriteTopology_monsterSnapshotShapeValid(
 
     if (snapshot == NULL || expectedArenaFNV1a == 0U ||
         snapshot->sourceArenaFNV1a != expectedArenaFNV1a ||
-        snapshot->stateFNV1a == 0U || snapshot->reserved0 != 0U ||
-        snapshot->count > ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_MAX ||
-        snapshot->recordBytes != sizeof(EspMapSpriteTopologyMonsterRecord) ||
-        monsterSnapshotFNV(snapshot) != snapshot->stateFNV1a) {
+        snapshot->stateFNV1a == 0U || snapshot->reserved0 != 0U) {
         return 0;
     }
+    if (snapshot->recordBytes ==
+            sizeof(EspMapSpriteTopologyMonsterRecord)) {
+        if (snapshot->count >
+            ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_MAX) return 0;
+    }
+    else if (snapshot->recordBytes ==
+                 ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_COMPACT_BYTES) {
+        if (snapshot->count <=
+                ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_MAX ||
+            snapshot->count >
+                ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_COMPACT_MAX)
+            return 0;
+    }
+    else return 0;
+
+    usedBytes = (uint32_t)snapshot->count * snapshot->recordBytes;
+    if (usedBytes > sizeof(snapshot->records) ||
+        monsterSnapshotFNV(snapshot) != snapshot->stateFNV1a)
+        return 0;
 
     for (i = 0U; i < snapshot->count; ++i) {
-        const EspMapSpriteTopologyMonsterRecord* record =
-            &snapshot->records[i];
-        if (record->reserved0 != 0U ||
-            (i != 0U &&
-             record->spriteIndex <= snapshot->records[i - 1U].spriteIndex) ||
-            (record->linkState & (uint16_t)~allowed) != 0U ||
-            (record->linkState & ESP_MAP_SPRITE_TOPOLOGY_EXISTS) == 0U) {
+        EspMapSpriteTopologyMonsterRecord record;
+        if (!EspMapSpriteTopology_monsterSnapshotRecordAt(
+                snapshot, i, &record) ||
+            record.reserved0 != 0U ||
+            (i != 0U && record.spriteIndex <= previousIndex) ||
+            (record.linkState & (uint16_t)~allowed) != 0U ||
+            (record.linkState & ESP_MAP_SPRITE_TOPOLOGY_EXISTS) == 0U) {
             return 0;
         }
-        if ((record->linkState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) != 0U) {
-            if (record->linkOrder == 0U ||
-                record->linkOrder > snapshot->nextLinkOrder) {
+        if ((record.linkState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) != 0U) {
+            if (record.linkOrder == 0U ||
+                record.linkOrder > snapshot->nextLinkOrder) {
                 return 0;
             }
         }
-        else if (record->linkOrder != 0U) {
+        else if (record.linkOrder != 0U) {
             return 0;
         }
+        previousIndex = record.spriteIndex;
     }
 
-    for (i = snapshot->count;
-         i < ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_MAX; ++i) {
-        const uint8_t* bytes = (const uint8_t*)&snapshot->records[i];
-        uint32_t j;
-        for (j = 0U; j < sizeof(snapshot->records[i]); ++j) {
-            if (bytes[j] != 0U) return 0;
-        }
+    /* Unused bytes are part of the file CRC AND canonical codec shape. */
+    for (i = usedBytes; i < sizeof(snapshot->records); ++i) {
+        if (((const uint8_t*)snapshot->records)[i] != 0U) return 0;
     }
     return 1;
 }
@@ -539,6 +597,14 @@ int EspMapSpriteTopology_monsterSnapshotShapeValid(
 int EspMapSpriteTopology_snapshotMonsters(
     EspMapSpriteTopologyMonsterSnapshot* outSnapshot) {
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    const uint32_t tracked = topologyView.enemyCount +
+                             topologyView.destructibleCount +
+                             topologyView.humanCount;
+    const uint8_t compact = (uint8_t)(
+        tracked > ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_MAX);
+    const uint32_t capacity = compact
+        ? ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_COMPACT_MAX
+        : ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_MAX;
     uint32_t i;
     uint16_t count = 0U;
 
@@ -549,38 +615,67 @@ int EspMapSpriteTopology_snapshotMonsters(
 
     memset(outSnapshot, 0, sizeof(*outSnapshot));
     outSnapshot->sourceArenaFNV1a = runtime->arenaFNV1a;
-    outSnapshot->recordBytes =
-        (uint16_t)sizeof(EspMapSpriteTopologyMonsterRecord);
+    outSnapshot->recordBytes = compact
+        ? ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_COMPACT_BYTES
+        : (uint16_t)sizeof(EspMapSpriteTopologyMonsterRecord);
     outSnapshot->nextLinkOrder = topologyView.nextLinkOrder;
 
     for (i = 0U; i < topologyView.spriteCount; ++i) {
-        EspMapSpriteTopologyMonsterRecord* record;
+        uint16_t state;
+        uint16_t order;
         const uint8_t type = entityTypes[i];
         if (type != ESP_MAP_ENTITY_TYPE_ENEMY &&
             type != ESP_MAP_ENTITY_TYPE_DESTRUCTIBLE &&
-            type != ESP_MAP_ENTITY_TYPE_HUMAN) {
-            continue;
-        }
-        if (count >= ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_MAX ||
-            i > UINT16_MAX) {
+            type != ESP_MAP_ENTITY_TYPE_HUMAN) continue;
+
+        if (count >= capacity ||
+            i > (compact != 0U ? 1023U : UINT16_MAX)) {
             printf("[MAPCHECKPOINTTOPO] SNAPSHOT-FAILED reason=capacity tracked=%u cap=%u enemies=%u destructibles=%u humans=%u failClosed=yes\n",
                    (unsigned int)(count + 1U),
-                   (unsigned int)ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_MAX,
+                   (unsigned int)capacity,
                    (unsigned int)topologyView.enemyCount,
                    (unsigned int)topologyView.destructibleCount,
                    (unsigned int)topologyView.humanCount);
             return 0;
         }
-        record = &outSnapshot->records[count++];
-        record->spriteIndex = (uint16_t)i;
-        record->linkState = linkStateAt(i);
-        record->linkOrder = linkOrderAt(i);
-        record->visualState = visualStates[i];
+
+        state = linkStateAt(i);
+        order = linkOrderAt(i);
+        if (compact != 0U) {
+            uint8_t* packed = (uint8_t*)outSnapshot->records +
+                (uint32_t)count *
+                ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_COMPACT_BYTES;
+            if ((state & 0xc000U) != 0U) return 0;
+            packed[0] = (uint8_t)(i & 0xffU);
+            packed[1] = (uint8_t)(state & 0xffU);
+            packed[2] = (uint8_t)(((state >> 8U) & 0x3fU) |
+                                  (((i >> 8U) & 3U) << 6U));
+            writeLe16(packed + 3U, order);
+            packed[5] = visualStates[i];
+        }
+        else {
+            EspMapSpriteTopologyMonsterRecord* record =
+                &outSnapshot->records[count];
+            record->spriteIndex = (uint16_t)i;
+            record->linkState = state;
+            record->linkOrder = order;
+            record->visualState = visualStates[i];
+        }
+        ++count;
     }
     outSnapshot->count = count;
     outSnapshot->stateFNV1a = monsterSnapshotFNV(outSnapshot);
-    return EspMapSpriteTopology_monsterSnapshotShapeValid(
-        outSnapshot, runtime->arenaFNV1a);
+    if (!EspMapSpriteTopology_monsterSnapshotShapeValid(
+            outSnapshot, runtime->arenaFNV1a)) return 0;
+    if (compact != 0U) {
+        printf("[MAPCHECKPOINTTOPO] SNAPSHOT tracked=%u enemies=%u destructibles=%u humans=%u codec=packed6 recordBytes=6 sectionBytes=%u allocation=no\n",
+               (unsigned int)count,
+               (unsigned int)topologyView.enemyCount,
+               (unsigned int)topologyView.destructibleCount,
+               (unsigned int)topologyView.humanCount,
+               (unsigned int)sizeof(*outSnapshot));
+    }
+    return 1;
 }
 
 int EspMapSpriteTopology_restoreMonsterSnapshot(
@@ -621,7 +716,7 @@ int EspMapSpriteTopology_restoreMonsterSnapshot(
 
         for (i = 0U; i < topologyView.spriteCount; ++i) {
             const uint8_t type = entityTypes[i];
-            const EspMapSpriteTopologyMonsterRecord* record;
+            EspMapSpriteTopologyMonsterRecord record;
             if (type != ESP_MAP_ENTITY_TYPE_ENEMY &&
                 (legacyEnemyOnly != 0U ||
                  (type != ESP_MAP_ENTITY_TYPE_DESTRUCTIBLE &&
@@ -630,30 +725,34 @@ int EspMapSpriteTopology_restoreMonsterSnapshot(
                 continue;
             }
             if (cursor >= snapshot->count ||
-                snapshot->records[cursor].spriteIndex != i) return 0;
-            record = &snapshot->records[cursor++];
+                !EspMapSpriteTopology_monsterSnapshotRecordAt(
+                    snapshot, cursor, &record) ||
+                record.spriteIndex != i) return 0;
+            ++cursor;
             if ((linkStateAt(i) & identityMask) !=
-                (record->linkState & identityMask)) return 0;
+                (record.linkState & identityMask)) return 0;
         }
         if (cursor != snapshot->count) return 0;
     }
 
     for (i = 0U; i < snapshot->count; ++i) {
-        const EspMapSpriteTopologyMonsterRecord* record =
-            &snapshot->records[i];
-        visualStates[record->spriteIndex] = record->visualState;
-        setLinkState(record->spriteIndex, record->linkState);
-        setLinkOrder(record->spriteIndex, record->linkOrder);
+        EspMapSpriteTopologyMonsterRecord record;
+        if (!EspMapSpriteTopology_monsterSnapshotRecordAt(
+                snapshot, i, &record)) return 0;
+        visualStates[record.spriteIndex] = record.visualState;
+        setLinkState(record.spriteIndex, record.linkState);
+        setLinkOrder(record.spriteIndex, record.linkOrder);
     }
     topologyView.nextLinkOrder = snapshot->nextLinkOrder;
     refreshView();
 
     for (i = 0U; i < snapshot->count; ++i) {
-        const EspMapSpriteTopologyMonsterRecord* record =
-            &snapshot->records[i];
-        if (visualStates[record->spriteIndex] != record->visualState ||
-            linkStateAt(record->spriteIndex) != record->linkState ||
-            linkOrderAt(record->spriteIndex) != record->linkOrder) {
+        EspMapSpriteTopologyMonsterRecord record;
+        if (!EspMapSpriteTopology_monsterSnapshotRecordAt(
+                snapshot, i, &record) ||
+            visualStates[record.spriteIndex] != record.visualState ||
+            linkStateAt(record.spriteIndex) != record.linkState ||
+            linkOrderAt(record.spriteIndex) != record.linkOrder) {
             return 0;
         }
     }
@@ -663,7 +762,8 @@ int EspMapSpriteTopology_restoreMonsterSnapshot(
         EspMapSpriteTopologyMonsterSnapshot verify;
         if (!EspMapSpriteTopology_snapshotMonsters(&verify) ||
             verify.stateFNV1a != snapshot->stateFNV1a ||
-            verify.count != snapshot->count) {
+            verify.count != snapshot->count ||
+            verify.recordBytes != snapshot->recordBytes) {
             return 0;
         }
     }
@@ -673,7 +773,7 @@ int EspMapSpriteTopology_restoreMonsterSnapshot(
                (unsigned int)topologyView.humanCount,
                legacyEnemyOnly != 0U ? "enemy-only" : "enemy+destructible");
     }
-    printf("[MAPCHECKPOINTTOPO] RESTORE arena=%08x tracked=%u enemies=%u destructibles=%u humans=%u scope=%s nextOrder=%u stateFNV=%08x mutation=%s allocation=no\n",
+    printf("[MAPCHECKPOINTTOPO] RESTORE arena=%08x tracked=%u enemies=%u destructibles=%u humans=%u scope=%s nextOrder=%u stateFNV=%08x codec=%s mutation=%s allocation=no\n",
            (unsigned int)snapshot->sourceArenaFNV1a,
            (unsigned int)snapshot->count,
            (unsigned int)topologyView.enemyCount,
@@ -684,6 +784,8 @@ int EspMapSpriteTopology_restoreMonsterSnapshot(
                                             "enemy-only-legacy-v9"),
            (unsigned int)snapshot->nextLinkOrder,
            (unsigned int)snapshot->stateFNV1a,
+           snapshot->recordBytes == ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_COMPACT_BYTES
+               ? "packed6" : "legacy8",
            fullScope != 0U ? "tracked-topology-exact" :
                (legacyMonsterScope != 0U ? "enemy+destructible-exact+human-fresh" :
                                            "enemy-topology-exact+nonenemy-replay"));
