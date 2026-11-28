@@ -866,6 +866,26 @@ static int sampleWallSpan(FirstFrameWork* work,
 
     pitch = render->pitch >> 1;
     pixels = (uint16_t*)render->pixels + pitch * y + x;
+    /* P3b: prove the entire forward span stays inside this packed
+     * texture. The affine recurrence is monotonic, so the endpoints
+     * suffice. Keep short, reverse and boundary spans on the original
+     * path, including legacy successor I/O and partial failure stats. */
+    if (pixelCount >= 4 && texelPosition >= 0 && texelStep >= 0 &&
+        (int64_t)texelPosition + (int64_t)(pixelCount - 1) * texelStep <
+            ((int64_t)WALL_PACKED_BYTES << 13)) {
+        uint32_t pos = (uint32_t)texelPosition;
+        int left = pixelCount;
+        while (left-- > 0) {
+            const uint8_t packed = texels[pos >> 13];
+            *pixels = source->paletteRgb565[
+                (packed >> ((pos >> 10) & 4U)) & 15U];
+            pixels += pitch;
+            pos += (uint32_t)texelStep;
+        }
+        work->pixelsDrawn += (uint32_t)pixelCount;
+        return 1;
+    }
+
     localPosition = (int64_t)texelPosition;
     remaining = pixelCount;
 

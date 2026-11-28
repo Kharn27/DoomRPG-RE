@@ -24,21 +24,26 @@ static inline unsigned EspNativeSpriteMask_countColumn(
     return result;
 }
 
-/* Return the first row not matching opaque (0/1), or height. Consume
- * whole homogeneous bytes when aligned; never inspect padding rows. */
+/* P3n: find the first differing bit within the current byte, including
+ * an unaligned start. No speculative next-byte read and no lookup table.
+ * Padding may affect the intermediate mismatch, never the clamped result.
+ * The common immediate mismatch exits before the bounded 4/2/1 search. */
 static inline int EspNativeSpriteMask_runEnd(
     const uint8_t* bits, int row, int height, int opaque) {
     const unsigned fill = opaque ? 255U : 0U;
     while (row < height) {
-        const unsigned byte = bits[(unsigned)row >> 3U];
-        if ((row & 7) == 0 && height - row >= 8 && byte == fill) {
-            row += 8;
-        } else {
-            if (((byte >> (row & 7)) & 1U) != (unsigned)opaque)
-                break;
-            ++row;
+        const unsigned offset = (unsigned)row & 7U;
+        unsigned mismatch = (bits[(unsigned)row >> 3U] ^ fill) >> offset;
+        if (mismatch == 0U) {
+            row += (int)(8U - offset);
+            continue;
         }
+        if ((mismatch & 1U) != 0U) return row;
+        if ((mismatch & 15U) == 0U) { row += 4; mismatch >>= 4U; }
+        if ((mismatch & 3U) == 0U) { row += 2; mismatch >>= 2U; }
+        if ((mismatch & 1U) == 0U) ++row;
+        break;
     }
-    return row;
+    return row < height ? row : height;
 }
 #endif
