@@ -128,6 +128,11 @@ void EspAssetPack_mapFlashGetStats(EspAssetPackMapFlashStats* outStats);
 uint8_t EspAssetPack_mapFlashCachedMapId(void);
 
 /* Explicit read-only lease on one exact entry in the authoritative SD PAK.
+ * P3: with a verified active cache and identical fresh SD index identity,
+ * catalog BSP payloads are read from flash after exact entry comparison.
+ * The lease retains SD index authority and BSP CRC validation; it never
+ * retries failed flash reads on SD. Inactive or changed-source preflight
+ * keeps the original explicit SD path (not gameplay fallback).
  *
  * This exists for map-load / CHANGEMAP preflight while the current gameplay
  * slot remains staged in raw flash. It never changes the active gameplay
